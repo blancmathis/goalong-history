@@ -51,8 +51,10 @@ jobs:
           API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
         run: |
-          for name in CERTIFICATE CERTIFICATE_PASSWORD SIGN_IDENTITY API_KEY_ID API_ISSUER_ID API_PRIVATE_KEY; do
+          for name in CERTIFICATE CERTIFICATE_PASSWORD SIGN_IDENTITY API_KEY_ID API_ISSUER_ID API_PRIVATE_KEY SPARKLE_PUBLIC_KEY SPARKLE_PRIVATE_KEY; do
             if [[ -z "${!name:-}" ]]; then
               echo "Missing required release secret: $name" >&2
               exit 1
@@ -96,13 +98,17 @@ jobs:
           LOCALHISTORY_ARCHS: arm64 x86_64
           LOCALHISTORY_RUN_TESTS: 1
           LOCALHISTORY_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
         run: ./scripts/build_app.sh
 
-      - name: Confirm universal architecture and signature
+      - name: Confirm universal architecture, signature, and updater policy
+        env:
+          LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
         run: |
           lipo -info dist/LocalHistory.app/Contents/MacOS/LocalHistory
           lipo -verify_arch arm64 x86_64 dist/LocalHistory.app/Contents/MacOS/LocalHistory
           codesign --verify --strict --verbose=4 dist/LocalHistory.app
+          ./scripts/verify_sparkle_bundle.sh
 
       - name: Notarize and staple app
         env:
@@ -146,6 +152,17 @@ jobs:
             shasum -a 256 LocalHistory-macOS-universal.zip > LocalHistory-macOS-universal.zip.sha256
           )
 
+      - name: Generate signed Sparkle appcast
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          ./scripts/generate_sparkle_appcast.sh \
+            "${{ steps.version.outputs.value }}" \
+            dist/LocalHistory-macOS-universal.zip \
+            dist/appcast.xml
+          test -s dist/appcast.xml
+          grep -q 'sparkle:edSignature=' dist/appcast.xml
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -159,3 +176,4 @@ jobs:
             dist/LocalHistory-macOS-universal.dmg.sha256
             dist/LocalHistory-macOS-universal.zip
             dist/LocalHistory-macOS-universal.zip.sha256
+            dist/appcast.xml

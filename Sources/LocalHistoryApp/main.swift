@@ -29,9 +29,20 @@
 
     LegacyInstallationMigrator.run()
 
+    let updateObserver = NotificationCenter.default.addObserver(
+        forName: NSApplication.didFinishLaunchingNotification,
+        object: application,
+        queue: .main
+    ) { _ in
+        Task { @MainActor in
+            SoftwareUpdateManager.shared.start()
+        }
+    }
+
     let delegate = AppDelegate()
     application.delegate = delegate
     application.run()
+    NotificationCenter.default.removeObserver(updateObserver)
 #else
     import Foundation
     fputs("LocalHistory is a macOS-only application.\n", stderr)

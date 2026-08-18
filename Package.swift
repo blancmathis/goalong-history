@@ -11,6 +11,9 @@ let package = Package(
         .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
         .executable(name: "LocalHistory", targets: ["LocalHistoryApp"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6")
+    ],
     targets: [
         .target(
             name: "AppleScreenTime",
@@ -22,7 +25,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "LocalHistoryApp",
-            dependencies: ["LocalHistoryCore", "AppleScreenTime"],
+            dependencies: [
+                "LocalHistoryCore",
+                "AppleScreenTime",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "Sources/LocalHistoryApp",
             linkerSettings: [
                 .linkedFramework("AppKit", .when(platforms: [.macOS])),
@@ -32,6 +39,10 @@ let package = Package(
                 .linkedFramework("Carbon", .when(platforms: [.macOS])),
                 .linkedFramework("Security", .when(platforms: [.macOS])),
                 .linkedFramework("ServiceManagement", .when(platforms: [.macOS])),
+                .unsafeFlags(
+                    ["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"],
+                    .when(platforms: [.macOS])
+                ),
             ]
         ),
         .testTarget(

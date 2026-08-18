@@ -1,4 +1,4 @@
-.PHONY: test build app dmg audit install install-source uninstall clean
+.PHONY: test build app dmg audit sparkle-keys install install-source uninstall clean
 
 VERSION ?= 0.4.0
 ARCHS ?= $(shell uname -m)
@@ -17,6 +17,9 @@ dmg: app
 
 audit:
 	./scripts/audit_privacy_boundaries.sh
+
+sparkle-keys:
+	./scripts/setup_sparkle_keys.sh
 
 install:
 	./install.sh
