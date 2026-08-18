@@ -1,6 +1,6 @@
 .PHONY: test build app dmg audit sparkle-keys install install-source uninstall clean
 
-VERSION ?= 0.4.0
+VERSION ?= 0.5.1
 ARCHS ?= $(shell uname -m)
 
 test:

@@ -46,7 +46,7 @@ Existing installations that predate Sparkle cannot discover Sparkle by themselve
 
 1. Update `CHANGELOG.md` and the default version in `scripts/build_app.sh` when appropriate.
 2. Merge a green pull request into `main`.
-3. Create and push an annotated stable tag, for example `v0.5.0`.
+3. Create and push an annotated stable tag, for example `v0.5.1`.
 4. The **Signed macOS release** workflow:
    - builds both architectures;
    - embeds the exact-pinned Sparkle framework;

@@ -191,7 +191,7 @@
                 VStack(alignment: .leading, spacing: 14) {
                     SectionTitle(
                         title: "Top applications",
-                        subtitle: "Approximate active minutes from observed input"
+                        subtitle: "Bounded foreground time from observed context"
                     )
 
                     if model.snapshot.appUsage.isEmpty {
@@ -199,7 +199,7 @@
                             symbol: "app.dashed",
                             title: "No app activity",
                             message:
-                                "Applications will appear after clicks, typing, scrolling or context changes are observed."
+                                "Applications will appear after foreground context is observed."
                         )
                         .frame(height: 250)
                     } else {

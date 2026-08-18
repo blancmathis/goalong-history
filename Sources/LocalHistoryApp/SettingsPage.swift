@@ -189,11 +189,7 @@
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark.shield.fill")
                             .foregroundStyle(LHTheme.success)
-                        Text(
-                            model.deviceTrustTier == "secure_enclave"
-                                ? "Minute commitments are signed with a Secure Enclave protected P-256 key."
-                                : "Minute commitments are signed with a non-exportable Keychain P-256 key on this Mac."
-                        )
+                        Text(model.deviceProtectionSummary)
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.secondary)
                         Spacer()

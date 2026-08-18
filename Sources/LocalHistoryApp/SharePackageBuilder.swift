@@ -17,7 +17,6 @@
         case brokenSeal(UInt64)
         case missingEvents(UInt64)
         case brokenEvent(String)
-        case inconsistentDevice
 
         var description: String {
             switch self {
@@ -25,7 +24,6 @@
             case .brokenSeal(let sequence): return "Minute seal \(sequence) failed local integrity validation."
             case .missingEvents(let sequence): return "The detailed events for minute seal \(sequence) are no longer available. Use Completely private for that minute."
             case .brokenEvent(let root): return "Event \(root.prefix(12))… failed local integrity validation."
-            case .inconsistentDevice: return "The selected day contains seals from inconsistent device identities."
             }
         }
     }
@@ -63,7 +61,7 @@
         func build(for day: Date = Date(), levels: [UInt64: ShareLevel]) throws -> DaySharePackage {
             let seals = try loadSeals(for: day)
             guard let first = seals.first, let last = seals.last else { throw ShareBuildError.noSeals }
-            guard seals.allSatisfy({ $0.deviceID == first.deviceID }) else { throw ShareBuildError.inconsistentDevice }
+            let deviceIDs = uniqueValues(seals.map(\.deviceID))
 
             let eventsByRoot = loadEventsByRoot(for: day)
             let receipts = loadReceiptsBySequence()
@@ -71,6 +69,7 @@
                 try makeDisclosure(
                     seal: seal,
                     level: levels[seal.anchorSequence] ?? .privateOnly,
+                    eventLevel: nil,
                     eventsByRoot: eventsByRoot,
                     receipts: receipts
                 )
@@ -82,19 +81,83 @@
             let bySequence = Dictionary(uniqueKeysWithValues: all.map { ($0.anchorSequence, $0) })
             let boundaryBefore: MinuteDisclosure?
             if first.anchorSequence > 1, let seal = bySequence[first.anchorSequence - 1] {
-                boundaryBefore = try makeDisclosure(seal: seal, level: .privateOnly, eventsByRoot: [:], receipts: receipts)
+                boundaryBefore = try makeDisclosure(
+                    seal: seal, level: .privateOnly, eventLevel: nil, eventsByRoot: [:], receipts: receipts)
             } else {
                 boundaryBefore = nil
             }
             let boundaryAfter: MinuteDisclosure?
             if let seal = bySequence[last.anchorSequence + 1] {
-                boundaryAfter = try makeDisclosure(seal: seal, level: .privateOnly, eventsByRoot: [:], receipts: receipts)
+                boundaryAfter = try makeDisclosure(
+                    seal: seal, level: .privateOnly, eventLevel: nil, eventsByRoot: [:], receipts: receipts)
             } else {
                 boundaryAfter = nil
             }
 
             return DaySharePackage(
+                schemaVersion: deviceIDs.count > 1 ? 4 : 2,
                 deviceID: first.deviceID,
+                deviceIDs: deviceIDs,
+                localDay: AppPaths.localDayString(for: day),
+                classifierVersion: LocalClassifier.version,
+                boundaryBefore: boundaryBefore,
+                boundaryAfter: boundaryAfter,
+                minutes: disclosures
+            )
+        }
+
+        func build(
+            for day: Date = Date(),
+            sharingRules: [String: SharingVisibility],
+            defaultVisibility: SharingVisibility
+        ) throws -> DaySharePackage {
+            let seals = try loadSeals(for: day)
+            guard let first = seals.first, let last = seals.last else { throw ShareBuildError.noSeals }
+            let deviceIDs = uniqueValues(seals.map(\.deviceID))
+
+            let eventsByRoot = loadEventsByRoot(for: day)
+            let receipts = loadReceiptsBySequence()
+            let eventLevel: (HistoryEvent) -> ShareLevel = { event in
+                guard let subject = SharingSubjectKey.forEvent(event) else { return .privateOnly }
+                let visibility = sharingRules[subject] ?? defaultVisibility
+                if event.url?.host != nil, visibility == .identity, event.schemaVersion < 3 {
+                    // v2 committed the host together with the complete URL and window context.
+                    // Category-only is the strongest safe identity fallback for those old events.
+                    return .categoryOnly
+                }
+                return visibility.shareLevel
+            }
+            let disclosures = try seals.map { seal in
+                try makeDisclosure(
+                    seal: seal,
+                    level: .mixed,
+                    eventLevel: eventLevel,
+                    eventsByRoot: eventsByRoot,
+                    receipts: receipts
+                )
+            }
+
+            let all = loadAllSeals()
+            let bySequence = Dictionary(uniqueKeysWithValues: all.map { ($0.anchorSequence, $0) })
+            let boundaryBefore: MinuteDisclosure?
+            if first.anchorSequence > 1, let seal = bySequence[first.anchorSequence - 1] {
+                boundaryBefore = try makeDisclosure(
+                    seal: seal, level: .privateOnly, eventLevel: nil, eventsByRoot: [:], receipts: receipts)
+            } else {
+                boundaryBefore = nil
+            }
+            let boundaryAfter: MinuteDisclosure?
+            if let seal = bySequence[last.anchorSequence + 1] {
+                boundaryAfter = try makeDisclosure(
+                    seal: seal, level: .privateOnly, eventLevel: nil, eventsByRoot: [:], receipts: receipts)
+            } else {
+                boundaryAfter = nil
+            }
+
+            return DaySharePackage(
+                schemaVersion: deviceIDs.count > 1 ? 4 : 3,
+                deviceID: first.deviceID,
+                deviceIDs: deviceIDs,
                 localDay: AppPaths.localDayString(for: day),
                 classifierVersion: LocalClassifier.version,
                 boundaryBefore: boundaryBefore,
@@ -115,10 +178,39 @@
         private func makeDisclosure(
             seal: LocalMinuteSeal,
             level: ShareLevel,
+            eventLevel: ((HistoryEvent) -> ShareLevel)?,
             eventsByRoot: [String: HistoryEvent],
             receipts: [UInt64: AnchorReceipt]
         ) throws -> MinuteDisclosure {
             guard verifyLocalSeal(seal) else { throw ShareBuildError.brokenSeal(seal.anchorSequence) }
+
+            let resolvedEvents = seal.eventRoots.compactMap { eventsByRoot[$0] }
+            let hasEveryEvent = resolvedEvents.count == seal.eventRoots.count
+            let eventLevels: [ShareLevel]
+            let resolvedMinuteLevel: ShareLevel
+            if let eventLevel {
+                guard hasEveryEvent else {
+                    return try makeDisclosure(
+                        seal: seal,
+                        level: .privateOnly,
+                        eventLevel: nil,
+                        eventsByRoot: [:],
+                        receipts: receipts
+                    )
+                }
+                eventLevels = resolvedEvents.map(eventLevel)
+                let uniqueLevels = Set(eventLevels)
+                if eventLevels.isEmpty || uniqueLevels == [.privateOnly] {
+                    resolvedMinuteLevel = .privateOnly
+                } else if uniqueLevels.count == 1, let only = uniqueLevels.first {
+                    resolvedMinuteLevel = only
+                } else {
+                    resolvedMinuteLevel = .mixed
+                }
+            } else {
+                eventLevels = Array(repeating: level, count: seal.eventRoots.count)
+                resolvedMinuteLevel = level
+            }
 
             let minuteFields = seal.minuteFields.map { field -> FieldDisclosure in
                 let revealOpening: Bool
@@ -126,7 +218,7 @@
                 case "time", "coverage":
                     revealOpening = true
                 case "events_root", "event_count":
-                    revealOpening = level != .privateOnly
+                    revealOpening = resolvedMinuteLevel != .privateOnly
                 default:
                     revealOpening = false
                 }
@@ -139,23 +231,29 @@
 
             var eventRoots: [String]? = nil
             var eventDisclosures: [EventDisclosure]? = nil
-            if level != .privateOnly {
+            if resolvedMinuteLevel != .privateOnly {
                 var built: [EventDisclosure] = []
-                for root in seal.eventRoots {
+                for (index, root) in seal.eventRoots.enumerated() {
                     guard let event = eventsByRoot[root] else { throw ShareBuildError.missingEvents(seal.anchorSequence) }
                     guard verifyLocalEvent(event) else { throw ShareBuildError.brokenEvent(root) }
+
+                    let resolvedEventLevel = eventLevels[index]
 
                     let commitments = event.integrity?.fieldCommitments ?? []
                     let fields = commitments.map { field -> FieldDisclosure in
                         let reveal: Bool
-                        switch level {
+                        switch resolvedEventLevel {
                         case .everything:
                             reveal = true
                         case .applicationOnly:
-                            reveal = ["time", "application", "coverage", "trust"].contains(field.name)
+                            let identityField = event.url?.host != nil && event.schemaVersion >= 3
+                                ? "website" : "application"
+                            reveal = ["time", identityField, "coverage", "trust"].contains(field.name)
                         case .categoryOnly:
                             reveal = ["time", "classification", "coverage", "trust"].contains(field.name)
                         case .privateOnly:
+                            reveal = false
+                        case .mixed:
                             reveal = false
                         }
                         return FieldDisclosure(
@@ -164,7 +262,14 @@
                             opening: reveal ? field.opening : nil
                         )
                     }
-                    built.append(EventDisclosure(eventRoot: root, fieldCommitments: fields, rawEvent: nil))
+                    built.append(
+                        EventDisclosure(
+                            eventRoot: root,
+                            fieldCommitments: fields,
+                            rawEvent: nil,
+                            schemaVersion: event.schemaVersion,
+                            shareLevel: resolvedEventLevel
+                        ))
                 }
                 eventRoots = seal.eventRoots
                 eventDisclosures = built
@@ -176,7 +281,7 @@
                 minuteRoot: seal.minuteRoot,
                 previousAnchorHash: seal.previousAnchorHash,
                 anchorHash: seal.anchorHash,
-                shareLevel: level,
+                shareLevel: resolvedMinuteLevel,
                 minuteFields: minuteFields,
                 eventRoots: eventRoots,
                 events: eventDisclosures,
@@ -214,11 +319,12 @@
             guard let integrity = event.integrity else { return false }
             guard integrity.fieldCommitments.allSatisfy({ $0.opening.commitmentHex() == $0.commitmentHex }) else { return false }
             let byName = Dictionary(uniqueKeysWithValues: integrity.fieldCommitments.map { ($0.name, $0.commitmentHex) })
-            let leaves = IntegrityDomains.eventFieldOrder.compactMap { name -> (String, String)? in
+            let fieldOrder = IntegrityDomains.eventFieldOrder(for: event.schemaVersion)
+            let leaves = fieldOrder.compactMap { name -> (String, String)? in
                 guard let value = byName[name] else { return nil }
                 return (name, value)
             }
-            guard leaves.count == IntegrityDomains.eventFieldOrder.count else { return false }
+            guard leaves.count == fieldOrder.count else { return false }
             guard MerkleTree.root(labeledHexValues: leaves) == integrity.eventRoot else { return false }
             return ChainHash.event(sequence: integrity.sequence, previous: integrity.previousEventHash, eventRoot: integrity.eventRoot) == integrity.eventHash
         }

@@ -22,6 +22,19 @@ fi
 /usr/bin/codesign --verify --strict --verbose=2 "$FRAMEWORK"
 /usr/bin/codesign --verify --strict --verbose=2 "$APP_PATH"
 
+APP_SIGNATURE="$({ /usr/bin/codesign -dvv "$APP_PATH" 2>&1 || true; })"
+FRAMEWORK_SIGNATURE="$({ /usr/bin/codesign -dvv "$FRAMEWORK" 2>&1 || true; })"
+APP_TEAM="$(printf '%s\n' "$APP_SIGNATURE" | /usr/bin/awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+FRAMEWORK_TEAM="$(printf '%s\n' "$FRAMEWORK_SIGNATURE" | /usr/bin/awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+if [[ "$APP_TEAM" != "$FRAMEWORK_TEAM" ]]; then
+  echo "LocalHistory and Sparkle.framework have different signing Team IDs." >&2
+  exit 1
+fi
+if [[ "$APP_TEAM" == "not set" ]] && printf '%s\n' "$APP_SIGNATURE" | /usr/bin/grep -q 'runtime'; then
+  echo "Ad-hoc development bundles cannot enable Hardened Runtime with Sparkle.framework." >&2
+  exit 1
+fi
+
 HELPERS="$FRAMEWORK/Versions/B"
 if [[ ! -d "$HELPERS" ]]; then
   HELPERS="$FRAMEWORK/Versions/Current"
@@ -57,6 +70,7 @@ fi
 
 FEED_URL="$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$INFO")"
 REQUIRE_SIGNED="$(/usr/libexec/PlistBuddy -c 'Print :SURequireSignedFeed' "$INFO")"
+VERIFY_BEFORE_EXTRACTION="$(/usr/libexec/PlistBuddy -c 'Print :SUVerifyUpdateBeforeExtraction' "$INFO")"
 SYSTEM_PROFILING="$(/usr/libexec/PlistBuddy -c 'Print :SUEnableSystemProfiling' "$INFO")"
 SEND_PROFILE="$(/usr/libexec/PlistBuddy -c 'Print :SUSendProfileInfo' "$INFO")"
 ALLOW_AUTO="$(/usr/libexec/PlistBuddy -c 'Print :SUAllowsAutomaticUpdates' "$INFO")"
@@ -64,6 +78,7 @@ ALLOW_AUTO="$(/usr/libexec/PlistBuddy -c 'Print :SUAllowsAutomaticUpdates' "$INF
 [[ "$FEED_URL" == "$SPARKLE_FEED_URL" ]]
 [[ "$FEED_URL" == https://* ]]
 [[ "$REQUIRE_SIGNED" == "true" ]]
+[[ "$VERIFY_BEFORE_EXTRACTION" == "true" ]]
 [[ "$SYSTEM_PROFILING" == "false" ]]
 [[ "$SEND_PROFILE" == "false" ]]
 [[ "$ALLOW_AUTO" == "false" ]]

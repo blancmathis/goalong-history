@@ -5,6 +5,7 @@ public enum ShareLevel: String, Codable, CaseIterable {
     case applicationOnly
     case categoryOnly
     case privateOnly
+    case mixed
 
     public var title: String {
         switch self {
@@ -12,6 +13,7 @@ public enum ShareLevel: String, Codable, CaseIterable {
         case .applicationOnly: return "Application only"
         case .categoryOnly: return "Category only"
         case .privateOnly: return "Completely private"
+        case .mixed: return "Mixed per app and site"
         }
     }
 }
@@ -37,20 +39,31 @@ public struct EventDisclosure: Codable, Equatable {
     public let eventRoot: String
     public let fieldCommitments: [FieldDisclosure]
     public let rawEvent: HistoryEvent?
+    public let schemaVersion: Int?
+    public let shareLevel: ShareLevel?
 
-    public init(eventRoot: String, fieldCommitments: [FieldDisclosure], rawEvent: HistoryEvent?) {
+    public init(
+        eventRoot: String,
+        fieldCommitments: [FieldDisclosure],
+        rawEvent: HistoryEvent?,
+        schemaVersion: Int? = 2,
+        shareLevel: ShareLevel? = nil
+    ) {
         self.eventRoot = eventRoot
         self.fieldCommitments = fieldCommitments
         self.rawEvent = rawEvent
+        self.schemaVersion = schemaVersion
+        self.shareLevel = shareLevel
     }
 
     public func verifiesRoot() -> Bool {
         let byName = Dictionary(uniqueKeysWithValues: fieldCommitments.map { ($0.name, $0.commitmentHex) })
-        let leaves = IntegrityDomains.eventFieldOrder.compactMap { name -> (String, String)? in
+        let fieldOrder = IntegrityDomains.eventFieldOrder(for: schemaVersion ?? 2)
+        let leaves = fieldOrder.compactMap { name -> (String, String)? in
             guard let value = byName[name] else { return nil }
             return (name, value)
         }
-        guard leaves.count == IntegrityDomains.eventFieldOrder.count else { return false }
+        guard leaves.count == fieldOrder.count else { return false }
         guard fieldCommitments.allSatisfy({ $0.verifies() }) else { return false }
         return MerkleTree.root(labeledHexValues: leaves) == eventRoot
     }
@@ -141,6 +154,7 @@ public struct DaySharePackage: Codable, Equatable {
     public let schemaVersion: Int
     public let createdAt: Date
     public let deviceID: String
+    public let deviceIDs: [String]?
     public let localDay: String
     public let classifierVersion: String
     public let boundaryBefore: MinuteDisclosure?
@@ -151,6 +165,7 @@ public struct DaySharePackage: Codable, Equatable {
         schemaVersion: Int = 2,
         createdAt: Date = Date(),
         deviceID: String,
+        deviceIDs: [String]? = nil,
         localDay: String,
         classifierVersion: String,
         boundaryBefore: MinuteDisclosure? = nil,
@@ -160,6 +175,7 @@ public struct DaySharePackage: Codable, Equatable {
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
         self.deviceID = deviceID
+        self.deviceIDs = deviceIDs
         self.localDay = localDay
         self.classifierVersion = classifierVersion
         self.boundaryBefore = boundaryBefore

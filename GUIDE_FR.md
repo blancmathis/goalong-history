@@ -79,7 +79,7 @@ Selon les autorisations et les exclusions choisies :
 - mots de passe ;
 - caractères saisis reconstitués.
 
-La navigation privée est traitée en mode fermé par défaut : l’application garde uniquement un état générique de période privée, sans URL privée, titre de fenêtre, détail des clics ni activité clavier.
+La navigation privée des navigateurs reconnus ou détectés par leurs capacités est traitée en mode fermé par défaut : l’application garde uniquement un état générique de période privée, sans URL privée, titre de fenêtre, détail des clics ni activité clavier. La disponibilité des URL dépend toutefois des informations d’Accessibilité réellement exposées par chaque navigateur.
 
 ## Où sont les données ?
 
@@ -114,7 +114,23 @@ L’icône de barre des menus permet de :
 - consulter les diagnostics ;
 - quitter l’application.
 
-Le tableau de bord contient : **Vue d’ensemble**, **Activité**, **Partager**, **Confidentialité et sécurité**, et **Réglages**.
+Le tableau de bord contient : **Vue d’ensemble**, **Activité**, **Apple Screen Time**, **Partager**, **Confidentialité et sécurité**, et **Réglages**.
+
+Dans **Activité → Apps & sites**, toutes les applications et tous les sites observés sont listés avec leur temps estimé au premier plan et leurs minutes d’entrée active. Le temps au premier plan est volontairement prudent : LocalHistory n’invente jamais plus de 75 secondes entre deux observations.
+
+Pour chaque application ou site, choisissez la règle utilisée lors d’un partage :
+
+- **Afficher le nom** ;
+- **Catégorie uniquement** ;
+- **Masqué**.
+
+La règle d’un site est prioritaire sur celle du navigateur qui le contient. Les nouvelles preuves séparent le nom d’hôte du contexte complet : afficher un site ne révèle donc ni le titre de page ni l’URL complète. Les anciennes données restent vérifiables mais reviennent automatiquement à la catégorie lorsqu’un nom de site ne peut pas être ouvert sans révéler davantage.
+
+La clé qui signe les preuves est liée à la signature stable de l’application. Si cette signature change, LocalHistory crée une nouvelle identité clairement visible tout en conservant l’historique précédent ; il ne réutilise pas silencieusement une ancienne clé incompatible. Un refus du Trousseau suspend aussi les nouvelles tentatives pour le lancement en cours, afin qu’aucune demande de mot de passe ne puisse revenir chaque minute.
+
+## Mises à jour
+
+Cette version doit être installée manuellement une première fois. Les versions publiques suivantes, lorsqu’elles sont signées et publiées dans le flux officiel, apparaissent ensuite directement dans LocalHistory. Le bouton de mise à jour permet de consulter la version proposée avant de lancer son installation ; l’application ne l’installe pas silencieusement.
 
 ## Désinstallation
 

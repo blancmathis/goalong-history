@@ -136,7 +136,7 @@
         }
     }
 
-    extension SoftwareUpdateManager: SPUStandardUserDriverDelegate {
+    extension SoftwareUpdateManager: @preconcurrency SPUStandardUserDriverDelegate {
         var supportsGentleScheduledUpdateReminders: Bool { true }
 
         func standardUserDriverShouldHandleShowingScheduledUpdate(

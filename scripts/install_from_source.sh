@@ -42,7 +42,7 @@ run_step "Checking privacy boundaries" "$ROOT_DIR/scripts/audit_privacy_boundari
 BUILD_OUTPUT="$(mktemp -d "${TMPDIR:-/tmp}/localhistory-source-install.XXXXXX")"
 trap 'rm -rf "$BUILD_OUTPUT"' EXIT
 run_step "Testing and building the native app" env \
-  LOCALHISTORY_VERSION="${LOCALHISTORY_VERSION:-0.4.0}" \
+  LOCALHISTORY_VERSION="${LOCALHISTORY_VERSION:-0.5.1}" \
   LOCALHISTORY_ARCHS="$(uname -m)" \
   LOCALHISTORY_OUTPUT_DIR="$BUILD_OUTPUT" \
   "$ROOT_DIR/scripts/build_app.sh"

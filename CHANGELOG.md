@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 0.5.1
+
+### Keychain authorization loop
+
+- Stopped reusing legacy signing keys created by earlier ad-hoc builds, which could make macOS request the login-keychain password on every minute signature after an app-signature change.
+- Namespaced replacement Keychain keys by the app's designated signing requirement, so a development-to-production certificate transition creates a visible identity rotation instead of reopening an incompatible key.
+- Prefer the modern Data Protection Keychain when the signed bundle carries authorized application-identity entitlements; stable signed builds otherwise use a newly scoped, non-exportable login-Keychain key.
+- Made ad-hoc source builds use a user-only local key file rather than a legacy Keychain item that would become inaccessible after the next recompile.
+- Suspended signing for the rest of a launch after an explicit authentication cancellation, preventing an authorization failure from creating a new password dialog every minute.
+- Added share-package identity-rotation metadata and made the uploader register and replay seals for each identity represented in existing history.
+
+## 0.5.0
+
+### Apps, websites, and sharing rules
+
+- Made **Apps & sites** the primary Activity view while keeping the detailed session timeline one click away.
+- Added a complete local list of observed applications and websites with estimated foreground time, input-active minutes, category, and event count.
+- Replaced minute-by-minute sharing controls with persistent per-app and per-website rules: **Show name**, **Category only**, or **Hidden**.
+- Made website rules override their browser rule and defaulted new subjects to **Category only**.
+- Added event-level mixed disclosure so several apps or websites in the same sealed minute can follow different privacy rules without rewriting the original evidence.
+- Added event schema v3 with a separately salted website-host commitment. New shares can prove a host without revealing the full URL, page title, or browser name.
+- Kept v2 history verifiable and made older website identity requests fall back to category-only instead of opening the broader legacy context commitment.
+- Replaced activity-event winner estimates with bounded foreground observation time; unobserved gaps are never filled beyond 75 seconds.
+- Added capability-based browser URL discovery and bundle-name detection so wrappers and previously unknown browsers such as Aside can expose accessible URLs without a dedicated extension.
+- Fixed source-built Sparkle bundles failing at launch because Hardened Runtime library validation cannot match Team IDs for ad-hoc signatures; production Developer ID builds still require Hardened Runtime.
+
 ### Software updates
 
 - Added Sparkle 2.9.6 as an exact-pinned macOS update dependency.
@@ -9,6 +35,7 @@
 - Kept explicit user control over installation: automatic download/install remains disabled, while clicking the update indicator opens Sparkle's standard release-notes and installation flow.
 - Added a stable GitHub Releases appcast, EdDSA archive signing, signed-feed enforcement, and explicit nested Sparkle code signing in the release pipeline.
 - Added CI checks for the embedded framework, app-relative rpath, updater privacy settings, dependency pin, and signed release metadata.
+- Enabled Sparkle's required verify-before-extraction policy for signed appcasts.
 - Added maintainer tooling and documentation for Sparkle key generation, backup, release publication, N-1 → N testing, and key rotation/recovery.
 
 ## 0.4.0

@@ -48,7 +48,7 @@ When the relevant macOS permissions are granted, LocalHistory can store:
 
 It does **not** record screenshots, screen video, camera, microphone, system audio, clipboard contents, passwords, or reconstructed typed text.
 
-Private-browser windows are fail-closed. The record keeps a generic private/suppressed coverage state without storing the private URL, window title, click details, or keyboard activity. Password managers and secure text-entry contexts are excluded or suppressed as well.
+Recognized and capability-detected private-browser windows are fail-closed. The record keeps a generic private/suppressed coverage state without storing the private URL, window title, click details, or keyboard activity. Browser URL availability still depends on the Accessibility information exposed by that browser; an extension may be needed for browsers that do not expose it. Password managers and secure text-entry contexts are excluded or suppressed as well.
 
 ## Local-first by default
 
@@ -57,6 +57,7 @@ Detailed activity is written to the current user’s private Application Support
 ```text
 ~/Library/Application Support/LocalHistory/
 ├── config.json
+├── sharing-rules.json
 ├── integrity-state.json
 ├── diagnostics.log
 ├── events/
@@ -77,29 +78,31 @@ Verification networking is disabled by default. When the user enables it, the on
 Each event is separated into independently committed groups:
 
 ```text
-time · application · context · activity · classification · coverage · trust · raw_digest
+time · application · website · context · activity · classification · coverage · trust · raw_digest
 ```
 
 Each group receives a random 256-bit salt and SHA-256 commitment. Those commitments form an event Merkle root. Event roots are chained with a monotonic sequence and the previous event hash.
 
-Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. LocalHistory first tries Secure Enclave and falls back to a non-exportable Keychain key while reporting the lower trust tier.
+Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. LocalHistory first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable signed build. Ad-hoc source builds use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
 
-The **Share** screen offers four disclosure levels for every grouped period:
+Signing identities are scoped to the app's designated code-signing requirement. If that requirement changes, LocalHistory records a visible identity rotation and keeps the existing chain data instead of repeatedly requesting access to an incompatible old key. A refused authentication attempt also suspends background signing for that launch, so it can never create a password dialog every minute.
 
-- full details;
-- application only;
-- category only;
-- completely private.
+The **Share** screen stores one rule for every observed application and website:
 
-The original JSONL is never rewritten. Export creates a separate `*.verified-share.json` package containing only the selected openings and the hashes required to reconstruct the already-sealed roots. Every sealed minute remains represented, so anonymization cannot silently turn into omission.
+- show the app or website name;
+- show only its category;
+- hide its identifying details.
+
+Website rules take priority over the containing browser rule. The original JSONL is never rewritten. Export creates a separate `*.verified-share.json` package containing only the selected event-level openings and the hashes required to reconstruct the already-sealed roots. Every sealed minute remains represented, so anonymization cannot silently turn into omission.
 
 ## Native dashboard
 
-The SwiftUI dashboard is split into five areas:
+The SwiftUI dashboard is split into six areas:
 
 - **Overview** — runtime state, daily metrics, coverage, top apps, and recent sessions;
-- **Activity** — searchable sessions, event breakdown, privacy states, and automation signals;
-- **Share** — visual selective disclosure, exact outgoing-data preview, and verified export;
+- **Activity** — every observed app and website with bounded foreground time, plus the searchable session timeline;
+- **Apple Screen Time** — isolated import and analysis of user-exported Apple device activity;
+- **Share** — persistent per-app and per-site rules with verified event-level export;
 - **Privacy & Security** — permission state, data flow, storage, identity, and safe deletion;
 - **Settings** — capture signals, retention, URL redaction, verification, and exclusions.
 
@@ -109,7 +112,7 @@ A menu-bar control keeps pause/resume, status, dashboard access, and sharing imm
 
 Start-at-login is an explicit onboarding choice implemented with Apple’s `SMAppService`. LocalHistory no longer installs a hand-written LaunchAgent. Upgrading preserves the local history and settings directory.
 
-A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer.
+A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. Starting with the first manually installed Sparkle-enabled build, later signed releases can be reviewed and installed from the update button inside LocalHistory.
 
 ## Build from source
 
@@ -144,7 +147,7 @@ make dmg
 make install-source
 ```
 
-The build script creates a real `.app` bundle, generates the `.icns` asset, writes the production Info.plist, signs the bundle, and verifies it. Local builds use ad-hoc signing; public releases use Developer ID signing and notarization.
+The build script creates a real `.app` bundle, generates the `.icns` asset, writes the production Info.plist, signs the bundle, and verifies it. Local builds use ad-hoc signing and a user-only local signing-key file; public releases use Developer ID signing, a non-exportable device key, and notarization.
 
 ## Release pipeline
 

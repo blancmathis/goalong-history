@@ -11,43 +11,39 @@
         var agentTokenBudget = 1_600
         @State var expandedBlockID: String?
         @State var showRichContextConfirmation = false
+        @State var mode: ActivityMode = .dayRecap
 
         let metricColumns = [
             GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
         ]
 
         var body: some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    header
+            VStack(alignment: .leading, spacing: 16) {
+                header
 
-                    if let analysis = analysisModel.analysis {
-                        headlineCard(analysis)
-                        metrics(analysis)
-
-                        HStack(alignment: .top, spacing: 14) {
-                            focusBlocksCard(analysis)
-                                .frame(minWidth: 500, maxWidth: .infinity)
-                            VStack(spacing: 14) {
-                                sitesCard(analysis)
-                                requestsCard(analysis)
-                            }
-                            .frame(minWidth: 330, idealWidth: 370, maxWidth: 430)
-                        }
-
-                        agentBriefCard(analysis)
-                        richContextCard(analysis)
-                        evidenceCard
-                    } else if analysisModel.isLoading {
-                        loadingState
-                    } else {
-                        emptyState
+                Picker("Activity view", selection: $mode) {
+                    ForEach(ActivityMode.allCases) { item in
+                        Text(item.title).tag(item)
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 28)
-                .padding(.bottom, 30)
+                .pickerStyle(.segmented)
+                .frame(width: 360)
+
+                Group {
+                    switch mode {
+                    case .dayRecap:
+                        recapBody
+                    case .appsAndSites:
+                        UsageRulesList(model: model)
+                    case .timeline:
+                        ActivityTimelineExplorer(model: model)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 28)
+            .padding(.bottom, 22)
             .background(LHTheme.pageBackground)
             .onAppear {
                 analysisModel.refresh(day: model.selectedDay)
@@ -71,12 +67,42 @@
             }
         }
 
+        var recapBody: some View {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let analysis = analysisModel.analysis {
+                        headlineCard(analysis)
+                        metrics(analysis)
+
+                        HStack(alignment: .top, spacing: 14) {
+                            focusBlocksCard(analysis)
+                                .frame(minWidth: 500, maxWidth: .infinity)
+                            VStack(spacing: 14) {
+                                sitesCard(analysis)
+                                requestsCard(analysis)
+                            }
+                            .frame(minWidth: 330, idealWidth: 370, maxWidth: 430)
+                        }
+
+                        agentBriefCard(analysis)
+                        richContextCard(analysis)
+                        evidenceCard
+                    } else if analysisModel.isLoading {
+                        loadingState
+                    } else {
+                        emptyState
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+        }
+
         var header: some View {
             PageHeader(
                 eyebrow: Calendar.current.isDateInToday(model.selectedDay) ? "Today" : "Daily history",
-                title: "Day recap",
+                title: "Activity",
                 subtitle:
-                    "A compact, readable account of what you did — optimized for both you and a daily agent."
+                    "Review the compact day recap, every observed app and site, or the underlying session timeline."
             ) {
                 HStack(spacing: 10) {
                     DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
@@ -89,7 +115,7 @@
                     }
                     .buttonStyle(.bordered)
                     .disabled(analysisModel.isLoading)
-                    .help("Rebuild the day analysis")
+                    .help("Refresh activity and rebuild the day analysis")
                 }
             }
         }
@@ -210,6 +236,22 @@
 
         func duration(_ seconds: Int) -> String {
             DashboardFormatters.duration(seconds: TimeInterval(seconds))
+        }
+    }
+
+    enum ActivityMode: String, CaseIterable, Identifiable {
+        case dayRecap
+        case appsAndSites
+        case timeline
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .dayRecap: return "Day recap"
+            case .appsAndSites: return "Apps & sites"
+            case .timeline: return "Timeline"
+            }
         }
     }
 #endif

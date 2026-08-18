@@ -17,6 +17,10 @@
         static let integrityStateFile = applicationSupportDirectory.appendingPathComponent(
             "integrity-state.json", isDirectory: false)
         static let configFile = applicationSupportDirectory.appendingPathComponent("config.json", isDirectory: false)
+        static let sharingRulesFile = applicationSupportDirectory.appendingPathComponent(
+            "sharing-rules.json", isDirectory: false)
+        static let softwareSigningKeyFile = applicationSupportDirectory.appendingPathComponent(
+            "device-signing-key-v2.bin", isDirectory: false)
         static let diagnosticsFile = applicationSupportDirectory.appendingPathComponent(
             "diagnostics.log", isDirectory: false)
 

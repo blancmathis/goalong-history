@@ -15,6 +15,7 @@
         private var cachedPrivateWindow = false
         private var cachedPrivacyIdentity: String?
         private var lastPrivacyProbe = Date.distantPast
+        private var discoveredBrowserBundleIdentifiers = Set<String>()
 
         init(configManager: ConfigManager, permissions: PermissionManager) {
             self.configManager = configManager
@@ -43,7 +44,7 @@
                 )
             }
 
-            let isBrowser = isBrowser(app: app, config: config)
+            var isBrowser = isBrowser(app: app, config: config)
 
             guard permissions.currentStatus.accessibility else {
                 return ContextSnapshot(
@@ -74,6 +75,27 @@
                 String(runningApplication.processIdentifier),
                 String(CFHash(windowElement)),
             ].joined(separator: "|")
+
+            // Browser support is capability-based as well as list-based. This lets Chromium
+            // wrappers and new browsers work without waiting for a hard-coded bundle update.
+            if !isBrowser, config.captureURLs,
+                let rawURL = AXReader.browserURL(
+                    from: windowElement,
+                    addressFieldMarkers: config.addressFieldMarkers
+                )
+            {
+                isBrowser = true
+                if let bundleIdentifier = app.bundleIdentifier {
+                    discoveredBrowserBundleIdentifiers.insert(bundleIdentifier)
+                }
+                cachedURL = URLRedactor.sanitize(
+                    rawURL,
+                    redactAllQueryValues: config.redactAllURLQueryValues,
+                    maxLength: config.maxStringLength
+                )
+                cachedBrowserIdentity = windowIdentity
+                lastURLProbe = Date()
+            }
 
             if isBrowser {
                 let shouldProbePrivacy =
@@ -203,19 +225,21 @@
         }
 
         private func isBrowser(app: AppSnapshot, config: RecorderConfig) -> Bool {
-            if let bundleIdentifier = app.bundleIdentifier,
-                config.browserBundleIdentifiers.contains(bundleIdentifier)
-            {
-                return true
+            if let bundleIdentifier = app.bundleIdentifier {
+                if config.browserBundleIdentifiers.contains(bundleIdentifier)
+                    || discoveredBrowserBundleIdentifiers.contains(bundleIdentifier)
+                {
+                    return true
+                }
             }
 
-            let name = app.name.lowercased()
+            let identity = [app.name, app.bundleIdentifier ?? ""].joined(separator: " ").lowercased()
             let browserNameMarkers = [
                 "safari", "chrome", "chromium", "firefox", "librewolf", "floorp",
                 "edge", "brave", "arc", "opera", "vivaldi", "orion", "duckduckgo",
                 "zen browser", "dia", "sigmaos", "browser",
             ]
-            return browserNameMarkers.contains { name.contains($0) }
+            return browserNameMarkers.contains { identity.contains($0) }
         }
     }
 #endif
