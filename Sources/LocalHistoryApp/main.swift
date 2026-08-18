@@ -1,10 +1,36 @@
 #if os(macOS)
     import AppKit
+    import Darwin
+    import ServiceManagement
+
+    if CommandLine.arguments.contains("--unregister-login-item") {
+        switch SMAppService.mainApp.status {
+        case .enabled, .requiresApproval:
+            try? SMAppService.mainApp.unregister()
+        case .notRegistered, .notFound:
+            break
+        @unknown default:
+            try? SMAppService.mainApp.unregister()
+        }
+        exit(0)
+    }
+
+    if CommandLine.arguments.contains("--reset-onboarding") {
+        UserDefaults.standard.removeObject(forKey: "didShowLocalHistoryOnboardingV3")
+        exit(0)
+    }
 
     let application = NSApplication.shared
+    application.setActivationPolicy(.accessory)
+
+    if InstallationLocationManager.handleTransientLaunchIfNeeded() {
+        exit(0)
+    }
+
+    LegacyInstallationMigrator.run()
+
     let delegate = AppDelegate()
     application.delegate = delegate
-    application.setActivationPolicy(.accessory)
     application.run()
 #else
     import Foundation

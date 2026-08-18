@@ -1,10 +1,19 @@
-.PHONY: test build audit install uninstall package
+.PHONY: test build app dmg audit install install-source uninstall clean
+
+VERSION ?= 0.4.0
+ARCHS ?= $(shell uname -m)
 
 test:
-	swift test
+	xcrun swift test
 
 build:
-	swift build -c release --product LocalHistory
+	xcrun swift build -c release --product LocalHistory
+
+app:
+	LOCALHISTORY_VERSION="$(VERSION)" LOCALHISTORY_ARCHS="$(ARCHS)" ./scripts/build_app.sh
+
+dmg: app
+	./scripts/package_release.sh
 
 audit:
 	./scripts/audit_privacy_boundaries.sh
@@ -12,9 +21,11 @@ audit:
 install:
 	./install.sh
 
+install-source:
+	./install.sh --source
+
 uninstall:
 	./uninstall.sh
 
-package:
-	cd .. && zip -r LocalHistory-macOS-v0.3.2.zip LocalHistory \
-		-x 'LocalHistory/.build/*' 'LocalHistory/.git/*' 'LocalHistory/**/__pycache__/*' 'LocalHistory/**/*.pyc'
+clean:
+	rm -rf .build dist

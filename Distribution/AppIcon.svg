@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">LocalHistory icon</title>
+  <desc id="desc">A blue and violet rounded square containing a clock with a green verified check.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3478f6"/>
+      <stop offset="1" stop-color="#6843e6"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="24" stdDeviation="34" flood-color="#07132f" flood-opacity=".45"/>
+    </filter>
+  </defs>
+  <rect x="90" y="80" width="844" height="844" rx="220" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="106" y="96" width="812" height="812" rx="204" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="5"/>
+  <circle cx="484" cy="500" r="245" fill="#0b1e4b" stroke="#fff" stroke-width="24"/>
+  <g stroke="#fff" stroke-linecap="round">
+    <path d="M484 292v34M588 320l-17 29M664 396l-29 17M692 500h-34M664 604l-29-17M588 680l-17-29M484 708v-34M380 680l17-29M304 604l29-17M276 500h34M304 396l29 17M380 320l17 29" stroke-width="10" opacity=".78"/>
+    <path d="M484 500V365M484 500l112 62" stroke-width="25"/>
+  </g>
+  <circle cx="484" cy="500" r="24" fill="#fff"/>
+  <circle cx="710" cy="690" r="116" fill="#f7f9ff"/>
+  <circle cx="710" cy="690" r="92" fill="#23b977"/>
+  <path d="M660 690l38 42 74-85" fill="none" stroke="#fff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

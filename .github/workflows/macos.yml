@@ -1,36 +1,38 @@
-name: macOS build
+name: macOS quality gate
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-test:
+  build-test-package:
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Swift version
-        run: xcrun swift --version
-      - name: Tests + build (SDK-compatible)
+
+      - name: Environment
+        run: |
+          sw_vers
+          xcrun swift --version
+
+      - name: Validate scripts
+        run: |
+          bash -n Install.command Uninstall.command install.sh uninstall.sh
+          find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+
+      - name: Privacy-boundary audit
+        run: ./scripts/audit_privacy_boundaries.sh
+
+      - name: Tests
         shell: bash
         run: |
           set -euo pipefail
-          APP_ATTEST_DISABLED=0
-          run_test() {
-            if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
-              xcrun swift test -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST
-            else
-              xcrun swift test
-            fi
-          }
-          run_release_build() {
-            if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
-              xcrun swift build -c release --product LocalHistory -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST
-            else
-              xcrun swift build -c release --product LocalHistory
-            fi
-          }
           LOG="$(mktemp)"
           set +e
           xcrun swift test 2>&1 | tee "$LOG"
@@ -38,13 +40,37 @@ jobs:
           set -e
           if [[ $STATUS -ne 0 ]]; then
             if grep -Eq "AppAttestManager\.swift:[0-9]+:[0-9]+: (error|fatal error):|error: no such module 'DeviceCheck'|error: cannot find 'DCAppAttestService'" "$LOG"; then
-              APP_ATTEST_DISABLED=1
-              run_test
+              xcrun swift test -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST
             else
               exit "$STATUS"
             fi
           fi
-          rm -f "$LOG"
-          run_release_build
-      - name: Privacy-boundary audit
-        run: ./scripts/audit_privacy_boundaries.sh
+
+      - name: Build installable app bundle
+        env:
+          LOCALHISTORY_VERSION: 0.4.0-ci
+          LOCALHISTORY_BUILD_NUMBER: ${{ github.run_number }}
+          LOCALHISTORY_RUN_TESTS: 0
+          LOCALHISTORY_ARCHS: ${{ runner.arch == 'ARM64' && 'arm64' || 'x86_64' }}
+        run: ./scripts/build_app.sh
+
+      - name: Validate bundle
+        run: |
+          plutil -lint dist/LocalHistory.app/Contents/Info.plist
+          codesign --verify --strict --verbose=2 dist/LocalHistory.app
+          test "$(defaults read "$PWD/dist/LocalHistory.app/Contents/Info" CFBundleIdentifier)" = "ai.goalong.localhistory"
+
+      - name: Package smoke test
+        run: |
+          ./scripts/package_release.sh
+          test -s dist/LocalHistory-macOS-universal.zip
+          test -s dist/LocalHistory-macOS-universal.dmg
+
+      - name: Upload CI app
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocalHistory-${{ runner.arch }}-${{ github.sha }}
+          path: |
+            dist/LocalHistory.app
+            dist/LocalHistory-macOS-universal.zip
+          retention-days: 7

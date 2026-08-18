@@ -1,95 +1,145 @@
-# Guide simple — LocalHistory v0.3.2
+# LocalHistory — guide d’installation et de prise en main
 
-## Ce que fait l'application
+LocalHistory crée sur votre Mac une chronologie privée de l’activité autorisée au premier plan. Cette chronologie est enregistrée localement, scellée cryptographiquement minute par minute, puis peut être partagée de manière sélective sans réécrire l’historique original.
 
-LocalHistory observe l'activité autorisée du Mac et conserve les détails **uniquement en local** : application, fenêtre, clics, défilements, raccourcis et activité de saisie sans enregistrer les caractères tapés.
+L’application est destinée à votre propre Mac. Elle ne doit jamais servir à surveiller une autre personne sans son accord explicite préalable.
 
-Toutes les minutes, elle crée une preuve cryptographique. Lorsque la vérification serveur est activée, seul cet engagement opaque est envoyé. Le serveur ne reçoit alors ni l'application, ni le site, ni la fenêtre, ni les clics, ni la catégorie de travail.
+## Installation recommandée
 
-Plus tard, l'utilisateur peut publier une journée en choisissant précisément ce qu'il révèle pour chaque période :
+L’installation normale ne demande **ni Terminal, ni Xcode, ni Homebrew, ni commande administrateur**.
 
-- **Full details** : tous les champs partageables ;
-- **Application only** : l'application et l'heure, sans le contexte ;
-- **Category only** : la catégorie locale, sans l'application ;
-- **Completely private** : uniquement l'existence et la couverture de la période.
+1. Ouvrez la page **Releases** du dépôt.
+2. Téléchargez `LocalHistory-macOS-universal.dmg`.
+3. Ouvrez le fichier téléchargé.
+4. Glissez **LocalHistory** vers **Applications**.
+5. Ouvrez LocalHistory et suivez l’assistant.
 
-L'historique original n'est jamais réécrit pour être anonymisé. L'application fabrique un package de partage séparé et vérifiable.
+Le même fichier fonctionne sur les Mac Apple Silicon et Intel équipés de macOS 13 Ventura ou d’une version plus récente. La version publique doit être signée avec Developer ID et notarisée par Apple afin que Gatekeeper puisse la vérifier normalement.
 
-## La nouvelle interface v0.3
+## L’assistant de première ouverture
 
-### Overview
+Le premier lancement est volontairement progressif. Il présente cinq étapes :
 
-Affiche immédiatement :
+1. **Bienvenue** — ce que LocalHistory apporte concrètement ;
+2. **Confidentialité** — ce qui est enregistré et ce qui ne le sera jamais ;
+3. **Accessibilité** — pourquoi cette autorisation est nécessaire ;
+4. **Surveillance de l’entrée** — comment l’activité est mesurée sans enregistrer le texte saisi ;
+5. **Vérification finale** — état des autorisations et choix explicite du lancement à la connexion.
 
-- si l'enregistrement fonctionne ;
-- les permissions manquantes ;
-- le temps actif et classifié comme travail ;
-- les minutes scellées et reçues par le serveur ;
-- les périodes privées ou indisponibles ;
-- une timeline de 24 heures ;
-- les applications principales et les sessions récentes.
+Chaque demande d’autorisation est faite séparément, au moment où son intérêt vient d’être expliqué. L’état se met à jour en direct et un bouton ouvre directement le bon écran des Réglages Système.
 
-### Activity
+Vous pouvez choisir **Configurer plus tard**. LocalHistory ouvrira alors son espace Confidentialité et fonctionnera avec des informations plus limitées tant que les autorisations ne sont pas accordées.
 
-Permet de rechercher et filtrer les sessions. En sélectionnant une session, on voit le contexte local, la catégorie, la durée, le nombre d'événements et les éventuels signaux d'entrée générée par logiciel.
+## Autorisation Accessibilité
 
-### Share
-
-C'est ici que l'utilisateur anonymise sa journée. Les minutes similaires sont regroupées pour faciliter la navigation. Chaque groupe possède un menu de confidentialité et un aperçu exact de ce qui sera révélé ou conservé sur le Mac.
-
-Le bouton **Export verified package** crée un fichier JSON séparé. Les périodes dont les détails ont été supprimés sont automatiquement forcées en mode complètement privé.
-
-### Privacy & security
-
-Explique le trajet des données, montre les permissions macOS, le stockage local, l'identité cryptographique du Mac et les protections appliquées. Les boutons de suppression effacent les détails locaux mais conservent les preuves, afin qu'une mauvaise période ne puisse pas simplement disparaître.
-
-### Settings
-
-Permet de régler la capture, la conservation, l'anonymisation des URL, le serveur de vérification, App Attest et les applications/sites exclus. Les changements doivent être sauvegardés explicitement.
-
-## Installation
-
-1. Décompresse le ZIP.
-2. Ouvre le dossier `LocalHistory`.
-3. Double-clique sur `Install.command`.
-4. Si macOS bloque le fichier : clic droit → **Ouvrir**.
-5. Autorise **Accessibilité** et **Surveillance de l'entrée**.
-6. L'interface s'ouvre automatiquement lors du premier lancement de la v0.3.
-
-Ensuite, clique sur l'icône LocalHistory dans la barre des menus pour rouvrir l'interface, mettre l'enregistrement en pause ou préparer un partage.
-
-## Tester le serveur anti-triche en local
-
-```bash
-cd server_reference
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app:app --host 127.0.0.1 --port 8787
-```
-
-Dans LocalHistory :
-
-1. ouvre **Settings** ;
-2. active **Send opaque minute commitments** ;
-3. saisis `http://127.0.0.1:8787` ;
-4. clique **Save settings**.
-
-Utilise HTTPS pour un serveur distant.
-
-## Fichiers importants
+Chemin manuel :
 
 ```text
-events/    historique détaillé privé
-seals/     preuves cryptographiques locales
-receipts/  reçus des preuves acceptées par le serveur
-shares/    packages anonymisés exportés
+Réglages Système → Confidentialité et sécurité → Accessibilité
 ```
 
-Si le JSON détaillé est modifié après l'ancrage, il ne correspondra plus aux preuves déjà reçues. Si les détails sont supprimés, la période reste visible mais ne peut plus être partagée autrement qu'en privé.
+Cette autorisation permet de connaître le contexte autorisé au premier plan : application, fenêtre, URL de navigateur permise, contrôle sélectionné et élément d’interface cliqué.
 
-## Important sur App Attest
+LocalHistory n’utilise pas cette autorisation pour piloter le Mac.
 
-Le client contient le pont App Attest, mais le serveur de référence ne prétend pas encore le valider. Il renvoie volontairement `appAttestAccepted=false` tant qu'un vrai validateur Apple n'est pas connecté.
+## Autorisation Surveillance de l’entrée
 
-Pour la production, il faudra utiliser ton compte Apple Developer, ton Team ID, ton Bundle ID, une application officiellement signée/notarisée et une validation App Attest complète côté serveur.
+Chemin manuel :
+
+```text
+Réglages Système → Confidentialité et sécurité → Surveillance de l’entrée
+```
+
+Cette autorisation sert à compter les clics, défilements, raccourcis, touches de navigation et la durée de saisie.
+
+LocalHistory ne conserve jamais les caractères tapés, les mots de passe ni le contenu du presse-papiers.
+
+Selon la version de macOS, le système peut demander de quitter puis de rouvrir l’application après l’activation. Acceptez cette demande, puis revenez dans l’assistant ; son état se mettra à jour automatiquement.
+
+## Ce qui est enregistré localement
+
+Selon les autorisations et les exclusions choisies :
+
+- application et identifiant de bundle actifs ;
+- titre de fenêtre et métadonnées accessibles ;
+- URL nettoyée lorsqu’elle est disponible et autorisée ;
+- clics et défilements regroupés ;
+- raccourcis et touches de navigation ;
+- nombre et durée de saisie, jamais le texte ;
+- changements d’application, fenêtre et focus ;
+- verrouillage, veille, pause et suppression de contexte ;
+- certains signaux d’origine des événements clavier/souris.
+
+## Ce qui n’est jamais enregistré
+
+- captures d’écran ou vidéo de l’écran ;
+- caméra ;
+- microphone ou audio système ;
+- presse-papiers ;
+- mots de passe ;
+- caractères saisis reconstitués.
+
+La navigation privée est traitée en mode fermé par défaut : l’application garde uniquement un état générique de période privée, sans URL privée, titre de fenêtre, détail des clics ni activité clavier.
+
+## Où sont les données ?
+
+```text
+~/Library/Application Support/LocalHistory/
+```
+
+Les détails restent sur le Mac. La vérification réseau est désactivée par défaut. Lorsqu’elle est activée volontairement, seuls des engagements cryptographiques opaques sont envoyés ; pas les noms d’application, URL, titres de fenêtre ou clics.
+
+Depuis **Confidentialité et sécurité**, vous pouvez ouvrir le dossier local, examiner les protections et supprimer les détails. La suppression des détails conserve les sceaux cryptographiques ; la période devient alors privée et ne peut plus être révélée en détail.
+
+## Lancement à la connexion
+
+La dernière étape propose :
+
+```text
+Démarrer LocalHistory à ma connexion
+```
+
+Le choix est visible et modifiable. Il utilise le mécanisme macOS `SMAppService`, présenté dans **Réglages Système → Général → Ouverture et extensions** lorsque macOS exige une approbation supplémentaire.
+
+Aucun LaunchAgent caché n’est installé par la nouvelle version.
+
+## Utilisation quotidienne
+
+L’icône de barre des menus permet de :
+
+- vérifier si l’enregistrement est actif ;
+- mettre en pause ou reprendre ;
+- ouvrir le tableau de bord ;
+- accéder au partage sélectif ;
+- consulter les diagnostics ;
+- quitter l’application.
+
+Le tableau de bord contient : **Vue d’ensemble**, **Activité**, **Partager**, **Confidentialité et sécurité**, et **Réglages**.
+
+## Désinstallation
+
+Double-cliquez `Uninstall.command` dans le dossier source, ou lancez :
+
+```bash
+./uninstall.sh
+```
+
+Par défaut, l’application et ses autorisations sont supprimées, mais l’historique reste conservé. Pour supprimer aussi les données :
+
+```bash
+./uninstall.sh --purge-data
+```
+
+## Installation depuis les sources
+
+Cette voie est réservée au développement. Elle nécessite les Command Line Tools de Xcode :
+
+```bash
+./install.sh --source
+```
+
+L’installateur vérifie les frontières de confidentialité, exécute les tests, construit l’application native, signe localement le bundle et l’ouvre. Les logs techniques sont placés dans :
+
+```text
+~/Library/Logs/LocalHistory/installer.log
+```
