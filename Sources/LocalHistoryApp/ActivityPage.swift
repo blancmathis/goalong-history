@@ -4,28 +4,22 @@
 
     struct ActivityPage: View {
         @ObservedObject var model: DashboardViewModel
-        @State private var mode: ActivityMode = .appsAndSites
+        @StateObject var analysisModel = ActivityAnalysisPageModel()
+        @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey)
+        var richContextEnabled = false
+        @AppStorage(ActivityAnalysisPreferences.agentTokenBudgetKey)
+        var agentTokenBudget = 1_600
+        @State var expandedBlockID: String?
+        @State var showRichContextConfirmation = false
+        @State var mode: ActivityMode = .dayRecap
+
+        let metricColumns = [
+            GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
+        ]
 
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
-                PageHeader(
-                    eyebrow: "Local activity",
-                    title: "Activity",
-                    subtitle:
-                        "See every observed app and website, then open the timeline when you need session-level detail."
-                ) {
-                    HStack(spacing: 10) {
-                        DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
-                        Button {
-                            model.refreshEverything()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .frame(width: 28, height: 28)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(model.isRefreshing)
-                    }
-                }
+                header
 
                 Picker("Activity view", selection: $mode) {
                     ForEach(ActivityMode.allCases) { item in
@@ -33,398 +27,231 @@
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 260)
+                .frame(width: 360)
 
-                if mode == .appsAndSites {
-                    UsageRulesList(model: model)
-                        .frame(maxHeight: .infinity)
-                } else {
-                    filterBar
-
-                    HStack(alignment: .top, spacing: 14) {
-                        sessionList
-                            .frame(minWidth: 330, idealWidth: 400, maxWidth: 450)
-                        sessionDetail
-                            .frame(maxWidth: .infinity)
+                Group {
+                    switch mode {
+                    case .dayRecap:
+                        recapBody
+                    case .appsAndSites:
+                        UsageRulesList(model: model)
+                    case .timeline:
+                        ActivityTimelineExplorer(model: model)
                     }
-                    .frame(maxHeight: .infinity)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .padding(.horizontal, 24)
             .padding(.top, 28)
             .padding(.bottom, 22)
             .background(LHTheme.pageBackground)
-        }
-
-        private var filterBar: some View {
-            HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("Search app, window, website or category", text: $model.activitySearch)
-                        .textFieldStyle(.plain)
-                    if !model.activitySearch.isEmpty {
-                        Button {
-                            model.activitySearch = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
+            .onAppear {
+                analysisModel.refresh(day: model.selectedDay)
+            }
+            .onChange(of: model.selectedDay) { day in
+                expandedBlockID = nil
+                analysisModel.refresh(day: day)
+            }
+            .onChange(of: agentTokenBudget) { _ in
+                analysisModel.refresh(day: model.selectedDay)
+            }
+            .alert("Enable Rich Context?", isPresented: $showRichContextConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Enable Rich Context") {
+                    richContextEnabled = true
                 }
-                .padding(.horizontal, 11)
-                .frame(height: 34)
-                .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+            } message: {
+                Text(
+                    "LocalHistory will store selected and visible text exposed by macOS Accessibility for eligible foreground windows. It will not decode keystrokes and will still suppress private browsing, exclusions and secure fields. Turning it off later stops future snapshots; existing snapshots follow your normal local retention and deletion controls."
                 )
-
-                Picker("Filter", selection: $model.activityFilter) {
-                    ForEach(ActivityFilter.allCases) { filter in
-                        Text(filter.title).tag(filter)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 310)
-
-                Text("\(model.filteredSessions.count) session\(model.filteredSessions.count == 1 ? "" : "s")")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 72, alignment: .trailing)
             }
         }
 
-        private var sessionList: some View {
-            LHCard(padding: 0) {
-                if model.filteredSessions.isEmpty {
-                    EmptyStateView(
-                        symbol: "line.3.horizontal.decrease.circle",
-                        title: model.snapshot.sessions.isEmpty ? "No activity found" : "No matching sessions",
-                        message: model.snapshot.sessions.isEmpty
-                            ? "Keep LocalHistory running and activity will appear here."
-                            : "Try another search or filter."
-                    )
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 3) {
-                            ForEach(model.filteredSessions) { session in
-                                SessionRow(
-                                    session: session,
-                                    selected: model.selectedSession?.id == session.id
-                                ) {
-                                    model.selectSession(session.id)
-                                }
+        var recapBody: some View {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let analysis = analysisModel.analysis {
+                        headlineCard(analysis)
+                        metrics(analysis)
+
+                        HStack(alignment: .top, spacing: 14) {
+                            focusBlocksCard(analysis)
+                                .frame(minWidth: 500, maxWidth: .infinity)
+                            VStack(spacing: 14) {
+                                sitesCard(analysis)
+                                requestsCard(analysis)
                             }
+                            .frame(minWidth: 330, idealWidth: 370, maxWidth: 430)
                         }
-                        .padding(8)
+
+                        agentBriefCard(analysis)
+                        richContextCard(analysis)
+                        evidenceCard
+                    } else if analysisModel.isLoading {
+                        loadingState
+                    } else {
+                        emptyState
                     }
                 }
+                .padding(.bottom, 8)
             }
         }
 
-        private var sessionDetail: some View {
-            LHCard(padding: 0) {
-                if let session = model.selectedSession {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 22) {
-                            detailHeader(session)
-                            Divider()
-                            detailsGrid(session)
-                            if session.suppressionReason != nil {
-                                privacyNotice(session)
-                            }
-                            if session.isFlagged {
-                                automationNotice(session)
-                            }
-                            eventBreakdown(session)
-                        }
-                        .padding(22)
+        var header: some View {
+            PageHeader(
+                eyebrow: Calendar.current.isDateInToday(model.selectedDay) ? "Today" : "Daily history",
+                title: "Activity",
+                subtitle:
+                    "Review the compact day recap, every observed app and site, or the underlying session timeline."
+            ) {
+                HStack(spacing: 10) {
+                    DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
+                    Button {
+                        model.refreshEverything()
+                        analysisModel.refresh(day: model.selectedDay)
+                    } label: {
+                        Image(systemName: analysisModel.isLoading ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
+                            .frame(width: 28, height: 28)
                     }
-                } else {
-                    EmptyStateView(
-                        symbol: "rectangle.and.hand.point.up.left",
-                        title: "Select a session",
-                        message: "Choose a session to inspect its local context, category and integrity signals."
-                    )
+                    .buttonStyle(.bordered)
+                    .disabled(analysisModel.isLoading)
+                    .help("Refresh activity and rebuild the day analysis")
                 }
             }
         }
 
-        private func detailHeader(_ session: ActivitySession) -> some View {
-            HStack(alignment: .top, spacing: 15) {
-                AppIconView(
-                    bundleIdentifier: session.bundleIdentifier,
-                    appName: session.appName,
-                    size: 48
-                )
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(spacing: 8) {
-                        Text(session.appName)
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                        if let reason = session.suppressionReason {
-                            StatusPill(
-                                title: privacyLabel(reason),
-                                symbol: "eye.slash",
-                                tint: LHTheme.privateTint
-                            )
-                        } else {
-                            StatusPill(
-                                title: "Stored locally",
-                                symbol: "internaldrive",
-                                tint: LHTheme.teal
-                            )
-                        }
-                    }
-                    Text(session.windowTitle ?? session.host ?? "No detailed context available")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                        .textSelection(.enabled)
-                    HStack(spacing: 10) {
-                        CategoryBadge(category: session.category, isWork: session.isWork)
-                        Text(
-                            "\(DashboardFormatters.shortTime.string(from: session.start))–\(DashboardFormatters.shortTime.string(from: session.end))"
+        func headlineCard(_ analysis: ActivityDayAnalysis) -> some View {
+            LHCard(padding: 20) {
+                HStack(alignment: .center, spacing: 17) {
+                    Image(systemName: "sparkles.rectangle.stack.fill")
+                        .font(.system(size: 27, weight: .semibold))
+                        .foregroundStyle(LHTheme.accent)
+                        .frame(width: 58, height: 58)
+                        .background(
+                            LinearGradient(
+                                colors: [LHTheme.accent.opacity(0.14), LHTheme.privateTint.opacity(0.09)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                         )
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(analysis.headline)
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "\(analysis.coverage.sourceEventCount.formatted()) raw events were reduced to \(analysis.coverage.representativeMinuteCount.formatted()) meaningful minute records before analysis."
+                        )
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
-                        Text(DashboardFormatters.duration(seconds: session.duration))
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
                     }
+                    Spacer(minLength: 16)
+                    StatusPill(
+                        title: "~\(analysis.estimatedAgentTokens.formatted()) agent tokens",
+                        symbol: "leaf.fill",
+                        tint: LHTheme.success
+                    )
                 }
+            }
+        }
+
+        func metrics(_ analysis: ActivityDayAnalysis) -> some View {
+            LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 12) {
+                MetricCard(
+                    title: "ACTIVE",
+                    value: duration(analysis.activeSeconds),
+                    detail: "Representative foreground minutes",
+                    symbol: "clock.fill",
+                    tint: LHTheme.teal
+                )
+                MetricCard(
+                    title: "FOCUS BLOCKS",
+                    value: "\(analysis.focusBlocks.count)",
+                    detail: "Coherent tasks, not every window change",
+                    symbol: "rectangle.3.group.fill",
+                    tint: LHTheme.accent
+                )
+                MetricCard(
+                    title: "SITES / PAGES",
+                    value: "\(analysis.sites.count) / \(analysis.sites.reduce(0) { $0 + $1.pageCount })",
+                    detail: "Deduplicated web context",
+                    symbol: "globe",
+                    tint: LHTheme.privateTint
+                )
+                MetricCard(
+                    title: "REQUESTS FOUND",
+                    value: "\(analysis.requests.count)",
+                    detail: analysis.coverage.semanticContextEnabledInData
+                        ? "From opt-in accessible context"
+                        : "Enable Rich Context for discussions",
+                    symbol: "text.bubble.fill",
+                    tint: LHTheme.warning
+                )
+            }
+        }
+
+        var loadingState: some View {
+            LHCard {
+                VStack(spacing: 14) {
+                    ProgressView()
+                    Text("Building the compact day analysis…")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Events are being deduplicated into representative minutes and focus blocks locally.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 300)
+            }
+        }
+
+        var emptyState: some View {
+            LHCard {
+                EmptyStateView(
+                    symbol: "sparkles.rectangle.stack",
+                    title: "No analyzable activity yet",
+                    message: analysisModel.errorMessage
+                        ?? "Keep LocalHistory running. The recap and agent brief will be generated automatically as activity appears.",
+                    buttonTitle: "Try again",
+                    action: { analysisModel.refresh(day: model.selectedDay) }
+                )
+                .frame(minHeight: 320)
+            }
+        }
+
+        func compactEmpty(symbol: String, title: String) -> some View {
+            HStack(spacing: 9) {
+                Image(systemName: symbol)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
                 Spacer()
             }
+            .padding(11)
+            .background(
+                Color.primary.opacity(0.03),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
         }
 
-        private func detailsGrid(_ session: ActivitySession) -> some View {
-            LazyVGrid(
-                columns: [GridItem(.flexible()), GridItem(.flexible())],
-                alignment: .leading,
-                spacing: 12
-            ) {
-                detailValue(
-                    title: "Application",
-                    value: session.bundleIdentifier ?? session.appName,
-                    symbol: "app"
-                )
-                detailValue(
-                    title: "Local category",
-                    value: session.category.map(CategoryBadge.prettyCategory) ?? "Unclassified",
-                    symbol: "tag"
-                )
-                detailValue(
-                    title: "Observed events",
-                    value: "\(session.eventCount)",
-                    symbol: "list.number"
-                )
-                detailValue(
-                    title: "Input events",
-                    value: "\(session.inputEventCount)",
-                    symbol: "keyboard"
-                )
-                detailValue(
-                    title: "Classification confidence",
-                    value: session.confidence.map { "\(Int(($0 * 100).rounded()))%" } ?? "Not available",
-                    symbol: "gauge.with.dots.needle.50percent"
-                )
-                detailValue(
-                    title: "Software-attributed input",
-                    value: "\(session.softwareAttributedEventCount)",
-                    symbol: "exclamationmark.triangle"
-                )
-            }
-        }
-
-        private func detailValue(title: String, value: String, symbol: String) -> some View {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(LHTheme.accent)
-                    .frame(width: 28, height: 28)
-                    .background(LHTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title.uppercased())
-                        .font(.system(size: 8, weight: .semibold))
-                        .tracking(0.4)
-                        .foregroundStyle(.secondary)
-                    Text(value)
-                        .font(.system(size: 11, weight: .medium))
-                        .lineLimit(2)
-                        .textSelection(.enabled)
-                }
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        }
-
-        private func privacyNotice(_ session: ActivitySession) -> some View {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "hand.raised.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(LHTheme.privateTint)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Details intentionally unavailable")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(
-                        "LocalHistory preserved only the coverage state for this period. It cannot later reveal the hidden URL, title or input details."
-                    )
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(14)
-            .background(LHTheme.privateTint.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-
-        private func automationNotice(_ session: ActivitySession) -> some View {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(LHTheme.warning)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Software-attributed input detected")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(
-                        "macOS attributed \(session.softwareAttributedEventCount) input event(s) to a userspace process. This is an integrity signal, not automatic proof of cheating."
-                    )
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(14)
-            .background(LHTheme.warning.opacity(0.09), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-
-        private func eventBreakdown(_ session: ActivitySession) -> some View {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionTitle(
-                    title: "Event breakdown",
-                    subtitle: "Counts only — raw typed characters are never stored"
-                )
-                let sorted = session.kindCounts.sorted { left, right in
-                    if left.value == right.value { return left.key < right.key }
-                    return left.value > right.value
-                }
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 140), spacing: 8)],
-                    alignment: .leading,
-                    spacing: 8
-                ) {
-                    ForEach(sorted, id: \.key) { entry in
-                        HStack {
-                            Text(prettyEventKind(entry.key))
-                                .font(.system(size: 10, weight: .medium))
-                            Spacer()
-                            Text("\(entry.value)")
-                                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(height: 30)
-                        .background(
-                            Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                }
-            }
-        }
-
-        private func privacyLabel(_ reason: SuppressionReason) -> String {
-            switch reason {
-            case .privateBrowserWindow: return "Private browsing"
-            case .excludedApplication: return "Excluded app"
-            case .excludedDomain: return "Excluded site"
-            case .secureInput: return "Secure input"
-            case .sessionUnavailable: return "Session unavailable"
-            case .manualPause: return "Paused"
-            case .accessibilityUnavailable: return "Context unavailable"
-            }
-        }
-
-        private func prettyEventKind(_ raw: String) -> String {
-            var result = ""
-            for character in raw {
-                if character.isUppercase, !result.isEmpty { result.append(" ") }
-                result.append(character)
-            }
-            return result.prefix(1).uppercased() + result.dropFirst()
+        func duration(_ seconds: Int) -> String {
+            DashboardFormatters.duration(seconds: TimeInterval(seconds))
         }
     }
 
-    private enum ActivityMode: String, CaseIterable, Identifiable {
+    enum ActivityMode: String, CaseIterable, Identifiable {
+        case dayRecap
         case appsAndSites
         case timeline
 
         var id: String { rawValue }
-        var title: String { self == .appsAndSites ? "Apps & sites" : "Timeline" }
-    }
 
-    private struct SessionRow: View {
-        let session: ActivitySession
-        let selected: Bool
-        let action: () -> Void
-
-        var body: some View {
-            Button(action: action) {
-                HStack(spacing: 11) {
-                    AppIconView(
-                        bundleIdentifier: session.bundleIdentifier,
-                        appName: session.appName,
-                        size: 34
-                    )
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            Text(session.appName)
-                                .font(.system(size: 11, weight: .semibold))
-                                .lineLimit(1)
-                            if session.suppressionReason != nil {
-                                Image(systemName: "eye.slash.fill")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(LHTheme.privateTint)
-                            }
-                            if session.isFlagged {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(LHTheme.warning)
-                            }
-                        }
-                        Text(
-                            session.windowTitle ?? session.host ?? session.category.map(CategoryBadge.prettyCategory)
-                                ?? "Activity"
-                        )
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        HStack(spacing: 6) {
-                            Text(DashboardFormatters.shortTime.string(from: session.start))
-                            Text("·")
-                            Text(DashboardFormatters.duration(seconds: session.duration))
-                            if session.isWork == true {
-                                Text("· Work")
-                                    .foregroundStyle(LHTheme.success)
-                            }
-                        }
-                        .font(.system(size: 9, weight: .medium, design: .rounded))
-                        .foregroundStyle(.tertiary)
-                    }
-                    Spacer(minLength: 6)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(selected ? LHTheme.accent : Color.secondary.opacity(0.45))
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 9)
-                .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(selected ? LHTheme.accent.opacity(0.11) : Color.clear)
-                )
-                .contentShape(Rectangle())
+        var title: String {
+            switch self {
+            case .dayRecap: return "Day recap"
+            case .appsAndSites: return "Apps & sites"
+            case .timeline: return "Timeline"
             }
-            .buttonStyle(.plain)
         }
     }
 #endif
