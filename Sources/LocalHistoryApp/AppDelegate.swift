@@ -118,7 +118,7 @@
                     "raw_text_capture": "disabled",
                     "interface_version": (Bundle.main.object(
                         forInfoDictionaryKey: "CFBundleShortVersionString"
-                    ) as? String) ?? "0.5.0-dev",
+                    ) as? String) ?? "0.5.1-dev",
                 ]
             )
 

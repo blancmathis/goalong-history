@@ -227,7 +227,7 @@
                         .foregroundStyle(LHTheme.success)
                     Spacer()
                 }
-                Text(model.deviceTrustTier == "secure_enclave" ? "Secure Enclave key" : "Keychain signing key")
+                Text(model.deviceProtectionTitle)
                     .font(.system(size: 10, weight: .medium))
                 Text("Device \(model.deviceID.prefix(10))…")
                     .font(.system(size: 9, design: .monospaced))
@@ -246,7 +246,7 @@
 
         private static var version: String {
             let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            return "v\(value ?? "0.5.0-dev")"
+            return "v\(value ?? "0.5.1-dev")"
         }
     }
 #endif

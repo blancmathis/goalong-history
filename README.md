@@ -83,7 +83,9 @@ time · application · website · context · activity · classification · cover
 
 Each group receives a random 256-bit salt and SHA-256 commitment. Those commitments form an event Merkle root. Event roots are chained with a monotonic sequence and the previous event hash.
 
-Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. LocalHistory first tries Secure Enclave and falls back to a non-exportable Keychain key while reporting the lower trust tier.
+Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. LocalHistory first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable signed build. Ad-hoc source builds use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
+
+Signing identities are scoped to the app's designated code-signing requirement. If that requirement changes, LocalHistory records a visible identity rotation and keeps the existing chain data instead of repeatedly requesting access to an incompatible old key. A refused authentication attempt also suspends background signing for that launch, so it can never create a password dialog every minute.
 
 The **Share** screen stores one rule for every observed application and website:
 
@@ -145,7 +147,7 @@ make dmg
 make install-source
 ```
 
-The build script creates a real `.app` bundle, generates the `.icns` asset, writes the production Info.plist, signs the bundle, and verifies it. Local builds use ad-hoc signing; public releases use Developer ID signing and notarization.
+The build script creates a real `.app` bundle, generates the `.icns` asset, writes the production Info.plist, signs the bundle, and verifies it. Local builds use ad-hoc signing and a user-only local signing-key file; public releases use Developer ID signing, a non-exportable device key, and notarization.
 
 ## Release pipeline
 

@@ -30,6 +30,8 @@
         let deviceID: String
         let deviceTrustTier: String
         let deviceAlgorithm: String
+        let deviceProtectionTitle: String
+        let deviceProtectionSummary: String
 
         private(set) var selectedDay: Date
         private var savedSettingsDraft: DashboardSettingsDraft
@@ -73,6 +75,8 @@
             self.deviceID = deviceInfo.deviceID
             self.deviceTrustTier = deviceInfo.trustTier
             self.deviceAlgorithm = deviceInfo.algorithm
+            self.deviceProtectionTitle = deviceInfo.protectionTitle
+            self.deviceProtectionSummary = deviceInfo.protectionSummary
             self.eventTapStatus = eventTapStatus
             self.currentSuppression = currentSuppression
             self.onTogglePause = onTogglePause

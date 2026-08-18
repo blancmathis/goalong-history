@@ -7,7 +7,7 @@ BUNDLE_ID="ai.goalong.localhistory"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=sparkle_release.env
 source "$ROOT_DIR/scripts/sparkle_release.env"
-VERSION="${LOCALHISTORY_VERSION:-0.5.0}"
+VERSION="${LOCALHISTORY_VERSION:-0.5.1}"
 BUILD_NUMBER="${LOCALHISTORY_BUILD_NUMBER:-1}"
 ARCHS="${LOCALHISTORY_ARCHS:-$(uname -m)}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
@@ -293,6 +293,13 @@ sign_sparkle_component "$CONTENTS/Frameworks/Sparkle.framework"
 APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
 if [[ "$SIGN_IDENTITY" != "-" ]]; then
   APP_SIGN_ARGS+=(--options runtime --timestamp)
+  if [[ -n "${LOCALHISTORY_APP_ENTITLEMENTS:-}" ]]; then
+    if [[ ! -f "$LOCALHISTORY_APP_ENTITLEMENTS" ]]; then
+      echo "LOCALHISTORY_APP_ENTITLEMENTS does not exist: $LOCALHISTORY_APP_ENTITLEMENTS" >&2
+      exit 1
+    fi
+    APP_SIGN_ARGS+=(--entitlements "$LOCALHISTORY_APP_ENTITLEMENTS")
+  fi
 fi
 codesign "${APP_SIGN_ARGS[@]}" "$APP_DIR"
 codesign --verify --strict --verbose=2 "$APP_DIR"

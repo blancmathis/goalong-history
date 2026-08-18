@@ -253,10 +253,7 @@
                                 LHTheme.success.opacity(0.1), in: RoundedRectangle(cornerRadius: 13, style: .continuous)
                             )
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(
-                                model.deviceTrustTier == "secure_enclave"
-                                    ? "Secure Enclave protected" : "Keychain protected"
-                            )
+                            Text(model.deviceProtectionTitle)
                             .font(.system(size: 13, weight: .semibold))
                             Text(model.deviceAlgorithm)
                                 .font(.system(size: 9, design: .monospaced))

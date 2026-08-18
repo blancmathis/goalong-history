@@ -126,6 +126,8 @@ Pour chaque application ou site, choisissez la règle utilisée lors d’un part
 
 La règle d’un site est prioritaire sur celle du navigateur qui le contient. Les nouvelles preuves séparent le nom d’hôte du contexte complet : afficher un site ne révèle donc ni le titre de page ni l’URL complète. Les anciennes données restent vérifiables mais reviennent automatiquement à la catégorie lorsqu’un nom de site ne peut pas être ouvert sans révéler davantage.
 
+La clé qui signe les preuves est liée à la signature stable de l’application. Si cette signature change, LocalHistory crée une nouvelle identité clairement visible tout en conservant l’historique précédent ; il ne réutilise pas silencieusement une ancienne clé incompatible. Un refus du Trousseau suspend aussi les nouvelles tentatives pour le lancement en cours, afin qu’aucune demande de mot de passe ne puisse revenir chaque minute.
+
 ## Mises à jour
 
 Cette version doit être installée manuellement une première fois. Les versions publiques suivantes, lorsqu’elles sont signées et publiées dans le flux officiel, apparaissent ensuite directement dans LocalHistory. Le bouton de mise à jour permet de consulter la version proposée avant de lancer son installation ; l’application ne l’installe pas silencieusement.

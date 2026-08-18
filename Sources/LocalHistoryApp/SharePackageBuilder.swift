@@ -17,7 +17,6 @@
         case brokenSeal(UInt64)
         case missingEvents(UInt64)
         case brokenEvent(String)
-        case inconsistentDevice
 
         var description: String {
             switch self {
@@ -25,7 +24,6 @@
             case .brokenSeal(let sequence): return "Minute seal \(sequence) failed local integrity validation."
             case .missingEvents(let sequence): return "The detailed events for minute seal \(sequence) are no longer available. Use Completely private for that minute."
             case .brokenEvent(let root): return "Event \(root.prefix(12))… failed local integrity validation."
-            case .inconsistentDevice: return "The selected day contains seals from inconsistent device identities."
             }
         }
     }
@@ -63,7 +61,7 @@
         func build(for day: Date = Date(), levels: [UInt64: ShareLevel]) throws -> DaySharePackage {
             let seals = try loadSeals(for: day)
             guard let first = seals.first, let last = seals.last else { throw ShareBuildError.noSeals }
-            guard seals.allSatisfy({ $0.deviceID == first.deviceID }) else { throw ShareBuildError.inconsistentDevice }
+            let deviceIDs = uniqueValues(seals.map(\.deviceID))
 
             let eventsByRoot = loadEventsByRoot(for: day)
             let receipts = loadReceiptsBySequence()
@@ -97,7 +95,9 @@
             }
 
             return DaySharePackage(
+                schemaVersion: deviceIDs.count > 1 ? 4 : 2,
                 deviceID: first.deviceID,
+                deviceIDs: deviceIDs,
                 localDay: AppPaths.localDayString(for: day),
                 classifierVersion: LocalClassifier.version,
                 boundaryBefore: boundaryBefore,
@@ -113,9 +113,7 @@
         ) throws -> DaySharePackage {
             let seals = try loadSeals(for: day)
             guard let first = seals.first, let last = seals.last else { throw ShareBuildError.noSeals }
-            guard seals.allSatisfy({ $0.deviceID == first.deviceID }) else {
-                throw ShareBuildError.inconsistentDevice
-            }
+            let deviceIDs = uniqueValues(seals.map(\.deviceID))
 
             let eventsByRoot = loadEventsByRoot(for: day)
             let receipts = loadReceiptsBySequence()
@@ -157,8 +155,9 @@
             }
 
             return DaySharePackage(
-                schemaVersion: 3,
+                schemaVersion: deviceIDs.count > 1 ? 4 : 3,
                 deviceID: first.deviceID,
+                deviceIDs: deviceIDs,
                 localDay: AppPaths.localDayString(for: day),
                 classifierVersion: LocalClassifier.version,
                 boundaryBefore: boundaryBefore,

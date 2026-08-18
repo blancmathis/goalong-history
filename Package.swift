@@ -37,6 +37,7 @@ let package = Package(
                 .linkedFramework("ApplicationServices", .when(platforms: [.macOS])),
                 .linkedFramework("CoreGraphics", .when(platforms: [.macOS])),
                 .linkedFramework("Carbon", .when(platforms: [.macOS])),
+                .linkedFramework("LocalAuthentication", .when(platforms: [.macOS])),
                 .linkedFramework("Security", .when(platforms: [.macOS])),
                 .linkedFramework("ServiceManagement", .when(platforms: [.macOS])),
                 .unsafeFlags(

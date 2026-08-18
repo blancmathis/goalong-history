@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.5.1
+
+### Keychain authorization loop
+
+- Stopped reusing legacy signing keys created by earlier ad-hoc builds, which could make macOS request the login-keychain password on every minute signature after an app-signature change.
+- Namespaced replacement Keychain keys by the app's designated signing requirement, so a development-to-production certificate transition creates a visible identity rotation instead of reopening an incompatible key.
+- Prefer the modern Data Protection Keychain when the signed bundle carries authorized application-identity entitlements; stable signed builds otherwise use a newly scoped, non-exportable login-Keychain key.
+- Made ad-hoc source builds use a user-only local key file rather than a legacy Keychain item that would become inaccessible after the next recompile.
+- Suspended signing for the rest of a launch after an explicit authentication cancellation, preventing an authorization failure from creating a new password dialog every minute.
+- Added share-package identity-rotation metadata and made the uploader register and replay seals for each identity represented in existing history.
+
 ## 0.5.0
 
 ### Apps, websites, and sharing rules

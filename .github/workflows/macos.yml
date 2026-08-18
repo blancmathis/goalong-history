@@ -48,7 +48,7 @@ jobs:
 
       - name: Build installable app bundle
         env:
-          LOCALHISTORY_VERSION: 0.5.0-ci
+          LOCALHISTORY_VERSION: 0.5.1-ci
           LOCALHISTORY_BUILD_NUMBER: ${{ github.run_number }}
           LOCALHISTORY_RUN_TESTS: 0
           LOCALHISTORY_ARCHS: ${{ runner.arch == 'ARM64' && 'arm64' || 'x86_64' }}

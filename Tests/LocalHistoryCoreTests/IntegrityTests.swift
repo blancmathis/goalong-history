@@ -227,4 +227,22 @@ final class IntegrityTests: XCTestCase {
         XCTAssertTrue(disclosure.verifiesStructure())
         XCTAssertTrue(hidden.fieldCommitments.allSatisfy { $0.opening == nil })
     }
+
+    func testDaySharePackageCanDeclareAVisibleIdentityRotation() throws {
+        let package = DaySharePackage(
+            schemaVersion: 4,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            deviceID: "old-device",
+            deviceIDs: ["old-device", "new-device"],
+            localDay: "2026-08-18",
+            classifierVersion: "test",
+            minutes: []
+        )
+
+        let encoded = try JSONEncoder().encode(package)
+        let decoded = try JSONDecoder().decode(DaySharePackage.self, from: encoded)
+
+        XCTAssertEqual(decoded, package)
+        XCTAssertEqual(decoded.deviceIDs, ["old-device", "new-device"])
+    }
 }
