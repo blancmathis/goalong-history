@@ -14,6 +14,7 @@
         private var currentEventRoots: [String] = []
         private var currentCoverageStates: Set<String> = ["captured"]
         private var carriedCoverageState = "captured"
+        private var signingSuspended = false
 
         init(stateStore: IntegrityStateStore, identity: DeviceIdentity) {
             self.stateStore = stateStore
@@ -109,6 +110,7 @@
         }
 
         private func sealCurrentMinute() {
+            guard !signingSuspended else { return }
             do {
                 let position = stateStore.takeAnchorPosition()
                 let minuteEnd = currentMinuteStart.addingTimeInterval(60)
@@ -185,6 +187,13 @@
                 uploader?.enqueue(seal)
             } catch {
                 Diagnostics.write("Failed to seal minute: \(error)")
+                if let identityError = error as? DeviceIdentityError,
+                   identityError.shouldSuspendBackgroundSigning
+                {
+                    signingSuspended = true
+                    Diagnostics.write(
+                        "Minute signing suspended for this launch to prevent recurring Keychain authorization dialogs")
+                }
             }
         }
 

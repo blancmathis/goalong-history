@@ -5,29 +5,24 @@
     final class CommitmentUploader {
         private let queue = DispatchQueue(label: "ai.goalong.localhistory.commitment-uploader")
         private let baseURL: URL
-        private let identity: DeviceIdentity
         private let appAttest: AppAttestManager
         private let session: URLSession
         private var pending: [LocalMinuteSeal] = []
         private var inFlight = false
-        private var registered = false
 
-        init?(config: RecorderConfig, identity: DeviceIdentity) {
+        init?(config: RecorderConfig, identity _: DeviceIdentity) {
             guard config.verificationEnabled == true,
                 let raw = config.verificationServerURL,
                 let url = URL(string: raw)
             else { return nil }
 
             self.baseURL = url
-            self.identity = identity
             self.appAttest = AppAttestManager(enabled: config.enableAppAttest != false)
             let configuration = URLSessionConfiguration.ephemeral
             configuration.waitsForConnectivity = false
             configuration.timeoutIntervalForRequest = 20
             configuration.timeoutIntervalForResource = 30
             self.session = URLSession(configuration: configuration)
-            self.registered = UserDefaults.standard.bool(
-                forKey: "LocalHistory.DeviceRegistered.\(identity.info.deviceID)")
         }
 
         func enqueue(_ seal: LocalMinuteSeal) {
@@ -59,7 +54,7 @@
         private func drain() {
             guard !inFlight, let seal = pending.first else { return }
             inFlight = true
-            ensureRegistered { [weak self] ok in
+            ensureRegistered(for: seal) { [weak self] ok in
                 guard let self else { return }
                 if !ok {
                     self.finishAttempt(success: false)
@@ -86,25 +81,30 @@
             }
         }
 
-        private func ensureRegistered(completion: @escaping (Bool) -> Void) {
-            if registered {
+        private func ensureRegistered(for seal: LocalMinuteSeal, completion: @escaping (Bool) -> Void) {
+            let registrationKey = "LocalHistory.DeviceRegistered.\(seal.deviceID)"
+            if UserDefaults.standard.bool(forKey: registrationKey) {
                 completion(true)
                 return
             }
 
-            fetchChallenge { [weak self] challenge in
+            fetchChallenge(deviceID: seal.deviceID) { [weak self] challenge in
                 guard let self, let challenge else {
                     completion(false)
                     return
                 }
-                let hash = self.registrationClientDataHash(challenge: challenge)
+                let hash = self.registrationClientDataHash(
+                    challenge: challenge,
+                    deviceID: seal.deviceID,
+                    publicKeyBase64: seal.publicKeyBase64
+                )
                 self.appAttest.materialForRegistration(clientDataHash: hash) { material in
                     let request = DeviceRegistrationRequest(
                         challengeID: challenge.challengeID,
-                        deviceID: self.identity.info.deviceID,
-                        publicKeyBase64: self.identity.info.publicKeyBase64,
-                        signatureAlgorithm: self.identity.info.algorithm,
-                        localTrustTier: self.identity.info.trustTier,
+                        deviceID: seal.deviceID,
+                        publicKeyBase64: seal.publicKeyBase64,
+                        signatureAlgorithm: seal.signatureAlgorithm,
+                        localTrustTier: seal.trustTier,
                         appVersion: self.appVersion,
                         appAttestKeyID: material.keyID,
                         appAttestationObjectBase64: material.attestationObjectBase64
@@ -113,9 +113,7 @@
                         switch result {
                         case .success(let response) where response.ok:
                             self.queue.async {
-                                self.registered = true
-                                UserDefaults.standard.set(
-                                    true, forKey: "LocalHistory.DeviceRegistered.\(self.identity.info.deviceID)")
+                                UserDefaults.standard.set(true, forKey: registrationKey)
                                 completion(true)
                             }
                         default:
@@ -127,7 +125,7 @@
         }
 
         private func upload(_ seal: LocalMinuteSeal, completion: @escaping (Bool) -> Void) {
-            fetchChallenge { [weak self] challenge in
+            fetchChallenge(deviceID: seal.deviceID) { [weak self] challenge in
                 guard let self, let challenge else {
                     completion(false)
                     return
@@ -167,8 +165,8 @@
             }
         }
 
-        private func fetchChallenge(completion: @escaping (ChallengeResponse?) -> Void) {
-            let request = ChallengeRequest(deviceID: identity.info.deviceID)
+        private func fetchChallenge(deviceID: String, completion: @escaping (ChallengeResponse?) -> Void) {
+            let request = ChallengeRequest(deviceID: deviceID)
             post(path: "/v1/challenge", body: request, response: ChallengeResponse.self) { result in
                 switch result {
                 case .success(let challenge): completion(challenge)
@@ -179,10 +177,14 @@
             }
         }
 
-        private func registrationClientDataHash(challenge: ChallengeResponse) -> Data {
+        private func registrationClientDataHash(
+            challenge: ChallengeResponse,
+            deviceID: String,
+            publicKeyBase64: String
+        ) -> Data {
             SHA256Digest.hash(
                 Data(
-                    "LH-APP-ATTEST-REGISTER-V1\0\(challenge.challengeBase64)\0\(identity.info.deviceID)\0\(identity.info.publicKeyBase64)"
+                    "LH-APP-ATTEST-REGISTER-V1\0\(challenge.challengeBase64)\0\(deviceID)\0\(publicKeyBase64)"
                         .utf8
                 ))
         }
@@ -242,7 +244,7 @@
         }
 
         private var appVersion: String {
-            (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.5.0-dev"
+            (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.5.1-dev"
         }
 
         private func appendReceipt(_ receipt: AnchorReceipt) throws {

@@ -154,6 +154,7 @@ public struct DaySharePackage: Codable, Equatable {
     public let schemaVersion: Int
     public let createdAt: Date
     public let deviceID: String
+    public let deviceIDs: [String]?
     public let localDay: String
     public let classifierVersion: String
     public let boundaryBefore: MinuteDisclosure?
@@ -164,6 +165,7 @@ public struct DaySharePackage: Codable, Equatable {
         schemaVersion: Int = 2,
         createdAt: Date = Date(),
         deviceID: String,
+        deviceIDs: [String]? = nil,
         localDay: String,
         classifierVersion: String,
         boundaryBefore: MinuteDisclosure? = nil,
@@ -173,6 +175,7 @@ public struct DaySharePackage: Codable, Equatable {
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
         self.deviceID = deviceID
+        self.deviceIDs = deviceIDs
         self.localDay = localDay
         self.classifierVersion = classifierVersion
         self.boundaryBefore = boundaryBefore
