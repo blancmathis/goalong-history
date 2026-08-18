@@ -7,7 +7,7 @@ public enum ActivityAgentDigestRenderer {
         _ = writer.append("# LocalHistory day brief — \(day)")
         _ = writer.append("summary: \(analysis.headline)")
         _ = writer.append(
-            "active=\(duration(analysis.activeSeconds)); work=\(duration(analysis.workSeconds)); private=\(analysis.coverage.privateMinuteCount)m; blocks=\(analysis.focusBlocks.count); sites=\(analysis.sites.count); events=\(analysis.coverage.sourceEventCount)→\(analysis.coverage.representativeMinuteCount) representative minutes"
+            "active=\(duration(analysis.activeSeconds)); work=\(duration(analysis.workSeconds)); private=\(analysis.coverage.privateMinuteCount)m; blocks=\(analysis.focusBlocks.count); sites=\(analysis.sites.count); events=\(analysis.coverage.sourceEventCount)↓\(analysis.coverage.representativeMinuteCount) representative minutes"
         )
 
         if !analysis.focusBlocks.isEmpty {

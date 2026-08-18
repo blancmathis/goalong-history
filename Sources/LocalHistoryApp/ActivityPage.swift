@@ -9,8 +9,8 @@
         var richContextEnabled = false
         @AppStorage(ActivityAnalysisPreferences.agentTokenBudgetKey)
         var agentTokenBudget = 1_600
-        @State private var expandedBlockID: String?
-        @State private var showRichContextConfirmation = false
+        @State var expandedBlockID: String?
+        @State var showRichContextConfirmation = false
 
         let metricColumns = [
             GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
