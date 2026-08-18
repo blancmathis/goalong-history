@@ -26,7 +26,7 @@ jobs:
           bash -n Install.command Uninstall.command install.sh uninstall.sh
           find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
 
-      - name: Privacy-boundary audit
+      - name: Privacy-boundary and dependency audit
         run: ./scripts/audit_privacy_boundaries.sh
 
       - name: Tests
@@ -52,13 +52,18 @@ jobs:
           LOCALHISTORY_BUILD_NUMBER: ${{ github.run_number }}
           LOCALHISTORY_RUN_TESTS: 0
           LOCALHISTORY_ARCHS: ${{ runner.arch == 'ARM64' && 'arm64' || 'x86_64' }}
+          # CI-only 32-byte public key. Production releases inject the real EdDSA public key secret.
+          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: ./scripts/build_app.sh
 
-      - name: Validate bundle
+      - name: Validate bundle and Sparkle integration
+        env:
+          LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
         run: |
           plutil -lint dist/LocalHistory.app/Contents/Info.plist
           codesign --verify --strict --verbose=2 dist/LocalHistory.app
           test "$(defaults read "$PWD/dist/LocalHistory.app/Contents/Info" CFBundleIdentifier)" = "ai.goalong.localhistory"
+          ./scripts/verify_sparkle_bundle.sh
 
       - name: Package smoke test
         run: |

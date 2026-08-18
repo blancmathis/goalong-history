@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Software updates
+
+- Added Sparkle 2.9.6 as an exact-pinned macOS update dependency.
+- Added quiet daily signed update checks with a compact dashboard button that appears only when a new release is available.
+- Kept explicit user control over installation: automatic download/install remains disabled, while clicking the update indicator opens Sparkle's standard release-notes and installation flow.
+- Added a stable GitHub Releases appcast, EdDSA archive signing, signed-feed enforcement, and explicit nested Sparkle code signing in the release pipeline.
+- Added CI checks for the embedded framework, app-relative rpath, updater privacy settings, dependency pin, and signed release metadata.
+- Added maintainer tooling and documentation for Sparkle key generation, backup, release publication, N-1 → N testing, and key rotation/recovery.
+
 ## 0.4.0
 
 ### Installation and onboarding
@@ -53,7 +64,7 @@
 - Overview with runtime status, daily metrics, 24-hour coverage timeline, top apps and recent sessions.
 - Searchable/filterable Activity browser with detailed session inspector.
 - Visual selective-disclosure editor with four privacy levels, bulk presets and exact share preview.
-- Privacy & Security center covering permissions, data flow, storage, signing identity and safe deletion.
+- Privacy & Security center covering permissions, data flow, storage, identity and safe deletion.
 - Settings interface for capture, retention, verification, App Attest preference and exclusions.
 - Menu-bar shortcuts to open the dashboard and Share section.
 - Dashboard data reader that turns local JSONL/seals/receipts into understandable sessions and metrics.

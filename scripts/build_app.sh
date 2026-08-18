@@ -5,6 +5,8 @@ APP_NAME="LocalHistory"
 PRODUCT_NAME="LocalHistory"
 BUNDLE_ID="ai.goalong.localhistory"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=sparkle_release.env
+source "$ROOT_DIR/scripts/sparkle_release.env"
 VERSION="${LOCALHISTORY_VERSION:-0.4.0}"
 BUILD_NUMBER="${LOCALHISTORY_BUILD_NUMBER:-1}"
 ARCHS="${LOCALHISTORY_ARCHS:-$(uname -m)}"
@@ -12,6 +14,7 @@ OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
 SIGN_IDENTITY="${LOCALHISTORY_CODESIGN_IDENTITY:--}"
 RUN_TESTS="${LOCALHISTORY_RUN_TESTS:-1}"
 DISABLE_APP_ATTEST="${LOCALHISTORY_DISABLE_APP_ATTEST:-auto}"
+SPARKLE_PUBLIC_ED_KEY="${LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY:-}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build_app.sh must run on macOS." >&2
@@ -23,7 +26,7 @@ if ! xcode-select -p >/dev/null 2>&1; then
   exit 1
 fi
 
-for tool in xcrun plutil codesign ditto lipo sips iconutil; do
+for tool in xcrun plutil codesign ditto lipo sips iconutil otool; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Required build tool not found: $tool" >&2
     exit 1
@@ -128,6 +131,7 @@ if [[ $BUILD_STATUS -eq 42 ]]; then
   echo "The installed SDK does not support the optional App Attest bridge; rebuilding with it disabled."
   APP_ATTEST_DISABLED=1
   rm -f "$WORK_DIR/$PRODUCT_NAME-"*
+  rm -rf "$WORK_DIR"/build-*
   build_all_archs
 elif [[ $BUILD_STATUS -ne 0 ]]; then
   exit "$BUILD_STATUS"
@@ -135,7 +139,7 @@ fi
 
 APP_DIR="$WORK_DIR/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
-mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
+mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Frameworks"
 
 BINARY_COUNT=0
 for arch in $ARCHS; do
@@ -153,6 +157,24 @@ else
   cp "$WORK_DIR/$PRODUCT_NAME-$first_arch" "$CONTENTS/MacOS/$APP_NAME"
 fi
 chmod 755 "$CONTENTS/MacOS/$APP_NAME"
+
+# SwiftPM links Sparkle dynamically but does not create our hand-built .app bundle for us.
+# Copy the exact binary artifact resolved by Package.swift, preserving symlinks and metadata.
+SPARKLE_FRAMEWORK="$(find "$WORK_DIR" -type d -name Sparkle.framework -path '*/artifacts/sparkle/Sparkle/*' -print -quit 2>/dev/null || true)"
+if [[ -z "$SPARKLE_FRAMEWORK" ]]; then
+  echo "Sparkle.framework was not found in SwiftPM build artifacts." >&2
+  exit 1
+fi
+/usr/bin/ditto "$SPARKLE_FRAMEWORK" "$CONTENTS/Frameworks/Sparkle.framework"
+
+if ! /usr/bin/otool -L "$CONTENTS/MacOS/$APP_NAME" | /usr/bin/grep -q '@rpath/Sparkle.framework'; then
+  echo "Built binary is not linked to Sparkle.framework." >&2
+  exit 1
+fi
+if ! /usr/bin/otool -l "$CONTENTS/MacOS/$APP_NAME" | /usr/bin/grep -A2 LC_RPATH | /usr/bin/grep -q '@executable_path/../Frameworks'; then
+  echo "Built binary is missing the app-relative Frameworks rpath." >&2
+  exit 1
+fi
 
 ICON_SOURCE="$ROOT_DIR/Distribution/AppIcon.png"
 if [[ ! -f "$ICON_SOURCE" && -f "$ROOT_DIR/scripts/generate_distribution_assets.swift" ]]; then
@@ -222,17 +244,58 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# Production/CI bundles receive a Sparkle key explicitly. Development source builds omit
+# the updater keys and SoftwareUpdateManager fails closed instead of hitting a live feed.
+if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+  /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $SPARKLE_FEED_URL" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_ED_KEY" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :SURequireSignedFeed bool true' "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :SUEnableAutomaticChecks bool true' "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :SUScheduledCheckInterval integer 86400' "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :SUAllowsAutomaticUpdates bool false' "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :SUAutomaticallyUpdate bool false' "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :SUEnableSystemProfiling bool false' "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :SUSendProfileInfo bool false' "$CONTENTS/Info.plist"
+fi
+
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
-SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
+SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY")
 if [[ "$SIGN_IDENTITY" != "-" ]]; then
   SIGN_ARGS+=(--timestamp)
 fi
-codesign "${SIGN_ARGS[@]}" "$APP_DIR"
+
+sign_sparkle_component() {
+  local path="$1"
+  shift
+  if [[ -e "$path" ]]; then
+    codesign "${SIGN_ARGS[@]}" "$@" "$path"
+  fi
+}
+
+# Explicit nested-code signing order from Sparkle's manual distribution guidance.
+# Do not use --deep: Downloader.xpc carries its own entitlement metadata.
+SPARKLE_VERSION_DIR="$CONTENTS/Frameworks/Sparkle.framework/Versions/B"
+if [[ ! -d "$SPARKLE_VERSION_DIR" ]]; then
+  SPARKLE_VERSION_DIR="$CONTENTS/Frameworks/Sparkle.framework/Versions/Current"
+fi
+sign_sparkle_component "$SPARKLE_VERSION_DIR/XPCServices/Installer.xpc"
+sign_sparkle_component "$SPARKLE_VERSION_DIR/XPCServices/Downloader.xpc" --preserve-metadata=entitlements
+sign_sparkle_component "$SPARKLE_VERSION_DIR/Autoupdate"
+sign_sparkle_component "$SPARKLE_VERSION_DIR/Updater.app"
+sign_sparkle_component "$CONTENTS/Frameworks/Sparkle.framework"
+
+APP_SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
+if [[ "$SIGN_IDENTITY" != "-" ]]; then
+  APP_SIGN_ARGS+=(--timestamp)
+fi
+codesign "${APP_SIGN_ARGS[@]}" "$APP_DIR"
 codesign --verify --strict --verbose=2 "$APP_DIR"
 
 rm -rf "$OUTPUT_DIR/$APP_NAME.app"
 ditto "$APP_DIR" "$OUTPUT_DIR/$APP_NAME.app"
+
+LOCALHISTORY_APP_PATH="$OUTPUT_DIR/$APP_NAME.app" "$ROOT_DIR/scripts/verify_sparkle_bundle.sh"
 
 echo
 printf 'Built %s %s (%s)\n' "$APP_NAME" "$VERSION" "$ARCHS"
@@ -241,4 +304,9 @@ if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
   echo "Optional App Attest bridge: disabled for SDK compatibility"
 else
   echo "Optional App Attest bridge: enabled"
+fi
+if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+  echo "Sparkle updates: configured for signed feed checks"
+else
+  echo "Sparkle updates: framework embedded, live checks disabled in this development build"
 fi

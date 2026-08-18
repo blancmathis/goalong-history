@@ -50,6 +50,7 @@
 
     private struct DashboardSidebar: View {
         @ObservedObject var model: DashboardViewModel
+        @ObservedObject private var updates = SoftwareUpdateManager.shared
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
@@ -98,6 +99,12 @@
                 }
                 .padding(.horizontal, 10)
 
+                if let version = updates.availableVersion {
+                    updateButton(version: version)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 12)
+                }
+
                 Spacer(minLength: 20)
 
                 trustCard
@@ -107,7 +114,12 @@
                 HStack {
                     Text("LocalHistory")
                     Spacer()
-                    Text(Self.version)
+                    Button(Self.version) {
+                        updates.checkForUpdates()
+                    }
+                    .buttonStyle(.plain)
+                    .help(updates.isConfigured ? "Check for updates" : "Software updates are disabled in this build")
+                    .disabled(!updates.isConfigured)
                 }
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.tertiary)
@@ -170,6 +182,41 @@
                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.plain)
+        }
+
+        private func updateButton(version: String) -> some View {
+            Button {
+                updates.showAvailableUpdate()
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Update available")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("LocalHistory \(version)")
+                            .font(.system(size: 9, weight: .medium))
+                            .opacity(0.76)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .opacity(0.7)
+                }
+                .foregroundStyle(LHTheme.accent)
+                .padding(.horizontal, 11)
+                .frame(height: 46)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(LHTheme.accent.opacity(0.10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(LHTheme.accent.opacity(0.18), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Review and install LocalHistory \(version)")
         }
 
         private var trustCard: some View {
