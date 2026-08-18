@@ -274,7 +274,7 @@ public enum MerkleTree {
 // MARK: - Shared verification helpers
 
 public enum IntegrityDomains {
-    public static let eventFieldOrder = [
+    public static let eventFieldOrderV2 = [
         "time",
         "application",
         "context",
@@ -284,6 +284,25 @@ public enum IntegrityDomains {
         "trust",
         "raw_digest",
     ]
+
+    public static let eventFieldOrderV3 = [
+        "time",
+        "application",
+        "website",
+        "context",
+        "activity",
+        "classification",
+        "coverage",
+        "trust",
+        "raw_digest",
+    ]
+
+    /// Kept for source compatibility with v2 callers and fixtures.
+    public static let eventFieldOrder = eventFieldOrderV2
+
+    public static func eventFieldOrder(for schemaVersion: Int) -> [String] {
+        schemaVersion >= 3 ? eventFieldOrderV3 : eventFieldOrderV2
+    }
 
     public static let minuteFieldOrder = [
         "time",

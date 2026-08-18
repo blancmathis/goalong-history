@@ -48,7 +48,7 @@ When the relevant macOS permissions are granted, LocalHistory can store:
 
 It does **not** record screenshots, screen video, camera, microphone, system audio, clipboard contents, passwords, or reconstructed typed text.
 
-Private-browser windows are fail-closed. The record keeps a generic private/suppressed coverage state without storing the private URL, window title, click details, or keyboard activity. Password managers and secure text-entry contexts are excluded or suppressed as well.
+Recognized and capability-detected private-browser windows are fail-closed. The record keeps a generic private/suppressed coverage state without storing the private URL, window title, click details, or keyboard activity. Browser URL availability still depends on the Accessibility information exposed by that browser; an extension may be needed for browsers that do not expose it. Password managers and secure text-entry contexts are excluded or suppressed as well.
 
 ## Local-first by default
 
@@ -57,6 +57,7 @@ Detailed activity is written to the current user’s private Application Support
 ```text
 ~/Library/Application Support/LocalHistory/
 ├── config.json
+├── sharing-rules.json
 ├── integrity-state.json
 ├── diagnostics.log
 ├── events/
@@ -77,29 +78,29 @@ Verification networking is disabled by default. When the user enables it, the on
 Each event is separated into independently committed groups:
 
 ```text
-time · application · context · activity · classification · coverage · trust · raw_digest
+time · application · website · context · activity · classification · coverage · trust · raw_digest
 ```
 
 Each group receives a random 256-bit salt and SHA-256 commitment. Those commitments form an event Merkle root. Event roots are chained with a monotonic sequence and the previous event hash.
 
 Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. LocalHistory first tries Secure Enclave and falls back to a non-exportable Keychain key while reporting the lower trust tier.
 
-The **Share** screen offers four disclosure levels for every grouped period:
+The **Share** screen stores one rule for every observed application and website:
 
-- full details;
-- application only;
-- category only;
-- completely private.
+- show the app or website name;
+- show only its category;
+- hide its identifying details.
 
-The original JSONL is never rewritten. Export creates a separate `*.verified-share.json` package containing only the selected openings and the hashes required to reconstruct the already-sealed roots. Every sealed minute remains represented, so anonymization cannot silently turn into omission.
+Website rules take priority over the containing browser rule. The original JSONL is never rewritten. Export creates a separate `*.verified-share.json` package containing only the selected event-level openings and the hashes required to reconstruct the already-sealed roots. Every sealed minute remains represented, so anonymization cannot silently turn into omission.
 
 ## Native dashboard
 
-The SwiftUI dashboard is split into five areas:
+The SwiftUI dashboard is split into six areas:
 
 - **Overview** — runtime state, daily metrics, coverage, top apps, and recent sessions;
-- **Activity** — searchable sessions, event breakdown, privacy states, and automation signals;
-- **Share** — visual selective disclosure, exact outgoing-data preview, and verified export;
+- **Activity** — every observed app and website with bounded foreground time, plus the searchable session timeline;
+- **Apple Screen Time** — isolated import and analysis of user-exported Apple device activity;
+- **Share** — persistent per-app and per-site rules with verified event-level export;
 - **Privacy & Security** — permission state, data flow, storage, identity, and safe deletion;
 - **Settings** — capture signals, retention, URL redaction, verification, and exclusions.
 
@@ -109,7 +110,7 @@ A menu-bar control keeps pause/resume, status, dashboard access, and sharing imm
 
 Start-at-login is an explicit onboarding choice implemented with Apple’s `SMAppService`. LocalHistory no longer installs a hand-written LaunchAgent. Upgrading preserves the local history and settings directory.
 
-A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer.
+A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. Starting with the first manually installed Sparkle-enabled build, later signed releases can be reviewed and installed from the update button inside LocalHistory.
 
 ## Build from source
 

@@ -18,6 +18,7 @@
         private var contextMonitor: ContextMonitor!
         private var eventTapMonitor: EventTapMonitor!
         private var dashboardViewModel: DashboardViewModel!
+        private var sharingRulesStore: SharingRulesStore!
         private var dashboardWindowController: DashboardWindowController!
         private var menuBarController: MenuBarController!
 
@@ -60,11 +61,13 @@
                     state: captureState,
                     configManager: configManager
                 )
+                sharingRulesStore = SharingRulesStore()
 
                 dashboardViewModel = DashboardViewModel(
                     state: captureState,
                     permissions: permissions,
                     configManager: configManager,
+                    sharingRulesStore: sharingRulesStore,
                     deviceInfo: deviceIdentity.info,
                     eventTapStatus: { [weak self] in self?.eventTapMonitor.isRunning ?? false },
                     currentSuppression: { [weak self] in self?.contextMonitor.latestSnapshot?.suppressionReason },
@@ -115,7 +118,7 @@
                     "raw_text_capture": "disabled",
                     "interface_version": (Bundle.main.object(
                         forInfoDictionaryKey: "CFBundleShortVersionString"
-                    ) as? String) ?? "0.4.0-dev",
+                    ) as? String) ?? "0.5.0-dev",
                 ]
             )
 

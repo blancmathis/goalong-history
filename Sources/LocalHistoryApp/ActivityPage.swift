@@ -4,14 +4,15 @@
 
     struct ActivityPage: View {
         @ObservedObject var model: DashboardViewModel
+        @State private var mode: ActivityMode = .appsAndSites
 
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(
-                    eyebrow: "Local timeline",
+                    eyebrow: "Local activity",
                     title: "Activity",
                     subtitle:
-                        "Browse understandable sessions instead of raw JSON events. Everything shown here stays local."
+                        "See every observed app and website, then open the timeline when you need session-level detail."
                 ) {
                     HStack(spacing: 10) {
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
@@ -26,15 +27,28 @@
                     }
                 }
 
-                filterBar
-
-                HStack(alignment: .top, spacing: 14) {
-                    sessionList
-                        .frame(minWidth: 330, idealWidth: 400, maxWidth: 450)
-                    sessionDetail
-                        .frame(maxWidth: .infinity)
+                Picker("Activity view", selection: $mode) {
+                    ForEach(ActivityMode.allCases) { item in
+                        Text(item.title).tag(item)
+                    }
                 }
-                .frame(maxHeight: .infinity)
+                .pickerStyle(.segmented)
+                .frame(width: 260)
+
+                if mode == .appsAndSites {
+                    UsageRulesList(model: model)
+                        .frame(maxHeight: .infinity)
+                } else {
+                    filterBar
+
+                    HStack(alignment: .top, spacing: 14) {
+                        sessionList
+                            .frame(minWidth: 330, idealWidth: 400, maxWidth: 450)
+                        sessionDetail
+                            .frame(maxWidth: .infinity)
+                    }
+                    .frame(maxHeight: .infinity)
+                }
             }
             .padding(.horizontal, 24)
             .padding(.top, 28)
@@ -339,6 +353,14 @@
             }
             return result.prefix(1).uppercased() + result.dropFirst()
         }
+    }
+
+    private enum ActivityMode: String, CaseIterable, Identifiable {
+        case appsAndSites
+        case timeline
+
+        var id: String { rawValue }
+        var title: String { self == .appsAndSites ? "Apps & sites" : "Timeline" }
     }
 
     private struct SessionRow: View {

@@ -15,10 +15,14 @@
         @Published private(set) var isRefreshing = false
         @Published private(set) var shareSegments: [ShareSegment] = []
         @Published private(set) var isLoadingShare = false
+        @Published private(set) var isExportingShare = false
         @Published var selectedShareSegmentID: String?
         @Published var selectedSessionID: String?
         @Published var activitySearch = ""
         @Published var activityFilter: ActivityFilter = .all
+        @Published var usageSearch = ""
+        @Published private(set) var sharingRules: [String: SharingVisibility]
+        @Published private(set) var defaultSharingVisibility: SharingVisibility
         @Published var settingsDraft: DashboardSettingsDraft
         @Published var alert: DashboardAlert?
         @Published var showWelcome: Bool
@@ -33,6 +37,7 @@
         private let state: CaptureState
         private let permissions: PermissionManager
         private let configManager: ConfigManager
+        private let sharingRulesStore: SharingRulesStore
         private let eventTapStatus: () -> Bool
         private let currentSuppression: () -> SuppressionReason?
         private let onTogglePause: () -> Void
@@ -50,6 +55,7 @@
             state: CaptureState,
             permissions: PermissionManager,
             configManager: ConfigManager,
+            sharingRulesStore: SharingRulesStore,
             deviceInfo: DeviceIdentityInfo,
             eventTapStatus: @escaping () -> Bool,
             currentSuppression: @escaping () -> SuppressionReason?,
@@ -61,6 +67,9 @@
             self.state = state
             self.permissions = permissions
             self.configManager = configManager
+            self.sharingRulesStore = sharingRulesStore
+            self.sharingRules = sharingRulesStore.rules
+            self.defaultSharingVisibility = sharingRulesStore.defaultVisibility
             self.deviceID = deviceInfo.deviceID
             self.deviceTrustTier = deviceInfo.trustTier
             self.deviceAlgorithm = deviceInfo.algorithm
@@ -120,6 +129,42 @@
         var selectedShareSegment: ShareSegment? {
             guard let selectedShareSegmentID else { return shareSegments.first }
             return shareSegments.first(where: { $0.id == selectedShareSegmentID }) ?? shareSegments.first
+        }
+
+        var filteredTrackedUsage: [TrackedUsageItem] {
+            let query = usageSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !query.isEmpty else { return snapshot.trackedUsage }
+            return snapshot.trackedUsage.filter { $0.searchableText.contains(query) }
+        }
+
+        func sharingVisibility(for subjectID: String) -> SharingVisibility {
+            sharingRules[subjectID] ?? defaultSharingVisibility
+        }
+
+        func setSharingVisibility(_ visibility: SharingVisibility, for subjectID: String) {
+            do {
+                sharingRules = try sharingRulesStore.set(visibility, for: subjectID)
+            } catch {
+                alert = DashboardAlert(
+                    kind: .error,
+                    title: "Sharing rule could not be saved",
+                    message: String(describing: error)
+                )
+            }
+        }
+
+        func setDefaultSharingVisibility(_ visibility: SharingVisibility) {
+            do {
+                let document = try sharingRulesStore.setDefault(visibility)
+                defaultSharingVisibility = document.defaultVisibility
+                sharingRules = document.rules
+            } catch {
+                alert = DashboardAlert(
+                    kind: .error,
+                    title: "Default sharing rule could not be saved",
+                    message: String(describing: error)
+                )
+            }
         }
 
         var settingsHaveChanges: Bool {
@@ -287,7 +332,7 @@
         }
 
         func exportSharePackage() {
-            guard !shareSegments.isEmpty else {
+            guard snapshot.sealedMinutes > 0 else {
                 alert = DashboardAlert(
                     kind: .information,
                     title: "Nothing to export",
@@ -303,34 +348,35 @@
             guard panel.runModal() == .OK, let destination = panel.url else { return }
 
             let day = selectedDay
-            let levels = Dictionary(
-                uniqueKeysWithValues: shareSegments.flatMap { segment in
-                    segment.anchorSequences.map { ($0, segment.level) }
-                }
-            )
-            isLoadingShare = true
+            let rules = sharingRules
+            let defaultVisibility = defaultSharingVisibility
+            isExportingShare = true
 
             shareQueue.async { [weak self] in
                 guard let self else { return }
                 do {
-                    let package = try self.shareBuilder.build(for: day, levels: levels)
+                    let package = try self.shareBuilder.build(
+                        for: day,
+                        sharingRules: rules,
+                        defaultVisibility: defaultVisibility
+                    )
                     guard package.minutes.allSatisfy({ $0.verifiesStructure() }) else {
                         throw ShareBuildError.brokenSeal(package.minutes.first?.anchorSequence ?? 0)
                     }
                     try self.shareBuilder.write(package, to: destination)
                     DispatchQueue.main.async {
-                        self.isLoadingShare = false
+                        self.isExportingShare = false
                         self.alert = DashboardAlert(
                             kind: .information,
                             title: "Verified package exported",
                             message:
-                                "The package contains only the disclosure levels you selected. Hidden fields remain on this Mac."
+                                "The package follows your saved app and website rules. Hidden fields remain on this Mac."
                         )
                         NSWorkspace.shared.activateFileViewerSelecting([destination])
                     }
                 } catch {
                     DispatchQueue.main.async {
-                        self.isLoadingShare = false
+                        self.isExportingShare = false
                         self.alert = DashboardAlert(
                             kind: .error,
                             title: "Export failed",

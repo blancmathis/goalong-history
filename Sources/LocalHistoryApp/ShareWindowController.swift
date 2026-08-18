@@ -5,6 +5,7 @@
     import UniformTypeIdentifiers
 
     final class ShareWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
+        private let selectableLevels: [ShareLevel] = [.everything, .applicationOnly, .categoryOnly, .privateOnly]
         private let builder: SharePackageBuilder
         private let day: Date
         private var rows: [ShareMinuteRow] = []
@@ -71,7 +72,7 @@
 
             let setAll = NSPopUpButton()
             setAll.translatesAutoresizingMaskIntoConstraints = false
-            setAll.addItems(withTitles: ["Set all…"] + ShareLevel.allCases.map(\.title))
+            setAll.addItems(withTitles: ["Set all…"] + selectableLevels.map(\.title))
             setAll.target = self
             setAll.action = #selector(setAllChanged(_:))
 
@@ -129,7 +130,7 @@
 
             if identifier == "privacy" {
                 let popup = NSPopUpButton(frame: .zero, pullsDown: false)
-                popup.addItems(withTitles: ShareLevel.allCases.map(\.title))
+                popup.addItems(withTitles: selectableLevels.map(\.title))
                 popup.selectItem(withTitle: item.level.title)
                 popup.tag = row
                 popup.target = self
@@ -156,14 +157,14 @@
         @objc private func rowPrivacyChanged(_ sender: NSPopUpButton) {
             guard sender.tag >= 0, sender.tag < rows.count,
                   let title = sender.selectedItem?.title,
-                  let level = ShareLevel.allCases.first(where: { $0.title == title })
+                  let level = selectableLevels.first(where: { $0.title == title })
             else { return }
             rows[sender.tag].level = rows[sender.tag].canRevealDetails ? level : .privateOnly
         }
 
         @objc private func setAllChanged(_ sender: NSPopUpButton) {
             guard sender.indexOfSelectedItem > 0 else { return }
-            let level = ShareLevel.allCases[sender.indexOfSelectedItem - 1]
+            let level = selectableLevels[sender.indexOfSelectedItem - 1]
             for index in rows.indices {
                 rows[index].level = rows[index].canRevealDetails ? level : .privateOnly
             }

@@ -7,7 +7,7 @@ BUNDLE_ID="ai.goalong.localhistory"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=sparkle_release.env
 source "$ROOT_DIR/scripts/sparkle_release.env"
-VERSION="${LOCALHISTORY_VERSION:-0.4.0}"
+VERSION="${LOCALHISTORY_VERSION:-0.5.0}"
 BUILD_NUMBER="${LOCALHISTORY_BUILD_NUMBER:-1}"
 ARCHS="${LOCALHISTORY_ARCHS:-$(uname -m)}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
@@ -250,6 +250,7 @@ if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
   /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $SPARKLE_FEED_URL" "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_ED_KEY" "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c 'Add :SURequireSignedFeed bool true' "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :SUVerifyUpdateBeforeExtraction bool true' "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c 'Add :SUEnableAutomaticChecks bool true' "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c 'Add :SUScheduledCheckInterval integer 86400' "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c 'Add :SUAllowsAutomaticUpdates bool false' "$CONTENTS/Info.plist"
@@ -260,9 +261,13 @@ fi
 
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
-SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY")
-if [[ "$SIGN_IDENTITY" != "-" ]]; then
-  SIGN_ARGS+=(--timestamp)
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+  # Hardened Runtime library validation rejects ad-hoc signed dynamic frameworks
+  # because neither side has a Team ID. Development bundles stay ad-hoc without
+  # runtime; production Developer ID bundles keep Hardened Runtime and timestamps.
+  SIGN_ARGS=(--force --sign "$SIGN_IDENTITY")
+else
+  SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY" --timestamp)
 fi
 
 sign_sparkle_component() {
@@ -285,9 +290,9 @@ sign_sparkle_component "$SPARKLE_VERSION_DIR/Autoupdate"
 sign_sparkle_component "$SPARKLE_VERSION_DIR/Updater.app"
 sign_sparkle_component "$CONTENTS/Frameworks/Sparkle.framework"
 
-APP_SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
+APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
 if [[ "$SIGN_IDENTITY" != "-" ]]; then
-  APP_SIGN_ARGS+=(--timestamp)
+  APP_SIGN_ARGS+=(--options runtime --timestamp)
 fi
 codesign "${APP_SIGN_ARGS[@]}" "$APP_DIR"
 codesign --verify --strict --verbose=2 "$APP_DIR"

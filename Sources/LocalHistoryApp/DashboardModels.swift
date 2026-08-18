@@ -109,6 +109,27 @@
         var id: String { bundleIdentifier ?? "name:\(appName)" }
     }
 
+    struct TrackedUsageItem: Identifiable {
+        let id: String
+        let kind: TrackedSubjectKind
+        let name: String
+        let appName: String?
+        let bundleIdentifier: String?
+        let host: String?
+        let category: String?
+        let foregroundSeconds: TimeInterval
+        let activeMinutes: Int
+        let eventCount: Int
+        let identityProofAvailable: Bool
+
+        var searchableText: String {
+            [name, appName, bundleIdentifier, host, category]
+                .compactMap { $0 }
+                .joined(separator: " ")
+                .lowercased()
+        }
+    }
+
     struct ActivitySession: Identifiable {
         let id: String
         let start: Date
@@ -160,6 +181,7 @@
         let softwareAttributedEvents: Int
         let sessions: [ActivitySession]
         let appUsage: [AppUsage]
+        let trackedUsage: [TrackedUsageItem]
         let timeline: [TimelineBucket]
         let storageBytes: Int64
         let availableDays: [Date]
@@ -176,6 +198,7 @@
                 softwareAttributedEvents: 0,
                 sessions: [],
                 appUsage: [],
+                trackedUsage: [],
                 timeline: [],
                 storageBytes: 0,
                 availableDays: []
@@ -282,6 +305,7 @@
             case .applicationOnly: return "Application only"
             case .categoryOnly: return "Category only"
             case .privateOnly: return "Completely private"
+            case .mixed: return "Mixed by app or site"
             }
         }
 
@@ -295,6 +319,8 @@
                 return "Verified local category; application stays private"
             case .privateOnly:
                 return "Only the existence and coverage of the period"
+            case .mixed:
+                return "Each event follows its saved app or website rule"
             }
         }
 
@@ -304,6 +330,7 @@
             case .applicationOnly: return "app"
             case .categoryOnly: return "tag"
             case .privateOnly: return "eye.slash"
+            case .mixed: return "slider.horizontal.3"
             }
         }
     }
