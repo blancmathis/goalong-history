@@ -41,7 +41,16 @@
             )
 
             let sessions = buildSessions(from: events)
-            let appUsage = buildAppUsage(from: events)
+            let trackedUsage = buildTrackedUsage(from: events, day: day)
+            let appUsage = trackedUsage.compactMap { item -> AppUsage? in
+                guard item.kind == .application, item.foregroundSeconds > 0 else { return nil }
+                return AppUsage(
+                    appName: item.name,
+                    bundleIdentifier: item.bundleIdentifier,
+                    activeMinutes: Int(ceil(item.foregroundSeconds / 60)),
+                    eventCount: item.eventCount
+                )
+            }
             let timeline = buildTimeline(
                 for: day,
                 activeMinuteKeys: activeMinuteKeys,
@@ -64,6 +73,7 @@
                 softwareAttributedEvents: softwareAttributedEvents,
                 sessions: sessions,
                 appUsage: appUsage,
+                trackedUsage: trackedUsage,
                 timeline: timeline,
                 storageBytes: storageBytes(),
                 availableDays: availableDays()
@@ -116,51 +126,95 @@
             return raw.split(separator: ",").map(String.init)
         }
 
-        private func buildAppUsage(from events: [HistoryEvent]) -> [AppUsage] {
+        private func buildTrackedUsage(from events: [HistoryEvent], day: Date) -> [TrackedUsageItem] {
             struct Counter {
-                var appName: String
+                var kind: TrackedSubjectKind
+                var name: String
+                var appName: String?
                 var bundleIdentifier: String?
-                var minuteCounts: [Int64: Int] = [:]
+                var host: String?
+                var foregroundSeconds: TimeInterval = 0
+                var activeMinuteKeys = Set<Int64>()
                 var eventCount = 0
+                var categories: [String: Int] = [:]
+                var identityProofAvailable = true
             }
 
             var counters: [String: Counter] = [:]
-            for event in events where Self.isActivityEvent(event) {
-                guard let app = event.app else { continue }
-                let key = app.bundleIdentifier ?? "name:\(app.name)"
-                var counter =
-                    counters[key]
-                    ?? Counter(
-                        appName: app.name,
-                        bundleIdentifier: app.bundleIdentifier
-                    )
-                counter.eventCount += 1
-                counter.minuteCounts[Self.minuteKey(event.timestamp), default: 0] += 1
-                counters[key] = counter
-            }
+            let ordered = events.sorted { $0.timestamp < $1.timestamp }
+            for (index, event) in ordered.enumerated() {
+                guard event.suppressionReason == nil, let app = event.app else { continue }
 
-            // A minute is credited to the app that produced the most meaningful activity in that minute.
-            var winnerByMinute: [Int64: String] = [:]
-            let allMinutes = Set(counters.values.flatMap { $0.minuteCounts.keys })
-            for minute in allMinutes {
-                let winner = counters.max { left, right in
-                    left.value.minuteCounts[minute, default: 0] < right.value.minuteCounts[minute, default: 0]
-                }?.key
-                if let winner { winnerByMinute[minute] = winner }
+                let nextTimestamp: Date = {
+                    if index + 1 < ordered.count { return ordered[index + 1].timestamp }
+                    if Calendar.current.isDateInToday(day) { return Date() }
+                    return event.timestamp.addingTimeInterval(60)
+                }()
+                let observedSeconds = min(75, max(0, nextTimestamp.timeIntervalSince(event.timestamp)))
+                let isInput = event.pointer != nil || event.keyboard != nil || event.scroll != nil
+                let minute = Self.minuteKey(event.timestamp)
+                let category = event.classification?.category
+
+                let appKey = SharingSubjectKey.application(
+                    bundleIdentifier: app.bundleIdentifier,
+                    name: app.name
+                )
+                var appCounter = counters[appKey] ?? Counter(
+                    kind: .application,
+                    name: app.name,
+                    appName: nil,
+                    bundleIdentifier: app.bundleIdentifier,
+                    host: nil
+                )
+                appCounter.foregroundSeconds += observedSeconds
+                appCounter.eventCount += 1
+                if isInput { appCounter.activeMinuteKeys.insert(minute) }
+                if let category { appCounter.categories[category, default: 0] += 1 }
+                counters[appKey] = appCounter
+
+                guard let rawHost = event.url?.host else { continue }
+                let host = SharingSubjectKey.normalizedHost(rawHost)
+                guard !host.isEmpty else { continue }
+                let siteKey = SharingSubjectKey.website(host: host)
+                var siteCounter = counters[siteKey] ?? Counter(
+                    kind: .website,
+                    name: host,
+                    appName: app.name,
+                    bundleIdentifier: app.bundleIdentifier,
+                    host: host
+                )
+                siteCounter.foregroundSeconds += observedSeconds
+                siteCounter.eventCount += 1
+                if isInput { siteCounter.activeMinuteKeys.insert(minute) }
+                if let category { siteCounter.categories[category, default: 0] += 1 }
+                if event.schemaVersion < 3 { siteCounter.identityProofAvailable = false }
+                counters[siteKey] = siteCounter
             }
 
             return counters.map { key, value in
-                AppUsage(
+                let category = value.categories.max { left, right in
+                    if left.value == right.value { return left.key > right.key }
+                    return left.value < right.value
+                }?.key
+                return TrackedUsageItem(
+                    id: key,
+                    kind: value.kind,
+                    name: value.name,
                     appName: value.appName,
                     bundleIdentifier: value.bundleIdentifier,
-                    activeMinutes: winnerByMinute.values.filter { $0 == key }.count,
-                    eventCount: value.eventCount
+                    host: value.host,
+                    category: category,
+                    foregroundSeconds: value.foregroundSeconds,
+                    activeMinutes: value.activeMinuteKeys.count,
+                    eventCount: value.eventCount,
+                    identityProofAvailable: value.identityProofAvailable
                 )
             }
-            .filter { $0.activeMinutes > 0 }
+            .filter { $0.foregroundSeconds > 0 || $0.eventCount > 0 }
             .sorted {
-                if $0.activeMinutes == $1.activeMinutes { return $0.eventCount > $1.eventCount }
-                return $0.activeMinutes > $1.activeMinutes
+                if $0.kind != $1.kind { return $0.kind == .application }
+                if $0.foregroundSeconds == $1.foregroundSeconds { return $0.name < $1.name }
+                return $0.foregroundSeconds > $1.foregroundSeconds
             }
         }
 

@@ -242,7 +242,7 @@
         }
 
         private var appVersion: String {
-            (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.4.0-dev"
+            (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.5.0-dev"
         }
 
         private func appendReceipt(_ receipt: AnchorReceipt) throws {

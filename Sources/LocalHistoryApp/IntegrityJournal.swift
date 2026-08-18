@@ -26,7 +26,7 @@
                 suppressionReason: baseEvent.suppressionReason
             )
             let event = HistoryEvent(
-                schemaVersion: 2,
+                schemaVersion: max(3, baseEvent.schemaVersion),
                 id: baseEvent.id,
                 sessionID: baseEvent.sessionID,
                 timestamp: baseEvent.timestamp,
@@ -48,7 +48,8 @@
 
             let fields = makeFieldCommitments(for: event)
             let byName = Dictionary(uniqueKeysWithValues: fields.map { ($0.name, $0.commitmentHex) })
-            let leaves = IntegrityDomains.eventFieldOrder.compactMap { name -> (String, String)? in
+            let fieldOrder = IntegrityDomains.eventFieldOrder(for: event.schemaVersion)
+            let leaves = fieldOrder.compactMap { name -> (String, String)? in
                 guard let value = byName[name] else { return nil }
                 return (name, value)
             }
@@ -105,6 +106,14 @@
                 context["url_redacted"] = String(url.redactionApplied)
             }
 
+            let website: [String: String] = {
+                guard let url = event.url else { return [:] }
+                return [
+                    "host": url.host ?? "",
+                    "redacted": String(url.redactionApplied),
+                ]
+            }()
+
             var activity: [String: String] = ["kind": event.kind.rawValue]
             if let pointer = event.pointer {
                 activity["pointer_button"] = pointer.button
@@ -160,16 +169,21 @@
                 return SHA256Digest.hashHex(data)
             }()
 
-            let groups: [(String, [String: String])] = [
+            var groups: [(String, [String: String])] = [
                 ("time", time),
                 ("application", application),
+            ]
+            if event.schemaVersion >= 3 {
+                groups.append(("website", website))
+            }
+            groups.append(contentsOf: [
                 ("context", context),
                 ("activity", activity),
                 ("classification", classification),
                 ("coverage", coverage),
                 ("trust", trust),
                 ("raw_digest", ["sha256": rawDigest]),
-            ]
+            ])
 
             return groups.map { name, values in
                 CommitmentBuilder.make(name: name, fields: values, salt: Self.randomBytes(count: 32))

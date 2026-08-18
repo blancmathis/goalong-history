@@ -28,7 +28,7 @@
             timestamp: Date = Date()
         ) {
             let base = HistoryEvent(
-                schemaVersion: 2,
+                schemaVersion: 3,
                 sessionID: sessionID,
                 timestamp: timestamp,
                 kind: kind,
