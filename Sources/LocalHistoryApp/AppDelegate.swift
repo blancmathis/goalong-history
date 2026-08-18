@@ -113,7 +113,9 @@
                     "verification_server": configManager.config.verificationServerURL ?? "none",
                     "device_trust_tier": deviceIdentity.info.trustTier,
                     "raw_text_capture": "disabled",
-                    "interface_version": "0.3.2",
+                    "interface_version": (Bundle.main.object(
+                        forInfoDictionaryKey: "CFBundleShortVersionString"
+                    ) as? String) ?? "0.4.0-dev",
                 ]
             )
 

@@ -19,6 +19,7 @@
 ### Product polish
 
 - Added a production app icon and branded DMG background.
+- Made diagnostics, uploads, the dashboard footer, and the reference server report the v0.4.0 bundle/protocol version instead of stale v0.3.2 metadata.
 - Added release, distribution, and installation-experience documentation.
 - Updated the English README and French guide around the no-Terminal public installation path.
 - Expanded CI to validate shell scripts, build a real app bundle, verify signing metadata, and smoke-test packaging.
