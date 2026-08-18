@@ -12,6 +12,8 @@
         static let sealsDirectory = applicationSupportDirectory.appendingPathComponent("seals", isDirectory: true)
         static let receiptsDirectory = applicationSupportDirectory.appendingPathComponent("receipts", isDirectory: true)
         static let sharesDirectory = applicationSupportDirectory.appendingPathComponent("shares", isDirectory: true)
+        static let screenTimeDirectory = applicationSupportDirectory.appendingPathComponent(
+            "apple-screen-time", isDirectory: true)
         static let integrityStateFile = applicationSupportDirectory.appendingPathComponent(
             "integrity-state.json", isDirectory: false)
         static let configFile = applicationSupportDirectory.appendingPathComponent("config.json", isDirectory: false)

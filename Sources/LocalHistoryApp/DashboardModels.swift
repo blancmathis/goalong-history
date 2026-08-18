@@ -5,6 +5,7 @@
     enum DashboardSection: String, CaseIterable, Identifiable, Hashable {
         case overview
         case activity
+        case screenTime
         case share
         case privacy
         case settings
@@ -15,6 +16,7 @@
             switch self {
             case .overview: return "Overview"
             case .activity: return "Activity"
+            case .screenTime: return "Apple Screen Time"
             case .share: return "Share"
             case .privacy: return "Privacy & security"
             case .settings: return "Settings"
@@ -25,6 +27,7 @@
             switch self {
             case .overview: return "square.grid.2x2"
             case .activity: return "clock.arrow.circlepath"
+            case .screenTime: return "macbook.and.iphone"
             case .share: return "square.and.arrow.up"
             case .privacy: return "hand.raised"
             case .settings: return "slider.horizontal.3"

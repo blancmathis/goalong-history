@@ -8,16 +8,21 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "LocalHistory", targets: ["LocalHistoryApp"])
+        .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
+        .executable(name: "LocalHistory", targets: ["LocalHistoryApp"]),
     ],
     targets: [
+        .target(
+            name: "AppleScreenTime",
+            path: "Features/AppleScreenTime/Sources"
+        ),
         .target(
             name: "LocalHistoryCore",
             path: "Sources/LocalHistoryCore"
         ),
         .executableTarget(
             name: "LocalHistoryApp",
-            dependencies: ["LocalHistoryCore"],
+            dependencies: ["LocalHistoryCore", "AppleScreenTime"],
             path: "Sources/LocalHistoryApp",
             linkerSettings: [
                 .linkedFramework("AppKit", .when(platforms: [.macOS])),
@@ -33,6 +38,11 @@ let package = Package(
             name: "LocalHistoryCoreTests",
             dependencies: ["LocalHistoryCore"],
             path: "Tests/LocalHistoryCoreTests"
+        ),
+        .testTarget(
+            name: "AppleScreenTimeTests",
+            dependencies: ["AppleScreenTime"],
+            path: "Features/AppleScreenTime/Tests"
         ),
     ],
     swiftLanguageVersions: [.v5]

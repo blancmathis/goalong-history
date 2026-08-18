@@ -36,6 +36,8 @@
                 OverviewPage(model: model)
             case .activity:
                 ActivityPage(model: model)
+            case .screenTime:
+                ScreenTimePage(model: model)
             case .share:
                 SharePage(model: model)
             case .privacy:

@@ -1,17 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CODE_ROOTS=("$ROOT_DIR/Sources" "$ROOT_DIR/Features")
 
 CONTENT_FORBIDDEN='NSPasteboard|UIPasteboard|CGWindowListCreateImage|ScreenCaptureKit|SCStream|AVCaptureSession|AVAudioEngine|keyboardGetUnicodeString|NSEvent\.characters|CGEventKeyboardGetUnicodeString'
 EXECUTION_FORBIDDEN='NSAppleScript|osascript|Process\(|NSTask|/bin/sh|/bin/bash'
 
 failed=false
 
-if grep -R -nE "$CONTENT_FORBIDDEN" "$ROOT_DIR/Sources"; then
+if grep -R -nE "$CONTENT_FORBIDDEN" "${CODE_ROOTS[@]}"; then
   echo "Forbidden content-capture API found." >&2
   failed=true
 fi
-if grep -R -nE "$EXECUTION_FORBIDDEN" "$ROOT_DIR/Sources"; then
+if grep -R -nE "$EXECUTION_FORBIDDEN" "${CODE_ROOTS[@]}"; then
   echo "Forbidden shell/automation execution API found." >&2
   failed=true
 fi
@@ -23,7 +24,7 @@ while IFS= read -r match; do
     echo "Unexpected network API outside CommitmentUploader.swift: $match" >&2
     failed=true
   fi
-done < <(grep -R -nE 'URLSession|HTTPURLResponse|URLRequest' "$ROOT_DIR/Sources" || true)
+done < <(grep -R -nE 'URLSession|HTTPURLResponse|URLRequest' "${CODE_ROOTS[@]}" || true)
 
 # Never allow obviously sensitive event fields into the anchor upload model.
 ANCHOR_MODEL="$ROOT_DIR/Sources/LocalHistoryCore/SealModels.swift"
