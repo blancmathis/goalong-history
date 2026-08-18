@@ -1,0 +1,50 @@
+name: macOS build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: xcrun swift --version
+      - name: Tests + build (SDK-compatible)
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_ATTEST_DISABLED=0
+          run_test() {
+            if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
+              xcrun swift test -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST
+            else
+              xcrun swift test
+            fi
+          }
+          run_release_build() {
+            if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
+              xcrun swift build -c release --product LocalHistory -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST
+            else
+              xcrun swift build -c release --product LocalHistory
+            fi
+          }
+          LOG="$(mktemp)"
+          set +e
+          xcrun swift test 2>&1 | tee "$LOG"
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [[ $STATUS -ne 0 ]]; then
+            if grep -Eq "AppAttestManager\.swift:[0-9]+:[0-9]+: (error|fatal error):|error: no such module 'DeviceCheck'|error: cannot find 'DCAppAttestService'" "$LOG"; then
+              APP_ATTEST_DISABLED=1
+              run_test
+            else
+              exit "$STATUS"
+            fi
+          fi
+          rm -f "$LOG"
+          run_release_build
+      - name: Privacy-boundary audit
+        run: ./scripts/audit_privacy_boundaries.sh

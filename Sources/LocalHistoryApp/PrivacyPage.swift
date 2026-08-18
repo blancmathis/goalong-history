@@ -1,0 +1,455 @@
+#if os(macOS)
+    import SwiftUI
+
+    struct PrivacyPage: View {
+        @ObservedObject var model: DashboardViewModel
+        @State private var deletionScope: DeletionScope?
+
+        var body: some View {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    PageHeader(
+                        eyebrow: "Local-first by design",
+                        title: "Privacy & security",
+                        subtitle: "Understand exactly what is captured, what is hidden and what can leave your Mac."
+                    ) {
+                        HStack(spacing: 10) {
+                            Button("Open data folder") {
+                                model.openDataFolder()
+                            }
+                            .buttonStyle(.bordered)
+                            Button {
+                                model.refreshEverything()
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                                    .frame(width: 28, height: 28)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+
+                    dataFlowCard
+
+                    permissionsCard
+
+                    protectionGrid
+
+                    HStack(alignment: .top, spacing: 14) {
+                        storageCard
+                            .frame(maxWidth: .infinity)
+                        identityCard
+                            .frame(maxWidth: .infinity)
+                    }
+
+                    deletionCard
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 28)
+                .padding(.bottom, 30)
+            }
+            .background(LHTheme.pageBackground)
+            .alert(item: $deletionScope) { scope in
+                Alert(
+                    title: Text(scope.title),
+                    message: Text(scope.message),
+                    primaryButton: .destructive(Text("Delete")) {
+                        model.deleteDetails(since: scope.cutoff)
+                    },
+                    secondaryButton: .cancel()
+                )
+            }
+        }
+
+        private var dataFlowCard: some View {
+            LHCard {
+                VStack(alignment: .leading, spacing: 18) {
+                    SectionTitle(
+                        title: "What happens to your data",
+                        subtitle: "The detailed record and the cryptographic proof follow separate paths"
+                    )
+
+                    HStack(alignment: .center, spacing: 12) {
+                        flowNode(
+                            symbol: "macwindow",
+                            title: "1. Observe",
+                            message: "Apps, windows, clicks and non-content input activity"
+                        )
+                        flowArrow
+                        flowNode(
+                            symbol: "internaldrive.fill",
+                            title: "2. Keep local",
+                            message: "Detailed JSONL events and private commitment salts"
+                        )
+                        flowArrow
+                        flowNode(
+                            symbol: "number.square.fill",
+                            title: "3. Anchor",
+                            message: model.runtime.verificationEnabled
+                                ? "Opaque signed commitments only"
+                                : "Stored locally until verification is enabled"
+                        )
+                        flowArrow
+                        flowNode(
+                            symbol: "eye.slash.fill",
+                            title: "4. Share selectively",
+                            message: "Only fields you explicitly reveal with their proofs"
+                        )
+                    }
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundStyle(LHTheme.accent)
+                        Text(
+                            "An opaque commitment does not contain the application, URL, window title, clicks or category. Your server necessarily sees connection metadata such as arrival time and IP when commitments are enabled."
+                        )
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(11)
+                    .background(
+                        LHTheme.accent.opacity(0.055), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+            }
+        }
+
+        private var permissionsCard: some View {
+            LHCard {
+                VStack(alignment: .leading, spacing: 15) {
+                    SectionTitle(
+                        title: "macOS permissions",
+                        subtitle: "Both permissions are required for reliable activity capture"
+                    )
+
+                    HStack(spacing: 12) {
+                        permissionRow(
+                            title: "Accessibility",
+                            message: "Reads the active app, window and accessible UI context.",
+                            granted: model.runtime.accessibilityGranted,
+                            buttonTitle: "Open settings",
+                            action: model.openAccessibilitySettings
+                        )
+                        permissionRow(
+                            title: "Input Monitoring",
+                            message: "Observes clicks, scrolls, shortcuts and non-content typing activity.",
+                            granted: model.runtime.inputMonitoringGranted,
+                            buttonTitle: "Open settings",
+                            action: model.openInputMonitoringSettings
+                        )
+                    }
+
+                    if !model.runtime.accessibilityGranted || !model.runtime.inputMonitoringGranted {
+                        HStack {
+                            Label(
+                                "Capture is incomplete until both permissions are enabled.",
+                                systemImage: "exclamationmark.triangle.fill"
+                            )
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(LHTheme.warning)
+                            Spacer()
+                            Button("Request both permissions") {
+                                model.requestPermissions()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                }
+            }
+        }
+
+        private var protectionGrid: some View {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 210), spacing: 12)],
+                alignment: .leading,
+                spacing: 12
+            ) {
+                protectionCard(
+                    symbol: "person.fill.questionmark",
+                    title: "Private browsing",
+                    message:
+                        "No URL, title, click detail or keyboard activity is stored from detected private windows.",
+                    tint: LHTheme.privateTint
+                )
+                protectionCard(
+                    symbol: "key.fill",
+                    title: "Passwords and secure fields",
+                    message: "Password managers are excluded and secure text input suppresses keyboard activity.",
+                    tint: LHTheme.success
+                )
+                protectionCard(
+                    symbol: "keyboard.badge.ellipsis",
+                    title: "No raw typed text",
+                    message: "LocalHistory stores typing counts and duration, never reconstructed characters.",
+                    tint: LHTheme.teal
+                )
+                protectionCard(
+                    symbol: "link.badge.plus",
+                    title: "Sanitized URLs",
+                    message: model.settingsDraft.redactAllURLQueryValues
+                        ? "URL query values and fragments are removed before local storage."
+                        : "Sensitive query names are redacted; full-query redaction is currently disabled.",
+                    tint: LHTheme.accent
+                )
+            }
+        }
+
+        private var storageCard: some View {
+            LHCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionTitle(
+                        title: "Local storage",
+                        subtitle: "Readable files protected by your macOS user account"
+                    )
+
+                    infoRow(
+                        symbol: "externaldrive.fill",
+                        title: "Current size",
+                        value: DashboardFormatters.byteCount.string(fromByteCount: model.snapshot.storageBytes)
+                    )
+                    infoRow(
+                        symbol: "calendar",
+                        title: "Detailed retention",
+                        value: model.settingsDraft.retentionDays == 0
+                            ? "Keep indefinitely"
+                            : "\(model.settingsDraft.retentionDays) days"
+                    )
+                    infoRow(
+                        symbol: "doc.text",
+                        title: "Available days",
+                        value: "\(model.snapshot.availableDays.count)"
+                    )
+                    infoRow(
+                        symbol: "lock.fill",
+                        title: "File permissions",
+                        value: "Folders 0700 · files 0600"
+                    )
+
+                    HStack {
+                        Button("Open folder") { model.openDataFolder() }
+                            .buttonStyle(.bordered)
+                        Button("Open JSONL") { model.openTodayJSON() }
+                            .buttonStyle(.bordered)
+                        Button("Diagnostics") { model.openDiagnostics() }
+                            .buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+
+        private var identityCard: some View {
+            LHCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionTitle(
+                        title: "Verification identity",
+                        subtitle: "Used to sign minute commitments without exposing activity"
+                    )
+
+                    HStack(spacing: 13) {
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(.system(size: 23, weight: .semibold))
+                            .foregroundStyle(LHTheme.success)
+                            .frame(width: 48, height: 48)
+                            .background(
+                                LHTheme.success.opacity(0.1), in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            )
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(
+                                model.deviceTrustTier == "secure_enclave"
+                                    ? "Secure Enclave protected" : "Keychain protected"
+                            )
+                            .font(.system(size: 13, weight: .semibold))
+                            Text(model.deviceAlgorithm)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("DEVICE ID")
+                            .font(.system(size: 8, weight: .semibold))
+                            .tracking(0.5)
+                            .foregroundStyle(.secondary)
+                        Text(model.deviceID)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .textSelection(.enabled)
+                    }
+                    .padding(11)
+                    .background(
+                        Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    HStack {
+                        StatusPill(
+                            title: model.runtime.verificationEnabled ? "Verification enabled" : "Local-only mode",
+                            symbol: model.runtime.verificationEnabled ? "checkmark.seal.fill" : "internaldrive",
+                            tint: model.runtime.verificationEnabled ? LHTheme.accent : Color.secondary
+                        )
+                        Spacer()
+                    }
+                }
+            }
+        }
+
+        private var deletionCard: some View {
+            LHCard {
+                HStack(alignment: .top, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Delete detailed local activity")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(
+                            "Deleting details does not erase existing minute commitments or server receipts. Those periods remain cryptographically present, but can only be shared as private afterward."
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 20)
+                    Menu {
+                        Button("Last 10 minutes", role: .destructive) {
+                            deletionScope = .lastTenMinutes
+                        }
+                        Button("Last hour", role: .destructive) {
+                            deletionScope = .lastHour
+                        }
+                        Divider()
+                        Button("All detailed history", role: .destructive) {
+                            deletionScope = .all
+                        }
+                    } label: {
+                        Label("Delete details…", systemImage: "trash")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+            }
+        }
+
+        private func flowNode(symbol: String, title: String, message: String) -> some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(LHTheme.accent)
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(message)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(13)
+            .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+
+        private var flowArrow: some View {
+            Image(systemName: "arrow.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.tertiary)
+        }
+
+        private func permissionRow(
+            title: String,
+            message: String,
+            granted: Bool,
+            buttonTitle: String,
+            action: @escaping () -> Void
+        ) -> some View {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(granted ? LHTheme.success : LHTheme.warning)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(message)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                if granted {
+                    Text("Granted")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(LHTheme.success)
+                } else {
+                    Button(buttonTitle, action: action)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+            }
+            .padding(13)
+            .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+
+        private func protectionCard(symbol: String, title: String, message: String, tint: Color) -> some View {
+            LHCard(padding: 15) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: symbol)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(tint)
+                        .frame(width: 34, height: 34)
+                        .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(message)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+
+        private func infoRow(symbol: String, title: String, value: String) -> some View {
+            HStack(spacing: 9) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(LHTheme.accent)
+                    .frame(width: 22)
+                Text(title)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(value)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+            }
+        }
+    }
+
+    private enum DeletionScope: Identifiable {
+        case lastTenMinutes
+        case lastHour
+        case all
+
+        var id: String {
+            switch self {
+            case .lastTenMinutes: return "ten"
+            case .lastHour: return "hour"
+            case .all: return "all"
+            }
+        }
+
+        var cutoff: Date? {
+            switch self {
+            case .lastTenMinutes: return Date().addingTimeInterval(-10 * 60)
+            case .lastHour: return Date().addingTimeInterval(-60 * 60)
+            case .all: return nil
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .lastTenMinutes: return "Delete the last 10 minutes?"
+            case .lastHour: return "Delete the last hour?"
+            case .all: return "Delete all detailed history?"
+            }
+        }
+
+        var message: String {
+            "This permanently removes the detailed local JSONL data. Existing cryptographic seals and receipts remain, so the affected periods cannot disappear and will become private-only."
+        }
+    }
+#endif
