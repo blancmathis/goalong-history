@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.4.0
+
+### Installation and onboarding
+
+- Replaced the target-Mac compilation flow with a universal prebuilt macOS application as the primary distribution path.
+- Added a branded drag-to-Applications DMG for Intel and Apple Silicon Macs.
+- Added a Developer ID signing, Hardened Runtime, notarization, stapling, verification, checksum, and GitHub Release workflow.
+- Added a five-step native setup assistant inspired by the calm, focused installation experience of modern developer tools.
+- Added a full privacy-boundary screen before any permission request.
+- Split Accessibility and Input Monitoring into separate contextual permission steps with live state, direct System Settings links, retry controls, and graceful deferral.
+- Added a final readiness check and an explicit start-at-login choice.
+- Replaced the legacy hand-written LaunchAgent with Apple `SMAppService` login-item management.
+- Added migration cleanup for the old LaunchAgent while preserving existing activity and settings.
+- Reworked `Install.command` and `install.sh` as polished fallback installers that download and verify the signed release before using a source-build fallback.
+- Reworked uninstallation with a native keep-data/remove-data choice and login-item cleanup.
+
+### Product polish
+
+- Added a production app icon and branded DMG background.
+- Added release, distribution, and installation-experience documentation.
+- Updated the English README and French guide around the no-Terminal public installation path.
+- Expanded CI to validate shell scripts, build a real app bundle, verify signing metadata, and smoke-test packaging.
+
+### Unchanged trust boundary
+
+- Event schema, local-only detailed storage, private-browser suppression, cryptographic commitments, minute anchors, P-256 signatures, and selective-disclosure behavior are unchanged.
+- Raw typed characters, screenshots, audio, camera, and clipboard capture remain prohibited.
+
 ## 0.3.2
 
 - Fixed `Install.command` on the macOS system Bash (3.2) when App Attest compatibility flags are empty.
@@ -28,13 +56,6 @@
 - Settings interface for capture, retention, verification, App Attest preference and exclusions.
 - Menu-bar shortcuts to open the dashboard and Share section.
 - Dashboard data reader that turns local JSONL/seals/receipts into understandable sessions and metrics.
-
-### Changed
-
-- Installer now builds and labels version 0.3.0 and opens the dashboard after installation.
-- Main window minimum size and layout tuned for the complete dashboard.
-- Configuration can be safely saved from the UI.
-- Detailed deletion callbacks are marshalled back to the main thread before UI updates.
 
 ### Preserved
 

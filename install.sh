@@ -3,193 +3,195 @@ set -euo pipefail
 
 APP_NAME="LocalHistory"
 BUNDLE_ID="ai.goalong.localhistory"
-VERSION="0.3.2"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET_DIR="$HOME/Applications"
-TARGET_APP="$TARGET_DIR/$APP_NAME.app"
-LAUNCH_AGENT="$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
-LOG_DIR="$HOME/Library/Logs/LocalHistory"
+REPOSITORY="blancmathis/goalong-history"
+RELEASE_ASSET="LocalHistory-macOS-universal.zip"
+SOURCE_ONLY=false
+VERBOSE=false
+
+for argument in "$@"; do
+  case "$argument" in
+    --source) SOURCE_ONLY=true ;;
+    --verbose) VERBOSE=true ;;
+    -h|--help)
+      cat <<HELP
+Usage: ./install.sh [--source] [--verbose]
+
+The normal path downloads the latest signed universal release.
+Use --source only for a local developer build.
+HELP
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $argument" >&2
+      exit 2
+      ;;
+  esac
+done
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "This installer must be run on macOS." >&2
+  echo "LocalHistory can only be installed on macOS." >&2
   exit 1
 fi
 
-if ! xcode-select -p >/dev/null 2>&1; then
-  echo "Xcode Command Line Tools are required. macOS will now offer to install them."
-  xcode-select --install || true
-  echo "Run this installer again after the Command Line Tools installation finishes."
+MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
+if [[ "$MACOS_MAJOR" -lt 13 ]]; then
+  echo "LocalHistory requires macOS 13 Ventura or later." >&2
   exit 1
 fi
 
-mkdir -p "$TARGET_DIR" "$HOME/Library/LaunchAgents" "$LOG_DIR"
-chmod 700 "$LOG_DIR"
-touch "$LOG_DIR/stdout.log" "$LOG_DIR/stderr.log"
-chmod 600 "$LOG_DIR/stdout.log" "$LOG_DIR/stderr.log"
+if [[ -t 1 ]]; then
+  RESET='\033[0m'
+  BOLD='\033[1m'
+  DIM='\033[2m'
+  BLUE='\033[38;5;75m'
+  GREEN='\033[38;5;78m'
+  YELLOW='\033[38;5;214m'
+  RED='\033[38;5;203m'
+else
+  RESET='' BOLD='' DIM='' BLUE='' GREEN='' YELLOW='' RED=''
+fi
 
-cd "$ROOT_DIR"
-echo "Running privacy-boundary audit…"
-./scripts/audit_local_only.sh
+headline() {
+  printf '\n%b%s%b\n' "$BOLD$BLUE" "$1" "$RESET"
+}
+status() {
+  printf '  %b✓%b %s\n' "$GREEN" "$RESET" "$1"
+}
+note() {
+  printf '  %b%s%b\n' "$DIM" "$1" "$RESET"
+}
+warn() {
+  printf '  %b!%b %s\n' "$YELLOW" "$RESET" "$1"
+}
+fail() {
+  printf '  %b×%b %s\n' "$RED" "$RESET" "$1" >&2
+}
 
-echo "Running tests…"
-# macOS still ships Bash 3.2. With `set -u`, expanding an empty array can fail
-# as an "unbound variable". Keep compatibility mode as a scalar and use
-# explicit command branches instead of optional array expansion.
-APP_ATTEST_DISABLED=0
+clear 2>/dev/null || true
+printf '%b' "$BLUE"
+cat <<'BANNER'
 
-swift_test_for_current_mode() {
-  if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
-    xcrun swift test -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST
+       ╭──────────────────────────────╮
+       │       ◷  LocalHistory        │
+       │   private • local • trusted  │
+       ╰──────────────────────────────╯
+BANNER
+printf '%b' "$RESET"
+
+note "A clean, private setup for this Mac. No sudo required."
+
+install_source() {
+  headline "Developer installation"
+  warn "The signed release could not be used, so LocalHistory will be built locally."
+  if [[ ! -x "$ROOT_DIR/scripts/install_from_source.sh" ]]; then
+    fail "This folder does not contain the source installer."
+    return 1
+  fi
+  if [[ "$VERBOSE" == true ]]; then
+    LOCALHISTORY_INSTALL_VERBOSE=1 "$ROOT_DIR/scripts/install_from_source.sh"
   else
-    xcrun swift test
+    "$ROOT_DIR/scripts/install_from_source.sh"
   fi
 }
 
-swift_build_release_for_current_mode() {
-  if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
-    xcrun swift build -c release --product LocalHistory -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST
-  else
-    xcrun swift build -c release --product LocalHistory
-  fi
-}
+if [[ "$SOURCE_ONLY" == true ]]; then
+  install_source
+  exit $?
+fi
 
-swift_release_bin_path_for_current_mode() {
-  if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
-    xcrun swift build -c release --show-bin-path -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST
-  else
-    xcrun swift build -c release --show-bin-path
-  fi
-}
+headline "Preparing LocalHistory"
+status "macOS $(sw_vers -productVersion) detected"
+status "$(uname -m) Mac detected"
 
-TEST_LOG="$(mktemp)"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/localhistory-install.XXXXXX")"
+trap 'rm -rf "$WORK_DIR"' EXIT
+ZIP_PATH="$WORK_DIR/$RELEASE_ASSET"
+CHECKSUM_PATH="$WORK_DIR/$RELEASE_ASSET.sha256"
+BASE_URL="https://github.com/$REPOSITORY/releases/latest/download"
+DOWNLOAD_LOG="$WORK_DIR/download.log"
+
+printf '  • Downloading the latest signed release… '
 set +e
-xcrun swift test 2>&1 | tee "$TEST_LOG"
-TEST_STATUS=${PIPESTATUS[0]}
+/usr/bin/curl --fail --location --silent --show-error --retry 2 --connect-timeout 12 \
+  "$BASE_URL/$RELEASE_ASSET" -o "$ZIP_PATH" >"$DOWNLOAD_LOG" 2>&1
+DOWNLOAD_STATUS=$?
 set -e
-
-if [[ $TEST_STATUS -ne 0 ]]; then
-  if /usr/bin/grep -Eq "AppAttestManager\.swift:[0-9]+:[0-9]+: (error|fatal error):|error: no such module 'DeviceCheck'|error: cannot find 'DCAppAttestService'" "$TEST_LOG"; then
-    echo
-    echo "The optional App Attest bridge is not compatible with this installed SDK."
-    echo "Retrying with App Attest disabled; Secure Enclave signatures and live anchors remain enabled."
-    APP_ATTEST_DISABLED=1
-    swift_test_for_current_mode
-  else
-    echo
-    echo "Compilation failed for a reason unrelated to App Attest. No compatibility fallback was applied." >&2
-    rm -f "$TEST_LOG"
-    exit "$TEST_STATUS"
-  fi
+if [[ $DOWNLOAD_STATUS -ne 0 ]]; then
+  echo "unavailable"
+  install_source
+  exit $?
 fi
-rm -f "$TEST_LOG"
+echo "done"
 
-echo "Building $APP_NAME in release mode…"
-swift_build_release_for_current_mode
-BIN_DIR="$(swift_release_bin_path_for_current_mode)"
-BINARY="$BIN_DIR/LocalHistory"
-
-if [[ ! -x "$BINARY" ]]; then
-  echo "Build succeeded but the executable was not found at $BINARY" >&2
+printf '  • Checking the download… '
+set +e
+/usr/bin/curl --fail --location --silent --show-error --retry 2 --connect-timeout 12 \
+  "$BASE_URL/$RELEASE_ASSET.sha256" -o "$CHECKSUM_PATH" >>"$DOWNLOAD_LOG" 2>&1
+CHECKSUM_DOWNLOAD_STATUS=$?
+set -e
+if [[ $CHECKSUM_DOWNLOAD_STATUS -ne 0 ]]; then
+  echo "failed"
+  fail "The release checksum could not be downloaded."
   exit 1
 fi
 
-STAGING="$(mktemp -d)"
-trap 'rm -rf "$STAGING"' EXIT
-APP="$STAGING/$APP_NAME.app"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BINARY" "$APP/Contents/MacOS/$APP_NAME"
-chmod 755 "$APP/Contents/MacOS/$APP_NAME"
+EXPECTED_HASH="$(awk '{print $1}' "$CHECKSUM_PATH" | head -n 1)"
+ACTUAL_HASH="$(/usr/bin/shasum -a 256 "$ZIP_PATH" | awk '{print $1}')"
+if [[ -z "$EXPECTED_HASH" || "$EXPECTED_HASH" != "$ACTUAL_HASH" ]]; then
+  echo "failed"
+  fail "The downloaded archive did not match its published checksum."
+  exit 1
+fi
+echo "verified"
 
-cat > "$APP/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleDisplayName</key>
-    <string>$APP_NAME</string>
-    <key>CFBundleExecutable</key>
-    <string>$APP_NAME</string>
-    <key>CFBundleIdentifier</key>
-    <string>$BUNDLE_ID</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>$APP_NAME</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>$VERSION</string>
-    <key>CFBundleVersion</key>
-    <string>5</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSAccessibilityUsageDescription</key>
-    <string>LocalHistory uses macOS Accessibility to record the active app, window, focused control, URL, and clicked interface element locally on this Mac.</string>
-    <key>NSInputMonitoringUsageDescription</key>
-    <string>LocalHistory uses Input Monitoring to record clicks, scroll activity, keyboard shortcuts, navigation keys, and non-content typing activity locally on this Mac.</string>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-</dict>
-</plist>
-PLIST
+printf '  • Verifying Apple security checks… '
+/usr/bin/ditto -x -k "$ZIP_PATH" "$WORK_DIR/unpacked"
+SOURCE_APP="$WORK_DIR/unpacked/$APP_NAME.app"
+if [[ ! -d "$SOURCE_APP" ]]; then
+  echo "failed"
+  fail "The release archive does not contain $APP_NAME.app."
+  exit 1
+fi
 
-/usr/bin/plutil -lint "$APP/Contents/Info.plist" >/dev/null
-/usr/bin/codesign --force --deep --options runtime --sign - --identifier "$BUNDLE_ID" "$APP"
-/usr/bin/codesign --verify --deep --strict "$APP"
+IDENTIFIER="$(/usr/bin/codesign -dv --verbose=4 "$SOURCE_APP" 2>&1 | awk -F= '/^Identifier=/{print $2; exit}')"
+if [[ "$IDENTIFIER" != "$BUNDLE_ID" ]]; then
+  echo "failed"
+  fail "Unexpected application identifier: ${IDENTIFIER:-missing}"
+  exit 1
+fi
+/usr/bin/codesign --verify --deep --strict "$SOURCE_APP"
+if ! /usr/sbin/spctl --assess --type execute --verbose=2 "$SOURCE_APP" >/dev/null 2>&1; then
+  echo "failed"
+  fail "macOS did not accept this release as signed and notarized."
+  exit 1
+fi
+echo "accepted"
 
+if [[ -d "/Applications/$APP_NAME.app" && -w "/Applications/$APP_NAME.app" ]]; then
+  TARGET_DIR="/Applications"
+elif [[ -w /Applications ]]; then
+  TARGET_DIR="/Applications"
+else
+  TARGET_DIR="$HOME/Applications"
+  mkdir -p "$TARGET_DIR"
+fi
+TARGET_APP="$TARGET_DIR/$APP_NAME.app"
+
+headline "Installing"
+/usr/bin/launchctl bootout "gui/$UID" "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist" >/dev/null 2>&1 || true
+rm -f "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
 /usr/bin/pkill -x "$APP_NAME" >/dev/null 2>&1 || true
-sleep 0.5
+sleep 0.4
 rm -rf "$TARGET_APP"
-/usr/bin/ditto "$APP" "$TARGET_APP"
+/usr/bin/ditto "$SOURCE_APP" "$TARGET_APP"
+/usr/bin/codesign --verify --deep --strict "$TARGET_APP"
+status "Installed in $TARGET_DIR"
+status "Legacy background service cleaned up"
+status "Your existing history and settings were preserved"
 
-launchctl bootout "gui/$UID" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
-cat > "$LAUNCH_AGENT" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>$BUNDLE_ID</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$TARGET_APP/Contents/MacOS/$APP_NAME</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-    </dict>
-    <key>LimitLoadToSessionType</key>
-    <string>Aqua</string>
-    <key>ProcessType</key>
-    <string>Interactive</string>
-    <key>Umask</key>
-    <integer>63</integer>
-    <key>StandardOutPath</key>
-    <string>$LOG_DIR/stdout.log</string>
-    <key>StandardErrorPath</key>
-    <string>$LOG_DIR/stderr.log</string>
-</dict>
-</plist>
-PLIST
-chmod 600 "$LAUNCH_AGENT"
-/usr/bin/plutil -lint "$LAUNCH_AGENT" >/dev/null
-launchctl bootstrap "gui/$UID" "$LAUNCH_AGENT"
+headline "Ready"
+note "Opening the step-by-step setup assistant now…"
+/usr/bin/open "$TARGET_APP"
 
-sleep 0.7
-open "$TARGET_APP"
-
-echo
-echo "$APP_NAME is installed at:"
-echo "  $TARGET_APP"
-echo
-echo "Data will be stored locally at:"
-echo "  $HOME/Library/Application Support/LocalHistory/events/"
-echo
-echo "The LocalHistory dashboard opens on first launch. Use the menu-bar icon to reopen it, pause capture, or share a selectively anonymized verified day."
+printf '\n%bInstallation complete.%b The rest happens inside LocalHistory.\n\n' "$BOLD$GREEN" "$RESET"

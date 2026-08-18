@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 880" role="img" aria-labelledby="title desc">
+  <title id="title">LocalHistory disk image background</title>
+  <desc id="desc">A clean installer background directing the user to drag LocalHistory into Applications.</desc>
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#edf3ff"/>
+      <stop offset=".5" stop-color="#f8f9fd"/>
+      <stop offset="1" stop-color="#f2efff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="880" fill="url(#surface)"/>
+  <rect x="108" y="76" width="68" height="68" rx="18" fill="#3776f4"/>
+  <circle cx="142" cy="110" r="19" fill="none" stroke="#fff" stroke-width="5"/>
+  <path d="M142 110V99m0 11 10 5" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  <text x="198" y="132" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="58" font-weight="700" fill="#151b2d">LocalHistory</text>
+  <text x="200" y="174" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="26" fill="#62697c">Private, verifiable activity for your Mac</text>
+  <text x="720" y="286" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="26" font-weight="500" fill="#3a4256">Drag LocalHistory to Applications</text>
+  <circle cx="360" cy="475" r="128" fill="#fff" fill-opacity=".8" stroke="#283f78" stroke-opacity=".18" stroke-width="3"/>
+  <circle cx="1080" cy="475" r="128" fill="#fff" fill-opacity=".8" stroke="#283f78" stroke-opacity=".18" stroke-width="3"/>
+  <path d="M555 475h310" stroke="#4b70d7" stroke-width="8" stroke-linecap="round"/>
+  <path d="m865 475-44-29v58z" fill="#4b70d7"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="19" font-weight="600" fill="#414a66">
+    <rect x="225" y="704" width="275" height="54" rx="27" fill="#fff" fill-opacity=".86" stroke="#283f78" stroke-opacity=".14"/>
+    <text x="247" y="738">✓  Signed by Goalong</text>
+    <rect x="520" y="704" width="278" height="54" rx="27" fill="#fff" fill-opacity=".86" stroke="#283f78" stroke-opacity=".14"/>
+    <text x="542" y="738">✓  Notarized by Apple</text>
+    <rect x="818" y="704" width="397" height="54" rx="27" fill="#fff" fill-opacity=".86" stroke="#283f78" stroke-opacity=".14"/>
+    <text x="840" y="738">✓  Universal Intel + Apple Silicon</text>
+  </g>
+  <text x="720" y="822" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="21" fill="#74798a">Open LocalHistory after copying it — the setup assistant will guide every permission step.</text>
+</svg>

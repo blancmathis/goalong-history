@@ -18,7 +18,8 @@
             .background(LHTheme.pageBackground)
             .frame(minWidth: 1080, minHeight: 680)
             .sheet(isPresented: $model.showWelcome) {
-                WelcomeView(model: model)
+                LocalHistoryOnboardingView(model: model)
+                    .interactiveDismissDisabled()
             }
             .alert(item: $model.alert) { item in
                 Alert(
@@ -197,117 +198,6 @@
         private static var version: String {
             let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
             return "v\(value ?? "0.3.2")"
-        }
-    }
-
-    private struct WelcomeView: View {
-        @ObservedObject var model: DashboardViewModel
-
-        var body: some View {
-            VStack(spacing: 0) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Welcome to LocalHistory")
-                            .font(.system(size: 25, weight: .bold, design: .rounded))
-                        Text("A private activity record that can later prove only what you choose to share.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "checkmark.shield.fill")
-                        .font(.system(size: 38, weight: .semibold))
-                        .foregroundStyle(LHTheme.accent)
-                }
-                .padding(28)
-
-                Divider()
-
-                HStack(alignment: .top, spacing: 14) {
-                    welcomeStep(
-                        number: "1",
-                        symbol: "macwindow",
-                        title: "Observed locally",
-                        message: "Apps, windows, clicks and non-content input activity are written only to your Mac."
-                    )
-                    welcomeStep(
-                        number: "2",
-                        symbol: "number",
-                        title: "Sealed every minute",
-                        message:
-                            "Opaque cryptographic commitments make later edits, additions and omissions detectable."
-                    )
-                    welcomeStep(
-                        number: "3",
-                        symbol: "eye.slash",
-                        title: "Share selectively",
-                        message:
-                            "Reveal full context, only the app, only the category, or keep a period completely private."
-                    )
-                }
-                .padding(28)
-
-                Spacer()
-
-                HStack(spacing: 12) {
-                    permissionBadge(
-                        title: "Accessibility",
-                        granted: model.runtime.accessibilityGranted
-                    )
-                    permissionBadge(
-                        title: "Input Monitoring",
-                        granted: model.runtime.inputMonitoringGranted
-                    )
-                    Spacer()
-                    if !model.runtime.accessibilityGranted || !model.runtime.inputMonitoringGranted {
-                        Button("Grant permissions") {
-                            model.requestPermissions()
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    Button("Open LocalHistory") {
-                        model.dismissWelcome()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                }
-                .padding(22)
-                .background(Color.primary.opacity(0.025))
-            }
-            .frame(width: 760, height: 500)
-            .background(LHTheme.pageBackground)
-        }
-
-        private func welcomeStep(number: String, symbol: String, title: String, message: String) -> some View {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    ZStack {
-                        Circle().fill(LHTheme.accent.opacity(0.12))
-                        Text(number)
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundStyle(LHTheme.accent)
-                    }
-                    .frame(width: 28, height: 28)
-                    Spacer()
-                    Image(systemName: symbol)
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                Text(message)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(17)
-            .frame(maxWidth: .infinity, minHeight: 180, alignment: .topLeading)
-            .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-        }
-
-        private func permissionBadge(title: String, granted: Bool) -> some View {
-            Label(title, systemImage: granted ? "checkmark.circle.fill" : "circle.dashed")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(granted ? LHTheme.success : LHTheme.warning)
         }
     }
 #endif

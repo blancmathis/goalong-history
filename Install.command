@@ -1,13 +1,14 @@
 #!/bin/bash
-cd "$(dirname "$0")"
-chmod +x install.sh
-./install.sh
+cd "$(dirname "$0")" || exit 1
+printf '\033]0;LocalHistory Setup\007'
+chmod +x install.sh scripts/*.sh 2>/dev/null || true
+./install.sh "$@"
 STATUS=$?
-echo
-if [[ $STATUS -eq 0 ]]; then
-  echo "Installation complete. You can close this Terminal window."
-else
-  echo "Installation failed with status $STATUS. See the messages above."
+
+if [[ $STATUS -ne 0 ]]; then
+  echo
+  echo "LocalHistory was not installed. The details above explain what needs attention."
+  echo
+  read -r -p "Press Return to close… " _
 fi
-read -r -p "Press Return to close…" _
 exit $STATUS

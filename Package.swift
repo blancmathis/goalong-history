@@ -26,6 +26,7 @@ let package = Package(
                 .linkedFramework("CoreGraphics", .when(platforms: [.macOS])),
                 .linkedFramework("Carbon", .when(platforms: [.macOS])),
                 .linkedFramework("Security", .when(platforms: [.macOS])),
+                .linkedFramework("ServiceManagement", .when(platforms: [.macOS])),
             ]
         ),
         .testTarget(

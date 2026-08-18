@@ -18,15 +18,25 @@
             )
         }
 
-        func requestAll() {
+        @discardableResult
+        func requestAccessibility() -> Bool {
             let options =
                 [
                     kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
                 ] as CFDictionary
-            _ = AXIsProcessTrustedWithOptions(options)
+            return AXIsProcessTrustedWithOptions(options)
+        }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                _ = CGRequestListenEventAccess()
+        @discardableResult
+        func requestInputMonitoring() -> Bool {
+            CGRequestListenEventAccess()
+        }
+
+        func requestAll() {
+            _ = requestAccessibility()
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                _ = self?.requestInputMonitoring()
             }
         }
 
@@ -38,10 +48,10 @@
             openSettingsPane("Privacy_ListenEvent")
         }
 
-        private func openSettingsPane(_ anchor: String) {
+        func openPrivacySettings() {
             let candidates = [
-                "x-apple.systempreferences:com.apple.preference.security?\(anchor)",
-                "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(anchor)",
+                "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension",
+                "x-apple.systempreferences:com.apple.preference.security?Privacy",
             ]
 
             for candidate in candidates {
@@ -49,6 +59,21 @@
                     return
                 }
             }
+        }
+
+        private func openSettingsPane(_ anchor: String) {
+            let candidates = [
+                "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(anchor)",
+                "x-apple.systempreferences:com.apple.preference.security?\(anchor)",
+            ]
+
+            for candidate in candidates {
+                if let url = URL(string: candidate), NSWorkspace.shared.open(url) {
+                    return
+                }
+            }
+
+            openPrivacySettings()
         }
     }
 #endif
