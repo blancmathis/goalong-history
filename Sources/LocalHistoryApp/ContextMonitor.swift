@@ -43,11 +43,18 @@
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
             sampleNow()
+            ActivityAnalysisRuntime.shared.start(
+                recorder: recorder,
+                state: state,
+                configManager: configManager,
+                currentContext: { [weak self] in self?.latestSnapshot }
+            )
         }
 
         func stop() {
             timer?.invalidate()
             timer = nil
+            ActivityAnalysisRuntime.shared.stop()
         }
 
         func resetAndSample() {
