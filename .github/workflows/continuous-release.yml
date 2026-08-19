@@ -184,7 +184,7 @@ jobs:
           APP="dist/LocalHistory.app"
           INFO="$APP/Contents/Info.plist"
           lipo -info "$APP/Contents/MacOS/LocalHistory"
-          lipo -verify_arch arm64 x86_64 "$APP/Contents/MacOS/LocalHistory"
+          lipo "$APP/Contents/MacOS/LocalHistory" -verify_arch arm64 x86_64
           codesign --verify --strict --verbose=4 "$APP"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO")" = "$BUNDLE_ID"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")" = "$PRODUCT"
