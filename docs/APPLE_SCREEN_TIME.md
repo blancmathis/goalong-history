@@ -1,16 +1,62 @@
-# Apple Screen Time in LocalHistory
+# Screen Time in LocalHistory
 
-LocalHistory can analyze an official Apple Screen Time export while keeping the source and device scope unambiguous.
+LocalHistory now measures the current Mac automatically and continuously. It does not require the user to export Apple Screen Time every day, and it does not read Apple's private Screen Time databases.
 
 ## User flow
 
-1. An eligible companion client requests Apple's enhanced Screen Time data authorization.
-2. The companion fetches `DeviceActivityData` for a chosen interval and exports the versioned JSON envelope.
-3. On the Mac, open **Apple Screen Time → Import export**.
-4. Choose **All Apple devices**, **Mac only**, or **Selected devices**.
-5. Export a share file as totals only, per-device totals, or devices plus application rows.
+1. Install and run LocalHistory normally on the Mac.
+2. Open **Screen Time** in the dashboard.
+3. Choose **This Mac**, **All devices**, or **Selected devices**.
+4. View continuously updated device totals and application durations.
+5. Optionally export a share file with totals only, per-device totals, or device-plus-application rows.
 
-Imported files are stored separately under:
+For the current Mac, there is no import step. Today's calculation refreshes every five seconds from the foreground activity stream that LocalHistory already records.
+
+## How the Mac total is produced
+
+The Mac source reconstructs non-overlapping foreground intervals from:
+
+- application activation and context changes;
+- recorder heartbeats;
+- pause and resume transitions;
+- session lock and unlock transitions;
+- display/system sleep and wake transitions;
+- recorder start and stop events;
+- privacy-suppression boundaries.
+
+The total advances while the recorder is running, the session is active, the display is awake and a foreground application is known. A normal foreground interval must keep receiving heartbeats; its unconfirmed trailing edge is capped. This prevents a crash or terminated recorder from silently adding hours of usage.
+
+Private browsing, excluded applications/domains and secure-input periods can remain represented in the overall device duration without exposing an application identity. Manual pause, unavailable session and unavailable Accessibility stop measurement.
+
+## Application details
+
+For the Mac, LocalHistory attributes each measured interval to the foreground app's name and bundle identifier. Durations are aggregated per app and update along with the total.
+
+For companion devices, the official collector walks Apple's DeviceActivity categories and application activity rows, aggregating `totalActivityDuration` by bundle identifier. Apple may not expose a localized app name in every process context, so the bundle identifier remains the stable fallback.
+
+## Device scopes
+
+- **This Mac**: only the physical Mac currently running LocalHistory.
+- **All devices**: this Mac plus every connected companion-device report.
+- **Selected devices**: only the exact physical-device identifiers chosen by the user.
+
+An all-device total is the **sum of per-device screen-on durations**. It is deliberately not described as unique human time: simultaneous iPhone and Mac use remains counted on both device rows.
+
+## Automatic iPhone and iPad path
+
+The reusable iOS collector and Mac-side multi-device fusion are implemented. An end-to-end automatic companion still needs:
+
+- an iOS application target signed by Goalong;
+- Apple's managed `Family Controls App and Website Usage` entitlement;
+- `approvedWithDataAccess` user authorization;
+- a secure sync transport that delivers the newest signed companion snapshot to the Mac;
+- pinned-key verification on the Mac.
+
+A manual snapshot import remains available only for development and compatibility testing. It is not required for the current Mac and is not intended as the final daily workflow for other devices.
+
+## Local storage
+
+Device-scope configuration and optional companion snapshots are stored separately under:
 
 ```text
 ~/Library/Application Support/LocalHistory/apple-screen-time/
@@ -19,37 +65,37 @@ Imported files are stored separately under:
     └── <timestamp>-<uuid>.json
 ```
 
+The live Mac calculation reads the existing daily event JSONL incrementally; it does not create a second raw activity database.
+
 Directories use `0700` and files use `0600` where supported.
-
-## What “all devices” means
-
-Apple returns one report per person/device pair. LocalHistory preserves those rows and aggregates only after applying the selected scope. An all-device total is the **sum of per-device screen-on durations**. It is not a deduplicated estimate of human attention: if an iPhone and Mac are active simultaneously, both durations remain represented.
 
 ## Share format
 
-`*.apple-screen-time-share.json` includes:
+A Screen Time share JSON includes:
 
 - interval and creation date;
 - requested device scope;
-- number of included devices;
+- included-device count;
 - summed screen-on duration;
-- the explicit aggregation method;
-- optional per-device and application rows according to the selected disclosure level;
-- Apple API provenance and authorization evidence;
-- import-verification status and a human-readable trust notice.
+- the explicit no-cross-device-deduplication rule;
+- optional per-device and application rows according to the disclosure level;
+- collector provenance;
+- current verification status and a trust notice.
+
+A standalone Screen Time summary is not automatically equivalent to LocalHistory's complete minute-seal proof package. Share the corresponding LocalHistory evidence as well when cryptographic verification of the underlying event history matters.
 
 ## Security and anti-cheat status
 
-LocalHistory validates structure, bounded durations, device uniqueness and schema version before accepting an import. This prevents malformed or abusive files from entering the dashboard, but structural validation is not proof that a user did not edit an unsigned JSON file.
+LocalHistory validates imported companion structure, bounded durations, device uniqueness and schema version. Structural validation does not prove that an unsigned JSON file was not edited.
 
-The current implementation therefore uses three explicit states:
+Companion snapshots therefore retain explicit states:
 
-- `unsigned`: no signature in the imported export;
-- `signaturePresentUnverified`: a signature exists but is not linked to a trusted official collector key;
-- `verifiedOfficialCollector`: the caller has verified the signature against a trusted official collector key.
+- `unsigned`;
+- `signaturePresentUnverified`;
+- `verifiedOfficialCollector`.
 
-Only the third state should be presented as collector-authenticated. Even then, the claim remains limited to what the official client received from Apple's public API; it does not prove attention, identity, or productive work.
+Only a snapshot whose canonical signature has been checked against a pinned official key should receive `verifiedOfficialCollector`. Even then, the claim remains limited to what an official client observed; it does not prove attention, identity or productive work.
 
-## Why no private macOS database access
+## Why no private macOS Screen Time database access
 
-The feature intentionally does not read private Screen Time SQLite stores, invoke undocumented daemons, or depend on reverse-engineered file paths. Those approaches are brittle, difficult to permission cleanly, and incompatible with the project's honest trust boundary.
+The feature intentionally avoids private SQLite stores, undocumented daemons and reverse-engineered paths. The live Mac source uses LocalHistory's own documented capture boundary, works continuously, remains independently maintainable and does not require Full Disk Access merely to imitate Apple's Settings UI.
