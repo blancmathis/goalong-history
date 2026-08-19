@@ -26,8 +26,82 @@ jobs:
 
       - name: Apply focused fixes
         run: |
-          git apply --check .web-test-fix.patch
-          git apply .web-test-fix.patch
+          python3 - <<'PY'
+          from pathlib import Path
+
+          aggregation = Path("Sources/LocalHistoryCore/ActivityAnalysisAggregation.swift")
+          text = aggregation.read_text()
+          old = '''            if detail == nil { detail = seed.detail }'''
+          new = '''            if let seedDetail = seed.detail {
+                          // For grouped clicks, keep the richest/latest detail. A later event can
+                          // reveal that the action was the second click in a double-click sequence,
+                          // while the first event only contained the pointer button and coordinates.
+                          if detail == nil || seedDetail.contains("click sequence") {
+                              detail = seedDetail
+                          }
+                      }'''
+          assert old in text, "grouped-click detail anchor not found"
+          aggregation.write_text(text.replace(old, new, 1))
+
+          utilities = Path("Sources/LocalHistoryCore/ActivityAnalysisUtilities.swift")
+          text = utilities.read_text()
+          text = text.replace("maximumLength: 4_000", "maximumLength: 6_000", 1)
+
+          old = '''            lines.compactMap { line in
+                          let candidate = bounded(line, maximum: 280)
+                          guard candidate.count >= 12, candidate.count <= 280 else { return nil }'''
+          new = '''            lines.compactMap { line in
+                          let rawCandidate = normalizedSpeakerLine(bounded(line, maximum: 280))
+                          let rawLowered = rawCandidate.folding(
+                              options: [.caseInsensitive, .diacriticInsensitive],
+                              locale: Locale(identifier: "en_US_POSIX")
+                          )
+                          let noisePrefixes = ["assistant:", "system:", "developer:", "response:"]
+                          guard !noisePrefixes.contains(where: { rawLowered.hasPrefix($0) }) else { return nil }
+
+                          let candidate = strippingUserSpeakerPrefix(rawCandidate)
+                          guard candidate.count >= 12, candidate.count <= 280 else { return nil }'''
+          assert old in text, "request candidate anchor not found"
+          text = text.replace(old, new, 1)
+
+          old = '''                guard looksLikeRequest else { return nil }
+                          let noisePrefixes = ["assistant:", "system:", "developer:", "response:"]
+                          guard !noisePrefixes.contains(where: { lowered.hasPrefix($0) }) else { return nil }
+                          return candidate'''
+          new = '''                guard looksLikeRequest else { return nil }
+                          return candidate'''
+          assert old in text, "request noise anchor not found"
+          text = text.replace(old, new, 1)
+
+          anchor = '''    static func isAIContext(_ event: HistoryEvent) -> Bool {'''
+          helper = '''    /// Accessibility text from chat products commonly includes speaker labels such as
+              /// `User:` or `Human:`. Strip only user-side labels before request detection while
+              /// keeping assistant/system turns excluded above.
+              static func strippingUserSpeakerPrefix(_ value: String) -> String {
+                  let prefixes = ["user:", "human:", "utilisateur:", "client:", "me:", "moi:"]
+                  let lowered = value.folding(
+                      options: [.caseInsensitive, .diacriticInsensitive],
+                      locale: Locale(identifier: "en_US_POSIX")
+                  )
+                  guard let prefix = prefixes.first(where: { lowered.hasPrefix($0) }) else { return value }
+                  let start = value.index(value.startIndex, offsetBy: prefix.count)
+                  return String(value[start...]).trimmingCharacters(in: .whitespacesAndNewlines)
+              }
+
+              static func normalizedSpeakerLine(_ value: String) -> String {
+                  let withoutMarkdown = value
+                      .replacingOccurrences(of: "**", with: "")
+                      .replacingOccurrences(of: "__", with: "")
+                  let markers = CharacterSet(charactersIn: ">-•*_ ")
+                  return withoutMarkdown.trimmingCharacters(
+                      in: CharacterSet.whitespacesAndNewlines.union(markers)
+                  )
+              }
+
+          '''
+          assert anchor in text, "speaker helper insertion anchor not found"
+          utilities.write_text(text.replace(anchor, helper + anchor, 1))
+          PY
           rm .web-test-fix.patch
           rm .github/workflows/apply-web-test-fix.yml
           git diff --check
