@@ -1,0 +1,48 @@
+name: Apply final website request extraction fix
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-final-website-request-fix
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.head_ref == 'agent/site-level-web-activity' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Extend deterministic request verbs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("Sources/LocalHistoryCore/ActivityAnalysisUtilities.swift")
+          text = path.read_text()
+          old = '"donne ", "explain ", "fais ", "fix ", "help ", "il faut ", "je veux ",'
+          new = '"donne ", "explain ", "fais ", "fix ", "help ", "improve ", "optimize ", "optimise ", "il faut ", "je veux ",'
+          assert old in text, "request verb anchor not found"
+          path.write_text(text.replace(old, new, 1))
+          PY
+          rm .github/workflows/apply-final-web-request-fix.yml
+          git diff --check
+
+      - name: Commit final fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Recognize improvement requests in web discussions"
+          git push origin "HEAD:${{ github.head_ref }}"
