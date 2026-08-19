@@ -68,6 +68,12 @@ public enum AppleScreenTimeNativeCollectorError: Error, CustomStringConvertible 
     /// `com.apple.developer.family-controls.app-and-website-usage` entitlement.
     @available(iOS 26.0, *)
     public struct AppleDeviceActivityCollector: AppleScreenTimeCollecting {
+        private struct ApplicationAccumulator {
+            var bundleIdentifier: String?
+            var displayName: String?
+            var duration: TimeInterval
+        }
+
         public init() {}
 
         public var availability: AppleScreenTimeCollectorAvailability { .available }
@@ -118,13 +124,15 @@ public enum AppleScreenTimeNativeCollectorError: Error, CustomStringConvertible 
 
                 var segments: [AppleScreenTimeSegment] = []
                 for try await segment in activityData.activitySegments {
+                    let applications = try await Self.applicationRows(in: segment)
                     segments.append(
                         AppleScreenTimeSegment(
                             start: segment.dateInterval.start,
                             end: segment.dateInterval.end,
                             totalScreenOnDuration: segment.totalActivityDuration,
                             longestActivityStart: segment.longestActivity?.start,
-                            longestActivityEnd: segment.longestActivity?.end
+                            longestActivityEnd: segment.longestActivity?.end,
+                            applications: applications
                         )
                     )
                 }
@@ -157,6 +165,47 @@ public enum AppleScreenTimeNativeCollectorError: Error, CustomStringConvertible 
                 provenance: provenance,
                 reports: reports
             )
+        }
+
+        private static func applicationRows(
+            in segment: DeviceActivityData.ActivitySegment
+        ) async throws -> [AppleScreenTimeApplicationUsage] {
+            var totals: [String: ApplicationAccumulator] = [:]
+
+            for try await category in segment.categories {
+                for try await activity in category.applications {
+                    let application = activity.application
+                    let bundleIdentifier = application.bundleIdentifier?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let displayName = application.localizedDisplayName?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard bundleIdentifier?.isEmpty == false || displayName?.isEmpty == false else {
+                        continue
+                    }
+
+                    let key = bundleIdentifier ?? "name:\(displayName!.lowercased())"
+                    var accumulated = totals[key] ?? ApplicationAccumulator(
+                        bundleIdentifier: bundleIdentifier,
+                        displayName: displayName,
+                        duration: 0
+                    )
+                    accumulated.duration += max(0, activity.totalActivityDuration)
+                    totals[key] = accumulated
+                }
+            }
+
+            return totals.values
+                .map {
+                    AppleScreenTimeApplicationUsage(
+                        bundleIdentifier: $0.bundleIdentifier,
+                        displayName: $0.displayName,
+                        duration: $0.duration
+                    )
+                }
+                .sorted {
+                    if $0.duration != $1.duration { return $0.duration > $1.duration }
+                    return $0.resolvedName.localizedCaseInsensitiveCompare($1.resolvedName) == .orderedAscending
+                }
         }
 
         private static func map(
