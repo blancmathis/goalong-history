@@ -23,7 +23,7 @@ jobs:
       BUNDLE_ID: ai.goalong.localhistory
       ROLLING_TAG: latest-main
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -45,18 +45,24 @@ jobs:
 
       - name: Validate release credentials
         env:
-          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          SIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
-          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-          API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
         run: |
           set -euo pipefail
           missing=()
-          for name in CERTIFICATE CERTIFICATE_PASSWORD SIGN_IDENTITY API_KEY_ID API_ISSUER_ID API_PRIVATE_KEY SPARKLE_PUBLIC_KEY SPARKLE_PRIVATE_KEY; do
+          for name in \
+            MACOS_CERTIFICATE_P12 \
+            MACOS_CERTIFICATE_PASSWORD \
+            APPLE_API_KEY_ID \
+            APPLE_API_ISSUER_ID \
+            APPLE_API_PRIVATE_KEY \
+            SPARKLE_PUBLIC_ED_KEY \
+            SPARKLE_PRIVATE_ED_KEY; do
             if [[ -z "${!name:-}" ]]; then
               missing+=("$name")
             fi
@@ -73,13 +79,18 @@ jobs:
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
           set -euo pipefail
+          umask 077
           KEYCHAIN="$RUNNER_TEMP/goalong-history-signing.keychain-db"
+          P12_PATH="$RUNNER_TEMP/goalong-history-signing.p12"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
-          printf '%s' "$CERTIFICATE" | /usr/bin/base64 -D > "$RUNNER_TEMP/certificate.p12"
+          printf '%s' "$CERTIFICATE" | /usr/bin/base64 -D > "$P12_PATH"
+          chmod 600 "$P12_PATH"
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          echo "SIGNING_P12_PATH=$P12_PATH" >> "$GITHUB_ENV"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import "$RUNNER_TEMP/certificate.p12" \
+          security import "$P12_PATH" \
             -k "$KEYCHAIN" \
             -P "$CERTIFICATE_PASSWORD" \
             -T /usr/bin/codesign \
@@ -88,16 +99,42 @@ jobs:
           security default-keychain -d user -s "$KEYCHAIN"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
 
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN")"
+          DEVELOPER_ID_COUNT="$(printf '%s\n' "$IDENTITIES" | awk '/"Developer ID Application:/{count++} END {print count+0}')"
+          if [[ "$DEVELOPER_ID_COUNT" != "1" ]]; then
+            echo "The imported P12 must contain exactly one valid Developer ID Application identity; found $DEVELOPER_ID_COUNT." >&2
+            exit 1
+          fi
+          SIGN_IDENTITY="$(printf '%s\n' "$IDENTITIES" | sed -nE 's/^[[:space:]]*[0-9]+\) [[:xdigit:]]+ "(Developer ID Application: [^"]+)"$/\1/p')"
+          if [[ -z "$SIGN_IDENTITY" ]]; then
+            echo "Could not determine the Developer ID Application identity from the imported P12." >&2
+            exit 1
+          fi
+          echo "LOCALHISTORY_CODESIGN_IDENTITY=$SIGN_IDENTITY" >> "$GITHUB_ENV"
+          /bin/rm -P "$P12_PATH"
+
       - name: Prepare App Store Connect API key
         env:
-          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
           API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          umask 077
           KEY_PATH="$RUNNER_TEMP/AuthKey_${API_KEY_ID}.p8"
           printf '%s' "$API_PRIVATE_KEY" | /usr/bin/base64 -D > "$KEY_PATH"
           chmod 600 "$KEY_PATH"
           echo "NOTARY_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate App Store Connect notarization credentials
+        env:
+          API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          xcrun notarytool history \
+            --key "$NOTARY_KEY_PATH" \
+            --key-id "$API_KEY_ID" \
+            --issuer "$API_ISSUER_ID" >/dev/null
 
       - name: Build universal signed app
         env:
@@ -106,8 +143,7 @@ jobs:
           LOCALHISTORY_DISPLAY_NAME: Go Long History
           LOCALHISTORY_ARCHS: arm64 x86_64
           LOCALHISTORY_RUN_TESTS: 1
-          LOCALHISTORY_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
-          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
         run: ./scripts/build_app.sh
 
       - name: Confirm architecture, identity, signature, and updater policy
@@ -117,7 +153,7 @@ jobs:
         run: |
           set -euo pipefail
           lipo -info dist/LocalHistory.app/Contents/MacOS/LocalHistory
-          lipo -verify_arch arm64 x86_64 dist/LocalHistory.app/Contents/MacOS/LocalHistory
+          lipo dist/LocalHistory.app/Contents/MacOS/LocalHistory -verify_arch arm64 x86_64
           codesign --verify --strict --verbose=4 dist/LocalHistory.app
           test "$(defaults read "$PWD/dist/LocalHistory.app/Contents/Info" CFBundleIdentifier)" = "$BUNDLE_ID"
           test "$(defaults read "$PWD/dist/LocalHistory.app/Contents/Info" CFBundleDisplayName)" = "$DISPLAY_NAME"
@@ -125,8 +161,8 @@ jobs:
 
       - name: Notarize and staple app
         env:
-          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
         run: |
           set -euo pipefail
           ditto -c -k --sequesterRsrc --keepParent dist/LocalHistory.app "$RUNNER_TEMP/notarization.zip"
@@ -140,8 +176,6 @@ jobs:
           spctl --assess --type execute --verbose=4 dist/LocalHistory.app
 
       - name: Create DMG and ZIP
-        env:
-          LOCALHISTORY_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
         run: |
           set -euo pipefail
           brew install create-dmg
@@ -149,8 +183,8 @@ jobs:
 
       - name: Notarize and staple DMG
         env:
-          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
         run: |
           set -euo pipefail
           DMG="dist/LocalHistory-macOS-universal.dmg"
@@ -191,7 +225,7 @@ jobs:
           git push origin "refs/tags/$ROLLING_TAG" --force
 
       - name: Publish rolling GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: latest-main
           name: Go Long History — latest main
@@ -210,3 +244,23 @@ jobs:
             dist/LocalHistory-macOS-universal.zip
             dist/LocalHistory-macOS-universal.zip.sha256
             dist/appcast.xml
+
+      - name: Remove temporary credentials
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${NOTARY_KEY_PATH:-}" && -f "$NOTARY_KEY_PATH" ]]; then
+            chmod 600 "$NOTARY_KEY_PATH"
+            /bin/rm -P "$NOTARY_KEY_PATH"
+          fi
+          if [[ -n "${SIGNING_P12_PATH:-}" && -f "$SIGNING_P12_PATH" ]]; then
+            chmod 600 "$SIGNING_P12_PATH"
+            /bin/rm -P "$SIGNING_P12_PATH"
+          fi
+          if [[ -n "${SIGNING_KEYCHAIN:-}" && -e "$SIGNING_KEYCHAIN" ]]; then
+            security delete-keychain "$SIGNING_KEYCHAIN" || true
+            if [[ -e "$SIGNING_KEYCHAIN" ]]; then
+              chmod 600 "$SIGNING_KEYCHAIN"
+              /bin/rm -P "$SIGNING_KEYCHAIN"
+            fi
+          fi

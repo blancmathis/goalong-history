@@ -23,20 +23,26 @@ https://github.com/blancmathis/goalong-history/releases/download/latest-main/app
 
 Sparkle performs a probe at launch and when the dashboard becomes active. No dialog is shown when the app is current. When a newer build exists, a small button appears at the bottom-left of the sidebar; clicking it opens Sparkle's signed installation flow.
 
-### Required GitHub Actions secrets
+### Required GitHub Actions configuration
 
 The rolling workflow deliberately fails closed when any release credential is absent:
 
+Private GitHub Actions secrets:
+
 - `MACOS_CERTIFICATE_P12`
 - `MACOS_CERTIFICATE_PASSWORD`
-- `MACOS_CODESIGN_IDENTITY`
-- `APPLE_API_KEY_ID`
-- `APPLE_API_ISSUER_ID`
 - `APPLE_API_PRIVATE_KEY`
-- `SPARKLE_PUBLIC_ED_KEY`
 - `SPARKLE_PRIVATE_ED_KEY`
 
-Never commit those values. The repository contains only their names and the public release process.
+Non-secret GitHub Actions variables:
+
+- `APPLE_API_KEY_ID`
+- `APPLE_API_ISSUER_ID`
+- `SPARKLE_PUBLIC_ED_KEY`
+
+The workflow detects the exact signing identity after importing the P12 and refuses to continue unless it contains exactly one valid `Developer ID Application` identity. It validates the App Store Connect key with `notarytool` before building. Temporary P12 and API-key files are created with mode `600` and securely removed after use.
+
+Never commit private values. The repository contains only their names, public configuration, and the release process.
 
 ## Development/source builds
 
