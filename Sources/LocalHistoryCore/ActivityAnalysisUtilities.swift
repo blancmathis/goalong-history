@@ -53,7 +53,7 @@ extension ActivityAnalysisEngine {
                 let prefixes = [
                     "add ", "analyze ", "analyse ", "ameliore ", "ameliorer ", "build ", "check ",
                     "cherche ", "compare ", "create ", "cree ", "crée ", "design ", "dis moi ",
-                    "donne ", "explain ", "fais ", "fix ", "help ", "il faut ", "je veux ",
+                    "donne ", "explain ", "fais ", "fix ", "help ", "improve ", "optimize ", "optimise ", "il faut ", "je veux ",
                     "look up ", "make ", "peux tu ", "peux-tu ", "please ", "refactor ",
                     "resume ", "résume ", "summarize ", "trouve ", "update ", "verify ", "verifie ",
                     "vérifie ", "write ",
