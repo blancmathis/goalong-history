@@ -5,9 +5,9 @@
     import Sparkle
 
     /// Owns the Sparkle lifecycle and exposes a quiet update surface in the dashboard.
-    /// Signed builds check the rolling main-channel feed immediately at launch. Development/source
-    /// builds cannot safely self-update because they do not contain the production EdDSA key; those
-    /// builds instead offer a one-time migration to the latest signed build.
+    /// Release builds check the rolling main-channel feed immediately at launch. Development/source
+    /// builds cannot safely self-update because they do not contain the release EdDSA key; those
+    /// builds instead offer a one-time migration to the latest update-enabled release.
     @MainActor
     final class SoftwareUpdateManager: NSObject, ObservableObject {
         static let shared = SoftwareUpdateManager()
@@ -17,7 +17,7 @@
         @Published private(set) var availableVersion: String?
         @Published private(set) var automaticallyChecksForUpdates = false
         @Published private(set) var requiresSignedBuild = false
-        @Published private(set) var statusMessage = "Updates are available in signed release builds."
+        @Published private(set) var statusMessage = "Updates are available in update-enabled release builds."
 
         private var updaterController: SPUStandardUpdaterController?
         private var hasStarted = false
@@ -42,7 +42,7 @@
 
             guard Self.hasValidSparkleConfiguration(in: .main) else {
                 requiresSignedBuild = true
-                statusMessage = "Install the signed build once to enable in-app updates."
+                statusMessage = "Install the release build once to enable in-app updates."
                 return
             }
 
@@ -58,7 +58,7 @@
             requiresSignedBuild = false
             automaticallyChecksForUpdates = controller.updater.automaticallyChecksForUpdates
             statusMessage = automaticallyChecksForUpdates
-                ? "Signed update checks run automatically."
+                ? "Verified update checks run automatically."
                 : "Automatic update checks are off."
 
             // Sparkle's scheduled interval may not be due yet, especially on a freshly installed
@@ -96,7 +96,7 @@
         }
 
         func installUpdateEnabledBuild() {
-            statusMessage = "Downloading the latest signed build…"
+            statusMessage = "Downloading the latest release build…"
             NSWorkspace.shared.open(ProductIdentity.rollingDMGURL)
         }
 
@@ -109,7 +109,7 @@
             updater.automaticallyChecksForUpdates = enabled
             automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
             statusMessage = automaticallyChecksForUpdates
-                ? "Signed update checks run automatically."
+                ? "Verified update checks run automatically."
                 : "Automatic update checks are off."
         }
 

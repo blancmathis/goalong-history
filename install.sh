@@ -19,7 +19,7 @@ for argument in "$@"; do
       cat <<HELP
 Usage: ./install.sh [--source] [--verbose]
 
-The normal path downloads the latest signed Go Long History build from GitHub.
+The normal path downloads the latest Sparkle-enabled Go Long History build from GitHub.
 Use --source only for a local developer build; source builds cannot self-update.
 HELP
       exit 0
@@ -113,7 +113,7 @@ CHECKSUM_PATH="$WORK_DIR/$RELEASE_ASSET.sha256"
 BASE_URL="https://github.com/$REPOSITORY/releases/download/$RELEASE_TAG"
 DOWNLOAD_LOG="$WORK_DIR/download.log"
 
-printf '  • Downloading the latest signed Git build… '
+printf '  • Downloading the latest update-enabled Git build… '
 set +e
 /usr/bin/curl --fail --location --silent --show-error --retry 2 --connect-timeout 12 \
   "$BASE_URL/$RELEASE_ASSET" -o "$ZIP_PATH" >"$DOWNLOAD_LOG" 2>&1
@@ -121,7 +121,7 @@ DOWNLOAD_STATUS=$?
 set -e
 if [[ $DOWNLOAD_STATUS -ne 0 ]]; then
   echo "unavailable"
-  fail "No signed rolling build is currently available from GitHub."
+  fail "No rolling release is currently available from GitHub."
   note "The installer will not silently fall back to a source build because that would disable in-app updates."
   note "Developers can explicitly run ./install.sh --source."
   if [[ "$VERBOSE" == true ]]; then
@@ -152,7 +152,7 @@ if [[ -z "$EXPECTED_HASH" || "$EXPECTED_HASH" != "$ACTUAL_HASH" ]]; then
 fi
 echo "verified"
 
-printf '  • Verifying Apple security checks… '
+printf '  • Verifying the release bundle… '
 /usr/bin/ditto -x -k "$ZIP_PATH" "$WORK_DIR/unpacked"
 SOURCE_APP="$WORK_DIR/unpacked/$APP_NAME.app"
 if [[ ! -d "$SOURCE_APP" ]]; then
@@ -168,12 +168,33 @@ if [[ "$IDENTIFIER" != "$BUNDLE_ID" ]]; then
   exit 1
 fi
 /usr/bin/codesign --verify --deep --strict "$SOURCE_APP"
-if ! /usr/sbin/spctl --assess --type execute --verbose=2 "$SOURCE_APP" >/dev/null 2>&1; then
+INFO_PLIST="$SOURCE_APP/Contents/Info.plist"
+FEED_URL="$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$INFO_PLIST" 2>/dev/null || true)"
+PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$INFO_PLIST" 2>/dev/null || true)"
+REQUIRE_SIGNED_FEED="$(/usr/libexec/PlistBuddy -c 'Print :SURequireSignedFeed' "$INFO_PLIST" 2>/dev/null || true)"
+VERIFY_BEFORE_EXTRACTION="$(/usr/libexec/PlistBuddy -c 'Print :SUVerifyUpdateBeforeExtraction' "$INFO_PLIST" 2>/dev/null || true)"
+PUBLIC_KEY_BYTES="$(printf '%s' "$PUBLIC_KEY" | /usr/bin/base64 -D 2>/dev/null | /usr/bin/wc -c | /usr/bin/tr -d ' ')"
+
+if [[ "$FEED_URL" != "$BASE_URL/appcast.xml" || "$PUBLIC_KEY_BYTES" != "32" || "$REQUIRE_SIGNED_FEED" != "true" || "$VERIFY_BEFORE_EXTRACTION" != "true" ]]; then
   echo "failed"
-  fail "macOS did not accept this release as signed and notarized."
+  fail "This release is missing the required Sparkle update verification policy."
   exit 1
 fi
-echo "accepted"
+
+APPLE_VERIFIED=false
+if /usr/sbin/spctl --assess --type execute --verbose=2 "$SOURCE_APP" >/dev/null 2>&1; then
+  APPLE_VERIFIED=true
+  echo "verified by Apple and Sparkle"
+else
+  SIGNATURE="$(/usr/bin/codesign -dv --verbose=4 "$SOURCE_APP" 2>&1 | awk -F= '/^Signature=/{print $2; exit}')"
+  TEAM_ID="$(/usr/bin/codesign -dv --verbose=4 "$SOURCE_APP" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+  if [[ "$SIGNATURE" != "adhoc" || "$TEAM_ID" != "not set" ]]; then
+    echo "failed"
+    fail "The release has an unexpected code-signing identity."
+    exit 1
+  fi
+  echo "verified by Sparkle (Apple verification pending)"
+fi
 
 if [[ -d "/Applications/$APP_NAME.app" && -w "/Applications/$APP_NAME.app" ]]; then
   TARGET_DIR="/Applications"
@@ -196,7 +217,12 @@ rm -rf "$TARGET_APP"
 status "Installed in $TARGET_DIR"
 status "Legacy background service cleaned up"
 status "Your existing history, settings, and bundle ID were preserved"
-warn "macOS may ask you to approve this signed app copy once; the in-app guide handles that step"
+status "Sparkle update verification enabled"
+if [[ "$APPLE_VERIFIED" == true ]]; then
+  warn "macOS may ask you to approve this app copy once; the in-app guide handles that step"
+else
+  warn "Apple Developer verification is not enabled yet; macOS may require Open Anyway on this first copy"
+fi
 
 headline "Ready"
 note "Opening the guided setup now…"
