@@ -10,6 +10,7 @@ public enum ActivitySemanticMetadata {
     public static let redacted = "analysis.semantic_redacted"
     public static let truncated = "analysis.semantic_truncated"
     public static let fingerprint = "analysis.semantic_fingerprint"
+    public static let characterCount = "analysis.semantic_character_count"
 }
 
 public struct ActivityAnalysisOptions: Codable, Equatable {
@@ -18,21 +19,33 @@ public struct ActivityAnalysisOptions: Codable, Equatable {
     public var maximumPagesPerSite: Int
     public var maximumRequests: Int
     public var maximumContextHighlights: Int
+    public var maximumWebInteractionsPerSite: Int
+    public var maximumWebInteractionsPerPage: Int
+    public var maximumRememberedContextPerSite: Int
+    public var maximumRememberedContextPerPage: Int
     public var agentTokenBudget: Int
 
     public init(
         maximumFocusBlocks: Int = 24,
-        maximumSites: Int = 12,
-        maximumPagesPerSite: Int = 5,
-        maximumRequests: Int = 20,
-        maximumContextHighlights: Int = 16,
+        maximumSites: Int = 5_000,
+        maximumPagesPerSite: Int = 2_000,
+        maximumRequests: Int = 40,
+        maximumContextHighlights: Int = 40,
+        maximumWebInteractionsPerSite: Int = 5_000,
+        maximumWebInteractionsPerPage: Int = 2_000,
+        maximumRememberedContextPerSite: Int = 500,
+        maximumRememberedContextPerPage: Int = 250,
         agentTokenBudget: Int = 1_600
     ) {
         self.maximumFocusBlocks = max(4, min(maximumFocusBlocks, 96))
-        self.maximumSites = max(4, min(maximumSites, 50))
-        self.maximumPagesPerSite = max(2, min(maximumPagesPerSite, 20))
-        self.maximumRequests = max(4, min(maximumRequests, 80))
-        self.maximumContextHighlights = max(4, min(maximumContextHighlights, 80))
+        self.maximumSites = max(4, min(maximumSites, 20_000))
+        self.maximumPagesPerSite = max(2, min(maximumPagesPerSite, 10_000))
+        self.maximumRequests = max(4, min(maximumRequests, 200))
+        self.maximumContextHighlights = max(4, min(maximumContextHighlights, 200))
+        self.maximumWebInteractionsPerSite = max(8, min(maximumWebInteractionsPerSite, 20_000))
+        self.maximumWebInteractionsPerPage = max(4, min(maximumWebInteractionsPerPage, 10_000))
+        self.maximumRememberedContextPerSite = max(4, min(maximumRememberedContextPerSite, 2_000))
+        self.maximumRememberedContextPerPage = max(2, min(maximumRememberedContextPerPage, 1_000))
         self.agentTokenBudget = max(400, min(agentTokenBudget, 12_000))
     }
 
@@ -91,19 +104,108 @@ public struct ActivityFocusBlock: Codable, Equatable, Identifiable {
     }
 }
 
+public enum ActivityWebInteractionKind: String, Codable, CaseIterable, Sendable {
+    case click
+    case typing
+    case scroll
+    case shortcut
+
+    public var displayName: String {
+        switch self {
+        case .click: return "Click"
+        case .typing: return "Typing activity"
+        case .scroll: return "Scroll"
+        case .shortcut: return "Shortcut"
+        }
+    }
+}
+
+public struct ActivityWebInteractionSummary: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let kind: ActivityWebInteractionKind
+    public let label: String
+    public let role: String?
+    public let pageTitle: String?
+    public let URL: String?
+    public let count: Int
+    public let firstSeen: Date
+    public let lastSeen: Date
+    public let detail: String?
+
+    public init(
+        id: String,
+        kind: ActivityWebInteractionKind,
+        label: String,
+        role: String?,
+        pageTitle: String?,
+        URL: String?,
+        count: Int,
+        firstSeen: Date,
+        lastSeen: Date,
+        detail: String?
+    ) {
+        self.id = id
+        self.kind = kind
+        self.label = label
+        self.role = role
+        self.pageTitle = pageTitle
+        self.URL = URL
+        self.count = max(1, count)
+        self.firstSeen = firstSeen
+        self.lastSeen = lastSeen
+        self.detail = detail
+    }
+}
+
 public struct ActivityPageSummary: Codable, Equatable, Identifiable {
     public let title: String
     public let URL: String?
     public let activeSeconds: Int
     public let firstSeen: Date
     public let lastSeen: Date
+    public let eventCount: Int
+    public let clickCount: Int
+    public let typingBurstCount: Int
+    public let scrollBurstCount: Int
+    public let shortcutCount: Int
+    public let semanticSnapshotCount: Int
+    public let interactions: [ActivityWebInteractionSummary]
+    public let rememberedContext: [String]
+    public let interactionsTruncated: Bool
+    public let rememberedContextTruncated: Bool
 
-    public init(title: String, URL: String?, activeSeconds: Int, firstSeen: Date, lastSeen: Date) {
+    public init(
+        title: String,
+        URL: String?,
+        activeSeconds: Int,
+        firstSeen: Date,
+        lastSeen: Date,
+        eventCount: Int,
+        clickCount: Int,
+        typingBurstCount: Int,
+        scrollBurstCount: Int,
+        shortcutCount: Int,
+        semanticSnapshotCount: Int,
+        interactions: [ActivityWebInteractionSummary],
+        rememberedContext: [String],
+        interactionsTruncated: Bool,
+        rememberedContextTruncated: Bool
+    ) {
         self.title = title
         self.URL = URL
         self.activeSeconds = activeSeconds
         self.firstSeen = firstSeen
         self.lastSeen = lastSeen
+        self.eventCount = eventCount
+        self.clickCount = clickCount
+        self.typingBurstCount = typingBurstCount
+        self.scrollBurstCount = scrollBurstCount
+        self.shortcutCount = shortcutCount
+        self.semanticSnapshotCount = semanticSnapshotCount
+        self.interactions = interactions
+        self.rememberedContext = rememberedContext
+        self.interactionsTruncated = interactionsTruncated
+        self.rememberedContextTruncated = rememberedContextTruncated
     }
 
     public var id: String { URL ?? title }
@@ -115,19 +217,52 @@ public struct ActivitySiteSummary: Codable, Equatable, Identifiable {
     public let visitCount: Int
     public let pageCount: Int
     public let pages: [ActivityPageSummary]
+    public let sourceApplications: [String]
+    public let clickCount: Int
+    public let typingBurstCount: Int
+    public let scrollBurstCount: Int
+    public let shortcutCount: Int
+    public let semanticSnapshotCount: Int
+    public let interactions: [ActivityWebInteractionSummary]
+    public let rememberedContext: [String]
+    public let pagesTruncated: Bool
+    public let interactionsTruncated: Bool
+    public let rememberedContextTruncated: Bool
 
     public init(
         host: String,
         activeSeconds: Int,
         visitCount: Int,
         pageCount: Int,
-        pages: [ActivityPageSummary]
+        pages: [ActivityPageSummary],
+        sourceApplications: [String],
+        clickCount: Int,
+        typingBurstCount: Int,
+        scrollBurstCount: Int,
+        shortcutCount: Int,
+        semanticSnapshotCount: Int,
+        interactions: [ActivityWebInteractionSummary],
+        rememberedContext: [String],
+        pagesTruncated: Bool,
+        interactionsTruncated: Bool,
+        rememberedContextTruncated: Bool
     ) {
         self.host = host
         self.activeSeconds = activeSeconds
         self.visitCount = visitCount
         self.pageCount = pageCount
         self.pages = pages
+        self.sourceApplications = sourceApplications
+        self.clickCount = clickCount
+        self.typingBurstCount = typingBurstCount
+        self.scrollBurstCount = scrollBurstCount
+        self.shortcutCount = shortcutCount
+        self.semanticSnapshotCount = semanticSnapshotCount
+        self.interactions = interactions
+        self.rememberedContext = rememberedContext
+        self.pagesTruncated = pagesTruncated
+        self.interactionsTruncated = interactionsTruncated
+        self.rememberedContextTruncated = rememberedContextTruncated
     }
 
     public var id: String { host }
@@ -245,7 +380,7 @@ public struct ActivityDayAnalysis: Codable, Equatable {
     public let estimatedAgentTokens: Int
 
     public init(
-        schemaVersion: Int = 1,
+        schemaVersion: Int = 2,
         dayStart: Date,
         dayEnd: Date,
         generatedAt: Date,
@@ -282,7 +417,7 @@ public struct ActivityDayAnalysis: Codable, Equatable {
 /// Conservative local redaction for optional rich context. This does not try to
 /// infer every possible secret; it removes common credentials before persistence.
 public enum ActivitySemanticTextSanitizer {
-    public static func clean(_ raw: String?, maximumLength: Int = 2_400) -> String? {
+    public static func clean(_ raw: String?, maximumLength: Int = 6_000) -> String? {
         guard var value = raw else { return nil }
         value = value.replacingOccurrences(of: "\u{0000}", with: "")
         value = value.replacingOccurrences(of: "[\\t ]+", with: " ", options: .regularExpression)
@@ -302,7 +437,7 @@ public enum ActivitySemanticTextSanitizer {
 
         value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return nil }
-        let limit = max(64, min(maximumLength, 20_000))
+        let limit = max(64, min(maximumLength, 40_000))
         if value.count > limit {
             value = String(value.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines)
         }

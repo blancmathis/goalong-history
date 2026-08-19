@@ -29,7 +29,7 @@ public enum ActivityAnalysisEngine {
         blocks = bridgeShortBlocks(blocks)
         blocks = selectFocusBlocks(blocks, maximum: options.maximumFocusBlocks)
 
-        let sites = makeSites(from: points, blocks: blocks, options: options)
+        let sites = makeSites(from: points, events: inDay, blocks: blocks, options: options)
         let applications = makeApplications(from: points, blocks: blocks)
         let requests = makeRequests(from: semanticEvents, options: options)
         let highlights = makeHighlights(from: semanticEvents, requests: requests, options: options)
@@ -67,6 +67,7 @@ public enum ActivityAnalysisEngine {
         )
         let markdown = ActivityAgentDigestRenderer.render(base, tokenBudget: options.agentTokenBudget)
         return ActivityDayAnalysis(
+            schemaVersion: base.schemaVersion,
             dayStart: base.dayStart,
             dayEnd: base.dayEnd,
             generatedAt: base.generatedAt,
@@ -186,5 +187,4 @@ public enum ActivityAnalysisEngine {
             )
         }
     }
-
 }

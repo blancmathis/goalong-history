@@ -34,7 +34,14 @@
                     case .dayRecap:
                         recapBody
                     case .appsAndSites:
-                        UsageRulesList(model: model)
+                        UsageRulesList(
+                            model: model,
+                            websiteSummaries: analysisModel.analysis?.sites ?? [],
+                            richContextEnabled: richContextEnabled,
+                            onEnableRichContext: {
+                                showRichContextConfirmation = true
+                            }
+                        )
                     case .timeline:
                         ActivityTimelineExplorer(model: model)
                     }
@@ -174,17 +181,15 @@
                 MetricCard(
                     title: "SITES / PAGES",
                     value: "\(analysis.sites.count) / \(analysis.sites.reduce(0) { $0 + $1.pageCount })",
-                    detail: "Deduplicated web context",
+                    detail: "Every detected site and sanitized page",
                     symbol: "globe",
                     tint: LHTheme.privateTint
                 )
                 MetricCard(
-                    title: "REQUESTS FOUND",
-                    value: "\(analysis.requests.count)",
-                    detail: analysis.coverage.semanticContextEnabledInData
-                        ? "From opt-in accessible context"
-                        : "Enable Rich Context for discussions",
-                    symbol: "text.bubble.fill",
+                    title: "WEB CLICKS",
+                    value: "\(analysis.sites.reduce(0) { $0 + $1.clickCount })",
+                    detail: "Accessible targets plus unlabelled positions",
+                    symbol: "cursorarrow.click",
                     tint: LHTheme.warning
                 )
             }
@@ -196,7 +201,7 @@
                     ProgressView()
                     Text("Building the compact day analysis…")
                         .font(.system(size: 12, weight: .semibold))
-                    Text("Events are being deduplicated into representative minutes and focus blocks locally.")
+                    Text("Events are being deduplicated into representative minutes, sites, pages and focus blocks locally.")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
@@ -249,7 +254,7 @@
         var title: String {
             switch self {
             case .dayRecap: return "Day recap"
-            case .appsAndSites: return "Apps & sites"
+            case .appsAndSites: return "Sites & apps"
             case .timeline: return "Timeline"
             }
         }
