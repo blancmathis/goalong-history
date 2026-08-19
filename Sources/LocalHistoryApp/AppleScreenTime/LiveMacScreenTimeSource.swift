@@ -98,6 +98,8 @@
         private let fileManager: FileManager
         private let decoder: JSONDecoder
         private let calendar: Calendar
+        private let eventsDirectory: URL
+        private let dayFormatter: DateFormatter
         private let maximumUnconfirmedGap: TimeInterval = 90
 
         private var cachedDay: Date?
@@ -109,7 +111,8 @@
             deviceID: String,
             deviceName: String? = Host.current().localizedName,
             fileManager: FileManager = .default,
-            calendar: Calendar = .current
+            calendar: Calendar = .current,
+            eventsDirectory: URL = AppPaths.eventsDirectory
         ) {
             self.device = AppleScreenTimeDevice(
                 id: "local-mac:\(deviceID)",
@@ -118,8 +121,18 @@
             )
             self.fileManager = fileManager
             self.calendar = calendar
-            self.decoder = JSONDecoder()
-            self.decoder.dateDecodingStrategy = .iso8601
+            self.eventsDirectory = eventsDirectory
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            self.decoder = decoder
+
+            let formatter = DateFormatter()
+            formatter.calendar = calendar
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = calendar.timeZone
+            formatter.dateFormat = "yyyy-MM-dd"
+            self.dayFormatter = formatter
         }
 
         func storedExport(for day: Date, now: Date = Date()) -> AppleScreenTimeStoredExport? {
@@ -161,7 +174,7 @@
                 resetCache(for: normalizedDay)
             }
 
-            let file = AppPaths.eventFileURL(for: normalizedDay)
+            let file = eventFileURL(for: normalizedDay)
             guard fileManager.fileExists(atPath: file.path) else {
                 cachedOffset = 0
                 trailingData.removeAll(keepingCapacity: true)
@@ -198,9 +211,13 @@
 
         private func seedEvents(for day: Date) -> [HistoryEvent] {
             guard let previousDay = calendar.date(byAdding: .day, value: -1, to: day),
-                  let event = lastEvent(in: AppPaths.eventFileURL(for: previousDay))
+                  let event = lastEvent(in: eventFileURL(for: previousDay))
             else { return [] }
             return [event]
+        }
+
+        private func eventFileURL(for date: Date) -> URL {
+            eventsDirectory.appendingPathComponent(dayFormatter.string(from: date) + ".jsonl")
         }
 
         private func lastEvent(in file: URL) -> HistoryEvent? {
