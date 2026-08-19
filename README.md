@@ -7,7 +7,7 @@
 
 A native menu-bar app that turns foreground activity into a clear local timeline, seals it against later rewriting, and lets the user disclose only what they choose.
 
-[Download the latest Mac release](https://github.com/blancmathis/goalong-history/releases/latest) · [Guide français](GUIDE_FR.md) · [Security model](SECURITY.md)
+[Download the latest Mac release](https://github.com/blancmathis/goalong-history/releases/tag/latest-main) · [Guide français](GUIDE_FR.md) · [Security model](SECURITY.md)
 </div>
 
 > LocalHistory is for a Mac you own and use yourself. Never use it to monitor another person without their prior, explicit consent.
@@ -21,7 +21,7 @@ The normal installation does **not** require Terminal, Xcode, Homebrew, Python, 
 3. Open the app.
 4. Follow the native setup assistant.
 
-The release is universal (`arm64 + x86_64`), Developer ID signed, notarized by Apple, and compatible with macOS 13 Ventura or later.
+The rolling release is universal (`arm64 + x86_64`), authenticated for in-app updates with Sparkle EdDSA, and compatible with macOS 13 Ventura or later. Until Developer ID is configured, the first downloaded copy is ad-hoc code signed and macOS may require **Open Anyway**. Developer ID signing and notarization will turn on automatically once the optional Apple credentials are added.
 
 The first launch guides the user through five focused screens:
 
@@ -83,7 +83,7 @@ time · application · website · context · activity · classification · cover
 
 Each group receives a random 256-bit salt and SHA-256 commitment. Those commitments form an event Merkle root. Event roots are chained with a monotonic sequence and the previous event hash.
 
-Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. LocalHistory first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable signed build. Ad-hoc source builds use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
+Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. LocalHistory first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable Developer ID build. Ad-hoc builds, including the current rolling release, use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
 
 Signing identities are scoped to the app's designated code-signing requirement. If that requirement changes, LocalHistory records a visible identity rotation and keeps the existing chain data instead of repeatedly requesting access to an incompatible old key. A refused authentication attempt also suspends background signing for that launch, so it can never create a password dialog every minute.
 
@@ -112,7 +112,7 @@ A menu-bar control keeps pause/resume, status, dashboard access, and sharing imm
 
 Start-at-login is an explicit onboarding choice implemented with Apple’s `SMAppService`. LocalHistory no longer installs a hand-written LaunchAgent. Upgrading preserves the local history and settings directory.
 
-A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. Starting with the first manually installed Sparkle-enabled build, later signed releases can be reviewed and installed from the update button inside LocalHistory.
+A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. Starting with the first manually installed Sparkle-enabled build, later EdDSA-authenticated releases can be reviewed and installed from the update button inside LocalHistory.
 
 ## Build from source
 
@@ -147,11 +147,11 @@ make dmg
 make install-source
 ```
 
-The build script creates a real `.app` bundle, generates the `.icns` asset, writes the production Info.plist, signs the bundle, and verifies it. Local builds use ad-hoc signing and a user-only local signing-key file; public releases use Developer ID signing, a non-exportable device key, and notarization.
+The build script creates a real `.app` bundle, generates the `.icns` asset, writes the release Info.plist, code signs the bundle, and verifies it. Local and current rolling builds use ad-hoc code signing; release archives and feeds use a separate Sparkle EdDSA signature. When Apple credentials become available, rolling builds automatically add Developer ID, Hardened Runtime, and notarization.
 
 ## Release pipeline
 
-The tag workflow builds both architectures, creates the universal binary, signs with Hardened Runtime, notarizes and staples the app, creates the branded DMG and ZIP, notarizes the DMG, verifies both artifacts, and publishes SHA-256 checksum files.
+Every successful merge to `main` builds both architectures, creates the universal binary, verifies the Sparkle configuration, creates the branded DMG and ZIP, signs the update archive and feed with EdDSA, and replaces the `latest-main` prerelease. Developer ID signing and notarization are optional enhancements in this rolling workflow. The separate stable-tag workflow remains reserved for a future Apple-verified release.
 
 Release credentials and the exact process are documented in [`docs/RELEASING.md`](docs/RELEASING.md). Installation design principles are documented in [`docs/INSTALLATION_UX.md`](docs/INSTALLATION_UX.md).
 

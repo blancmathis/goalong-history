@@ -129,7 +129,7 @@
                     .help(
                         updates.isConfigured
                             ? "Check for updates"
-                            : "Install the signed build to enable in-app updates"
+                            : "Install the release build to enable in-app updates"
                     )
                 }
                 .font(.system(size: 9, weight: .medium))
@@ -243,7 +243,7 @@
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Enable app updates")
                             .font(.system(size: 10, weight: .semibold))
-                        Text("Install the signed build once")
+                        Text("Install the release build once")
                             .font(.system(size: 9, weight: .medium))
                             .opacity(0.76)
                     }
@@ -265,7 +265,7 @@
                 )
             }
             .buttonStyle(.plain)
-            .help("Download the latest signed build. Your history and settings are preserved.")
+            .help("Download the latest release build. Your history and settings are preserved.")
         }
 
         private var trustCard: some View {

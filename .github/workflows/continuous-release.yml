@@ -1,4 +1,4 @@
-name: Continuous signed macOS release
+name: Continuous Sparkle macOS release
 
 on:
   push:
@@ -43,7 +43,8 @@ jobs:
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
 
-      - name: Validate release credentials
+      - name: Resolve release trust mode
+        id: release_mode
         env:
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -54,26 +55,51 @@ jobs:
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
         run: |
           set -euo pipefail
-          missing=()
-          for name in \
-            MACOS_CERTIFICATE_P12 \
-            MACOS_CERTIFICATE_PASSWORD \
-            APPLE_API_KEY_ID \
-            APPLE_API_ISSUER_ID \
-            APPLE_API_PRIVATE_KEY \
-            SPARKLE_PUBLIC_ED_KEY \
-            SPARKLE_PRIVATE_ED_KEY; do
+          sparkle_missing=()
+          for name in SPARKLE_PUBLIC_ED_KEY SPARKLE_PRIVATE_ED_KEY; do
             if [[ -z "${!name:-}" ]]; then
-              missing+=("$name")
+              sparkle_missing+=("$name")
             fi
           done
-          if (( ${#missing[@]} > 0 )); then
-            printf 'Missing required release secret: %s\n' "${missing[@]}" >&2
-            echo "The rolling updater intentionally fails closed until the signing and Sparkle credentials are configured." >&2
+          if (( ${#sparkle_missing[@]} > 0 )); then
+            printf 'Missing required Sparkle release value: %s\n' "${sparkle_missing[@]}" >&2
+            echo "The rolling updater fails closed unless its EdDSA signing pair is configured." >&2
+            exit 1
+          fi
+
+          apple_values=(
+            MACOS_CERTIFICATE_P12
+            MACOS_CERTIFICATE_PASSWORD
+            APPLE_API_KEY_ID
+            APPLE_API_ISSUER_ID
+            APPLE_API_PRIVATE_KEY
+          )
+          apple_configured=0
+          apple_missing=()
+          for name in "${apple_values[@]}"; do
+            if [[ -n "${!name:-}" ]]; then
+              apple_configured=$((apple_configured + 1))
+            else
+              apple_missing+=("$name")
+            fi
+          done
+
+          if (( apple_configured == 0 )); then
+            echo "apple_enabled=false" >> "$GITHUB_OUTPUT"
+            echo "release_note=This build is ad-hoc code signed. Its update archive and feed are authenticated with Sparkle EdDSA; macOS may require a one-time manual approval on first install." >> "$GITHUB_OUTPUT"
+            echo "### Release trust mode: Sparkle EdDSA (free mode)" >> "$GITHUB_STEP_SUMMARY"
+          elif (( apple_configured == ${#apple_values[@]} )); then
+            echo "apple_enabled=true" >> "$GITHUB_OUTPUT"
+            echo "release_note=This build is Developer ID signed and notarized by Apple. Its update archive and feed are also authenticated with Sparkle EdDSA." >> "$GITHUB_OUTPUT"
+            echo "### Release trust mode: Developer ID + notarization + Sparkle EdDSA" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf 'Incomplete optional Apple release configuration; missing: %s\n' "${apple_missing[@]}" >&2
+            echo "Configure every Apple value or remove all of them to use the free Sparkle-only mode." >&2
             exit 1
           fi
 
       - name: Import Developer ID certificate
+        if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}
         env:
           CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -114,6 +140,7 @@ jobs:
           /bin/rm -P "$P12_PATH"
 
       - name: Prepare App Store Connect API key
+        if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}
         env:
           API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
           API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
@@ -126,6 +153,7 @@ jobs:
           echo "NOTARY_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Validate App Store Connect notarization credentials
+        if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}
         env:
           API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
           API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
@@ -136,7 +164,7 @@ jobs:
             --key-id "$API_KEY_ID" \
             --issuer "$API_ISSUER_ID" >/dev/null
 
-      - name: Build universal signed app
+      - name: Build universal update-enabled app
         env:
           LOCALHISTORY_VERSION: ${{ steps.version.outputs.value }}
           LOCALHISTORY_BUILD_NUMBER: ${{ steps.version.outputs.build }}
@@ -146,7 +174,7 @@ jobs:
           LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
         run: ./scripts/build_app.sh
 
-      - name: Confirm architecture, identity, signature, and updater policy
+      - name: Confirm architecture, code signature, and updater policy
         env:
           LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
           LOCALHISTORY_DISPLAY_NAME: Go Long History
@@ -160,6 +188,7 @@ jobs:
           ./scripts/verify_sparkle_bundle.sh
 
       - name: Notarize and staple app
+        if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}
         env:
           API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
           API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
@@ -182,6 +211,7 @@ jobs:
           ./scripts/package_release.sh
 
       - name: Notarize and staple DMG
+        if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}
         env:
           API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
           API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
@@ -230,9 +260,11 @@ jobs:
           tag_name: latest-main
           name: Go Long History — latest main
           body: |
-            Automatically built, signed, notarized, and published from `${{ github.sha }}` on `main`.
+            Automatically built and published from `${{ github.sha }}` on `main`.
 
-            Installed signed builds discover this release through Sparkle. The rolling tag and assets are intentionally replaced after every successful merge.
+            ${{ steps.release_mode.outputs.release_note }}
+
+            Installed update-enabled builds discover this release through Sparkle. The rolling tag and assets are intentionally replaced after every successful merge.
           draft: false
           prerelease: true
           make_latest: false
