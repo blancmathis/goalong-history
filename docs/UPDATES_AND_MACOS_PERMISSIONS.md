@@ -22,7 +22,7 @@ Installed update-enabled builds read this fixed feed URL:
 https://github.com/blancmathis/goalong-history/releases/download/latest-main/appcast.xml
 ```
 
-Sparkle performs a probe at launch and when the dashboard becomes active. No dialog is shown when the app is current. When a newer build exists, a small button appears at the bottom-left of the sidebar; clicking it opens Sparkle's signed installation flow.
+Sparkle starts a quiet background update session at launch and when the dashboard becomes active. No dialog is shown when the app is current. When a newer build exists, a small button appears at the bottom-left of the sidebar. Clicking that button brings the already-detected update directly into Sparkle's signed installation flow; it does not repeat a user-visible feed search first. If the original Sparkle session has expired or failed, the app safely falls back to a fresh attended check instead of presenting stale update metadata.
 
 ### Required GitHub Actions configuration
 
