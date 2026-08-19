@@ -11,7 +11,7 @@
             let rootView = LocalHistoryDashboardView(model: viewModel)
             let hostingController = NSHostingController(rootView: rootView)
             let window = NSWindow(contentViewController: hostingController)
-            window.title = "LocalHistory"
+            window.title = ProductIdentity.displayName
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
@@ -19,13 +19,12 @@
             window.minSize = NSSize(width: 1080, height: 680)
             window.setContentSize(NSSize(width: 1240, height: 790))
             window.center()
+            // Keep the historical autosave key so existing users retain their preferred window size.
             window.setFrameAutosaveName("LocalHistory.MainWindow.v3")
             window.isReleasedWhenClosed = false
 
             // The recorder stays a lightweight menu-bar accessory while its dashboard is closed,
-            // but the dashboard itself must behave like a normal macOS application window. Keeping
-            // it at the normal level and making it the primary full-screen window prevents it from
-            // joining another application's full-screen Space as an overlay.
+            // but the dashboard itself must behave like a normal macOS application window.
             window.level = .normal
             window.collectionBehavior = [.managed, .fullScreenPrimary]
 
@@ -38,23 +37,20 @@
         func show(section: DashboardSection = .overview) {
             viewModel.selectSection(section)
 
-            // LSUIElement keeps the background recorder out of the Dock. Promote the application
-            // while the dashboard is in use so macOS gives it normal app, Space and full-screen
-            // semantics instead of treating the window as an accessory over the current app.
             let application = NSApplication.shared
             application.setActivationPolicy(.regular)
             showWindow(nil)
             application.activate(ignoringOtherApps: true)
             window?.makeKeyAndOrderFront(nil)
+            SoftwareUpdateManager.shared.refreshAvailableUpdate()
         }
 
         func windowDidBecomeKey(_ notification: Notification) {
             viewModel.refreshEverything()
+            SoftwareUpdateManager.shared.refreshAvailableUpdate()
         }
 
         func windowWillClose(_ notification: Notification) {
-            // Keep background recording available from the menu bar without leaving a permanent
-            // Dock icon once every normal application window has closed.
             DispatchQueue.main.async {
                 let application = NSApplication.shared
                 let hasVisibleApplicationWindow = application.windows.contains {

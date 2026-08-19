@@ -49,11 +49,11 @@
         var statusDetail: String {
             switch state {
             case .enabled:
-                return "LocalHistory will be ready after each Mac login."
+                return "\(ProductIdentity.displayName) will be ready after each Mac login."
             case .requiresApproval:
-                return "Allow LocalHistory in System Settings → General → Login Items."
+                return "Allow \(ProductIdentity.displayName) in System Settings → General → Login Items."
             case .disabled:
-                return "You can still open LocalHistory manually at any time."
+                return "You can still open \(ProductIdentity.displayName) manually at any time."
             case .unavailable:
                 return "macOS could not read the login-item status."
             }

@@ -4,9 +4,10 @@
     import Foundation
     import Sparkle
 
-    /// Owns LocalHistory's Sparkle lifecycle and exposes a deliberately quiet update surface.
-    /// Scheduled checks use Sparkle's gentle-reminder API so background checks never steal focus;
-    /// the dashboard instead shows a compact button when an update is available.
+    /// Owns the Sparkle lifecycle and exposes a quiet update surface in the dashboard.
+    /// Signed builds check the rolling main-channel feed immediately at launch. Development/source
+    /// builds cannot safely self-update because they do not contain the production EdDSA key; those
+    /// builds instead offer a one-time migration to the latest signed build.
     @MainActor
     final class SoftwareUpdateManager: NSObject, ObservableObject {
         static let shared = SoftwareUpdateManager()
@@ -15,6 +16,7 @@
         @Published private(set) var isChecking = false
         @Published private(set) var availableVersion: String?
         @Published private(set) var automaticallyChecksForUpdates = false
+        @Published private(set) var requiresSignedBuild = false
         @Published private(set) var statusMessage = "Updates are available in signed release builds."
 
         private var updaterController: SPUStandardUpdaterController?
@@ -39,7 +41,8 @@
             hasStarted = true
 
             guard Self.hasValidSparkleConfiguration(in: .main) else {
-                statusMessage = "Software updates are disabled in this development build."
+                requiresSignedBuild = true
+                statusMessage = "Install the signed build once to enable in-app updates."
                 return
             }
 
@@ -52,10 +55,26 @@
             controller.startUpdater()
 
             isConfigured = true
+            requiresSignedBuild = false
             automaticallyChecksForUpdates = controller.updater.automaticallyChecksForUpdates
             statusMessage = automaticallyChecksForUpdates
                 ? "Signed update checks run automatically."
                 : "Automatic update checks are off."
+
+            // Sparkle's scheduled interval may not be due yet, especially on a freshly installed
+            // build. Perform one quiet check now so the dashboard button reflects the current Git
+            // release without waiting up to a day.
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshAvailableUpdate()
+            }
+        }
+
+        func refreshAvailableUpdate() {
+            guard let updater = updaterController?.updater, updater.canCheckForUpdates else { return }
+            guard !isChecking else { return }
+            isChecking = true
+            statusMessage = "Checking for updates…"
+            updater.checkForUpdateInformation()
         }
 
         func checkForUpdates() {
@@ -76,6 +95,15 @@
             updater.checkForUpdates()
         }
 
+        func installUpdateEnabledBuild() {
+            statusMessage = "Downloading the latest signed build…"
+            NSWorkspace.shared.open(ProductIdentity.rollingDMGURL)
+        }
+
+        func openRollingReleasePage() {
+            NSWorkspace.shared.open(ProductIdentity.rollingReleasePageURL)
+        }
+
         func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
             guard let updater = updaterController?.updater else { return }
             updater.automaticallyChecksForUpdates = enabled
@@ -89,13 +117,13 @@
             availableVersion = item.displayVersionString
             isChecking = false
             userAttendedCurrentUpdate = false
-            statusMessage = "LocalHistory \(item.displayVersionString) is available."
+            statusMessage = "\(ProductIdentity.displayName) \(item.displayVersionString) is available."
         }
 
         private func markUpToDate() {
             availableVersion = nil
             isChecking = false
-            statusMessage = "LocalHistory is up to date."
+            statusMessage = "\(ProductIdentity.displayName) is up to date."
         }
 
         private static func hasValidSparkleConfiguration(in bundle: Bundle) -> Bool {
@@ -143,9 +171,8 @@
             _ update: SUAppcastItem,
             andInImmediateFocus immediateFocus: Bool
         ) -> Bool {
-            // LocalHistory is a dockless menu-bar app. Scheduled checks stay quiet even immediately
-            // after launch; the dashboard indicator is the reminder. Explicit user checks still use
-            // Sparkle's complete standard UI, including release notes and installation progress.
+            // Background checks stay quiet; the dashboard indicator is the reminder. Explicit user
+            // checks still use Sparkle's complete standard release-notes and installation flow.
             false
         }
 
@@ -165,10 +192,10 @@
 
         func standardUserDriverWillFinishUpdateSession() {
             isChecking = false
-            if userAttendedCurrentUpdate {
-                availableVersion = nil
-                userAttendedCurrentUpdate = false
-                statusMessage = "The update reminder was dismissed. Sparkle will check again later."
+            guard userAttendedCurrentUpdate else { return }
+            userAttendedCurrentUpdate = false
+            if let availableVersion {
+                statusMessage = "\(ProductIdentity.displayName) \(availableVersion) is still available."
             }
         }
     }

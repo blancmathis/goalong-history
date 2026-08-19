@@ -8,10 +8,15 @@ source "$ROOT_DIR/scripts/sparkle_release.env"
 VERSION="${1:-}"
 ARCHIVE="${2:-$ROOT_DIR/dist/LocalHistory-macOS-universal.zip}"
 OUTPUT="${3:-$ROOT_DIR/dist/appcast.xml}"
+RELEASE_TAG="${4:-v$VERSION}"
 PRIVATE_KEY="${SPARKLE_PRIVATE_ED_KEY:-}"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
-  echo "Usage: SPARKLE_PRIVATE_ED_KEY=... $0 <version> [archive] [output]" >&2
+  echo "Usage: SPARKLE_PRIVATE_ED_KEY=... $0 <version> [archive] [output] [release-tag]" >&2
+  exit 1
+fi
+if [[ ! "$RELEASE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "Invalid release tag: $RELEASE_TAG" >&2
   exit 1
 fi
 if [[ ! -s "$ARCHIVE" ]]; then
@@ -29,7 +34,7 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 ARCHIVE_NAME="LocalHistory-macOS-universal.zip"
 cp "$ARCHIVE" "$WORK_DIR/$ARCHIVE_NAME"
-DOWNLOAD_PREFIX="$SPARKLE_RELEASE_DOWNLOAD_ROOT/v$VERSION/"
+DOWNLOAD_PREFIX="$SPARKLE_RELEASE_DOWNLOAD_ROOT/$RELEASE_TAG/"
 
 # generate_appcast signs the archive enclosure with EdDSA. Because the embedded app
 # opts into SURequireSignedFeed, Sparkle 2.9+ also signs the appcast itself.

@@ -31,6 +31,7 @@
                 launchAtLoginPreference = defaults.object(forKey: "launchAtLoginPreference") == nil
                     ? true
                     : defaults.bool(forKey: "launchAtLoginPreference")
+                model.refreshEverything()
             }
             .onChange(of: step) { newStep in
                 note = nil
@@ -66,7 +67,7 @@
                         }
                         .frame(width: 42, height: 42)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("LocalHistory")
+                            Text(ProductIdentity.displayName)
                                 .font(.system(size: 16, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white)
                             Text("SETUP ASSISTANT")
@@ -241,7 +242,7 @@
                 return
             }
             if launchAtLoginPreference && launchAtLogin.requiresApproval {
-                note = "Allow LocalHistory in System Settings → General → Login Items, then click Finish setup again."
+                note = "Allow \(ProductIdentity.displayName) in System Settings → General → Login Items, then click Finish setup again."
                 launchAtLogin.openLoginItemsSettings()
                 return
             }
@@ -257,12 +258,21 @@
         var eyebrow: String {
             ["Welcome", "Privacy first", "Permission one", "Permission two", "Final check"][rawValue]
         }
+
         var navigationTitle: String {
-            ["Meet LocalHistory", "Understand the boundary", "Add foreground context", "Measure activity", "Start your timeline"][rawValue]
+            switch self {
+            case .welcome: return "Meet \(ProductIdentity.displayName)"
+            case .privacy: return "Understand the boundary"
+            case .accessibility: return "Add foreground context"
+            case .inputMonitoring: return "Measure activity"
+            case .ready: return "Start your timeline"
+            }
         }
+
         var sidebarTitle: String {
             ["Welcome", "Privacy", "Accessibility", "Input Monitoring", "Ready"][rawValue]
         }
+
         var sidebarDetail: String {
             ["What the app does", "What stays private", "Foreground context", "Activity signals", "Review and start"][rawValue]
         }

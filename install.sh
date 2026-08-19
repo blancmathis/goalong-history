@@ -2,9 +2,11 @@
 set -euo pipefail
 
 APP_NAME="LocalHistory"
+DISPLAY_NAME="Go Long History"
 BUNDLE_ID="ai.goalong.localhistory"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY="blancmathis/goalong-history"
+RELEASE_TAG="${GOALONG_RELEASE_TAG:-latest-main}"
 RELEASE_ASSET="LocalHistory-macOS-universal.zip"
 SOURCE_ONLY=false
 VERBOSE=false
@@ -17,8 +19,8 @@ for argument in "$@"; do
       cat <<HELP
 Usage: ./install.sh [--source] [--verbose]
 
-The normal path downloads the latest signed universal release.
-Use --source only for a local developer build.
+The normal path downloads the latest signed Go Long History build from GitHub.
+Use --source only for a local developer build; source builds cannot self-update.
 HELP
       exit 0
       ;;
@@ -30,13 +32,13 @@ HELP
 done
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "LocalHistory can only be installed on macOS." >&2
+  echo "$DISPLAY_NAME can only be installed on macOS." >&2
   exit 1
 fi
 
 MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
 if [[ "$MACOS_MAJOR" -lt 13 ]]; then
-  echo "LocalHistory requires macOS 13 Ventura or later." >&2
+  echo "$DISPLAY_NAME requires macOS 13 Ventura or later." >&2
   exit 1
 fi
 
@@ -73,7 +75,7 @@ printf '%b' "$BLUE"
 cat <<'BANNER'
 
        ╭──────────────────────────────╮
-       │       ◷  LocalHistory        │
+       │      ◷  Go Long History      │
        │   private • local • trusted  │
        ╰──────────────────────────────╯
 BANNER
@@ -83,7 +85,7 @@ note "A clean, private setup for this Mac. No sudo required."
 
 install_source() {
   headline "Developer installation"
-  warn "The signed release could not be used, so LocalHistory will be built locally."
+  warn "This creates a local development build without production update credentials."
   if [[ ! -x "$ROOT_DIR/scripts/install_from_source.sh" ]]; then
     fail "This folder does not contain the source installer."
     return 1
@@ -100,7 +102,7 @@ if [[ "$SOURCE_ONLY" == true ]]; then
   exit $?
 fi
 
-headline "Preparing LocalHistory"
+headline "Preparing $DISPLAY_NAME"
 status "macOS $(sw_vers -productVersion) detected"
 status "$(uname -m) Mac detected"
 
@@ -108,10 +110,10 @@ WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/localhistory-install.XXXXXX")"
 trap 'rm -rf "$WORK_DIR"' EXIT
 ZIP_PATH="$WORK_DIR/$RELEASE_ASSET"
 CHECKSUM_PATH="$WORK_DIR/$RELEASE_ASSET.sha256"
-BASE_URL="https://github.com/$REPOSITORY/releases/latest/download"
+BASE_URL="https://github.com/$REPOSITORY/releases/download/$RELEASE_TAG"
 DOWNLOAD_LOG="$WORK_DIR/download.log"
 
-printf '  • Downloading the latest signed release… '
+printf '  • Downloading the latest signed Git build… '
 set +e
 /usr/bin/curl --fail --location --silent --show-error --retry 2 --connect-timeout 12 \
   "$BASE_URL/$RELEASE_ASSET" -o "$ZIP_PATH" >"$DOWNLOAD_LOG" 2>&1
@@ -119,8 +121,13 @@ DOWNLOAD_STATUS=$?
 set -e
 if [[ $DOWNLOAD_STATUS -ne 0 ]]; then
   echo "unavailable"
-  install_source
-  exit $?
+  fail "No signed rolling build is currently available from GitHub."
+  note "The installer will not silently fall back to a source build because that would disable in-app updates."
+  note "Developers can explicitly run ./install.sh --source."
+  if [[ "$VERBOSE" == true ]]; then
+    cat "$DOWNLOAD_LOG" >&2
+  fi
+  exit 1
 fi
 echo "done"
 
@@ -188,10 +195,11 @@ rm -rf "$TARGET_APP"
 /usr/bin/codesign --verify --deep --strict "$TARGET_APP"
 status "Installed in $TARGET_DIR"
 status "Legacy background service cleaned up"
-status "Your existing history and settings were preserved"
+status "Your existing history, settings, and bundle ID were preserved"
+warn "macOS may ask you to approve this signed app copy once; the in-app guide handles that step"
 
 headline "Ready"
-note "Opening the step-by-step setup assistant now…"
+note "Opening the guided setup now…"
 /usr/bin/open "$TARGET_APP"
 
-printf '\n%bInstallation complete.%b The rest happens inside LocalHistory.\n\n' "$BOLD$GREEN" "$RESET"
+printf '\n%bInstallation complete.%b The rest happens inside %s.\n\n' "$BOLD$GREEN" "$RESET" "$DISPLAY_NAME"

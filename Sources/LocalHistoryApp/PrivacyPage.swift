@@ -29,9 +29,7 @@
                     }
 
                     dataFlowCard
-
                     permissionsCard
-
                     protectionGrid
 
                     HStack(alignment: .top, spacing: 14) {
@@ -118,7 +116,7 @@
                 VStack(alignment: .leading, spacing: 15) {
                     SectionTitle(
                         title: "macOS permissions",
-                        subtitle: "Both permissions are required for reliable activity capture"
+                        subtitle: "Accessibility is required. It also provides event-listening access on macOS; direct Input Monitoring is used only when still needed."
                     )
 
                     HStack(spacing: 12) {
@@ -126,14 +124,16 @@
                             title: "Accessibility",
                             message: "Reads the active app, window and accessible UI context.",
                             granted: model.runtime.accessibilityGranted,
-                            buttonTitle: "Open settings",
+                            grantedLabel: "Granted",
+                            buttonTitle: "Guided setup",
                             action: model.openAccessibilitySettings
                         )
                         permissionRow(
-                            title: "Input Monitoring",
-                            message: "Observes clicks, scrolls, shortcuts and non-content typing activity.",
+                            title: "Activity input",
+                            message: "Observes clicks, scrolls, shortcuts and non-content typing activity. Accessibility may already provide this access.",
                             granted: model.runtime.inputMonitoringGranted,
-                            buttonTitle: "Open settings",
+                            grantedLabel: "Available",
+                            buttonTitle: "Guided setup",
                             action: model.openInputMonitoringSettings
                         )
                     }
@@ -141,16 +141,24 @@
                     if !model.runtime.accessibilityGranted || !model.runtime.inputMonitoringGranted {
                         HStack {
                             Label(
-                                "Capture is incomplete until both permissions are enabled.",
+                                "Capture is incomplete until the required access is available.",
                                 systemImage: "exclamationmark.triangle.fill"
                             )
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(LHTheme.warning)
                             Spacer()
-                            Button("Request both permissions") {
+                            Button("Open guided setup") {
                                 model.requestPermissions()
                             }
                             .buttonStyle(.borderedProminent)
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(LHTheme.success)
+                            Text("The current app copy has the access required for reliable capture.")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -179,7 +187,7 @@
                 protectionCard(
                     symbol: "keyboard.badge.ellipsis",
                     title: "No raw typed text",
-                    message: "LocalHistory stores typing counts and duration, never reconstructed characters.",
+                    message: "\(ProductIdentity.displayName) stores typing counts and duration, never reconstructed characters.",
                     tint: LHTheme.teal
                 )
                 protectionCard(
@@ -254,7 +262,7 @@
                             )
                         VStack(alignment: .leading, spacing: 4) {
                             Text(model.deviceProtectionTitle)
-                            .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                             Text(model.deviceAlgorithm)
                                 .font(.system(size: 9, design: .monospaced))
                                 .foregroundStyle(.secondary)
@@ -349,6 +357,7 @@
             title: String,
             message: String,
             granted: Bool,
+            grantedLabel: String,
             buttonTitle: String,
             action: @escaping () -> Void
         ) -> some View {
@@ -366,7 +375,7 @@
                 }
                 Spacer()
                 if granted {
-                    Text("Granted")
+                    Text(grantedLabel)
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(LHTheme.success)
                 } else {
