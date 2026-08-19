@@ -25,7 +25,14 @@ extension ActivityAnalysisEngine {
             count += max(1, seed.count)
             firstSeen = min(firstSeen, date)
             lastSeen = max(lastSeen, date)
-            if detail == nil { detail = seed.detail }
+            if let seedDetail = seed.detail {
+                // For grouped clicks, keep the richest/latest detail. A later event can
+                // reveal that the action was the second click in a double-click sequence,
+                // while the first event only contained the pointer button and coordinates.
+                if detail == nil || seedDetail.contains("click sequence") {
+                    detail = seedDetail
+                }
+            }
         }
 
         func finish() -> ActivityWebInteractionSummary {
