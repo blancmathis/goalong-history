@@ -103,6 +103,10 @@
                     updateButton(version: version)
                         .padding(.horizontal, 12)
                         .padding(.top, 12)
+                } else if updates.requiresSignedBuild {
+                    enableUpdatesButton
+                        .padding(.horizontal, 12)
+                        .padding(.top, 12)
                 }
 
                 Spacer(minLength: 20)
@@ -112,14 +116,21 @@
                     .padding(.bottom, 12)
 
                 HStack {
-                    Text("LocalHistory")
+                    Text(ProductIdentity.displayName)
                     Spacer()
                     Button(Self.version) {
-                        updates.checkForUpdates()
+                        if updates.isConfigured {
+                            updates.checkForUpdates()
+                        } else {
+                            updates.installUpdateEnabledBuild()
+                        }
                     }
                     .buttonStyle(.plain)
-                    .help(updates.isConfigured ? "Check for updates" : "Software updates are disabled in this build")
-                    .disabled(!updates.isConfigured)
+                    .help(
+                        updates.isConfigured
+                            ? "Check for updates"
+                            : "Install the signed build to enable in-app updates"
+                    )
                 }
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.tertiary)
@@ -127,6 +138,9 @@
                 .padding(.bottom, 14)
             }
             .background(LHTheme.sidebarBackground)
+            .onAppear {
+                updates.refreshAvailableUpdate()
+            }
         }
 
         private var brand: some View {
@@ -147,7 +161,7 @@
                 .frame(width: 38, height: 38)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("LocalHistory")
+                    Text(ProductIdentity.displayName)
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                     Text("Private, verifiable activity")
                         .font(.system(size: 9, weight: .medium))
@@ -194,7 +208,7 @@
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Update available")
                             .font(.system(size: 10, weight: .semibold))
-                        Text("LocalHistory \(version)")
+                        Text("\(ProductIdentity.displayName) \(version)")
                             .font(.system(size: 9, weight: .medium))
                             .opacity(0.76)
                     }
@@ -216,7 +230,42 @@
                 )
             }
             .buttonStyle(.plain)
-            .help("Review and install LocalHistory \(version)")
+            .help("Review and install \(ProductIdentity.displayName) \(version)")
+        }
+
+        private var enableUpdatesButton: some View {
+            Button {
+                updates.installUpdateEnabledBuild()
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "arrow.down.app.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Enable app updates")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Install the signed build once")
+                            .font(.system(size: 9, weight: .medium))
+                            .opacity(0.76)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .opacity(0.7)
+                }
+                .foregroundStyle(LHTheme.accent)
+                .padding(.horizontal, 11)
+                .frame(height: 46)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(LHTheme.accent.opacity(0.10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(LHTheme.accent.opacity(0.18), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Download the latest signed build. Your history and settings are preserved.")
         }
 
         private var trustCard: some View {

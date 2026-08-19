@@ -1,0 +1,212 @@
+name: Continuous signed macOS release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: goalong-history-latest-main
+  cancel-in-progress: true
+
+jobs:
+  publish-latest-main:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      PRODUCT: LocalHistory
+      DISPLAY_NAME: Go Long History
+      BUNDLE_ID: ai.goalong.localhistory
+      ROLLING_TAG: latest-main
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve rolling version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Apple requires numeric bundle versions. Reserve the 5000.x.y range for
+          # rolling builds and encode the monotonic workflow run number in it.
+          RUN_SEQUENCE="$GITHUB_RUN_NUMBER"
+          BUILD_MAJOR=$((5000 + RUN_SEQUENCE / 10000))
+          BUILD_MINOR=$(((RUN_SEQUENCE / 100) % 100))
+          BUILD_PATCH=$((RUN_SEQUENCE % 100))
+          BUILD_NUMBER="${BUILD_MAJOR}.${BUILD_MINOR}.${BUILD_PATCH}"
+          VERSION="0.5.1"
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release credentials
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          SIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in CERTIFICATE CERTIFICATE_PASSWORD SIGN_IDENTITY API_KEY_ID API_ISSUER_ID API_PRIVATE_KEY SPARKLE_PUBLIC_KEY SPARKLE_PRIVATE_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required release secret: %s\n' "${missing[@]}" >&2
+            echo "The rolling updater intentionally fails closed until the signing and Sparkle credentials are configured." >&2
+            exit 1
+          fi
+
+      - name: Import Developer ID certificate
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/goalong-history-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          printf '%s' "$CERTIFICATE" | /usr/bin/base64 -D > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -k "$KEYCHAIN" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security list-keychains -d user -s "$KEYCHAIN"
+          security default-keychain -d user -s "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+      - name: Prepare App Store Connect API key
+        env:
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${API_KEY_ID}.p8"
+          printf '%s' "$API_PRIVATE_KEY" | /usr/bin/base64 -D > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "NOTARY_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Build universal signed app
+        env:
+          LOCALHISTORY_VERSION: ${{ steps.version.outputs.value }}
+          LOCALHISTORY_BUILD_NUMBER: ${{ steps.version.outputs.build }}
+          LOCALHISTORY_DISPLAY_NAME: Go Long History
+          LOCALHISTORY_ARCHS: arm64 x86_64
+          LOCALHISTORY_RUN_TESTS: 1
+          LOCALHISTORY_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+        run: ./scripts/build_app.sh
+
+      - name: Confirm architecture, identity, signature, and updater policy
+        env:
+          LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
+          LOCALHISTORY_DISPLAY_NAME: Go Long History
+        run: |
+          set -euo pipefail
+          lipo -info dist/LocalHistory.app/Contents/MacOS/LocalHistory
+          lipo -verify_arch arm64 x86_64 dist/LocalHistory.app/Contents/MacOS/LocalHistory
+          codesign --verify --strict --verbose=4 dist/LocalHistory.app
+          test "$(defaults read "$PWD/dist/LocalHistory.app/Contents/Info" CFBundleIdentifier)" = "$BUNDLE_ID"
+          test "$(defaults read "$PWD/dist/LocalHistory.app/Contents/Info" CFBundleDisplayName)" = "$DISPLAY_NAME"
+          ./scripts/verify_sparkle_bundle.sh
+
+      - name: Notarize and staple app
+        env:
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          ditto -c -k --sequesterRsrc --keepParent dist/LocalHistory.app "$RUNNER_TEMP/notarization.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarization.zip" \
+            --key "$NOTARY_KEY_PATH" \
+            --key-id "$API_KEY_ID" \
+            --issuer "$API_ISSUER_ID" \
+            --wait
+          xcrun stapler staple dist/LocalHistory.app
+          xcrun stapler validate dist/LocalHistory.app
+          spctl --assess --type execute --verbose=4 dist/LocalHistory.app
+
+      - name: Create DMG and ZIP
+        env:
+          LOCALHISTORY_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          brew install create-dmg
+          ./scripts/package_release.sh
+
+      - name: Notarize and staple DMG
+        env:
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          DMG="dist/LocalHistory-macOS-universal.dmg"
+          xcrun notarytool submit "$DMG" \
+            --key "$NOTARY_KEY_PATH" \
+            --key-id "$API_KEY_ID" \
+            --issuer "$API_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
+          (
+            cd dist
+            shasum -a 256 LocalHistory-macOS-universal.dmg > LocalHistory-macOS-universal.dmg.sha256
+            shasum -a 256 LocalHistory-macOS-universal.zip > LocalHistory-macOS-universal.zip.sha256
+          )
+
+      - name: Generate signed rolling Sparkle appcast
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          ./scripts/generate_sparkle_appcast.sh \
+            "${{ steps.version.outputs.value }}" \
+            dist/LocalHistory-macOS-universal.zip \
+            dist/appcast.xml \
+            "$ROLLING_TAG"
+          test -s dist/appcast.xml
+          grep -q 'sparkle:edSignature=' dist/appcast.xml
+          grep -Fq "/releases/download/$ROLLING_TAG/LocalHistory-macOS-universal.zip" dist/appcast.xml
+
+      - name: Move rolling tag to this merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git tag --force "$ROLLING_TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$ROLLING_TAG" --force
+
+      - name: Publish rolling GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-main
+          name: Go Long History — latest main
+          body: |
+            Automatically built, signed, notarized, and published from `${{ github.sha }}` on `main`.
+
+            Installed signed builds discover this release through Sparkle. The rolling tag and assets are intentionally replaced after every successful merge.
+          draft: false
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          preserve_order: true
+          files: |
+            dist/LocalHistory-macOS-universal.dmg
+            dist/LocalHistory-macOS-universal.dmg.sha256
+            dist/LocalHistory-macOS-universal.zip
+            dist/LocalHistory-macOS-universal.zip.sha256
+            dist/appcast.xml

@@ -1,13 +1,13 @@
 #!/bin/bash
 cd "$(dirname "$0")" || exit 1
-printf '\033]0;LocalHistory Setup\007'
+printf '\033]0;Go Long History Setup\007'
 chmod +x install.sh scripts/*.sh 2>/dev/null || true
 ./install.sh "$@"
 STATUS=$?
 
 if [[ $STATUS -ne 0 ]]; then
   echo
-  echo "LocalHistory was not installed. The details above explain what needs attention."
+  echo "Go Long History was not installed. The details above explain what needs attention."
   echo
   read -r -p "Press Return to close… " _
 fi

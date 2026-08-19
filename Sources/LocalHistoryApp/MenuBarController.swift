@@ -75,10 +75,10 @@
             if !permissionStatus.allGranted {
                 display = (
                     "Setup required", "exclamationmark.triangle",
-                    "LocalHistory needs Accessibility and Input Monitoring"
+                    "\(ProductIdentity.displayName) needs Accessibility before reliable capture can start"
                 )
             } else if !recording {
-                display = ("Recording paused", "pause.circle", "LocalHistory is paused")
+                display = ("Recording paused", "pause.circle", "\(ProductIdentity.displayName) is paused")
             } else if let suppression {
                 switch suppression {
                 case .privateBrowserWindow:
@@ -105,12 +105,12 @@
                     display = ("Context hidden", "eye.slash", "The current context is intentionally hidden")
                 }
             } else {
-                display = ("Recording locally", "record.circle", "LocalHistory is recording locally")
+                display = ("Recording locally", "record.circle", "\(ProductIdentity.displayName) is recording locally")
             }
 
             statusMenuItem.title = display.title
             permissionMenuItem.title =
-                "Accessibility: \(permissionStatus.accessibility ? "on" : "off")  •  Input: \(permissionStatus.inputMonitoring ? "on" : "off")  •  Tap: \(eventTapStatus() ? "on" : "off")"
+                "Accessibility: \(permissionStatus.accessibility ? "on" : "off")  •  Activity input: \(permissionStatus.inputMonitoringStatusLabel)  •  Tap: \(eventTapStatus() ? "on" : "off")"
             pauseMenuItem.title = state.isManuallyPaused ? "Resume recording" : "Pause recording"
 
             if let button = statusItem.button {
@@ -129,7 +129,7 @@
         }
 
         private func buildMenu() {
-            let openItem = makeItem("Open LocalHistory", action: #selector(openDashboard), keyEquivalent: "o")
+            let openItem = makeItem("Open \(ProductIdentity.displayName)", action: #selector(openDashboard), keyEquivalent: "o")
             openItem.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
             menu.addItem(openItem)
             menu.addItem(.separator())
@@ -150,11 +150,11 @@
             menu.addItem(makeItem("Open configuration", action: #selector(openConfiguration)))
 
             let permissionsMenu = NSMenu(title: "Permissions")
-            permissionsMenu.addItem(makeItem("Request both permissions", action: #selector(requestPermissions)))
+            permissionsMenu.addItem(makeItem("Request required access", action: #selector(requestPermissions)))
             permissionsMenu.addItem(
-                makeItem("Open Accessibility settings", action: #selector(openAccessibilitySettings)))
+                makeItem("Guided Accessibility setup", action: #selector(openAccessibilitySettings)))
             permissionsMenu.addItem(
-                makeItem("Open Input Monitoring settings", action: #selector(openInputMonitoringSettings)))
+                makeItem("Guided Input Monitoring setup", action: #selector(openInputMonitoringSettings)))
             let permissionsItem = NSMenuItem(title: "Permissions", action: nil, keyEquivalent: "")
             permissionsItem.submenu = permissionsMenu
             menu.addItem(permissionsItem)
@@ -170,7 +170,7 @@
             menu.addItem(makeItem("Reload configuration", action: #selector(reloadConfiguration)))
             menu.addItem(makeItem("Open diagnostics", action: #selector(openDiagnostics)))
             menu.addItem(.separator())
-            menu.addItem(makeItem("Quit LocalHistory", action: #selector(quit), keyEquivalent: "q"))
+            menu.addItem(makeItem("Quit \(ProductIdentity.displayName)", action: #selector(quit), keyEquivalent: "q"))
         }
 
         private func makeItem(_ title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
@@ -236,7 +236,7 @@
             onReloadConfig()
             showInformation(
                 title: "Configuration reloaded",
-                message: "LocalHistory reloaded config.json and refreshed verification settings."
+                message: "\(ProductIdentity.displayName) reloaded config.json and refreshed verification settings."
             )
         }
 
@@ -251,7 +251,7 @@
         @objc private func clearAllHistory() {
             guard
                 confirmDestructiveAction(
-                    title: "Delete all detailed LocalHistory events?",
+                    title: "Delete all detailed \(ProductIdentity.displayName) events?",
                     message:
                         "This removes detailed local JSONL events. Cryptographic minute seals and server receipts are kept, so anchored periods remain visible but can only be shared as private when their details are gone."
                 )

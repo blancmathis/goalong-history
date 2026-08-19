@@ -14,7 +14,7 @@
                         permissionPage(
                             symbol: "accessibility",
                             tint: LHTheme.accent,
-                            title: "Let LocalHistory understand the foreground context",
+                            title: "Let \(ProductIdentity.displayName) understand the foreground context",
                             subtitle: "Accessibility lets the app read permitted information about the active app, window, browser URL, and clicked interface element.",
                             granted: model.runtime.accessibilityGranted,
                             bullets: [
@@ -31,10 +31,11 @@
                             symbol: "keyboard",
                             tint: LHTheme.privateTint,
                             title: "Measure activity without reading what you type",
-                            subtitle: "Input Monitoring lets LocalHistory count clicks, scrolling, shortcuts, navigation keys, and typing duration.",
+                            subtitle: "Accessibility already includes event-listening access on macOS. A direct Input Monitoring grant is requested only when the current Mac still needs it.",
                             granted: model.runtime.inputMonitoringGranted,
                             bullets: [
                                 "Characters and words are never stored",
+                                "Accessibility may complete this step automatically",
                                 "Passwords and secure input are excluded",
                                 "You can pause capture instantly from the menu bar",
                             ],
@@ -72,7 +73,7 @@
                         Text("Your activity, made useful — without giving it away.")
                             .font(.system(size: 27, weight: .bold, design: .rounded))
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("LocalHistory creates a clear timeline on this Mac, seals it minute by minute, and lets you share only the parts you choose.")
+                        Text("\(ProductIdentity.displayName) creates a clear timeline on this Mac, seals it minute by minute, and lets you share only the parts you choose.")
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -186,14 +187,14 @@
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                         .disabled(granted)
-                    Button("Open System Settings", action: settingsAction)
+                    Button("Open guided setup", action: settingsAction)
                         .buttonStyle(.bordered)
                         .controlSize(.large)
                     Button("Check again", action: model.refreshEverything)
                         .buttonStyle(.plain)
                         .foregroundStyle(LHTheme.accent)
                 }
-                Text("macOS may ask you to quit and reopen LocalHistory. Your setup progress is preserved.")
+                Text("The guide stays visible beside System Settings and refreshes automatically. macOS may ask you to quit and reopen \(ProductIdentity.displayName).")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
@@ -210,7 +211,7 @@
                     }
                     .frame(width: 84, height: 84)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(allPermissionsGranted ? "LocalHistory is ready" : "You can finish and grant access later")
+                        Text(allPermissionsGranted ? "\(ProductIdentity.displayName) is ready" : "You can finish and grant access later")
                             .font(.system(size: 25, weight: .bold, design: .rounded))
                         Text(allPermissionsGranted
                             ? "Your private timeline begins as soon as setup closes."
@@ -230,7 +231,7 @@
                     Divider().padding(.leading, 48)
                     finalCheckRow(
                         symbol: "keyboard",
-                        title: "Input Monitoring",
+                        title: "Activity monitoring",
                         detail: model.runtime.inputMonitoringGranted ? "Activity signals available" : "Still needs approval",
                         complete: model.runtime.inputMonitoringGranted
                     )
@@ -241,7 +242,7 @@
 
                 Toggle(isOn: $launchAtLoginPreference) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Start LocalHistory when I log in")
+                        Text("Start \(ProductIdentity.displayName) when I log in")
                             .font(.system(size: 12, weight: .semibold))
                         Text("Recommended to avoid accidental gaps. You can change this later.")
                             .font(.system(size: 10))
