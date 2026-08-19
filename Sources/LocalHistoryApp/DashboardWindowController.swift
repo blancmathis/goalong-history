@@ -22,7 +22,7 @@
             window.setFrameAutosaveName("LocalHistory.MainWindow.v3")
             window.isReleasedWhenClosed = false
 
-            // The recorder can stay a lightweight menu-bar accessory while its dashboard is closed,
+            // The recorder stays a lightweight menu-bar accessory while its dashboard is closed,
             // but the dashboard itself must behave like a normal macOS application window. Keeping
             // it at the normal level and making it the primary full-screen window prevents it from
             // joining another application's full-screen Space as an overlay.
@@ -50,6 +50,20 @@
 
         func windowDidBecomeKey(_ notification: Notification) {
             viewModel.refreshEverything()
+        }
+
+        func windowWillClose(_ notification: Notification) {
+            // Keep background recording available from the menu bar without leaving a permanent
+            // Dock icon once every normal application window has closed.
+            DispatchQueue.main.async {
+                let application = NSApplication.shared
+                let hasVisibleApplicationWindow = application.windows.contains {
+                    $0.isVisible && $0.canBecomeKey
+                }
+                if !hasVisibleApplicationWindow {
+                    application.setActivationPolicy(.accessory)
+                }
+            }
         }
     }
 #endif
