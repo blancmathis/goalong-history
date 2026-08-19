@@ -28,7 +28,7 @@ extension ActivityAnalysisEngine {
     static func semanticText(from event: HistoryEvent) -> String? {
         ActivitySemanticTextSanitizer.clean(
             event.metadata?[ActivitySemanticMetadata.text],
-            maximumLength: 4_000
+            maximumLength: 6_000
         )
     }
 
@@ -36,7 +36,15 @@ extension ActivityAnalysisEngine {
         let lines = splitSemanticLines(semantic)
         return distinct(
             lines.compactMap { line in
-                let candidate = bounded(line, maximum: 280)
+                let rawCandidate = normalizedSpeakerLine(bounded(line, maximum: 280))
+                let rawLowered = rawCandidate.folding(
+                    options: [.caseInsensitive, .diacriticInsensitive],
+                    locale: Locale(identifier: "en_US_POSIX")
+                )
+                let noisePrefixes = ["assistant:", "system:", "developer:", "response:"]
+                guard !noisePrefixes.contains(where: { rawLowered.hasPrefix($0) }) else { return nil }
+
+                let candidate = strippingUserSpeakerPrefix(rawCandidate)
                 guard candidate.count >= 12, candidate.count <= 280 else { return nil }
                 let lowered = candidate.folding(
                     options: [.caseInsensitive, .diacriticInsensitive],
@@ -45,7 +53,7 @@ extension ActivityAnalysisEngine {
                 let prefixes = [
                     "add ", "analyze ", "analyse ", "ameliore ", "ameliorer ", "build ", "check ",
                     "cherche ", "compare ", "create ", "cree ", "crée ", "design ", "dis moi ",
-                    "donne ", "explain ", "fais ", "fix ", "help ", "il faut ", "je veux ",
+                    "donne ", "explain ", "fais ", "fix ", "help ", "improve ", "optimize ", "optimise ", "il faut ", "je veux ",
                     "look up ", "make ", "peux tu ", "peux-tu ", "please ", "refactor ",
                     "resume ", "résume ", "summarize ", "trouve ", "update ", "verify ", "verifie ",
                     "vérifie ", "write ",
@@ -56,12 +64,34 @@ extension ActivityAnalysisEngine {
                     || lowered.contains(" j'aimerais ")
                     || lowered.contains(" we need ")
                 guard looksLikeRequest else { return nil }
-                let noisePrefixes = ["assistant:", "system:", "developer:", "response:"]
-                guard !noisePrefixes.contains(where: { lowered.hasPrefix($0) }) else { return nil }
                 return candidate
             },
             maximum: 8,
             maximumLength: 280
+        )
+    }
+
+    /// Accessibility text from chat products commonly includes speaker labels such as
+    /// `User:` or `Human:`. Strip only user-side labels before request detection while
+    /// keeping assistant/system turns excluded above.
+    static func strippingUserSpeakerPrefix(_ value: String) -> String {
+        let prefixes = ["user:", "human:", "utilisateur:", "client:", "me:", "moi:"]
+        let lowered = value.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: Locale(identifier: "en_US_POSIX")
+        )
+        guard let prefix = prefixes.first(where: { lowered.hasPrefix($0) }) else { return value }
+        let start = value.index(value.startIndex, offsetBy: prefix.count)
+        return String(value[start...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func normalizedSpeakerLine(_ value: String) -> String {
+        let withoutMarkdown = value
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "__", with: "")
+        let markers = CharacterSet(charactersIn: ">-•*_ ")
+        return withoutMarkdown.trimmingCharacters(
+            in: CharacterSet.whitespacesAndNewlines.union(markers)
         )
     }
 

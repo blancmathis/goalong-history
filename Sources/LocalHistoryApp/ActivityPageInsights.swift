@@ -6,42 +6,106 @@
         func sitesCard(_ analysis: ActivityDayAnalysis) -> some View {
             LHCard {
                 VStack(alignment: .leading, spacing: 13) {
-                    SectionTitle(
-                        title: "Sites and pages",
-                        subtitle: "One row per host, with repeated pages merged"
-                    )
+                    HStack(alignment: .firstTextBaseline) {
+                        SectionTitle(
+                            title: "Websites, pages and actions",
+                            subtitle: "Web activity is attributed to the site, independently of the browser used"
+                        )
+                        Spacer()
+                        Button("Open all sites") {
+                            mode = .appsAndSites
+                        }
+                        .buttonStyle(.link)
+                        .font(.system(size: 10, weight: .semibold))
+                    }
+
                     if analysis.sites.isEmpty {
-                        compactEmpty(symbol: "globe", title: "No website context")
+                        compactEmpty(
+                            symbol: "globe",
+                            title: "No website URL was exposed by the active web container"
+                        )
                     } else {
                         VStack(spacing: 11) {
-                            ForEach(analysis.sites.prefix(7)) { site in
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack {
-                                        Text(site.host)
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .lineLimit(1)
-                                        Spacer()
-                                        Text(duration(site.activeSeconds))
-                                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    if let page = site.pages.first {
-                                        Text(page.title)
-                                            .font(.system(size: 9))
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(2)
-                                            .textSelection(.enabled)
-                                    }
-                                    Text(
-                                        "\(site.visitCount) block\(site.visitCount == 1 ? "" : "s") · \(site.pageCount) page\(site.pageCount == 1 ? "" : "s")"
-                                    )
-                                        .font(.system(size: 8, weight: .medium))
-                                        .foregroundStyle(.tertiary)
-                                }
-                                if site.id != analysis.sites.prefix(7).last?.id { Divider() }
+                            ForEach(Array(analysis.sites.prefix(10))) { site in
+                                recapSiteRow(site)
+                                if site.id != analysis.sites.prefix(10).last?.id { Divider() }
                             }
                         }
+
+                        if analysis.sites.count > 10 {
+                            Button {
+                                mode = .appsAndSites
+                            } label: {
+                                Label(
+                                    "View all \(analysis.sites.count) websites and their pages",
+                                    systemImage: "arrow.right.circle"
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(LHTheme.accent)
+                        }
                     }
+                }
+            }
+        }
+
+        func recapSiteRow(_ site: ActivitySiteSummary) -> some View {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(site.host)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                    Spacer()
+                    Text(duration(site.activeSeconds))
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 9) {
+                    Label("\(site.pageCount) page\(site.pageCount == 1 ? "" : "s")", systemImage: "doc.on.doc")
+                    Label("\(site.clickCount) click\(site.clickCount == 1 ? "" : "s")", systemImage: "cursorarrow.click")
+                    if site.typingBurstCount > 0 {
+                        Label("\(site.typingBurstCount) typing", systemImage: "keyboard")
+                    }
+                    if site.semanticSnapshotCount > 0 {
+                        Label("\(site.semanticSnapshotCount) memories", systemImage: "brain.head.profile")
+                    }
+                }
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(.tertiary)
+
+                if let page = site.pages.first {
+                    Text(page.title)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                }
+
+                let clicks = site.interactions.filter { $0.kind == .click }
+                if !clicks.isEmpty {
+                    HStack(spacing: 5) {
+                        Text("Clicked:")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                        Text(
+                            clicks.prefix(2).map {
+                                $0.count > 1 ? "\($0.label) ×\($0.count)" : $0.label
+                            }.joined(separator: " · ")
+                        )
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    }
+                }
+
+                if let remembered = site.rememberedContext.first {
+                    Text(remembered)
+                        .font(.system(size: 8))
+                        .foregroundStyle(LHTheme.privateTint)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
                 }
             }
         }
@@ -101,7 +165,7 @@
                             Text("Agent-ready daily brief")
                                 .font(.system(size: 15, weight: .semibold))
                             Text(
-                                "Stable Markdown, ordered by time, already deduplicated and bounded by an explicit token budget."
+                                "Stable Markdown with websites, pages and meaningful actions already deduplicated under a hard token budget."
                             )
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
@@ -180,14 +244,14 @@
                             )
                         }
                         Text(
-                            "Adds selected and visible text exposed by macOS Accessibility, so the recap can understand pages, discussions and requests instead of seeing only titles and URLs."
+                            "Remembers selected and visible text exposed by macOS Accessibility, including accessible web discussions, so the recap can understand more than a URL or page title."
                         )
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 12) {
                             Label("No keyboard character decoding", systemImage: "keyboard.badge.ellipsis")
-                            Label("Private and excluded contexts stay hidden", systemImage: "eye.slash.fill")
+                            Label("Private and excluded sites stay hidden", systemImage: "eye.slash.fill")
                             Label("Common credentials redacted", systemImage: "key.slash.fill")
                             Label("Stored locally and sealed", systemImage: "checkmark.seal.fill")
                             if analysis.coverage.semanticSnapshotCount > 0 {
@@ -214,12 +278,11 @@
                             }
                         )
                     )
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .help("Enable optional accessible visible-text context")
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .help("Enable optional accessible visible-text context")
                 }
             }
         }
-
     }
 #endif

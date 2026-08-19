@@ -15,7 +15,7 @@
 
         private var richContextTimer: Timer?
         private var analysisTimer: Timer?
-        private var lastRichContextFingerprint: String?
+        private var lastRichContextFingerprints: [String: String] = [:]
         private var lastRichContextCapture = Date.distantPast
         private var lastAnalyzedModificationDates: [String: Date] = [:]
         private let analysisQueue = DispatchQueue(
@@ -77,22 +77,34 @@
                 application.isTerminated == false,
                 let capture = AXRichContextReader.capture(
                     processIdentifier: snapshot.app.processIdentifier,
-                    maximumCharacters: 2_400
-                ),
-                capture.fingerprint != lastRichContextFingerprint
+                    maximumCharacters: 6_000
+                )
             else { return }
 
-            lastRichContextFingerprint = capture.fingerprint
+            let contextKey = [
+                snapshot.app.bundleIdentifier ?? "pid:\(snapshot.app.processIdentifier)",
+                snapshot.url?.value ?? "",
+                snapshot.window?.title ?? "",
+            ].joined(separator: "|")
+            guard lastRichContextFingerprints[contextKey] != capture.fingerprint else { return }
+            lastRichContextFingerprints[contextKey] = capture.fingerprint
+            if lastRichContextFingerprints.count > 256,
+                let firstKey = lastRichContextFingerprints.keys.first
+            {
+                lastRichContextFingerprints.removeValue(forKey: firstKey)
+            }
+
             recorder.record(
                 kind: .focusChanged,
                 context: snapshot,
                 metadata: [
-                    ActivitySemanticMetadata.version: "1",
+                    ActivitySemanticMetadata.version: "2",
                     ActivitySemanticMetadata.text: capture.text,
                     ActivitySemanticMetadata.source: capture.source,
                     ActivitySemanticMetadata.redacted: String(capture.redacted),
                     ActivitySemanticMetadata.truncated: String(capture.truncated),
                     ActivitySemanticMetadata.fingerprint: capture.fingerprint,
+                    ActivitySemanticMetadata.characterCount: String(capture.text.count),
                 ]
             )
         }

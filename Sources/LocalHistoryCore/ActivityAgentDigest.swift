@@ -42,12 +42,28 @@ public enum ActivityAgentDigestRenderer {
         }
 
         if !analysis.sites.isEmpty, writer.remainingTokens > 100 {
-            _ = writer.append("\n## Sites")
+            _ = writer.append("\n## Sites, pages and web actions")
             for site in analysis.sites {
                 let pageNames = site.pages.prefix(3).map(\.title).joined(separator: " | ")
-                var line = "- \(site.host) \(duration(site.activeSeconds)); visits=\(site.visitCount); pages=\(site.pageCount)"
+                var line = "- \(site.host) \(duration(site.activeSeconds)); visits=\(site.visitCount); pages=\(site.pageCount); clicks=\(site.clickCount); typing_bursts=\(site.typingBurstCount); scroll_bursts=\(site.scrollBurstCount); memory_snapshots=\(site.semanticSnapshotCount)"
+                if !site.sourceApplications.isEmpty {
+                    line += "; source_apps=\(site.sourceApplications.prefix(3).joined(separator: ","))"
+                }
                 if !pageNames.isEmpty { line += ": \(pageNames)" }
                 guard writer.append(line) else { break }
+
+                let clickActions = site.interactions.filter { $0.kind == .click }.prefix(6)
+                if !clickActions.isEmpty {
+                    let rendered = clickActions.map { interaction in
+                        interaction.count > 1
+                            ? "\(interaction.label)×\(interaction.count)"
+                            : interaction.label
+                    }.joined(separator: " | ")
+                    _ = writer.append("  clicked: \(rendered)")
+                }
+                if let remembered = site.rememberedContext.first, writer.remainingTokens > 80 {
+                    _ = writer.append("  remembered: \(remembered)")
+                }
             }
         }
 
@@ -78,7 +94,7 @@ public enum ActivityAgentDigestRenderer {
             coverageLine += "; last_event_hash=\(hash.prefix(16))…"
         }
         coverageLine +=
-            "; private periods expose no content. Durations are minute-level foreground estimates, not billing-grade time tracking."
+            "; private periods expose no content. Web click labels come from macOS Accessibility when available; unlabelled clicks remain represented by position. Durations are minute-level foreground estimates, not billing-grade time tracking."
         _ = writer.append(coverageLine)
         return writer.text.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
     }
