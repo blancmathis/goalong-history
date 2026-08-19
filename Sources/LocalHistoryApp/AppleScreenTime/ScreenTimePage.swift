@@ -10,6 +10,7 @@
             _screenTime = StateObject(
                 wrappedValue: AppleScreenTimeDashboardModel(
                     rootDirectory: AppPaths.screenTimeDirectory,
+                    deviceID: model.deviceID,
                     selectedDay: model.selectedDay
                 )
             )
@@ -19,9 +20,10 @@
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     PageHeader(
-                        eyebrow: "Apple activity data",
-                        title: "Apple Screen Time",
-                        subtitle: "Analyze Mac, iPhone and iPad usage without ever hiding which devices a total covers."
+                        eyebrow: "Always-current device activity",
+                        title: "Screen Time",
+                        subtitle:
+                            "This Mac is measured automatically from LocalHistory's live foreground recorder, with an exact application breakdown and explicit device scope."
                     ) {
                         HStack(spacing: 10) {
                             DateSelectionControl(date: screenTime.selectedDay, onChange: screenTime.selectDay)
@@ -33,17 +35,10 @@
                             }
                             .buttonStyle(.bordered)
                             .disabled(screenTime.isBusy)
-                            Button {
-                                screenTime.importExport()
-                            } label: {
-                                Label("Import export", systemImage: "square.and.arrow.down")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(screenTime.isBusy)
                         }
                     }
 
-                    provenanceBanner
+                    liveBanner
                     scopeCard
 
                     if let summary = screenTime.summary {
@@ -57,7 +52,7 @@
                         emptyCard
                     }
 
-                    requirementsCard
+                    connectedDevicesCard
                     storageCard
                 }
                 .padding(.horizontal, 24)
@@ -75,39 +70,37 @@
             }
         }
 
-        private var provenanceBanner: some View {
+        private var liveBanner: some View {
             HStack(alignment: .top, spacing: 13) {
-                featureIcon("rectangle.stack.badge.person.crop", tint: LHTheme.accent)
+                featureIcon("waveform.path.ecg.rectangle.fill", tint: LHTheme.success)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Device scope is part of the claim")
+                    Text(screenTime.selectedDayIsToday ? "Live on this Mac" : "Recorded automatically on this Mac")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "Mac only, every Apple device and a hand-picked device set remain distinct in the dashboard and in every exported share file."
+                        screenTime.selectedDayIsToday
+                            ? "The total and application durations advance automatically while the Mac is awake and in use. No Screen Time export or daily action is required."
+                            : "This historical view comes from the activity stream LocalHistory recorded on that day; no Apple Screen Time database was copied."
                     )
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
-                if let summary = screenTime.summary {
-                    StatusPill(
-                        title: verificationTitle(summary.verification),
-                        symbol: verificationSymbol(summary.verification),
-                        tint: verificationTint(summary.verification)
-                    )
-                } else {
-                    StatusPill(
-                        title: screenTime.hasImports ? "No data for this day" : "Not connected",
-                        symbol: screenTime.hasImports ? "calendar.badge.exclamationmark" : "link.badge.plus",
-                        tint: LHTheme.warning
-                    )
+                Spacer(minLength: 16)
+                if screenTime.isBusy {
+                    ProgressView()
+                        .controlSize(.small)
                 }
+                StatusPill(
+                    title: screenTime.selectedDayIsToday ? "Refreshes every 5s" : "Local history",
+                    symbol: screenTime.selectedDayIsToday ? "dot.radiowaves.left.and.right" : "clock.arrow.circlepath",
+                    tint: LHTheme.success
+                )
             }
             .padding(14)
-            .background(LHTheme.accent.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(LHTheme.success.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(LHTheme.accent.opacity(0.12), lineWidth: 1)
+                    .stroke(LHTheme.success.opacity(0.14), lineWidth: 1)
             )
         }
 
@@ -118,7 +111,8 @@
                         symbol: "macbook.and.iphone",
                         tint: LHTheme.teal,
                         title: "Devices included",
-                        subtitle: "This scope is stored separately from the Mac activity recorder."
+                        subtitle:
+                            "The selected scope is preserved in the dashboard and in every shared Screen Time file."
                     )
 
                     Picker(
@@ -129,25 +123,33 @@
                         )
                     ) {
                         ForEach(AppleScreenTimeScopeMode.allCases, id: \.self) { mode in
-                            Text(mode.displayName).tag(mode)
+                            Text(scopeTitle(mode)).tag(mode)
                         }
                     }
                     .pickerStyle(.segmented)
 
+                    HStack(spacing: 9) {
+                        Image(systemName: scopeStatusSymbol)
+                            .foregroundStyle(scopeStatusTint)
+                        Text(scopeStatusMessage)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(11)
+                    .background(
+                        scopeStatusTint.opacity(0.065),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+
                     if screenTime.configuration.scope.mode == .selectedDevices {
                         Divider()
-                        if screenTime.availableDevices.isEmpty {
-                            Text("Import data first to choose individual physical devices.")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                        } else {
-                            LazyVGrid(
-                                columns: [GridItem(.adaptive(minimum: 190), spacing: 9)],
-                                spacing: 9
-                            ) {
-                                ForEach(screenTime.availableDevices) { device in
-                                    deviceSelectionButton(device)
-                                }
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 205), spacing: 9)],
+                            spacing: 9
+                        ) {
+                            ForEach(screenTime.availableDevices) { device in
+                                deviceSelectionButton(device)
                             }
                         }
                     }
@@ -158,9 +160,11 @@
         private func metrics(for summary: AppleScreenTimeDaySummary) -> some View {
             HStack(spacing: 12) {
                 metric(
-                    title: "Summed screen-on",
+                    title: "Screen time",
                     value: duration(summary.totalScreenOnDuration),
-                    note: "Per-device sum; concurrent devices are not deduplicated",
+                    note: summary.deviceSummaries.count > 1
+                        ? "Sum by device; simultaneous use is not deduplicated"
+                        : "Continuously measured foreground time",
                     symbol: "hourglass"
                 )
                 metric(
@@ -170,16 +174,16 @@
                     symbol: "macbook.and.iphone"
                 )
                 metric(
-                    title: "Latest Apple update",
-                    value: summary.latestDataUpdate.map(relativeDate) ?? "Unknown",
-                    note: summary.provenance.fetchPolicy == .live ? "Live fetch" : "Cached fetch",
-                    symbol: "arrow.triangle.2.circlepath"
+                    title: "Applications",
+                    value: String(summary.topApplications.count),
+                    note: "Detailed durations for the selected scope",
+                    symbol: "square.grid.2x2.fill"
                 )
                 metric(
-                    title: "Import trust",
-                    value: verificationShortTitle(summary.verification),
-                    note: verificationNote(summary.verification),
-                    symbol: verificationSymbol(summary.verification)
+                    title: "Last refresh",
+                    value: screenTime.lastRefreshAt.map(relativeDate) ?? "—",
+                    note: screenTime.selectedDayIsToday ? "Automatically refreshed" : "Historical calculation",
+                    symbol: "arrow.triangle.2.circlepath"
                 )
             }
         }
@@ -190,11 +194,12 @@
                     sectionHeader(
                         symbol: "display.2",
                         tint: LHTheme.teal,
-                        title: "Per-device usage",
-                        subtitle: "The original physical-device rows stay visible."
+                        title: "Usage by device",
+                        subtitle: "Each physical device keeps its own duration and source label."
                     )
+
                     if summary.deviceSummaries.isEmpty {
-                        Text("The current scope includes no activity for this day.")
+                        Text("The selected scope contains no measured activity for this day.")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     } else {
@@ -206,11 +211,23 @@
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.device.displayName)
                                         .font(.system(size: 10, weight: .semibold))
-                                    Text(item.device.kind.displayName)
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                    Text(
+                                        item.device.id == screenTime.currentMacDeviceID
+                                            ? "This Mac · live recorder"
+                                            : "\(item.device.kind.displayName) · connected snapshot"
+                                    )
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(.secondary)
                                 }
                                 Spacer()
+                                if item.device.id == screenTime.currentMacDeviceID {
+                                    StatusPill(
+                                        title: screenTime.selectedDayIsToday ? "Live" : "Local",
+                                        symbol: "dot.radiowaves.left.and.right",
+                                        tint: LHTheme.success
+                                    )
+                                }
                                 Text(duration(item.screenOnDuration))
                                     .font(.system(size: 11, weight: .bold, design: .rounded))
                                     .monospacedDigit()
@@ -230,23 +247,33 @@
                     sectionHeader(
                         symbol: "square.grid.2x2.fill",
                         tint: LHTheme.accent,
-                        title: "Top applications",
-                        subtitle: "Available only when the official export includes application rows."
+                        title: "Applications used",
+                        subtitle:
+                            "The Mac breakdown updates automatically from foreground app changes and recorder heartbeats."
                     )
+
                     if summary.topApplications.isEmpty {
-                        Text("This import contains device totals but no application breakdown.")
+                        Text("No attributable application activity is available for this scope and day.")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(Array(summary.topApplications.prefix(8).enumerated()), id: \.element.id) { index, app in
+                        ForEach(Array(summary.topApplications.prefix(10).enumerated()), id: \.element.id) { index, app in
                             HStack(spacing: 10) {
                                 Text(String(index + 1))
                                     .font(.system(size: 9, weight: .bold, design: .rounded))
                                     .foregroundStyle(.secondary)
                                     .frame(width: 18)
-                                Text(app.resolvedName)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .lineLimit(1)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(app.resolvedName)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .lineLimit(1)
+                                    if let bundle = app.bundleIdentifier {
+                                        Text(bundle)
+                                            .font(.system(size: 7, design: .monospaced))
+                                            .foregroundStyle(.tertiary)
+                                            .lineLimit(1)
+                                    }
+                                }
                                 Spacer()
                                 Text(duration(app.duration))
                                     .font(.system(size: 10, weight: .semibold, design: .rounded))
@@ -265,10 +292,10 @@
                 HStack(spacing: 16) {
                     featureIcon("square.and.arrow.up.on.square.fill", tint: LHTheme.accent)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Share this Screen Time analysis")
+                        Text("Share this Screen Time view")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
-                            "The JSON carries the scope, included device count, aggregation rule, Apple provenance and import-verification state."
+                            "The export states whether it covers this Mac, every connected device or a specific selection, and whether application details are included."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
@@ -301,36 +328,47 @@
         private var emptyCard: some View {
             LHCard {
                 EmptyStateView(
-                    symbol: screenTime.hasImports ? "calendar.badge.exclamationmark" : "macbook.and.iphone",
-                    title: screenTime.hasImports ? "No import covers this day" : "Connect Apple Screen Time",
-                    message: screenTime.hasImports
-                        ? "Choose another day or import a newer Apple DeviceActivity export."
-                        : "Import a JSON export from the isolated Apple Screen Time collector, then choose all devices, Mac only or exact physical devices.",
-                    buttonTitle: "Import Apple export",
-                    action: screenTime.importExport
+                    symbol: "display",
+                    title: "No measured activity for this day",
+                    message:
+                        "Keep LocalHistory running on the Mac. Screen Time will appear here automatically as soon as foreground activity is recorded."
                 )
-                .frame(minHeight: 280)
+                .frame(minHeight: 250)
             }
         }
 
-        private var requirementsCard: some View {
+        private var connectedDevicesCard: some View {
             LHCard {
                 HStack(alignment: .top, spacing: 14) {
-                    featureIcon("checklist.checked", tint: LHTheme.warning)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Official Apple collection requirements")
+                    featureIcon(
+                        screenTime.hasRemoteDevices ? "checkmark.icloud.fill" : "iphone.gen3",
+                        tint: screenTime.hasRemoteDevices ? LHTheme.success : LHTheme.warning
+                    )
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("iPhone, iPad and other Macs")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "The 2026 DeviceActivity export API requires an eligible EU customer device, approved-with-data-access authorization and Apple’s managed Family Controls App and Website Usage entitlement."
+                            screenTime.hasRemoteDevices
+                                ? "\(screenTime.remoteDeviceCount) additional device\(screenTime.remoteDeviceCount == 1 ? " is" : "s are") available for All devices and Selected devices views."
+                                : "This Mac is already automatic. Continuous iPhone and iPad data requires the Goalong iOS companion with Apple's Screen Time data-access entitlement and automatic sync."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        Text("LocalHistory never reads private Screen Time databases or uses undocumented Apple APIs.")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(LHTheme.success)
+                        Text(
+                            "A diagnostic snapshot import remains available for development, but it is not the intended daily workflow."
+                        )
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(.tertiary)
                     }
-                    Spacer()
+                    Spacer(minLength: 16)
+                    Button {
+                        screenTime.importExport()
+                    } label: {
+                        Label("Import test snapshot", systemImage: "hammer")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(screenTime.isBusy)
                 }
             }
         }
@@ -341,27 +379,35 @@
                     Image(systemName: "internaldrive.fill")
                         .foregroundStyle(LHTheme.teal)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Separate local storage")
+                        Text("Local and separate")
                             .font(.system(size: 11, weight: .semibold))
-                        Text("Imports and scope settings live under LocalHistory/apple-screen-time with private permissions.")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
+                        Text(
+                            "Live Mac usage is calculated from LocalHistory events. Device-scope settings and optional companion snapshots stay under LocalHistory/apple-screen-time."
+                        )
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    Text("\(screenTime.importCount) import\(screenTime.importCount == 1 ? "" : "s")")
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
+                    if screenTime.hasImports {
+                        Text("\(screenTime.importCount) test snapshot\(screenTime.importCount == 1 ? "" : "s")")
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
                     Button("Open folder") { screenTime.openDataFolder() }
                         .buttonStyle(.bordered)
-                    Button("Delete imports") { screenTime.deleteAllImports() }
-                        .buttonStyle(.bordered)
-                        .disabled(!screenTime.hasImports || screenTime.isBusy)
+                    if screenTime.hasImports {
+                        Button("Delete snapshots") { screenTime.deleteAllImports() }
+                            .buttonStyle(.bordered)
+                            .disabled(screenTime.isBusy)
+                    }
                 }
             }
         }
 
         private func deviceSelectionButton(_ device: AppleScreenTimeDevice) -> some View {
             let selected = screenTime.selectedDeviceIDs.contains(device.id)
+            let isCurrentMac = device.id == screenTime.currentMacDeviceID
             return Button {
                 screenTime.toggleDevice(device)
             } label: {
@@ -372,9 +418,9 @@
                         Text(device.displayName)
                             .font(.system(size: 10, weight: .semibold))
                             .lineLimit(1)
-                        Text(device.kind.displayName)
+                        Text(isCurrentMac ? "This Mac · live" : device.kind.displayName)
                             .font(.system(size: 8))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(isCurrentMac ? LHTheme.success : Color.secondary)
                     }
                     Spacer()
                     Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -387,6 +433,50 @@
                 )
             }
             .buttonStyle(.plain)
+        }
+
+        private var scopeStatusMessage: String {
+            switch screenTime.configuration.scope.mode {
+            case .macOnly:
+                return "Only this running Mac is included. Its data is live and does not require an export."
+            case .allDevices:
+                return screenTime.hasRemoteDevices
+                    ? "This Mac plus every connected Apple device is included."
+                    : "This Mac is included; no other Apple device is connected yet."
+            case .selectedDevices:
+                let count = screenTime.selectedDeviceIDs.count
+                return "\(count) exact device\(count == 1 ? "" : "s") selected."
+            }
+        }
+
+        private var scopeStatusSymbol: String {
+            if screenTime.configuration.scope.mode == .allDevices, !screenTime.hasRemoteDevices {
+                return "exclamationmark.triangle.fill"
+            }
+            return "checkmark.circle.fill"
+        }
+
+        private var scopeStatusTint: Color {
+            if screenTime.configuration.scope.mode == .allDevices, !screenTime.hasRemoteDevices {
+                return LHTheme.warning
+            }
+            return LHTheme.success
+        }
+
+        private func scopeTitle(_ mode: AppleScreenTimeScopeMode) -> String {
+            switch mode {
+            case .macOnly: return "This Mac"
+            case .allDevices: return "All devices"
+            case .selectedDevices: return "Selected devices"
+            }
+        }
+
+        private func scopeDescription(_ scope: AppleScreenTimeScope) -> String {
+            switch scope.mode {
+            case .macOnly: return "This Mac only"
+            case .allDevices: return "Every currently connected device"
+            case .selectedDevices: return "Exact selected device set"
+            }
         }
 
         private func sectionHeader(symbol: String, tint: Color, title: String, subtitle: String) -> some View {
@@ -431,42 +521,6 @@
             }
         }
 
-        private func scopeDescription(_ scope: AppleScreenTimeScope) -> String {
-            switch scope.mode {
-            case .allDevices: return "Every device returned by Apple"
-            case .macOnly: return "Only reports identified as Mac"
-            case .selectedDevices: return "\(scope.selectedDeviceIDs.count) selected physical device(s)"
-            }
-        }
-
-        private func verificationTitle(_ value: AppleScreenTimeImportVerification) -> String {
-            switch value {
-            case .verifiedOfficialCollector: return "Official signature verified"
-            case .signaturePresentUnverified: return "Signature not verified"
-            case .unsigned: return "Unsigned import"
-            }
-        }
-
-        private func verificationShortTitle(_ value: AppleScreenTimeImportVerification) -> String {
-            value == .verifiedOfficialCollector ? "Verified" : (value == .unsigned ? "Unsigned" : "Unverified")
-        }
-
-        private func verificationNote(_ value: AppleScreenTimeImportVerification) -> String {
-            switch value {
-            case .verifiedOfficialCollector: return "Signature matched a trusted collector key"
-            case .signaturePresentUnverified: return "Signature present; official key not established"
-            case .unsigned: return "File may have been edited before import"
-            }
-        }
-
-        private func verificationSymbol(_ value: AppleScreenTimeImportVerification) -> String {
-            value == .verifiedOfficialCollector ? "checkmark.shield.fill" : "exclamationmark.triangle.fill"
-        }
-
-        private func verificationTint(_ value: AppleScreenTimeImportVerification) -> Color {
-            value == .verifiedOfficialCollector ? LHTheme.success : LHTheme.warning
-        }
-
         private func deviceSymbol(_ kind: AppleScreenTimeDeviceKind) -> String {
             switch kind {
             case .mac: return "laptopcomputer"
@@ -478,10 +532,12 @@
         }
 
         private func duration(_ seconds: TimeInterval) -> String {
-            let value = max(0, Int(seconds.rounded()))
-            let hours = value / 3_600
-            let minutes = (value % 3_600) / 60
-            return hours > 0 ? "\(hours)h \(String(format: "%02d", minutes))m" : "\(minutes)m"
+            let total = max(0, Int(seconds.rounded()))
+            let hours = total / 3_600
+            let minutes = (total % 3_600) / 60
+            if hours > 0 { return "\(hours)h \(minutes)m" }
+            if minutes > 0 { return "\(minutes)m" }
+            return "\(total)s"
         }
 
         private func relativeDate(_ date: Date) -> String {
