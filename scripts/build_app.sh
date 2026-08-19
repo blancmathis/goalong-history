@@ -60,7 +60,10 @@ fi
 
 /usr/bin/codesign "${APP_SIGN_ARGS[@]}" "$APP_PATH"
 /usr/bin/codesign --verify --strict --verbose=2 "$APP_PATH"
-LOCALHISTORY_APP_PATH="$APP_PATH" LOCALHISTORY_DISPLAY_NAME="$DISPLAY_NAME" "$ROOT_DIR/scripts/verify_sparkle_bundle.sh"
+LOCALHISTORY_APP_PATH="$APP_PATH" \
+LOCALHISTORY_DISPLAY_NAME="$DISPLAY_NAME" \
+LOCALHISTORY_REQUIRE_LOCALIZED_NAME=1 \
+  "$ROOT_DIR/scripts/verify_sparkle_bundle.sh"
 
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")" = "$APP_NAME"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")" = "$APP_NAME"

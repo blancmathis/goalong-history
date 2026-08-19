@@ -10,6 +10,7 @@ FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
 BINARY="$APP_PATH/Contents/MacOS/LocalHistory"
 RESOURCES="$APP_PATH/Contents/Resources"
 REQUIRE_CONFIGURED="${LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED:-0}"
+REQUIRE_LOCALIZED_NAME="${LOCALHISTORY_REQUIRE_LOCALIZED_NAME:-0}"
 EXPECTED_DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Go Long History}"
 INTERNAL_BUNDLE_NAME="LocalHistory"
 
@@ -61,22 +62,28 @@ if ! /usr/bin/otool -l "$BINARY" | /usr/bin/grep -A2 LC_RPATH | /usr/bin/grep -q
   exit 1
 fi
 
-# Finder ignores a localized bundle display name when the unlocalized value disagrees with
-# the physical bundle filename. Keep the compatibility filename LocalHistory.app and validate
-# the English/French localized public name separately.
-BASE_DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")"
-BASE_BUNDLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO")"
-[[ "$BASE_DISPLAY_NAME" == "$INTERNAL_BUNDLE_NAME" ]]
-[[ "$BASE_BUNDLE_NAME" == "$INTERNAL_BUNDLE_NAME" ]]
-for locale in en fr; do
-  localized="$RESOURCES/$locale.lproj/InfoPlist.strings"
-  if [[ ! -f "$localized" ]]; then
-    echo "Missing localized product name: $localized" >&2
-    exit 1
-  fi
-  [[ "$(/usr/bin/plutil -extract CFBundleDisplayName raw -o - "$localized")" == "$EXPECTED_DISPLAY_NAME" ]]
-  [[ "$(/usr/bin/plutil -extract CFBundleName raw -o - "$localized")" == "$EXPECTED_DISPLAY_NAME" ]]
-done
+# The core builder invokes this verifier before public-name localizations are installed. Once
+# the finalizer has created them—or when explicitly required—also validate the Finder naming
+# contract. Finder ignores a localized display name if the base name disagrees with the .app file.
+LOCALIZED_NAME_PRESENT=0
+if [[ -f "$RESOURCES/en.lproj/InfoPlist.strings" && -f "$RESOURCES/fr.lproj/InfoPlist.strings" ]]; then
+  LOCALIZED_NAME_PRESENT=1
+fi
+if [[ "$REQUIRE_LOCALIZED_NAME" == "1" || "$LOCALIZED_NAME_PRESENT" == "1" ]]; then
+  BASE_DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")"
+  BASE_BUNDLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO")"
+  [[ "$BASE_DISPLAY_NAME" == "$INTERNAL_BUNDLE_NAME" ]]
+  [[ "$BASE_BUNDLE_NAME" == "$INTERNAL_BUNDLE_NAME" ]]
+  for locale in en fr; do
+    localized="$RESOURCES/$locale.lproj/InfoPlist.strings"
+    if [[ ! -f "$localized" ]]; then
+      echo "Missing localized product name: $localized" >&2
+      exit 1
+    fi
+    [[ "$(/usr/bin/plutil -extract CFBundleDisplayName raw -o - "$localized")" == "$EXPECTED_DISPLAY_NAME" ]]
+    [[ "$(/usr/bin/plutil -extract CFBundleName raw -o - "$localized")" == "$EXPECTED_DISPLAY_NAME" ]]
+  done
+fi
 
 PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$INFO" 2>/dev/null || true)"
 if [[ -z "$PUBLIC_KEY" ]]; then
@@ -111,4 +118,4 @@ if len(raw) != 32:
     raise SystemExit("SUPublicEDKey must decode to exactly 32 bytes")
 PY
 
-echo "Sparkle bundle verification passed: localized Go Long History branding, embedded framework, app-relative rpath, signed-feed policy, and privacy defaults are valid."
+echo "Sparkle bundle verification passed: embedded framework, app-relative rpath, signed-feed policy, privacy defaults, and finalized branding (when present) are valid."
