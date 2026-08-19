@@ -9,6 +9,92 @@
     final class LiveMacScreenTimeSource {
         let device: AppleScreenTimeDevice
 
+        private struct AppCounter {
+            var bundleIdentifier: String?
+            var displayName: String?
+            var duration: TimeInterval = 0
+        }
+
+        private struct HourBucket {
+            let start: Date
+            let end: Date
+            var total: TimeInterval = 0
+            var applications: [String: AppCounter] = [:]
+        }
+
+        private struct RuntimeState {
+            var app: AppSnapshot?
+            var suppression: SuppressionReason?
+            var recorderRunning = false
+            var paused = false
+            var sessionActive = true
+            var systemAwake = true
+
+            mutating func apply(_ event: HistoryEvent) {
+                if let eventApp = event.app {
+                    app = eventApp
+                    recorderRunning = true
+                    if event.kind != .captureSuppressed && event.kind != .secureInputSuppressed {
+                        suppression = event.suppressionReason
+                    }
+                }
+
+                switch event.kind {
+                case .recorderStarted:
+                    recorderRunning = true
+                    paused = false
+                case .recorderStopped:
+                    recorderRunning = false
+                    app = nil
+                case .recordingPaused:
+                    paused = true
+                    app = nil
+                case .recordingResumed:
+                    recorderRunning = true
+                    paused = false
+                    app = nil
+                case .sessionLocked:
+                    sessionActive = false
+                    app = nil
+                case .sessionUnlocked:
+                    sessionActive = true
+                    app = nil
+                case .systemSleep:
+                    systemAwake = false
+                    app = nil
+                case .systemWake:
+                    systemAwake = true
+                    app = nil
+                case .captureSuppressed:
+                    suppression = event.suppressionReason
+                case .captureResumed:
+                    suppression = nil
+                case .secureInputSuppressed:
+                    suppression = event.suppressionReason ?? .secureInput
+                case .secureInputResumed:
+                    suppression = nil
+                default:
+                    break
+                }
+            }
+
+            var canMeasureScreenTime: Bool {
+                guard recorderRunning, !paused, sessionActive, systemAwake, app != nil else {
+                    return false
+                }
+                guard let suppression else { return true }
+                return ![
+                    SuppressionReason.manualPause,
+                    .sessionUnavailable,
+                    .accessibilityUnavailable,
+                ].contains(suppression)
+            }
+
+            var canRevealApplication: Bool {
+                canMeasureScreenTime && suppression == nil
+            }
+        }
+
         private let fileManager: FileManager
         private let decoder: JSONDecoder
         private let calendar: Calendar
@@ -39,8 +125,11 @@
         func storedExport(for day: Date, now: Date = Date()) -> AppleScreenTimeStoredExport? {
             guard let dayInterval = calendar.dateInterval(of: .day, for: day) else { return nil }
             let effectiveNow = min(max(now, dayInterval.start), dayInterval.end)
-            let events = loadEvents(for: day)
-            let report = makeReport(events: events, interval: dayInterval, now: effectiveNow)
+            let report = makeReport(
+                events: loadEvents(for: day),
+                interval: dayInterval,
+                now: effectiveNow
+            )
 
             let info = Bundle.main.infoDictionary
             let provenance = AppleScreenTimeProvenance(
@@ -168,92 +257,8 @@
             interval: DateInterval,
             now: Date
         ) -> AppleScreenTimeDeviceReport {
-            struct AppCounter {
-                var bundleIdentifier: String?
-                var displayName: String?
-                var duration: TimeInterval = 0
-            }
-            struct Bucket {
-                let start: Date
-                let end: Date
-                var total: TimeInterval = 0
-                var applications: [String: AppCounter] = [:]
-            }
-            struct RuntimeState {
-                var app: AppSnapshot?
-                var suppression: SuppressionReason?
-                var recorderRunning = false
-                var paused = false
-                var sessionActive = true
-                var systemAwake = true
-
-                mutating func apply(_ event: HistoryEvent) {
-                    if let eventApp = event.app {
-                        app = eventApp
-                        recorderRunning = true
-                        if event.kind != .captureSuppressed && event.kind != .secureInputSuppressed {
-                            suppression = event.suppressionReason
-                        }
-                    }
-
-                    switch event.kind {
-                    case .recorderStarted:
-                        recorderRunning = true
-                        paused = false
-                    case .recorderStopped:
-                        recorderRunning = false
-                        app = nil
-                    case .recordingPaused:
-                        paused = true
-                        app = nil
-                    case .recordingResumed:
-                        recorderRunning = true
-                        paused = false
-                        app = nil
-                    case .sessionLocked:
-                        sessionActive = false
-                        app = nil
-                    case .sessionUnlocked:
-                        sessionActive = true
-                        app = nil
-                    case .systemSleep:
-                        systemAwake = false
-                        app = nil
-                    case .systemWake:
-                        systemAwake = true
-                        app = nil
-                    case .captureSuppressed:
-                        suppression = event.suppressionReason
-                    case .captureResumed:
-                        suppression = nil
-                    case .secureInputSuppressed:
-                        suppression = event.suppressionReason ?? .secureInput
-                    case .secureInputResumed:
-                        suppression = nil
-                    default:
-                        break
-                    }
-                }
-
-                var canMeasureScreenTime: Bool {
-                    guard recorderRunning, !paused, sessionActive, systemAwake, app != nil else {
-                        return false
-                    }
-                    switch suppression {
-                    case .manualPause?, .sessionUnavailable?, .accessibilityUnavailable?:
-                        return false
-                    default:
-                        return true
-                    }
-                }
-
-                var canRevealApplication: Bool {
-                    canMeasureScreenTime && suppression == nil
-                }
-            }
-
             var state = RuntimeState()
-            var buckets: [Int64: Bucket] = [:]
+            var buckets: [Int64: HourBucket] = [:]
             let ordered = events
                 .filter { $0.timestamp < interval.end }
                 .sorted { lhs, rhs in
@@ -267,13 +272,13 @@
                 guard state.canMeasureScreenTime else { continue }
 
                 let naturalEnd = index + 1 < ordered.count ? ordered[index + 1].timestamp : now
-                var end = min(naturalEnd, now, interval.end)
+                var end = min(min(naturalEnd, now), interval.end)
                 let start = max(event.timestamp, interval.start)
                 guard end > start else { continue }
 
-                // Normal foreground state is confirmed by a heartbeat at least once per minute.
-                // Suppressed states intentionally emit no heartbeat, so explicit resume/lock/sleep
-                // boundaries are trusted instead of truncating their duration.
+                // A normal foreground state is confirmed by a heartbeat at least once per minute.
+                // Suppressed states intentionally emit no heartbeat, so their explicit resume,
+                // lock, sleep, or stop boundary is used instead.
                 if state.suppression == nil,
                    end.timeIntervalSince(event.timestamp) > maximumUnconfirmedGap
                 {
@@ -285,7 +290,7 @@
                     start: start,
                     end: end,
                     app: state.canRevealApplication ? state.app : nil,
-                    interval: interval,
+                    dayInterval: interval,
                     buckets: &buckets
                 )
             }
@@ -313,24 +318,46 @@
                     )
                 }
 
-            let lastUpdate = min(interval.end, max(interval.start, now))
             return AppleScreenTimeDeviceReport(
                 device: device,
-                lastUpdatedAt: lastUpdate,
+                lastUpdatedAt: min(interval.end, max(interval.start, now)),
                 segments: segments
             )
         }
 
-        private func accumulate<BucketValue>(
+        private func accumulate(
             start: Date,
             end: Date,
             app: AppSnapshot?,
-            interval: DateInterval,
-            buckets: inout [Int64: BucketValue]
+            dayInterval: DateInterval,
+            buckets: inout [Int64: HourBucket]
         ) {
-            // This generic declaration is never called. The concrete overload below keeps
-            // the state-machine implementation local to `makeReport` while satisfying Swift's
-            // nested-type visibility rules.
+            var cursor = start
+            while cursor < end {
+                guard let hour = calendar.dateInterval(of: .hour, for: cursor) else { break }
+                let bucketStart = max(hour.start, dayInterval.start)
+                let bucketEnd = min(hour.end, dayInterval.end)
+                let portionEnd = min(end, bucketEnd)
+                guard portionEnd > cursor else { break }
+
+                let key = Int64(hour.start.timeIntervalSince1970)
+                var bucket = buckets[key] ?? HourBucket(start: bucketStart, end: bucketEnd)
+                let duration = portionEnd.timeIntervalSince(cursor)
+                bucket.total += duration
+
+                if let app {
+                    let appKey = app.bundleIdentifier ?? "name:\(app.name.lowercased())"
+                    var counter = bucket.applications[appKey] ?? AppCounter(
+                        bundleIdentifier: app.bundleIdentifier,
+                        displayName: app.name
+                    )
+                    counter.duration += duration
+                    bucket.applications[appKey] = counter
+                }
+
+                buckets[key] = bucket
+                cursor = portionEnd
+            }
         }
     }
 #endif
