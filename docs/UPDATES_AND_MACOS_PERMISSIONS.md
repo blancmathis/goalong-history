@@ -2,6 +2,12 @@
 
 This document describes the production behavior implemented for **Go Long History**. Internal executable, bundle ID, data-folder, and legacy migration names intentionally remain `LocalHistory` so existing history and settings are not split into a new installation identity. macOS may still require a one-time approval for a newly signed app copy because TCC also evaluates the running binary and its location.
 
+## Product name and compatibility identity
+
+The physical compatibility bundle remains `LocalHistory.app`, with executable `LocalHistory` and bundle ID `ai.goalong.localhistory`. Its English and French `InfoPlist.strings` localizations expose **Go Long History** to Finder, the Dock, app menus, permission panels, and the app UI. The unlocalized `CFBundleDisplayName`/`CFBundleName` intentionally match the physical filename because Finder ignores a localized display name when the base bundle name and filename disagree.
+
+This gives users the correct product name without creating a second data directory, changing the update identity, or abandoning the existing installation path. The release DMG is also mounted as **Go Long History**.
+
 ## Rolling updates from `main`
 
 Every successful merge to `main` runs `.github/workflows/continuous-release.yml`.
