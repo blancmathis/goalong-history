@@ -62,8 +62,10 @@
                 : "Automatic update checks are off."
 
             // Sparkle's scheduled interval may not be due yet, especially on a freshly installed
-            // build. Perform one quiet check now so the dashboard button reflects the current Git
-            // release without waiting up to a day.
+            // build. Start one quiet update session now so the dashboard button reflects the
+            // current Git release without waiting up to a day. Keeping Sparkle's scheduled session
+            // alive also lets a click on that button reveal the already-found update immediately,
+            // instead of performing a second user-visible feed check.
             DispatchQueue.main.async { [weak self] in
                 self?.refreshAvailableUpdate()
             }
@@ -71,10 +73,11 @@
 
         func refreshAvailableUpdate() {
             guard let updater = updaterController?.updater, updater.canCheckForUpdates else { return }
+            guard availableVersion == nil, !updater.sessionInProgress else { return }
             guard !isChecking else { return }
             isChecking = true
             statusMessage = "Checking for updates…"
-            updater.checkForUpdateInformation()
+            updater.checkForUpdatesInBackground()
         }
 
         func checkForUpdates() {
@@ -92,7 +95,17 @@
             }
             guard let updater = updaterController?.updater else { return }
             NSApplication.shared.activate(ignoringOtherApps: true)
-            updater.checkForUpdates()
+
+            if updater.sessionInProgress {
+                // The quiet background session already owns this appcast item. Sparkle treats
+                // checkForUpdates() here as "show the current update in focus", so no second
+                // search/progress step is presented to the user.
+                updater.checkForUpdates()
+            } else {
+                // The cached indicator can outlive a dismissed or failed Sparkle session. Fall
+                // back to a fresh attended check rather than presenting stale update metadata.
+                checkForUpdates()
+            }
         }
 
         func installUpdateEnabledBuild() {
