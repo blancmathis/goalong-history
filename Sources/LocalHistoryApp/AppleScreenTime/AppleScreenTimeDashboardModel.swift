@@ -10,26 +10,29 @@
         @Published var configuration: AppleScreenTimeConfiguration
         @Published private(set) var summary: AppleScreenTimeDaySummary?
         @Published private(set) var availableDevices: [AppleScreenTimeDevice] = []
-        @Published private(set) var importCount = 0
         @Published private(set) var isBusy = false
         @Published private(set) var lastRefreshAt: Date?
-        @Published private(set) var remoteDeviceCount = 0
+        @Published private(set) var latestAppleUpdate: Date?
+        @Published private(set) var status: AppleSystemScreenTimeStatus = .loading
+        @Published private(set) var knowledgeIntervalCount = 0
+        @Published private(set) var biomeIntervalCount = 0
         @Published var alert: AppleScreenTimeDashboardAlert?
 
         let currentMacDevice: AppleScreenTimeDevice
 
         private let store: AppleScreenTimeStore?
-        private let liveMacSource: LiveMacScreenTimeSource
+        private let appleSource: AppleSystemScreenTimeSource
         private let queue = DispatchQueue(
-            label: "ai.goalong.localhistory.apple-screen-time.dashboard",
+            label: "ai.goalong.localhistory.apple-system-screen-time.dashboard",
             qos: .userInitiated
         )
         private var refreshTimer: Timer?
+        private var deviceSourceLabels: [String: String] = [:]
 
         init(rootDirectory: URL, deviceID: String, selectedDay: Date = Date()) {
-            let liveSource = LiveMacScreenTimeSource(deviceID: deviceID)
-            self.liveMacSource = liveSource
-            self.currentMacDevice = liveSource.device
+            let source = AppleSystemScreenTimeSource(deviceID: deviceID)
+            self.appleSource = source
+            self.currentMacDevice = source.currentMacDevice
             self.selectedDay = Calendar.current.startOfDay(for: selectedDay)
 
             do {
@@ -43,34 +46,29 @@
                 self.store = nil
                 self.configuration = AppleScreenTimeConfiguration(
                     enabled: true,
-                    scope: .macOnly,
+                    scope: .allDevices,
                     shareLevel: .perDevice
                 )
                 self.alert = AppleScreenTimeDashboardAlert(
-                    title: "Screen Time storage could not start",
+                    title: "Screen Time configuration could not start",
                     message: String(describing: error)
                 )
             }
 
             refresh()
-            startLiveRefreshTimer()
+            startRefreshTimer()
         }
 
         deinit {
             refreshTimer?.invalidate()
         }
 
-        var hasImports: Bool { importCount > 0 }
-        var hasRemoteDevices: Bool { remoteDeviceCount > 0 }
         var currentMacDeviceID: String { currentMacDevice.id }
-
-        var selectedDeviceIDs: Set<String> {
-            Set(configuration.scope.selectedDeviceIDs)
-        }
-
-        var selectedDayIsToday: Bool {
-            Calendar.current.isDateInToday(selectedDay)
-        }
+        var remoteDeviceCount: Int { availableDevices.filter { $0.id != currentMacDevice.id }.count }
+        var hasRemoteDevices: Bool { remoteDeviceCount > 0 }
+        var selectedDeviceIDs: Set<String> { Set(configuration.scope.selectedDeviceIDs) }
+        var selectedDayIsToday: Bool { Calendar.current.isDateInToday(selectedDay) }
+        var needsFullDiskAccess: Bool { status.kind == .fullDiskAccessRequired }
 
         var currentMacIsIncluded: Bool {
             switch configuration.scope.mode {
@@ -79,6 +77,11 @@
             case .selectedDevices:
                 return selectedDeviceIDs.contains(currentMacDevice.id)
             }
+        }
+
+        func sourceLabel(for device: AppleScreenTimeDevice) -> String {
+            deviceSourceLabels[device.id]
+                ?? (device.id == currentMacDevice.id ? "Apple system usage" : "Apple iCloud sync")
         }
 
         func selectDay(_ date: Date) {
@@ -91,30 +94,18 @@
             isBusy = true
             let day = selectedDay
             let scope = configuration.scope
-            let store = self.store
-            let liveMacSource = self.liveMacSource
+            let source = appleSource
 
             queue.async { [weak self] in
-                let imports = store?.storedExports() ?? []
-                let local = liveMacSource.storedExport(for: day)
-                let devices = Self.uniqueDevices(
-                    localDevice: liveMacSource.device,
-                    from: imports
-                )
-                let remoteReports = Self.latestRemoteReports(
-                    for: day,
-                    imports: imports,
-                    excludingLocalDevice: liveMacSource.device
-                )
-                let merged = Self.combinedExport(
-                    for: day,
+                let collection = source.collect(for: day)
+                let scoped = Self.scopedExport(
+                    collection.storedExport,
                     scope: scope,
-                    local: local,
-                    remoteReports: remoteReports
+                    currentMacID: source.currentMacDevice.id
                 )
                 let interval = Calendar.current.dateInterval(of: .day, for: day)
                 let nextSummary = interval.flatMap { interval in
-                    merged.flatMap {
+                    scoped.flatMap {
                         AppleScreenTimeAnalyzer.summary(
                             from: $0,
                             interval: interval,
@@ -130,10 +121,13 @@
                         self.refresh()
                         return
                     }
-                    self.importCount = imports.count
-                    self.availableDevices = devices
-                    self.remoteDeviceCount = max(0, devices.count - 1)
+                    self.availableDevices = collection.availableDevices
+                    self.deviceSourceLabels = collection.deviceSourceLabels
+                    self.status = collection.status
                     self.summary = nextSummary
+                    self.latestAppleUpdate = collection.latestAppleUpdate
+                    self.knowledgeIntervalCount = collection.knowledgeIntervalCount
+                    self.biomeIntervalCount = collection.biomeIntervalCount
                     self.lastRefreshAt = Date()
                     self.isBusy = false
                 }
@@ -176,52 +170,11 @@
             saveConfigurationAndRefresh(refreshSummary: false)
         }
 
-        /// Compatibility path for companion snapshots. The Mac itself never needs an import:
-        /// its usage is reconstructed continuously from the live LocalHistory recorder.
-        func importExport() {
-            guard let store else { return }
-            let panel = NSOpenPanel()
-            panel.allowedContentTypes = [.json]
-            panel.allowsMultipleSelection = false
-            panel.canChooseDirectories = false
-            panel.message = "Choose a Screen Time companion snapshot for another Apple device."
-            guard panel.runModal() == .OK, let source = panel.url else { return }
-
-            isBusy = true
-            queue.async { [weak self] in
-                do {
-                    let imported = try store.importExport(from: source)
-                    var config = store.loadConfiguration()
-                    config.enabled = true
-                    try store.saveConfiguration(config)
-                    DispatchQueue.main.async {
-                        guard let self else { return }
-                        self.configuration = config
-                        self.isBusy = false
-                        self.alert = AppleScreenTimeDashboardAlert(
-                            title: "Device snapshot connected",
-                            message: Self.importMessage(for: imported)
-                        )
-                        self.refresh()
-                    }
-                } catch {
-                    DispatchQueue.main.async {
-                        guard let self else { return }
-                        self.isBusy = false
-                        self.alert = AppleScreenTimeDashboardAlert(
-                            title: "Connection failed",
-                            message: String(describing: error)
-                        )
-                    }
-                }
-            }
-        }
-
         func exportSharePayload() {
             guard let store, let summary else {
                 alert = AppleScreenTimeDashboardAlert(
                     title: "Nothing to export",
-                    message: "No Screen Time data is available for the selected day and device scope."
+                    message: "No Apple Screen Time data is available for the selected day and device scope."
                 )
                 return
             }
@@ -229,11 +182,11 @@
             let panel = NSSavePanel()
             panel.canCreateDirectories = true
             panel.allowedContentTypes = [.json]
-            panel.nameFieldStringValue = "\(Self.dayString(selectedDay)).screen-time-share.json"
+            panel.nameFieldStringValue = "\(Self.dayString(selectedDay)).apple-screen-time-share.json"
             guard panel.runModal() == .OK, let destination = panel.url else { return }
 
             isBusy = true
-            let payload = AppleScreenTimeAnalyzer.sharePayload(
+            let payload = Self.systemSharePayload(
                 from: summary,
                 disclosureLevel: configuration.shareLevel
             )
@@ -244,9 +197,9 @@
                         guard let self else { return }
                         self.isBusy = false
                         self.alert = AppleScreenTimeDashboardAlert(
-                            title: "Screen Time share exported",
+                            title: "Apple Screen Time exported",
                             message:
-                                "The file includes the selected device scope, per-device totals and the chosen application disclosure level."
+                                "The file states the exact device scope, Apple data source, per-device totals and chosen application disclosure level."
                         )
                         NSWorkspace.shared.activateFileViewerSelecting([destination])
                     }
@@ -263,41 +216,33 @@
             }
         }
 
-        func deleteAllImports() {
-            guard let store, !isBusy else { return }
-            isBusy = true
-            queue.async { [weak self] in
-                do {
-                    let count = try store.deleteAllImports()
-                    DispatchQueue.main.async {
-                        guard let self else { return }
-                        self.isBusy = false
-                        self.alert = AppleScreenTimeDashboardAlert(
-                            title: "Connected-device snapshots deleted",
-                            message:
-                                "Deleted \(count) snapshot\(count == 1 ? "" : "s"). Live Screen Time for this Mac is unaffected."
-                        )
-                        self.refresh()
-                    }
-                } catch {
-                    DispatchQueue.main.async {
-                        guard let self else { return }
-                        self.isBusy = false
-                        self.alert = AppleScreenTimeDashboardAlert(
-                            title: "Deletion failed",
-                            message: String(describing: error)
-                        )
-                    }
-                }
-            }
+        func openFullDiskAccessSettings() {
+            openSettings(candidates: [
+                "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles",
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+            ])
         }
 
-        func openDataFolder() {
+        func openScreenTimeSettings() {
+            openSettings(candidates: [
+                "x-apple.systempreferences:com.apple.Screen-Time-Settings.extension",
+                "x-apple.systempreferences:com.apple.preference.familysharing",
+                "x-apple.systempreferences:",
+            ])
+        }
+
+        func openConfigurationFolder() {
             guard let store else { return }
             NSWorkspace.shared.open(store.rootDirectory)
         }
 
-        private func startLiveRefreshTimer() {
+        private func openSettings(candidates: [String]) {
+            for candidate in candidates {
+                if let url = URL(string: candidate), NSWorkspace.shared.open(url) { return }
+            }
+        }
+
+        private func startRefreshTimer() {
             let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
                 guard let self, self.selectedDayIsToday else { return }
                 self.refresh()
@@ -322,136 +267,61 @@
             }
         }
 
-        private static func combinedExport(
-            for day: Date,
-            scope: AppleScreenTimeScope,
-            local: AppleScreenTimeStoredExport?,
-            remoteReports: [AppleScreenTimeDeviceReport]
-        ) -> AppleScreenTimeStoredExport? {
-            guard let interval = Calendar.current.dateInterval(of: .day, for: day) else { return nil }
-            let localReports = local?.envelope.reports ?? []
-            let reports: [AppleScreenTimeDeviceReport]
+        private static func systemSharePayload(
+            from summary: AppleScreenTimeDaySummary,
+            disclosureLevel: AppleScreenTimeShareLevel
+        ) -> AppleScreenTimeSharePayload {
+            let generated = AppleScreenTimeAnalyzer.sharePayload(
+                from: summary,
+                disclosureLevel: disclosureLevel
+            )
+            return AppleScreenTimeSharePayload(
+                schemaVersion: generated.schemaVersion,
+                createdAt: generated.createdAt,
+                start: generated.start,
+                end: generated.end,
+                requestedScope: generated.requestedScope,
+                includedDeviceCount: generated.includedDeviceCount,
+                totalScreenOnDuration: generated.totalScreenOnDuration,
+                aggregationMethod: generated.aggregationMethod,
+                disclosureLevel: generated.disclosureLevel,
+                devices: generated.devices,
+                provenance: generated.provenance,
+                importVerification: generated.importVerification,
+                trustNotice:
+                    "These values were read directly from Apple’s local knowledgeC and Biome stores. They were not generated by LocalHistory or manually imported. Apple’s private on-disk formats are not cryptographically attested for third parties and may change in future OS releases."
+            )
+        }
 
+        private static func scopedExport(
+            _ stored: AppleScreenTimeStoredExport?,
+            scope: AppleScreenTimeScope,
+            currentMacID: String
+        ) -> AppleScreenTimeStoredExport? {
+            guard let stored else { return nil }
+            let reports: [AppleScreenTimeDeviceReport]
             switch scope.mode {
             case .macOnly:
-                // "Mac only" means this running Mac, not every Mac present in a synced account.
-                reports = localReports
+                reports = stored.envelope.reports.filter { $0.device.id == currentMacID }
             case .allDevices, .selectedDevices:
-                reports = localReports + remoteReports
+                reports = stored.envelope.reports
             }
-
             guard !reports.isEmpty else { return nil }
-            let provenance: AppleScreenTimeProvenance
-            if remoteReports.isEmpty, let localProvenance = local?.envelope.provenance {
-                provenance = localProvenance
-            } else {
-                let info = Bundle.main.infoDictionary
-                provenance = AppleScreenTimeProvenance(
-                    api: "LocalHistory live Mac recorder plus connected Apple device snapshots",
-                    collectorBundleIdentifier: Bundle.main.bundleIdentifier ?? "ai.goalong.localhistory",
-                    collectorVersion: info?["CFBundleShortVersionString"] as? String ?? "unknown",
-                    collectorPlatform: ProcessInfo.processInfo.operatingSystemVersionString,
-                    authorization: .unknown,
-                    fetchPolicy: .live,
-                    euCustomerRequirementAcknowledged: false
-                )
-            }
 
             let envelope = AppleScreenTimeExportEnvelope(
-                requestedStart: interval.start,
-                requestedEnd: interval.end,
+                schemaVersion: stored.envelope.schemaVersion,
+                createdAt: stored.envelope.createdAt,
+                requestedStart: stored.envelope.requestedStart,
+                requestedEnd: stored.envelope.requestedEnd,
                 requestedScope: scope,
-                provenance: provenance,
+                provenance: stored.envelope.provenance,
                 reports: reports
             )
             return AppleScreenTimeStoredExport(
-                importedAt: Date(),
-                verification: .unsigned,
+                importedAt: stored.importedAt,
+                verification: stored.verification,
                 envelope: envelope
             )
-        }
-
-        private static func latestRemoteReports(
-            for day: Date,
-            imports: [AppleScreenTimeStoredExport],
-            excludingLocalDevice local: AppleScreenTimeDevice
-        ) -> [AppleScreenTimeDeviceReport] {
-            guard let interval = Calendar.current.dateInterval(of: .day, for: day) else { return [] }
-            var selected: [String: AppleScreenTimeDeviceReport] = [:]
-
-            for stored in imports {
-                let exportInterval = DateInterval(
-                    start: stored.envelope.requestedStart,
-                    end: stored.envelope.requestedEnd
-                )
-                guard exportInterval.intersects(interval) else { continue }
-
-                for report in stored.envelope.reports {
-                    guard !isSamePhysicalMac(report.device, local) else { continue }
-                    guard report.segments.contains(where: { $0.interval.intersects(interval) }) else { continue }
-                    if let previous = selected[report.device.id],
-                       previous.lastUpdatedAt >= report.lastUpdatedAt
-                    {
-                        continue
-                    }
-                    selected[report.device.id] = report
-                }
-            }
-
-            return selected.values.sorted {
-                if $0.device.kind.rawValue != $1.device.kind.rawValue {
-                    return $0.device.kind.rawValue < $1.device.kind.rawValue
-                }
-                return $0.device.displayName.localizedCaseInsensitiveCompare($1.device.displayName) == .orderedAscending
-            }
-        }
-
-        private static func uniqueDevices(
-            localDevice: AppleScreenTimeDevice,
-            from exports: [AppleScreenTimeStoredExport]
-        ) -> [AppleScreenTimeDevice] {
-            var byID: [String: AppleScreenTimeDevice] = [localDevice.id: localDevice]
-            for stored in exports {
-                for report in stored.envelope.reports {
-                    guard !isSamePhysicalMac(report.device, localDevice) else { continue }
-                    byID[report.device.id] = report.device
-                }
-            }
-            return byID.values.sorted {
-                if $0.id == localDevice.id { return true }
-                if $1.id == localDevice.id { return false }
-                if $0.kind.rawValue != $1.kind.rawValue {
-                    return $0.kind.rawValue < $1.kind.rawValue
-                }
-                return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
-            }
-        }
-
-        private static func isSamePhysicalMac(
-            _ candidate: AppleScreenTimeDevice,
-            _ local: AppleScreenTimeDevice
-        ) -> Bool {
-            if candidate.id == local.id { return true }
-            guard candidate.kind == .mac else { return false }
-            return normalizedDeviceName(candidate.displayName) == normalizedDeviceName(local.displayName)
-        }
-
-        private static func normalizedDeviceName(_ value: String) -> String {
-            value
-                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        private static func importMessage(for stored: AppleScreenTimeStoredExport) -> String {
-            let deviceCount = stored.envelope.reports.count
-            switch stored.verification {
-            case .unsigned:
-                return "Connected \(deviceCount) device snapshot\(deviceCount == 1 ? "" : "s"). The Mac continues updating automatically; this compatibility snapshot is marked unverified."
-            case .signaturePresentUnverified:
-                return "Connected \(deviceCount) device snapshot\(deviceCount == 1 ? "" : "s"). A signature is present but has not yet been verified against an official companion key."
-            case .verifiedOfficialCollector:
-                return "Connected and verified \(deviceCount) device report\(deviceCount == 1 ? "" : "s") from an official companion."
-            }
         }
 
         private static func dayString(_ date: Date) -> String {

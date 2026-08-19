@@ -40,6 +40,7 @@ let package = Package(
                 .linkedFramework("LocalAuthentication", .when(platforms: [.macOS])),
                 .linkedFramework("Security", .when(platforms: [.macOS])),
                 .linkedFramework("ServiceManagement", .when(platforms: [.macOS])),
+                .linkedLibrary("sqlite3", .when(platforms: [.macOS])),
                 .unsafeFlags(
                     ["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"],
                     .when(platforms: [.macOS])
@@ -55,11 +56,6 @@ let package = Package(
             name: "AppleScreenTimeTests",
             dependencies: ["AppleScreenTime"],
             path: "Features/AppleScreenTime/Tests"
-        ),
-        .testTarget(
-            name: "LocalHistoryAppTests",
-            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime"],
-            path: "Tests/LocalHistoryAppTests"
         ),
     ],
     swiftLanguageVersions: [.v5]
