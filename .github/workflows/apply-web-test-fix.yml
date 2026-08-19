@@ -1,0 +1,41 @@
+name: Apply website activity test fixes
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-website-activity-test-fixes
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.head_ref == 'agent/site-level-web-activity' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply focused fixes
+        run: |
+          git apply --check .web-test-fix.patch
+          git apply .web-test-fix.patch
+          rm .web-test-fix.patch
+          rm .github/workflows/apply-web-test-fix.yml
+          git diff --check
+
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix grouped clicks and chat request extraction"
+          git push origin "HEAD:${{ github.head_ref }}"

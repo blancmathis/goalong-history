@@ -1,0 +1,89 @@
+diff --git a/Sources/LocalHistoryCore/ActivityAnalysisAggregation.swift b/Sources/LocalHistoryCore/ActivityAnalysisAggregation.swift
+--- a/Sources/LocalHistoryCore/ActivityAnalysisAggregation.swift
++++ b/Sources/LocalHistoryCore/ActivityAnalysisAggregation.swift
+@@ -24,7 +24,15 @@ extension ActivityAnalysisEngine {
+             count += max(1, seed.count)
+             firstSeen = min(firstSeen, date)
+             lastSeen = max(lastSeen, date)
+-            if detail == nil { detail = seed.detail }
++            if let seedDetail = seed.detail {
++                // For grouped clicks, keep the richest/latest detail. A later event can
++                // reveal that the action was the second click in a double-click sequence,
++                // while the first event only contained the pointer button and coordinates.
++                if detail == nil || seedDetail.contains("click sequence") {
++                    detail = seedDetail
++                }
++            }
+         }
+ 
+         func finish() -> ActivityWebInteractionSummary {
+diff --git a/Sources/LocalHistoryCore/ActivityAnalysisUtilities.swift b/Sources/LocalHistoryCore/ActivityAnalysisUtilities.swift
+--- a/Sources/LocalHistoryCore/ActivityAnalysisUtilities.swift
++++ b/Sources/LocalHistoryCore/ActivityAnalysisUtilities.swift
+@@ -27,7 +27,7 @@ extension ActivityAnalysisEngine {
+     static func semanticText(from event: HistoryEvent) -> String? {
+         ActivitySemanticTextSanitizer.clean(
+             event.metadata?[ActivitySemanticMetadata.text],
+-            maximumLength: 4_000
++            maximumLength: 6_000
+         )
+     }
+ 
+@@ -35,13 +35,19 @@ extension ActivityAnalysisEngine {
+         let lines = splitSemanticLines(semantic)
+         return distinct(
+             lines.compactMap { line in
+-                let candidate = bounded(line, maximum: 280)
++                let rawCandidate = normalizedSpeakerLine(bounded(line, maximum: 280))
++                let rawLowered = rawCandidate.folding(
++                    options: [.caseInsensitive, .diacriticInsensitive],
++                    locale: Locale(identifier: "en_US_POSIX")
++                )
++                let noisePrefixes = ["assistant:", "system:", "developer:", "response:"]
++                guard !noisePrefixes.contains(where: { rawLowered.hasPrefix($0) }) else { return nil }
++
++                let candidate = strippingUserSpeakerPrefix(rawCandidate)
+                 guard candidate.count >= 12, candidate.count <= 280 else { return nil }
+                 let lowered = candidate.folding(
+                     options: [.caseInsensitive, .diacriticInsensitive],
+                     locale: Locale(identifier: "en_US_POSIX")
+                 )
+@@ -58,13 +64,36 @@ extension ActivityAnalysisEngine {
+                     || lowered.contains(" j'aimerais ")
+                     || lowered.contains(" we need ")
+                 guard looksLikeRequest else { return nil }
+-                let noisePrefixes = ["assistant:", "system:", "developer:", "response:"]
+-                guard !noisePrefixes.contains(where: { lowered.hasPrefix($0) }) else { return nil }
+                 return candidate
+             },
+             maximum: 8,
+             maximumLength: 280
+         )
+     }
++
++    /// Accessibility text from chat products commonly includes speaker labels such as
++    /// `User:` or `Human:`. Strip only user-side labels before request detection while
++    /// keeping assistant/system turns excluded above.
++    static func strippingUserSpeakerPrefix(_ value: String) -> String {
++        let prefixes = ["user:", "human:", "utilisateur:", "client:", "me:", "moi:"]
++        let lowered = value.folding(
++            options: [.caseInsensitive, .diacriticInsensitive],
++            locale: Locale(identifier: "en_US_POSIX")
++        )
++        guard let prefix = prefixes.first(where: { lowered.hasPrefix($0) }) else { return value }
++        let start = value.index(value.startIndex, offsetBy: prefix.count)
++        return String(value[start...]).trimmingCharacters(in: .whitespacesAndNewlines)
++    }
++
++    static func normalizedSpeakerLine(_ value: String) -> String {
++        let withoutMarkdown = value
++            .replacingOccurrences(of: "**", with: "")
++            .replacingOccurrences(of: "__", with: "")
++        let markers = CharacterSet(charactersIn: ">-•*_ ")
++        return withoutMarkdown.trimmingCharacters(
++            in: CharacterSet.whitespacesAndNewlines.union(markers)
++        )
++    }
+ 
+     static func isAIContext(_ event: HistoryEvent) -> Bool {
+         let haystack = [event.app?.name, event.app?.bundleIdentifier, event.url?.host, event.window?.title]
