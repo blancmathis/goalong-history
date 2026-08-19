@@ -40,6 +40,25 @@ if grep -nE 'AnchorUploadRequest' "$ANCHOR_MODEL" >/dev/null; then
   fi
 fi
 
+# Apple Screen Time private stores are permitted only through the isolated read-only adapter.
+APPLE_SYSTEM_SOURCE="$ROOT_DIR/Sources/LocalHistoryApp/AppleScreenTime/AppleSystemScreenTimeSource.swift"
+if [[ -f "$APPLE_SYSTEM_SOURCE" ]]; then
+  if ! grep -Fq 'SQLITE_OPEN_READONLY' "$APPLE_SYSTEM_SOURCE"; then
+    echo "Apple system Screen Time SQLite access is not explicitly read-only." >&2
+    failed=true
+  fi
+  if grep -nE 'sqlite3_exec|SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|INSERT[[:space:]]|UPDATE[[:space:]]|DELETE[[:space:]]|VACUUM|FileHandle\(forWritingTo:|\.write\(to:' "$APPLE_SYSTEM_SOURCE"; then
+    echo "Apple system Screen Time adapter appears capable of mutating Apple-owned stores." >&2
+    failed=true
+  fi
+fi
+
+# The deprecated LocalHistory-derived Screen Time approximation must not return.
+if [[ -e "$ROOT_DIR/Sources/LocalHistoryApp/AppleScreenTime/LiveMacScreenTimeSource.swift" ]]; then
+  echo "Deprecated LocalHistory-derived Screen Time source is still present." >&2
+  failed=true
+fi
+
 # Supply-chain rule: Sparkle is the only remote Swift dependency, and it must stay exact-pinned.
 EXPECTED_SPARKLE=".package(url: \"$SPARKLE_PACKAGE_URL\", exact: \"$SPARKLE_VERSION\")"
 REMOTE_DEPENDENCY_COUNT="$(grep -cE '\.package\s*\(' "$ROOT_DIR/Package.swift" || true)"
@@ -57,4 +76,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; first-party networking is limited to opaque commitments; Sparkle is the sole exact-pinned update dependency."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time access is isolated and read-only; first-party networking is limited to opaque commitments; Sparkle is the sole exact-pinned update dependency."

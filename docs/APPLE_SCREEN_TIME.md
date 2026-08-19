@@ -1,101 +1,67 @@
-# Screen Time in LocalHistory
+# Apple Screen Time in LocalHistory
 
-LocalHistory now measures the current Mac automatically and continuously. It does not require the user to export Apple Screen Time every day, and it does not read Apple's private Screen Time databases.
+## What the page now represents
 
-## User flow
+The **Apple Screen Time** page reads Apple's own local and iCloud-synchronized usage data. It does not calculate a replacement Screen Time number from LocalHistory events.
 
-1. Install and run LocalHistory normally on the Mac.
-2. Open **Screen Time** in the dashboard.
-3. Choose **This Mac**, **All devices**, or **Selected devices**.
-4. View continuously updated device totals and application durations.
-5. Optionally export a share file with totals only, per-device totals, or device-plus-application rows.
+The runtime combines two Apple sources:
 
-For the current Mac, there is no import step. Today's calculation refreshes every five seconds from the foreground activity stream that LocalHistory already records.
+1. **knowledgeC `/app/usage`** for Apple-created application usage intervals;
+2. **Biome `App.InFocus`** for local and remote device focus transitions synchronized through iCloud.
 
-## How the Mac total is produced
+The source code is isolated under `Sources/LocalHistoryApp/AppleScreenTime/` and the SEGB/protobuf decoder lives in the independent `AppleScreenTime` module.
 
-The Mac source reconstructs non-overlapping foreground intervals from:
+## One-time setup
 
-- application activation and context changes;
-- recorder heartbeats;
-- pause and resume transitions;
-- session lock and unlock transitions;
-- display/system sleep and wake transitions;
-- recorder start and stop events;
-- privacy-suppression boundaries.
+1. Turn on **System Settings → Screen Time**.
+2. Turn on **Share Across Devices** on the Mac, iPhone and iPad using the same Apple Account.
+3. Grant the signed **LocalHistory.app** Full Disk Access under **Privacy & Security → Full Disk Access**.
+4. Reopen LocalHistory if macOS does not apply the TCC grant immediately.
 
-The total advances while the recorder is running, the session is active, the display is awake and a foreground application is known. A normal foreground interval must keep receiving heartbeats; its unconfirmed trailing edge is capped. This prevents a crash or terminated recorder from silently adding hours of usage.
+No daily export, manual file selection, companion snapshot or Goalong server is required for the data already synchronized to the Mac.
 
-Private browsing, excluded applications/domains and secure-input periods can remain represented in the overall device duration without exposing an application identity. Manual pause, unavailable session and unavailable Accessibility stop measurement.
+## Automatic updates
 
-## Application details
+The dashboard checks the Apple stores every five seconds while viewing today. Unchanged Biome files are served from an in-memory fingerprint cache; only newly created or modified SEGB files are decoded again.
 
-For the Mac, LocalHistory attributes each measured interval to the foreground app's name and bundle identifier. Durations are aggregated per app and update along with the total.
+The Mac-side refresh cadence is deterministic. Cross-device latency is not: Apple controls when iCloud/Biome delivers iPhone and iPad transitions. The page displays the latest Apple file/event update so a user can distinguish a live Mac refresh from a stale remote sync.
 
-For companion devices, the official collector walks Apple's DeviceActivity categories and application activity rows, aggregating `totalActivityDuration` by bundle identifier. Apple may not expose a localized app name in every process context, so the bundle identifier remains the stable fallback.
+## Per-device selection
 
-## Device scopes
+The page supports:
 
-- **This Mac**: only the physical Mac currently running LocalHistory.
-- **All devices**: this Mac plus every connected companion-device report.
-- **Selected devices**: only the exact physical-device identifiers chosen by the user.
+- **This Mac** — only the current physical Mac;
+- **All devices** — every Apple device synchronized to the Mac;
+- **Selected devices** — exact device IDs chosen individually.
 
-An all-device total is the **sum of per-device screen-on durations**. It is deliberately not described as unique human time: simultaneous iPhone and Mac use remains counted on both device rows.
+Each shared JSON file carries the selected scope, included device count, aggregation method, provenance and optional per-application rows.
 
-## Automatic iPhone and iPad path
+## How application time is reconstructed
 
-The reusable iOS collector and Mac-side multi-device fusion are implemented. An end-to-end automatic companion still needs:
+knowledgeC rows already contain start/end application intervals. Biome stores protobuf transition events:
 
-- an iOS application target signed by Goalong;
-- Apple's managed `Family Controls App and Website Usage` entitlement;
-- `approvedWithDataAccess` user authorization;
-- a secure sync transport that delivers the newest signed companion snapshot to the Mac;
-- pinned-key verification on the Mac.
+- field 3: gained/lost foreground state;
+- field 4: CFAbsoluteTime timestamp;
+- field 6: bundle identifier.
 
-A manual snapshot import remains available only for development and compatibility testing. It is not required for the current Mac and is not intended as the final daily workflow for other devices.
+The native decoder supports Apple SEGB v1 and v2 containers. A foreground gain opens an interval; a matching loss or a different app gaining focus closes it. A currently open interval is extended to “now” only when Apple's latest event is recent, preventing a stale iCloud stream from inventing hours of usage.
 
-## Local storage
+knowledgeC has precedence. Biome contributes only uncovered fragments, so data present in both stores is not double-counted.
 
-Device-scope configuration and optional companion snapshots are stored separately under:
+## Privacy and security
 
-```text
-~/Library/Application Support/LocalHistory/apple-screen-time/
-├── configuration.json
-└── imports/
-    └── <timestamp>-<uuid>.json
-```
+- Apple databases are opened read-only with SQLite.
+- Apple files are never modified, vacuumed, migrated or copied into Goalong storage.
+- LocalHistory stores only its scope/share configuration and explicit share exports.
+- Full Disk Access is required because Apple protects knowledgeC and Biome with TCC.
+- The private formats can change after an OS update; failures remain isolated to this optional feature.
 
-The live Mac calculation reads the existing daily event JSONL incrementally; it does not create a second raw activity database.
+The defensible source claim is:
 
-Directories use `0700` and files use `0600` where supported.
+> LocalHistory read these usage intervals from Apple-owned Screen Time/usage stores present on this Mac, including Apple-synchronized remote-device streams where available.
 
-## Share format
+It is not a cryptographic attestation from Apple and it is not proof of attention or productive work.
 
-A Screen Time share JSON includes:
+## Public Apple API path
 
-- interval and creation date;
-- requested device scope;
-- included-device count;
-- summed screen-on duration;
-- the explicit no-cross-device-deduplication rule;
-- optional per-device and application rows according to the disclosure level;
-- collector provenance;
-- current verification status and a trust notice.
-
-A standalone Screen Time summary is not automatically equivalent to LocalHistory's complete minute-seal proof package. Share the corresponding LocalHistory evidence as well when cryptographic verification of the underlying event history matters.
-
-## Security and anti-cheat status
-
-LocalHistory validates imported companion structure, bounded durations, device uniqueness and schema version. Structural validation does not prove that an unsigned JSON file was not edited.
-
-Companion snapshots therefore retain explicit states:
-
-- `unsigned`;
-- `signaturePresentUnverified`;
-- `verifiedOfficialCollector`.
-
-Only a snapshot whose canonical signature has been checked against a pinned official key should receive `verifiedOfficialCollector`. Even then, the claim remains limited to what an official client observed; it does not prove attention, identity or productive work.
-
-## Why no private macOS Screen Time database access
-
-The feature intentionally avoids private SQLite stores, undocumented daemons and reverse-engineered paths. The live Mac source uses LocalHistory's own documented capture boundary, works continuously, remains independently maintainable and does not require Full Disk Access merely to imitate Apple's Settings UI.
+`NativeCollector.swift` still contains the official `DeviceActivityData.activityData(filteredBy:using:)` adapter for an eligible Apple-platform companion. Apple's public data-export route requires enhanced authorization, a managed entitlement and current regional/platform eligibility. It can later provide a supported alternative to the private macOS stores, but it is no longer required for the normal automatic Mac experience.
