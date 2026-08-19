@@ -1,12 +1,12 @@
 # Updates and macOS permissions
 
-This document describes the production behavior implemented for **Go Long History**. Internal executable, bundle ID, data-folder, and legacy migration names intentionally remain `LocalHistory` so existing history and settings are not split into a new installation identity. macOS may still require a one-time approval for a newly signed app copy because TCC also evaluates the running binary and its location.
+This document describes the release behavior implemented for **Go Long History**. Internal executable, bundle ID, data-folder, and legacy migration names intentionally remain `LocalHistory` so existing history and settings are not split into a new installation identity. Until Developer ID is configured, macOS may require a one-time **Open Anyway** approval for the downloaded app. TCC may separately require a one-time permission approval when the running binary or its location changes.
 
 ## Product name and compatibility identity
 
-The physical compatibility bundle remains `LocalHistory.app`, with executable `LocalHistory` and bundle ID `ai.goalong.localhistory`. Its English and French `InfoPlist.strings` localizations expose **Go Long History** to Finder, the Dock, app menus, permission panels, and the app UI. The unlocalized `CFBundleDisplayName`/`CFBundleName` intentionally match the physical filename because Finder ignores a localized display name when the base bundle name and filename disagree.
+The physical compatibility bundle remains `LocalHistory.app`, with executable `LocalHistory` and bundle ID `ai.goalong.localhistory`. Its English and French `InfoPlist.strings` localizations expose **Go Long History** to Finder, the Dock, app menus, permission panels, and the app UI. The unlocalized `CFBundleDisplayName` and `CFBundleName` intentionally remain `LocalHistory` so they match the physical bundle filename; Finder can then honor the localized public name.
 
-This gives users the correct product name without creating a second data directory, changing the update identity, or abandoning the existing installation path. The release DMG is also mounted as **Go Long History**.
+This gives users the correct product name without creating a second data directory, changing the update identity, or abandoning the existing installation path. The release DMG is mounted as **Go Long History**.
 
 ## Rolling updates from `main`
 
@@ -15,13 +15,14 @@ Every successful merge to `main` runs `.github/workflows/continuous-release.yml`
 The workflow:
 
 1. builds a universal `arm64` + `x86_64` app;
-2. signs it with Developer ID and Hardened Runtime;
-3. notarizes and staples the app and DMG;
-4. generates an EdDSA-signed Sparkle appcast;
-5. moves the `latest-main` tag to the merged commit;
-6. replaces the assets on the `latest-main` prerelease.
+2. ad-hoc code signs the app so Sparkle's nested helpers have a consistent local signature;
+3. generates an EdDSA-signed update archive and Sparkle appcast;
+4. moves the `latest-main` tag to the merged commit;
+5. replaces the assets on the `latest-main` prerelease.
 
-Installed signed builds read this fixed feed URL:
+When the complete optional Apple credential set is present, the same workflow instead applies Developer ID, Hardened Runtime, notarization, and stapling before publishing. App Store distribution is not involved in either mode.
+
+Installed update-enabled builds read this fixed feed URL:
 
 ```text
 https://github.com/blancmathis/goalong-history/releases/download/latest-main/appcast.xml
@@ -29,26 +30,44 @@ https://github.com/blancmathis/goalong-history/releases/download/latest-main/app
 
 Sparkle performs a probe at launch and when the dashboard becomes active. No dialog is shown when the app is current. When a newer build exists, a small button appears at the bottom-left of the sidebar; clicking it opens Sparkle's signed installation flow.
 
-### Required GitHub Actions secrets
+### Required GitHub Actions configuration
 
-The rolling workflow deliberately fails closed when any release credential is absent:
+The rolling workflow deliberately fails closed when either side of the Sparkle trust chain is absent:
+
+Private GitHub Actions secret:
+
+- `SPARKLE_PRIVATE_ED_KEY`
+
+Non-secret GitHub Actions variable:
+
+- `SPARKLE_PUBLIC_ED_KEY`
+
+These are sufficient for the free release mode. The private key signs every archive and feed; the matching public key is embedded in the app so Sparkle can reject modified or untrusted updates.
+
+### Optional Apple verification
+
+Developer ID signing and notarization turn on automatically only when the complete Apple set is configured.
+
+Optional private GitHub Actions secrets:
 
 - `MACOS_CERTIFICATE_P12`
 - `MACOS_CERTIFICATE_PASSWORD`
-- `MACOS_CODESIGN_IDENTITY`
+- `APPLE_API_PRIVATE_KEY`
+
+Optional non-secret GitHub Actions variables:
+
 - `APPLE_API_KEY_ID`
 - `APPLE_API_ISSUER_ID`
-- `APPLE_API_PRIVATE_KEY`
-- `SPARKLE_PUBLIC_ED_KEY`
-- `SPARKLE_PRIVATE_ED_KEY`
 
-Never commit those values. The repository contains only their names and the public release process.
+The workflow rejects a partially configured Apple set, detects the exact signing identity after importing the P12, and refuses to continue unless it contains exactly one valid `Developer ID Application` identity. It validates the App Store Connect key with `notarytool` before building. Temporary P12 and API-key files are created with mode `600` and securely removed after use.
+
+Never commit private values. The repository contains only their names, public configuration, and the release process.
 
 ## Development/source builds
 
-A source build does not contain the production Sparkle public key and cannot safely self-update. It now shows **Enable app updates** in the sidebar. That button downloads the current signed DMG once. The signed app keeps the same bundle ID and data paths, so local history and settings remain available. The guided permission flow handles any one-time approval macOS requests for the signed copy.
+A source build does not contain the release Sparkle public key and cannot safely self-update. It now shows **Enable app updates** in the sidebar. That button downloads the current release DMG once. The release app keeps the same bundle ID and data paths, so local history and settings remain available. Until Apple verification is added, macOS may require **Open Anyway** on this first downloaded copy. The guided permission flow handles any separate one-time permission requests for the replacement copy.
 
-The normal installer no longer silently falls back to a source build when a signed release is missing. Developers can still opt in explicitly with:
+The normal installer no longer silently falls back to a source build when a release is missing. Developers can still opt in explicitly with:
 
 ```bash
 ./install.sh --source
