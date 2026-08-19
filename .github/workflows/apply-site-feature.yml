@@ -26,7 +26,7 @@ jobs:
 
       - name: Assemble and verify payload
         run: |
-          cat .site-feature-payload.part-* > /tmp/site-feature.tar.gz.b64
+          cat .site-feature-payload.part-00a .site-feature-payload.part-00b .site-feature-payload.part-0[1-7] > /tmp/site-feature.tar.gz.b64
           base64 --decode /tmp/site-feature.tar.gz.b64 > /tmp/site-feature.tar.gz
           echo "3d4c8f0908aef0bc742cd406b84a923028936aae55b6945d58cc8226a9566138  /tmp/site-feature.tar.gz" | sha256sum --check --strict
           tar -tzf /tmp/site-feature.tar.gz
