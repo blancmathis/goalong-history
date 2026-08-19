@@ -56,6 +56,11 @@ let package = Package(
             dependencies: ["AppleScreenTime"],
             path: "Features/AppleScreenTime/Tests"
         ),
+        .testTarget(
+            name: "LocalHistoryAppTests",
+            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime"],
+            path: "Tests/LocalHistoryAppTests"
+        ),
     ],
     swiftLanguageVersions: [.v5]
 )
