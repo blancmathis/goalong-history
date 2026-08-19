@@ -174,17 +174,26 @@ jobs:
           LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
         run: ./scripts/build_app.sh
 
-      - name: Confirm architecture, code signature, and updater policy
+      - name: Confirm architecture, identity, localized name, code signature, and updater policy
         env:
           LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
+          LOCALHISTORY_REQUIRE_LOCALIZED_NAME: 1
           LOCALHISTORY_DISPLAY_NAME: Go Long History
         run: |
           set -euo pipefail
-          lipo -info dist/LocalHistory.app/Contents/MacOS/LocalHistory
-          lipo dist/LocalHistory.app/Contents/MacOS/LocalHistory -verify_arch arm64 x86_64
-          codesign --verify --strict --verbose=4 dist/LocalHistory.app
-          test "$(defaults read "$PWD/dist/LocalHistory.app/Contents/Info" CFBundleIdentifier)" = "$BUNDLE_ID"
-          test "$(defaults read "$PWD/dist/LocalHistory.app/Contents/Info" CFBundleDisplayName)" = "$DISPLAY_NAME"
+          APP="dist/LocalHistory.app"
+          INFO="$APP/Contents/Info.plist"
+          lipo -info "$APP/Contents/MacOS/LocalHistory"
+          lipo "$APP/Contents/MacOS/LocalHistory" -verify_arch arm64 x86_64
+          codesign --verify --strict --verbose=4 "$APP"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO")" = "$BUNDLE_ID"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")" = "$PRODUCT"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO")" = "$PRODUCT"
+          for locale in en fr; do
+            STRINGS="$APP/Contents/Resources/$locale.lproj/InfoPlist.strings"
+            test "$(plutil -extract CFBundleDisplayName raw -o - "$STRINGS")" = "$DISPLAY_NAME"
+            test "$(plutil -extract CFBundleName raw -o - "$STRINGS")" = "$DISPLAY_NAME"
+          done
           ./scripts/verify_sparkle_bundle.sh
 
       - name: Notarize and staple app

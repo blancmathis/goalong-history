@@ -2,6 +2,7 @@
 set -euo pipefail
 
 APP_NAME="LocalHistory"
+DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Go Long History}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_PATH="${LOCALHISTORY_APP_PATH:-$ROOT_DIR/dist/$APP_NAME.app}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
@@ -39,7 +40,7 @@ fi
 
 if command -v create-dmg >/dev/null 2>&1; then
   CREATE_ARGS=(
-    --volname "$APP_NAME"
+    --volname "$DISPLAY_NAME"
     --window-pos 200 120
     --window-size 720 440
     --icon-size 108
@@ -59,7 +60,7 @@ else
   echo "create-dmg is unavailable; creating a standard Finder disk image."
   ln -s /Applications "$STAGING/Applications"
   /usr/bin/hdiutil create \
-    -volname "$APP_NAME" \
+    -volname "$DISPLAY_NAME" \
     -srcfolder "$STAGING" \
     -ov \
     -format UDZO \
@@ -77,4 +78,4 @@ fi
   /usr/bin/shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256"
 )
 
-printf 'Release artifacts:\n  %s\n  %s\n' "$OUTPUT_DIR/$DMG_NAME" "$OUTPUT_DIR/$ZIP_NAME"
+printf 'Release artifacts for %s:\n  %s\n  %s\n' "$DISPLAY_NAME" "$OUTPUT_DIR/$DMG_NAME" "$OUTPUT_DIR/$ZIP_NAME"
