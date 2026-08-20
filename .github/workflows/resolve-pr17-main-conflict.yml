@@ -4,13 +4,17 @@ on:
   push:
     branches:
       - agent/computer-history-upgrade
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   resolve:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && (github.event_name != 'pull_request' || github.head_ref == 'agent/computer-history-upgrade')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,13 +65,9 @@ jobs:
                   raise SystemExit(f"Missing merge marker: {marker!r}")
               return text.replace(marker, insertion + marker if before else marker + insertion, 1)
 
-          # Package.swift: preserve query CLI from #17 and AgentActivity target from #16.
           p, t = load('Package.swift')
           if '.library(name: "AgentActivity", targets: ["AgentActivity"])' not in t:
-              t = t.replace(
-                  '        .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),\n',
-                  '        .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),\n'
-                  '        .library(name: "AgentActivity", targets: ["AgentActivity"]),\n', 1)
+              t = t.replace('        .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),\n', '        .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),\n        .library(name: "AgentActivity", targets: ["AgentActivity"]),\n', 1)
           if 'name: "AgentActivity",\n            dependencies: ["LocalHistoryCore"]' not in t:
               marker = '        .executableTarget(\n            name: "LocalHistoryApp",'
               block = ('        .target(\n'
@@ -77,9 +77,7 @@ jobs:
                        '        ),\n')
               t = insert_once(t, marker, block, before=True)
           if '                "AgentActivity",\n' not in t:
-              t = t.replace(
-                  '                "AppleScreenTime",\n',
-                  '                "AppleScreenTime",\n                "AgentActivity",\n', 1)
+              t = t.replace('                "AppleScreenTime",\n', '                "AppleScreenTime",\n                "AgentActivity",\n', 1)
           if 'name: "AgentActivityTests"' not in t:
               marker = '        .testTarget(\n            name: "LocalHistoryAppTests",'
               block = ('        .testTarget(\n'
@@ -90,7 +88,6 @@ jobs:
               t = insert_once(t, marker, block, before=True)
           save(p, t)
 
-          # AppPaths.swift: preserve semantic/memory stores plus agent activity store.
           p, t = load('Sources/LocalHistoryApp/AppPaths.swift')
           if 'static let agentActivityDirectory' not in t:
               marker = '        static let integrityStateFile'
@@ -109,29 +106,22 @@ jobs:
                       raise SystemExit('Could not add agentActivityDirectory to prepare()')
           save(p, t)
 
-          # DashboardModels.swift: retain Computer History sections and Agentic Work.
           p, t = load('Sources/LocalHistoryApp/DashboardModels.swift')
           if '        case agentActivity\n' not in t:
               t = t.replace('        case screenTime\n', '        case screenTime\n        case agentActivity\n', 1)
           if 'case .agentActivity: return "Agentic work"' not in t:
-              t = t.replace('            case .screenTime: return "Apple Screen Time"\n',
-                            '            case .screenTime: return "Apple Screen Time"\n            case .agentActivity: return "Agentic work"\n', 1)
+              t = t.replace('            case .screenTime: return "Apple Screen Time"\n', '            case .screenTime: return "Apple Screen Time"\n            case .agentActivity: return "Agentic work"\n', 1)
           if 'case .agentActivity: return "cpu"' not in t:
-              t = t.replace('            case .screenTime: return "macbook.and.iphone"\n',
-                            '            case .screenTime: return "macbook.and.iphone"\n            case .agentActivity: return "cpu"\n', 1)
+              t = t.replace('            case .screenTime: return "macbook.and.iphone"\n', '            case .screenTime: return "macbook.and.iphone"\n            case .agentActivity: return "cpu"\n', 1)
           save(p, t)
 
-          # DashboardViewModel.swift: expose and refresh the AgentActivity runtime.
           p, t = load('Sources/LocalHistoryApp/DashboardViewModel.swift')
           if '        let agentActivityRuntime: AgentActivityRuntime\n' not in t:
-              t = t.replace('        let deviceProtectionSummary: String\n',
-                            '        let deviceProtectionSummary: String\n        let agentActivityRuntime: AgentActivityRuntime\n', 1)
+              t = t.replace('        let deviceProtectionSummary: String\n', '        let deviceProtectionSummary: String\n        let agentActivityRuntime: AgentActivityRuntime\n', 1)
           if '            agentActivityRuntime: AgentActivityRuntime,\n' not in t:
-              t = t.replace('            sharingRulesStore: SharingRulesStore,\n',
-                            '            sharingRulesStore: SharingRulesStore,\n            agentActivityRuntime: AgentActivityRuntime,\n', 1)
+              t = t.replace('            sharingRulesStore: SharingRulesStore,\n', '            sharingRulesStore: SharingRulesStore,\n            agentActivityRuntime: AgentActivityRuntime,\n', 1)
           if '            self.agentActivityRuntime = agentActivityRuntime\n' not in t:
-              t = t.replace('            self.sharingRulesStore = sharingRulesStore\n',
-                            '            self.sharingRulesStore = sharingRulesStore\n            self.agentActivityRuntime = agentActivityRuntime\n', 1)
+              t = t.replace('            self.sharingRulesStore = sharingRulesStore\n', '            self.sharingRulesStore = sharingRulesStore\n            self.agentActivityRuntime = agentActivityRuntime\n', 1)
           select_marker = ('            if section == .share, shareSegments.isEmpty {\n'
                            '                reloadShareSegments()\n'
                            '            }\n')
@@ -146,19 +136,16 @@ jobs:
               t = t.replace(refresh_marker, refresh_marker + '            if selectedSection == .agentActivity { agentActivityRuntime.scanNow() }\n', 1)
           save(p, t)
 
-          # Core event model: keep semantic/health kinds plus AgentActivity provenance.
           p, t = load('Sources/LocalHistoryCore/Models.swift')
           if '    case agentArtifactCaptured\n' not in t:
               t = t.replace('    case historyCleared\n', '    case historyCleared\n    case agentArtifactCaptured\n', 1)
           save(p, t)
 
-          # AppDelegate.swift: wire AgentActivity into the richer #17 recorder/runtime.
           p, t = load('Sources/LocalHistoryApp/AppDelegate.swift')
           if '    import AgentActivity\n' not in t:
               t = t.replace('#if os(macOS)\n', '#if os(macOS)\n    import AgentActivity\n', 1)
           if '        private var agentActivityRuntime: AgentActivityRuntime!\n' not in t:
-              t = t.replace('        private var sharingRulesStore: SharingRulesStore!\n',
-                            '        private var sharingRulesStore: SharingRulesStore!\n        private var agentActivityRuntime: AgentActivityRuntime!\n', 1)
+              t = t.replace('        private var sharingRulesStore: SharingRulesStore!\n', '        private var sharingRulesStore: SharingRulesStore!\n        private var agentActivityRuntime: AgentActivityRuntime!\n', 1)
           if 'agentActivityRuntime = try AgentActivityRuntime(' not in t:
               marker = '                sharingRulesStore = SharingRulesStore()\n'
               block = ('                let executableURL = Bundle.main.executableURL\n'
@@ -174,16 +161,14 @@ jobs:
                   raise SystemExit('Missing SharingRulesStore merge marker')
               t = t.replace(marker, marker + block, 1)
           if '                    agentActivityRuntime: agentActivityRuntime,\n' not in t:
-              t = t.replace('                    sharingRulesStore: sharingRulesStore,\n',
-                            '                    sharingRulesStore: sharingRulesStore,\n                    agentActivityRuntime: agentActivityRuntime,\n', 1)
+              t = t.replace('                    sharingRulesStore: sharingRulesStore,\n', '                    sharingRulesStore: sharingRulesStore,\n                    agentActivityRuntime: agentActivityRuntime,\n', 1)
           if '            agentActivityRuntime.start()\n' not in t:
               marker = '            installWorkspaceObservers()\n'
               if marker not in t:
                   raise SystemExit('Missing launch observer marker')
               t = t.replace(marker, '            agentActivityRuntime.start()\n\n' + marker, 1)
           if '            agentActivityRuntime?.stop()\n' not in t:
-              t = t.replace('            permissionTimer?.invalidate()\n',
-                            '            permissionTimer?.invalidate()\n            agentActivityRuntime?.stop()\n', 1)
+              t = t.replace('            permissionTimer?.invalidate()\n', '            permissionTimer?.invalidate()\n            agentActivityRuntime?.stop()\n', 1)
           if '        private func recordAgentCaptures(_ captures: [AgentCaptureRecord]) {' not in t:
               marker = '        private func applyConfiguration(_ config: RecorderConfig) throws -> RecorderConfig {'
               block = '''        private func recordAgentCaptures(_ captures: [AgentCaptureRecord]) {
