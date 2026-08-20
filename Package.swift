@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
+        .library(name: "AgentActivity", targets: ["AgentActivity"]),
         .executable(name: "LocalHistory", targets: ["LocalHistoryApp"]),
     ],
     dependencies: [
@@ -23,11 +24,17 @@ let package = Package(
             name: "LocalHistoryCore",
             path: "Sources/LocalHistoryCore"
         ),
+        .target(
+            name: "AgentActivity",
+            dependencies: ["LocalHistoryCore"],
+            path: "Features/AgentActivity/Sources"
+        ),
         .executableTarget(
             name: "LocalHistoryApp",
             dependencies: [
                 "LocalHistoryCore",
                 "AppleScreenTime",
+                "AgentActivity",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/LocalHistoryApp",
@@ -56,6 +63,11 @@ let package = Package(
             name: "AppleScreenTimeTests",
             dependencies: ["AppleScreenTime"],
             path: "Features/AppleScreenTime/Tests"
+        ),
+        .testTarget(
+            name: "AgentActivityTests",
+            dependencies: ["AgentActivity"],
+            path: "Features/AgentActivity/Tests"
         ),
         .testTarget(
             name: "LocalHistoryAppTests",

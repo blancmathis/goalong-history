@@ -143,7 +143,10 @@
             var counters: [String: Counter] = [:]
             let ordered = events.sorted { $0.timestamp < $1.timestamp }
             for (index, event) in ordered.enumerated() {
-                guard event.suppressionReason == nil, let app = event.app else { continue }
+                guard event.kind != .agentArtifactCaptured,
+                    event.suppressionReason == nil,
+                    let app = event.app
+                else { continue }
 
                 let nextTimestamp: Date = {
                     if index + 1 < ordered.count { return ordered[index + 1].timestamp }

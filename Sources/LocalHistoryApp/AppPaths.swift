@@ -14,6 +14,8 @@
         static let sharesDirectory = applicationSupportDirectory.appendingPathComponent("shares", isDirectory: true)
         static let screenTimeDirectory = applicationSupportDirectory.appendingPathComponent(
             "apple-screen-time", isDirectory: true)
+        static let agentActivityDirectory = applicationSupportDirectory.appendingPathComponent(
+            "agent-activity", isDirectory: true)
         static let integrityStateFile = applicationSupportDirectory.appendingPathComponent(
             "integrity-state.json", isDirectory: false)
         static let configFile = applicationSupportDirectory.appendingPathComponent("config.json", isDirectory: false)
@@ -31,7 +33,13 @@
                 withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700]
             )
-            for directory in [eventsDirectory, sealsDirectory, receiptsDirectory, sharesDirectory] {
+            for directory in [
+                eventsDirectory,
+                sealsDirectory,
+                receiptsDirectory,
+                sharesDirectory,
+                agentActivityDirectory,
+            ] {
                 try fileManager.createDirectory(
                     at: directory,
                     withIntermediateDirectories: true,

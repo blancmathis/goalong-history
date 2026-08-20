@@ -38,6 +38,8 @@
                 ActivityPage(model: model)
             case .screenTime:
                 ScreenTimePage(model: model)
+            case .agentActivity:
+                AgentActivityPage(agents: model.agentActivityRuntime)
             case .share:
                 SharePage(model: model)
             case .privacy:
