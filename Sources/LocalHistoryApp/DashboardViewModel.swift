@@ -43,6 +43,8 @@
         private let sharingRulesStore: SharingRulesStore
         private let eventTapStatus: () -> Bool
         private let currentSuppression: () -> SuppressionReason?
+        private let captureHealthSnapshot: () -> CaptureHealthSnapshot
+        private let onBeginCaptureValidation: () -> Void
         private let onTogglePause: () -> Void
         private let onRequestPermissions: () -> Void
         private let onSaveConfiguration: SaveConfiguration
@@ -63,6 +65,8 @@
             deviceInfo: DeviceIdentityInfo,
             eventTapStatus: @escaping () -> Bool,
             currentSuppression: @escaping () -> SuppressionReason?,
+            captureHealthSnapshot: @escaping () -> CaptureHealthSnapshot,
+            onBeginCaptureValidation: @escaping () -> Void,
             onTogglePause: @escaping () -> Void,
             onRequestPermissions: @escaping () -> Void,
             onSaveConfiguration: @escaping SaveConfiguration,
@@ -82,6 +86,8 @@
             self.deviceProtectionSummary = deviceInfo.protectionSummary
             self.eventTapStatus = eventTapStatus
             self.currentSuppression = currentSuppression
+            self.captureHealthSnapshot = captureHealthSnapshot
+            self.onBeginCaptureValidation = onBeginCaptureValidation
             self.onTogglePause = onTogglePause
             self.onRequestPermissions = onRequestPermissions
             self.onSaveConfiguration = onSaveConfiguration
@@ -215,6 +221,11 @@
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
                 self?.refreshRuntime()
             }
+        }
+
+        func beginCaptureValidation() {
+            onBeginCaptureValidation()
+            refreshRuntime()
         }
 
         func openAccessibilitySettings() {
@@ -481,17 +492,21 @@
         private func refreshRuntime() {
             let status = permissions.currentStatus
             let tap = eventTapStatus()
+            let healthSnapshot = captureHealthSnapshot()
+            let health = CaptureHealthEvaluator.assess(healthSnapshot)
             let runtimeState: RuntimeStateKind
-            if !status.allGranted {
-                runtimeState = .permissionsMissing
-            } else if state.isManuallyPaused {
+            switch health.state {
+            case .paused:
                 runtimeState = .paused
-            } else if let suppression = currentSuppression() {
-                runtimeState = .suppressed(suppression)
-            } else if !tap {
-                runtimeState = .inputTapUnavailable
-            } else {
+            case .excludedPrivateOrSecure:
+                runtimeState = currentSuppression().map(RuntimeStateKind.suppressed) ?? .recording
+            case .ready, .healthyButIdle:
                 runtimeState = .recording
+            case .permissionRequired, .permissionAppearsEnabledButStaleForBuild,
+                .accessibilityContextUnavailable:
+                runtimeState = .permissionsMissing
+            case .inputTapUnavailable, .awaitingInputEvidence:
+                runtimeState = .inputTapUnavailable
             }
 
             let next = RuntimePresentation(
@@ -500,7 +515,9 @@
                 inputMonitoringGranted: status.inputMonitoring,
                 eventTapRunning: tap,
                 verificationEnabled: configManager.config.verificationEnabled == true,
-                verificationServer: configManager.config.verificationServerURL
+                verificationServer: configManager.config.verificationServerURL,
+                captureHealth: health,
+                captureHealthSnapshot: healthSnapshot
             )
             if next != runtime { runtime = next }
         }

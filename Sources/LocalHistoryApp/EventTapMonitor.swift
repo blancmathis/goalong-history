@@ -21,6 +21,7 @@
         private let contextProvider: ContextProvider
         private let state: CaptureState
         private let configManager: ConfigManager
+        private let captureHealth: CaptureHealthStore
 
         private var eventTap: CFMachPort?
         private var runLoopSource: CFRunLoopSource?
@@ -47,13 +48,15 @@
             contextMonitor: ContextMonitor,
             contextProvider: ContextProvider,
             state: CaptureState,
-            configManager: ConfigManager
+            configManager: ConfigManager,
+            captureHealth: CaptureHealthStore
         ) {
             self.recorder = recorder
             self.contextMonitor = contextMonitor
             self.contextProvider = contextProvider
             self.state = state
             self.configManager = configManager
+            self.captureHealth = captureHealth
         }
 
         @discardableResult
@@ -82,12 +85,14 @@
                 )
             else {
                 Diagnostics.write("Could not create event tap. Input Monitoring may not be granted yet.")
+                captureHealth.markTapCreationFailed("CGEvent.tapCreate returned nil")
                 return false
             }
 
             guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
                 CFMachPortInvalidate(tap)
                 Diagnostics.write("Could not create event-tap run-loop source")
+                captureHealth.markTapCreationFailed("CFMachPortCreateRunLoopSource returned nil")
                 return false
             }
 
@@ -96,7 +101,8 @@
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
             isRunning = true
-            Diagnostics.write("Event tap started")
+            Diagnostics.write("Event tap created and enabled; waiting for a real input callback")
+            captureHealth.markTapEnabled()
             return true
         }
 
@@ -113,18 +119,29 @@
             runLoopSource = nil
             eventTap = nil
             isRunning = false
+            captureHealth.markTapDisabled("Event tap stopped")
         }
 
         func handle(type: CGEventType, event: CGEvent) {
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                captureHealth.markTapControlCallback()
+                captureHealth.markTapDisabled("macOS disabled the event tap")
                 if let eventTap {
                     CGEvent.tapEnable(tap: eventTap, enable: true)
+                    captureHealth.markTapEnabled()
                     Diagnostics.write("Event tap was disabled and has been re-enabled")
                 }
                 return
             }
 
+            // Only mouse, key and scroll callbacks count as proof that input reaches
+            // this exact process. Tap lifecycle callbacks never satisfy this signal.
+            captureHealth.markInputCallback()
             guard state.isCapturing else { return }
+            if IsSecureEventInputEnabled() {
+                suppressForSecureInput(using: contextMonitor.latestSnapshot)
+                return
+            }
 
             let needsFreshPrivacyCheck: Bool
             switch type {
@@ -133,7 +150,11 @@
             case .scrollWheel:
                 needsFreshPrivacyCheck = scrollEventCount == 0
             case .keyDown:
-                needsFreshPrivacyCheck = typingCount == 0
+                let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+                let isContextChangingKey = event.flags.contains(.maskCommand)
+                    || event.flags.contains(.maskControl)
+                    || KeyDescriptor.specialName(for: keyCode) != nil
+                needsFreshPrivacyCheck = typingCount == 0 || isContextChangingKey
             default:
                 needsFreshPrivacyCheck = false
             }
@@ -141,23 +162,31 @@
             if needsFreshPrivacyCheck, contextProvider.fastSuppressionReason() != nil {
                 flushTypingBurst()
                 flushScrollBurst()
-                contextMonitor.sampleNow()
+                _ = contextMonitor.sampleNow()
                 return
             }
 
-            if needsFreshPrivacyCheck {
-                // Refresh app/window/focus/URL after the fast privacy gate so the
-                // event is attached to the context that actually received it.
-                contextMonitor.sampleNow()
-            }
-
-            var context = contextMonitor.latestSnapshot
-            if context == nil {
-                contextMonitor.sampleNow()
+            // Keep the event and the captured app/window/page in one atomic sampling
+            // decision. A cached snapshot from a previous foreground PID is never used.
+            let cachedPID = contextMonitor.latestSnapshot?.app.processIdentifier
+            let frontmostPID = contextProvider.frontmostProcessIdentifier()
+            let foregroundChanged = cachedPID != frontmostPID
+            var context: ContextSnapshot?
+            if needsFreshPrivacyCheck || foregroundChanged {
+                context = contextMonitor.sampleNow()
+            } else {
                 context = contextMonitor.latestSnapshot
+            }
+            if context == nil {
+                context = contextMonitor.sampleNow()
             }
 
             guard let context, context.suppressionReason == nil else { return }
+            if context.focusedElement?.isSecure == true {
+                suppressForSecureInput(using: context)
+                return
+            }
+            resumeAfterSecureInputIfNeeded(using: context)
 
             switch type {
             case .leftMouseDown, .rightMouseDown, .otherMouseDown:
@@ -169,6 +198,40 @@
             default:
                 break
             }
+        }
+
+        private func suppressForSecureInput(using context: ContextSnapshot?) {
+            flushTypingBurst()
+            flushScrollBurst()
+            captureHealth.setSuppression(.secureInput)
+            guard !secureInputWasActive else { return }
+            secureInputWasActive = true
+            let safeContext = context.map {
+                ContextSnapshot(
+                    app: $0.app,
+                    window: nil,
+                    focusedElement: nil,
+                    url: nil,
+                    suppressionReason: .secureInput
+                )
+            }
+            recorder.record(
+                kind: .secureInputSuppressed,
+                context: safeContext,
+                suppressionReason: .secureInput,
+                message: "All input detail suppressed while Secure Input or a secure control is active"
+            )
+        }
+
+        private func resumeAfterSecureInputIfNeeded(using context: ContextSnapshot) {
+            guard secureInputWasActive else { return }
+            secureInputWasActive = false
+            captureHealth.setSuppression(nil)
+            recorder.record(
+                kind: .secureInputResumed,
+                context: context,
+                message: "Secure Input and secure-control suppression ended"
+            )
         }
 
         private func handleMouseDown(type: CGEventType, event: CGEvent, context: ContextSnapshot) {
@@ -191,7 +254,10 @@
                 y: Double(location.y),
                 clickCount: clickCount
             )
-            let target = contextProvider.element(at: location)
+            let target = contextProvider.element(
+                at: location,
+                expectedProcessIdentifier: context.app.processIdentifier
+            )
 
             recorder.record(
                 kind: .mouseClick,
@@ -228,36 +294,6 @@
 
         private func handleKeyDown(event: CGEvent, context: ContextSnapshot) {
             flushScrollBurst()
-            let secureInputActive = IsSecureEventInputEnabled() || context.focusedElement?.isSecure == true
-            if secureInputActive {
-                flushTypingBurst()
-                if !secureInputWasActive {
-                    recorder.record(
-                        kind: .secureInputSuppressed,
-                        context: ContextSnapshot(
-                            app: context.app,
-                            window: context.window,
-                            focusedElement: nil,
-                            url: context.url,
-                            suppressionReason: .secureInput
-                        ),
-                        suppressionReason: .secureInput,
-                        message: "Keyboard capture suppressed while secure input is active"
-                    )
-                }
-                secureInputWasActive = true
-                return
-            }
-
-            if secureInputWasActive {
-                recorder.record(
-                    kind: .secureInputResumed,
-                    context: context,
-                    message: "Secure input ended"
-                )
-                secureInputWasActive = false
-            }
-
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
             let modifiers = KeyDescriptor.modifierNames(from: event.flags)
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0

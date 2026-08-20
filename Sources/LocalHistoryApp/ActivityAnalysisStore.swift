@@ -122,16 +122,44 @@
         }
 
         private func loadEvents(for day: Date) -> [HistoryEvent] {
-            let URL = ActivityAnalysisPaths.eventFile(for: day)
-            guard let data = try? Data(contentsOf: URL), !data.isEmpty,
-                let text = String(data: data, encoding: .utf8)
-            else { return [] }
-
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return text.split(separator: "\n").compactMap { line in
-                guard let lineData = String(line).data(using: .utf8) else { return nil }
-                return try? decoder.decode(HistoryEvent.self, from: lineData)
+            let start = Calendar.current.startOfDay(for: day)
+            guard let next = Calendar.current.date(byAdding: .day, value: 1, to: start) else {
+                return []
+            }
+            let loaded = HistoryLocalStoreReader(
+                rootDirectory: AppPaths.applicationSupportDirectory
+            ).load(start: start, end: next.addingTimeInterval(-0.001))
+            for issue in loaded.issues {
+                Diagnostics.write("Activity analysis load gap: \(issue.path):\(issue.line.map(String.init) ?? "-") \(issue.message)")
+            }
+            return loaded.events.map { event in
+                guard let semantic = SemanticContextResolver.text(
+                    for: event,
+                    semanticSnapshots: loaded.semanticSnapshots
+                ) else { return event }
+                var metadata = event.metadata ?? [:]
+                metadata[ActivitySemanticMetadata.text] = semantic
+                return HistoryEvent(
+                    schemaVersion: event.schemaVersion,
+                    id: event.id,
+                    sessionID: event.sessionID,
+                    timestamp: event.timestamp,
+                    kind: event.kind,
+                    app: event.app,
+                    window: event.window,
+                    element: event.element,
+                    url: event.url,
+                    pointer: event.pointer,
+                    keyboard: event.keyboard,
+                    scroll: event.scroll,
+                    inputOrigin: event.inputOrigin,
+                    semanticContext: event.semanticContext,
+                    classification: event.classification,
+                    suppressionReason: event.suppressionReason,
+                    message: event.message,
+                    metadata: metadata,
+                    integrity: event.integrity
+                )
             }
         }
 
@@ -153,8 +181,8 @@
     }
 
     /// Runs alongside the recorder. It never performs network requests and its optional
-    /// rich-context snapshots go through EventRecorder, so they receive the same event
-    /// hash, chain position and minute seal as all other local activity.
+    /// rich-context payloads stay in a separate local store; only their references go
+    /// through EventRecorder and receive an event hash, chain position and minute seal.
     final class ActivityAnalysisPageModel: ObservableObject {
         @Published private(set) var analysis: ActivityDayAnalysis?
         @Published private(set) var isLoading = false

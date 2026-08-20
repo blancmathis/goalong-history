@@ -14,6 +14,8 @@
         private let configManager: ConfigManager
         private let eventTapStatus: () -> Bool
         private let currentSuppression: () -> SuppressionReason?
+        private let captureHealth: () -> CaptureHealthAssessment
+        private let onDeleteDetails: (Date?, @escaping (Result<Int, Error>) -> Void) -> Void
         private let onOpenDashboard: () -> Void
         private let onOpenShare: () -> Void
         private let onTogglePause: () -> Void
@@ -33,6 +35,8 @@
             configManager: ConfigManager,
             eventTapStatus: @escaping () -> Bool,
             currentSuppression: @escaping () -> SuppressionReason?,
+            captureHealth: @escaping () -> CaptureHealthAssessment,
+            onDeleteDetails: @escaping (Date?, @escaping (Result<Int, Error>) -> Void) -> Void,
             onOpenDashboard: @escaping () -> Void,
             onOpenShare: @escaping () -> Void,
             onTogglePause: @escaping () -> Void,
@@ -47,6 +51,8 @@
             self.configManager = configManager
             self.eventTapStatus = eventTapStatus
             self.currentSuppression = currentSuppression
+            self.captureHealth = captureHealth
+            self.onDeleteDetails = onDeleteDetails
             self.onOpenDashboard = onOpenDashboard
             self.onOpenShare = onOpenShare
             self.onTogglePause = onTogglePause
@@ -70,12 +76,15 @@
             let permissionStatus = permissions.currentStatus
             let recording = state.isCapturing
             let suppression = recording ? currentSuppression() : nil
+            let health = captureHealth()
 
             let display: (title: String, symbol: String, description: String)
-            if !permissionStatus.allGranted {
+            if health.state == .permissionRequired
+                || health.state == .permissionAppearsEnabledButStaleForBuild
+                || health.state == .accessibilityContextUnavailable
+            {
                 display = (
-                    "Setup required", "exclamationmark.triangle",
-                    "\(ProductIdentity.displayName) needs Accessibility before reliable capture can start"
+                    health.state.title, "exclamationmark.triangle", health.detail
                 )
             } else if !recording {
                 display = ("Recording paused", "pause.circle", "\(ProductIdentity.displayName) is paused")
@@ -104,13 +113,17 @@
                 default:
                     display = ("Context hidden", "eye.slash", "The current context is intentionally hidden")
                 }
+            } else if health.state == .inputTapUnavailable || health.state == .awaitingInputEvidence {
+                display = (health.state.title, "waveform.path.ecg", health.detail)
+            } else if health.state == .healthyButIdle {
+                display = (health.state.title, "record.circle", health.detail)
             } else {
-                display = ("Recording locally", "record.circle", "\(ProductIdentity.displayName) is recording locally")
+                display = ("Recording locally", "record.circle", health.detail)
             }
 
             statusMenuItem.title = display.title
             permissionMenuItem.title =
-                "Accessibility: \(permissionStatus.accessibility ? "on" : "off")  •  Activity input: \(permissionStatus.inputMonitoringStatusLabel)  •  Tap: \(eventTapStatus() ? "on" : "off")"
+                "Accessibility: \(permissionStatus.accessibility ? "on" : "off")  •  Direct input: \(permissionStatus.inputMonitoringStatusLabel)  •  Tap object: \(eventTapStatus() ? "on" : "off")  •  Evidence: \(health.captureProven ? "yes" : "no")"
             pauseMenuItem.title = state.isManuallyPaused ? "Resume recording" : "Pause recording"
 
             if let button = statusItem.button {
@@ -257,13 +270,12 @@
                 )
             else { return }
 
-            store.deleteAll { [weak self] result in
+            onDeleteDetails(nil) { [weak self] result in
                 switch result {
-                case .success(let fileCount):
-                    self?.recorder.record(
-                        kind: .historyCleared,
-                        message: "All detailed history cleared",
-                        metadata: ["deleted_files": String(fileCount)]
+                case .success(let itemCount):
+                    self?.showInformation(
+                        title: "Detailed history deleted",
+                        message: "Deleted \(itemCount) detailed event or semantic item(s). Existing seals and receipts remain."
                     )
                 case .failure(let error):
                     self?.showError(error)
@@ -284,13 +296,12 @@
                 )
             else { return }
 
-            store.deleteEvents(since: cutoff) { [weak self] result in
+            onDeleteDetails(cutoff) { [weak self] result in
                 switch result {
                 case .success(let count):
-                    self?.recorder.record(
-                        kind: .historyCleared,
-                        message: "Cleared \(label)",
-                        metadata: ["deleted_events": String(count)]
+                    self?.showInformation(
+                        title: "Detailed history deleted",
+                        message: "Deleted \(count) detailed event or semantic item(s) from the \(label). Existing seals remain."
                     )
                 case .failure(let error):
                     self?.showError(error)

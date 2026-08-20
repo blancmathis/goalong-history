@@ -102,6 +102,7 @@
                                 automationNotice(session)
                             }
                             eventBreakdown(session)
+                            ActivityEventInspector(session: session)
                         }
                         .padding(22)
                     }

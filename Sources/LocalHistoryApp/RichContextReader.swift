@@ -1,5 +1,6 @@
 #if os(macOS)
     import AppKit
+    import Carbon
     import ApplicationServices
     import Foundation
     import LocalHistoryCore
@@ -22,6 +23,7 @@
         private static let children = "AXChildren" as CFString
 
         static func capture(processIdentifier: pid_t, maximumCharacters: Int) -> AXRichContextCapture? {
+            guard !IsSecureEventInputEnabled() else { return nil }
             let application = AXUIElementCreateApplication(processIdentifier)
             AXUIElementSetMessagingTimeout(application, 0.35)
             guard let window = AXReader.focusedWindow(for: application) else { return nil }

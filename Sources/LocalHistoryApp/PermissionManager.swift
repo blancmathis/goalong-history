@@ -51,6 +51,8 @@
         let inputMonitoringProvidedByAccessibility: Bool
 
         var allGranted: Bool { accessibility && inputMonitoring }
+        var accessibilityUsable: Bool { accessibilityPreflight && accessibilityFunctionalProbe }
+        var canAttemptInputTap: Bool { accessibility || inputMonitoringDirectlyGranted }
 
         func isGranted(_ permission: MacPermissionKind) -> Bool {
             switch permission {
@@ -68,11 +70,9 @@
 
     /// Reads macOS TCC state and owns the guided permission experience.
     ///
-    /// Accessibility grants the current process both accessibility-client access and the ability
-    /// to listen to Quartz events. `CGPreflightListenEventAccess()` only reports the narrower,
-    /// direct Input Monitoring grant, so treating it as an independent hard requirement produces
-    /// a false "Setup required" state on Macs where the event listener already works through
-    /// Accessibility. The effective status below intentionally reflects actual usable access.
+    /// Reports macOS Accessibility and direct Input Monitoring preflights independently.
+    /// Neither switch nor event-tap creation is treated as proof of capture: the recorder health
+    /// state requires a functional AX read and a real click/key/scroll callback in this process.
     final class PermissionManager {
         private var guideController: PermissionGuideController?
 
@@ -81,15 +81,14 @@
             let accessibilityFunctionalProbe = Self.canReadFocusedApplication()
             let accessibility = accessibilityPreflight || accessibilityFunctionalProbe
             let directInputMonitoring = CGPreflightListenEventAccess()
-            let inputMonitoringViaAccessibility = accessibility && !directInputMonitoring
 
             return PermissionStatus(
                 accessibility: accessibility,
-                inputMonitoring: directInputMonitoring || accessibility,
+                inputMonitoring: directInputMonitoring,
                 accessibilityPreflight: accessibilityPreflight,
                 accessibilityFunctionalProbe: accessibilityFunctionalProbe,
                 inputMonitoringDirectlyGranted: directInputMonitoring,
-                inputMonitoringProvidedByAccessibility: inputMonitoringViaAccessibility
+                inputMonitoringProvidedByAccessibility: false
             )
         }
 
@@ -104,9 +103,8 @@
 
         @discardableResult
         func requestInputMonitoring() -> Bool {
-            // A granted Accessibility permission already provides the listening capability used by
-            // this app. Avoid asking for a redundant second switch unless macOS still cannot provide
-            // the required access.
+            // Input Monitoring preflight is reported independently from Accessibility.
+            // A successful callback remains the authoritative runtime proof.
             if currentStatus.inputMonitoring { return true }
             return CGRequestListenEventAccess()
         }
@@ -214,9 +212,6 @@
 
         var statusTitle: String {
             if isGranted {
-                if permission == .inputMonitoring && status.inputMonitoringProvidedByAccessibility {
-                    return "Available through Accessibility"
-                }
                 return "Permission granted"
             }
             return "Waiting for macOS"
@@ -224,10 +219,7 @@
 
         var statusDetail: String {
             if isGranted {
-                if permission == .inputMonitoring && status.inputMonitoringProvidedByAccessibility {
-                    return "No second switch is required. Accessibility already provides the event-listening access used by the app."
-                }
-                return "\(ProductIdentity.displayName) can use this permission now."
+                return "macOS reports this permission for the current app copy. Runtime health still requires a functional AX probe and a real input callback."
             }
             return "Turn on the switch beside the current copy of \(ProductIdentity.displayName). This status refreshes automatically."
         }

@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
         .library(name: "AgentActivity", targets: ["AgentActivity"]),
         .executable(name: "LocalHistory", targets: ["LocalHistoryApp"]),
+        .executable(name: "goalong-history-query", targets: ["LocalHistoryQueryCLI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6")
@@ -53,6 +54,11 @@ let package = Package(
                     .when(platforms: [.macOS])
                 ),
             ]
+        ),
+        .executableTarget(
+            name: "LocalHistoryQueryCLI",
+            dependencies: ["LocalHistoryCore"],
+            path: "Sources/LocalHistoryQueryCLI"
         ),
         .testTarget(
             name: "LocalHistoryCoreTests",

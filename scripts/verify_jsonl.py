@@ -14,7 +14,9 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
 
-FORBIDDEN_SUPPRESSED_FIELDS = ("window", "element", "url", "pointer", "keyboard", "scroll")
+FORBIDDEN_SUPPRESSED_FIELDS = (
+    "window", "element", "url", "pointer", "keyboard", "scroll", "semanticContext"
+)
 PRIVATE_MARKERS = (
     "incognito",
     "inprivate",
@@ -45,11 +47,11 @@ def validate_event(event: object, line_number: int) -> list[str]:
         if field not in event:
             errors.append(f"line {line_number}: missing required field {field!r}")
 
-    if event.get("suppressionReason") == "privateBrowserWindow":
+    if event.get("suppressionReason") is not None:
         leaked = [field for field in FORBIDDEN_SUPPRESSED_FIELDS if event.get(field) is not None]
         if leaked:
             errors.append(
-                f"line {line_number}: private suppression event contains detailed fields: {', '.join(leaked)}"
+                f"line {line_number}: suppressed event contains detailed fields: {', '.join(leaked)}"
             )
 
     if event.get("kind") == "typingBurst":
@@ -59,6 +61,42 @@ def validate_event(event: object, line_number: int) -> list[str]:
             errors.append(f"line {line_number}: typingBurst contains a key value")
         if not isinstance(metadata, dict) or metadata.get("content_recorded") != "false":
             errors.append(f"line {line_number}: typingBurst does not declare content_recorded=false")
+
+        if isinstance(metadata, dict):
+            forbidden_text_keys = {
+                "characters", "raw_characters", "raw_text", "text", "typed_text", "unicode", "value"
+            }
+            leaked_keys = sorted(
+                key for key, value in metadata.items()
+                if key.casefold() in forbidden_text_keys and value not in (None, "", False, "false", 0, "0")
+            )
+            if leaked_keys:
+                errors.append(
+                    f"line {line_number}: typingBurst contains text-like metadata keys: {', '.join(leaked_keys)}"
+                )
+
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    inline_semantic = any(
+        isinstance(metadata.get(key), str) and metadata[key].strip()
+        for key in ("analysis.semantic_text", "semantic.text", "rich_context.text")
+    )
+    if isinstance(event.get("schemaVersion"), int) and event["schemaVersion"] >= 4 and inline_semantic:
+        errors.append(f"line {line_number}: schema-v4 event contains inline semantic plaintext")
+
+    semantic_reference = event.get("semanticContext")
+    if event.get("kind") == "semanticSnapshot" and not isinstance(semantic_reference, dict):
+        errors.append(f"line {line_number}: semanticSnapshot has no semanticContext reference")
+    if isinstance(semantic_reference, dict):
+        for field in ("snapshotID", "contentSHA256", "characterCount", "source"):
+            if field not in semantic_reference:
+                errors.append(f"line {line_number}: semanticContext is missing {field!r}")
+
+    element = event.get("element")
+    if isinstance(element, dict) and element.get("isSecure") is True:
+        if semantic_reference is not None or inline_semantic:
+            errors.append(f"line {line_number}: secure element contains semantic content")
+        if event.get("keyboard") is not None:
+            errors.append(f"line {line_number}: secure element contains keyboard detail")
 
     url = event.get("url")
     if isinstance(url, dict) and isinstance(url.get("value"), str):

@@ -116,8 +116,10 @@
                 VStack(alignment: .leading, spacing: 15) {
                     SectionTitle(
                         title: "macOS permissions",
-                        subtitle: "Accessibility is required. It also provides event-listening access on macOS; direct Input Monitoring is used only when still needed."
+                        subtitle: "macOS switches, functional AX access and real input callbacks are measured separately."
                     )
+
+                    captureHealthPanel
 
                     HStack(spacing: 12) {
                         permissionRow(
@@ -130,7 +132,7 @@
                         )
                         permissionRow(
                             title: "Activity input",
-                            message: "Observes clicks, scrolls, shortcuts and non-content typing activity. Accessibility may already provide this access.",
+                            message: "Reports the direct Input Monitoring switch. A real event callback is still required before capture is called healthy.",
                             granted: model.runtime.inputMonitoringGranted,
                             grantedLabel: "Available",
                             buttonTitle: "Guided setup",
@@ -138,31 +140,97 @@
                         )
                     }
 
-                    if !model.runtime.accessibilityGranted || !model.runtime.inputMonitoringGranted {
+                    if let health = model.runtime.captureHealth,
+                        [.permissionRequired, .permissionAppearsEnabledButStaleForBuild,
+                         .accessibilityContextUnavailable].contains(health.state)
+                    {
+                        HStack {
+                            Label(health.detail, systemImage: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(LHTheme.warning)
+                            Spacer()
+                            Button("Open guided setup") { model.requestPermissions() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    } else if model.runtime.captureHealth?.captureProven != true {
                         HStack {
                             Label(
-                                "Capture is incomplete until the required access is available.",
-                                systemImage: "exclamationmark.triangle.fill"
+                                "The switches or tap object may exist, but this process has not received a real input callback yet.",
+                                systemImage: "waveform.path.ecg"
                             )
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(LHTheme.warning)
                             Spacer()
-                            Button("Open guided setup") {
-                                model.requestPermissions()
-                            }
-                            .buttonStyle(.borderedProminent)
+                            Button("Validate input") { model.beginCaptureValidation() }
+                                .buttonStyle(.borderedProminent)
                         }
                     } else {
                         HStack(spacing: 8) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(LHTheme.success)
-                            Text("The current app copy has the access required for reliable capture.")
+                            Text("A real input callback and Accessibility context have been observed for this running process.")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
                     }
                 }
             }
+        }
+
+        private var captureHealthPanel: some View {
+            let assessment = model.runtime.captureHealth
+            let snapshot = model.runtime.captureHealthSnapshot
+            return VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: assessment?.captureProven == true ? "checkmark.shield.fill" : "waveform.path.ecg")
+                        .foregroundStyle(assessment?.captureProven == true ? LHTheme.success : LHTheme.warning)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(assessment?.state.title ?? "Capture health unavailable")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(assessment?.detail ?? "No persisted capture-health evidence is available yet.")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Button("Validate input now") { model.beginCaptureValidation() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+                if let snapshot {
+                    Text(
+                        "Last input: \(snapshot.lastInputEventAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · click: \(snapshot.lastClickAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · typing: \(snapshot.lastTypingBurstAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · scroll: \(snapshot.lastScrollAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · shortcut: \(snapshot.lastShortcutAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never")"
+                    )
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    Text(
+                        "AX: \(snapshot.lastAXContextSuccessAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · URL: \(snapshot.lastURLDetectedAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · suppression: \(snapshot.lastSuppressionReason?.rawValue ?? "none") at \(snapshot.lastSuppressionAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never")"
+                    )
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    Text(
+                        "Permissions: AX switch \(snapshot.permissions.accessibilityPreflight ? "on" : "off") · AX probe \(snapshot.permissions.accessibilityFunctionalProbe ? "works" : "fails") · Input Monitoring switch \(snapshot.permissions.inputMonitoringPreflight ? "on" : "off") · tap \(snapshot.eventTapLifecycle.rawValue)"
+                    )
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    Text(
+                        "Build: \(snapshot.build.signatureKind.rawValue) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "no CDHash") · 5 min input events: \(snapshot.recentCounters.inputEventCount)"
+                    )
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    if snapshot.build.signatureKind == .adHoc {
+                        Text("Ad-hoc updates can change the app identity recognized by TCC and may require approval again. Existing history remains readable.")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(LHTheme.warning)
+                    }
+                }
+            }
+            .padding(13)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
 
         private var protectionGrid: some View {

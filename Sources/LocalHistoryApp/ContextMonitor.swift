@@ -1,4 +1,5 @@
 #if os(macOS)
+    import Carbon
     import CoreGraphics
     import Foundation
     import LocalHistoryCore
@@ -8,6 +9,9 @@
         private let recorder: EventRecorder
         private let state: CaptureState
         private let configManager: ConfigManager
+        private let captureHealth: CaptureHealthStore
+        private let semanticContextStore: SemanticContextStore
+        private let memoryStore: LocalActivityMemoryStore
 
         private var timer: Timer?
         private var previous: ContextSnapshot?
@@ -26,12 +30,18 @@
             provider: ContextProvider,
             recorder: EventRecorder,
             state: CaptureState,
-            configManager: ConfigManager
+            configManager: ConfigManager,
+            captureHealth: CaptureHealthStore,
+            semanticContextStore: SemanticContextStore,
+            memoryStore: LocalActivityMemoryStore
         ) {
             self.provider = provider
             self.recorder = recorder
             self.state = state
             self.configManager = configManager
+            self.captureHealth = captureHealth
+            self.semanticContextStore = semanticContextStore
+            self.memoryStore = memoryStore
         }
 
         func start() {
@@ -47,7 +57,9 @@
                 recorder: recorder,
                 state: state,
                 configManager: configManager,
-                currentContext: { [weak self] in self?.latestSnapshot }
+                currentContext: { [weak self] in self?.latestSnapshot },
+                semanticContextStore: semanticContextStore,
+                memoryStore: memoryStore
             )
         }
 
@@ -62,10 +74,35 @@
             sampleNow()
         }
 
-        func sampleNow() {
-            guard state.isCapturing else { return }
-            guard let current = provider.capture() else { return }
+        @discardableResult
+        func sampleNow() -> ContextSnapshot? {
+            guard state.isCapturing else { return nil }
+            if IsSecureEventInputEnabled() {
+                let safeContext = latestSnapshot.map { current in
+                    ContextSnapshot(
+                        app: current.app,
+                        window: nil,
+                        focusedElement: nil,
+                        url: nil,
+                        suppressionReason: .secureInput
+                    )
+                }
+                setLatest(safeContext)
+                previous = safeContext
+                captureHealth.setSuppression(.secureInput)
+                return safeContext
+            }
+            guard let current = provider.capture() else {
+                captureHealth.markAXFailure()
+                return nil
+            }
             setLatest(current)
+            captureHealth.setSuppression(current.suppressionReason)
+            if current.suppressionReason == .accessibilityUnavailable {
+                captureHealth.markAXFailure()
+            } else if current.suppressionReason == nil {
+                captureHealth.markAXSuccess(urlAvailable: current.url != nil)
+            }
 
             if let reason = current.suppressionReason {
                 if previous?.suppressionReason != reason || previous?.app != current.app {
@@ -77,7 +114,7 @@
                     )
                 }
                 previous = current
-                return
+                return current
             }
 
             if let previousReason = previous?.suppressionReason {
@@ -115,6 +152,7 @@
             }
 
             previous = current
+            return current
         }
 
         private func setLatest(_ snapshot: ContextSnapshot?) {

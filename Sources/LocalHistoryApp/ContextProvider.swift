@@ -244,9 +244,19 @@
             return nil
         }
 
-        func element(at point: CGPoint) -> ElementSnapshot? {
+        func frontmostProcessIdentifier() -> pid_t? {
+            NSWorkspace.shared.frontmostApplication?.processIdentifier
+        }
+
+        func element(at point: CGPoint, expectedProcessIdentifier: pid_t? = nil) -> ElementSnapshot? {
             guard permissions.currentStatus.accessibility else { return nil }
             guard let element = AXReader.actionableElement(at: point) else { return nil }
+            if let expectedProcessIdentifier {
+                var actual: pid_t = 0
+                guard AXUIElementGetPid(element, &actual) == .success,
+                    actual == expectedProcessIdentifier
+                else { return nil }
+            }
             return AXReader.elementSnapshot(element, config: configManager.config)
         }
 

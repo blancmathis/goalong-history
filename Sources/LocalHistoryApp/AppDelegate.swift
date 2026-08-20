@@ -7,6 +7,10 @@
     final class AppDelegate: NSObject, NSApplicationDelegate {
         private var configManager: ConfigManager!
         private var permissions: PermissionManager!
+        private var captureHealthStore: CaptureHealthStore!
+        private var semanticContextStore: SemanticContextStore!
+        private var memoryStore: LocalActivityMemoryStore!
+        private var retentionStore: HistoryRetentionStore!
         private var captureState: CaptureState!
         private var store: JSONLStore!
         private var integrityStateStore: IntegrityStateStore!
@@ -26,6 +30,7 @@
 
         private var permissionTimer: Timer?
         private var lastPermissionStatus: PermissionStatus?
+        private var lastRecordedHealthState: CaptureHealthState?
         private var workspaceObservers: [NSObjectProtocol] = []
 
         func applicationDidFinishLaunching(_ notification: Notification) {
@@ -40,6 +45,12 @@
                 try AppPaths.prepare()
                 configManager = ConfigManager()
                 permissions = PermissionManager()
+                captureHealthStore = CaptureHealthStore(permissions: permissions)
+                semanticContextStore = SemanticContextStore()
+                memoryStore = LocalActivityMemoryStore()
+                retentionStore = HistoryRetentionStore(
+                    legacyRetentionDays: configManager.config.retentionDays
+                )
                 captureState = CaptureState()
                 store = try JSONLStore(retentionDays: configManager.config.retentionDays)
                 integrityStateStore = IntegrityStateStore()
@@ -48,20 +59,29 @@
                 minuteSealer = MinuteSealer(stateStore: integrityStateStore, identity: deviceIdentity)
                 commitmentUploader = CommitmentUploader(config: configManager.config, identity: deviceIdentity)
                 minuteSealer.setUploader(commitmentUploader)
-                recorder = EventRecorder(store: store, integrityJournal: integrityJournal, minuteSealer: minuteSealer)
+                recorder = EventRecorder(
+                    store: store,
+                    integrityJournal: integrityJournal,
+                    minuteSealer: minuteSealer,
+                    captureHealth: captureHealthStore
+                )
                 contextProvider = ContextProvider(configManager: configManager, permissions: permissions)
                 contextMonitor = ContextMonitor(
                     provider: contextProvider,
                     recorder: recorder,
                     state: captureState,
-                    configManager: configManager
+                    configManager: configManager,
+                    captureHealth: captureHealthStore,
+                    semanticContextStore: semanticContextStore,
+                    memoryStore: memoryStore
                 )
                 eventTapMonitor = EventTapMonitor(
                     recorder: recorder,
                     contextMonitor: contextMonitor,
                     contextProvider: contextProvider,
                     state: captureState,
-                    configManager: configManager
+                    configManager: configManager,
+                    captureHealth: captureHealthStore
                 )
                 sharingRulesStore = SharingRulesStore()
                 let executableURL = Bundle.main.executableURL
@@ -83,6 +103,10 @@
                     deviceInfo: deviceIdentity.info,
                     eventTapStatus: { [weak self] in self?.eventTapMonitor.isRunning ?? false },
                     currentSuppression: { [weak self] in self?.contextMonitor.latestSnapshot?.suppressionReason },
+                    captureHealthSnapshot: { [unowned self] in self.captureHealthStore.snapshot },
+                    onBeginCaptureValidation: { [weak self] in
+                        self?.captureHealthStore.beginControlledInputValidation()
+                    },
                     onTogglePause: { [weak self] in self?.toggleManualPause() },
                     onRequestPermissions: { [weak self] in self?.requestPermissionsAndExplain() },
                     onSaveConfiguration: { [weak self] config in
@@ -103,6 +127,10 @@
                     configManager: configManager,
                     eventTapStatus: { [weak self] in self?.eventTapMonitor.isRunning ?? false },
                     currentSuppression: { [weak self] in self?.contextMonitor.latestSnapshot?.suppressionReason },
+                    captureHealth: { [unowned self] in self.captureHealthStore.assessment },
+                    onDeleteDetails: { [weak self] cutoff, completion in
+                        self?.deleteDetails(since: cutoff, completion: completion)
+                    },
                     onOpenDashboard: { [weak self] in self?.dashboardWindowController.show(section: .overview) },
                     onOpenShare: { [weak self] in self?.dashboardWindowController.show(section: .share) },
                     onTogglePause: { [weak self] in self?.toggleManualPause() },
@@ -115,6 +143,7 @@
                 return
             }
 
+            retentionStore.applyCleanup()
             minuteSealer.start()
             commitmentUploader?.replayPending()
 
@@ -149,6 +178,7 @@
             eventTapMonitor?.stop()
             recorder?.record(kind: .recorderStopped, message: "LocalHistory stopped")
             recorder?.flush()
+            captureHealthStore?.flush()
             minuteSealer?.stopAndSeal()
             recorder?.close()
 
@@ -167,12 +197,14 @@
         private func toggleManualPause() {
             if captureState.isManuallyPaused {
                 captureState.setManualPaused(false)
+                captureHealthStore.setPaused(false)
                 recorder.record(kind: .recordingResumed, message: "Recording resumed from the LocalHistory interface")
                 contextMonitor.resetAndSample()
             } else {
                 recorder.record(kind: .recordingPaused, message: "Recording paused from the LocalHistory interface")
                 recorder.flush()
                 captureState.setManualPaused(true)
+                captureHealthStore.setPaused(true)
             }
             menuBarController.updateStatus()
         }
@@ -219,6 +251,12 @@
 
         private func applyConfiguration(_ config: RecorderConfig) throws -> RecorderConfig {
             let applied = try configManager.save(config)
+            do {
+                try retentionStore.updateDetailedRetention(fromLegacyDays: applied.retentionDays)
+                retentionStore.applyCleanup()
+            } catch {
+                Diagnostics.write("Could not persist detailed retention policy: \(error)")
+            }
             contextMonitor.resetAndSample()
             configureUploader(for: applied)
             menuBarController.updateStatus()
@@ -242,26 +280,54 @@
             completion: @escaping (Result<Int, Error>) -> Void
         ) {
             if let cutoff {
-                store.deleteEvents(since: cutoff) { [weak self] result in
-                    if case .success(let count) = result {
-                        self?.recorder.record(
-                            kind: .historyCleared,
-                            message: "Detailed local activity deleted",
-                            metadata: ["deleted_events": String(count)]
-                        )
+                store.deleteEvents(since: cutoff) { [weak self] rawResult in
+                    guard let self else { completion(rawResult); return }
+                    switch rawResult {
+                    case .failure:
+                        completion(rawResult)
+                    case .success(let rawCount):
+                        self.semanticContextStore.deleteEvents(since: cutoff) { semanticResult in
+                            switch semanticResult {
+                            case .failure(let error): completion(.failure(error))
+                            case .success(let semanticCount):
+                                let total = rawCount + semanticCount
+                                self.recorder.record(
+                                    kind: .historyCleared,
+                                    message: "Detailed local activity and semantic snapshots deleted",
+                                    metadata: [
+                                        "deleted_events": String(rawCount),
+                                        "deleted_semantic_snapshots": String(semanticCount),
+                                    ]
+                                )
+                                completion(.success(total))
+                            }
+                        }
                     }
-                    completion(result)
                 }
             } else {
-                store.deleteAll { [weak self] result in
-                    if case .success(let count) = result {
-                        self?.recorder.record(
-                            kind: .historyCleared,
-                            message: "All detailed local activity deleted",
-                            metadata: ["deleted_files": String(count)]
-                        )
+                store.deleteAll { [weak self] rawResult in
+                    guard let self else { completion(rawResult); return }
+                    switch rawResult {
+                    case .failure:
+                        completion(rawResult)
+                    case .success(let rawCount):
+                        self.semanticContextStore.deleteAll { semanticResult in
+                            switch semanticResult {
+                            case .failure(let error): completion(.failure(error))
+                            case .success(let semanticCount):
+                                let total = rawCount + semanticCount
+                                self.recorder.record(
+                                    kind: .historyCleared,
+                                    message: "All detailed local activity and semantic snapshots deleted",
+                                    metadata: [
+                                        "deleted_files": String(rawCount),
+                                        "deleted_semantic_files": String(semanticCount),
+                                    ]
+                                )
+                                completion(.success(total))
+                            }
+                        }
                     }
-                    completion(result)
                 }
             }
         }
@@ -297,6 +363,7 @@
 
         private func checkPermissionsAndStartTap() {
             let status = permissions.currentStatus
+            captureHealthStore.updatePermissions(status)
 
             if status != lastPermissionStatus {
                 recorder.record(
@@ -305,6 +372,9 @@
                     metadata: [
                         "accessibility": String(status.accessibility),
                         "input_monitoring": String(status.inputMonitoring),
+                        "accessibility_preflight": String(status.accessibilityPreflight),
+                        "accessibility_functional": String(status.accessibilityFunctionalProbe),
+                        "input_monitoring_preflight": String(status.inputMonitoringDirectlyGranted),
                     ]
                 )
                 if status.accessibility {
@@ -313,12 +383,24 @@
                 lastPermissionStatus = status
             }
 
-            if status.inputMonitoring, !eventTapMonitor.isRunning {
+            if status.canAttemptInputTap, !eventTapMonitor.isRunning {
                 _ = eventTapMonitor.start()
-            } else if !status.inputMonitoring, eventTapMonitor.isRunning {
+            } else if !status.canAttemptInputTap, eventTapMonitor.isRunning {
                 eventTapMonitor.stop()
             }
 
+            let assessment = captureHealthStore.assessment
+            if assessment.state != lastRecordedHealthState {
+                recorder.record(
+                    kind: .recorderHealth,
+                    message: assessment.detail,
+                    metadata: [
+                        "state": assessment.state.rawValue,
+                        "capture_proven": String(assessment.captureProven),
+                    ]
+                )
+                lastRecordedHealthState = assessment.state
+            }
             menuBarController.updateStatus()
         }
 

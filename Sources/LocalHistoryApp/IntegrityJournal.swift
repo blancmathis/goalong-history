@@ -39,6 +39,7 @@
                 keyboard: baseEvent.keyboard,
                 scroll: baseEvent.scroll,
                 inputOrigin: baseEvent.inputOrigin,
+                semanticContext: baseEvent.semanticContext,
                 classification: classification,
                 suppressionReason: baseEvent.suppressionReason,
                 message: baseEvent.message,
@@ -114,6 +115,18 @@
                 ]
             }()
 
+            let semanticContext: [String: String] = {
+                guard let reference = event.semanticContext else { return [:] }
+                return [
+                    "snapshot_id": reference.snapshotID,
+                    "content_sha256": reference.contentSHA256,
+                    "character_count": String(reference.characterCount),
+                    "source": reference.source.rawValue,
+                    "redacted": String(reference.redacted),
+                    "truncated": String(reference.truncated),
+                ]
+            }()
+
             var activity: [String: String] = ["kind": event.kind.rawValue]
             if let pointer = event.pointer {
                 activity["pointer_button"] = pointer.button
@@ -175,6 +188,9 @@
             ]
             if event.schemaVersion >= 3 {
                 groups.append(("website", website))
+            }
+            if event.schemaVersion >= 4 {
+                groups.append(("semantic_context", semanticContext))
             }
             groups.append(contentsOf: [
                 ("context", context),
