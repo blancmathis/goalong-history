@@ -32,6 +32,7 @@
         let deviceAlgorithm: String
         let deviceProtectionTitle: String
         let deviceProtectionSummary: String
+        let agentActivityRuntime: AgentActivityRuntime
 
         private(set) var selectedDay: Date
         private var savedSettingsDraft: DashboardSettingsDraft
@@ -60,6 +61,7 @@
             permissions: PermissionManager,
             configManager: ConfigManager,
             sharingRulesStore: SharingRulesStore,
+            agentActivityRuntime: AgentActivityRuntime,
             deviceInfo: DeviceIdentityInfo,
             eventTapStatus: @escaping () -> Bool,
             currentSuppression: @escaping () -> SuppressionReason?,
@@ -74,6 +76,7 @@
             self.permissions = permissions
             self.configManager = configManager
             self.sharingRulesStore = sharingRulesStore
+            self.agentActivityRuntime = agentActivityRuntime
             self.sharingRules = sharingRulesStore.rules
             self.defaultSharingVisibility = sharingRulesStore.defaultVisibility
             self.deviceID = deviceInfo.deviceID
@@ -196,12 +199,16 @@
             if section == .share, shareSegments.isEmpty {
                 reloadShareSegments()
             }
+            if section == .agentActivity {
+                agentActivityRuntime.scanNow()
+            }
         }
 
         func refreshEverything() {
             refreshRuntime()
             refreshData(force: true)
             if selectedSection == .share { reloadShareSegments() }
+            if selectedSection == .agentActivity { agentActivityRuntime.scanNow() }
         }
 
         func togglePause() {

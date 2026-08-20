@@ -16,6 +16,8 @@
         static let memoriesDirectory = applicationSupportDirectory.appendingPathComponent("memories", isDirectory: true)
         static let screenTimeDirectory = applicationSupportDirectory.appendingPathComponent(
             "apple-screen-time", isDirectory: true)
+        static let agentActivityDirectory = applicationSupportDirectory.appendingPathComponent(
+            "agent-activity", isDirectory: true)
         static let integrityStateFile = applicationSupportDirectory.appendingPathComponent(
             "integrity-state.json", isDirectory: false)
         static let configFile = applicationSupportDirectory.appendingPathComponent("config.json", isDirectory: false)
