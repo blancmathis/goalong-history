@@ -25,6 +25,7 @@ public enum EventKind: String, Codable, CaseIterable {
     case systemSleep
     case systemWake
     case historyCleared
+    case agentArtifactCaptured
     case diagnostic
 }
 

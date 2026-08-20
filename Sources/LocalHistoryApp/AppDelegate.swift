@@ -1,4 +1,5 @@
 #if os(macOS)
+    import AgentActivity
     import AppKit
     import Foundation
     import LocalHistoryCore
@@ -19,6 +20,7 @@
         private var eventTapMonitor: EventTapMonitor!
         private var dashboardViewModel: DashboardViewModel!
         private var sharingRulesStore: SharingRulesStore!
+        private var agentActivityRuntime: AgentActivityRuntime!
         private var dashboardWindowController: DashboardWindowController!
         private var menuBarController: MenuBarController!
 
@@ -62,12 +64,22 @@
                     configManager: configManager
                 )
                 sharingRulesStore = SharingRulesStore()
+                let executableURL = Bundle.main.executableURL
+                    ?? URL(fileURLWithPath: CommandLine.arguments.first ?? "/Applications/LocalHistory.app/Contents/MacOS/LocalHistory")
+                agentActivityRuntime = try AgentActivityRuntime(
+                    rootDirectory: AppPaths.agentActivityDirectory,
+                    executableURL: executableURL,
+                    onCaptured: { [weak self] captures in
+                        self?.recordAgentCaptures(captures)
+                    }
+                )
 
                 dashboardViewModel = DashboardViewModel(
                     state: captureState,
                     permissions: permissions,
                     configManager: configManager,
                     sharingRulesStore: sharingRulesStore,
+                    agentActivityRuntime: agentActivityRuntime,
                     deviceInfo: deviceIdentity.info,
                     eventTapStatus: { [weak self] in self?.eventTapMonitor.isRunning ?? false },
                     currentSuppression: { [weak self] in self?.contextMonitor.latestSnapshot?.suppressionReason },
@@ -121,6 +133,7 @@
                     ) as? String) ?? "0.5.1-dev",
                 ]
             )
+            agentActivityRuntime.start()
 
             installWorkspaceObservers()
             contextMonitor.start()
@@ -131,6 +144,7 @@
 
         func applicationWillTerminate(_ notification: Notification) {
             permissionTimer?.invalidate()
+            agentActivityRuntime?.stop()
             contextMonitor?.stop()
             eventTapMonitor?.stop()
             recorder?.record(kind: .recorderStopped, message: "LocalHistory stopped")
@@ -161,6 +175,46 @@
                 captureState.setManualPaused(true)
             }
             menuBarController.updateStatus()
+        }
+
+        private func recordAgentCaptures(_ captures: [AgentCaptureRecord]) {
+            for capture in captures {
+                let context = ContextSnapshot(
+                    app: AppSnapshot(
+                        name: capture.provider.displayName,
+                        bundleIdentifier: "ai.goalong.agent.\(capture.provider.rawValue.lowercased())",
+                        processIdentifier: ProcessInfo.processInfo.processIdentifier
+                    ),
+                    window: nil,
+                    focusedElement: nil,
+                    url: nil,
+                    suppressionReason: nil
+                )
+                var metadata: [String: String] = [
+                    "agent_capture_id": capture.id,
+                    "agent_provider": capture.provider.rawValue,
+                    "agent_source_key": capture.sourceKey,
+                    "agent_relative_path_sha256": SHA256Digest.hashHex(capture.relativePath),
+                    "agent_content_sha256": capture.sha256,
+                    "agent_manifest_hash": capture.manifestHash,
+                    "agent_storage_kind": capture.storageKind.rawValue,
+                    "agent_version": String(capture.version),
+                    "agent_byte_count": String(capture.byteCount),
+                    "agent_stored_byte_count": String(capture.storedByteCount),
+                    "agent_message_count": String(capture.summary.messageCount),
+                    "agent_tool_call_count": String(capture.summary.toolCallCount),
+                ]
+                if let sessionID = capture.summary.sessionID {
+                    metadata["agent_session_sha256"] = SHA256Digest.hashHex(sessionID)
+                }
+                recorder.record(
+                    kind: .agentArtifactCaptured,
+                    context: context,
+                    message: "Agent activity captured locally",
+                    metadata: metadata,
+                    timestamp: capture.capturedAt
+                )
+            }
         }
 
         private func applyConfiguration(_ config: RecorderConfig) throws -> RecorderConfig {
