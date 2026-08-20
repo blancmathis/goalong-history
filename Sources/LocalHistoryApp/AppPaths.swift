@@ -43,7 +43,7 @@
             )
             for directory in [
                 eventsDirectory, sealsDirectory, receiptsDirectory, sharesDirectory,
-                semanticDirectory, memoriesDirectory,
+                semanticDirectory, memoriesDirectory, agentActivityDirectory,
             ] {
                 try fileManager.createDirectory(
                     at: directory,
@@ -148,8 +148,7 @@
                             attributes: [.posixPermissions: 0o600]
                         )
                     }
-                    try? FileManager.default.setAttributes(
-                        [.posixPermissions: 0o600], ofItemAtPath: AppPaths.diagnosticsFile.path)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: AppPaths.diagnosticsFile.path)
                     let handle = try FileHandle(forWritingTo: AppPaths.diagnosticsFile)
                     try handle.seekToEnd()
                     try handle.write(contentsOf: data)
