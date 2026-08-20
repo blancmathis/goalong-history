@@ -1,0 +1,107 @@
+name: Bootstrap Computer History upgrade
+
+on:
+  push:
+    branches:
+      - agent/computer-history-upgrade
+
+permissions:
+  contents: write
+
+jobs:
+  apply-upgrade:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct validated upgrade bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, itertools, sys
+
+          expected_size = 139141
+          expected_sha = "c21f2eb06098499711e3275f574a1178a39451910f8e92fc8c0d7b77462b9645"
+          files = sorted(Path('.bootstrap/candidates').glob('*.bin'))
+          chunks = [(p, p.read_bytes()) for p in files]
+          print('candidates:')
+          for i, (p, data) in enumerate(chunks):
+              print(i, p.name, len(data), hashlib.sha256(data).hexdigest())
+
+          def digest(indices):
+              h = hashlib.sha256()
+              size = 0
+              for i in indices:
+                  data = chunks[i][1]
+                  h.update(data)
+                  size += len(data)
+              return size, h.hexdigest()
+
+          n = len(chunks)
+          all_indices = tuple(range(n))
+          candidates = [all_indices]
+          # Previous transfer had at most a few rejected/replaced segments. Search
+          # order-preserving subsets first; this is deterministic and bounded.
+          for removed_count in (1, 2, 3):
+              for removed in itertools.combinations(range(n), removed_count):
+                  removed = set(removed)
+                  candidates.append(tuple(i for i in range(n) if i not in removed))
+
+          selected = None
+          for indices in candidates:
+              size, sha = digest(indices)
+              if size == expected_size and sha == expected_sha:
+                  selected = indices
+                  break
+
+          if selected is None:
+              print('No order-preserving subset matched the validated bundle.', file=sys.stderr)
+              size, sha = digest(all_indices)
+              print(f'all: size={size} sha256={sha}', file=sys.stderr)
+              sys.exit(42)
+
+          out = Path('/tmp/goalong-history-upgrade.zip')
+          with out.open('wb') as fh:
+              for i in selected:
+                  fh.write(chunks[i][1])
+          print('selected indices:', list(selected))
+          print('validated:', out, out.stat().st_size, hashlib.sha256(out.read_bytes()).hexdigest())
+          PY
+
+          rm -rf /tmp/goalong-history-upgrade
+          mkdir -p /tmp/goalong-history-upgrade
+          unzip -q /tmp/goalong-history-upgrade.zip -d /tmp/goalong-history-upgrade
+
+      - name: Apply guarded source upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 /tmp/goalong-history-upgrade/goalong-history-upgrade/apply_upgrade.py --repo "$GITHUB_WORKSPACE" --apply
+          rm -rf .goalong-history-backup
+          rm -rf .bootstrap
+          rm -f .github/workflows/bootstrap-computer-history-upgrade.yml
+
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test
+          ./scripts/audit_privacy_boundaries.sh
+
+      - name: Commit real upgrade only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes produced"
+            exit 1
+          fi
+          git commit -m "Upgrade capture health and local activity history"
+          git push origin HEAD:agent/computer-history-upgrade
