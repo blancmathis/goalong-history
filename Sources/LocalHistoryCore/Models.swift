@@ -6,9 +6,11 @@ public enum EventKind: String, Codable, CaseIterable {
     case recordingPaused
     case recordingResumed
     case permissionStatus
+    case recorderHealth
     case applicationActivated
     case windowChanged
     case focusChanged
+    case semanticSnapshot
     case urlChanged
     case mouseClick
     case keyboardShortcut
@@ -257,6 +259,7 @@ public struct HistoryEvent: Codable, Equatable {
     public let keyboard: KeyboardSnapshot?
     public let scroll: ScrollSnapshot?
     public let inputOrigin: InputOriginSnapshot?
+    public let semanticContext: SemanticContextReference?
     public let classification: LocalClassification?
     public let suppressionReason: SuppressionReason?
     public let message: String?
@@ -277,6 +280,7 @@ public struct HistoryEvent: Codable, Equatable {
         keyboard: KeyboardSnapshot? = nil,
         scroll: ScrollSnapshot? = nil,
         inputOrigin: InputOriginSnapshot? = nil,
+        semanticContext: SemanticContextReference? = nil,
         classification: LocalClassification? = nil,
         suppressionReason: SuppressionReason? = nil,
         message: String? = nil,
@@ -296,6 +300,7 @@ public struct HistoryEvent: Codable, Equatable {
         self.keyboard = keyboard
         self.scroll = scroll
         self.inputOrigin = inputOrigin
+        self.semanticContext = semanticContext
         self.classification = classification
         self.suppressionReason = suppressionReason
         self.message = message
@@ -318,6 +323,7 @@ public struct HistoryEvent: Codable, Equatable {
             keyboard: keyboard,
             scroll: scroll,
             inputOrigin: inputOrigin,
+            semanticContext: semanticContext,
             classification: classification,
             suppressionReason: suppressionReason,
             message: message,

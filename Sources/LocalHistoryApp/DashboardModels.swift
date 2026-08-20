@@ -50,6 +50,8 @@
         let eventTapRunning: Bool
         let verificationEnabled: Bool
         let verificationServer: String?
+        let captureHealth: CaptureHealthAssessment?
+        let captureHealthSnapshot: CaptureHealthSnapshot?
 
         static let unavailable = RuntimePresentation(
             state: .permissionsMissing,
@@ -57,7 +59,9 @@
             inputMonitoringGranted: false,
             eventTapRunning: false,
             verificationEnabled: false,
-            verificationServer: nil
+            verificationServer: nil,
+            captureHealth: nil,
+            captureHealthSnapshot: nil
         )
     }
 

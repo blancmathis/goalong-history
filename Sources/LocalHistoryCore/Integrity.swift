@@ -297,11 +297,25 @@ public enum IntegrityDomains {
         "raw_digest",
     ]
 
+    public static let eventFieldOrderV4 = [
+        "time",
+        "application",
+        "website",
+        "context",
+        "semantic_context",
+        "activity",
+        "classification",
+        "coverage",
+        "trust",
+        "raw_digest",
+    ]
+
     /// Kept for source compatibility with v2 callers and fixtures.
     public static let eventFieldOrder = eventFieldOrderV2
 
     public static func eventFieldOrder(for schemaVersion: Int) -> [String] {
-        schemaVersion >= 3 ? eventFieldOrderV3 : eventFieldOrderV2
+        if schemaVersion >= 4 { return eventFieldOrderV4 }
+        return schemaVersion >= 3 ? eventFieldOrderV3 : eventFieldOrderV2
     }
 
     public static let minuteFieldOrder = [

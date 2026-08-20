@@ -7,11 +7,18 @@
         private let store: JSONLStore
         private let integrityJournal: IntegrityJournal
         private let minuteSealer: MinuteSealer
+        private let captureHealth: CaptureHealthStore?
 
-        init(store: JSONLStore, integrityJournal: IntegrityJournal, minuteSealer: MinuteSealer) {
+        init(
+            store: JSONLStore,
+            integrityJournal: IntegrityJournal,
+            minuteSealer: MinuteSealer,
+            captureHealth: CaptureHealthStore? = nil
+        ) {
             self.store = store
             self.integrityJournal = integrityJournal
             self.minuteSealer = minuteSealer
+            self.captureHealth = captureHealth
         }
 
         func record(
@@ -22,13 +29,14 @@
             keyboard: KeyboardSnapshot? = nil,
             scroll: ScrollSnapshot? = nil,
             inputOrigin: InputOriginSnapshot? = nil,
+            semanticContext: SemanticContextReference? = nil,
             suppressionReason: SuppressionReason? = nil,
             message: String? = nil,
             metadata: [String: String]? = nil,
             timestamp: Date = Date()
         ) {
             let base = HistoryEvent(
-                schemaVersion: 3,
+                schemaVersion: 4,
                 sessionID: sessionID,
                 timestamp: timestamp,
                 kind: kind,
@@ -40,6 +48,7 @@
                 keyboard: keyboard,
                 scroll: scroll,
                 inputOrigin: inputOrigin,
+                semanticContext: semanticContext,
                 classification: LocalClassifier.classify(
                     app: context?.app,
                     url: context?.url,
@@ -50,9 +59,17 @@
                 metadata: metadata,
                 integrity: nil
             )
+            let violations = PrivacyBoundaryValidator.violations(in: base)
+            guard violations.isEmpty else {
+                Diagnostics.write(
+                    "Refused unsafe event \(kind.rawValue): " + violations.map(\.rawValue).joined(separator: ",")
+                )
+                return
+            }
             let event = integrityJournal.commit(base)
             store.append(event)
             minuteSealer.receive(event)
+            captureHealth?.markRecordedEvent(kind, at: timestamp)
         }
 
         func flush() {

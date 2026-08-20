@@ -12,6 +12,8 @@
         static let sealsDirectory = applicationSupportDirectory.appendingPathComponent("seals", isDirectory: true)
         static let receiptsDirectory = applicationSupportDirectory.appendingPathComponent("receipts", isDirectory: true)
         static let sharesDirectory = applicationSupportDirectory.appendingPathComponent("shares", isDirectory: true)
+        static let semanticDirectory = applicationSupportDirectory.appendingPathComponent("semantic", isDirectory: true)
+        static let memoriesDirectory = applicationSupportDirectory.appendingPathComponent("memories", isDirectory: true)
         static let screenTimeDirectory = applicationSupportDirectory.appendingPathComponent(
             "apple-screen-time", isDirectory: true)
         static let integrityStateFile = applicationSupportDirectory.appendingPathComponent(
@@ -23,6 +25,12 @@
             "device-signing-key-v2.bin", isDirectory: false)
         static let diagnosticsFile = applicationSupportDirectory.appendingPathComponent(
             "diagnostics.log", isDirectory: false)
+        static let captureHealthFile = applicationSupportDirectory.appendingPathComponent(
+            "capture-health.json", isDirectory: false)
+        static let retentionPolicyFile = applicationSupportDirectory.appendingPathComponent(
+            "retention-policy.json", isDirectory: false)
+        static let retentionPolicyActivationFile = applicationSupportDirectory.appendingPathComponent(
+            "retention-policy-activated", isDirectory: false)
 
         static func prepare() throws {
             let fileManager = FileManager.default
@@ -31,7 +39,10 @@
                 withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700]
             )
-            for directory in [eventsDirectory, sealsDirectory, receiptsDirectory, sharesDirectory] {
+            for directory in [
+                eventsDirectory, sealsDirectory, receiptsDirectory, sharesDirectory,
+                semanticDirectory, memoriesDirectory,
+            ] {
                 try fileManager.createDirectory(
                     at: directory,
                     withIntermediateDirectories: true,
@@ -53,6 +64,10 @@
 
         static func eventFileURL(for date: Date = Date()) -> URL {
             eventsDirectory.appendingPathComponent(localDayString(for: date) + ".jsonl")
+        }
+
+        static func semanticFileURL(for date: Date = Date()) -> URL {
+            semanticDirectory.appendingPathComponent(localDayString(for: date) + ".semantic.jsonl")
         }
 
         static func sealFileURL(for date: Date = Date()) -> URL {

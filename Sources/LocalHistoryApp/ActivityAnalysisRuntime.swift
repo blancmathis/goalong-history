@@ -12,6 +12,8 @@
         private weak var state: CaptureState?
         private weak var configManager: ConfigManager?
         private var currentContext: (() -> ContextSnapshot?)?
+        private var semanticContextStore: SemanticContextStore?
+        private var memoryStore: LocalActivityMemoryStore?
 
         private var richContextTimer: Timer?
         private var analysisTimer: Timer?
@@ -30,13 +32,17 @@
             recorder: EventRecorder,
             state: CaptureState,
             configManager: ConfigManager,
-            currentContext: @escaping () -> ContextSnapshot?
+            currentContext: @escaping () -> ContextSnapshot?,
+            semanticContextStore: SemanticContextStore,
+            memoryStore: LocalActivityMemoryStore
         ) {
             stop()
             self.recorder = recorder
             self.state = state
             self.configManager = configManager
             self.currentContext = currentContext
+            self.semanticContextStore = semanticContextStore
+            self.memoryStore = memoryStore
 
             let richTimer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
                 self?.captureRichContextIfNeeded()
@@ -57,6 +63,8 @@
             richContextTimer = nil
             analysisTimer = nil
             currentContext = nil
+            semanticContextStore = nil
+            memoryStore = nil
         }
 
         private func captureRichContextIfNeeded() {
@@ -94,19 +102,29 @@
                 lastRichContextFingerprints.removeValue(forKey: firstKey)
             }
 
-            recorder.record(
-                kind: .focusChanged,
-                context: snapshot,
-                metadata: [
-                    ActivitySemanticMetadata.version: "2",
-                    ActivitySemanticMetadata.text: capture.text,
-                    ActivitySemanticMetadata.source: capture.source,
-                    ActivitySemanticMetadata.redacted: String(capture.redacted),
-                    ActivitySemanticMetadata.truncated: String(capture.truncated),
-                    ActivitySemanticMetadata.fingerprint: capture.fingerprint,
-                    ActivitySemanticMetadata.characterCount: String(capture.text.count),
-                ]
-            )
+            guard let semanticContextStore else { return }
+            do {
+                let reference = try semanticContextStore.append(
+                    capture: capture,
+                    context: snapshot
+                )
+                recorder.record(
+                    kind: .semanticSnapshot,
+                    context: snapshot,
+                    semanticContext: reference,
+                    metadata: [
+                        ActivitySemanticMetadata.version: "3",
+                        ActivitySemanticMetadata.source: capture.source,
+                        ActivitySemanticMetadata.redacted: String(capture.redacted),
+                        ActivitySemanticMetadata.truncated: String(capture.truncated),
+                        ActivitySemanticMetadata.fingerprint: capture.fingerprint,
+                        ActivitySemanticMetadata.characterCount: String(capture.text.count),
+                        "semantic_storage": "separate_local_jsonl",
+                    ]
+                )
+            } catch {
+                Diagnostics.write("Semantic context persistence failed: \(error)")
+            }
         }
 
         private func generateRecentAnalyses(force: Bool) {
@@ -128,6 +146,7 @@
                     if !force, self.lastAnalyzedModificationDates[key] == modificationDate { continue }
                     do {
                         _ = try self.store.buildAndWrite(for: day)
+                        _ = try self.memoryStore?.buildAndWrite(for: day)
                         self.lastAnalyzedModificationDates[key] = modificationDate
                     } catch {
                         Diagnostics.write("Activity analysis generation failed for \(key): \(error)")
