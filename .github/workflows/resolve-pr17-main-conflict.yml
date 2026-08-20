@@ -1,0 +1,278 @@
+name: Resolve PR 17 main conflict
+
+on:
+  push:
+    branches:
+      - agent/computer-history-upgrade
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/computer-history-upgrade
+
+      - name: Merge current main and resolve expected overlaps
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+
+          set +e
+          git merge --no-commit --no-ff origin/main
+          merge_status=$?
+          set -e
+
+          conflicts="$(git diff --name-only --diff-filter=U)"
+          printf 'Conflicts before resolution:\n%s\n' "$conflicts"
+
+          allowed=$'Package.swift\nSources/LocalHistoryApp/AppDelegate.swift\nSources/LocalHistoryApp/AppPaths.swift\nSources/LocalHistoryApp/DashboardModels.swift\nSources/LocalHistoryApp/DashboardViewModel.swift\nSources/LocalHistoryCore/Models.swift'
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            if ! grep -Fxq "$file" <<< "$allowed"; then
+              echo "Unexpected conflict: $file" >&2
+              exit 41
+            fi
+            git checkout --ours -- "$file"
+          done <<< "$conflicts"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def load(path):
+              p = Path(path)
+              return p, p.read_text()
+
+          def save(p, text):
+              p.write_text(text)
+
+          def insert_once(text, marker, insertion, *, before=False):
+              if insertion.strip() in text:
+                  return text
+              if marker not in text:
+                  raise SystemExit(f"Missing merge marker: {marker!r}")
+              return text.replace(marker, insertion + marker if before else marker + insertion, 1)
+
+          # Package.swift: preserve query CLI from #17 and AgentActivity target from #16.
+          p, t = load('Package.swift')
+          if '.library(name: "AgentActivity", targets: ["AgentActivity"])' not in t:
+              t = t.replace(
+                  '        .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),\n',
+                  '        .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),\n'
+                  '        .library(name: "AgentActivity", targets: ["AgentActivity"]),\n', 1)
+          if 'name: "AgentActivity",\n            dependencies: ["LocalHistoryCore"]' not in t:
+              marker = '        .executableTarget(\n            name: "LocalHistoryApp",'
+              block = ('        .target(\n'
+                       '            name: "AgentActivity",\n'
+                       '            dependencies: ["LocalHistoryCore"],\n'
+                       '            path: "Features/AgentActivity/Sources"\n'
+                       '        ),\n')
+              t = insert_once(t, marker, block, before=True)
+          if '                "AgentActivity",\n' not in t:
+              t = t.replace(
+                  '                "AppleScreenTime",\n',
+                  '                "AppleScreenTime",\n                "AgentActivity",\n', 1)
+          if 'name: "AgentActivityTests"' not in t:
+              marker = '        .testTarget(\n            name: "LocalHistoryAppTests",'
+              block = ('        .testTarget(\n'
+                       '            name: "AgentActivityTests",\n'
+                       '            dependencies: ["AgentActivity"],\n'
+                       '            path: "Features/AgentActivity/Tests"\n'
+                       '        ),\n')
+              t = insert_once(t, marker, block, before=True)
+          save(p, t)
+
+          # AppPaths.swift: preserve semantic/memory stores plus agent activity store.
+          p, t = load('Sources/LocalHistoryApp/AppPaths.swift')
+          if 'static let agentActivityDirectory' not in t:
+              marker = '        static let integrityStateFile'
+              block = ('        static let agentActivityDirectory = applicationSupportDirectory.appendingPathComponent(\n'
+                       '            "agent-activity", isDirectory: true)\n')
+              t = insert_once(t, marker, block, before=True)
+          if 'memoriesDirectory, agentActivityDirectory' not in t:
+              marker = '                semanticDirectory, memoriesDirectory,\n'
+              if marker in t:
+                  t = t.replace(marker, '                semanticDirectory, memoriesDirectory, agentActivityDirectory,\n', 1)
+              else:
+                  marker = '                semanticDirectory, memoriesDirectory\n'
+                  if marker in t:
+                      t = t.replace(marker, '                semanticDirectory, memoriesDirectory, agentActivityDirectory\n', 1)
+                  elif 'agentActivityDirectory' not in t.split('static func prepare()',1)[1]:
+                      raise SystemExit('Could not add agentActivityDirectory to prepare()')
+          save(p, t)
+
+          # DashboardModels.swift: retain Computer History sections and Agentic Work.
+          p, t = load('Sources/LocalHistoryApp/DashboardModels.swift')
+          if '        case agentActivity\n' not in t:
+              t = t.replace('        case screenTime\n', '        case screenTime\n        case agentActivity\n', 1)
+          if 'case .agentActivity: return "Agentic work"' not in t:
+              t = t.replace('            case .screenTime: return "Apple Screen Time"\n',
+                            '            case .screenTime: return "Apple Screen Time"\n            case .agentActivity: return "Agentic work"\n', 1)
+          if 'case .agentActivity: return "cpu"' not in t:
+              t = t.replace('            case .screenTime: return "macbook.and.iphone"\n',
+                            '            case .screenTime: return "macbook.and.iphone"\n            case .agentActivity: return "cpu"\n', 1)
+          save(p, t)
+
+          # DashboardViewModel.swift: expose and refresh the AgentActivity runtime.
+          p, t = load('Sources/LocalHistoryApp/DashboardViewModel.swift')
+          if '        let agentActivityRuntime: AgentActivityRuntime\n' not in t:
+              t = t.replace('        let deviceProtectionSummary: String\n',
+                            '        let deviceProtectionSummary: String\n        let agentActivityRuntime: AgentActivityRuntime\n', 1)
+          if '            agentActivityRuntime: AgentActivityRuntime,\n' not in t:
+              t = t.replace('            sharingRulesStore: SharingRulesStore,\n',
+                            '            sharingRulesStore: SharingRulesStore,\n            agentActivityRuntime: AgentActivityRuntime,\n', 1)
+          if '            self.agentActivityRuntime = agentActivityRuntime\n' not in t:
+              t = t.replace('            self.sharingRulesStore = sharingRulesStore\n',
+                            '            self.sharingRulesStore = sharingRulesStore\n            self.agentActivityRuntime = agentActivityRuntime\n', 1)
+          select_marker = ('            if section == .share, shareSegments.isEmpty {\n'
+                           '                reloadShareSegments()\n'
+                           '            }\n')
+          if '            if section == .agentActivity {\n                agentActivityRuntime.scanNow()\n            }\n' not in t:
+              if select_marker not in t:
+                  raise SystemExit('Missing selectSection merge marker')
+              t = t.replace(select_marker, select_marker + '            if section == .agentActivity {\n                agentActivityRuntime.scanNow()\n            }\n', 1)
+          refresh_marker = '            if selectedSection == .share { reloadShareSegments() }\n'
+          if '            if selectedSection == .agentActivity { agentActivityRuntime.scanNow() }\n' not in t:
+              if refresh_marker not in t:
+                  raise SystemExit('Missing refreshEverything merge marker')
+              t = t.replace(refresh_marker, refresh_marker + '            if selectedSection == .agentActivity { agentActivityRuntime.scanNow() }\n', 1)
+          save(p, t)
+
+          # Core event model: keep semantic/health kinds plus AgentActivity provenance.
+          p, t = load('Sources/LocalHistoryCore/Models.swift')
+          if '    case agentArtifactCaptured\n' not in t:
+              t = t.replace('    case historyCleared\n', '    case historyCleared\n    case agentArtifactCaptured\n', 1)
+          save(p, t)
+
+          # AppDelegate.swift: wire AgentActivity into the richer #17 recorder/runtime.
+          p, t = load('Sources/LocalHistoryApp/AppDelegate.swift')
+          if '    import AgentActivity\n' not in t:
+              t = t.replace('#if os(macOS)\n', '#if os(macOS)\n    import AgentActivity\n', 1)
+          if '        private var agentActivityRuntime: AgentActivityRuntime!\n' not in t:
+              t = t.replace('        private var sharingRulesStore: SharingRulesStore!\n',
+                            '        private var sharingRulesStore: SharingRulesStore!\n        private var agentActivityRuntime: AgentActivityRuntime!\n', 1)
+          if 'agentActivityRuntime = try AgentActivityRuntime(' not in t:
+              marker = '                sharingRulesStore = SharingRulesStore()\n'
+              block = ('                let executableURL = Bundle.main.executableURL\n'
+                       '                    ?? URL(fileURLWithPath: CommandLine.arguments.first ?? "/Applications/LocalHistory.app/Contents/MacOS/LocalHistory")\n'
+                       '                agentActivityRuntime = try AgentActivityRuntime(\n'
+                       '                    rootDirectory: AppPaths.agentActivityDirectory,\n'
+                       '                    executableURL: executableURL,\n'
+                       '                    onCaptured: { [weak self] captures in\n'
+                       '                        self?.recordAgentCaptures(captures)\n'
+                       '                    }\n'
+                       '                )\n')
+              if marker not in t:
+                  raise SystemExit('Missing SharingRulesStore merge marker')
+              t = t.replace(marker, marker + block, 1)
+          if '                    agentActivityRuntime: agentActivityRuntime,\n' not in t:
+              t = t.replace('                    sharingRulesStore: sharingRulesStore,\n',
+                            '                    sharingRulesStore: sharingRulesStore,\n                    agentActivityRuntime: agentActivityRuntime,\n', 1)
+          if '            agentActivityRuntime.start()\n' not in t:
+              marker = '            installWorkspaceObservers()\n'
+              if marker not in t:
+                  raise SystemExit('Missing launch observer marker')
+              t = t.replace(marker, '            agentActivityRuntime.start()\n\n' + marker, 1)
+          if '            agentActivityRuntime?.stop()\n' not in t:
+              t = t.replace('            permissionTimer?.invalidate()\n',
+                            '            permissionTimer?.invalidate()\n            agentActivityRuntime?.stop()\n', 1)
+          if '        private func recordAgentCaptures(_ captures: [AgentCaptureRecord]) {' not in t:
+              marker = '        private func applyConfiguration(_ config: RecorderConfig) throws -> RecorderConfig {'
+              block = '''        private func recordAgentCaptures(_ captures: [AgentCaptureRecord]) {
+            for capture in captures {
+                let context = ContextSnapshot(
+                    app: AppSnapshot(
+                        name: capture.provider.displayName,
+                        bundleIdentifier: "ai.goalong.agent.\\(capture.provider.rawValue.lowercased())",
+                        processIdentifier: ProcessInfo.processInfo.processIdentifier
+                    ),
+                    window: nil,
+                    focusedElement: nil,
+                    url: nil,
+                    suppressionReason: nil
+                )
+                var metadata: [String: String] = [
+                    "agent_capture_id": capture.id,
+                    "agent_provider": capture.provider.rawValue,
+                    "agent_source_key": capture.sourceKey,
+                    "agent_relative_path_sha256": SHA256Digest.hashHex(capture.relativePath),
+                    "agent_content_sha256": capture.sha256,
+                    "agent_manifest_hash": capture.manifestHash,
+                    "agent_storage_kind": capture.storageKind.rawValue,
+                    "agent_version": String(capture.version),
+                    "agent_byte_count": String(capture.byteCount),
+                    "agent_stored_byte_count": String(capture.storedByteCount),
+                    "agent_message_count": String(capture.summary.messageCount),
+                    "agent_tool_call_count": String(capture.summary.toolCallCount),
+                ]
+                if let sessionID = capture.summary.sessionID {
+                    metadata["agent_session_sha256"] = SHA256Digest.hashHex(sessionID)
+                }
+                recorder.record(
+                    kind: .agentArtifactCaptured,
+                    context: context,
+                    message: "Agent activity captured locally",
+                    metadata: metadata,
+                    timestamp: capture.capturedAt
+                )
+            }
+        }
+
+'''
+              if marker not in t:
+                  raise SystemExit('Missing applyConfiguration merge marker')
+              t = t.replace(marker, block + marker, 1)
+          save(p, t)
+          PY
+
+          git add -- \
+            Package.swift \
+            Sources/LocalHistoryApp/AppDelegate.swift \
+            Sources/LocalHistoryApp/AppPaths.swift \
+            Sources/LocalHistoryApp/DashboardModels.swift \
+            Sources/LocalHistoryApp/DashboardViewModel.swift \
+            Sources/LocalHistoryCore/Models.swift
+
+          unresolved="$(git diff --name-only --diff-filter=U)"
+          if [ -n "$unresolved" ]; then
+            echo "Unresolved conflicts remain:" >&2
+            echo "$unresolved" >&2
+            exit 42
+          fi
+
+          test -f Features/AgentActivity/Sources/ActivityStore.swift
+          test -f Sources/LocalHistoryApp/AgentActivity/AgentActivityRuntime.swift
+          grep -q 'AgentActivity' Package.swift
+          grep -q 'agentActivityRuntime' Sources/LocalHistoryApp/AppDelegate.swift
+          grep -q 'agentArtifactCaptured' Sources/LocalHistoryCore/Models.swift
+
+      - name: Remove temporary resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/resolve-pr17-main-conflict.yml
+          git add -- .github/workflows/resolve-pr17-main-conflict.yml
+
+      - name: Validate merged application
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test
+          ./scripts/audit_privacy_boundaries.sh
+          ./scripts/build_app_core.sh
+
+      - name: Commit and push resolved merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          git commit -m "Merge main and preserve agentic activity"
+          git push origin HEAD:agent/computer-history-upgrade
