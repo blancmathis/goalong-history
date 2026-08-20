@@ -4,17 +4,23 @@ on:
   push:
     branches:
       - agent/computer-history-upgrade
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   apply-upgrade:
+    if: github.head_ref == 'agent/computer-history-upgrade' || github.ref == 'refs/heads/agent/computer-history-upgrade'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: agent/computer-history-upgrade
 
       - name: Reconstruct validated upgrade bundle
         shell: bash
@@ -43,16 +49,14 @@ jobs:
 
           n = len(chunks)
           all_indices = tuple(range(n))
-          candidates = [all_indices]
-          # Previous transfer had at most a few rejected/replaced segments. Search
-          # order-preserving subsets first; this is deterministic and bounded.
+          candidate_sets = [all_indices]
           for removed_count in (1, 2, 3):
               for removed in itertools.combinations(range(n), removed_count):
                   removed = set(removed)
-                  candidates.append(tuple(i for i in range(n) if i not in removed))
+                  candidate_sets.append(tuple(i for i in range(n) if i not in removed))
 
           selected = None
-          for indices in candidates:
+          for indices in candidate_sets:
               size, sha = digest(indices)
               if size == expected_size and sha == expected_sha:
                   selected = indices
