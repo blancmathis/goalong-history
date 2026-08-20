@@ -1,15 +1,21 @@
 name: Bootstrap Computer History upgrade
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/computer-history-upgrade
+      - main
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
+concurrency:
+  group: computer-history-bootstrap-pr17
+  cancel-in-progress: true
+
 jobs:
   apply-upgrade:
+    if: github.head_ref == 'agent/computer-history-upgrade'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
