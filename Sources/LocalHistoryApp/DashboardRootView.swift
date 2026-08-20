@@ -40,6 +40,8 @@
                 ScreenTimePage(model: model)
             case .agentActivity:
                 AgentActivityPage(agents: model.agentActivityRuntime)
+            case .chatGPTRecap:
+                ChatGPTRecapPage(model: model)
             case .share:
                 SharePage(model: model)
             case .privacy:

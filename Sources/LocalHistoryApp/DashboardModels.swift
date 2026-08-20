@@ -7,6 +7,7 @@
         case activity
         case screenTime
         case agentActivity
+        case chatGPTRecap
         case share
         case privacy
         case settings
@@ -19,6 +20,7 @@
             case .activity: return "Activity"
             case .screenTime: return "Apple Screen Time"
             case .agentActivity: return "Agentic work"
+            case .chatGPTRecap: return "AI recap"
             case .share: return "Share"
             case .privacy: return "Privacy & security"
             case .settings: return "Settings"
@@ -31,6 +33,7 @@
             case .activity: return "clock.arrow.circlepath"
             case .screenTime: return "macbook.and.iphone"
             case .agentActivity: return "cpu"
+            case .chatGPTRecap: return "sparkles.rectangle.stack"
             case .share: return "square.and.arrow.up"
             case .privacy: return "hand.raised"
             case .settings: return "slider.horizontal.3"

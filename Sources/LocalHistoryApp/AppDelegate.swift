@@ -163,6 +163,8 @@
                 ]
             )
             agentActivityRuntime.start()
+            ChatGPTRecapRuntime.shared.configure(deviceID: deviceIdentity.info.deviceID)
+            ChatGPTRecapRuntime.shared.start()
 
             installWorkspaceObservers()
             contextMonitor.start()
@@ -174,6 +176,7 @@
         func applicationWillTerminate(_ notification: Notification) {
             permissionTimer?.invalidate()
             agentActivityRuntime?.stop()
+            ChatGPTRecapRuntime.shared.stop()
             contextMonitor?.stop()
             eventTapMonitor?.stop()
             recorder?.record(kind: .recorderStopped, message: "LocalHistory stopped")

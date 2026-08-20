@@ -18,6 +18,16 @@
             "apple-screen-time", isDirectory: true)
         static let agentActivityDirectory = applicationSupportDirectory.appendingPathComponent(
             "agent-activity", isDirectory: true)
+        static let chatGPTDirectory = applicationSupportDirectory.appendingPathComponent(
+            "chatgpt", isDirectory: true)
+        static let chatGPTHistoryDirectory = chatGPTDirectory.appendingPathComponent(
+            "history", isDirectory: true)
+        static let chatGPTRecapsDirectory = chatGPTDirectory.appendingPathComponent(
+            "recaps", isDirectory: true)
+        static let chatGPTRunsDirectory = chatGPTDirectory.appendingPathComponent(
+            "runs", isDirectory: true)
+        static let chatGPTCodexHomeDirectory = chatGPTDirectory.appendingPathComponent(
+            "codex-home", isDirectory: true)
         static let integrityStateFile = applicationSupportDirectory.appendingPathComponent(
             "integrity-state.json", isDirectory: false)
         static let configFile = applicationSupportDirectory.appendingPathComponent("config.json", isDirectory: false)
@@ -44,6 +54,8 @@
             for directory in [
                 eventsDirectory, sealsDirectory, receiptsDirectory, sharesDirectory,
                 semanticDirectory, memoriesDirectory, agentActivityDirectory,
+                chatGPTDirectory, chatGPTHistoryDirectory, chatGPTRecapsDirectory,
+                chatGPTRunsDirectory, chatGPTCodexHomeDirectory,
             ] {
                 try fileManager.createDirectory(
                     at: directory,
