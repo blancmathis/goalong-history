@@ -50,9 +50,12 @@ enum ComputerHistoryInteractionBuilder {
 
             let beforeText = before?.text
             let afterText = after?.text
-            let explicitDelta = event.metadata?[ComputerHistoryMetadata.semanticDelta]
-                .map(ComputerHistorySupport.splitSemanticLines)
-                ?? []
+            let explicitDelta: [String]
+            if let rawDelta = event.metadata?[ComputerHistoryMetadata.semanticDelta] {
+                explicitDelta = ComputerHistorySupport.splitSemanticLines(rawDelta)
+            } else {
+                explicitDelta = []
+            }
             let delta = explicitDelta.isEmpty
                 ? ComputerHistorySupport.semanticDelta(before: beforeText, after: afterText)
                 : explicitDelta
