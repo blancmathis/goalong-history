@@ -57,7 +57,10 @@
                 recorder: recorder,
                 state: state,
                 configManager: configManager,
-                currentContext: { [weak self] in self?.latestSnapshot },
+                currentContext: { [weak self] in
+                    guard let self else { return nil }
+                    return self.sampleNow() ?? self.latestSnapshot
+                },
                 semanticContextStore: semanticContextStore,
                 memoryStore: memoryStore
             )
