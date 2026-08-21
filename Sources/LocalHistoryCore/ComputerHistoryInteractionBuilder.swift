@@ -35,9 +35,13 @@ enum ComputerHistoryInteractionBuilder {
         var output: [ComputerHistoryInteraction] = []
         for event in ordered where ComputerHistorySupport.isActionEvent(event) {
             let interactionID = event.metadata?[ComputerHistoryMetadata.interactionID] ?? event.id
-            let explicit = (linked[interactionID] ?? []).sorted {
-                $0.event.timestamp < $1.event.timestamp
-            }
+
+            // Delayed after/settled callbacks can execute after the foreground app changes.
+            // An interaction ID is therefore not sufficient by itself: explicit semantic
+            // observations must also belong to the same application as the action.
+            let explicit = (linked[interactionID] ?? [])
+                .filter { ComputerHistorySupport.sameApplication($0.event, event) }
+                .sorted { $0.event.timestamp < $1.event.timestamp }
             let before = explicit.last(where: {
                 $0.phase == ComputerHistoryMetadata.Phase.before
             }) ?? nearest(before: event, observations: observations)
