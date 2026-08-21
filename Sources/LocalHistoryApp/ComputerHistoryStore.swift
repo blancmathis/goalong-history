@@ -14,13 +14,18 @@
         init(rootDirectory: URL = AppPaths.applicationSupportDirectory) {
             self.rootDirectory = rootDirectory
             memoryDirectory = rootDirectory.appendingPathComponent("computer-history", isDirectory: true)
-            let configuredCodexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
-                .map { URL(fileURLWithPath: NSString(string: $0).expandingTildeInPath, isDirectory: true) }
-                ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
-            codexMemoryDirectory = configuredCodexHome
-                .appendingPathComponent("memories", isDirectory: true)
-                .appendingPathComponent("extensions", isDirectory: true)
-                .appendingPathComponent("goalong", isDirectory: true)
+            codexMemoryDirectory = Self.codexMemoryDirectoryURL()
+        }
+
+        /// Directories containing Computer History's long-lived memories.
+        /// HistoryRetentionStore treats both the authoritative Goalong copy and the
+        /// optional Codex mirror as the same `.memories` data class so they expire
+        /// together instead of leaving an orphaned mirror after local cleanup.
+        static func retentionDirectories(rootDirectory: URL) -> [URL] {
+            [
+                rootDirectory.appendingPathComponent("computer-history", isDirectory: true),
+                codexMemoryDirectoryURL(),
+            ]
         }
 
         @discardableResult
@@ -146,6 +151,17 @@
 
         private func dayString(_ date: Date) -> String {
             Self.dayFormatter.string(from: Calendar.current.startOfDay(for: date))
+        }
+
+        private static func codexMemoryDirectoryURL() -> URL {
+            let fileManager = FileManager.default
+            let configuredCodexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
+                .map { URL(fileURLWithPath: NSString(string: $0).expandingTildeInPath, isDirectory: true) }
+                ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
+            return configuredCodexHome
+                .appendingPathComponent("memories", isDirectory: true)
+                .appendingPathComponent("extensions", isDirectory: true)
+                .appendingPathComponent("goalong", isDirectory: true)
         }
 
         private static let encoder: JSONEncoder = {
