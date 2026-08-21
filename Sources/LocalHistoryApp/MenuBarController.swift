@@ -84,66 +84,63 @@
                 || health.state == .accessibilityContextUnavailable
             {
                 display = (
-                    health.state.title, "exclamationmark.triangle", health.detail
+                    health.state.title, "exclamationmark.triangle.fill", health.detail
                 )
             } else if !recording {
-                display = ("Recording paused", "pause.circle", "\(ProductIdentity.displayName) is paused")
-            } else if let suppression {
-                switch suppression {
-                case .privateBrowserWindow:
-                    display = (
-                        "Private browser — hidden", "eye.slash",
-                        "Private-browser details are not being recorded"
-                    )
-                case .excludedApplication:
-                    display = (
-                        "Excluded app — hidden", "eye.slash",
-                        "An excluded application is not being recorded"
-                    )
-                case .excludedDomain:
-                    display = (
-                        "Excluded website — hidden", "eye.slash",
-                        "An excluded website is not being recorded"
-                    )
-                case .accessibilityUnavailable:
-                    display = (
-                        "Browser context unavailable", "exclamationmark.shield",
-                        "This browser context cannot be inspected safely"
-                    )
-                default:
-                    display = ("Context hidden", "eye.slash", "The current context is intentionally hidden")
-                }
+                display = ("Recording paused", "pause.circle.fill", "\(ProductIdentity.displayName) is paused")
+            } else if let suppression, suppression == .accessibilityUnavailable {
+                display = (
+                    "Browser context unavailable", "exclamationmark.shield.fill",
+                    "This browser context cannot be inspected safely"
+                )
+            } else if let suppression, suppression == .sessionUnavailable {
+                display = (
+                    "Mac session unavailable", "lock.fill",
+                    "The Mac is locked, asleep or otherwise unavailable"
+                )
             } else if health.state == .inputTapUnavailable || health.state == .awaitingInputEvidence {
                 display = (health.state.title, "waveform.path.ecg", health.detail)
-            } else if health.state == .healthyButIdle {
-                display = (health.state.title, "record.circle", health.detail)
             } else {
-                display = ("Recording locally", "record.circle", health.detail)
+                display = (
+                    "Recording locally",
+                    "record.circle.fill",
+                    "Goalong is running. Monitoring and privacy rules are applied in the background."
+                )
             }
 
             statusMenuItem.title = display.title
+            statusMenuItem.image = NSImage(
+                systemSymbolName: display.symbol,
+                accessibilityDescription: display.description
+            )
+            statusMenuItem.toolTip = display.description
             permissionMenuItem.title =
                 "Accessibility: \(permissionStatus.accessibility ? "on" : "off")  •  Direct input: \(permissionStatus.inputMonitoringStatusLabel)  •  Tap object: \(eventTapStatus() ? "on" : "off")  •  Evidence: \(health.captureProven ? "yes" : "no")"
             pauseMenuItem.title = state.isManuallyPaused ? "Resume recording" : "Pause recording"
 
             if let button = statusItem.button {
-                button.image = NSImage(
-                    systemSymbolName: display.symbol,
-                    accessibilityDescription: display.description
-                )
-                button.toolTip = display.description
+                button.image = GoalongBrandAssets.menuBarImage
+                button.toolTip = "\(ProductIdentity.displayName) — \(display.title)"
+                button.setAccessibilityLabel(ProductIdentity.displayName)
+                button.setAccessibilityHelp(display.description)
             }
         }
 
         private func configureStatusItem() {
-            statusItem.button?.imagePosition = .imageOnly
+            if let button = statusItem.button {
+                button.image = GoalongBrandAssets.menuBarImage
+                button.imagePosition = .imageOnly
+                button.imageScaling = .scaleProportionallyDown
+                button.toolTip = ProductIdentity.displayName
+                button.setAccessibilityLabel(ProductIdentity.displayName)
+            }
             statusItem.menu = menu
             menu.delegate = self
         }
 
         private func buildMenu() {
             let openItem = makeItem("Open \(ProductIdentity.displayName)", action: #selector(openDashboard), keyEquivalent: "o")
-            openItem.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
+            openItem.image = GoalongBrandAssets.menuBarImage
             menu.addItem(openItem)
             menu.addItem(.separator())
 

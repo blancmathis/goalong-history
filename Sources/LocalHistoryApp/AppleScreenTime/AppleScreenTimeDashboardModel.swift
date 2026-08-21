@@ -93,14 +93,21 @@
             guard !isBusy else { return }
             isBusy = true
             let day = selectedDay
-            let scope = configuration.scope
+            let requestedScope = configuration.scope
             let source = appleSource
 
             queue.async { [weak self] in
-                let collection = source.collect(for: day)
+                let rawCollection = source.collect(for: day)
+                let collection = AppleScreenTimeDeviceNormalizer.normalize(
+                    rawCollection,
+                    currentMac: source.currentMacDevice
+                )
+                let normalizedScope = requestedScope.normalized(
+                    availableDevices: collection.availableDevices
+                )
                 let scoped = Self.scopedExport(
                     collection.storedExport,
-                    scope: scope,
+                    scope: normalizedScope,
                     currentMacID: source.currentMacDevice.id
                 )
                 let interval = Calendar.current.dateInterval(of: .day, for: day)
@@ -109,7 +116,7 @@
                         AppleScreenTimeAnalyzer.summary(
                             from: $0,
                             interval: interval,
-                            scope: scope
+                            scope: normalizedScope
                         )
                     }
                 }
@@ -121,6 +128,12 @@
                         self.refresh()
                         return
                     }
+                    guard self.configuration.scope == requestedScope else {
+                        self.isBusy = false
+                        self.refresh()
+                        return
+                    }
+
                     self.availableDevices = collection.availableDevices
                     self.deviceSourceLabels = collection.deviceSourceLabels
                     self.status = collection.status
@@ -130,6 +143,13 @@
                     self.biomeIntervalCount = collection.biomeIntervalCount
                     self.lastRefreshAt = Date()
                     self.isBusy = false
+
+                    if normalizedScope != requestedScope {
+                        self.configuration.scope = normalizedScope
+                        if let store = self.store {
+                            try? store.saveConfiguration(self.configuration)
+                        }
+                    }
                 }
             }
         }
@@ -303,8 +323,11 @@
             switch scope.mode {
             case .macOnly:
                 reports = stored.envelope.reports.filter { $0.device.id == currentMacID }
-            case .allDevices, .selectedDevices:
+            case .allDevices:
                 reports = stored.envelope.reports
+            case .selectedDevices:
+                let selected = Set(scope.selectedDeviceIDs)
+                reports = stored.envelope.reports.filter { selected.contains($0.device.id) }
             }
             guard !reports.isEmpty else { return nil }
 

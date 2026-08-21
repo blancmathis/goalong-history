@@ -37,7 +37,7 @@
             case .activity:
                 ActivityPage(model: model)
             case .screenTime:
-                ScreenTimePage(model: model)
+                GoalongScreenTimePage(model: model)
             case .agentActivity:
                 AgentActivityPage(agents: model.agentActivityRuntime)
             case .chatGPTRecap:
@@ -166,11 +166,15 @@
                                 endPoint: .bottomTrailing
                             )
                         )
-                    Image(systemName: "clock.badge.checkmark.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
+                    GoalongMark()
+                        .stroke(
+                            Color.white,
+                            style: StrokeStyle(lineWidth: 2.35, lineCap: .round, lineJoin: .round)
+                        )
+                        .frame(width: 25, height: 17)
                 }
                 .frame(width: 38, height: 38)
+                .accessibilityLabel("Goalong logo")
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(ProductIdentity.displayName)

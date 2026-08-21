@@ -11,7 +11,7 @@
         var agentTokenBudget = 1_600
         @State var expandedBlockID: String?
         @State var showRichContextConfirmation = false
-        @State var mode: ActivityMode = .dayRecap
+        @State var mode: ActivityMode = .appsAndSites
 
         let metricColumns = [
             GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
@@ -27,21 +27,14 @@
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 360)
+                .frame(width: 430)
 
                 Group {
                     switch mode {
+                    case .appsAndSites:
+                        MonitoringRulesList(model: model)
                     case .dayRecap:
                         recapBody
-                    case .appsAndSites:
-                        UsageRulesList(
-                            model: model,
-                            websiteSummaries: analysisModel.analysis?.sites ?? [],
-                            richContextEnabled: richContextEnabled,
-                            onEnableRichContext: {
-                                showRichContextConfirmation = true
-                            }
-                        )
                     case .timeline:
                         ActivityTimelineExplorer(model: model)
                     }
@@ -69,7 +62,7 @@
                 }
             } message: {
                 Text(
-                    "Goalong History will store selected and visible text exposed by macOS Accessibility for eligible foreground windows. It will not decode keystrokes and will still suppress private browsing, exclusions and secure fields. Turning it off later stops future snapshots; existing snapshots follow your normal local retention and deletion controls."
+                    "\(ProductIdentity.displayName) will store selected and visible text exposed by macOS Accessibility for eligible foreground windows. It will not decode keystrokes and will still suppress private browsing, exclusions and secure fields. Turning it off later stops future snapshots; existing snapshots follow your normal local retention and deletion controls."
                 )
             }
         }
@@ -109,7 +102,7 @@
                 eyebrow: Calendar.current.isDateInToday(model.selectedDay) ? "Today" : "Daily history",
                 title: "Activity",
                 subtitle:
-                    "Review the compact day recap, every observed app and site, or the underlying session timeline."
+                    "See every observed app and website, decide what Goalong monitors, then review the same detailed recap and timeline."
             ) {
                 HStack(spacing: 10) {
                     DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
@@ -215,7 +208,7 @@
                     symbol: "sparkles.rectangle.stack",
                     title: "No analyzable activity yet",
                     message: analysisModel.errorMessage
-                        ?? "Keep Goalong History running. The recap and agent brief will be generated automatically as activity appears.",
+                        ?? "Keep Goalong running. The recap and agent brief will be generated automatically as activity appears.",
                     buttonTitle: "Try again",
                     action: { analysisModel.refresh(day: model.selectedDay) }
                 )
@@ -245,16 +238,16 @@
     }
 
     enum ActivityMode: String, CaseIterable, Identifiable {
-        case dayRecap
         case appsAndSites
+        case dayRecap
         case timeline
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
+            case .appsAndSites: return "Apps & websites"
             case .dayRecap: return "Day recap"
-            case .appsAndSites: return "Sites & apps"
             case .timeline: return "Timeline"
             }
         }
