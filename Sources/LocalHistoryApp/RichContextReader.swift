@@ -1,7 +1,7 @@
 #if os(macOS)
     import AppKit
-    import Carbon
     import ApplicationServices
+    import Carbon
     import Foundation
     import LocalHistoryCore
 
@@ -22,8 +22,14 @@
         private static let protectedContent = "AXProtectedContent" as CFString
         private static let children = "AXChildren" as CFString
 
-        static func capture(processIdentifier: pid_t, maximumCharacters: Int) -> AXRichContextCapture? {
+        static func capture(
+            processIdentifier: pid_t,
+            maximumCharacters: Int,
+            maximumNodes: Int = 260
+        ) -> AXRichContextCapture? {
             guard !IsSecureEventInputEnabled() else { return nil }
+            let characterLimit = min(max(maximumCharacters, 256), 20_000)
+            let nodeLimit = min(max(maximumNodes, 0), 600)
             let application = AXUIElementCreateApplication(processIdentifier)
             AXUIElementSetMessagingTimeout(application, 0.35)
             guard let window = AXReader.focusedWindow(for: application) else { return nil }
@@ -32,16 +38,23 @@
             var sources: [String] = []
             var rawCharacterCount = 0
             var truncated = false
+            var addedVisibleText = false
 
             if let focused = AXReader.focusedElement(for: application), !isSecure(focused) {
-                if let selected = sanitized(AXReader.string(focused, attribute: selectedText), maximum: 1_200) {
+                if let selected = sanitized(
+                    AXReader.string(focused, attribute: selectedText),
+                    maximum: min(1_200, characterLimit)
+                ) {
                     snippets.append(selected)
                     sources.append("selected")
                     rawCharacterCount += selected.count
                 }
                 let focusedRole = AXReader.string(focused, attribute: role) ?? ""
                 if shouldReadValue(role: focusedRole),
-                    let focusedValue = sanitized(AXReader.string(focused, attribute: value), maximum: 1_200)
+                    let focusedValue = sanitized(
+                        AXReader.string(focused, attribute: value),
+                        maximum: min(1_800, characterLimit)
+                    )
                 {
                     snippets.append(focusedValue)
                     sources.append("focused")
@@ -49,44 +62,61 @@
                 }
             }
 
-            var queue: [AXUIElement] = [window]
-            var index = 0
-            var visited = 0
-            while index < queue.count, visited < 260, rawCharacterCount < maximumCharacters * 2 {
-                let element = queue[index]
-                index += 1
-                visited += 1
-                guard !isSecure(element) else { continue }
+            if nodeLimit > 0 {
+                var queue: [AXUIElement] = [window]
+                var index = 0
+                var visited = 0
+                while index < queue.count,
+                    visited < nodeLimit,
+                    rawCharacterCount < characterLimit * 2
+                {
+                    let element = queue[index]
+                    index += 1
+                    visited += 1
+                    guard !isSecure(element) else { continue }
 
-                let elementRole = AXReader.string(element, attribute: role) ?? ""
-                if shouldReadVisibleText(role: elementRole) {
-                    for attribute in [title, description, value] {
-                        if let text = sanitized(AXReader.string(element, attribute: attribute), maximum: 700) {
-                            snippets.append(text)
-                            rawCharacterCount += text.count
+                    let elementRole = AXReader.string(element, attribute: role) ?? ""
+                    if shouldReadVisibleText(role: elementRole) {
+                        for attribute in [title, description, value] {
+                            if let text = sanitized(
+                                AXReader.string(element, attribute: attribute),
+                                maximum: 700
+                            ) {
+                                snippets.append(text)
+                                rawCharacterCount += text.count
+                                addedVisibleText = true
+                            }
                         }
                     }
-                }
 
-                if queue.count < 600 {
-                    queue.append(contentsOf: AXReader.elements(element, attribute: children))
+                    if queue.count < nodeLimit * 2 {
+                        queue.append(contentsOf: AXReader.elements(element, attribute: children))
+                    }
+                }
+                if visited >= nodeLimit || rawCharacterCount >= characterLimit * 2 {
+                    truncated = true
                 }
             }
-            if visited >= 260 || rawCharacterCount >= maximumCharacters * 2 { truncated = true }
+            if addedVisibleText { sources.append("visible") }
 
             var seen = Set<String>()
             var output: [String] = []
             var outputCount = 0
             for snippet in snippets {
                 let key = normalized(snippet)
-                guard key.count >= 3, seen.insert(key).inserted, !isGenericUIString(key) else { continue }
+                guard key.count >= 3,
+                    seen.insert(key).inserted,
+                    !isGenericUIString(key)
+                else { continue }
                 let separatorCount = output.isEmpty ? 0 : 1
-                let available = maximumCharacters - outputCount - separatorCount
+                let available = characterLimit - outputCount - separatorCount
                 guard available > 24 else {
                     truncated = true
                     break
                 }
-                let bounded = snippet.count <= available ? snippet : String(snippet.prefix(available))
+                let bounded = snippet.count <= available
+                    ? snippet
+                    : String(snippet.prefix(available))
                 output.append(bounded)
                 outputCount += bounded.count + separatorCount
                 if bounded.count < snippet.count {
@@ -96,22 +126,22 @@
             }
 
             let joined = output.joined(separator: "\n")
-            guard let cleaned = ActivitySemanticTextSanitizer.clean(joined, maximumLength: maximumCharacters),
-                cleaned.count >= 12
-            else { return nil }
-            let redacted = cleaned.contains("[REDACTED")
-            let source = Array(Set(sources + ["visible"])).sorted().joined(separator: "+")
+            guard let cleaned = ActivitySemanticTextSanitizer.clean(
+                joined,
+                maximumLength: characterLimit
+            ), cleaned.count >= 12 else { return nil }
             return AXRichContextCapture(
                 text: cleaned,
-                source: source,
-                redacted: redacted,
+                source: Array(Set(sources)).sorted().joined(separator: "+"),
+                redacted: cleaned.contains("[REDACTED"),
                 truncated: truncated || cleaned.count < joined.count,
                 fingerprint: stableFingerprint(cleaned)
             )
         }
 
         private static func shouldReadValue(role: String) -> Bool {
-            ["AXTextArea", "AXTextField", "AXDocument", "AXWebArea", "AXStaticText"].contains(role)
+            ["AXTextArea", "AXTextField", "AXDocument", "AXWebArea", "AXStaticText"]
+                .contains(role)
         }
 
         private static func shouldReadVisibleText(role: String) -> Bool {
@@ -128,8 +158,10 @@
         }
 
         private static func sanitized(_ value: String?, maximum: Int) -> String? {
-            guard let cleaned = ActivitySemanticTextSanitizer.clean(value, maximumLength: maximum) else { return nil }
-            guard cleaned.count >= 3 else { return nil }
+            guard let cleaned = ActivitySemanticTextSanitizer.clean(
+                value,
+                maximumLength: maximum
+            ), cleaned.count >= 3 else { return nil }
             return cleaned
         }
 
@@ -143,8 +175,9 @@
 
         private static func isGenericUIString(_ value: String) -> Bool {
             let generic: Set<String> = [
-                "back", "forward", "reload", "share", "close", "minimize", "zoom", "search",
-                "new tab", "address and search bar", "toolbar", "sidebar", "window", "button",
+                "back", "forward", "reload", "share", "close", "minimize", "zoom",
+                "search", "new tab", "address and search bar", "toolbar", "sidebar",
+                "window", "button",
             ]
             return generic.contains(value)
         }
@@ -158,5 +191,4 @@
             return String(format: "%016llx", hash)
         }
     }
-
 #endif
