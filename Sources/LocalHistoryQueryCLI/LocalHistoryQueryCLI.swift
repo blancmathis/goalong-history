@@ -25,6 +25,22 @@ private struct SummaryEnvelope: Encodable {
     let loadIssues: [HistoryLoadIssue]
 }
 
+private struct ComputerHistoryEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let memory: ComputerHistoryDayMemory?
+    let error: String?
+    let loadIssues: [HistoryLoadIssue]
+}
+
+private struct ComputerHistoryAnswerEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let answer: ComputerHistoryAnswer
+    let reconstructedDays: Int
+    let loadIssues: [HistoryLoadIssue]
+}
+
 private enum CLIError: Error, CustomStringConvertible {
     case usage(String)
     case invalidDate(String)
@@ -147,6 +163,48 @@ private enum LocalHistoryQueryCLI {
                 }
             }
 
+        case "computer-history":
+            guard let raw = arguments.popFirst() else {
+                throw CLIError.usage("computer-history requires YYYY-MM-DD")
+            }
+            let start = try day(raw)
+            let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!.addingTimeInterval(-0.001)
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(start: start, end: end)
+            let memory = loaded.events.isEmpty
+                ? nil
+                : ComputerHistoryEngine.analyze(
+                    events: loaded.events,
+                    semanticSnapshots: loaded.semanticSnapshots,
+                    day: start
+                )
+            try printJSON(
+                ComputerHistoryEnvelope(
+                    rootDirectory: root.path,
+                    memory: memory,
+                    error: memory == nil ? "No events were loaded for that day." : nil,
+                    loadIssues: loaded.issues
+                )
+            )
+
+        case "ask":
+            let days = try integer(arguments.removeOption("--days") ?? "30")
+            guard !arguments.values.isEmpty else { throw CLIError.usage("ask requires a natural-language question") }
+            let question = arguments.values.joined(separator: " ")
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
+            let memories = reconstructComputerHistory(
+                loaded: loaded,
+                maximumDays: min(max(1, days), 365)
+            )
+            let answer = ComputerHistorySearchService(memories: memories).ask(question)
+            try printJSON(
+                ComputerHistoryAnswerEnvelope(
+                    rootDirectory: root.path,
+                    answer: answer,
+                    reconstructedDays: memories.count,
+                    loadIssues: loaded.issues
+                )
+            )
+
         case "search", "app", "site":
             guard !arguments.values.isEmpty else { throw CLIError.usage("\(command) requires a query") }
             let query = arguments.values.joined(separator: " ")
@@ -186,6 +244,29 @@ private enum LocalHistoryQueryCLI {
         default:
             throw CLIError.usage("Unknown command: \(command)")
         }
+    }
+
+    private static func reconstructComputerHistory(
+        loaded: HistoryLoadedData,
+        maximumDays: Int
+    ) -> [ComputerHistoryDayMemory] {
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: loaded.events) { event in
+            calendar.startOfDay(for: event.timestamp)
+        }
+        let days = grouped.keys.sorted().suffix(maximumDays)
+        var memories: [ComputerHistoryDayMemory] = []
+        for day in days {
+            guard let events = grouped[day], !events.isEmpty else { continue }
+            let memory = ComputerHistoryEngine.analyze(
+                events: events,
+                semanticSnapshots: loaded.semanticSnapshots,
+                day: day,
+                priorMemories: memories
+            )
+            memories.append(memory)
+        }
+        return memories
     }
 
     private static func service(from loaded: HistoryLoadedData) -> HistoryQueryService {
@@ -270,6 +351,8 @@ private enum LocalHistoryQueryCLI {
       recent [--minutes N] [--actions-only] [--gaps-only] [--semantic-only]
       day YYYY-MM-DD
       summary YYYY-MM-DD
+      computer-history YYYY-MM-DD
+      ask [--days N] NATURAL_LANGUAGE_QUESTION
       search TEXT
       app NAME_OR_BUNDLE_ID
       site HOST
@@ -278,5 +361,7 @@ private enum LocalHistoryQueryCLI {
       sources MEMORY_ID
 
     All commands are read-only and return JSON with coverage, provenance and load issues.
+    `computer-history` preserves the full causal action sequence; `ask` supports natural
+    questions about recent work, resources, status, standups and repeatable workflows.
     """
 }
