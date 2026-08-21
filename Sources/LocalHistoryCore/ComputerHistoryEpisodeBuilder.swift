@@ -20,6 +20,9 @@ enum ComputerHistoryEpisodeBuilder {
         let suppressedTimestamps = events
             .filter { $0.suppressionReason != nil }
             .map(\.timestamp)
+        let resourcesByID = Dictionary(
+            uniqueKeysWithValues: resources.map { ($0.id, $0) }
+        )
         var builders: [Builder] = []
 
         for interaction in interactions {
@@ -30,6 +33,7 @@ enum ComputerHistoryEpisodeBuilder {
             if shouldMerge(
                 previous,
                 interaction,
+                resources: resourcesByID,
                 suppressedTimestamps: suppressedTimestamps
             ) {
                 previous.append(interaction)
@@ -40,7 +44,6 @@ enum ComputerHistoryEpisodeBuilder {
             }
         }
 
-        let resourcesByID = Dictionary(uniqueKeysWithValues: resources.map { ($0.id, $0) })
         return builders.map {
             finish($0, events: events, resources: resourcesByID)
         }
@@ -49,6 +52,7 @@ enum ComputerHistoryEpisodeBuilder {
     private static func shouldMerge(
         _ builder: Builder,
         _ next: ComputerHistoryInteraction,
+        resources: [String: ComputerHistoryResourceReference],
         suppressedTimestamps: [Date]
     ) -> Bool {
         let previous = builder.last
@@ -60,25 +64,54 @@ enum ComputerHistoryEpisodeBuilder {
             return false
         }
 
-        if !Set(previous.resourceIDs).isDisjoint(with: Set(next.resourceIDs)) {
+        let previousResources = Set(previous.resourceIDs)
+        let nextResources = Set(next.resourceIDs)
+        if !previousResources.isDisjoint(with: nextResources) {
             return gap <= 20 * 60
         }
-        if let left = previous.host, let right = next.host, left == right {
-            return gap <= 10 * 60
-        }
-        if let left = previous.bundleIdentifier,
-            let right = next.bundleIdentifier,
-            left == right
-        {
-            return gap <= 8 * 60
-        }
-        if previous.application == next.application, previous.application != nil {
-            return gap <= 8 * 60
-        }
+
         let similarity = ComputerHistorySupport.tokenSimilarity(
             [previous.label] + previous.semanticDelta,
             [next.label] + next.semanticDelta
         )
+        if let leftHost = previous.host,
+            let rightHost = next.host
+        {
+            if leftHost == rightHost { return gap <= 10 * 60 }
+            // A browser switch to a different host is normally a new task unless it is
+            // immediate and the surrounding semantic evidence is clearly related.
+            return gap <= 120 && similarity >= 0.25
+        }
+
+        let previousKinds = Set(
+            previous.resourceIDs.compactMap { resources[$0]?.kind }
+        )
+        let nextKinds = Set(
+            next.resourceIDs.compactMap { resources[$0]?.kind }
+        )
+        let bothHaveSpecificResources = !previousResources.isEmpty
+            && !nextResources.isEmpty
+            && !previousKinds.isSubset(of: [.application])
+            && !nextKinds.isSubset(of: [.application])
+
+        if let leftBundle = previous.bundleIdentifier,
+            let rightBundle = next.bundleIdentifier,
+            leftBundle == rightBundle
+        {
+            if bothHaveSpecificResources {
+                if similarity >= 0.22 { return gap <= 6 * 60 }
+                return gap <= 120
+            }
+            return gap <= 8 * 60
+        }
+        if previous.application == next.application,
+            previous.application != nil
+        {
+            if bothHaveSpecificResources {
+                return gap <= 120 || (gap <= 6 * 60 && similarity >= 0.22)
+            }
+            return gap <= 8 * 60
+        }
         if similarity >= 0.18 { return gap <= 6 * 60 }
         return gap <= 90
     }
@@ -220,10 +253,6 @@ enum ComputerHistoryEpisodeBuilder {
         semanticLines: [String],
         requests: [String]
     ) -> StatusResult {
-        let normalized = ComputerHistorySupport.normalized(
-            (semanticLines + interactions.map(\.label)).joined(separator: " ")
-        )
-        let text = " \(normalized) "
         let blocked = [
             " error ", " failed ", " failure ", " blocked ", " cannot ", " impossible ",
             " erreur ", " echoue ", " bloque ",
@@ -239,18 +268,42 @@ enum ComputerHistoryEpisodeBuilder {
             " resolu ", " reussi ", " termine ",
         ]
 
-        if ComputerHistorySupport.containsAny(text, markers: blocked) {
-            return StatusResult(value: .blocked, confidence: 0.82)
+        // The latest observable state wins over earlier transient errors. This avoids
+        // marking a task blocked when a later retry visibly succeeded.
+        let recentLines = interactions.suffix(3).flatMap { interaction -> [String] in
+            var values = interaction.semanticDelta
+            if let after = interaction.afterContext {
+                values.append(contentsOf: ComputerHistorySupport.splitSemanticLines(after))
+            }
+            values.append(interaction.label)
+            return values
         }
-        if ComputerHistorySupport.containsAny(text, markers: waiting) {
-            return StatusResult(value: .waiting, confidence: 0.78)
+        let recentText = " " + ComputerHistorySupport.normalized(
+            recentLines.joined(separator: " ")
+        ) + " "
+        if let recent = explicitStatus(
+            in: recentText,
+            blocked: blocked,
+            waiting: waiting,
+            completed: completed,
+            confidence: 0.86
+        ) {
+            return recent
         }
-        if ComputerHistorySupport.containsAny(text, markers: completed),
-            !text.contains(" not completed "),
-            !text.contains(" pas termine ")
-        {
-            return StatusResult(value: .completed, confidence: 0.78)
+
+        let allText = " " + ComputerHistorySupport.normalized(
+            (semanticLines + interactions.map(\.label)).joined(separator: " ")
+        ) + " "
+        if let historical = explicitStatus(
+            in: allText,
+            blocked: blocked,
+            waiting: waiting,
+            completed: completed,
+            confidence: 0.76
+        ) {
+            return historical
         }
+
         let productive = interactions.filter {
             [.click, .typing, .shortcut, .navigationKey].contains($0.action)
         }
@@ -261,6 +314,31 @@ enum ComputerHistoryEpisodeBuilder {
             return StatusResult(value: .inProgress, confidence: 0.72)
         }
         return StatusResult(value: .unknown, confidence: 0.45)
+    }
+
+    private static func explicitStatus(
+        in text: String,
+        blocked: [String],
+        waiting: [String],
+        completed: [String],
+        confidence: Double
+    ) -> StatusResult? {
+        let completionIsNegated = text.contains(" not completed ")
+            || text.contains(" not done ")
+            || text.contains(" pas termine ")
+            || text.contains(" non termine ")
+        if ComputerHistorySupport.containsAny(text, markers: completed),
+            !completionIsNegated
+        {
+            return StatusResult(value: .completed, confidence: confidence)
+        }
+        if ComputerHistorySupport.containsAny(text, markers: blocked) {
+            return StatusResult(value: .blocked, confidence: confidence)
+        }
+        if ComputerHistorySupport.containsAny(text, markers: waiting) {
+            return StatusResult(value: .waiting, confidence: confidence - 0.04)
+        }
+        return nil
     }
 
     private static func episodeTitle(
