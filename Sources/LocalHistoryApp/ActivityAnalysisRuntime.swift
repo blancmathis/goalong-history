@@ -69,8 +69,8 @@
         }
 
         /// Captures bounded Accessibility context linked to one concrete interaction.
-        /// This is intentionally separate from the periodic deduplicated sampler: a
-        /// before/after pair is evidence even when the visible text did not change.
+        /// Before-state capture is intentionally shallow to keep the event tap responsive;
+        /// the delayed settled phase receives the full tree budget.
         func captureInteractionContext(
             interactionID: String,
             phase: String,
@@ -79,14 +79,17 @@
         ) {
             guard !interactionID.isEmpty else { return }
             guard let snapshot = explicitContext ?? currentContext?() else { return }
+            let budget = semanticBudget(for: phase)
             _ = persistSemanticContext(
                 snapshot: snapshot,
-                maximumCharacters: 6_000,
+                maximumCharacters: budget.characters,
+                maximumNodes: budget.nodes,
                 deduplicate: false,
                 metadata: [
                     ComputerHistoryMetadata.interactionID: interactionID,
                     ComputerHistoryMetadata.interactionPhase: phase,
                     ComputerHistoryMetadata.interactionTrigger: trigger,
+                    "computer_history.capture_nodes": String(budget.nodes),
                 ]
             )
         }
@@ -98,12 +101,25 @@
             delay: TimeInterval
         ) {
             guard !interactionID.isEmpty else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + max(0, delay)) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + Swift.max(0, delay)) { [weak self] in
                 self?.captureInteractionContext(
                     interactionID: interactionID,
                     phase: phase,
                     trigger: trigger
                 )
+            }
+        }
+
+        private func semanticBudget(for phase: String) -> (characters: Int, nodes: Int) {
+            switch phase {
+            case ComputerHistoryMetadata.Phase.before:
+                return (2_400, 72)
+            case ComputerHistoryMetadata.Phase.after:
+                return (4_800, 160)
+            case ComputerHistoryMetadata.Phase.settled:
+                return (6_000, 260)
+            default:
+                return (4_000, 140)
             }
         }
 
@@ -122,6 +138,7 @@
             _ = persistSemanticContext(
                 snapshot: snapshot,
                 maximumCharacters: 6_000,
+                maximumNodes: 260,
                 deduplicate: true,
                 metadata: [ComputerHistoryMetadata.interactionTrigger: "periodic"]
             )
@@ -131,6 +148,7 @@
         private func persistSemanticContext(
             snapshot: ContextSnapshot,
             maximumCharacters: Int,
+            maximumNodes: Int,
             deduplicate: Bool,
             metadata additionalMetadata: [String: String]
         ) -> SemanticContextReference? {
@@ -140,11 +158,14 @@
                 state.isCapturing,
                 snapshot.suppressionReason == nil,
                 snapshot.focusedElement?.isSecure != true,
-                let application = NSRunningApplication(processIdentifier: snapshot.app.processIdentifier),
+                let application = NSRunningApplication(
+                    processIdentifier: snapshot.app.processIdentifier
+                ),
                 application.isTerminated == false,
                 let capture = AXRichContextReader.capture(
                     processIdentifier: snapshot.app.processIdentifier,
-                    maximumCharacters: maximumCharacters
+                    maximumCharacters: maximumCharacters,
+                    maximumNodes: maximumNodes
                 )
             else { return nil }
 
@@ -154,7 +175,9 @@
                 snapshot.window?.title ?? "",
             ].joined(separator: "|")
             if deduplicate {
-                guard lastRichContextFingerprints[contextKey] != capture.fingerprint else { return nil }
+                guard lastRichContextFingerprints[contextKey] != capture.fingerprint else {
+                    return nil
+                }
                 lastRichContextFingerprints[contextKey] = capture.fingerprint
                 if lastRichContextFingerprints.count > 256,
                     let firstKey = lastRichContextFingerprints.keys.first
@@ -208,18 +231,23 @@
                         self.lastAnalyzedModificationDates.removeValue(forKey: key)
                         continue
                     }
-                    if !force, self.lastAnalyzedModificationDates[key] == modificationDate { continue }
+                    if !force,
+                        self.lastAnalyzedModificationDates[key] == modificationDate
+                    {
+                        continue
+                    }
                     do {
                         _ = try self.store.buildAndWrite(for: day)
                         _ = try self.memoryStore?.buildAndWrite(for: day)
                         _ = try self.computerHistoryStore.buildAndWrite(for: day)
                         self.lastAnalyzedModificationDates[key] = modificationDate
                     } catch {
-                        Diagnostics.write("Activity analysis generation failed for \(key): \(error)")
+                        Diagnostics.write(
+                            "Activity analysis generation failed for \(key): \(error)"
+                        )
                     }
                 }
             }
         }
     }
-
 #endif
