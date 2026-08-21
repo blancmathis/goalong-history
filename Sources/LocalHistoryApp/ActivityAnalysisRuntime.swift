@@ -94,6 +94,27 @@
             )
         }
 
+        /// Captures an event-driven semantic observation that is not tied to an input
+        /// interaction, such as a programmatic value change or a short-lived window title.
+        /// Fingerprint deduplication prevents Accessibility notification storms from
+        /// producing duplicate local payloads.
+        func captureObservedContext(
+            trigger: String,
+            context explicitContext: ContextSnapshot? = nil
+        ) {
+            guard let snapshot = explicitContext ?? currentContext?() else { return }
+            _ = persistSemanticContext(
+                snapshot: snapshot,
+                maximumCharacters: 4_800,
+                maximumNodes: 180,
+                deduplicate: true,
+                metadata: [
+                    ComputerHistoryMetadata.interactionTrigger: "ax:\(trigger)",
+                    "computer_history.capture_nodes": "180",
+                ]
+            )
+        }
+
         func scheduleInteractionContext(
             interactionID: String,
             phase: String,
