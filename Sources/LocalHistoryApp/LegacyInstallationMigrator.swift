@@ -25,7 +25,7 @@
             }
 
             removeLegacyLaunchAgent()
-            removeDuplicateUserApplicationIfSafe()
+            removeLegacyApplicationCopiesIfSafe()
         }
 
         private static func migrateOnboardingState() {
@@ -43,21 +43,30 @@
             try? fileManager.removeItem(at: legacyURL)
         }
 
-        private static func removeDuplicateUserApplicationIfSafe() {
+        private static func removeLegacyApplicationCopiesIfSafe() {
             let fileManager = FileManager.default
             let currentBundleURL = Bundle.main.bundleURL.standardizedFileURL
-            let oldURL = fileManager.homeDirectoryForCurrentUser
-                .appendingPathComponent("Applications/LocalHistory.app")
-                .standardizedFileURL
+            let legacyURLs = [
+                URL(fileURLWithPath: "/Applications/LocalHistory.app", isDirectory: true),
+                fileManager.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Applications/LocalHistory.app", isDirectory: true),
+                URL(fileURLWithPath: "/Applications/Go Long History.app", isDirectory: true),
+                fileManager.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Applications/Go Long History.app", isDirectory: true),
+                URL(fileURLWithPath: "/Applications/GoLong History.app", isDirectory: true),
+                fileManager.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Applications/GoLong History.app", isDirectory: true),
+            ]
 
-            guard currentBundleURL != oldURL,
-                fileManager.fileExists(atPath: oldURL.path),
-                Bundle(url: oldURL)?.bundleIdentifier == bundleIdentifier
-            else {
-                return
+            for legacyURL in legacyURLs.map(\.standardizedFileURL) {
+                guard currentBundleURL != legacyURL,
+                    fileManager.fileExists(atPath: legacyURL.path),
+                    Bundle(url: legacyURL)?.bundleIdentifier == bundleIdentifier
+                else {
+                    continue
+                }
+                try? fileManager.removeItem(at: legacyURL)
             }
-
-            try? fileManager.removeItem(at: oldURL)
         }
     }
 #endif

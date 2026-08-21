@@ -25,7 +25,7 @@ DB_PATH = Path(os.environ.get("LOCALHISTORY_DB", Path(__file__).with_name("local
 CHALLENGE_TTL_SECONDS = 120
 ZERO_HASH = "0" * 64
 
-app = FastAPI(title="LocalHistory verification reference server", version="0.4.0")
+app = FastAPI(title="Goalong History verification reference server", version="0.4.0")
 
 
 def db() -> sqlite3.Connection:

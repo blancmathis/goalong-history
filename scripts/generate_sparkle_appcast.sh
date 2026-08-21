@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/sparkle_release.env"
 
 VERSION="${1:-}"
-ARCHIVE="${2:-$ROOT_DIR/dist/LocalHistory-macOS-universal.zip}"
+ARCHIVE="${2:-$ROOT_DIR/dist/Goalong-History-macOS-universal.zip}"
 OUTPUT="${3:-$ROOT_DIR/dist/appcast.xml}"
 RELEASE_TAG="${4:-v$VERSION}"
 PRIVATE_KEY="${SPARKLE_PRIVATE_ED_KEY:-}"
@@ -32,7 +32,7 @@ TOOLS_DIR="$($ROOT_DIR/scripts/fetch_sparkle_tools.sh)"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/localhistory-appcast.XXXXXX")"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-ARCHIVE_NAME="LocalHistory-macOS-universal.zip"
+ARCHIVE_NAME="Goalong-History-macOS-universal.zip"
 cp "$ARCHIVE" "$WORK_DIR/$ARCHIVE_NAME"
 DOWNLOAD_PREFIX="$SPARKLE_RELEASE_DOWNLOAD_ROOT/$RELEASE_TAG/"
 

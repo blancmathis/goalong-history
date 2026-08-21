@@ -1,6 +1,6 @@
 # Website-level activity analysis
 
-LocalHistory treats a browser as a container, not as the final unit of analysis. A browser row can still appear in application totals, but website activity is attributed separately to the domain, sanitized page URL, page title and observed actions.
+Goalong History treats a browser as a container, not as the final unit of analysis. A browser row can still appear in application totals, but website activity is attributed separately to the domain, sanitized page URL, page title and observed actions.
 
 ## Browser-independent discovery
 
@@ -45,13 +45,13 @@ This does not alter local historical data.
 
 ### Future capture rule
 
-A domain can be added to the recorder's excluded-domain configuration directly from its row. From that point forward, LocalHistory records only a generic excluded coverage state for the domain and does not retain its URL, title, click target or visible context. Re-enabling the domain affects future capture only; it does not recreate missing details or rewrite existing sealed history.
+A domain can be added to the recorder's excluded-domain configuration directly from its row. From that point forward, Goalong History records only a generic excluded coverage state for the domain and does not retain its URL, title, click target or visible context. Re-enabling the domain affects future capture only; it does not recreate missing details or rewrite existing sealed history.
 
 Subdomains follow the existing domain exclusion semantics. For example, excluding `example.com` also excludes `app.example.com`.
 
 ## Visible web discussions
 
-Rich Context remains explicit and local-only. When enabled, LocalHistory periodically stores selected and visible text exposed through macOS Accessibility, up to a bounded snapshot size. This can preserve accessible ChatGPT-style discussions and other web content that cannot be inferred from a URL alone.
+Rich Context remains explicit and local-only. When enabled, Goalong History periodically stores selected and visible text exposed through macOS Accessibility, up to a bounded snapshot size. This can preserve accessible ChatGPT-style discussions and other web content that cannot be inferred from a URL alone.
 
 The collector:
 
@@ -62,7 +62,7 @@ The collector:
 - deduplicates unchanged page snapshots;
 - commits the snapshot through `EventRecorder`, so it is included in the normal event hash chain and minute seal.
 
-Some websites expose only part of their content to Accessibility, virtualize older conversation messages, or remove content from the accessibility tree after scrolling. LocalHistory can retain only the accessible content it actually observed; it must not claim a complete server-side conversation export when the browser did not expose one.
+Some websites expose only part of their content to Accessibility, virtualize older conversation messages, or remove content from the accessibility tree after scrolling. Goalong History can retain only the accessible content it actually observed; it must not claim a complete server-side conversation export when the browser did not expose one.
 
 ## Agent context
 

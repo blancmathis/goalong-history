@@ -1,12 +1,12 @@
 # Updates and macOS permissions
 
-This document describes the release behavior implemented for **Go Long History**. Internal executable, bundle ID, data-folder, and legacy migration names intentionally remain `LocalHistory` so existing history and settings are not split into a new installation identity. Until Developer ID is configured, macOS may require a one-time **Open Anyway** approval for the downloaded app. TCC may separately require a one-time permission approval when the running binary or its location changes.
+This document describes the release behavior implemented for **Goalong History**. The public bundle, executable, Finder name, Dock name, app menus, permission labels, and release assets all use **Goalong History**. The bundle ID and existing data-folder names intentionally remain compatible with `LocalHistory` so existing history and settings are not split into a new installation identity. Until Developer ID is configured, macOS may require a one-time **Open Anyway** approval for the downloaded app. TCC may separately require a one-time permission approval when the running binary or its location changes.
 
 ## Product name and compatibility identity
 
-The physical compatibility bundle remains `LocalHistory.app`, with executable `LocalHistory` and bundle ID `ai.goalong.localhistory`. Its English and French `InfoPlist.strings` localizations expose **Go Long History** to Finder, the Dock, app menus, permission panels, and the app UI. The unlocalized `CFBundleDisplayName` and `CFBundleName` intentionally remain `LocalHistory` so they match the physical bundle filename; Finder can then honor the localized public name.
+The physical bundle is `Goalong History.app`, its executable is `Goalong History`, and both `CFBundleDisplayName` and `CFBundleName` are `Goalong History` in the base property list and the English and French localizations. The stable bundle ID remains `ai.goalong.localhistory`, and existing data remains under `~/Library/Application Support/LocalHistory/`.
 
-This gives users the correct product name without creating a second data directory, changing the update identity, or abandoning the existing installation path. The release DMG is mounted as **Go Long History**.
+This gives users one exact searchable product name without creating a second data directory or changing the update identity. Installers safely remove an older `LocalHistory.app`, `Go Long History.app`, or `GoLong History.app` copy after the replacement has been installed. The release DMG is mounted as **Goalong History**.
 
 ## Rolling updates from `main`
 
@@ -28,7 +28,7 @@ Installed update-enabled builds read this fixed feed URL:
 https://github.com/blancmathis/goalong-history/releases/download/latest-main/appcast.xml
 ```
 
-Sparkle starts a quiet background update session at launch and when the dashboard becomes active. No dialog is shown when the app is current. When a newer build exists, a small button appears at the bottom-left of the sidebar. Clicking that button brings the already-detected update directly into Sparkle's signed installation flow; it does not repeat a user-visible feed search first. If the original Sparkle session has expired or failed, the app safely falls back to a fresh attended check instead of presenting stale update metadata.
+Sparkle starts a quiet background update session at launch and when the dashboard becomes active. No dialog is shown when the app is current. The small update button appears only after Sparkle's standard user driver has prepared the detected release for presentation, so its first click opens the signed installation flow immediately. Every update action is serialized through one pending-request state: a click received while Sparkle is checking, presenting, or closing a previous session is retained until Sparkle either gives the update alert real user attention or reports a terminal result. If the user dismisses that alert, a later button click transparently prepares a new session in the background and opens the installer from that same click as soon as it is ready. Both the update badge and the footer check action show progress and reject repeated input while their request is pending. Choosing **Skip This Version** removes the matching badge immediately; choosing **Remind Me Later** keeps the release available for a later one-click retry.
 
 ### Required GitHub Actions configuration
 

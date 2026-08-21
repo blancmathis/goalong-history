@@ -66,7 +66,7 @@
         // which never presents authentication UI for background minute sealing.
         private static let secureEnclaveTag = Data("ai.goalong.localhistory.anchor-key.secureenclave.v2".utf8)
         private static let softwareTag = Data("ai.goalong.localhistory.anchor-key.software.v2".utf8)
-        private static let keyLabel = "LocalHistory minute signing key"
+        private static let keyLabel = "Goalong History minute signing key"
 
         private let privateKey: SecKey
         let info: DeviceIdentityInfo

@@ -1,6 +1,6 @@
-# LocalHistory — guide d’installation et de prise en main
+# Goalong History — guide d’installation et de prise en main
 
-LocalHistory crée sur votre Mac une chronologie privée de l’activité autorisée au premier plan. Cette chronologie est enregistrée localement, scellée cryptographiquement minute par minute, puis peut être partagée de manière sélective sans réécrire l’historique original.
+Goalong History crée sur votre Mac une chronologie privée de l’activité autorisée au premier plan. Cette chronologie est enregistrée localement, scellée cryptographiquement minute par minute, puis peut être partagée de manière sélective sans réécrire l’historique original.
 
 L’application est destinée à votre propre Mac. Elle ne doit jamais servir à surveiller une autre personne sans son accord explicite préalable.
 
@@ -9,10 +9,10 @@ L’application est destinée à votre propre Mac. Elle ne doit jamais servir à
 L’installation normale ne demande **ni Terminal, ni Xcode, ni Homebrew, ni commande administrateur**.
 
 1. Ouvrez la page **Releases** du dépôt.
-2. Téléchargez `LocalHistory-macOS-universal.dmg`.
+2. Téléchargez `Goalong-History-macOS-universal.dmg`.
 3. Ouvrez le fichier téléchargé.
-4. Glissez **LocalHistory** vers **Applications**.
-5. Ouvrez LocalHistory et suivez l’assistant.
+4. Glissez **Goalong History** vers **Applications**.
+5. Ouvrez Goalong History et suivez l’assistant.
 
 Le même fichier fonctionne sur les Mac Apple Silicon et Intel équipés de macOS 13 Ventura ou d’une version plus récente. La version publique doit être signée avec Developer ID et notarisée par Apple afin que Gatekeeper puisse la vérifier normalement.
 
@@ -20,7 +20,7 @@ Le même fichier fonctionne sur les Mac Apple Silicon et Intel équipés de macO
 
 Le premier lancement est volontairement progressif. Il présente cinq étapes :
 
-1. **Bienvenue** — ce que LocalHistory apporte concrètement ;
+1. **Bienvenue** — ce que Goalong History apporte concrètement ;
 2. **Confidentialité** — ce qui est enregistré et ce qui ne le sera jamais ;
 3. **Accessibilité** — pourquoi cette autorisation est nécessaire ;
 4. **Surveillance de l’entrée** — comment l’activité est mesurée sans enregistrer le texte saisi ;
@@ -28,7 +28,7 @@ Le premier lancement est volontairement progressif. Il présente cinq étapes :
 
 Chaque demande d’autorisation est faite séparément, au moment où son intérêt vient d’être expliqué. L’état se met à jour en direct et un bouton ouvre directement le bon écran des Réglages Système.
 
-Vous pouvez choisir **Configurer plus tard**. LocalHistory ouvrira alors son espace Confidentialité et fonctionnera avec des informations plus limitées tant que les autorisations ne sont pas accordées.
+Vous pouvez choisir **Configurer plus tard**. Goalong History ouvrira alors son espace Confidentialité et fonctionnera avec des informations plus limitées tant que les autorisations ne sont pas accordées.
 
 ## Autorisation Accessibilité
 
@@ -40,7 +40,7 @@ Réglages Système → Confidentialité et sécurité → Accessibilité
 
 Cette autorisation permet de connaître le contexte autorisé au premier plan : application, fenêtre, URL de navigateur permise, contrôle sélectionné et élément d’interface cliqué.
 
-LocalHistory n’utilise pas cette autorisation pour piloter le Mac.
+Goalong History n’utilise pas cette autorisation pour piloter le Mac.
 
 ## Autorisation Surveillance de l’entrée
 
@@ -52,7 +52,7 @@ Réglages Système → Confidentialité et sécurité → Surveillance de l’en
 
 Cette autorisation sert à compter les clics, défilements, raccourcis, touches de navigation et la durée de saisie.
 
-LocalHistory ne conserve jamais les caractères tapés, les mots de passe ni le contenu du presse-papiers.
+Goalong History ne conserve jamais les caractères tapés, les mots de passe ni le contenu du presse-papiers.
 
 Selon la version de macOS, le système peut demander de quitter puis de rouvrir l’application après l’activation. Acceptez cette demande, puis revenez dans l’assistant ; son état se mettra à jour automatiquement.
 
@@ -96,7 +96,7 @@ Depuis **Confidentialité et sécurité**, vous pouvez ouvrir le dossier local, 
 La dernière étape propose :
 
 ```text
-Démarrer LocalHistory à ma connexion
+Démarrer Goalong History à ma connexion
 ```
 
 Le choix est visible et modifiable. Il utilise le mécanisme macOS `SMAppService`, présenté dans **Réglages Système → Général → Ouverture et extensions** lorsque macOS exige une approbation supplémentaire.
@@ -116,7 +116,7 @@ L’icône de barre des menus permet de :
 
 Le tableau de bord contient : **Vue d’ensemble**, **Activité**, **Apple Screen Time**, **Partager**, **Confidentialité et sécurité**, et **Réglages**.
 
-Dans **Activité → Apps & sites**, toutes les applications et tous les sites observés sont listés avec leur temps estimé au premier plan et leurs minutes d’entrée active. Le temps au premier plan est volontairement prudent : LocalHistory n’invente jamais plus de 75 secondes entre deux observations.
+Dans **Activité → Apps & sites**, toutes les applications et tous les sites observés sont listés avec leur temps estimé au premier plan et leurs minutes d’entrée active. Le temps au premier plan est volontairement prudent : Goalong History n’invente jamais plus de 75 secondes entre deux observations.
 
 Pour chaque application ou site, choisissez la règle utilisée lors d’un partage :
 
@@ -126,11 +126,11 @@ Pour chaque application ou site, choisissez la règle utilisée lors d’un part
 
 La règle d’un site est prioritaire sur celle du navigateur qui le contient. Les nouvelles preuves séparent le nom d’hôte du contexte complet : afficher un site ne révèle donc ni le titre de page ni l’URL complète. Les anciennes données restent vérifiables mais reviennent automatiquement à la catégorie lorsqu’un nom de site ne peut pas être ouvert sans révéler davantage.
 
-La clé qui signe les preuves est liée à la signature stable de l’application. Si cette signature change, LocalHistory crée une nouvelle identité clairement visible tout en conservant l’historique précédent ; il ne réutilise pas silencieusement une ancienne clé incompatible. Un refus du Trousseau suspend aussi les nouvelles tentatives pour le lancement en cours, afin qu’aucune demande de mot de passe ne puisse revenir chaque minute.
+La clé qui signe les preuves est liée à la signature stable de l’application. Si cette signature change, Goalong History crée une nouvelle identité clairement visible tout en conservant l’historique précédent ; il ne réutilise pas silencieusement une ancienne clé incompatible. Un refus du Trousseau suspend aussi les nouvelles tentatives pour le lancement en cours, afin qu’aucune demande de mot de passe ne puisse revenir chaque minute.
 
 ## Mises à jour
 
-Cette version doit être installée manuellement une première fois. Les versions publiques suivantes, lorsqu’elles sont signées et publiées dans le flux officiel, apparaissent ensuite directement dans LocalHistory. Le bouton de mise à jour permet de consulter la version proposée avant de lancer son installation ; l’application ne l’installe pas silencieusement.
+Cette version doit être installée manuellement une première fois. Les versions publiques suivantes, lorsqu’elles sont signées et publiées dans le flux officiel, apparaissent ensuite directement dans Goalong History. Le bouton de mise à jour permet de consulter la version proposée avant de lancer son installation ; l’application ne l’installe pas silencieusement.
 
 ## Désinstallation
 

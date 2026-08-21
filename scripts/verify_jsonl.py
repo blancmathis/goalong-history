@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Validate LocalHistory JSONL syntax and privacy invariants.
+"""Validate Goalong History JSONL syntax and privacy invariants.
 
-This checks the shape LocalHistory itself promises. It cannot infer whether a
+This checks the shape Goalong History itself promises. It cannot infer whether a
 browser vendor failed to expose a private-mode marker, so a real private-window
 smoke test is still required after browser updates.
 """

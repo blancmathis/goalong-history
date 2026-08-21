@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="Distribution/AppIcon.svg" width="112" alt="LocalHistory app icon">
+  <img src="Distribution/AppIcon.svg" width="112" alt="Goalong History app icon">
 
-# LocalHistory
+# Goalong History
 
 **Private, verifiable activity for macOS.**
 
@@ -10,14 +10,14 @@ A native menu-bar app that turns foreground activity into a clear local timeline
 [Download the latest Mac release](https://github.com/blancmathis/goalong-history/releases/tag/latest-main) · [Guide français](GUIDE_FR.md) · [Security model](SECURITY.md)
 </div>
 
-> LocalHistory is for a Mac you own and use yourself. Never use it to monitor another person without their prior, explicit consent.
+> Goalong History is for a Mac you own and use yourself. Never use it to monitor another person without their prior, explicit consent.
 
 ## A Mac installation that feels like a product
 
 The normal installation does **not** require Terminal, Xcode, Homebrew, Python, or administrator commands.
 
-1. Download `LocalHistory-macOS-universal.dmg` from Releases.
-2. Drag **LocalHistory** to **Applications**.
+1. Download `Goalong-History-macOS-universal.dmg` from Releases.
+2. Drag **Goalong History** to **Applications**.
 3. Open the app.
 4. Follow the native setup assistant.
 
@@ -25,7 +25,7 @@ The rolling release is universal (`arm64 + x86_64`), authenticated for in-app up
 
 The first launch guides the user through five focused screens:
 
-1. what LocalHistory does;
+1. what Goalong History does;
 2. the exact privacy boundary;
 3. Accessibility, explained and requested in context;
 4. Input Monitoring, explained and requested separately;
@@ -35,7 +35,7 @@ Permission state updates live. Every step includes a direct System Settings rout
 
 ## What the app records
 
-When the relevant macOS permissions are granted, LocalHistory can store:
+When the relevant macOS permissions are granted, Goalong History can store:
 
 - the active app and bundle identifier;
 - active window title and accessible control metadata;
@@ -83,9 +83,9 @@ time · application · website · context · activity · classification · cover
 
 Each group receives a random 256-bit salt and SHA-256 commitment. Those commitments form an event Merkle root. Event roots are chained with a monotonic sequence and the previous event hash.
 
-Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. LocalHistory first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable Developer ID build. Ad-hoc builds, including the current rolling release, use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
+Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. Goalong History first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable Developer ID build. Ad-hoc builds, including the current rolling release, use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
 
-Signing identities are scoped to the app's designated code-signing requirement. If that requirement changes, LocalHistory records a visible identity rotation and keeps the existing chain data instead of repeatedly requesting access to an incompatible old key. A refused authentication attempt also suspends background signing for that launch, so it can never create a password dialog every minute.
+Signing identities are scoped to the app's designated code-signing requirement. If that requirement changes, Goalong History records a visible identity rotation and keeps the existing chain data instead of repeatedly requesting access to an incompatible old key. A refused authentication attempt also suspends background signing for that launch, so it can never create a password dialog every minute.
 
 The **Share** screen stores one rule for every observed application and website:
 
@@ -110,9 +110,9 @@ A menu-bar control keeps pause/resume, status, dashboard access, and sharing imm
 
 ## Updates and start at login
 
-Start-at-login is an explicit onboarding choice implemented with Apple’s `SMAppService`. LocalHistory no longer installs a hand-written LaunchAgent. Upgrading preserves the local history and settings directory.
+Start-at-login is an explicit onboarding choice implemented with Apple’s `SMAppService`. Goalong History no longer installs a hand-written LaunchAgent. Upgrading preserves the local history and settings directory.
 
-A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. Starting with the first manually installed Sparkle-enabled build, later EdDSA-authenticated releases can be reviewed and installed from the update button inside LocalHistory.
+A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. Starting with the first manually installed Sparkle-enabled build, later EdDSA-authenticated releases can be reviewed and installed from the update button inside Goalong History.
 
 ## Build from source
 

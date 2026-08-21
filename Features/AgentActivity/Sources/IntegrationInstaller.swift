@@ -22,7 +22,7 @@ public enum AgentIntegrationInstallerError: Error, LocalizedError {
         case .invalidConfiguration(let url):
             return "The existing configuration at \(url.path) is not a JSON object. It was not changed."
         case .executableUnavailable:
-            return "The LocalHistory executable path is unavailable."
+            return "The Goalong History executable path is unavailable."
         case .unmanagedOpenCodePlugin(let url):
             return "A different file already exists at \(url.path). It was not overwritten."
         }

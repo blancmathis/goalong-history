@@ -1,4 +1,4 @@
-# Security model — LocalHistory v0.3
+# Security model — Goalong History v0.3
 
 ## Goals
 

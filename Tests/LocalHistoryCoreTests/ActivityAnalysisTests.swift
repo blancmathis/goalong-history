@@ -87,7 +87,7 @@ final class ActivityAnalysisTests: XCTestCase {
             kind: .focusChanged,
             appName: "ChatGPT",
             bundleIdentifier: "com.openai.chat",
-            title: "Improve the LocalHistory analysis",
+            title: "Improve the Goalong History analysis",
             host: "chatgpt.com",
             URL: "https://chatgpt.com/c/analysis",
             metadata: [

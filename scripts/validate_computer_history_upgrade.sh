@@ -14,8 +14,8 @@ usage() {
 Usage: validate_computer_history_upgrade.sh [options]
 
 Options:
-  --repo PATH                 Go Long History git checkout.
-  --data-root PATH            LocalHistory Application Support directory.
+  --repo PATH                 Goalong History git checkout.
+  --data-root PATH            Goalong History Application Support directory.
   --day YYYY-MM-DD            Day to inspect; newest event file by default.
   --output PATH               Validation output directory; /tmp by default.
   --require-real-events       Fail unless click, scroll, shortcut, typing,
@@ -57,7 +57,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 69
 fi
 if [[ ! -d "$REPO/.git" || ! -f "$REPO/Package.swift" ]]; then
-  echo "Not a Go Long History git checkout: $REPO" >&2
+  echo "Not a Goalong History git checkout: $REPO" >&2
   exit 66
 fi
 if [[ ! -x "$REPO/scripts/audit_privacy_boundaries.sh" || ! -x "$REPO/scripts/build_app.sh" ]]; then
@@ -128,7 +128,7 @@ run_logged official-app-build bash -lc "cd \"$REPO\" && ./scripts/build_app.sh"
 run_logged query-cli-build bash -lc "cd \"$REPO\" && swift build -c release --product goalong-history-query"
 
 APP_OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$REPO/dist}"
-BUILT_APP="$APP_OUTPUT_DIR/LocalHistory.app"
+BUILT_APP="$APP_OUTPUT_DIR/Goalong History.app"
 if [[ ! -d "$BUILT_APP" ]]; then
   echo "Official build did not produce $BUILT_APP" >&2
   exit 70
@@ -138,12 +138,13 @@ run_logged built-app-codesign-details /usr/bin/codesign -d --verbose=4 "$BUILT_A
 run_logged built-app-designated-requirement /usr/bin/codesign -d -r- "$BUILT_APP"
 capture_nonfatal built-app-gatekeeper /usr/sbin/spctl --assess --type execute --verbose=4 "$BUILT_APP"
 
-if [[ -d /Applications/LocalHistory.app ]]; then
-  run_logged installed-app-codesign-details /usr/bin/codesign -d --verbose=4 /Applications/LocalHistory.app
-  run_logged installed-app-designated-requirement /usr/bin/codesign -d -r- /Applications/LocalHistory.app
-  capture_nonfatal installed-app-gatekeeper /usr/sbin/spctl --assess --type execute --verbose=4 /Applications/LocalHistory.app
+INSTALLED_APP="/Applications/Goalong History.app"
+if [[ -d "$INSTALLED_APP" ]]; then
+  run_logged installed-app-codesign-details /usr/bin/codesign -d --verbose=4 "$INSTALLED_APP"
+  run_logged installed-app-designated-requirement /usr/bin/codesign -d -r- "$INSTALLED_APP"
+  capture_nonfatal installed-app-gatekeeper /usr/sbin/spctl --assess --type execute --verbose=4 "$INSTALLED_APP"
 else
-  echo "Installed app not found at /Applications/LocalHistory.app" | tee "$OUTPUT/installed-app-missing.log"
+  echo "Installed app not found at $INSTALLED_APP" | tee "$OUTPUT/installed-app-missing.log"
 fi
 
 BIN_PATH="$(cd "$REPO" && swift build -c release --show-bin-path)"

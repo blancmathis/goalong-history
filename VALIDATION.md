@@ -1,9 +1,9 @@
-# Validation notes — LocalHistory v0.5.1
+# Validation notes — Goalong History v0.5.1
 
 Validation performed on macOS 26.5.1 with Apple Silicon:
 
 - `swift test`: 21 tests, 0 failures.
-- `install.sh --source`: native release build and installation succeeded at `/Applications/LocalHistory.app`.
+- `install.sh --source`: native release build and installation succeeded at `/Applications/Goalong History.app`.
 - Installed bundle metadata reports version `0.5.1` and bundle identifier `ai.goalong.localhistory`.
 - `codesign --verify --deep --strict`: installed app is valid and satisfies its designated requirement.
 - Installed executable is native arm64 for this Mac.

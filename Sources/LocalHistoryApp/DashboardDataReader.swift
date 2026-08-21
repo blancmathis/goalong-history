@@ -462,7 +462,7 @@
             case .sessionLocked, .sessionUnlocked: return "Mac session"
             case .systemSleep, .systemWake: return "Mac power"
             case .historyCleared: return "Local data"
-            default: return "LocalHistory"
+            default: return "Goalong History"
             }
         }
     }

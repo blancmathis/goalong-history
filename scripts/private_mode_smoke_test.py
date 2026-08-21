@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive smoke test for LocalHistory private-browser suppression.
+"""Interactive smoke test for Goalong History private-browser suppression.
 
 Start outside private browsing, then run this script in Terminal. During the
 countdown, open or switch to a private browser window. Click, scroll, and type
@@ -133,7 +133,7 @@ def main() -> int:
 
     if not browser_events:
         print("INCONCLUSIVE: no browser event or suppression transition was observed.")
-        print("Check that LocalHistory is running and both permissions are enabled, then repeat.")
+        print("Check that Goalong History is running and both permissions are enabled, then repeat.")
         return 2
 
     unsafe: list[dict[str, object]] = []

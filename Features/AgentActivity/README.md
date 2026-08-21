@@ -20,7 +20,7 @@ Live integrations can be installed from the same page:
 - Cursor user hooks in `~/.cursor/hooks.json`;
 - an OpenCode global plugin in `~/.config/opencode/plugins/goalong-history.js`.
 
-All four invoke the already-signed LocalHistory executable with `--agent-hook-ingest`. The hook process reads JSON from stdin, appends one immutable event envelope to the local inbox, prints `{}`, and exits. It has no network path and never controls the agent.
+All four invoke the already-signed Goalong History executable with `--agent-hook-ingest`. The hook process reads JSON from stdin, appends one immutable event envelope to the local inbox, prints `{}`, and exits. It has no network path and never controls the agent.
 
 ## Local layout
 
@@ -50,17 +50,17 @@ Each changed source receives:
 - a content-addressed immutable blob;
 - a parsed summary for local search and analysis;
 - a manifest linked to the previous manifest hash;
-- an `agentArtifactCaptured` event in LocalHistory’s normal signed minute chain.
+- an `agentArtifactCaptured` event in Goalong History’s normal signed minute chain.
 
 Growing JSONL and log files are stored as append-only deltas when their previous bytes are an exact prefix. A full checkpoint is forced after a bounded delta depth. Materialization reconstructs the original bytes and verifies the complete SHA-256 before opening them.
 
 ## Privacy boundary
 
-The full bytes of captured sources stay local. The normal LocalHistory verification uploader still receives only opaque minute commitments.
+The full bytes of captured sources stay local. The normal Goalong History verification uploader still receives only opaque minute commitments.
 
-The scanner always excludes common standalone credential and browser-secret files, including authentication JSON, tokens, cookies, `.env` files, private-key formats, SSH/AWS/GPG directories, caches and LocalHistory’s own vault. These exclusions remain active even when a user selects **Every file**. Raw transcript and hook payloads are otherwise preserved as-is, so a secret printed inside a prompt, response or tool result remains in the local vault and must be reviewed before sharing.
+The scanner always excludes common standalone credential and browser-secret files, including authentication JSON, tokens, cookies, `.env` files, private-key formats, SSH/AWS/GPG directories, caches and Goalong History’s own vault. These exclusions remain active even when a user selects **Every file**. Raw transcript and hook payloads are otherwise preserved as-is, so a secret printed inside a prompt, response or tool result remains in the local vault and must be reviewed before sharing.
 
-The event committed into the main LocalHistory chain contains only the provider, capture identifiers, byte counts, version, storage kind, manifest hash and content SHA-256. It does not contain the transcript, prompt, response, command, project path, source path, title or excerpt.
+The event committed into the main Goalong History chain contains only the provider, capture identifiers, byte counts, version, storage kind, manifest hash and content SHA-256. It does not contain the transcript, prompt, response, command, project path, source path, title or excerpt.
 
 ## Tests
 

@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORE_BUILDER="$ROOT_DIR/scripts/build_app_core.sh"
-APP_NAME="LocalHistory"
+APP_NAME="Goalong History"
 BUNDLE_ID="ai.goalong.localhistory"
-DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Go Long History}"
+DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Goalong History}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
 SIGN_IDENTITY="${LOCALHISTORY_CODESIGN_IDENTITY:--}"
 
@@ -14,11 +14,8 @@ if [[ ! -x "$CORE_BUILDER" ]]; then
   exit 1
 fi
 
-# Keep the mature build/signing implementation isolated, then finalize only the public
-# product identity. The physical bundle, executable, bundle ID, and data paths intentionally
-# remain LocalHistory for compatibility. Finder only trusts a localized app name when the
-# unlocalized Info.plist name matches the actual .app filename, so the public name lives in
-# InfoPlist.strings rather than being forced into the base plist.
+# Keep the Swift target and compatibility identifiers internal, while the physical bundle,
+# executable, base plist, localizations, Finder name, and Dock name all use the public identity.
 "$CORE_BUILDER" "$@"
 
 APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
@@ -30,8 +27,8 @@ if [[ ! -d "$APP_PATH" || ! -f "$INFO_PLIST" ]]; then
   exit 1
 fi
 
-/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$INFO_PLIST"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$INFO_PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$INFO_PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $DISPLAY_NAME" "$INFO_PLIST"
 /usr/libexec/PlistBuddy -c "Set :NSAccessibilityUsageDescription $DISPLAY_NAME uses Accessibility to understand the foreground app, window, permitted URL, focused control, and clicked interface element. It never controls your Mac." "$INFO_PLIST"
 /usr/libexec/PlistBuddy -c "Set :NSInputMonitoringUsageDescription $DISPLAY_NAME uses event-listening access to count clicks, scrolling, shortcuts, navigation keys, and typing duration. It never stores typed characters, passwords, or clipboard contents." "$INFO_PLIST"
 /usr/bin/plutil -lint "$INFO_PLIST" >/dev/null
@@ -65,11 +62,11 @@ LOCALHISTORY_DISPLAY_NAME="$DISPLAY_NAME" \
 LOCALHISTORY_REQUIRE_LOCALIZED_NAME=1 \
   "$ROOT_DIR/scripts/verify_sparkle_bundle.sh"
 
-test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")" = "$APP_NAME"
-test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")" = "$APP_NAME"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")" = "$DISPLAY_NAME"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")" = "$DISPLAY_NAME"
 for locale in en fr; do
   localized="$RESOURCES/$locale.lproj/InfoPlist.strings"
   test "$(/usr/bin/plutil -extract CFBundleDisplayName raw -o - "$localized")" = "$DISPLAY_NAME"
   test "$(/usr/bin/plutil -extract CFBundleName raw -o - "$localized")" = "$DISPLAY_NAME"
 done
-printf 'Finalized %s at %s (internal bundle name: %s)\n' "$DISPLAY_NAME" "$APP_PATH" "$APP_NAME"
+printf 'Finalized %s at %s\n' "$DISPLAY_NAME" "$APP_PATH"

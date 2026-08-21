@@ -4,18 +4,22 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=sparkle_release.env
 source "$ROOT_DIR/scripts/sparkle_release.env"
-APP_PATH="${LOCALHISTORY_APP_PATH:-$ROOT_DIR/dist/LocalHistory.app}"
+APP_PATH="${LOCALHISTORY_APP_PATH:-$ROOT_DIR/dist/Goalong History.app}"
 INFO="$APP_PATH/Contents/Info.plist"
 FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
-BINARY="$APP_PATH/Contents/MacOS/LocalHistory"
 RESOURCES="$APP_PATH/Contents/Resources"
 REQUIRE_CONFIGURED="${LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED:-0}"
 REQUIRE_LOCALIZED_NAME="${LOCALHISTORY_REQUIRE_LOCALIZED_NAME:-0}"
-EXPECTED_DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Go Long History}"
-INTERNAL_BUNDLE_NAME="LocalHistory"
+EXPECTED_DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Goalong History}"
 
-if [[ ! -d "$APP_PATH" || ! -f "$INFO" || ! -x "$BINARY" ]]; then
-  echo "Go Long History app bundle is incomplete: $APP_PATH" >&2
+if [[ ! -d "$APP_PATH" || ! -f "$INFO" ]]; then
+  echo "Goalong History app bundle is incomplete: $APP_PATH" >&2
+  exit 1
+fi
+EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO")"
+BINARY="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
+if [[ ! -x "$BINARY" ]]; then
+  echo "Goalong History executable is missing: $BINARY" >&2
   exit 1
 fi
 if [[ ! -d "$FRAMEWORK" ]]; then
@@ -63,8 +67,8 @@ if ! /usr/bin/otool -l "$BINARY" | /usr/bin/grep -A2 LC_RPATH | /usr/bin/grep -q
 fi
 
 # The core builder invokes this verifier before public-name localizations are installed. Once
-# the finalizer has created them—or when explicitly required—also validate the Finder naming
-# contract. Finder ignores a localized display name if the base name disagrees with the .app file.
+# the finalizer has created them—or when explicitly required—also validate the complete Finder,
+# Dock, executable, and bundle filename contract.
 LOCALIZED_NAME_PRESENT=0
 if [[ -f "$RESOURCES/en.lproj/InfoPlist.strings" && -f "$RESOURCES/fr.lproj/InfoPlist.strings" ]]; then
   LOCALIZED_NAME_PRESENT=1
@@ -72,8 +76,10 @@ fi
 if [[ "$REQUIRE_LOCALIZED_NAME" == "1" || "$LOCALIZED_NAME_PRESENT" == "1" ]]; then
   BASE_DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")"
   BASE_BUNDLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO")"
-  [[ "$BASE_DISPLAY_NAME" == "$INTERNAL_BUNDLE_NAME" ]]
-  [[ "$BASE_BUNDLE_NAME" == "$INTERNAL_BUNDLE_NAME" ]]
+  [[ "$BASE_DISPLAY_NAME" == "$EXPECTED_DISPLAY_NAME" ]]
+  [[ "$BASE_BUNDLE_NAME" == "$EXPECTED_DISPLAY_NAME" ]]
+  [[ "$EXECUTABLE_NAME" == "$EXPECTED_DISPLAY_NAME" ]]
+  [[ "$(basename "$APP_PATH")" == "$EXPECTED_DISPLAY_NAME.app" ]]
   for locale in en fr; do
     localized="$RESOURCES/$locale.lproj/InfoPlist.strings"
     if [[ ! -f "$localized" ]]; then

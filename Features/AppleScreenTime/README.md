@@ -1,6 +1,6 @@
 # Apple Screen Time feature
 
-This feature is intentionally isolated from LocalHistory's foreground recorder. The **Apple Screen Time** page must never silently substitute Goalong-recorded activity for Apple data.
+This feature is intentionally isolated from Goalong History's foreground recorder. The **Apple Screen Time** page must never silently substitute Goalong-recorded activity for Apple data.
 
 ## Runtime architecture
 
@@ -40,7 +40,7 @@ All SQLite connections are `SQLITE_OPEN_READONLY`. The feature never writes to, 
 
 ## Permissions and freshness
 
-Apple protects these locations with TCC. The signed LocalHistory app needs **Full Disk Access** once. The UI detects a permission failure and links directly to the relevant System Settings pane.
+Apple protects these locations with TCC. The signed Goalong History app needs **Full Disk Access** once. The UI detects a permission failure and links directly to the relevant System Settings pane.
 
 The page refreshes every five seconds, but iPhone/iPad freshness is controlled by Apple's iCloud/Biome synchronization. “Real time” therefore means automatic and continuously re-read as Apple syncs—not a guaranteed zero-latency push channel.
 
@@ -66,4 +66,4 @@ This is separate from Apple's public `DeviceActivityData.activityData(filteredBy
 
 ## Trust statement
 
-A share produced from this source says that LocalHistory read these values from Apple-owned local system stores. Apple does not provide a third-party cryptographic signature over the private files, so the claim is not equivalent to App Attest or Goalong's live minute seals. It is nevertheless distinct from—and must never be confused with—an estimate produced from LocalHistory's recorder.
+A share produced from this source says that Goalong History read these values from Apple-owned local system stores. Apple does not provide a third-party cryptographic signature over the private files, so the claim is not equivalent to App Attest or Goalong's live minute seals. It is nevertheless distinct from—and must never be confused with—an estimate produced from Goalong History's recorder.

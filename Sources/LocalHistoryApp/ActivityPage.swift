@@ -69,7 +69,7 @@
                 }
             } message: {
                 Text(
-                    "LocalHistory will store selected and visible text exposed by macOS Accessibility for eligible foreground windows. It will not decode keystrokes and will still suppress private browsing, exclusions and secure fields. Turning it off later stops future snapshots; existing snapshots follow your normal local retention and deletion controls."
+                    "Goalong History will store selected and visible text exposed by macOS Accessibility for eligible foreground windows. It will not decode keystrokes and will still suppress private browsing, exclusions and secure fields. Turning it off later stops future snapshots; existing snapshots follow your normal local retention and deletion controls."
                 )
             }
         }
@@ -215,7 +215,7 @@
                     symbol: "sparkles.rectangle.stack",
                     title: "No analyzable activity yet",
                     message: analysisModel.errorMessage
-                        ?? "Keep LocalHistory running. The recap and agent brief will be generated automatically as activity appears.",
+                        ?? "Keep Goalong History running. The recap and agent brief will be generated automatically as activity appears.",
                     buttonTitle: "Try again",
                     action: { analysisModel.refresh(day: model.selectedDay) }
                 )

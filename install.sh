@@ -1,13 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
-APP_NAME="LocalHistory"
-DISPLAY_NAME="Go Long History"
+APP_NAME="Goalong History"
+EXECUTABLE_NAME="Goalong History"
+PREVIOUS_APP_NAME="GoLong History"
+LEGACY_APP_NAME="LocalHistory"
+DISPLAY_NAME="Goalong History"
 BUNDLE_ID="ai.goalong.localhistory"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY="blancmathis/goalong-history"
 RELEASE_TAG="${GOALONG_RELEASE_TAG:-latest-main}"
-RELEASE_ASSET="LocalHistory-macOS-universal.zip"
+RELEASE_ASSET="Goalong-History-macOS-universal.zip"
 SOURCE_ONLY=false
 VERBOSE=false
 
@@ -19,7 +22,7 @@ for argument in "$@"; do
       cat <<HELP
 Usage: ./install.sh [--source] [--verbose]
 
-The normal path downloads the latest Sparkle-enabled Go Long History build from GitHub.
+The normal path downloads the latest Sparkle-enabled Goalong History build from GitHub.
 Use --source only for a local developer build; source builds cannot self-update.
 HELP
       exit 0
@@ -75,7 +78,7 @@ printf '%b' "$BLUE"
 cat <<'BANNER'
 
        ╭──────────────────────────────╮
-       │      ◷  Go Long History      │
+       │      ◷  Goalong History      │
        │   private • local • trusted  │
        ╰──────────────────────────────╯
 BANNER
@@ -198,6 +201,10 @@ fi
 
 if [[ -d "/Applications/$APP_NAME.app" && -w "/Applications/$APP_NAME.app" ]]; then
   TARGET_DIR="/Applications"
+elif [[ -d "/Applications/$PREVIOUS_APP_NAME.app" && -w "/Applications/$PREVIOUS_APP_NAME.app" ]]; then
+  TARGET_DIR="/Applications"
+elif [[ -d "/Applications/$LEGACY_APP_NAME.app" && -w "/Applications/$LEGACY_APP_NAME.app" ]]; then
+  TARGET_DIR="/Applications"
 elif [[ -w /Applications ]]; then
   TARGET_DIR="/Applications"
 else
@@ -209,11 +216,22 @@ TARGET_APP="$TARGET_DIR/$APP_NAME.app"
 headline "Installing"
 /usr/bin/launchctl bootout "gui/$UID" "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist" >/dev/null 2>&1 || true
 rm -f "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
-/usr/bin/pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+/usr/bin/pkill -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true
+/usr/bin/pkill -x "$PREVIOUS_APP_NAME" >/dev/null 2>&1 || true
+/usr/bin/pkill -x "$LEGACY_APP_NAME" >/dev/null 2>&1 || true
 sleep 0.4
 rm -rf "$TARGET_APP"
 /usr/bin/ditto "$SOURCE_APP" "$TARGET_APP"
 /usr/bin/codesign --verify --deep --strict "$TARGET_APP"
+for legacy_app in \
+  "/Applications/$PREVIOUS_APP_NAME.app" \
+  "$HOME/Applications/$PREVIOUS_APP_NAME.app" \
+  "/Applications/$LEGACY_APP_NAME.app" \
+  "$HOME/Applications/$LEGACY_APP_NAME.app"; do
+  if [[ -d "$legacy_app" ]] && [[ "$(/usr/bin/codesign -dv --verbose=4 "$legacy_app" 2>&1 | awk -F= '/^Identifier=/{print $2; exit}')" == "$BUNDLE_ID" ]]; then
+    rm -rf "$legacy_app"
+  fi
+done
 status "Installed in $TARGET_DIR"
 status "Legacy background service cleaned up"
 status "Your existing history, settings, and bundle ID were preserved"

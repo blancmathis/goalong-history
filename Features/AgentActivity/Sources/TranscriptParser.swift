@@ -138,9 +138,13 @@ public enum AgentTranscriptParser {
         }
 
         mutating func inspect(_ dictionary: [String: Any], path: [String]) {
-            let normalized = Dictionary(
-                uniqueKeysWithValues: dictionary.map { (normalizeKey($0.key), $0.value) }
-            )
+            var normalized: [String: Any] = [:]
+            normalized.reserveCapacity(dictionary.count)
+            for key in dictionary.keys.sorted() {
+                let normalizedKey = normalizeKey(key)
+                guard !normalizedKey.isEmpty, normalized[normalizedKey] == nil else { continue }
+                normalized[normalizedKey] = dictionary[key]
+            }
 
             if sessionID == nil {
                 sessionID = firstString(

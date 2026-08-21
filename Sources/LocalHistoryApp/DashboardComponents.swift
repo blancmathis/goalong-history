@@ -360,7 +360,7 @@
                 case .sessionUnavailable:
                     return "The Mac is locked, asleep or otherwise unavailable."
                 case .accessibilityUnavailable:
-                    return "LocalHistory cannot safely inspect this browser window, so it records no details."
+                    return "Goalong History cannot safely inspect this browser window, so it records no details."
                 }
             }
         }

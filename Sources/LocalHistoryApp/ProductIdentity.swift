@@ -2,7 +2,7 @@
     import Foundation
 
     enum ProductIdentity {
-        static let fallbackDisplayName = "Go Long History"
+        static let fallbackDisplayName = "Goalong History"
         static let internalBundleName = "LocalHistory"
         static let bundleIdentifier = "ai.goalong.localhistory"
 
@@ -23,7 +23,7 @@
         )!
         static let rollingDMGURL = URL(
             string:
-                "https://github.com/blancmathis/goalong-history/releases/download/\(rollingReleaseTag)/LocalHistory-macOS-universal.dmg"
+                "https://github.com/blancmathis/goalong-history/releases/download/\(rollingReleaseTag)/Goalong-History-macOS-universal.dmg"
         )!
 
         static var installationPath: String {

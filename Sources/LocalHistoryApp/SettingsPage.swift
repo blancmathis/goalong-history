@@ -12,7 +12,7 @@
                             eyebrow: "Configuration",
                             title: "Settings",
                             subtitle:
-                                "Choose what LocalHistory observes and how verification behaves. Safe defaults are already enabled."
+                                "Choose what Goalong History observes and how verification behaves. Safe defaults are already enabled."
                         ) {
                             HStack(spacing: 10) {
                                 if model.settingsHaveChanges {

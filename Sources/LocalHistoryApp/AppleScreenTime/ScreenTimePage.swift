@@ -23,7 +23,7 @@
                         eyebrow: "Apple system data",
                         title: "Apple Screen Time",
                         subtitle:
-                            "Read the Screen Time activity Apple stores on this Mac and synchronizes from your other devices through iCloud. LocalHistory’s own recorder is not used for these numbers."
+                            "Read the Screen Time activity Apple stores on this Mac and synchronizes from your other devices through iCloud. Goalong History’s own recorder is not used for these numbers."
                     ) {
                         HStack(spacing: 10) {
                             DateSelectionControl(date: screenTime.selectedDay, onChange: screenTime.selectDay)
@@ -393,7 +393,7 @@
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         Text(
-                            "It never substitutes LocalHistory foreground events. The Apple formats are private and may require maintenance after a macOS update."
+                            "It never substitutes Goalong History foreground events. The Apple formats are private and may require maintenance after a macOS update."
                         )
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)
@@ -419,7 +419,7 @@
                         Text("Read-only Apple access")
                             .font(.system(size: 11, weight: .semibold))
                         Text(
-                            "Apple’s databases and streams are opened read-only. LocalHistory stores only your device-scope configuration and any share file you explicitly export."
+                            "Apple’s databases and streams are opened read-only. Goalong History stores only your device-scope configuration and any share file you explicitly export."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)

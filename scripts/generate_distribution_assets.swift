@@ -158,7 +158,7 @@ private func makeDMGBackground() -> NSImage {
     miniHands.lineCapStyle = .round
     miniHands.stroke()
 
-    NSString(string: "LocalHistory").draw(
+    NSString(string: "Goalong History").draw(
         at: NSPoint(x: 198, y: 748),
         withAttributes: [
             .font: NSFont.systemFont(ofSize: 58, weight: .bold),
@@ -174,7 +174,7 @@ private func makeDMGBackground() -> NSImage {
     )
 
     drawCenteredText(
-        "Drag LocalHistory to Applications",
+        "Drag Goalong History to Applications",
         y: 582,
         width: width,
         font: NSFont.systemFont(ofSize: 26, weight: .medium),
@@ -231,7 +231,7 @@ private func makeDMGBackground() -> NSImage {
     }
 
     drawCenteredText(
-        "Open LocalHistory after copying it — the setup assistant will guide every permission step.",
+        "Open Goalong History after copying it — the setup assistant will guide every permission step.",
         y: 54,
         width: width,
         font: NSFont.systemFont(ofSize: 21, weight: .regular),

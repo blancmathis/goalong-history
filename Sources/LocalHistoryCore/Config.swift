@@ -16,7 +16,7 @@ public struct RecorderConfig: Codable, Equatable {
     public var redactAllURLQueryValues: Bool
     public var maxStringLength: Int
 
-    /// Optional verification endpoint. When nil, LocalHistory stays fully local and only builds local seals.
+    /// Optional verification endpoint. When nil, Goalong History stays fully local and only builds local seals.
     public var verificationServerURL: String?
     public var verificationEnabled: Bool?
     public var enableAppAttest: Bool?

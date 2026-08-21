@@ -10,7 +10,7 @@
                     eyebrow: "Selective disclosure",
                     title: "Share a verified day",
                     subtitle:
-                        "Set one clear rule for each app and website. LocalHistory applies those rules automatically when it creates the package."
+                        "Set one clear rule for each app and website. Goalong History applies those rules automatically when it creates the package."
                 ) {
                     HStack(spacing: 10) {
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)

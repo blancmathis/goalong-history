@@ -1,13 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-APP_NAME="LocalHistory"
-DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Go Long History}"
+APP_NAME="Goalong History"
+DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Goalong History}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_PATH="${LOCALHISTORY_APP_PATH:-$ROOT_DIR/dist/$APP_NAME.app}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
-DMG_NAME="${LOCALHISTORY_DMG_NAME:-LocalHistory-macOS-universal.dmg}"
-ZIP_NAME="${LOCALHISTORY_ZIP_NAME:-LocalHistory-macOS-universal.zip}"
+DMG_NAME="${LOCALHISTORY_DMG_NAME:-Goalong-History-macOS-universal.dmg}"
+ZIP_NAME="${LOCALHISTORY_ZIP_NAME:-Goalong-History-macOS-universal.zip}"
 SIGN_IDENTITY="${LOCALHISTORY_CODESIGN_IDENTITY:-}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
