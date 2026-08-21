@@ -319,17 +319,27 @@ final class ComputerHistoryParityTests: XCTestCase {
     func testDoesNotCollapseSeveralActionsInsideOneMinute() {
         let start = makeDate("2026-08-20T16:00:00Z")
         let safari = app("Safari", "com.apple.Safari")
-        let events = (0..<5).map { index in
-            event(
+        var events: [HistoryEvent] = []
+        for index in 0..<5 {
+            let sequence = UInt64(index + 1)
+            let timestamp = start.addingTimeInterval(TimeInterval(index * 8))
+            let pointer = PointerSnapshot(
+                button: "left",
+                x: Double(index * 10),
+                y: 100,
+                clickCount: 1
+            )
+            let click = event(
                 id: "click-\(index)",
-                sequence: UInt64(index + 1),
-                at: start.addingTimeInterval(TimeInterval(index * 8)),
+                sequence: sequence,
+                at: timestamp,
                 kind: .mouseClick,
                 app: safari,
                 title: "Project dashboard",
                 URL: "https://example.com/project",
-                pointer: PointerSnapshot(button: "left", x: Double(index * 10), y: 100, clickCount: 1)
+                pointer: pointer
             )
+            events.append(click)
         }
 
         let memory = ComputerHistoryEngine.analyze(
