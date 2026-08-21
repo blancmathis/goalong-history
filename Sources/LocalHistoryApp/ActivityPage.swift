@@ -5,6 +5,7 @@
     struct ActivityPage: View {
         @ObservedObject var model: DashboardViewModel
         @StateObject var analysisModel = ActivityAnalysisPageModel()
+        @StateObject var computerHistoryModel = ComputerHistoryPageModel()
         @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey)
         var richContextEnabled = false
         @AppStorage(ActivityAnalysisPreferences.agentTokenBudgetKey)
@@ -27,12 +28,18 @@
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 430)
+                .frame(width: 590)
 
                 Group {
                     switch mode {
                     case .appsAndSites:
                         MonitoringRulesList(model: model)
+                    case .computerHistory:
+                        ComputerHistoryPage(
+                            model: computerHistoryModel,
+                            day: model.selectedDay,
+                            fullContextEnabled: richContextEnabled
+                        )
                     case .dayRecap:
                         recapBody
                     case .timeline:
@@ -46,14 +53,18 @@
             .padding(.bottom, 22)
             .background(LHTheme.pageBackground)
             .onAppear {
-                analysisModel.refresh(day: model.selectedDay)
+                refreshAnalyses(day: model.selectedDay)
             }
             .onChange(of: model.selectedDay) { day in
                 expandedBlockID = nil
-                analysisModel.refresh(day: day)
+                computerHistoryModel.clearAnswer()
+                refreshAnalyses(day: day)
             }
             .onChange(of: agentTokenBudget) { _ in
                 analysisModel.refresh(day: model.selectedDay)
+            }
+            .onChange(of: richContextEnabled) { _ in
+                computerHistoryModel.refresh(day: model.selectedDay)
             }
             .alert("Enable Rich Context?", isPresented: $showRichContextConfirmation) {
                 Button("Cancel", role: .cancel) {}
@@ -99,25 +110,55 @@
 
         var header: some View {
             PageHeader(
-                eyebrow: Calendar.current.isDateInToday(model.selectedDay) ? "Today" : "Daily history",
+                eyebrow: Calendar.current.isDateInToday(model.selectedDay)
+                    ? "Today"
+                    : "Daily history",
                 title: "Activity",
-                subtitle:
-                    "See every observed app and website, decide what Goalong monitors, then review the same detailed recap and timeline."
+                subtitle: headerSubtitle
             ) {
                 HStack(spacing: 10) {
-                    DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
+                    DateSelectionControl(
+                        date: model.selectedDay,
+                        onChange: model.selectDay
+                    )
                     Button {
                         model.refreshEverything()
-                        analysisModel.refresh(day: model.selectedDay)
+                        refreshAnalyses(day: model.selectedDay)
                     } label: {
-                        Image(systemName: analysisModel.isLoading ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
-                            .frame(width: 28, height: 28)
+                        Image(
+                            systemName: analysesLoading
+                                ? "arrow.triangle.2.circlepath"
+                                : "arrow.clockwise"
+                        )
+                        .frame(width: 28, height: 28)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(analysisModel.isLoading)
-                    .help("Refresh activity and rebuild the day analysis")
+                    .disabled(analysesLoading)
+                    .help("Refresh activity and rebuild both analysis layers")
                 }
             }
+        }
+
+        private var analysesLoading: Bool {
+            analysisModel.isLoading || computerHistoryModel.isLoading
+        }
+
+        private var headerSubtitle: String {
+            switch mode {
+            case .appsAndSites:
+                return "See every observed app and website, then choose what Goalong may monitor in future."
+            case .computerHistory:
+                return "Reconstruct causal work episodes, recover source locators, resume tasks, and detect repeatable workflows."
+            case .dayRecap:
+                return "Review the compact daily digest used by recap agents alongside full causal history."
+            case .timeline:
+                return "Inspect the exact chronological source events, gaps, classifications, and integrity signals."
+            }
+        }
+
+        private func refreshAnalyses(day: Date) {
+            analysisModel.refresh(day: day)
+            computerHistoryModel.refresh(day: day)
         }
 
         func headlineCard(_ analysis: ActivityDayAnalysis) -> some View {
@@ -129,7 +170,10 @@
                         .frame(width: 58, height: 58)
                         .background(
                             LinearGradient(
-                                colors: [LHTheme.accent.opacity(0.14), LHTheme.privateTint.opacity(0.09)],
+                                colors: [
+                                    LHTheme.accent.opacity(0.14),
+                                    LHTheme.privateTint.opacity(0.09),
+                                ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
@@ -140,7 +184,7 @@
                             .font(.system(size: 18, weight: .bold, design: .rounded))
                             .fixedSize(horizontal: false, vertical: true)
                         Text(
-                            "\(analysis.coverage.sourceEventCount.formatted()) raw events were reduced to \(analysis.coverage.representativeMinuteCount.formatted()) meaningful minute records before analysis."
+                            "\(analysis.coverage.sourceEventCount.formatted()) raw events were reduced to \(analysis.coverage.representativeMinuteCount.formatted()) meaningful minute records for the compact digest. Full causal history remains available in its own tab."
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -167,7 +211,7 @@
                 MetricCard(
                     title: "FOCUS BLOCKS",
                     value: "\(analysis.focusBlocks.count)",
-                    detail: "Coherent tasks, not every window change",
+                    detail: "Compact task digest",
                     symbol: "rectangle.3.group.fill",
                     tint: LHTheme.accent
                 )
@@ -194,9 +238,11 @@
                     ProgressView()
                     Text("Building the compact day analysis…")
                         .font(.system(size: 12, weight: .semibold))
-                    Text("Events are being deduplicated into representative minutes, sites, pages and focus blocks locally.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Events are being deduplicated into representative minutes, sites, pages and focus blocks locally."
+                    )
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 300)
             }
@@ -239,6 +285,7 @@
 
     enum ActivityMode: String, CaseIterable, Identifiable {
         case appsAndSites
+        case computerHistory
         case dayRecap
         case timeline
 
@@ -247,8 +294,9 @@
         var title: String {
             switch self {
             case .appsAndSites: return "Apps & websites"
+            case .computerHistory: return "Computer History"
             case .dayRecap: return "Day recap"
-            case .timeline: return "Timeline"
+            case .timeline: return "Raw timeline"
             }
         }
     }

@@ -11,7 +11,10 @@
 
         init(legacyRetentionDays: Int) {
             if let data = try? Data(contentsOf: AppPaths.retentionPolicyFile),
-                let decoded = try? Self.decoder.decode(HistoryRetentionPolicy.self, from: data)
+                let decoded = try? Self.decoder.decode(
+                    HistoryRetentionPolicy.self,
+                    from: data
+                )
             {
                 policy = decoded
             } else {
@@ -46,7 +49,10 @@
             updated.analysisCaches = duration
             _ = try save(updated)
             let activation = Data("explicit-settings-save\n".utf8)
-            try activation.write(to: AppPaths.retentionPolicyActivationFile, options: .atomic)
+            try activation.write(
+                to: AppPaths.retentionPolicyActivationFile,
+                options: .atomic
+            )
             try? fileManager.setAttributes(
                 [.posixPermissions: 0o600],
                 ofItemAtPath: AppPaths.retentionPolicyActivationFile.path
@@ -54,7 +60,9 @@
         }
 
         func applyCleanup(now: Date = Date()) {
-            guard fileManager.fileExists(atPath: AppPaths.retentionPolicyActivationFile.path) else {
+            guard fileManager.fileExists(
+                atPath: AppPaths.retentionPolicyActivationFile.path
+            ) else {
                 Diagnostics.write(
                     "Retention policy migrated non-destructively; cleanup remains disabled until settings are explicitly saved"
                 )
@@ -83,7 +91,7 @@
 
         private func storedArtifacts() -> [HistoryStoredArtifact] {
             var output: [HistoryStoredArtifact] = []
-            let definitions: [(URL, HistoryDataClass)] = [
+            var definitions: [(URL, HistoryDataClass)] = [
                 (AppPaths.eventsDirectory, .detailedEvents),
                 (AppPaths.semanticDirectory, .semanticSnapshots),
                 (AppPaths.memoriesDirectory, .memories),
@@ -91,6 +99,12 @@
                 (AppPaths.sealsDirectory, .minuteSeals),
                 (AppPaths.receiptsDirectory, .anchorReceipts),
             ]
+            definitions.append(
+                contentsOf: ComputerHistoryStore.retentionDirectories(
+                    rootDirectory: AppPaths.applicationSupportDirectory
+                ).map { ($0, .memories) }
+            )
+
             for (directory, dataClass) in definitions {
                 guard let files = try? fileManager.contentsOfDirectory(
                     at: directory,
@@ -98,10 +112,15 @@
                     options: [.skipsHiddenFiles]
                 ) else { continue }
                 for file in files {
-                    guard let day = Self.day(from: file.lastPathComponent) else { continue }
+                    guard let day = Self.day(from: file.lastPathComponent) else {
+                        continue
+                    }
                     let start = Calendar.current.startOfDay(for: day)
-                    let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
-                        .addingTimeInterval(-0.001)
+                    let end = Calendar.current.date(
+                        byAdding: .day,
+                        value: 1,
+                        to: start
+                    )!.addingTimeInterval(-0.001)
                     output.append(
                         HistoryStoredArtifact(
                             id: "\(dataClass.rawValue):\(file.lastPathComponent)",
@@ -117,9 +136,10 @@
         }
 
         private static func day(from name: String) -> Date? {
-            guard let range = name.range(of: #"^\d{4}-\d{2}-\d{2}"#, options: .regularExpression) else {
-                return nil
-            }
+            guard let range = name.range(
+                of: #"^\d{4}-\d{2}-\d{2}"#,
+                options: .regularExpression
+            ) else { return nil }
             return dayFormatter.date(from: String(name[range]))
         }
 
@@ -135,7 +155,11 @@
         private static let encoder: JSONEncoder = {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            encoder.outputFormatting = [
+                .prettyPrinted,
+                .sortedKeys,
+                .withoutEscapingSlashes,
+            ]
             return encoder
         }()
 

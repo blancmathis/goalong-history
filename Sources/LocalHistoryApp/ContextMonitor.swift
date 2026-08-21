@@ -14,6 +14,7 @@
         private let memoryStore: LocalActivityMemoryStore
 
         private var timer: Timer?
+        private var accessibilityEventMonitor: AccessibilityEventMonitor?
         private var previous: ContextSnapshot?
         private var lastHeartbeat = Date.distantPast
 
@@ -42,11 +43,23 @@
             self.captureHealth = captureHealth
             self.semanticContextStore = semanticContextStore
             self.memoryStore = memoryStore
+            accessibilityEventMonitor = AccessibilityEventMonitor { [weak self] trigger in
+                guard let self,
+                    let snapshot = self.sampleNow()
+                else { return }
+                ActivityAnalysisRuntime.shared.captureObservedContext(
+                    trigger: trigger,
+                    context: snapshot
+                )
+            }
         }
 
         func start() {
             stop()
-            let interval = max(0.25, Double(configManager.config.pollIntervalMilliseconds) / 1_000.0)
+            let interval = max(
+                0.25,
+                Double(configManager.config.pollIntervalMilliseconds) / 1_000.0
+            )
             let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
                 self?.sampleNow()
             }
@@ -57,13 +70,18 @@
                 recorder: recorder,
                 state: state,
                 configManager: configManager,
-                currentContext: { [weak self] in self?.latestSnapshot },
+                currentContext: { [weak self] in
+                    guard let self else { return nil }
+                    return self.sampleNow() ?? self.latestSnapshot
+                },
                 semanticContextStore: semanticContextStore,
                 memoryStore: memoryStore
             )
+            accessibilityEventMonitor?.start()
         }
 
         func stop() {
+            accessibilityEventMonitor?.stop()
             timer?.invalidate()
             timer = nil
             ActivityAnalysisRuntime.shared.stop()
@@ -141,12 +159,16 @@
                 recorder.record(kind: .focusChanged, context: current)
             }
 
-            let heartbeatInterval = TimeInterval(max(10, configManager.config.heartbeatSeconds))
+            let heartbeatInterval = TimeInterval(
+                max(10, configManager.config.heartbeatSeconds)
+            )
             if Date().timeIntervalSince(lastHeartbeat) >= heartbeatInterval {
                 recorder.record(
                     kind: .heartbeat,
                     context: current,
-                    metadata: ["idle_seconds": String(format: "%.1f", idleSeconds())]
+                    metadata: [
+                        "idle_seconds": String(format: "%.1f", idleSeconds()),
+                    ]
                 )
                 lastHeartbeat = Date()
             }
@@ -181,7 +203,10 @@
         }
 
         private func idleSeconds() -> Double {
-            CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)
+            CGEventSource.secondsSinceLastEventType(
+                .combinedSessionState,
+                eventType: .null
+            )
         }
     }
 #endif

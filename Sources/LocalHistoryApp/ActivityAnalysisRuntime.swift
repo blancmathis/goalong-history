@@ -25,6 +25,7 @@
             qos: .utility
         )
         private let store = ActivityAnalysisStore()
+        private let computerHistoryStore = ComputerHistoryStore()
 
         private init() {}
 
@@ -67,9 +68,84 @@
             memoryStore = nil
         }
 
+        /// Captures bounded Accessibility context linked to one concrete interaction.
+        /// Before-state capture is intentionally shallow to keep the event tap responsive;
+        /// the delayed settled phase receives the full tree budget.
+        func captureInteractionContext(
+            interactionID: String,
+            phase: String,
+            trigger: String,
+            context explicitContext: ContextSnapshot? = nil
+        ) {
+            guard !interactionID.isEmpty else { return }
+            guard let snapshot = explicitContext ?? currentContext?() else { return }
+            let budget = semanticBudget(for: phase)
+            _ = persistSemanticContext(
+                snapshot: snapshot,
+                maximumCharacters: budget.characters,
+                maximumNodes: budget.nodes,
+                deduplicate: false,
+                metadata: [
+                    ComputerHistoryMetadata.interactionID: interactionID,
+                    ComputerHistoryMetadata.interactionPhase: phase,
+                    ComputerHistoryMetadata.interactionTrigger: trigger,
+                    "computer_history.capture_nodes": String(budget.nodes),
+                ]
+            )
+        }
+
+        /// Captures an event-driven semantic observation that is not tied to an input
+        /// interaction, such as a programmatic value change or a short-lived window title.
+        /// Fingerprint deduplication prevents Accessibility notification storms from
+        /// producing duplicate local payloads.
+        func captureObservedContext(
+            trigger: String,
+            context explicitContext: ContextSnapshot? = nil
+        ) {
+            guard let snapshot = explicitContext ?? currentContext?() else { return }
+            _ = persistSemanticContext(
+                snapshot: snapshot,
+                maximumCharacters: 4_800,
+                maximumNodes: 180,
+                deduplicate: true,
+                metadata: [
+                    ComputerHistoryMetadata.interactionTrigger: "ax:\(trigger)",
+                    "computer_history.capture_nodes": "180",
+                ]
+            )
+        }
+
+        func scheduleInteractionContext(
+            interactionID: String,
+            phase: String,
+            trigger: String,
+            delay: TimeInterval
+        ) {
+            guard !interactionID.isEmpty else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Swift.max(0, delay)) { [weak self] in
+                self?.captureInteractionContext(
+                    interactionID: interactionID,
+                    phase: phase,
+                    trigger: trigger
+                )
+            }
+        }
+
+        private func semanticBudget(for phase: String) -> (characters: Int, nodes: Int) {
+            switch phase {
+            case ComputerHistoryMetadata.Phase.before:
+                return (2_400, 72)
+            case ComputerHistoryMetadata.Phase.after:
+                return (4_800, 160)
+            case ComputerHistoryMetadata.Phase.settled:
+                return (6_000, 260)
+            default:
+                return (4_000, 140)
+            }
+        }
+
         private func captureRichContextIfNeeded() {
             guard ActivityAnalysisPreferences.richContextEnabled,
-                let recorder,
                 let state,
                 state.isCapturing,
                 let snapshot = currentContext?(),
@@ -80,50 +156,83 @@
             let interval = ActivityAnalysisPreferences.richContextIntervalSeconds
             guard Date().timeIntervalSince(lastRichContextCapture) >= interval else { return }
             lastRichContextCapture = Date()
+            _ = persistSemanticContext(
+                snapshot: snapshot,
+                maximumCharacters: 6_000,
+                maximumNodes: 260,
+                deduplicate: true,
+                metadata: [ComputerHistoryMetadata.interactionTrigger: "periodic"]
+            )
+        }
 
-            guard let application = NSRunningApplication(processIdentifier: snapshot.app.processIdentifier),
+        @discardableResult
+        private func persistSemanticContext(
+            snapshot: ContextSnapshot,
+            maximumCharacters: Int,
+            maximumNodes: Int,
+            deduplicate: Bool,
+            metadata additionalMetadata: [String: String]
+        ) -> SemanticContextReference? {
+            guard ActivityAnalysisPreferences.richContextEnabled,
+                let recorder,
+                let state,
+                state.isCapturing,
+                snapshot.suppressionReason == nil,
+                snapshot.focusedElement?.isSecure != true,
+                let application = NSRunningApplication(
+                    processIdentifier: snapshot.app.processIdentifier
+                ),
                 application.isTerminated == false,
                 let capture = AXRichContextReader.capture(
                     processIdentifier: snapshot.app.processIdentifier,
-                    maximumCharacters: 6_000
+                    maximumCharacters: maximumCharacters,
+                    maximumNodes: maximumNodes
                 )
-            else { return }
+            else { return nil }
 
             let contextKey = [
                 snapshot.app.bundleIdentifier ?? "pid:\(snapshot.app.processIdentifier)",
                 snapshot.url?.value ?? "",
                 snapshot.window?.title ?? "",
             ].joined(separator: "|")
-            guard lastRichContextFingerprints[contextKey] != capture.fingerprint else { return }
-            lastRichContextFingerprints[contextKey] = capture.fingerprint
-            if lastRichContextFingerprints.count > 256,
-                let firstKey = lastRichContextFingerprints.keys.first
-            {
-                lastRichContextFingerprints.removeValue(forKey: firstKey)
+            if deduplicate {
+                guard lastRichContextFingerprints[contextKey] != capture.fingerprint else {
+                    return nil
+                }
+                lastRichContextFingerprints[contextKey] = capture.fingerprint
+                if lastRichContextFingerprints.count > 256,
+                    let firstKey = lastRichContextFingerprints.keys.first
+                {
+                    lastRichContextFingerprints.removeValue(forKey: firstKey)
+                }
             }
 
-            guard let semanticContextStore else { return }
+            guard let semanticContextStore else { return nil }
             do {
                 let reference = try semanticContextStore.append(
                     capture: capture,
                     context: snapshot
                 )
+                var metadata: [String: String] = [
+                    ActivitySemanticMetadata.version: "4",
+                    ActivitySemanticMetadata.source: capture.source,
+                    ActivitySemanticMetadata.redacted: String(capture.redacted),
+                    ActivitySemanticMetadata.truncated: String(capture.truncated),
+                    ActivitySemanticMetadata.fingerprint: capture.fingerprint,
+                    ActivitySemanticMetadata.characterCount: String(capture.text.count),
+                    "semantic_storage": "separate_local_jsonl",
+                ]
+                for (key, value) in additionalMetadata { metadata[key] = value }
                 recorder.record(
                     kind: .semanticSnapshot,
                     context: snapshot,
                     semanticContext: reference,
-                    metadata: [
-                        ActivitySemanticMetadata.version: "3",
-                        ActivitySemanticMetadata.source: capture.source,
-                        ActivitySemanticMetadata.redacted: String(capture.redacted),
-                        ActivitySemanticMetadata.truncated: String(capture.truncated),
-                        ActivitySemanticMetadata.fingerprint: capture.fingerprint,
-                        ActivitySemanticMetadata.characterCount: String(capture.text.count),
-                        "semantic_storage": "separate_local_jsonl",
-                    ]
+                    metadata: metadata
                 )
+                return reference
             } catch {
                 Diagnostics.write("Semantic context persistence failed: \(error)")
+                return nil
             }
         }
 
@@ -143,17 +252,23 @@
                         self.lastAnalyzedModificationDates.removeValue(forKey: key)
                         continue
                     }
-                    if !force, self.lastAnalyzedModificationDates[key] == modificationDate { continue }
+                    if !force,
+                        self.lastAnalyzedModificationDates[key] == modificationDate
+                    {
+                        continue
+                    }
                     do {
                         _ = try self.store.buildAndWrite(for: day)
                         _ = try self.memoryStore?.buildAndWrite(for: day)
+                        _ = try self.computerHistoryStore.buildAndWrite(for: day)
                         self.lastAnalyzedModificationDates[key] = modificationDate
                     } catch {
-                        Diagnostics.write("Activity analysis generation failed for \(key): \(error)")
+                        Diagnostics.write(
+                            "Activity analysis generation failed for \(key): \(error)"
+                        )
                     }
                 }
             }
         }
     }
-
 #endif

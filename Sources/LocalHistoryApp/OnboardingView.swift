@@ -8,6 +8,7 @@
         @State var askedForAccessibility = false
         @State var askedForInputMonitoring = false
         @State var launchAtLoginPreference = true
+        @State var fullContextPreference = true
         @State var note: String?
 
         let permissions = PermissionManager()
@@ -31,6 +32,13 @@
                 launchAtLoginPreference = defaults.object(forKey: "launchAtLoginPreference") == nil
                     ? true
                     : defaults.bool(forKey: "launchAtLoginPreference")
+                fullContextPreference = defaults.object(
+                    forKey: ActivityAnalysisPreferences.richContextEnabledKey
+                ) == nil
+                    ? true
+                    : defaults.bool(
+                        forKey: ActivityAnalysisPreferences.richContextEnabledKey
+                    )
                 model.refreshEverything()
             }
             .onChange(of: step) { newStep in
@@ -56,7 +64,10 @@
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .fill(
                                     LinearGradient(
-                                        colors: [LHTheme.accent, Color(red: 0.42, green: 0.31, blue: 0.94)],
+                                        colors: [
+                                            LHTheme.accent,
+                                            Color(red: 0.42, green: 0.31, blue: 0.94),
+                                        ],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
@@ -80,21 +91,26 @@
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(SetupStep.allCases) { progressRow($0) }
                     }
-                    .padding(.top, 46)
+                    .padding(.top, 34)
 
                     Spacer()
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Label("Private by default", systemImage: "lock.fill")
+                        Label("Local and permissioned", systemImage: "lock.fill")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.9))
-                        Text("No screenshots, audio, clipboard, passwords, or raw typed text.")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.5))
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "No screenshots, audio, clipboard, passwords, or reconstruction of raw typed characters."
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(14)
-                    .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(
+                        .white.opacity(0.055),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .stroke(.white.opacity(0.08), lineWidth: 1)
@@ -110,7 +126,11 @@
             return HStack(alignment: .top, spacing: 12) {
                 VStack(spacing: 0) {
                     ZStack {
-                        Circle().fill(current ? LHTheme.accent : (complete ? LHTheme.success : .white.opacity(0.08)))
+                        Circle().fill(
+                            current
+                                ? LHTheme.accent
+                                : (complete ? LHTheme.success : .white.opacity(0.08))
+                        )
                         if complete {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 9, weight: .bold))
@@ -124,14 +144,20 @@
                     .frame(width: 24, height: 24)
                     if item != .ready {
                         Rectangle()
-                            .fill(complete ? LHTheme.success.opacity(0.58) : .white.opacity(0.1))
-                            .frame(width: 1, height: 32)
+                            .fill(
+                                complete
+                                    ? LHTheme.success.opacity(0.58)
+                                    : .white.opacity(0.1)
+                            )
+                            .frame(width: 1, height: 26)
                     }
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.sidebarTitle)
                         .font(.system(size: 11, weight: current ? .semibold : .medium))
-                        .foregroundStyle(current ? .white : .white.opacity(complete ? 0.72 : 0.45))
+                        .foregroundStyle(
+                            current ? .white : .white.opacity(complete ? 0.72 : 0.45)
+                        )
                     if current {
                         Text(item.sidebarDetail)
                             .font(.system(size: 9))
@@ -142,7 +168,7 @@
                 .padding(.top, 4)
                 Spacer(minLength: 0)
             }
-            .frame(minHeight: item == .ready ? 25 : 56, alignment: .top)
+            .frame(minHeight: item == .ready ? 25 : 50, alignment: .top)
         }
 
         var header: some View {
@@ -212,7 +238,9 @@
             _ = permissions.requestAccessibility()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                 model.refreshEverything()
-                if !model.runtime.accessibilityGranted { permissions.openAccessibilitySettings() }
+                if !model.runtime.accessibilityGranted {
+                    permissions.openAccessibilitySettings()
+                }
             }
         }
 
@@ -221,7 +249,9 @@
             _ = permissions.requestInputMonitoring()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                 model.refreshEverything()
-                if !model.runtime.inputMonitoringGranted { permissions.openInputMonitoringSettings() }
+                if !model.runtime.inputMonitoringGranted {
+                    permissions.openInputMonitoringSettings()
+                }
             }
         }
 
@@ -236,9 +266,17 @@
         }
 
         func finishSetup() {
-            UserDefaults.standard.set(launchAtLoginPreference, forKey: "launchAtLoginPreference")
+            UserDefaults.standard.set(
+                launchAtLoginPreference,
+                forKey: "launchAtLoginPreference"
+            )
+            UserDefaults.standard.set(
+                fullContextPreference,
+                forKey: ActivityAnalysisPreferences.richContextEnabledKey
+            )
             guard launchAtLogin.setEnabled(launchAtLoginPreference) else {
-                note = launchAtLogin.message ?? "macOS could not update the login-item setting."
+                note = launchAtLogin.message
+                    ?? "macOS could not update the login-item setting."
                 return
             }
             if launchAtLoginPreference && launchAtLogin.requiresApproval {
@@ -252,29 +290,45 @@
     }
 
     enum SetupStep: Int, CaseIterable, Identifiable {
-        case welcome, privacy, accessibility, inputMonitoring, ready
+        case welcome, privacy, context, accessibility, inputMonitoring, ready
         var id: Int { rawValue }
 
         var eyebrow: String {
-            ["Welcome", "Privacy first", "Permission one", "Permission two", "Final check"][rawValue]
+            [
+                "Welcome", "Privacy first", "Analysis depth",
+                "Permission one", "Permission two", "Final check",
+            ][rawValue]
         }
 
         var navigationTitle: String {
             switch self {
-            case .welcome: return "Meet \(ProductIdentity.displayName)"
-            case .privacy: return "Understand the boundary"
-            case .accessibility: return "Add foreground context"
-            case .inputMonitoring: return "Measure activity"
-            case .ready: return "Start your timeline"
+            case .welcome:
+                return "Meet \(ProductIdentity.displayName)"
+            case .privacy:
+                return "Understand the boundary"
+            case .context:
+                return "Choose what the analysis may understand"
+            case .accessibility:
+                return "Add foreground context"
+            case .inputMonitoring:
+                return "Measure activity"
+            case .ready:
+                return "Start your timeline"
             }
         }
 
         var sidebarTitle: String {
-            ["Welcome", "Privacy", "Accessibility", "Input Monitoring", "Ready"][rawValue]
+            [
+                "Welcome", "Privacy", "Analysis", "Accessibility",
+                "Input Monitoring", "Ready",
+            ][rawValue]
         }
 
         var sidebarDetail: String {
-            ["What the app does", "What stays private", "Foreground context", "Activity signals", "Review and start"][rawValue]
+            [
+                "What the app does", "What stays private", "Metadata or full context",
+                "Foreground context", "Activity signals", "Review and start",
+            ][rawValue]
         }
     }
 #endif

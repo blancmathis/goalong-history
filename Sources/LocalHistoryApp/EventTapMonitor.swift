@@ -34,6 +34,7 @@
         private var typingLastAt: Date?
         private var typingContext: ContextSnapshot?
         private var typingOrigin: InputOriginSnapshot?
+        private var typingInteractionID: String?
         private var typingFlushWorkItem: DispatchWorkItem?
 
         private var scrollDeltaX = 0.0
@@ -41,6 +42,7 @@
         private var scrollEventCount = 0
         private var scrollContext: ContextSnapshot?
         private var scrollOrigin: InputOriginSnapshot?
+        private var scrollInteractionID: String?
         private var scrollFlushWorkItem: DispatchWorkItem?
 
         init(
@@ -239,6 +241,9 @@
             flushTypingBurst()
             flushScrollBurst()
 
+            let interactionID = UUID().uuidString
+            captureBefore(interactionID: interactionID, trigger: "click", context: context)
+
             let location = event.location
             let clickCount = max(1, Int(event.getIntegerValueField(.mouseEventClickState)))
             let button: String
@@ -264,8 +269,10 @@
                 context: context,
                 element: target,
                 pointer: pointer,
-                inputOrigin: inputOrigin(from: event)
+                inputOrigin: inputOrigin(from: event),
+                metadata: interactionMetadata(interactionID: interactionID, trigger: "click")
             )
+            captureAfter(interactionID: interactionID, trigger: "click")
         }
 
         private func handleScroll(event: CGEvent, context: ContextSnapshot) {
@@ -276,6 +283,11 @@
 
             if scrollContext?.fingerprint != context.fingerprint {
                 flushScrollBurst()
+            }
+            if scrollEventCount == 0 {
+                let interactionID = UUID().uuidString
+                scrollInteractionID = interactionID
+                captureBefore(interactionID: interactionID, trigger: "scroll", context: context)
             }
 
             scrollContext = context
@@ -301,26 +313,44 @@
 
             if isShortcut, configManager.config.captureShortcuts {
                 flushTypingBurst()
+                let interactionID = UUID().uuidString
+                captureBefore(interactionID: interactionID, trigger: "shortcut", context: context)
                 let keyboard = KeyboardSnapshot(
                     category: "shortcut",
                     key: KeyDescriptor.name(for: keyCode),
                     modifiers: modifiers,
                     isRepeat: isRepeat
                 )
-                recorder.record(kind: .keyboardShortcut, context: context, keyboard: keyboard, inputOrigin: inputOrigin(from: event))
+                recorder.record(
+                    kind: .keyboardShortcut,
+                    context: context,
+                    keyboard: keyboard,
+                    inputOrigin: inputOrigin(from: event),
+                    metadata: interactionMetadata(interactionID: interactionID, trigger: "shortcut")
+                )
+                captureAfter(interactionID: interactionID, trigger: "shortcut")
                 return
             }
 
             if let specialKey = KeyDescriptor.specialName(for: keyCode) {
                 flushTypingBurst()
                 guard configManager.config.captureKeyboardActivity else { return }
+                let interactionID = UUID().uuidString
+                captureBefore(interactionID: interactionID, trigger: "navigation_key", context: context)
                 let keyboard = KeyboardSnapshot(
                     category: "navigation",
                     key: specialKey,
                     modifiers: modifiers,
                     isRepeat: isRepeat
                 )
-                recorder.record(kind: .keyPressed, context: context, keyboard: keyboard, inputOrigin: inputOrigin(from: event))
+                recorder.record(
+                    kind: .keyPressed,
+                    context: context,
+                    keyboard: keyboard,
+                    inputOrigin: inputOrigin(from: event),
+                    metadata: interactionMetadata(interactionID: interactionID, trigger: "navigation_key")
+                )
+                captureAfter(interactionID: interactionID, trigger: "navigation_key")
                 return
             }
 
@@ -337,6 +367,11 @@
                 flushTypingBurst()
             }
 
+            if typingCount == 0 {
+                let interactionID = UUID().uuidString
+                typingInteractionID = interactionID
+                captureBefore(interactionID: interactionID, trigger: "typing", context: context)
+            }
             typingContext = context
             typingOrigin = mergeOrigin(typingOrigin, origin)
             if typingStartedAt == nil { typingStartedAt = now }
@@ -363,6 +398,7 @@
             let start = typingStartedAt ?? Date()
             let end = typingLastAt ?? start
             let durationMilliseconds = max(0, Int(end.timeIntervalSince(start) * 1_000))
+            let interactionID = typingInteractionID ?? UUID().uuidString
 
             recorder.record(
                 kind: .typingBurst,
@@ -378,9 +414,12 @@
                     "keystroke_count": String(typingCount),
                     "duration_ms": String(durationMilliseconds),
                     "content_recorded": "false",
+                    ComputerHistoryMetadata.interactionID: interactionID,
+                    ComputerHistoryMetadata.interactionTrigger: "typing",
                 ],
                 timestamp: end
             )
+            captureAfter(interactionID: interactionID, trigger: "typing")
             resetTypingBurst()
         }
 
@@ -390,6 +429,7 @@
             typingLastAt = nil
             typingContext = nil
             typingOrigin = nil
+            typingInteractionID = nil
         }
 
         private func flushScrollBurst() {
@@ -400,6 +440,7 @@
                 resetScrollBurst()
                 return
             }
+            let interactionID = scrollInteractionID ?? UUID().uuidString
 
             recorder.record(
                 kind: .scrollBurst,
@@ -409,8 +450,10 @@
                     deltaY: scrollDeltaY,
                     eventCount: scrollEventCount
                 ),
-                inputOrigin: scrollOrigin
+                inputOrigin: scrollOrigin,
+                metadata: interactionMetadata(interactionID: interactionID, trigger: "scroll")
             )
+            captureAfter(interactionID: interactionID, trigger: "scroll")
             resetScrollBurst()
         }
 
@@ -420,6 +463,42 @@
             scrollEventCount = 0
             scrollContext = nil
             scrollOrigin = nil
+            scrollInteractionID = nil
+        }
+
+        private func captureBefore(
+            interactionID: String,
+            trigger: String,
+            context: ContextSnapshot
+        ) {
+            ActivityAnalysisRuntime.shared.captureInteractionContext(
+                interactionID: interactionID,
+                phase: ComputerHistoryMetadata.Phase.before,
+                trigger: trigger,
+                context: context
+            )
+        }
+
+        private func captureAfter(interactionID: String, trigger: String) {
+            ActivityAnalysisRuntime.shared.scheduleInteractionContext(
+                interactionID: interactionID,
+                phase: ComputerHistoryMetadata.Phase.after,
+                trigger: trigger,
+                delay: 0.28
+            )
+            ActivityAnalysisRuntime.shared.scheduleInteractionContext(
+                interactionID: interactionID,
+                phase: ComputerHistoryMetadata.Phase.settled,
+                trigger: trigger,
+                delay: 1.05
+            )
+        }
+
+        private func interactionMetadata(interactionID: String, trigger: String) -> [String: String] {
+            [
+                ComputerHistoryMetadata.interactionID: interactionID,
+                ComputerHistoryMetadata.interactionTrigger: trigger,
+            ]
         }
 
         private func inputOrigin(from event: CGEvent) -> InputOriginSnapshot {
