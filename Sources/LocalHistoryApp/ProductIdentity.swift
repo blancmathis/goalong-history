@@ -2,9 +2,16 @@
     import Foundation
 
     enum ProductIdentity {
-        static let fallbackDisplayName = "Goalong History"
+        static let canonicalDisplayName = "Goalong History"
+        static let fallbackDisplayName = canonicalDisplayName
         static let internalBundleName = "LocalHistory"
         static let bundleIdentifier = "ai.goalong.localhistory"
+
+        private static let legacyOrTechnicalNames: Set<String> = [
+            internalBundleName,
+            "Go Long History",
+            "GoLong History",
+        ]
 
         static var displayName: String {
             let candidates = [
@@ -13,8 +20,8 @@
             ]
             return candidates
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .first(where: { !$0.isEmpty && $0 != internalBundleName })
-                ?? fallbackDisplayName
+                .first(where: { !$0.isEmpty && !legacyOrTechnicalNames.contains($0) })
+                ?? canonicalDisplayName
         }
 
         static let rollingReleaseTag = "latest-main"

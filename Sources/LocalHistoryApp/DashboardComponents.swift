@@ -147,12 +147,19 @@
                         .interpolation(.high)
                         .scaledToFit()
                 } else {
-                    Image(systemName: "app.fill")
-                        .resizable()
-                        .scaledToFit()
-                        .padding(size * 0.23)
-                        .foregroundStyle(LHTheme.accent)
-                        .background(LHTheme.accent.opacity(0.12))
+                    ZStack(alignment: .bottomTrailing) {
+                        RoundedRectangle(cornerRadius: size * 0.23, style: .continuous)
+                            .fill(LHTheme.accent.opacity(0.12))
+                        Text(Self.initial(for: appName))
+                            .font(.system(size: size * 0.45, weight: .bold, design: .rounded))
+                            .foregroundStyle(LHTheme.accent)
+                        Image(systemName: "app.fill")
+                            .font(.system(size: size * 0.22, weight: .semibold))
+                            .foregroundStyle(LHTheme.accent)
+                            .padding(size * 0.07)
+                            .background(.regularMaterial, in: Circle())
+                            .offset(x: size * 0.05, y: size * 0.05)
+                    }
                 }
             }
             .frame(width: size, height: size)
@@ -165,12 +172,30 @@
             guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return nil }
             let key = bundleIdentifier as NSString
             if let cached = cache.object(forKey: key) { return cached }
-            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
-                return nil
+
+            let aliases: [String: String] = [
+                "com.apple.mobilesafari": "com.apple.Safari",
+                "com.apple.mobilemail": "com.apple.mail",
+                "com.apple.preferences": "com.apple.systempreferences",
+                "com.apple.appstore": "com.apple.AppStore",
+            ]
+            let candidates = [bundleIdentifier, aliases[bundleIdentifier.lowercased()]].compactMap { $0 }
+            for candidate in candidates {
+                guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: candidate) else {
+                    continue
+                }
+                let icon = NSWorkspace.shared.icon(forFile: url.path)
+                cache.setObject(icon, forKey: key)
+                return icon
             }
-            let icon = NSWorkspace.shared.icon(forFile: url.path)
-            cache.setObject(icon, forKey: key)
-            return icon
+            return nil
+        }
+
+        private static func initial(for appName: String) -> String {
+            guard let first = appName.trimmingCharacters(in: .whitespacesAndNewlines).first else {
+                return "•"
+            }
+            return String(first).uppercased()
         }
     }
 
@@ -315,7 +340,18 @@
     }
 
     extension RuntimePresentation {
+        private var isBackgroundPrivacyRule: Bool {
+            switch state {
+            case .suppressed(.privateBrowserWindow), .suppressed(.excludedApplication),
+                 .suppressed(.excludedDomain), .suppressed(.secureInput):
+                return true
+            default:
+                return false
+            }
+        }
+
         var displayTitle: String {
+            if isBackgroundPrivacyRule { return "Recording locally" }
             switch state {
             case .recording: return "Recording locally"
             case .paused: return "Recording paused"
@@ -323,18 +359,19 @@
             case .inputTapUnavailable: return "Input monitoring inactive"
             case .suppressed(let reason):
                 switch reason {
-                case .privateBrowserWindow: return "Private browsing hidden"
-                case .excludedApplication: return "Excluded app hidden"
-                case .excludedDomain: return "Excluded website hidden"
-                case .secureInput: return "Secure input hidden"
                 case .manualPause: return "Recording paused"
                 case .sessionUnavailable: return "Mac session unavailable"
-                case .accessibilityUnavailable: return "Browser context hidden"
+                case .accessibilityUnavailable: return "Browser context unavailable"
+                case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput:
+                    return "Recording locally"
                 }
             }
         }
 
         var displayDetail: String {
+            if isBackgroundPrivacyRule {
+                return "Goalong keeps recording eligible activity while your monitoring and privacy rules run in the background. Manage them in Activity → Apps & websites."
+            }
             switch state {
             case .recording:
                 return
@@ -347,25 +384,20 @@
                 return "macOS granted permissions, but the keyboard and mouse event monitor is not running yet."
             case .suppressed(let reason):
                 switch reason {
-                case .privateBrowserWindow:
-                    return "No URL, title, click detail or input activity from the private window is stored."
-                case .excludedApplication:
-                    return "This application is excluded by your privacy settings."
-                case .excludedDomain:
-                    return "This website is excluded by your privacy settings."
-                case .secureInput:
-                    return "A secure text field is active. Keyboard activity is intentionally ignored."
                 case .manualPause:
                     return "Capture is paused."
                 case .sessionUnavailable:
                     return "The Mac is locked, asleep or otherwise unavailable."
                 case .accessibilityUnavailable:
-                    return "Goalong History cannot safely inspect this browser window, so it records no details."
+                    return "Goalong cannot safely inspect this browser window, so it records no details."
+                case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput:
+                    return "Goalong keeps recording eligible activity while your privacy rules run in the background."
                 }
             }
         }
 
         var displaySymbol: String {
+            if isBackgroundPrivacyRule { return "record.circle.fill" }
             switch state {
             case .recording: return "record.circle.fill"
             case .paused: return "pause.circle.fill"
@@ -376,6 +408,7 @@
         }
 
         var displayTint: Color {
+            if isBackgroundPrivacyRule { return LHTheme.success }
             switch state {
             case .recording: return LHTheme.success
             case .paused: return LHTheme.warning
