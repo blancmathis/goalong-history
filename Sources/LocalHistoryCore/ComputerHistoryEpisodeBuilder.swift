@@ -141,6 +141,24 @@ enum ComputerHistoryEpisodeBuilder {
             }
             return lines
         }
+
+        // Window titles and recorder messages are also observable foreground evidence.
+        // They matter when an application exposes a state such as “tests failed” in its
+        // title bar but does not expose equivalent Accessibility text inside the page.
+        // Suppressed events never contribute content to status inference.
+        let visibleEventContextLines = events
+            .filter {
+                $0.suppressionReason == nil
+                    && $0.timestamp >= start
+                    && $0.timestamp <= end.addingTimeInterval(1)
+            }
+            .flatMap { event -> [String] in
+                [event.window?.title, event.message]
+                    .compactMap {
+                        ActivitySemanticTextSanitizer.clean($0, maximumLength: 360)
+                    }
+            }
+
         let requests = ComputerHistorySupport.distinctText(
             semanticLines.filter(ComputerHistorySupport.looksLikeRequestOrIntention),
             maximum: 12,
@@ -153,6 +171,7 @@ enum ComputerHistoryEpisodeBuilder {
         let status = inferStatus(
             interactions: interactions,
             semanticLines: semanticLines,
+            eventContextLines: visibleEventContextLines,
             requests: requests
         )
         let title = episodeTitle(
@@ -251,6 +270,7 @@ enum ComputerHistoryEpisodeBuilder {
     private static func inferStatus(
         interactions: [ComputerHistoryInteraction],
         semanticLines: [String],
+        eventContextLines: [String],
         requests: [String]
     ) -> StatusResult {
         let blocked = [
@@ -270,7 +290,7 @@ enum ComputerHistoryEpisodeBuilder {
 
         // The latest observable state wins over earlier transient errors. This avoids
         // marking a task blocked when a later retry visibly succeeded.
-        let recentLines = interactions.suffix(3).flatMap { interaction -> [String] in
+        var recentLines = interactions.suffix(3).flatMap { interaction -> [String] in
             var values = interaction.semanticDelta
             if let after = interaction.afterContext {
                 values.append(contentsOf: ComputerHistorySupport.splitSemanticLines(after))
@@ -278,6 +298,7 @@ enum ComputerHistoryEpisodeBuilder {
             values.append(interaction.label)
             return values
         }
+        recentLines.append(contentsOf: eventContextLines.suffix(3))
         let recentText = " " + ComputerHistorySupport.normalized(
             recentLines.joined(separator: " ")
         ) + " "
@@ -292,7 +313,7 @@ enum ComputerHistoryEpisodeBuilder {
         }
 
         let allText = " " + ComputerHistorySupport.normalized(
-            (semanticLines + interactions.map(\.label)).joined(separator: " ")
+            (semanticLines + eventContextLines + interactions.map(\.label)).joined(separator: " ")
         ) + " "
         if let historical = explicitStatus(
             in: allText,
