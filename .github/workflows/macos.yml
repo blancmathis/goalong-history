@@ -60,22 +60,22 @@ jobs:
         env:
           LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
         run: |
-          plutil -lint dist/LocalHistory.app/Contents/Info.plist
-          codesign --verify --strict --verbose=2 dist/LocalHistory.app
-          test "$(defaults read "$PWD/dist/LocalHistory.app/Contents/Info" CFBundleIdentifier)" = "ai.goalong.localhistory"
+          plutil -lint "dist/Goalong History.app/Contents/Info.plist"
+          codesign --verify --strict --verbose=2 "dist/Goalong History.app"
+          test "$(defaults read "$PWD/dist/Goalong History.app/Contents/Info" CFBundleIdentifier)" = "ai.goalong.localhistory"
           ./scripts/verify_sparkle_bundle.sh
 
       - name: Package smoke test
         run: |
           ./scripts/package_release.sh
-          test -s dist/LocalHistory-macOS-universal.zip
-          test -s dist/LocalHistory-macOS-universal.dmg
+          test -s dist/Goalong-History-macOS-universal.zip
+          test -s dist/Goalong-History-macOS-universal.dmg
 
       - name: Upload CI app
         uses: actions/upload-artifact@v4
         with:
-          name: LocalHistory-${{ runner.arch }}-${{ github.sha }}
+          name: Goalong-History-${{ runner.arch }}-${{ github.sha }}
           path: |
-            dist/LocalHistory.app
-            dist/LocalHistory-macOS-universal.zip
+            dist/Goalong History.app
+            dist/Goalong-History-macOS-universal.zip
           retention-days: 7

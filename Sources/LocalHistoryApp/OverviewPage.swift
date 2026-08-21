@@ -168,7 +168,7 @@
                             symbol: "clock",
                             title: "No timeline yet",
                             message:
-                                "Sealed activity will appear here after LocalHistory has been running for a minute."
+                                "Sealed activity will appear here after Goalong History has been running for a minute."
                         )
                         .frame(height: 90)
                     } else {
@@ -258,7 +258,7 @@
                         EmptyStateView(
                             symbol: "list.bullet.rectangle",
                             title: "No sessions yet",
-                            message: "Recent sessions will appear here as LocalHistory observes activity."
+                            message: "Recent sessions will appear here as Goalong History observes activity."
                         )
                         .frame(height: 250)
                     } else {

@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-APP_NAME="LocalHistory"
+APP_NAME="Goalong History"
 PRODUCT_NAME="LocalHistory"
+EXECUTABLE_NAME="Goalong History"
 BUNDLE_ID="ai.goalong.localhistory"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=sparkle_release.env
@@ -22,7 +23,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 if ! xcode-select -p >/dev/null 2>&1; then
-  echo "Xcode Command Line Tools are required to build LocalHistory." >&2
+  echo "Xcode Command Line Tools are required to build Goalong History." >&2
   exit 1
 fi
 
@@ -61,7 +62,7 @@ run_swift_test() {
 }
 
 if [[ "$RUN_TESTS" == "1" ]]; then
-  echo "Testing LocalHistory…"
+  echo "Testing Goalong History…"
   TEST_LOG="$WORK_DIR/tests.log"
   set +e
   (cd "$ROOT_DIR" && run_swift_test) >"$TEST_LOG" 2>&1
@@ -151,12 +152,12 @@ if [[ $BINARY_COUNT -gt 1 ]]; then
   for arch in $ARCHS; do
     BINARIES+=("$WORK_DIR/$PRODUCT_NAME-$arch")
   done
-  lipo -create "${BINARIES[@]}" -output "$CONTENTS/MacOS/$APP_NAME"
+  lipo -create "${BINARIES[@]}" -output "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 else
   first_arch="${ARCHS%% *}"
-  cp "$WORK_DIR/$PRODUCT_NAME-$first_arch" "$CONTENTS/MacOS/$APP_NAME"
+  cp "$WORK_DIR/$PRODUCT_NAME-$first_arch" "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 fi
-chmod 755 "$CONTENTS/MacOS/$APP_NAME"
+chmod 755 "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 
 # SwiftPM links Sparkle dynamically but does not create our hand-built .app bundle for us.
 # Copy the exact binary artifact resolved by Package.swift, preserving symlinks and metadata.
@@ -167,11 +168,11 @@ if [[ -z "$SPARKLE_FRAMEWORK" ]]; then
 fi
 /usr/bin/ditto "$SPARKLE_FRAMEWORK" "$CONTENTS/Frameworks/Sparkle.framework"
 
-if ! /usr/bin/otool -L "$CONTENTS/MacOS/$APP_NAME" | /usr/bin/grep -q '@rpath/Sparkle.framework'; then
+if ! /usr/bin/otool -L "$CONTENTS/MacOS/$EXECUTABLE_NAME" | /usr/bin/grep -q '@rpath/Sparkle.framework'; then
   echo "Built binary is not linked to Sparkle.framework." >&2
   exit 1
 fi
-if ! /usr/bin/otool -l "$CONTENTS/MacOS/$APP_NAME" | /usr/bin/grep -A2 LC_RPATH | /usr/bin/grep -q '@executable_path/../Frameworks'; then
+if ! /usr/bin/otool -l "$CONTENTS/MacOS/$EXECUTABLE_NAME" | /usr/bin/grep -A2 LC_RPATH | /usr/bin/grep -q '@executable_path/../Frameworks'; then
   echo "Built binary is missing the app-relative Frameworks rpath." >&2
   exit 1
 fi
@@ -209,7 +210,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key>
     <string>$APP_NAME</string>
     <key>CFBundleExecutable</key>
-    <string>$APP_NAME</string>
+    <string>$EXECUTABLE_NAME</string>
     <key>CFBundleIconFile</key>
     <string>LocalHistory</string>
     <key>CFBundleIdentifier</key>
@@ -231,9 +232,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>LSUIElement</key>
     <true/>
     <key>NSAccessibilityUsageDescription</key>
-    <string>LocalHistory uses Accessibility to understand the foreground app, window, permitted URL, focused control, and clicked interface element. It never controls your Mac.</string>
+    <string>Goalong History uses Accessibility to understand the foreground app, window, permitted URL, focused control, and clicked interface element. It never controls your Mac.</string>
     <key>NSInputMonitoringUsageDescription</key>
-    <string>LocalHistory uses Input Monitoring to count clicks, scrolling, shortcuts, navigation keys, and typing duration. It never stores typed characters, passwords, or clipboard contents.</string>
+    <string>Goalong History uses Input Monitoring to count clicks, scrolling, shortcuts, navigation keys, and typing duration. It never stores typed characters, passwords, or clipboard contents.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

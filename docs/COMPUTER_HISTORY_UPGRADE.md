@@ -1,4 +1,4 @@
-# Go Long History — capture, memory and agent-access upgrade
+# Goalong History — capture, memory and agent-access upgrade
 
 This upgrade keeps the existing LocalHistory architecture and storage identity. It adds evidence-based capture health, separately retained semantic snapshots, deterministic local memories, a chronological source inspector, independent retention policies, and a read-only JSON query CLI.
 

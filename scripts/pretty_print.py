@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pretty-print a LocalHistory JSONL file without external dependencies."""
+"""Pretty-print a Goalong History JSONL file without external dependencies."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("file", type=Path, help="Path to a LocalHistory .jsonl file")
+    parser.add_argument("file", type=Path, help="Path to a Goalong History .jsonl file")
     parser.add_argument("--kind", help="Only show events with this kind")
     args = parser.parse_args()
 

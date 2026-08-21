@@ -39,6 +39,20 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertTrue(summary.commands.contains("swift test"))
     }
 
+    func testParserIgnoresEmptyAndCollidingNormalizedKeysWithoutCrashing() throws {
+        let payload = #"{"_":"first","123":"second","tool-name":"bash","tool_name":"shell"}"#
+
+        let summary = AgentTranscriptParser.parse(
+            data: Data(payload.utf8),
+            fileURL: URL(fileURLWithPath: "/tmp/colliding-keys.json"),
+            provider: .codex
+        )
+
+        XCTAssertEqual(summary.format, .json)
+        XCTAssertEqual(summary.toolCallCount, 1)
+        XCTAssertEqual(summary.tools.count, 1)
+    }
+
     func testConfigurationValidationDropsEmptyAndDuplicatePaths() throws {
         let source = try makeTemporaryDirectory("configuration-source")
         let first = AgentWatchedFolder(

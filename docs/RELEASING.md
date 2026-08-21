@@ -1,6 +1,6 @@
 # Shipping macOS releases
 
-LocalHistory's normal installation path must never ask users to install Xcode or compile source code. Rolling releases are universal, distributed as a drag-to-Applications DMG, and authenticated for in-app updates with Sparkle EdDSA. Developer ID signing and notarization are optional until the Apple Developer membership is available.
+Goalong History's normal installation path must never ask users to install Xcode or compile source code. Rolling releases are universal, distributed as a drag-to-Applications DMG, and authenticated for in-app updates with Sparkle EdDSA. Developer ID signing and notarization are optional until the Apple Developer membership is available.
 
 ## Required rolling-release configuration
 

@@ -85,7 +85,7 @@
                 )
                 sharingRulesStore = SharingRulesStore()
                 let executableURL = Bundle.main.executableURL
-                    ?? URL(fileURLWithPath: CommandLine.arguments.first ?? "/Applications/LocalHistory.app/Contents/MacOS/LocalHistory")
+                    ?? URL(fileURLWithPath: CommandLine.arguments.first ?? "/Applications/Goalong History.app/Contents/MacOS/Goalong History")
                 agentActivityRuntime = try AgentActivityRuntime(
                     rootDirectory: AppPaths.agentActivityDirectory,
                     executableURL: executableURL,
@@ -149,7 +149,7 @@
 
             recorder.record(
                 kind: .recorderStarted,
-                message: "LocalHistory started",
+                message: "Goalong History started",
                 metadata: [
                     "storage": AppPaths.eventsDirectory.path,
                     "network_upload": configManager.config.verificationEnabled == true
@@ -179,7 +179,7 @@
             ChatGPTRecapRuntime.shared.stop()
             contextMonitor?.stop()
             eventTapMonitor?.stop()
-            recorder?.record(kind: .recorderStopped, message: "LocalHistory stopped")
+            recorder?.record(kind: .recorderStopped, message: "Goalong History stopped")
             recorder?.flush()
             captureHealthStore?.flush()
             minuteSealer?.stopAndSeal()
@@ -201,10 +201,10 @@
             if captureState.isManuallyPaused {
                 captureState.setManualPaused(false)
                 captureHealthStore.setPaused(false)
-                recorder.record(kind: .recordingResumed, message: "Recording resumed from the LocalHistory interface")
+                recorder.record(kind: .recordingResumed, message: "Recording resumed from the Goalong History interface")
                 contextMonitor.resetAndSample()
             } else {
-                recorder.record(kind: .recordingPaused, message: "Recording paused from the LocalHistory interface")
+                recorder.record(kind: .recordingPaused, message: "Recording paused from the Goalong History interface")
                 recorder.flush()
                 captureState.setManualPaused(true)
                 captureHealthStore.setPaused(true)
@@ -514,7 +514,7 @@
         private func presentFatalError(_ error: Error) {
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert(error: error)
-            alert.messageText = "LocalHistory could not start"
+            alert.messageText = "Goalong History could not start"
             alert.runModal()
             NSApplication.shared.terminate(nil)
         }

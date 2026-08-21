@@ -446,7 +446,7 @@
                             tint: LHTheme.success,
                             title: "Private agent vault",
                             subtitle:
-                                "Raw content remains under LocalHistory Application Support with user-only permissions."
+                                "Raw content remains in Goalong History’s private Application Support folder with user-only permissions."
                         )
                         detailLine("Vault size", value: formatBytes(agents.storageBytes))
                         detailLine("Stored today", value: formatBytes(agents.overview.storedBytes))

@@ -229,9 +229,9 @@ public enum AppleScreenTimeAnalyzer {
         case .verifiedOfficialCollector:
             return "The companion export signature was verified against a trusted official collector key. Apple API and operating-system trust boundaries still apply."
         case .signaturePresentUnverified:
-            return "The imported export contains a signature, but this LocalHistory build has not verified it against a trusted official collector key."
+            return "The imported export contains a signature, but this Goalong History build has not verified it against a trusted official collector key."
         case .unsigned:
-            return "This Apple Screen Time JSON import is not cryptographically verified and may have been edited before LocalHistory imported it."
+            return "This Apple Screen Time JSON import is not cryptographically verified and may have been edited before Goalong History imported it."
         }
     }
 }

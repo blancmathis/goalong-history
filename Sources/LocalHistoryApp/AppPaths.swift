@@ -166,7 +166,7 @@
                     try handle.write(contentsOf: data)
                     try handle.close()
                 } catch {
-                    if let data = "LocalHistory diagnostic failure: \(error)\n".data(using: .utf8) {
+                    if let data = "Goalong History diagnostic failure: \(error)\n".data(using: .utf8) {
                         try? FileHandle.standardError.write(contentsOf: data)
                     }
                 }

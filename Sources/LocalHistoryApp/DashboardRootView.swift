@@ -122,14 +122,22 @@
                 HStack {
                     Text(ProductIdentity.displayName)
                     Spacer()
-                    Button(Self.version) {
+                    Button {
                         if updates.isConfigured {
                             updates.checkForUpdates()
                         } else {
                             updates.installUpdateEnabledBuild()
                         }
+                    } label: {
+                        if updates.isPreparingAvailableUpdate {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Text(Self.version)
+                        }
                     }
                     .buttonStyle(.plain)
+                    .disabled(updates.isPreparingAvailableUpdate)
                     .help(
                         updates.isConfigured
                             ? "Check for updates"
@@ -207,10 +215,15 @@
                 updates.showAvailableUpdate()
             } label: {
                 HStack(spacing: 9) {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                    if updates.isPreparingAvailableUpdate {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Update available")
+                        Text(updates.isPreparingAvailableUpdate ? "Preparing update…" : "Update available")
                             .font(.system(size: 10, weight: .semibold))
                         Text("\(ProductIdentity.displayName) \(version)")
                             .font(.system(size: 9, weight: .medium))
@@ -234,6 +247,7 @@
                 )
             }
             .buttonStyle(.plain)
+            .disabled(updates.isPreparingAvailableUpdate)
             .help("Review and install \(ProductIdentity.displayName) \(version)")
         }
 

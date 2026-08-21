@@ -1,6 +1,6 @@
 # Activity analysis and agent brief
 
-LocalHistory keeps the append-only event journal as its source of truth. The analysis layer is a deterministic, local derivative designed for two readers at once:
+Goalong History keeps the append-only event journal as its source of truth. The analysis layer is a deterministic, local derivative designed for two readers at once:
 
 1. the person reviewing the day in the macOS dashboard;
 2. an agent that needs the highest useful information density for a bounded context window.
@@ -69,13 +69,13 @@ The dashboard exposes 800, 1,600, 3,000 and 6,000-token presets. The renderer st
 
 ## Rich Context
 
-Rich Context is **off by default**. When explicitly enabled, LocalHistory periodically reads selected and visible text that macOS Accessibility already exposes for the foreground window. This is useful for understanding page content, coding-agent conversations and user requests that cannot be inferred from a URL or title alone.
+Rich Context is **off by default**. When explicitly enabled, Goalong History periodically reads selected and visible text that macOS Accessibility already exposes for the foreground window. This is useful for understanding page content, coding-agent conversations and user requests that cannot be inferred from a URL or title alone.
 
 The collector:
 
 - never decodes keyboard characters;
 - never uses screenshots, screen recording, the clipboard, microphone or system audio;
-- does not run while LocalHistory is paused;
+- does not run while Goalong History is paused;
 - does not run for private browsing, excluded applications, excluded domains or secure fields;
 - limits and deduplicates captured text;
 - redacts common credentials such as API keys, access tokens, passwords and card-like number sequences;

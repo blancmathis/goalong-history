@@ -3,7 +3,7 @@
     import Foundation
 
     enum InstallationLocationManager {
-        private static let appName = "LocalHistory.app"
+        private static let appName = "Goalong History.app"
         private static let bundleIdentifier = "ai.goalong.localhistory"
 
         /// Returns true when the current process should exit because the user quit
@@ -16,9 +16,9 @@
 
             let alert = NSAlert()
             alert.alertStyle = .informational
-            alert.messageText = "Finish installing LocalHistory"
+            alert.messageText = "Finish installing Goalong History"
             alert.informativeText =
-                "LocalHistory should live in Applications so permissions, start-at-login, and updates keep working reliably. Move it there now?"
+                "Goalong History should live in Applications so permissions, start-at-login, and updates keep working reliably. Move it there now?"
             alert.addButton(withTitle: "Move and Continue")
             alert.addButton(withTitle: "Quit")
 
@@ -34,9 +34,9 @@
             } catch {
                 let failure = NSAlert()
                 failure.alertStyle = .warning
-                failure.messageText = "LocalHistory could not be moved"
+                failure.messageText = "Goalong History could not be moved"
                 failure.informativeText =
-                    "\(error.localizedDescription) Copy LocalHistory to your Applications folder, then open that copy. No data has been created yet."
+                    "\(error.localizedDescription) Copy Goalong History to your Applications folder, then open that copy. No data has been created yet."
                 failure.addButton(withTitle: "Show Applications")
                 failure.addButton(withTitle: "Quit")
                 if failure.runModal() == .alertFirstButtonReturn {
@@ -96,7 +96,7 @@
         var errorDescription: String? {
             switch self {
             case .destinationOccupied:
-                return "Another application already uses the LocalHistory destination."
+                return "Another application already uses the Goalong History destination."
             case .couldNotRelaunch:
                 return "The copied application could not be opened."
             }

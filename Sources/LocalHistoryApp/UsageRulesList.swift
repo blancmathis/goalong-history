@@ -55,7 +55,7 @@
                             symbol: "app.dashed",
                             title: model.snapshot.trackedUsage.isEmpty ? "No observed apps or sites" : "No matches",
                             message: model.snapshot.trackedUsage.isEmpty
-                                ? "Keep LocalHistory running. Apps and websites will appear as context is observed."
+                                ? "Keep Goalong History running. Apps and websites will appear as context is observed."
                                 : "Try a different app, website or category."
                         )
                         .frame(minHeight: 320)

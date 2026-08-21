@@ -6,7 +6,7 @@
 
     if let hookIndex = CommandLine.arguments.firstIndex(of: "--agent-hook-ingest") {
         guard CommandLine.arguments.indices.contains(hookIndex + 2) else {
-            let message = "LocalHistory agent hook requires a provider and event name.\n"
+            let message = "Goalong History agent hook requires a provider and event name.\n"
             try? FileHandle.standardError.write(contentsOf: Data(message.utf8))
             try? FileHandle.standardOutput.write(contentsOf: Data("{}\n".utf8))
             exit(0)
@@ -27,7 +27,7 @@
             try? FileHandle.standardOutput.write(contentsOf: Data("{}\n".utf8))
             exit(0)
         } catch {
-            let message = "LocalHistory agent hook failed: \(error.localizedDescription)\n"
+            let message = "Goalong History agent hook failed: \(error.localizedDescription)\n"
             try? FileHandle.standardError.write(contentsOf: Data(message.utf8))
             try? FileHandle.standardOutput.write(contentsOf: Data("{}\n".utf8))
             exit(0)
@@ -76,5 +76,5 @@
     NotificationCenter.default.removeObserver(updateObserver)
 #else
     import Foundation
-    fputs("LocalHistory is a macOS-only application.\n", stderr)
+    fputs("Goalong History is a macOS-only application.\n", stderr)
 #endif

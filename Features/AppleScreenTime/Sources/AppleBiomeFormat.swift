@@ -2,7 +2,7 @@ import Foundation
 
 /// A foreground transition emitted by Apple's private Biome `App.InFocus` stream.
 ///
-/// This type intentionally contains only the fields LocalHistory needs. Unknown protobuf
+/// This type intentionally contains only the fields Goalong History needs. Unknown protobuf
 /// fields are skipped so newer Apple records remain readable when their schema grows.
 public struct AppleBiomeFocusEvent: Equatable, Sendable {
     public let bundleIdentifier: String

@@ -22,7 +22,7 @@
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Share verified LocalHistory"
+            window.title = "Share verified Goalong History"
             window.center()
             super.init(window: window)
             buildUI()

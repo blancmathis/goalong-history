@@ -1,8 +1,8 @@
-# Apple Screen Time in LocalHistory
+# Apple Screen Time in Goalong History
 
 ## What the page now represents
 
-The **Apple Screen Time** page reads Apple's own local and iCloud-synchronized usage data. It does not calculate a replacement Screen Time number from LocalHistory events.
+The **Apple Screen Time** page reads Apple's own local and iCloud-synchronized usage data. It does not calculate a replacement Screen Time number from Goalong History events.
 
 The runtime combines two Apple sources:
 
@@ -15,8 +15,8 @@ The source code is isolated under `Sources/LocalHistoryApp/AppleScreenTime/` and
 
 1. Turn on **System Settings → Screen Time**.
 2. Turn on **Share Across Devices** on the Mac, iPhone and iPad using the same Apple Account.
-3. Grant the signed **LocalHistory.app** Full Disk Access under **Privacy & Security → Full Disk Access**.
-4. Reopen LocalHistory if macOS does not apply the TCC grant immediately.
+3. Grant the signed **Goalong History.app** Full Disk Access under **Privacy & Security → Full Disk Access**.
+4. Reopen Goalong History if macOS does not apply the TCC grant immediately.
 
 No daily export, manual file selection, companion snapshot or Goalong server is required for the data already synchronized to the Mac.
 
@@ -52,13 +52,13 @@ knowledgeC has precedence. Biome contributes only uncovered fragments, so data p
 
 - Apple databases are opened read-only with SQLite.
 - Apple files are never modified, vacuumed, migrated or copied into Goalong storage.
-- LocalHistory stores only its scope/share configuration and explicit share exports.
+- Goalong History stores only its scope/share configuration and explicit share exports.
 - Full Disk Access is required because Apple protects knowledgeC and Biome with TCC.
 - The private formats can change after an OS update; failures remain isolated to this optional feature.
 
 The defensible source claim is:
 
-> LocalHistory read these usage intervals from Apple-owned Screen Time/usage stores present on this Mac, including Apple-synchronized remote-device streams where available.
+> Goalong History read these usage intervals from Apple-owned Screen Time/usage stores present on this Mac, including Apple-synchronized remote-device streams where available.
 
 It is not a cryptographic attestation from Apple and it is not proof of attention or productive work.
 

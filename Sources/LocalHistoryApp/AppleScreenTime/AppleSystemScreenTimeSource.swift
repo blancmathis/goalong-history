@@ -21,7 +21,7 @@
         static let loading = AppleSystemScreenTimeStatus(
             kind: .noAppleData,
             title: "Reading Apple Screen Time",
-            message: "LocalHistory is checking Apple’s local Screen Time and iCloud-synced device stores."
+            message: "Goalong History is checking Apple’s local Screen Time and iCloud-synced device stores."
         )
     }
 
@@ -71,7 +71,7 @@
     /// - Biome `App.InFocus` provides automatic iCloud-synced focus transitions for iPhone,
     ///   iPad and other devices when “Share Across Devices” is enabled.
     ///
-    /// These are private on-disk Apple formats, not LocalHistory’s recorder. The source is
+    /// These are private on-disk Apple formats, not Goalong History’s recorder. The source is
     /// deliberately isolated so an Apple schema change cannot affect normal activity capture.
     final class AppleSystemScreenTimeSource {
         let currentMacDevice: AppleScreenTimeDevice
@@ -773,7 +773,7 @@
                     kind: .fullDiskAccessRequired,
                     title: "Full Disk Access required",
                     message:
-                        "Apple protects Screen Time’s knowledgeC and Biome stores. Grant LocalHistory Full Disk Access once, then reopen or refresh the app."
+                        "Apple protects Screen Time’s knowledgeC and Biome stores. Grant Goalong History Full Disk Access once, then reopen or refresh the app."
                 )
             }
             if hasData, permissionDenied || !warnings.isEmpty {
@@ -797,7 +797,7 @@
                     kind: .ready,
                     title: "Official Apple Screen Time connected",
                     message:
-                        "The view is built from Apple’s local usage database and iCloud-synced Biome device streams, not from LocalHistory’s activity recorder."
+                        "The view is built from Apple’s local usage database and iCloud-synced Biome device streams, not from Goalong History’s activity recorder."
                 )
             }
             return AppleSystemScreenTimeStatus(

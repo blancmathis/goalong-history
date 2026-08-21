@@ -289,7 +289,7 @@ public struct AppleScreenTimeExportEnvelope: Codable, Equatable, Sendable {
 public enum AppleScreenTimeImportVerification: String, Codable, Sendable {
     /// The payload does not contain a companion signature.
     case unsigned
-    /// A signature is present but this LocalHistory build has not verified it against a trusted official key.
+    /// A signature is present but this Goalong History build has not verified it against a trusted official key.
     case signaturePresentUnverified
     /// A caller supplied a trusted verifier and the companion signature passed.
     case verifiedOfficialCollector

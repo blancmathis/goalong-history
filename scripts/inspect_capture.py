@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect Go Long History JSONL evidence without modifying local data.
+"""Inspect Goalong History JSONL evidence without modifying local data.
 
 This script is intentionally read-only. It reports event coverage, health evidence,
 semantic-reference integrity, and privacy-boundary violations. It never interprets
@@ -641,7 +641,7 @@ def inspect(data_root: Path, day: str) -> Inspection:
 
 def render_human(report: Inspection) -> str:
     lines = [
-        f"Go Long History capture inspection — {report.day}",
+        f"Goalong History capture inspection — {report.day}",
         f"Data root: {report.data_root}",
         f"Events: {report.event_count}  |  Semantic payloads: {report.semantic_payload_count}",
         "",
@@ -705,7 +705,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--data-root",
         type=Path,
         default=Path.home() / "Library" / "Application Support" / "LocalHistory",
-        help="LocalHistory application-support directory (read-only).",
+        help="Goalong History application-support directory (read-only).",
     )
     parser.add_argument("--day", help="Local day in YYYY-MM-DD; defaults to the newest event file.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")

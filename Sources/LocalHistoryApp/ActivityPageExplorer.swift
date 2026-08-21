@@ -66,7 +66,7 @@
                         symbol: "line.3.horizontal.decrease.circle",
                         title: model.snapshot.sessions.isEmpty ? "No activity found" : "No matching sessions",
                         message: model.snapshot.sessions.isEmpty
-                            ? "Keep LocalHistory running and activity will appear here."
+                            ? "Keep Goalong History running and activity will appear here."
                             : "Try another search or filter."
                     )
                 } else {
@@ -233,7 +233,7 @@
                     Text("Details intentionally unavailable")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "LocalHistory preserved only the coverage state for this period. It cannot later reveal the hidden URL, title or input details."
+                        "Goalong History preserved only the coverage state for this period. It cannot later reveal the hidden URL, title or input details."
                     )
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)

@@ -18,8 +18,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      PRODUCT: LocalHistory
-      DISPLAY_NAME: Go Long History
+      PRODUCT: Goalong History
+      DISPLAY_NAME: Goalong History
       BUNDLE_ID: ai.goalong.localhistory
       ROLLING_TAG: latest-main
     steps:
@@ -168,7 +168,7 @@ jobs:
         env:
           LOCALHISTORY_VERSION: ${{ steps.version.outputs.value }}
           LOCALHISTORY_BUILD_NUMBER: ${{ steps.version.outputs.build }}
-          LOCALHISTORY_DISPLAY_NAME: Go Long History
+          LOCALHISTORY_DISPLAY_NAME: Goalong History
           LOCALHISTORY_ARCHS: arm64 x86_64
           LOCALHISTORY_RUN_TESTS: 1
           LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
@@ -178,13 +178,13 @@ jobs:
         env:
           LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
           LOCALHISTORY_REQUIRE_LOCALIZED_NAME: 1
-          LOCALHISTORY_DISPLAY_NAME: Go Long History
+          LOCALHISTORY_DISPLAY_NAME: Goalong History
         run: |
           set -euo pipefail
-          APP="dist/LocalHistory.app"
+          APP="dist/Goalong History.app"
           INFO="$APP/Contents/Info.plist"
-          lipo -info "$APP/Contents/MacOS/LocalHistory"
-          lipo "$APP/Contents/MacOS/LocalHistory" -verify_arch arm64 x86_64
+          lipo -info "$APP/Contents/MacOS/Goalong History"
+          lipo "$APP/Contents/MacOS/Goalong History" -verify_arch arm64 x86_64
           codesign --verify --strict --verbose=4 "$APP"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO")" = "$BUNDLE_ID"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")" = "$PRODUCT"
@@ -203,15 +203,15 @@ jobs:
           API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
         run: |
           set -euo pipefail
-          ditto -c -k --sequesterRsrc --keepParent dist/LocalHistory.app "$RUNNER_TEMP/notarization.zip"
+          ditto -c -k --sequesterRsrc --keepParent "dist/Goalong History.app" "$RUNNER_TEMP/notarization.zip"
           xcrun notarytool submit "$RUNNER_TEMP/notarization.zip" \
             --key "$NOTARY_KEY_PATH" \
             --key-id "$API_KEY_ID" \
             --issuer "$API_ISSUER_ID" \
             --wait
-          xcrun stapler staple dist/LocalHistory.app
-          xcrun stapler validate dist/LocalHistory.app
-          spctl --assess --type execute --verbose=4 dist/LocalHistory.app
+          xcrun stapler staple "dist/Goalong History.app"
+          xcrun stapler validate "dist/Goalong History.app"
+          spctl --assess --type execute --verbose=4 "dist/Goalong History.app"
 
       - name: Create DMG and ZIP
         run: |
@@ -226,7 +226,7 @@ jobs:
           API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
         run: |
           set -euo pipefail
-          DMG="dist/LocalHistory-macOS-universal.dmg"
+          DMG="dist/Goalong-History-macOS-universal.dmg"
           xcrun notarytool submit "$DMG" \
             --key "$NOTARY_KEY_PATH" \
             --key-id "$API_KEY_ID" \
@@ -237,8 +237,8 @@ jobs:
           spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
           (
             cd dist
-            shasum -a 256 LocalHistory-macOS-universal.dmg > LocalHistory-macOS-universal.dmg.sha256
-            shasum -a 256 LocalHistory-macOS-universal.zip > LocalHistory-macOS-universal.zip.sha256
+            shasum -a 256 Goalong-History-macOS-universal.dmg > Goalong-History-macOS-universal.dmg.sha256
+            shasum -a 256 Goalong-History-macOS-universal.zip > Goalong-History-macOS-universal.zip.sha256
           )
 
       - name: Generate signed rolling Sparkle appcast
@@ -248,12 +248,12 @@ jobs:
           set -euo pipefail
           ./scripts/generate_sparkle_appcast.sh \
             "${{ steps.version.outputs.value }}" \
-            dist/LocalHistory-macOS-universal.zip \
+            dist/Goalong-History-macOS-universal.zip \
             dist/appcast.xml \
             "$ROLLING_TAG"
           test -s dist/appcast.xml
           grep -q 'sparkle:edSignature=' dist/appcast.xml
-          grep -Fq "/releases/download/$ROLLING_TAG/LocalHistory-macOS-universal.zip" dist/appcast.xml
+          grep -Fq "/releases/download/$ROLLING_TAG/Goalong-History-macOS-universal.zip" dist/appcast.xml
 
       - name: Move rolling tag to this merge
         env:
@@ -267,7 +267,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: latest-main
-          name: Go Long History — latest main
+          name: Goalong History — latest main
           body: |
             Automatically built and published from `${{ github.sha }}` on `main`.
 
@@ -280,10 +280,10 @@ jobs:
           overwrite_files: true
           preserve_order: true
           files: |
-            dist/LocalHistory-macOS-universal.dmg
-            dist/LocalHistory-macOS-universal.dmg.sha256
-            dist/LocalHistory-macOS-universal.zip
-            dist/LocalHistory-macOS-universal.zip.sha256
+            dist/Goalong-History-macOS-universal.dmg
+            dist/Goalong-History-macOS-universal.dmg.sha256
+            dist/Goalong-History-macOS-universal.zip
+            dist/Goalong-History-macOS-universal.zip.sha256
             dist/appcast.xml
 
       - name: Remove temporary credentials

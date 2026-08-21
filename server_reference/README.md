@@ -1,4 +1,4 @@
-# LocalHistory reference verification server
+# Goalong History reference verification server
 
 This is a development/reference backend for the v0.3 anti-tamper protocol.
 
@@ -11,7 +11,7 @@ pip install -r requirements.txt
 uvicorn app:app --host 127.0.0.1 --port 8787
 ```
 
-Then set in LocalHistory's `config.json`:
+Then set in Goalong History's `config.json`:
 
 ```json
 {
