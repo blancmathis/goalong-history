@@ -1,12 +1,24 @@
 #if os(macOS)
+    import AppleScreenTime
+    import Foundation
     import SwiftUI
 
     struct OverviewPage: View {
         @ObservedObject var model: DashboardViewModel
+        @StateObject private var screenTime: AppleScreenTimeDashboardModel
+        @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
 
-        private let metricColumns = [
-            GridItem(.adaptive(minimum: 170, maximum: 260), spacing: 12)
-        ]
+        init(model: DashboardViewModel) {
+            self.model = model
+            _screenTime = StateObject(
+                wrappedValue: AppleScreenTimeDashboardModel(
+                    rootDirectory: AppPaths.screenTimeDirectory,
+                    deviceID: model.deviceID,
+                    selectedDay: model.selectedDay
+                )
+            )
+            _recapRuntime = ObservedObject(wrappedValue: ChatGPTRecapRuntime.shared)
+        }
 
         var body: some View {
             ScrollView {
@@ -14,304 +26,485 @@
                     PageHeader(
                         eyebrow: Calendar.current.isDateInToday(model.selectedDay) ? "Today" : "History",
                         title: DashboardFormatters.dayTitle.string(from: model.selectedDay),
-                        subtitle: "A clear view of what was observed, sealed and kept private."
+                        subtitle: "One clear view of your day."
                     ) {
                         HStack(spacing: 10) {
-                            DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
+                            DateSelectionControl(date: model.selectedDay, onChange: selectDay)
+                            captureControl
                             Button {
-                                model.refreshEverything()
+                                refreshAll()
                             } label: {
-                                Image(
-                                    systemName: model.isRefreshing ? "arrow.triangle.2.circlepath" : "arrow.clockwise"
-                                )
-                                .frame(width: 28, height: 28)
+                                Image(systemName: "arrow.clockwise")
+                                    .frame(width: 28, height: 28)
                             }
                             .buttonStyle(.bordered)
-                            .disabled(model.isRefreshing)
+                            .disabled(model.isRefreshing || screenTime.isBusy)
                             .help("Refresh")
                         }
                     }
 
-                    runtimeHero
-
-                    LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 12) {
-                        MetricCard(
-                            title: "ACTIVE INPUT",
-                            value: DashboardFormatters.duration(minutes: model.snapshot.activeMinutes),
-                            detail: "Minutes with meaningful local activity",
-                            symbol: "cursorarrow.click.2",
-                            tint: LHTheme.teal
-                        )
-                        MetricCard(
-                            title: "WORK CLASSIFIED",
-                            value: DashboardFormatters.duration(minutes: model.snapshot.workMinutes),
-                            detail: "Conservative local classification",
-                            symbol: "briefcase.fill",
-                            tint: LHTheme.success
-                        )
-                        MetricCard(
-                            title: "LIVE VERIFIED",
-                            value: DashboardFormatters.percentage(
-                                model.snapshot.liveAnchoredMinutes,
-                                model.snapshot.sealedMinutes
-                            ),
-                            detail: model.runtime.verificationEnabled
-                                ? "\(model.snapshot.liveAnchoredMinutes) of \(model.snapshot.sealedMinutes) sealed minutes"
-                                : "Verification server is currently disabled",
-                            symbol: "checkmark.seal.fill",
-                            tint: LHTheme.accent
-                        )
-                        MetricCard(
-                            title: "PRIVATE / UNAVAILABLE",
-                            value: DashboardFormatters.duration(minutes: model.snapshot.privateMinutes),
-                            detail: "Details intentionally hidden or unavailable",
-                            symbol: "eye.slash.fill",
-                            tint: LHTheme.privateTint
-                        )
-                    }
-
-                    timelineCard
-
-                    HStack(alignment: .top, spacing: 14) {
-                        appBreakdownCard
-                            .frame(maxWidth: .infinity)
-                        recentActivityCard
-                            .frame(maxWidth: .infinity)
-                    }
+                    dayCard
+                    aiRecapCard
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 28)
-                .padding(.bottom, 30)
+                .padding(.bottom, 40)
             }
             .background(LHTheme.pageBackground)
+            .onAppear {
+                synchronizeSecondarySources(with: model.selectedDay)
+            }
+            .onChange(of: model.selectedDay) { day in
+                synchronizeSecondarySources(with: day)
+            }
+            .alert(item: $recapRuntime.alert) { item in
+                Alert(
+                    title: Text(item.title),
+                    message: Text(item.message),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
         }
 
-        private var runtimeHero: some View {
-            LHCard(padding: 20) {
-                HStack(spacing: 18) {
-                    ZStack {
-                        Circle()
-                            .fill(model.runtime.displayTint.opacity(0.12))
-                        Circle()
-                            .stroke(model.runtime.displayTint.opacity(0.22), lineWidth: 1)
-                        Image(systemName: model.runtime.displaySymbol)
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(model.runtime.displayTint)
-                    }
-                    .frame(width: 62, height: 62)
+        @ViewBuilder private var captureControl: some View {
+            switch model.runtime.state {
+            case .permissionsMissing:
+                Button("Finish setup") {
+                    model.requestPermissions()
+                }
+                .buttonStyle(.borderedProminent)
+            case .inputTapUnavailable:
+                Button("Check input") {
+                    model.beginCaptureValidation()
+                }
+                .buttonStyle(.borderedProminent)
+            case .paused:
+                Button {
+                    model.togglePause()
+                } label: {
+                    Label("Resume", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+            default:
+                StatusPill(
+                    title: model.runtime.displayTitle,
+                    symbol: model.runtime.displaySymbol,
+                    tint: model.runtime.displayTint
+                )
+            }
+        }
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 9) {
-                            Text(model.runtime.displayTitle)
+        private var dayCard: some View {
+            LHCard(padding: 0) {
+                VStack(spacing: 0) {
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Your day")
                                 .font(.system(size: 18, weight: .bold, design: .rounded))
-                            StatusPill(
-                                title: model.runtime.verificationEnabled ? "Opaque proofs on" : "Local only",
-                                symbol: model.runtime.verificationEnabled ? "checkmark.seal" : "internaldrive",
-                                tint: model.runtime.verificationEnabled ? LHTheme.accent : Color.secondary
-                            )
-                        }
-                        Text(model.runtime.displayDetail)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 20)
-
-                    if !model.runtime.accessibilityGranted || !model.runtime.inputMonitoringGranted {
-                        Button("Finish setup") {
-                            model.requestPermissions()
-                        }
-                        .buttonStyle(.borderedProminent)
-                    } else if model.runtime.state == .paused {
-                        Button {
-                            model.togglePause()
-                        } label: {
-                            Label("Resume", systemImage: "play.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut("p", modifiers: [.command])
-                    } else {
-                        Button {
-                            model.togglePause()
-                        } label: {
-                            Label("Pause", systemImage: "pause.fill")
-                        }
-                        .buttonStyle(.bordered)
-                        .keyboardShortcut("p", modifiers: [.command])
-                    }
-                }
-            }
-        }
-
-        private var timelineCard: some View {
-            LHCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Day coverage")
-                                .font(.system(size: 15, weight: .semibold))
-                            Text(
-                                "Each block represents 15 minutes. Private periods remain visible without exposing content."
-                            )
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text("\(model.snapshot.sealedMinutes) sealed min")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if model.snapshot.timeline.isEmpty {
-                        EmptyStateView(
-                            symbol: "clock",
-                            title: "No timeline yet",
-                            message:
-                                "Sealed activity will appear here after Goalong History has been running for a minute."
-                        )
-                        .frame(height: 90)
-                    } else {
-                        TimelineStrip(buckets: model.snapshot.timeline)
-                    }
-
-                    HStack(spacing: 16) {
-                        timelineLegend(label: "Work", color: LHTheme.success)
-                        timelineLegend(label: "Active", color: LHTheme.teal)
-                        timelineLegend(label: "Private", color: LHTheme.privateTint)
-                        timelineLegend(label: "Sealed / idle", color: Color.secondary.opacity(0.45))
-                        Spacer()
-                    }
-                }
-            }
-        }
-
-        private var appBreakdownCard: some View {
-            LHCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    SectionTitle(
-                        title: "Top applications",
-                        subtitle: "Bounded foreground time from observed context"
-                    )
-
-                    if model.snapshot.appUsage.isEmpty {
-                        EmptyStateView(
-                            symbol: "app.dashed",
-                            title: "No app activity",
-                            message:
-                                "Applications will appear after foreground context is observed."
-                        )
-                        .frame(height: 250)
-                    } else {
-                        let maximum = max(1, model.snapshot.appUsage.first?.activeMinutes ?? 1)
-                        VStack(spacing: 12) {
-                            ForEach(Array(model.snapshot.appUsage.prefix(6))) { usage in
-                                HStack(spacing: 11) {
-                                    AppIconView(
-                                        bundleIdentifier: usage.bundleIdentifier,
-                                        appName: usage.appName,
-                                        size: 31
-                                    )
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        HStack {
-                                            Text(usage.appName)
-                                                .font(.system(size: 11, weight: .semibold))
-                                                .lineLimit(1)
-                                            Spacer()
-                                            Text(DashboardFormatters.duration(minutes: usage.activeMinutes))
-                                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        ProgressBar(
-                                            value: Double(usage.activeMinutes) / Double(maximum),
-                                            tint: LHTheme.accent
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        private var recentActivityCard: some View {
-            LHCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Recent activity")
-                                .font(.system(size: 15, weight: .semibold))
-                            Text("Locally grouped into understandable sessions")
+                            Text("Screen Time and Goalong activity in one place.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button("View all") {
+                        if screenTime.isBusy {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                    .padding(20)
+
+                    Divider()
+
+                    HStack(alignment: .top, spacing: 18) {
+                        dayMetric(
+                            title: "SCREEN TIME",
+                            value: screenTimeValue,
+                            detail: screenTimeDetail
+                        )
+                        Divider().frame(height: 48)
+                        dayMetric(
+                            title: "ACTIVE ON THIS MAC",
+                            value: DashboardFormatters.duration(minutes: model.snapshot.activeMinutes),
+                            detail: "Observed by Goalong"
+                        )
+                        Divider().frame(height: 48)
+                        dayMetric(
+                            title: "WORK",
+                            value: DashboardFormatters.duration(minutes: model.snapshot.workMinutes),
+                            detail: "Conservative local classification"
+                        )
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 18)
+
+                    if screenTime.needsFullDiskAccess {
+                        Divider()
+                        HStack(spacing: 10) {
+                            Image(systemName: "macbook.and.iphone")
+                                .foregroundStyle(LHTheme.warning)
+                            Text("Enable Apple Screen Time to complete this view across your devices.")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Enable") {
+                                screenTime.openFullDiskAccessSettings()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                    }
+
+                    Divider()
+                    topApplicationsSection
+                        .padding(20)
+
+                    Divider()
+                    timelineSection
+                        .padding(20)
+
+                    Divider()
+                    HStack {
+                        Button("Open full history") {
                             model.selectSection(.activity)
                         }
                         .buttonStyle(.link)
-                        .font(.system(size: 11, weight: .semibold))
-                    }
 
-                    if model.snapshot.sessions.isEmpty {
-                        EmptyStateView(
-                            symbol: "list.bullet.rectangle",
-                            title: "No sessions yet",
-                            message: "Recent sessions will appear here as Goalong History observes activity."
-                        )
-                        .frame(height: 250)
-                    } else {
-                        VStack(spacing: 4) {
-                            ForEach(Array(model.snapshot.sessions.prefix(6))) { session in
-                                Button {
-                                    model.selectSession(session.id)
-                                    model.selectSection(.activity)
-                                } label: {
-                                    HStack(spacing: 10) {
-                                        AppIconView(
-                                            bundleIdentifier: session.bundleIdentifier,
-                                            appName: session.appName,
-                                            size: 30
-                                        )
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            HStack(spacing: 6) {
-                                                Text(session.appName)
-                                                    .font(.system(size: 11, weight: .semibold))
-                                                    .lineLimit(1)
-                                                if session.isFlagged {
-                                                    Image(systemName: "exclamationmark.triangle.fill")
-                                                        .font(.system(size: 9))
-                                                        .foregroundStyle(LHTheme.warning)
-                                                }
-                                            }
-                                            Text(
-                                                session.windowTitle ?? session.host ?? session.category.map(
-                                                    CategoryBadge.prettyCategory) ?? "Activity"
-                                            )
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(.secondary)
+                        Spacer()
+
+                        Button("Screen Time details") {
+                            model.selectSection(.screenTime)
+                        }
+                        .buttonStyle(.link)
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                }
+            }
+        }
+
+        private func dayMetric(title: String, value: String, detail: String) -> some View {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .tracking(0.5)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.system(size: 23, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                Text(detail)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        private var topApplicationsSection: some View {
+            let applications = Array(combinedAppUsage.prefix(6))
+            let maximum = max(1, applications.map(\.displaySeconds).max() ?? 1)
+
+            return VStack(alignment: .leading, spacing: 13) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Most used")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("One list across Apple devices and this Mac.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+
+                if applications.isEmpty {
+                    Text("Application usage will appear here as Screen Time or Goalong records the day.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(applications.enumerated()), id: \.element.id) { index, usage in
+                            HStack(spacing: 12) {
+                                AppIconView(
+                                    bundleIdentifier: usage.bundleIdentifier,
+                                    appName: usage.name,
+                                    size: 34
+                                )
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack(spacing: 12) {
+                                        Text(usage.name)
+                                            .font(.system(size: 11, weight: .semibold))
                                             .lineLimit(1)
-                                        }
                                         Spacer()
-                                        VStack(alignment: .trailing, spacing: 2) {
-                                            Text(DashboardFormatters.shortTime.string(from: session.start))
-                                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                            Text(DashboardFormatters.duration(seconds: session.duration))
-                                                .font(.system(size: 9))
-                                                .foregroundStyle(.secondary)
-                                        }
+                                        Text(formattedDuration(usage.displaySeconds))
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                            .monospacedDigit()
                                     }
-                                    .padding(.vertical, 7)
-                                    .padding(.horizontal, 8)
-                                    .contentShape(Rectangle())
+                                    Text(usage.sourceDetail)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                    ProgressBar(
+                                        value: usage.displaySeconds / maximum,
+                                        tint: LHTheme.accent
+                                    )
                                 }
-                                .buttonStyle(.plain)
+                            }
+                            .padding(.vertical, 8)
+
+                            if index < applications.count - 1 {
+                                Divider().padding(.leading, 46)
                             }
                         }
                     }
                 }
             }
+        }
+
+        private var timelineSection: some View {
+            VStack(alignment: .leading, spacing: 13) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Day activity")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Goalong's local coverage through the day.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    HStack(spacing: 12) {
+                        timelineLegend(label: "Work", color: LHTheme.success)
+                        timelineLegend(label: "Active", color: LHTheme.teal)
+                        timelineLegend(label: "Private", color: LHTheme.privateTint)
+                    }
+                }
+
+                if model.snapshot.timeline.isEmpty {
+                    Text("No Goalong activity has been recorded for this day yet.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 54, alignment: .center)
+                } else {
+                    TimelineStrip(buckets: model.snapshot.timeline)
+                }
+            }
+        }
+
+        private var aiRecapCard: some View {
+            LHCard(padding: 0) {
+                VStack(spacing: 0) {
+                    HStack(alignment: .center, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("AI recap")
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                            Text(aiRecapSubtitle)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                        Spacer()
+                        recapAction
+                    }
+                    .padding(20)
+
+                    Divider()
+
+                    recapPreview
+                        .padding(20)
+
+                    Divider()
+
+                    HStack(spacing: 12) {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(LHTheme.accent)
+                        Text(
+                            "Uses Screen Time, Goalong History, AI conversations and imported ChatGPT history when available."
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        Spacer(minLength: 16)
+                        Button(recapRuntime.recap == nil ? "Open setup" : "Open full recap") {
+                            model.selectSection(.chatGPTRecap)
+                        }
+                        .buttonStyle(.link)
+                        .font(.system(size: 11, weight: .semibold))
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                }
+            }
+        }
+
+        @ViewBuilder private var recapAction: some View {
+            if recapRuntime.isGenerating {
+                ProgressView()
+                    .controlSize(.small)
+            } else if aiRecapIsConnected {
+                Button(recapRuntime.recap == nil ? "Generate recap" : "Refresh recap") {
+                    recapRuntime.generateRecap()
+                }
+                .buttonStyle(.borderedProminent)
+            } else if case .checking = recapRuntime.connectionState {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Button("Set up AI recap") {
+                    model.selectSection(.chatGPTRecap)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+
+        @ViewBuilder private var recapPreview: some View {
+            if recapRuntime.isGenerating {
+                if recapRuntime.streamedMarkdown.isEmpty {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Combining your activity, Screen Time and AI conversations…")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
+                } else {
+                    markdownPreview(recapRuntime.streamedMarkdown)
+                }
+            } else if let recap = recapRuntime.recap {
+                markdownPreview(recap.markdown)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(aiRecapIsConnected ? "No recap for this day yet." : "AI recap is optional and currently off.")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(
+                        aiRecapIsConnected
+                            ? "Generate it once to turn the day's activity and conversations into a concise narrative."
+                            : "Set it up once, then Goalong can summarize the day from the sources shown above."
+                    )
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+            }
+        }
+
+        private func markdownPreview(_ markdown: String) -> some View {
+            Text(.init(markdown))
+                .font(.system(size: 11))
+                .lineSpacing(4)
+                .lineLimit(16)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+        }
+
+        private var aiRecapSubtitle: String {
+            if recapRuntime.isGenerating {
+                return "Building a concise account of the day."
+            }
+            if let recap = recapRuntime.recap {
+                return "Updated \(recap.generatedAt.formatted(date: .abbreviated, time: .shortened))."
+            }
+            return "A concise optional synthesis of what happened and what comes next."
+        }
+
+        private var aiRecapIsConnected: Bool {
+            if case .connected = recapRuntime.connectionState { return true }
+            return false
+        }
+
+        private var screenTimeValue: String {
+            guard let duration = screenTime.summary?.totalScreenOnDuration else { return "—" }
+            return formattedDuration(duration)
+        }
+
+        private var screenTimeDetail: String {
+            guard let summary = screenTime.summary else { return "Apple data not available" }
+            let count = summary.deviceSummaries.count
+            return "\(count) Apple device\(count == 1 ? "" : "s")"
+        }
+
+        private var combinedAppUsage: [DailyAppUsage] {
+            var merged: [String: DailyAppUsage] = [:]
+
+            for application in screenTime.summary?.topApplications ?? [] {
+                let key = appKey(
+                    name: application.resolvedName,
+                    bundleIdentifier: application.bundleIdentifier
+                )
+                merged[key] = DailyAppUsage(
+                    id: key,
+                    name: application.resolvedName,
+                    bundleIdentifier: application.bundleIdentifier,
+                    screenTimeSeconds: application.duration,
+                    goalongSeconds: 0
+                )
+            }
+
+            for application in model.snapshot.appUsage {
+                let key = appKey(
+                    name: application.appName,
+                    bundleIdentifier: application.bundleIdentifier
+                )
+                if var existing = merged[key] {
+                    existing.goalongSeconds = TimeInterval(application.activeMinutes * 60)
+                    if existing.bundleIdentifier == nil {
+                        existing.bundleIdentifier = application.bundleIdentifier
+                    }
+                    if existing.name == (existing.bundleIdentifier ?? "") {
+                        existing.name = application.appName
+                    }
+                    merged[key] = existing
+                } else {
+                    merged[key] = DailyAppUsage(
+                        id: key,
+                        name: application.appName,
+                        bundleIdentifier: application.bundleIdentifier,
+                        screenTimeSeconds: 0,
+                        goalongSeconds: TimeInterval(application.activeMinutes * 60)
+                    )
+                }
+            }
+
+            return merged.values.sorted { lhs, rhs in
+                if lhs.displaySeconds != rhs.displaySeconds {
+                    return lhs.displaySeconds > rhs.displaySeconds
+                }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+        }
+
+        private func appKey(name: String, bundleIdentifier: String?) -> String {
+            if let bundleIdentifier, !bundleIdentifier.isEmpty {
+                return "bundle:\(bundleIdentifier.lowercased())"
+            }
+            let normalized = name
+                .lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .joined()
+            return "name:\(normalized)"
+        }
+
+        private func formattedDuration(_ seconds: TimeInterval) -> String {
+            guard seconds > 0 else { return "0m" }
+            return DashboardFormatters.duration(seconds: seconds)
+        }
+
+        private func selectDay(_ date: Date) {
+            model.selectDay(date)
+            screenTime.selectDay(date)
+            recapRuntime.selectDay(date)
+        }
+
+        private func refreshAll() {
+            model.refreshEverything()
+            screenTime.refresh()
+        }
+
+        private func synchronizeSecondarySources(with date: Date) {
+            let normalized = Calendar.current.startOfDay(for: date)
+            if screenTime.selectedDay != normalized {
+                screenTime.selectDay(normalized)
+            }
+            recapRuntime.selectDay(normalized)
         }
 
         private func timelineLegend(label: String, color: Color) -> some View {
@@ -321,6 +514,28 @@
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private struct DailyAppUsage: Identifiable {
+        let id: String
+        var name: String
+        var bundleIdentifier: String?
+        var screenTimeSeconds: TimeInterval
+        var goalongSeconds: TimeInterval
+
+        // Apple and Goalong can describe the same foreground period. Keep the larger
+        // bounded duration instead of adding both and presenting a false total.
+        var displaySeconds: TimeInterval {
+            max(screenTimeSeconds, goalongSeconds)
+        }
+
+        var sourceDetail: String {
+            if screenTimeSeconds > 0, goalongSeconds > 0 {
+                return "Screen Time + \(DashboardFormatters.duration(seconds: goalongSeconds)) active on this Mac"
+            }
+            if screenTimeSeconds > 0 { return "Apple Screen Time" }
+            return "Goalong active use"
         }
     }
 
@@ -342,7 +557,7 @@
                         }
                     }
                 }
-                .frame(height: 34)
+                .frame(height: 30)
 
                 HStack {
                     Text("00:00")
