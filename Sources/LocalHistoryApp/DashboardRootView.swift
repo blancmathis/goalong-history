@@ -77,7 +77,7 @@
                             Button {
                                 model.selectSection(section)
                             } label: {
-                                Label(section.title, systemImage: section.symbol)
+                                Label(section.simpleTitle, systemImage: section.symbol)
                             }
                         }
                         Divider()
@@ -85,7 +85,7 @@
                             Button {
                                 model.selectSection(section)
                             } label: {
-                                Label(section.title, systemImage: section.symbol)
+                                Label(section.simpleTitle, systemImage: section.symbol)
                             }
                         }
                     } label: {
@@ -158,7 +158,7 @@
                 model.selectSection(section)
             } label: {
                 navigationLabel(
-                    title: section.title,
+                    title: section.simpleTitle,
                     symbol: section.symbol,
                     selected: model.selectedSection == section
                 )
@@ -184,7 +184,7 @@
                     Image(systemName: trailingSymbol)
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.tertiary)
-                } else if title == DashboardSection.share.title, model.snapshot.sealedMinutes > 0 {
+                } else if title == DashboardSection.share.simpleTitle, model.snapshot.sealedMinutes > 0 {
                     Text("\(model.snapshot.sealedMinutes)")
                         .font(.system(size: 9, weight: .semibold, design: .rounded))
                         .foregroundStyle(.secondary)
@@ -212,7 +212,7 @@
         }
 
         private var secondaryTitle: String {
-            secondaryIsSelected ? model.selectedSection.title : "More"
+            secondaryIsSelected ? model.selectedSection.simpleTitle : "More"
         }
 
         private var secondarySymbol: String {
@@ -313,6 +313,21 @@
         private static var version: String {
             let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
             return "v\(value ?? "0.5.1-dev")"
+        }
+    }
+
+    private extension DashboardSection {
+        var simpleTitle: String {
+            switch self {
+            case .overview: return "Overview"
+            case .activity: return "History"
+            case .screenTime: return "Screen Time"
+            case .agentActivity: return "AI conversations"
+            case .chatGPTRecap: return "AI recap settings"
+            case .share: return "Share"
+            case .privacy: return "Privacy"
+            case .settings: return "Settings"
+            }
         }
     }
 #endif
