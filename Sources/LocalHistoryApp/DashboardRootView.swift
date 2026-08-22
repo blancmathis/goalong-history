@@ -8,7 +8,7 @@
         var body: some View {
             HStack(spacing: 0) {
                 DashboardSidebar(model: model)
-                    .frame(width: 238)
+                    .frame(width: 220)
                 Rectangle()
                     .fill(LHTheme.separator)
                     .frame(width: 1)
@@ -56,50 +56,47 @@
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var updates = SoftwareUpdateManager.shared
 
+        private let primarySections: [DashboardSection] = [.overview, .activity, .share]
+        private let sourceSections: [DashboardSection] = [.screenTime, .agentActivity, .chatGPTRecap]
+        private let utilitySections: [DashboardSection] = [.privacy, .settings]
+
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
                 brand
                     .padding(.horizontal, 18)
                     .padding(.top, 24)
-                    .padding(.bottom, 18)
-
-                runtimeCard
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 20)
 
                 VStack(spacing: 5) {
-                    ForEach(DashboardSection.allCases) { section in
-                        Button {
-                            model.selectSection(section)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: section.symbol)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .frame(width: 20)
-                                Text(section.title)
-                                    .font(.system(size: 13, weight: .medium))
-                                Spacer()
-                                if section == .share, model.snapshot.sealedMinutes > 0 {
-                                    Text("\(model.snapshot.sealedMinutes)")
-                                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 3)
-                                        .background(Color.primary.opacity(0.06), in: Capsule())
-                                }
-                            }
-                            .foregroundStyle(
-                                model.selectedSection == section ? LHTheme.accent : Color.primary.opacity(0.78)
-                            )
-                            .padding(.horizontal, 12)
-                            .frame(height: 38)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(model.selectedSection == section ? LHTheme.accent.opacity(0.12) : Color.clear)
-                            )
-                        }
-                        .buttonStyle(.plain)
+                    ForEach(primarySections) { section in
+                        navigationButton(section)
                     }
+
+                    Menu {
+                        ForEach(sourceSections) { section in
+                            Button {
+                                model.selectSection(section)
+                            } label: {
+                                Label(section.title, systemImage: section.symbol)
+                            }
+                        }
+                        Divider()
+                        ForEach(utilitySections) { section in
+                            Button {
+                                model.selectSection(section)
+                            } label: {
+                                Label(section.title, systemImage: section.symbol)
+                            }
+                        }
+                    } label: {
+                        navigationLabel(
+                            title: secondaryTitle,
+                            symbol: secondarySymbol,
+                            selected: secondaryIsSelected,
+                            trailingSymbol: "chevron.down"
+                        )
+                    }
+                    .menuStyle(.borderlessButton)
                 }
                 .padding(.horizontal, 10)
 
@@ -107,47 +104,17 @@
                     updateButton(version: version)
                         .padding(.horizontal, 12)
                         .padding(.top, 12)
-                } else if updates.requiresSignedBuild {
-                    enableUpdatesButton
-                        .padding(.horizontal, 12)
-                        .padding(.top, 12)
                 }
 
                 Spacer(minLength: 20)
 
-                trustCard
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 12)
+                statusRow
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
 
-                HStack {
-                    Text(ProductIdentity.displayName)
-                    Spacer()
-                    Button {
-                        if updates.isConfigured {
-                            updates.checkForUpdates()
-                        } else {
-                            updates.installUpdateEnabledBuild()
-                        }
-                    } label: {
-                        if updates.isPreparingAvailableUpdate {
-                            ProgressView()
-                                .controlSize(.mini)
-                        } else {
-                            Text(Self.version)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(updates.isPreparingAvailableUpdate)
-                    .help(
-                        updates.isConfigured
-                            ? "Check for updates"
-                            : "Install the release build to enable in-app updates"
-                    )
-                }
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 14)
+                footer
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 14)
             }
             .background(LHTheme.sidebarBackground)
             .onAppear {
@@ -179,37 +146,100 @@
                 VStack(alignment: .leading, spacing: 1) {
                     Text(ProductIdentity.displayName)
                         .font(.system(size: 15, weight: .bold, design: .rounded))
-                    Text("Private, verifiable activity")
+                    Text("Private activity history")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
             }
         }
 
-        private var runtimeCard: some View {
+        private func navigationButton(_ section: DashboardSection) -> some View {
+            Button {
+                model.selectSection(section)
+            } label: {
+                navigationLabel(
+                    title: section.title,
+                    symbol: section.symbol,
+                    selected: model.selectedSection == section
+                )
+            }
+            .buttonStyle(.plain)
+        }
+
+        private func navigationLabel(
+            title: String,
+            symbol: String,
+            selected: Bool,
+            trailingSymbol: String? = nil
+        ) -> some View {
+            HStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 20)
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                Spacer()
+                if let trailingSymbol {
+                    Image(systemName: trailingSymbol)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                } else if title == DashboardSection.share.title, model.snapshot.sealedMinutes > 0 {
+                    Text("\(model.snapshot.sealedMinutes)")
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.primary.opacity(0.06), in: Capsule())
+                }
+            }
+            .foregroundStyle(selected ? LHTheme.accent : Color.primary.opacity(0.78))
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(selected ? LHTheme.accent.opacity(0.12) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+
+        private var secondarySections: [DashboardSection] {
+            sourceSections + utilitySections
+        }
+
+        private var secondaryIsSelected: Bool {
+            secondarySections.contains(model.selectedSection)
+        }
+
+        private var secondaryTitle: String {
+            secondaryIsSelected ? model.selectedSection.title : "More"
+        }
+
+        private var secondarySymbol: String {
+            secondaryIsSelected ? model.selectedSection.symbol : "ellipsis.circle"
+        }
+
+        private var statusRow: some View {
             Button {
                 model.selectSection(model.runtime.state == .permissionsMissing ? .privacy : .overview)
             } label: {
-                HStack(spacing: 10) {
+                HStack(spacing: 9) {
                     Circle()
                         .fill(model.runtime.displayTint)
-                        .frame(width: 8, height: 8)
-                        .shadow(color: model.runtime.displayTint.opacity(0.45), radius: 4)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(model.runtime.displayTitle)
-                            .font(.system(size: 11, weight: .semibold))
-                            .lineLimit(1)
-                        Text(model.runtime.verificationEnabled ? "Verification enabled" : "Local-only mode")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                    }
+                        .frame(width: 7, height: 7)
+                    Text(model.runtime.displayTitle)
+                        .font(.system(size: 10, weight: .semibold))
+                        .lineLimit(1)
                     Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                    if model.runtime.state == .permissionsMissing || model.runtime.state == .inputTapUnavailable {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
-                .padding(11)
-                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .foregroundStyle(Color.primary.opacity(0.72))
+                .padding(.horizontal, 12)
+                .frame(height: 34)
             }
             .buttonStyle(.plain)
         }
@@ -244,75 +274,40 @@
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(LHTheme.accent.opacity(0.10))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(LHTheme.accent.opacity(0.18), lineWidth: 1)
-                        )
                 )
             }
             .buttonStyle(.plain)
             .disabled(updates.isPreparingAvailableUpdate)
-            .help("Review and install \(ProductIdentity.displayName) \(version)")
         }
 
-        private var enableUpdatesButton: some View {
-            Button {
-                updates.installUpdateEnabledBuild()
-            } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "arrow.down.app.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Enable app updates")
-                            .font(.system(size: 10, weight: .semibold))
-                        Text("Install the release build once")
-                            .font(.system(size: 9, weight: .medium))
-                            .opacity(0.76)
+        private var footer: some View {
+            HStack {
+                Text(ProductIdentity.displayName)
+                Spacer()
+                Button {
+                    if updates.isConfigured {
+                        updates.checkForUpdates()
+                    } else {
+                        updates.installUpdateEnabledBuild()
                     }
-                    Spacer()
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 9, weight: .bold))
-                        .opacity(0.7)
+                } label: {
+                    if updates.isPreparingAvailableUpdate {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else {
+                        Text(Self.version)
+                    }
                 }
-                .foregroundStyle(LHTheme.accent)
-                .padding(.horizontal, 11)
-                .frame(height: 46)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(LHTheme.accent.opacity(0.10))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(LHTheme.accent.opacity(0.18), lineWidth: 1)
-                        )
+                .buttonStyle(.plain)
+                .disabled(updates.isPreparingAvailableUpdate)
+                .help(
+                    updates.isConfigured
+                        ? "Check for updates"
+                        : "Install the release build to enable in-app updates"
                 )
             }
-            .buttonStyle(.plain)
-            .help("Download the latest release build. Your history and settings are preserved.")
-        }
-
-        private var trustCard: some View {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label("Device identity", systemImage: "checkmark.shield.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(LHTheme.success)
-                    Spacer()
-                }
-                Text(model.deviceProtectionTitle)
-                    .font(.system(size: 10, weight: .medium))
-                Text("Device \(model.deviceID.prefix(10))…")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(LHTheme.success.opacity(0.07))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(LHTheme.success.opacity(0.15), lineWidth: 1)
-                    )
-            )
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(.tertiary)
         }
 
         private static var version: String {
