@@ -41,6 +41,16 @@ private struct ComputerHistoryAnswerEnvelope: Encodable {
     let loadIssues: [HistoryLoadIssue]
 }
 
+private struct ComputerHistoryResourceEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let resource: ComputerHistoryResourceReference?
+    let relatedEpisodes: [ComputerHistoryEpisode]
+    let reconstructedDays: Int
+    let error: String?
+    let loadIssues: [HistoryLoadIssue]
+}
+
 private enum CLIError: Error, CustomStringConvertible {
     case usage(String)
     case invalidDate(String)
@@ -186,21 +196,53 @@ private enum LocalHistoryQueryCLI {
                 )
             )
 
-        case "ask":
+        case "ask", "find":
             let days = try integer(arguments.removeOption("--days") ?? "30")
-            guard !arguments.values.isEmpty else { throw CLIError.usage("ask requires a natural-language question") }
+            guard !arguments.values.isEmpty else {
+                throw CLIError.usage("\(command) requires a natural-language query")
+            }
             let question = arguments.values.joined(separator: " ")
             let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
             let memories = reconstructComputerHistory(
                 loaded: loaded,
                 maximumDays: min(max(1, days), 365)
             )
-            let answer = ComputerHistorySearchService(memories: memories).ask(question)
+            let search = ComputerHistorySearchService(memories: memories)
+            let answer = command == "find"
+                ? search.findResources(question)
+                : search.ask(question)
             try printJSON(
                 ComputerHistoryAnswerEnvelope(
                     rootDirectory: root.path,
                     answer: answer,
                     reconstructedDays: memories.count,
+                    loadIssues: loaded.issues
+                )
+            )
+
+        case "resource":
+            let days = try integer(arguments.removeOption("--days") ?? "30")
+            guard let identifier = arguments.popFirst(), arguments.values.isEmpty else {
+                throw CLIError.usage("resource requires exactly one RESOURCE_ID")
+            }
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
+            let memories = reconstructComputerHistory(
+                loaded: loaded,
+                maximumDays: min(max(1, days), 365)
+            )
+            let search = ComputerHistorySearchService(memories: memories)
+            let resource = search.resource(identifier: identifier)
+            try printJSON(
+                ComputerHistoryResourceEnvelope(
+                    rootDirectory: root.path,
+                    resource: resource,
+                    relatedEpisodes: resource == nil
+                        ? []
+                        : search.episodes(referencing: identifier),
+                    reconstructedDays: memories.count,
+                    error: resource == nil
+                        ? "No inspectable resource matched that stable identifier."
+                        : nil,
                     loadIssues: loaded.issues
                 )
             )
@@ -353,6 +395,8 @@ private enum LocalHistoryQueryCLI {
       summary YYYY-MM-DD
       computer-history YYYY-MM-DD
       ask [--days N] NATURAL_LANGUAGE_QUESTION
+      find [--days N] RESOURCE_QUERY
+      resource [--days N] RESOURCE_ID
       search TEXT
       app NAME_OR_BUNDLE_ID
       site HOST
@@ -363,5 +407,6 @@ private enum LocalHistoryQueryCLI {
     All commands are read-only and return JSON with coverage, provenance and load issues.
     `computer-history` preserves the full causal action sequence; `ask` supports natural
     questions about recent work, resources, status, standups and repeatable workflows.
+    `find` performs evidence-gated resource retrieval and `resource` resolves one stable ID.
     """
 }
