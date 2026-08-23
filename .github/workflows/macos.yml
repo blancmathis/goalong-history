@@ -66,7 +66,40 @@ jobs:
           fi
 
       - name: Synthetic Computer History reconstruction regression
-        run: bash scripts/validate_computer_history_fixture.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$(mktemp)"
+          bash scripts/validate_computer_history_fixture.sh | tee "$LOG"
+          python3 - "$LOG" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          payload = None
+          for line in reversed(pathlib.Path(sys.argv[1]).read_text().splitlines()):
+              try:
+                  candidate = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if isinstance(candidate, dict) and "synthetic_fixture" in candidate:
+                  payload = candidate
+                  break
+
+          if payload is None:
+              raise SystemExit("Synthetic regression did not emit its scope declaration")
+          expected = {
+              "synthetic_regression_valid": True,
+              "synthetic_fixture": True,
+              "real_capture_measured": False,
+              "public_parity_validated": False,
+          }
+          for key, value in expected.items():
+              if payload.get(key) is not value:
+                  raise SystemExit(
+                      f"Synthetic regression scope mismatch: {key}={payload.get(key)!r}"
+                  )
+          PY
 
       - name: Build installable app bundle
         env:
