@@ -8,6 +8,18 @@
             label: "ai.goalong.localhistory.semantic-context",
             qos: .utility
         )
+        private let rootDirectory: URL
+        private let semanticDirectory: URL
+        private let fileManager: FileManager
+
+        init(
+            rootDirectory: URL = AppPaths.applicationSupportDirectory,
+            fileManager: FileManager = .default
+        ) {
+            self.rootDirectory = rootDirectory
+            self.fileManager = fileManager
+            semanticDirectory = rootDirectory.appendingPathComponent("semantic", isDirectory: true)
+        }
 
         func append(
             capture: AXRichContextCapture,
@@ -37,7 +49,7 @@
                 truncated: capture.truncated
             )
             let reference = payload.reference
-            let file = AppPaths.semanticFileURL(for: timestamp)
+            let file = semanticFileURL(for: timestamp)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -45,15 +57,15 @@
             data.append(0x0A)
 
             try queue.sync {
-                try AppPaths.prepare()
-                if !FileManager.default.fileExists(atPath: file.path) {
-                    FileManager.default.createFile(
+                try prepareDirectories()
+                if !fileManager.fileExists(atPath: file.path) {
+                    fileManager.createFile(
                         atPath: file.path,
                         contents: nil,
                         attributes: [.posixPermissions: 0o600]
                     )
                 }
-                try? FileManager.default.setAttributes(
+                try? fileManager.setAttributes(
                     [.posixPermissions: 0o600],
                     ofItemAtPath: file.path
                 )
@@ -65,67 +77,69 @@
             return reference
         }
 
+        func delete(
+            _ request: HistoryDeletionRequest,
+            additionallyDeleting snapshotIDs: [String] = [],
+            completion: @escaping (Result<HistorySemanticDeletionResult, Error>) -> Void
+        ) {
+            queue.async {
+                do {
+                    let result = try HistoryJSONLDeletionEngine.deleteSemanticSnapshots(
+                        in: self.semanticDirectory,
+                        request: request,
+                        additionallyDeleting: snapshotIDs,
+                        fileManager: self.fileManager
+                    )
+                    DispatchQueue.main.async { completion(.success(result)) }
+                } catch {
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                }
+            }
+        }
+
+        /// Compatibility wrapper for older dashboard call sites.
         func deleteEvents(
             since cutoff: Date,
             completion: @escaping (Result<Int, Error>) -> Void
         ) {
-            queue.async {
-                do {
-                    let files = try self.semanticFiles()
-                    var deleted = 0
-                    let decoder = JSONDecoder()
-                    decoder.dateDecodingStrategy = .iso8601
-                    for file in files {
-                        let data = try Data(contentsOf: file)
-                        let lines = data.split(separator: 0x0A)
-                        var kept = Data()
-                        for line in lines {
-                            let payload = try decoder.decode(SemanticContextPayload.self, from: Data(line))
-                            if payload.capturedAt >= cutoff {
-                                deleted += 1
-                            } else {
-                                kept.append(line)
-                                kept.append(0x0A)
-                            }
-                        }
-                        if kept.isEmpty {
-                            try? FileManager.default.removeItem(at: file)
-                        } else {
-                            try kept.write(to: file, options: .atomic)
-                            try? FileManager.default.setAttributes(
-                                [.posixPermissions: 0o600],
-                                ofItemAtPath: file.path
-                            )
-                        }
-                    }
-                    DispatchQueue.main.async { completion(.success(deleted)) }
-                } catch {
-                    DispatchQueue.main.async { completion(.failure(error)) }
-                }
+            delete(
+                HistoryDeletionRequest(
+                    scope: .interval,
+                    start: cutoff,
+                    end: .distantFuture
+                )
+            ) { result in
+                completion(result.map(\.deletedSnapshotCount))
             }
         }
 
+        /// Compatibility wrapper for older dashboard call sites.
         func deleteAll(completion: @escaping (Result<Int, Error>) -> Void) {
-            queue.async {
-                do {
-                    let files = try self.semanticFiles()
-                    for file in files { try FileManager.default.removeItem(at: file) }
-                    DispatchQueue.main.async { completion(.success(files.count)) }
-                } catch {
-                    DispatchQueue.main.async { completion(.failure(error)) }
-                }
+            delete(HistoryDeletionRequest(scope: .allDetailedData)) { result in
+                completion(result.map(\.deletedSnapshotCount))
             }
         }
 
-        private func semanticFiles() throws -> [URL] {
-            guard FileManager.default.fileExists(atPath: AppPaths.semanticDirectory.path) else {
-                return []
-            }
-            return try FileManager.default.contentsOfDirectory(
-                at: AppPaths.semanticDirectory,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            ).filter { $0.pathExtension.lowercased() == "jsonl" }
+        private func prepareDirectories() throws {
+            try fileManager.createDirectory(
+                at: semanticDirectory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            try? fileManager.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: rootDirectory.path
+            )
+            try? fileManager.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: semanticDirectory.path
+            )
+        }
+
+        private func semanticFileURL(for date: Date) -> URL {
+            semanticDirectory.appendingPathComponent(
+                Self.dayFormatter.string(from: date) + ".semantic.jsonl"
+            )
         }
 
         private func source(from raw: String) -> SemanticContextSource {
@@ -135,6 +149,15 @@
             if values.contains("focused") { return .focusedValue }
             return .visibleText
         }
+
+        private static let dayFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .current
+            formatter.dateFormat = "yyyy-MM-dd"
+            return formatter
+        }()
     }
 
     enum SemanticContextStoreError: Error {
