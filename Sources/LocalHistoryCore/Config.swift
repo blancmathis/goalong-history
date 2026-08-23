@@ -110,17 +110,23 @@ public struct RecorderConfig: Codable, Equatable {
         includedDomains ?? []
     }
 
-    /// Application and website policies are deliberately independent. In include-only
-    /// mode an unknown identity fails closed instead of being treated as implicitly allowed.
+    /// Application and website policies are deliberately independent. Explicit
+    /// exclusions always win over an inclusion entry; this keeps password managers,
+    /// Goalong itself, and deliberately blocked sites fail-closed in both modes.
     public func allowsApplication(bundleIdentifier: String?) -> Bool {
         let normalized = bundleIdentifier?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let normalized, !normalized.isEmpty,
+            excludedBundleIdentifiers.contains(where: {
+                $0.caseInsensitiveCompare(normalized) == .orderedSame
+            })
+        {
+            return false
+        }
+
         switch effectiveApplicationCaptureMode {
         case .excludeListed:
-            guard let normalized, !normalized.isEmpty else { return true }
-            return !excludedBundleIdentifiers.contains {
-                $0.caseInsensitiveCompare(normalized) == .orderedSame
-            }
+            return true
         case .includeOnly:
             guard let normalized, !normalized.isEmpty else { return false }
             return effectiveIncludedBundleIdentifiers.contains {
@@ -130,9 +136,12 @@ public struct RecorderConfig: Codable, Equatable {
     }
 
     public func allowsWebsite(host: String?) -> Bool {
+        if URLRedactor.domain(host, matches: excludedDomains) {
+            return false
+        }
         switch effectiveWebsiteCaptureMode {
         case .excludeListed:
-            return !URLRedactor.domain(host, matches: excludedDomains)
+            return true
         case .includeOnly:
             guard let host, !host.isEmpty else { return false }
             return URLRedactor.domain(host, matches: effectiveIncludedDomains)
