@@ -206,9 +206,16 @@ final class HistoryDeletionEngineTests: XCTestCase {
                 calendar: utcCalendar
             )
         ) { error in
+            guard let deletionError = error as? HistoryDeletionExecutionError,
+                case let .undecodableEvent(actualPath, actualLine) = deletionError
+            else {
+                XCTFail("Unexpected error: \(error)")
+                return
+            }
+            XCTAssertEqual(actualLine, 2)
             XCTAssertEqual(
-                error as? HistoryDeletionExecutionError,
-                .undecodableEvent(path: file.path, line: 2)
+                URL(fileURLWithPath: actualPath).resolvingSymlinksInPath().path,
+                file.resolvingSymlinksInPath().path
             )
         }
         XCTAssertEqual(try Data(contentsOf: file), original)
