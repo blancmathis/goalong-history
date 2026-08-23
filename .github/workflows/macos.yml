@@ -38,7 +38,12 @@ jobs:
           find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
           python3 -m py_compile \
             scripts/check_computer_history_memory.py \
-            scripts/make_computer_history_parity_fixture.py
+            scripts/make_computer_history_parity_fixture.py \
+            scripts/real_computer_history_benchmark.py
+          python3 -m unittest discover \
+            -s scripts/tests \
+            -p 'test_real_computer_history_benchmark.py' \
+            -v
 
       - name: Privacy-boundary and dependency audit
         run: ./scripts/audit_privacy_boundaries.sh
@@ -60,7 +65,7 @@ jobs:
             fi
           fi
 
-      - name: Strict Computer History parity fixture
+      - name: Synthetic Computer History reconstruction regression
         run: bash scripts/validate_computer_history_fixture.sh
 
       - name: Build installable app bundle
