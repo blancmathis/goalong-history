@@ -296,6 +296,7 @@ final class HistoryDeletionEngineTests: XCTestCase {
                 role: "AXWindow",
                 subrole: nil
             ),
+            url: nil,
             focusedRole: "AXTextArea",
             source: .visibleText,
             text: text,
