@@ -36,21 +36,35 @@ enum ComputerHistoryInteractionBuilder {
         for event in ordered where ComputerHistorySupport.isActionEvent(event) {
             let interactionID = event.metadata?[ComputerHistoryMetadata.interactionID] ?? event.id
 
-            // Delayed after/settled callbacks can execute after the foreground app changes.
-            // An interaction ID is therefore not sufficient by itself: explicit semantic
-            // observations must also belong to the same application as the action.
+            // Delayed callbacks can execute after either the foreground application or the
+            // active document/page changes. Both identities must remain continuous.
             let explicit = (linked[interactionID] ?? [])
-                .filter { ComputerHistorySupport.sameApplication($0.event, event) }
+                .filter {
+                    ComputerHistorySupport.sameApplication($0.event, event)
+                        && ComputerHistorySupport.sameResourceContext(
+                            $0.event,
+                            event,
+                            eventResourceIDs: eventResourceIDs
+                        )
+                }
                 .sorted { $0.event.timestamp < $1.event.timestamp }
             let before = explicit.last(where: {
                 $0.phase == ComputerHistoryMetadata.Phase.before
-            }) ?? nearest(before: event, observations: observations)
+            }) ?? nearest(
+                before: event,
+                observations: observations,
+                eventResourceIDs: eventResourceIDs
+            )
             let settled = explicit.last(where: {
                 $0.phase == ComputerHistoryMetadata.Phase.settled
             })
             let after = settled
                 ?? explicit.last(where: { $0.phase == ComputerHistoryMetadata.Phase.after })
-                ?? nearest(after: event, observations: observations)
+                ?? nearest(
+                    after: event,
+                    observations: observations,
+                    eventResourceIDs: eventResourceIDs
+                )
 
             let beforeText = before?.text
             let afterText = after?.text
@@ -113,26 +127,38 @@ enum ComputerHistoryInteractionBuilder {
 
     private static func nearest(
         before event: HistoryEvent,
-        observations: [SemanticObservation]
+        observations: [SemanticObservation],
+        eventResourceIDs: [String: [String]]
     ) -> SemanticObservation? {
         observations
             .filter {
                 $0.event.timestamp <= event.timestamp
                     && event.timestamp.timeIntervalSince($0.event.timestamp) <= 20
                     && ComputerHistorySupport.sameApplication($0.event, event)
+                    && ComputerHistorySupport.sameResourceContext(
+                        $0.event,
+                        event,
+                        eventResourceIDs: eventResourceIDs
+                    )
             }
             .max { $0.event.timestamp < $1.event.timestamp }
     }
 
     private static func nearest(
         after event: HistoryEvent,
-        observations: [SemanticObservation]
+        observations: [SemanticObservation],
+        eventResourceIDs: [String: [String]]
     ) -> SemanticObservation? {
         observations
             .filter {
                 $0.event.timestamp >= event.timestamp
                     && $0.event.timestamp.timeIntervalSince(event.timestamp) <= 20
                     && ComputerHistorySupport.sameApplication($0.event, event)
+                    && ComputerHistorySupport.sameResourceContext(
+                        $0.event,
+                        event,
+                        eventResourceIDs: eventResourceIDs
+                    )
             }
             .min { $0.event.timestamp < $1.event.timestamp }
     }
