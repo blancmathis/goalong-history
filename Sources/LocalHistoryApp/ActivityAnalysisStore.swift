@@ -66,7 +66,20 @@
     }
 
     final class ActivityAnalysisStore {
-        private let fileManager = FileManager.default
+        private let fileManager: FileManager
+        private let rootDirectory: URL
+        private let eventsDirectory: URL
+        private let analysisDirectory: URL
+
+        init(
+            rootDirectory: URL = AppPaths.applicationSupportDirectory,
+            fileManager: FileManager = .default
+        ) {
+            self.rootDirectory = rootDirectory
+            self.fileManager = fileManager
+            eventsDirectory = rootDirectory.appendingPathComponent("events", isDirectory: true)
+            analysisDirectory = rootDirectory.appendingPathComponent("analysis", isDirectory: true)
+        }
 
         func buildAndWrite(for day: Date) throws -> ActivityDayAnalysis {
             let events = loadEvents(for: day)
@@ -77,7 +90,7 @@
         }
 
         func loadStored(for day: Date) -> ActivityDayAnalysis? {
-            let URL = ActivityAnalysisPaths.JSONFile(for: day)
+            let URL = JSONFile(for: day)
             guard let data = try? Data(contentsOf: URL) else { return nil }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
@@ -85,23 +98,32 @@
         }
 
         func eventModificationDate(for day: Date) -> Date? {
-            let URL = ActivityAnalysisPaths.eventFile(for: day)
+            let URL = eventFile(for: day)
             return try? URL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         }
 
-        func removeAnalysis(for day: Date) {
-            for URL in [
-                ActivityAnalysisPaths.JSONFile(for: day),
-                ActivityAnalysisPaths.agentMarkdownFile(for: day),
-            ] {
-                try? fileManager.removeItem(at: URL)
-            }
+        @discardableResult
+        func removeAnalysis(for day: Date) -> Int {
+            remove([
+                JSONFile(for: day),
+                agentMarkdownFile(for: day),
+            ])
+        }
+
+        @discardableResult
+        func removeAllStored() -> Int {
+            guard let files = try? fileManager.contentsOfDirectory(
+                at: analysisDirectory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) else { return 0 }
+            return remove(files)
         }
 
         func removeOrphanedAnalyses() {
             guard
                 let files = try? fileManager.contentsOfDirectory(
-                    at: ActivityAnalysisPaths.analysisDirectory,
+                    at: analysisDirectory,
                     includingPropertiesForKeys: nil,
                     options: [.skipsHiddenFiles]
                 )
@@ -113,8 +135,7 @@
                     continue
                 }
                 let dayName = String(name[range])
-                let eventFile = ActivityAnalysisPaths.eventsDirectory
-                    .appendingPathComponent(dayName + ".jsonl")
+                let eventFile = eventsDirectory.appendingPathComponent(dayName + ".jsonl")
                 if !fileManager.fileExists(atPath: eventFile.path) {
                     try? fileManager.removeItem(at: file)
                 }
@@ -127,7 +148,7 @@
                 return []
             }
             let loaded = HistoryLocalStoreReader(
-                rootDirectory: AppPaths.applicationSupportDirectory
+                rootDirectory: rootDirectory
             ).load(start: start, end: next.addingTimeInterval(-0.001))
             for issue in loaded.issues {
                 Diagnostics.write("Activity analysis load gap: \(issue.path):\(issue.line.map(String.init) ?? "-") \(issue.message)")
@@ -164,20 +185,70 @@
         }
 
         private func write(_ analysis: ActivityDayAnalysis, for day: Date) throws {
-            try ActivityAnalysisPaths.prepare()
+            try prepareDirectory()
 
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             let JSONData = try encoder.encode(analysis)
-            let JSONURL = ActivityAnalysisPaths.JSONFile(for: day)
+            let JSONURL = JSONFile(for: day)
             try JSONData.write(to: JSONURL, options: [.atomic])
             try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: JSONURL.path)
 
-            let markdownURL = ActivityAnalysisPaths.agentMarkdownFile(for: day)
+            let markdownURL = agentMarkdownFile(for: day)
             try analysis.agentMarkdown.write(to: markdownURL, atomically: true, encoding: .utf8)
             try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: markdownURL.path)
         }
+
+        private func prepareDirectory() throws {
+            try fileManager.createDirectory(
+                at: analysisDirectory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            try? fileManager.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: analysisDirectory.path
+            )
+        }
+
+        private func eventFile(for day: Date) -> URL {
+            eventsDirectory.appendingPathComponent(dayString(day) + ".jsonl")
+        }
+
+        private func JSONFile(for day: Date) -> URL {
+            analysisDirectory.appendingPathComponent(dayString(day) + ".analysis.json")
+        }
+
+        private func agentMarkdownFile(for day: Date) -> URL {
+            analysisDirectory.appendingPathComponent(dayString(day) + ".agent.md")
+        }
+
+        private func dayString(_ date: Date) -> String {
+            Self.dayFormatter.string(from: Calendar.current.startOfDay(for: date))
+        }
+
+        private func remove(_ URLs: [URL]) -> Int {
+            var removed = 0
+            for URL in URLs where fileManager.fileExists(atPath: URL.path) {
+                do {
+                    try fileManager.removeItem(at: URL)
+                    removed += 1
+                } catch {
+                    Diagnostics.write("Could not remove derived analysis \(URL.path): \(error)")
+                }
+            }
+            return removed
+        }
+
+        private static let dayFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .current
+            formatter.dateFormat = "yyyy-MM-dd"
+            return formatter
+        }()
     }
 
     /// Runs alongside the recorder. It never performs network requests and its optional
