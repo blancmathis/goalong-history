@@ -13,30 +13,52 @@
         @Published var question = ""
 
         private let store = ComputerHistoryStore()
-        private let queue = DispatchQueue(
-            label: "ai.goalong.localhistory.computer-history-page",
+        private let analysisQueue = DispatchQueue(
+            label: "ai.goalong.localhistory.computer-history-page.analysis",
+            qos: .userInitiated
+        )
+        private let searchQueue = DispatchQueue(
+            label: "ai.goalong.localhistory.computer-history-page.search",
             qos: .userInitiated
         )
         private var requestedDay: Date?
+        private var loadedDay: Date?
 
-        func refresh(day: Date) {
+        /// Avoid rebuilding the complete day every time SwiftUI re-enters the tab.
+        /// Explicit refreshes and consent changes can still force a rebuild.
+        func refresh(day: Date, force: Bool = false) {
             let normalized = Calendar.current.startOfDay(for: day)
+            if !force,
+                requestedDay == normalized,
+                isLoading || loadedDay == normalized
+            {
+                return
+            }
+
+            let dayChanged = requestedDay != normalized
             requestedDay = normalized
             isLoading = true
             errorMessage = nil
-            queue.async { [weak self] in
+            if dayChanged {
+                memory = store.loadStored(for: normalized)
+                answer = nil
+            }
+
+            analysisQueue.async { [weak self] in
                 guard let self else { return }
                 do {
                     let memory = try self.store.buildAndWrite(for: normalized)
                     DispatchQueue.main.async {
                         guard self.requestedDay == normalized else { return }
                         self.memory = memory
+                        self.loadedDay = normalized
                         self.isLoading = false
                     }
                 } catch {
                     DispatchQueue.main.async {
                         guard self.requestedDay == normalized else { return }
                         self.memory = self.store.loadStored(for: normalized)
+                        self.loadedDay = normalized
                         self.errorMessage = error.localizedDescription
                         self.isLoading = false
                     }
@@ -49,7 +71,7 @@
             guard !query.isEmpty, !isAnswering else { return }
             isAnswering = true
             errorMessage = nil
-            queue.async { [weak self] in
+            searchQueue.async { [weak self] in
                 guard let self else { return }
                 let answer = self.store.answer(query, maximumDays: 30)
                 DispatchQueue.main.async {
@@ -104,6 +126,7 @@
         @ObservedObject var model: ComputerHistoryPageModel
         let day: Date
         let fullContextEnabled: Bool
+        let runtime: RuntimePresentation
 
         private let metricColumns = [
             GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
@@ -111,7 +134,7 @@
 
         var body: some View {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     contextStateCard
                     questionCard
                     answerCard
@@ -133,58 +156,196 @@
             }
         }
 
+        private var readiness: ComputerHistoryReadinessAssessment {
+            ComputerHistoryReadinessAssessment.assess(
+                richContextEnabled: fullContextEnabled,
+                accessibilityGranted: runtime.accessibilityGranted,
+                inputMonitoringGranted: runtime.inputMonitoringGranted,
+                eventTapRunning: runtime.eventTapRunning,
+                captureHealth: runtime.captureHealth,
+                captureHealthSnapshot: runtime.captureHealthSnapshot,
+                coverage: model.memory?.coverage
+            )
+        }
+
         private var contextStateCard: some View {
-            Group {
-                if fullContextEnabled {
+            LHCard(padding: 15) {
+                VStack(alignment: .leading, spacing: 13) {
                     HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "brain.head.profile.fill")
+                        Image(systemName: readinessIcon)
                             .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(LHTheme.success)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Full causal context is enabled")
+                            .foregroundStyle(readinessTint)
+                            .frame(width: 28)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(readiness.title)
                                 .font(.system(size: 12, weight: .semibold))
-                            Text(
-                                "Eligible interactions can be linked as before → action → after → settled. Private browsing, exclusions, Secure Input and protected fields remain suppressed."
-                            )
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            Text(readiness.detail)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        Spacer()
+                        Spacer(minLength: 10)
                         StatusPill(
-                            title: "Computer History ready",
-                            symbol: "checkmark.seal.fill",
-                            tint: LHTheme.success
+                            title: readinessStatusTitle,
+                            symbol: readinessIcon,
+                            tint: readinessTint
                         )
                     }
-                    .padding(15)
-                    .background(
-                        LHTheme.success.opacity(0.07),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    )
-                } else {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(LHTheme.warning)
+
+                    Divider()
+
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 185), spacing: 8)],
+                        alignment: .leading,
+                        spacing: 8
+                    ) {
+                        readinessRow(
+                            "Rich Context",
+                            fullContextEnabled ? "Enabled" : "Off",
+                            tint: fullContextEnabled ? LHTheme.success : LHTheme.warning
+                        )
+                        readinessRow(
+                            "Accessibility",
+                            runtime.accessibilityGranted ? "Granted" : "Missing",
+                            tint: runtime.accessibilityGranted ? LHTheme.success : LHTheme.danger
+                        )
+                        readinessRow(
+                            "Input Monitoring",
+                            runtime.inputMonitoringGranted ? "Granted" : "Missing",
+                            tint: runtime.inputMonitoringGranted ? LHTheme.success : LHTheme.danger
+                        )
+                        readinessRow(
+                            "Event tap",
+                            runtime.eventTapRunning ? "Running" : "Unavailable",
+                            tint: runtime.eventTapRunning ? LHTheme.success : LHTheme.danger
+                        )
+                        readinessRow(
+                            "Real input callback",
+                            runtime.captureHealth?.captureProven == true ? "Proven" : "Unproven",
+                            tint: runtime.captureHealth?.captureProven == true
+                                ? LHTheme.success
+                                : LHTheme.warning
+                        )
+                        readinessRow(
+                            "Update identity",
+                            stableIdentityLabel,
+                            tint: stableIdentityTint
+                        )
+                        readinessRow(
+                            "Day before / after",
+                            dayPairLabel,
+                            tint: dayPairTint
+                        )
+                    }
+
+                    if !readiness.limitations.isEmpty {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Metadata-only analysis is active")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(
-                                "Apps, pages, clicks and grouped input still appear, but intentions, semantic changes, task status and resume answers can be incomplete. Enable Rich Context in the Day recap tab for full analysis."
-                            )
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            ForEach(readiness.limitations, id: \.self) { limitation in
+                                Text("• \(limitation)")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
-                    .padding(15)
-                    .background(
-                        LHTheme.warning.opacity(0.08),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+
+                    Text(
+                        "Private browsing, exclusions, Secure Input and protected fields remain suppressed. A setting or a created tap is never presented as proof by itself."
                     )
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+
+        private func readinessRow(
+            _ title: String,
+            _ value: String,
+            tint: Color
+        ) -> some View {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(tint)
+                    .frame(width: 7, height: 7)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title.uppercased())
+                        .font(.system(size: 7, weight: .semibold, design: .rounded))
+                        .tracking(0.35)
+                        .foregroundStyle(.tertiary)
+                    Text(value)
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(9)
+            .background(
+                Color.primary.opacity(0.03),
+                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+            )
+        }
+
+        private var readinessTint: Color {
+            switch readiness.state {
+            case .ready: return LHTheme.success
+            case .metadataOnly, .awaitingDayEvidence, .partialSemanticCoverage:
+                return LHTheme.warning
+            case .permissionRequired, .inputCaptureUnproven:
+                return LHTheme.danger
+            }
+        }
+
+        private var readinessIcon: String {
+            switch readiness.state {
+            case .ready: return "checkmark.seal.fill"
+            case .metadataOnly: return "rectangle.and.pencil.and.ellipsis"
+            case .awaitingDayEvidence: return "clock.badge.questionmark"
+            case .partialSemanticCoverage: return "chart.bar.doc.horizontal"
+            case .permissionRequired: return "lock.trianglebadge.exclamationmark.fill"
+            case .inputCaptureUnproven: return "waveform.path.badge.minus"
+            }
+        }
+
+        private var readinessStatusTitle: String {
+            switch readiness.state {
+            case .ready: return "Day evidenced"
+            case .metadataOnly: return "Metadata only"
+            case .permissionRequired: return "Permission missing"
+            case .inputCaptureUnproven: return "Capture unproven"
+            case .awaitingDayEvidence: return "Awaiting actions"
+            case .partialSemanticCoverage: return "Partial evidence"
+            }
+        }
+
+        private var stableIdentityLabel: String {
+            switch readiness.stablePermissionIdentity {
+            case true: return "Stable signature"
+            case false: return "Unstable signature"
+            case nil: return "Unknown"
+            }
+        }
+
+        private var stableIdentityTint: Color {
+            switch readiness.stablePermissionIdentity {
+            case true: return LHTheme.success
+            case false: return LHTheme.warning
+            case nil: return .secondary
+            }
+        }
+
+        private var dayPairLabel: String {
+            guard let coverage = model.memory?.coverage else { return "No memory yet" }
+            guard coverage.actionEventCount > 0 else { return "No eligible actions" }
+            guard let ratio = coverage.semanticPairCoverage else { return "Unavailable" }
+            return "\(Int((ratio * 100).rounded()))%"
+        }
+
+        private var dayPairTint: Color {
+            guard let coverage = model.memory?.coverage,
+                coverage.actionEventCount > 0,
+                let ratio = coverage.semanticPairCoverage
+            else { return .secondary }
+            return ratio >= 0.90 ? LHTheme.success : LHTheme.warning
         }
 
         private var questionCard: some View {
@@ -355,7 +516,10 @@
         }
 
         private func episodes(_ memory: ComputerHistoryDayMemory) -> some View {
-            VStack(alignment: .leading, spacing: 10) {
+            let resourcesByID = Dictionary(
+                uniqueKeysWithValues: memory.resources.map { ($0.id, $0) }
+            )
+            return VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(
                     title: "Causal timeline",
                     subtitle: "Every retained action stays chronological and source-backed"
@@ -363,14 +527,14 @@
                 if memory.episodes.isEmpty {
                     compactEmpty("No causal episode could be reconstructed")
                 } else {
-                    ForEach(memory.episodes) { episode in
-                        ComputerHistoryEpisodeCard(
-                            episode: episode,
-                            resources: Dictionary(
-                                uniqueKeysWithValues: memory.resources.map { ($0.id, $0) }
-                            ),
-                            openResource: model.open
-                        )
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(memory.episodes) { episode in
+                            ComputerHistoryEpisodeCard(
+                                episode: episode,
+                                resources: resourcesByID,
+                                openResource: model.open
+                            )
+                        }
                     }
                 }
             }
@@ -523,7 +687,7 @@
                     message: model.errorMessage
                         ?? "Keep Goalong running and interact with eligible apps. The causal memory is rebuilt automatically as events arrive.",
                     buttonTitle: "Build again",
-                    action: { model.refresh(day: day) }
+                    action: { model.refresh(day: day, force: true) }
                 )
                 .frame(minHeight: 320)
             }
