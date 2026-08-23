@@ -6,8 +6,17 @@ DAY="2026-08-20"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/goalong-computer-history-fixture.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
+cat >&2 <<'NOTICE'
+Synthetic reconstruction regression only.
+
+This script starts from generated JSONL fixtures. It does not measure foreground macOS
+capture, TCC, private browsing, Secure Input, real resource reopening, performance,
+Codex behavior, or public parity. A successful result must never be reported as real
+Computer History parity evidence.
+NOTICE
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "This deterministic integration validation requires macOS." >&2
+  echo "This deterministic reconstruction regression requires macOS." >&2
   exit 69
 fi
 
@@ -46,16 +55,16 @@ payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 answer = payload.get("answer", {})
 hits = answer.get("hits", [])
 if not hits:
-    raise SystemExit("Strict resource lookup returned no hit")
+    raise SystemExit("Synthetic resource lookup returned no hit")
 resource = hits[0].get("resource")
 if not isinstance(resource, dict):
-    raise SystemExit("First strict resource hit has no resource payload")
+    raise SystemExit("First synthetic resource hit has no resource payload")
 uri = resource.get("canonicalURI", "")
 if "docs.google.com/document/d/goalong-parity-proposal" not in uri:
-    raise SystemExit(f"Unexpected resource URI: {uri!r}")
+    raise SystemExit(f"Unexpected synthetic resource URI: {uri!r}")
 identifier = resource.get("id")
 if not isinstance(identifier, str) or not identifier:
-    raise SystemExit("Strict resource hit has no stable ID")
+    raise SystemExit("Synthetic resource hit has no stable ID")
 print(identifier)
 PY
 )"
@@ -81,7 +90,7 @@ unrelated_envelope = json.loads(pathlib.Path(sys.argv[3]).read_text(encoding="ut
 
 memory = memory_envelope.get("memory")
 if not isinstance(memory, dict):
-    raise SystemExit("Positive fixture did not produce a causal memory")
+    raise SystemExit("Positive synthetic fixture did not produce a causal memory")
 coverage = memory.get("coverage", {})
 expected = {
     "actionEventCount": 4,
@@ -92,19 +101,19 @@ for key, value in expected.items():
     if coverage.get(key) != value:
         raise SystemExit(f"coverage.{key}={coverage.get(key)!r}; expected {value}")
 if len(memory.get("resources", [])) < 1:
-    raise SystemExit("Positive fixture resolved no resource")
+    raise SystemExit("Positive synthetic fixture resolved no resource")
 if len(memory.get("episodes", [])) < 1:
-    raise SystemExit("Positive fixture reconstructed no episode")
+    raise SystemExit("Positive synthetic fixture reconstructed no episode")
 
 resource = resource_envelope.get("resource")
 if not isinstance(resource, dict):
-    raise SystemExit("resource command failed to resolve the stable ID")
+    raise SystemExit("resource command failed to resolve the synthetic stable ID")
 if not resource_envelope.get("relatedEpisodes"):
-    raise SystemExit("resource command returned no related episode provenance")
+    raise SystemExit("resource command returned no related synthetic episode provenance")
 
 unrelated_hits = unrelated_envelope.get("answer", {}).get("hits")
 if unrelated_hits != []:
-    raise SystemExit("Named unrelated lookup returned an unsupported resource")
+    raise SystemExit("Named unrelated lookup returned an unsupported synthetic resource")
 PY
 
 python3 "$REPO/scripts/make_computer_history_parity_fixture.py" \
@@ -124,7 +133,7 @@ if python3 "$REPO/scripts/check_computer_history_memory.py" \
   >"$WORK/negative-check.stdout" \
   2>"$WORK/negative-check.stderr"
 then
-  echo "Strict checker incorrectly accepted a fixture with no semantic pairs." >&2
+  echo "Strict checker incorrectly accepted a synthetic fixture with no semantic pairs." >&2
   cat "$WORK/negative-check.stdout" >&2
   exit 1
 fi
@@ -153,7 +162,11 @@ ratio = (
 print(
     json.dumps(
         {
-            "valid": True,
+            "synthetic_regression_valid": True,
+            "synthetic_fixture": True,
+            "real_capture_measured": False,
+            "public_parity_validated": False,
+            "scope": "deterministic reconstruction regression only",
             "fixture": "deterministic-v1",
             "actions": coverage["actionEventCount"],
             "interactions": coverage["linkedInteractionCount"],
