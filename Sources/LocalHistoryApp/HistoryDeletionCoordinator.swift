@@ -123,16 +123,19 @@
             switch request.scope {
             case .timelineEntry, .interval, .day:
                 if let earliest = affectedDays.first {
-                    // Compact memories and analysis are day-local. Computer History
-                    // workflow evidence depends on previous days, so every later causal
-                    // memory is invalidated and rebuilt in order.
-                    for day in affectedDays {
+                    // A partial deletion can change task continuity, workflow evidence,
+                    // summaries and search rankings on later days. Invalidate every
+                    // derived artifact from the first affected day onward, then rebuild
+                    // each surviving day in chronological order. This is intentionally
+                    // broader than the minimum dependency graph so deleted content can
+                    // never remain searchable in a stale cache or memory.
+                    let remainingDays = eventDays().filter { $0 >= earliest }
+                    for day in remainingDays {
                         removedDerived += try removeDayLocalDerivedFiles(for: day)
                     }
                     removedDerived += try removeComputerHistoryFiles(from: earliest)
-                    let remainingDays = eventDays().filter { $0 >= earliest }
-                    let affectedSet = Set(affectedDays)
-                    for day in remainingDays where affectedSet.contains(day) {
+
+                    for day in remainingDays {
                         do {
                             _ = try ActivityAnalysisStore(
                                 rootDirectory: rootDirectory,
