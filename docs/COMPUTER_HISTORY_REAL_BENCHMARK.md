@@ -12,7 +12,7 @@ A synthetic fixture result must never be reported as real parity evidence.
 ## What the real benchmark measures
 
 The guided harness records independent ground truth and evaluates the exact installed
-application identity against the required thresholds:
+application identity and binary against the required thresholds:
 
 - physical clicks, shortcuts, scroll gestures and application-switch cycles;
 - typing bursts without reconstructing ordinary typed characters;
@@ -32,7 +32,7 @@ Every privacy scenario uses a unique disposable marker. The analyzer fails the p
 check if that marker, a target-specific action or a semantic payload appears where only
 a suppression record is allowed.
 
-## Required build identity
+## Required exact build identity
 
 A Developer ID Application signature is required for a parity-eligible run because an
 ad-hoc identity is not stable enough to establish update and TCC behavior.
@@ -43,27 +43,33 @@ List usable signing identities:
 security find-identity -v -p codesigning
 ```
 
-Build with the exact Developer ID Application identity:
+From a clean checkout of the exact commit to measure, build, verify, record the binary
+hash and install that same bundle in one command:
 
 ```bash
 export LOCALHISTORY_CODESIGN_IDENTITY='Developer ID Application: YOUR NAME (TEAMID)'
-./scripts/build_app.sh
-codesign --verify --strict --verbose=4 'dist/Goalong History.app'
+bash scripts/build_real_computer_history_benchmark_app.sh --install
 ```
 
-Install that exact bundle at the stable application path:
+This helper:
 
-```bash
-sudo /usr/bin/ditto \
-  'dist/Goalong History.app' \
-  '/Applications/Goalong History.app'
-open '/Applications/Goalong History.app'
-```
+1. refuses a dirty checkout;
+2. records the exact `git rev-parse HEAD`;
+3. runs the normal application build with the selected Developer ID identity;
+4. verifies the bundle and `ai.goalong.localhistory` identifier;
+5. records the executable SHA-256, Team ID, CDHash and designated requirement in
+   `dist/goalong-real-benchmark-build.json`;
+6. installs that exact binary at `/Applications/Goalong History.app` when `--install` is
+   supplied;
+7. verifies the installed executable hash before opening it.
 
-The harness refuses a public-parity-eligible run when the installed bundle is not
-`ai.goalong.localhistory` or does not have a Developer ID Application authority. The
-`--allow-unstable-signature` option exists only for debugging the harness and cannot make
-an ad-hoc run eligible for public parity.
+The benchmark launcher independently verifies the manifest, repository HEAD, installed
+bundle identifier, Developer ID authority, Team ID and executable hash. It refuses to run
+against an older or different installed build.
+
+The lower-level `--allow-unstable-signature` Python option exists only for debugging the
+harness and cannot make an ad-hoc run eligible for public parity. The standard launcher
+does not expose that bypass.
 
 ## Minimal manual preparation
 
@@ -78,17 +84,18 @@ physical click so the persisted health record can prove that a real input callba
 reached the running process. A visible permission switch or a created Event Tap alone is
 not sufficient.
 
-Use a clean checkout of the exact branch head, then run:
+Then run:
 
 ```bash
 bash scripts/run_real_computer_history_benchmark.sh \
   --expected-head "$(git rev-parse HEAD)"
 ```
 
-The script does not grant permissions, reset TCC, publish data, merge code, release the
-application, or delete existing history. It creates disposable benchmark files/pages and
-a timestamped report folder on the Desktop. Follow each foreground instruction exactly
-and use physical input for the ground-truth page.
+The launcher first proves that the installed executable is the exact Developer ID-signed
+binary recorded for that HEAD. The benchmark does not grant permissions, reset TCC,
+publish data, merge code, release the application, or delete existing history. It creates
+disposable benchmark files/pages and a timestamped report folder on the Desktop. Follow
+each foreground instruction exactly and use physical input for the ground-truth page.
 
 ## Required thresholds
 
@@ -109,7 +116,8 @@ measurement is present and passes:
 
 The following are also mandatory:
 
-- a Developer ID Application signature for `ai.goalong.localhistory`;
+- the exact manifest-verified Developer ID Application build for
+  `ai.goalong.localhistory`;
 - working Accessibility and Input Monitoring for that exact installed identity;
 - an Event Tap with a real callback observed during the current launch;
 - all core scenarios completed rather than skipped;
@@ -124,9 +132,14 @@ A missing measurement is a failure to validate, never an implicit pass.
 
 ## Artifacts
 
+The build directory contains:
+
+- `dist/goalong-real-benchmark-build.json`: exact source/signature/binary provenance;
+- `dist/Goalong History.app`: the verified source bundle copied to `/Applications`.
+
 The Desktop report directory contains:
 
-- `run.json`: immutable scenario windows, ground truth, manual judgments and environment;
+- `run.json`: scenario windows, independent ground truth, judgments and environment;
 - `report.json`: machine-readable measurements, thresholds and final eligibility;
 - `report.md`: concise human-readable result;
 - `memory-*.json`: Computer History reconstruction for each benchmark day;
@@ -158,6 +171,6 @@ remains the public contract, but no black-box equivalence may then be claimed.
 
 A green GitHub Actions run proves the code builds, tests and packages. A green synthetic
 fixture proves deterministic reconstruction. Neither proves real capture or public
-parity. Only a completed `real_foreground_macos` report for the exact signed build can
-support the parity conclusion, and its claim remains scoped to the apps, macOS version
-and scenarios actually measured.
+parity. Only a completed `real_foreground_macos` report for the exact manifest-verified
+signed binary can support the parity conclusion, and its claim remains scoped to the
+apps, macOS version and scenarios actually measured.
