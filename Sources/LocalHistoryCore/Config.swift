@@ -1,5 +1,12 @@
 import Foundation
 
+public enum CaptureListMode: String, Codable, CaseIterable {
+    /// Capture every source except entries explicitly listed in the exclusion list.
+    case excludeListed
+    /// Capture only sources explicitly listed in the inclusion list.
+    case includeOnly
+}
+
 public struct RecorderConfig: Codable, Equatable {
     public var retentionDays: Int
     public var pollIntervalMilliseconds: Int
@@ -23,6 +30,14 @@ public struct RecorderConfig: Codable, Equatable {
 
     public var excludedBundleIdentifiers: [String]
     public var excludedDomains: [String]
+
+    /// Optional for backwards-compatible decoding of config files written before
+    /// include-only capture was implemented. `validated()` materializes explicit defaults.
+    public var applicationCaptureMode: CaptureListMode?
+    public var websiteCaptureMode: CaptureListMode?
+    public var includedBundleIdentifiers: [String]?
+    public var includedDomains: [String]?
+
     public var browserBundleIdentifiers: [String]
     public var privateWindowMarkers: [String]
     public var addressFieldMarkers: [String]
@@ -45,6 +60,10 @@ public struct RecorderConfig: Codable, Equatable {
         enableAppAttest: Bool? = true,
         excludedBundleIdentifiers: [String],
         excludedDomains: [String],
+        applicationCaptureMode: CaptureListMode? = .excludeListed,
+        websiteCaptureMode: CaptureListMode? = .excludeListed,
+        includedBundleIdentifiers: [String]? = [],
+        includedDomains: [String]? = [],
         browserBundleIdentifiers: [String],
         privateWindowMarkers: [String],
         addressFieldMarkers: [String]
@@ -66,13 +85,64 @@ public struct RecorderConfig: Codable, Equatable {
         self.enableAppAttest = enableAppAttest
         self.excludedBundleIdentifiers = excludedBundleIdentifiers
         self.excludedDomains = excludedDomains
+        self.applicationCaptureMode = applicationCaptureMode
+        self.websiteCaptureMode = websiteCaptureMode
+        self.includedBundleIdentifiers = includedBundleIdentifiers
+        self.includedDomains = includedDomains
         self.browserBundleIdentifiers = browserBundleIdentifiers
         self.privateWindowMarkers = privateWindowMarkers
         self.addressFieldMarkers = addressFieldMarkers
     }
 
+    public var effectiveApplicationCaptureMode: CaptureListMode {
+        applicationCaptureMode ?? .excludeListed
+    }
+
+    public var effectiveWebsiteCaptureMode: CaptureListMode {
+        websiteCaptureMode ?? .excludeListed
+    }
+
+    public var effectiveIncludedBundleIdentifiers: [String] {
+        includedBundleIdentifiers ?? []
+    }
+
+    public var effectiveIncludedDomains: [String] {
+        includedDomains ?? []
+    }
+
+    /// Application and website policies are deliberately independent. In include-only
+    /// mode an unknown identity fails closed instead of being treated as implicitly allowed.
+    public func allowsApplication(bundleIdentifier: String?) -> Bool {
+        let normalized = bundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        switch effectiveApplicationCaptureMode {
+        case .excludeListed:
+            guard let normalized, !normalized.isEmpty else { return true }
+            return !excludedBundleIdentifiers.contains {
+                $0.caseInsensitiveCompare(normalized) == .orderedSame
+            }
+        case .includeOnly:
+            guard let normalized, !normalized.isEmpty else { return false }
+            return effectiveIncludedBundleIdentifiers.contains {
+                $0.caseInsensitiveCompare(normalized) == .orderedSame
+            }
+        }
+    }
+
+    public func allowsWebsite(host: String?) -> Bool {
+        switch effectiveWebsiteCaptureMode {
+        case .excludeListed:
+            return !URLRedactor.domain(host, matches: excludedDomains)
+        case .includeOnly:
+            guard let host, !host.isEmpty else { return false }
+            return URLRedactor.domain(host, matches: effectiveIncludedDomains)
+        }
+    }
+
     public static let `default` = RecorderConfig(
-        retentionDays: 30,
+        // Computer History's publicly documented temporary event window is 48 hours.
+        // Existing user configs retain their explicit value during migration.
+        retentionDays: 2,
         pollIntervalMilliseconds: 650,
         heartbeatSeconds: 60,
         captureClicks: true,
@@ -104,6 +174,10 @@ public struct RecorderConfig: Codable, Equatable {
             "com.apple.SafariTechnologyPreview.Passwords",
         ],
         excludedDomains: [],
+        applicationCaptureMode: .excludeListed,
+        websiteCaptureMode: .excludeListed,
+        includedBundleIdentifiers: [],
+        includedDomains: [],
         browserBundleIdentifiers: [
             "com.apple.Safari",
             "com.apple.SafariTechnologyPreview",
@@ -220,6 +294,8 @@ public struct RecorderConfig: Codable, Equatable {
         }
         output.verificationEnabled = output.verificationEnabled ?? false
         output.enableAppAttest = output.enableAppAttest ?? true
+        output.applicationCaptureMode = output.effectiveApplicationCaptureMode
+        output.websiteCaptureMode = output.effectiveWebsiteCaptureMode
 
         output.excludedBundleIdentifiers = Self.cleanedList(
             output.excludedBundleIdentifiers,
@@ -228,6 +304,16 @@ public struct RecorderConfig: Codable, Equatable {
         )
         output.excludedDomains = Self.cleanedList(
             output.excludedDomains,
+            maxItems: 512,
+            maxLength: 253
+        )
+        output.includedBundleIdentifiers = Self.cleanedList(
+            output.effectiveIncludedBundleIdentifiers,
+            maxItems: 512,
+            maxLength: 256
+        )
+        output.includedDomains = Self.cleanedList(
+            output.effectiveIncludedDomains,
             maxItems: 512,
             maxLength: 253
         )
@@ -279,7 +365,7 @@ public struct RecorderConfig: Codable, Equatable {
         for value in values.prefix(maxItems) {
             let cleaned =
                 value
-                .replacingOccurrences(of: "[\r\n\t]+", with: " ", options: .regularExpression)
+                .replacingOccurrences(of: "[\\r\\n\\t]+", with: " ", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleaned.isEmpty else { continue }
             let bounded =
