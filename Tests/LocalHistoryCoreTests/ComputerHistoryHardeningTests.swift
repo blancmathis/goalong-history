@@ -179,7 +179,7 @@ final class ComputerHistoryHardeningTests: XCTestCase {
         XCTAssertTrue(unrelated.answer.contains("No matching"))
 
         let generic = search.findResources(
-            "Which document was I working on most recently?",
+            "most recent document",
             now: start.addingTimeInterval(120)
         )
         XCTAssertEqual(generic.hits.first?.resource?.title, "Hiring Plan — Google Docs")
