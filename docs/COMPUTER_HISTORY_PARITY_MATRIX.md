@@ -8,85 +8,109 @@ not claim knowledge of undocumented OpenAI internals or equivalence with Compute
 Status vocabulary:
 
 - **implemented** — a corresponding Goalong code path exists;
-- **CI-proven** — deterministic automated validation exercises the behavior;
-- **live-unproven** — the behavior still needs a signed, permissioned macOS session;
+- **CI-regression-proven** — synthetic/unit evidence exercises the deterministic logic;
+- **live-unproven** — the behavior still needs a signed foreground macOS measurement;
 - **open gap** — the public behavior is absent or not sufficiently reliable.
+
+No CI-regression-proven row is a real parity measurement. The only parity-eligible
+protocol is documented in
+[`COMPUTER_HISTORY_REAL_BENCHMARK.md`](COMPUTER_HISTORY_REAL_BENCHMARK.md).
 
 ## Functional matrix
 
-| Public behavior | Expected behavior | Goalong implementation | Automated evidence | Required live macOS scenario | Current result | Remaining gap / required change | Final proof location |
+| Public behavior | Expected behavior | Goalong implementation | Automated evidence | Required real macOS scenario | Current result | Remaining proof | Final evidence |
 |---|---|---|---|---|---|---|---|
-| Explicit enablement | Computer History is opt-in and can be turned off without silently widening capture | onboarding and activity controls; semantic capture remains separately consented | existing onboarding/config tests; privacy audit | enable metadata-only, then full context, then disable | implemented; live-unproven | verify migration never enables rich context implicitly | app UI + config + real-session checklist |
-| Visible capture state | recording, paused, suppressed, permission-missing, tap-unavailable and evidence quality states are visible | menu-bar/dashboard runtime presentation plus evidence-based Computer History readiness | capture-health and readiness tests | revoke/restore Accessibility and Input Monitoring; pause/resume; run with no callback and with low semantic coverage | implemented and CI-proven for state logic; live-unproven | verify wording and transitions against the signed app identity | `RuntimePresentation`, `CaptureHealthEvaluator`, `ComputerHistoryReadinessAssessment` |
-| Pause, resume, stop | user can pause/resume or turn capture off | recorder state and menu/dashboard controls | recorder-state tests | pause for ten minutes, resume, stop, inspect gaps | implemented; live-unproven | verify no detailed data during pause and honest gap display | recorder events + live checklist |
-| Clicks | left, right, other-button and double-click actions are preserved | `CGEventTap`, pointer snapshots, action transactions | interaction tests and deterministic click fixture | TextEdit/Finder/browser single, double, right and auxiliary clicks | implemented; CI-proven for model; live-unproven for recall | measure ≥99% live callback recall and ≥95% target association | strict fixture + real benchmark report |
-| Typing activity without keylogging | grouped bursts contain quantity/duration/field context and observable consequence, not reconstructed ordinary text | typing-burst grouper, AX field context, before/settled snapshots | privacy audit, causal fixture, semantic-store tests | type in normal and secure fields; inspect persisted JSON | implemented; CI-proven for model; live-unproven | measure burst boundaries and prove zero secure-field leakage | privacy audit + live benchmark |
-| Keyboard shortcuts and navigation keys | meaningful combinations and special keys are recorded | event tap shortcut/navigation classification | action tests and deterministic Command-S fixture | Cmd-S, Cmd-C, arrows, Return, Escape in several apps | implemented; CI-proven for model; live-unproven | measure ≥99% live recall | strict fixture + live benchmark |
-| Scrolling | scroll bursts remain ordered actions | event tap scroll grouping and transaction builder | deterministic scroll fixture | short and rapid scrolls in browser, Notes and editor | implemented; CI-proven for model; live-unproven | measure ≥99% live recall and burst quality | strict fixture + live benchmark |
-| Application, window and page changes | app activation, window creation/change/title and URL/page changes are observed | `NSWorkspace`, `AXObserver`, URL sampler and fallback polling | unit tests for episode boundaries and resources | Finder, Safari, Chrome, Terminal, editor, Spaces/full screen | implemented; live-unproven | polling is only fallback; measure rapid-transition loss | real benchmark report |
-| Focus, selection and value changes | useful AX focus/selection/value changes trigger context capture | AX observer notifications and debounced semantic sampler | AX model tests | text selection, changed field value, tab/focus switches | implemented; live-unproven | third-party AX quality and timing are unproved | real benchmark report |
-| Before → action → after → settled | every important action is attributed only to a continuous app and resource | interaction IDs, phase metadata, application **and resource** continuity checks | parity tests, cross-app isolation test, cross-resource isolation test, strict fixture at 100% | switch app/document before delayed callback fires | CI-proven for deterministic model; live-unproven | live target ≥90% exploitable final state | `ComputerHistoryInteractionBuilder`, strict fixture |
-| Rich Context is honest | UI distinguishes event tap, Accessibility, Input Monitoring, rich context, stable identity and degraded metadata-only/partial capture | permission/capture-health surfaces, semantic opt-in and readiness assessment requiring real callback plus ≥90% day pair coverage | capture-health tests and `ComputerHistoryReadinessTests` | run with each permission combination, ad-hoc and stable signatures, no callback, and 0–100% pair coverage | implemented and CI-proven for state logic; live-unproven | signed-build TCC and wording audit remains required | Computer History readiness card + live UI benchmark |
-| Private browsing | no private title, URL, text or input details persist; uncertainty fails closed | private-window classifier, suppression events, cleared URL cache | private-content memory/search test and privacy audit | Safari/Chrome private windows, ambiguous transition | implemented; synthetic evidence; live-unproven | browser/version/localization coverage must be measured | privacy benchmark |
-| Secure Input and protected controls | no key or semantic capture during Secure Input/secure fields | secure-input suppression and secure AX element guards | secure-input/privacy tests and audit | Terminal password prompt and password field | implemented; synthetic evidence; live-unproven | TCC/event-tap timing proof required | privacy benchmark |
-| Application exclusions | excluded apps produce only a coverage gap | independent application policy | config migration/include-only tests; privacy audit | exclude TextEdit and exercise all action types | CI-proven for policy; live-unproven | verify callbacks cannot attach delayed semantic content | live privacy benchmark |
-| Website exclusions | excluded domains/subdomains produce only a coverage gap | sanitized URL policy independent from app policy | domain tests and privacy audit | exclude one host while keeping browser enabled | CI-proven for policy; live-unproven | verify URL-unavailable transitions fail closed where required | live privacy benchmark |
-| Application include-only | only explicitly listed bundle IDs are captured; unknown identity is suppressed | `CaptureListMode.includeOnly`, visible settings, recorder enforcement | migration and fail-closed policy tests | allow TextEdit only; exercise Finder/Safari/unknown wrapper | CI-proven for policy; live-unproven | verify real frontmost identity transitions | live privacy benchmark |
-| Website include-only | only explicitly listed hosts/subdomains are captured; missing host is suppressed | separate website mode and visible list | independent policy tests | allow one site in Safari; switch tabs and disable URL exposure | CI-proven for policy; live-unproven | verify browser AX edge cases | live privacy benchmark |
-| No screenshot/audio/clipboard capture | Computer History remains text/event based | no screenshot, video, camera, microphone, audio or clipboard capture paths | `audit_privacy_boundaries.sh` | inspect built app permissions and generated data | CI-audited; live inspection pending | repeat on final signed bundle | CI audit log + bundle inspection |
-| First-class resource references | identify files, web pages, cloud docs, conversations, issues and app sessions with sanitized locators and provenance | resource resolver and `ComputerHistoryResourceReference` | resolver tests and deterministic Google Docs fixture | files, Docs/Sheets/Slides, ChatGPT/Claude, Slack, Notion, Figma, Linear, GitHub, Office, Notes, IDE, Terminal | partially implemented; live-unproven | provider-specific stable IDs/reopen coverage remains incomplete for several native apps | resolver tests + live resource table |
-| Search without forced false positives | named queries return only evidence-backed matches and may return no result | evidence-gated subject matching, lexical/resource/recency ranking | unrelated named lookup regression and strict fixture | ask for present and absent named resources | CI-proven for fixture; live-unproven | calibrate multilingual semantic retrieval and conversational filler handling on a labeled live corpus | search benchmark |
-| Stable resource inspection | a returned stable ID can be inspected with provenance and related episodes | read-only `find` and `resource` CLI commands | strict end-to-end CLI fixture | locate and reopen real files/pages | CI-proven for fixture; live-unproven | reopening success must reach ≥95% on tested resources | CLI output + live benchmark |
-| Resume recent work | answer where work stopped with cited episode/resource and explicit limitations | local search service resume intent | resume tests and validator question | create break, switch task, ask to resume | implemented; synthetic evidence | measure ≥90% correct answers on live labeled questions | real Q&A benchmark |
-| Stand-up and task status | summarize episodes, decisions/outcomes and bounded status without inventing facts | episode builder, status inference, local answers | completion/blocked/latest-success tests | complete, fail/retry, wait and abandon tasks | implemented; synthetic evidence | factual accuracy target ≥95% requires human-labeled live set | real Q&A benchmark |
-| Chronological episodes | preserve ordered actions, transitions, resources, gaps, uncertainty and provenance | events → interactions → episodes pipeline | multi-action same-minute and separation tests | five rapid actions and unrelated browser tasks | CI-proven for model; live-unproven | high-volume performance and real boundary accuracy | tests + live benchmark |
-| Durable local memories | JSON and Markdown memories are locally inspectable and queryable without proprietary service | memory engine/store and Codex memory mirror | memory serialization/query tests; strict fixture | generate, inspect, restart and query | implemented; synthetic evidence | verify long-term migration and deletion rebuild on real store | memory files + migration report |
-| 48-hour detailed-event default | new detailed events expire after 48 hours; memories persist until deletion | new-config default is two days; data-class retention model preserves memories/proofs separately | hardening default test and retention tests | advance a disposable store beyond 48 hours | CI-proven for configuration/model; live-unproven | physical purge and restart proof on disposable macOS data | retention integration report |
-| Granular deletion | item, ten minutes, hour, day/session and all-history deletion remove derived indexes/memories consistently after confirmation | deletion scopes and planner exist; retention cleanup only removes whole expired-day artifacts | retention/deletion planner tests | execute each scope on a disposable history and rebuild | open functional gap | implement confirmed physical partial/all deletion across events, semantic payloads, indexes, analyses and memories, then rebuild surviving days | deletion integration report |
-| Repeated workflow suggestions | require repeated, normalized, meaningful actions, identified resources and observable result; never auto-install | grounded workflow detector and review-only suggestions | repeated-workflow test and app-switch-only rejection | repeat a real task twice/three times; inspect evidence | CI-proven for model; live-unproven | confidence calibration and diverse resource sequences | workflow benchmark |
-| Timeline coverage honesty | metadata-only periods are not presented as complete semantic understanding | readiness card, coverage counts, pair ratio, limitations, lazy timeline rendering and rebuild deduplication | readiness tests, strict checker and memory consistency tests | open large high- and low-context days while measuring CPU/memory | implemented in data/UI logic; live performance unproven | high-volume CPU and memory benchmark remains open | UI/performance benchmark |
-| Prompt-injection boundary | captured page text is untrusted evidence, never an executable command | security notice, deterministic summarizer/search, no execution path | privacy audit and memory tests | display hostile instructions in a page and query history | implemented; synthetic evidence | add signed-build black-box test | privacy benchmark |
+| Explicit enablement | Computer History is opt-in and can be turned off without silently widening capture | onboarding/activity controls; separate Rich Context consent | onboarding/config/privacy tests | metadata-only → Rich Context → off | implemented; live-unproven | confirm migration and stored data on signed app | real report + inspected config |
+| Visible capture state | recording, paused, suppressed, permission-missing, tap-unavailable and evidence quality are visible | menu/dashboard runtime plus readiness assessment | capture-health/readiness tests | remove/restore permissions; no callback; low pair coverage | CI-regression-proven; live-unproven | verify exact signed-identity transitions | real report + UI review |
+| Pause, resume and stop | no detailed capture while paused/stopped; honest gaps | recorder/menu/dashboard controls | recorder-state tests | pause ten minutes, resume and inspect | implemented; live-unproven | prove no hidden detail during gap | real report |
+| Clicks | left/right/other/double clicks preserved | `CGEventTap`, pointer snapshot, causal transaction | unit tests + synthetic reconstruction | independent physical click counter | CI-regression-proven; real recall unmeasured | ≥99% recall; ≥95% target association | `report.json` input metrics |
+| Typing activity | grouped duration/count/field context, without general keylogging | typing bursts, AX target, semantic aftermath | privacy/semantic tests + synthetic reconstruction | independent physical typing bursts; secure field | CI-regression-proven; live-unproven | burst quality and zero protected leakage | real report |
+| Shortcuts/navigation keys | meaningful combinations retained | Event Tap keyboard classification | unit tests + synthetic Command-S | independent physical shortcut counter | CI-regression-proven; real recall unmeasured | ≥99% recall | real report |
+| Scrolling | ordered scroll bursts retained | Event Tap scroll grouper | synthetic scroll regression | independent physical gesture counter | CI-regression-proven; real recall unmeasured | ≥99% recall and usable grouping | real report |
+| Application/window/page changes | event-driven app/window/title/URL transitions, polling only as fallback | `NSWorkspace`, `AXObserver`, URL sampler, fallback polling | episode/resource tests | Finder, Safari, Chrome, Terminal, editor, Spaces/full screen | implemented; live-unproven | measure rapid-transition loss | real report |
+| Focus/selection/value changes | useful AX changes trigger context capture | AX notifications and semantic sampler | AX/privacy model tests | focus, selection and value changes in real apps | implemented; live-unproven | third-party AX timing/coverage | real report |
+| Before → action → after → settled | context belongs to the same app, window and resource | interaction phases plus app/resource continuity gate | cross-app and cross-resource isolation tests; synthetic complete pairs | switch app/document before delayed callback | CI-regression-proven; live-unproven | ≥90% important interactions with usable final state | real report |
+| Rich Context honesty | UI distinguishes consent, switches, working tap, stable signature and pair coverage | evidence-based readiness card | readiness tests | every permission/signature/coverage state | CI-regression-proven; live-unproven | signed-build TCC and wording audit | real report + UI review |
+| Private browsing | no title/URL/input/semantic content; fail closed | private-window classifier, suppression, URL-cache clearing | suppression/privacy tests | Safari private and Chrome incognito | synthetic evidence only | zero leakage across tested browsers/locales | real privacy rows |
+| Secure Input/protected controls | no input or semantic detail | Secure Input and secure AX guards | secure/privacy tests | Terminal Secure Keyboard Entry and protected field | synthetic evidence only | zero leakage and correct suppression record | real privacy rows |
+| Application exclusions | excluded app yields only coverage state | independent app policy | exclusion/include-only tests | exclude TextEdit; exercise all actions | CI-regression-proven; live-unproven | zero detail leakage | real privacy rows |
+| Website exclusions | excluded host/subdomain yields only coverage state | independent sanitized-host policy | domain/privacy tests | exclude localhost/127.0.0.1 in browser | CI-regression-proven; live-unproven | zero detail leakage | real privacy rows |
+| Application include-only | only listed bundle IDs captured; unknown denied | `CaptureListMode.includeOnly`, UI and enforcement | migration/fail-closed/precedence tests | allow TextEdit; deny Finder/unknown app | CI-regression-proven; live-unproven | prove real identity transitions | real privacy rows |
+| Website include-only | only listed hosts/subdomains captured; missing host denied | independent website include-only mode | policy/precedence tests | allow localhost; deny 127.0.0.1 | CI-regression-proven; live-unproven | prove real tab/AX edge cases | real privacy rows |
+| No screenshot/audio/clipboard | event/text observation only | prohibited APIs absent | `audit_privacy_boundaries.sh` | inspect signed bundle and output | CI-audited; live inspection pending | repeat on final signed bundle | audit log + real artifacts |
+| Resource references | identify files, pages, docs, conversations, issues, app/terminal sessions with provenance | resource resolver and stable `ComputerHistoryResourceReference` | resolver tests + synthetic known resource | twenty independent local files/pages plus available third-party apps | partially implemented; live-unproven | ≥95% correct found and reopened; provider coverage | real resource table |
+| Search without forced false positives | may return no match; named subject requires evidence | subject-gated local ranking | unrelated-query regression | present/absent named real resources | CI-regression-proven; live-unproven | ≥95% correct resource; multilingual calibration | real query artifacts |
+| Stable resource inspection/reopen | stable ID resolves locator and related episodes | real `find` and `resource` CLI commands | end-to-end synthetic CLI regression | open exact intended local/page resource | CI-regression-proven; live-unproven | ≥95% reopen success | real resource review |
+| Resume recent work | recover where work stopped with evidence/limitations | resume intent over episodes/resources | English/French resume tests | ten labeled questions across benchmark sequence | synthetic evidence only | ≥90% correct/useful/evidence-backed | real resume review |
+| Stand-up/task status | summarize observable work/status without invented facts | episode/status inference and answers | completion/blocked/latest-success tests | success, retry, wait, abandon, stand-up | synthetic evidence only | ≥95% factual accuracy | real factual review |
+| Chronological episodes | preserve every ordered action, transition, gap, uncertainty and provenance | events → interactions → episodes | same-minute and boundary tests | rapid actions and unrelated browser tasks | CI-regression-proven; live-unproven | real boundary accuracy | real memory artifacts |
+| Durable local memories | JSON/Markdown locally inspectable and queryable | local memory stores plus namespaced Codex mirror | serialization/query/rebuild tests | generate, restart, query and inspect | CI-regression-proven; live-unproven | migration/restart proof on real store | real artifacts |
+| 48-hour detailed default | detailed events temporary; memories/proofs separate | two-day default and independent retention coordinator | retention boundary and transaction tests | disposable live data over boundary/restart | CI-regression-proven; live-unproven | physical purge proof on installed build | retention report |
+| Granular deletion | item/interval/day/session/all deletion removes raw+semantic+derived coherently and rebuilds survivors | causal JSONL deletion, transactional backup/rollback, later-day invalidation/rebuild | engine/coordinator/rollback tests | confirmed deletion scopes on disposable real history | implemented and CI-regression-proven; live-unproven | UI execution and post-restart proof | real deletion report |
+| Workflow suggestions | repeated semantic sequence, concrete resources and observable outcome; never app-switch-only | grounded workflow detector; review-only proposals | repeated-workflow and switch-only rejection tests | repeat real task two/three times | CI-regression-proven; live-unproven | confidence calibration and no false suggestion | real workflow review |
+| Timeline honesty/performance | coverage and uncertainty visible; no full eager rebuild/freeze | readiness card, lazy rendering and rebuild deduplication | readiness/cache tests | large real history; sample CPU/RSS and responsiveness | logic implemented; performance live-unproven | performance guard and high-volume run | real performance section |
+| Prompt-injection boundary | captured text remains untrusted evidence, never a command | deterministic analysis/search and security notices | privacy/memory tests | hostile text in disposable page | synthetic evidence only | signed-build black-box proof | real privacy/security report |
+| Extra Goalong surfaces | Computer History changes do not regress Screen Time, conversations, agents, integrity or updates | existing isolated features | complete test suite | manually smoke-test all five surfaces | automated tests pass; live-unproven | real smoke checks | real report regressions |
 
-## Deterministic CI benchmark contract
+## Synthetic CI reconstruction contract
 
-`scripts/validate_computer_history_fixture.sh` creates an isolated synthetic LocalHistory
-store and executes the same public read-only CLI used for local data. It currently
-requires:
+`scripts/validate_computer_history_fixture.sh` creates generated JSONL input and verifies
+only deterministic reconstruction:
 
-| Metric | Required | Fixture expectation |
-|---|---:|---:|
-| action events preserved | 100% | 4 / 4 |
-| reconstructed interactions | 100% | 4 / 4 |
-| before/after pair ratio | ≥90% | 4 / 4 = 100% |
-| concrete resources | ≥1 | Google Docs document |
-| stable resource lookup | success | same resource ID and related episode |
-| unsupported named lookup | zero hits | strategic acquisition query |
-| no-pair negative fixture | strict rejection | required |
+| Synthetic check | Expected |
+|---|---:|
+| generated actions preserved | 4 / 4 |
+| generated interactions reconstructed | 4 / 4 |
+| generated before/after pairs | 4 / 4 |
+| known generated resource resolved | yes |
+| unsupported named query rejected | yes |
+| no-pair negative fixture rejected | yes |
 
-This proves deterministic model and integration behavior only. It does **not** measure
-macOS callback recall, TCC persistence, private-window detection, resource reopening in
-third-party apps, CPU usage, or factual accuracy of live summaries.
+Its machine-readable output explicitly contains:
 
-## Live benchmark status
+```json
+{
+  "synthetic_regression_valid": true,
+  "synthetic_fixture": true,
+  "real_capture_measured": false,
+  "public_parity_validated": false
+}
+```
 
-The execution environment used for this change is Linux and has no access to Mathis's
-macOS session, TCC database, installed applications, local history, or Codex Computer
-History. Therefore the mandatory live figures remain **not measured**, not zero and not
-passed:
+This fixture cannot support a real-parity statement regardless of a `4/4` result.
+
+## Real benchmark status
+
+The guided fail-closed protocol is implemented in:
+
+```bash
+bash scripts/run_real_computer_history_benchmark.sh \
+  --expected-head "$(git rev-parse HEAD)"
+```
+
+It requires a Developer ID-signed `ai.goalong.localhistory` bundle installed at the
+stable Applications path, working Accessibility and Input Monitoring for that identity,
+Rich Context consent and a real foreground callback. It records independent physical
+input ground truth, privacy markers, twenty resource reviews, factual/resume judgments,
+performance samples and a Codex comparison when accessible.
+
+At the time of this matrix update, the protocol has **not been executed in Mathis's
+foreground macOS session**. Therefore every required live metric remains **not measured**
+and no public-parity conclusion is permitted:
 
 | Live threshold | Status |
 |---|---|
 | clicks, shortcuts, scrolls and app switches ≥99% recall | not measured |
 | correct element/document association ≥95% | not measured |
-| important interactions with exploitable final state ≥90% | not measured |
+| important interactions with usable final state ≥90% | not measured |
 | important semantic changes recovered ≥90% | not measured |
 | correct resource found ≥95% | not measured |
 | correct resource reopened ≥95% | not measured |
-| private/Secure Input/exclusion leakage = 0 | not measured on signed live build |
-| summary factual accuracy ≥95% | not measured |
+| private/Secure Input/exclusion/include-only leakage = 0 | not measured |
+| factual accuracy ≥95% | not measured |
 | resume questions solved ≥90% | not measured |
-| timeline CPU and memory limits | not measured |
-| side-by-side Codex black-box comparison | unavailable in this environment |
+| CPU/RSS and foreground responsiveness guard | not measured |
+| side-by-side Codex Computer History comparison | not executed |
 
-A public-parity conclusion is forbidden until these rows have measured evidence on the
-specific signed build and application set being claimed.
+Only a `real_foreground_macos` report for the exact signed build may set
+`public_parity_validated: true`; missing measurements fail closed.
