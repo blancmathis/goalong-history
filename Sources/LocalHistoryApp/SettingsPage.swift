@@ -1,4 +1,5 @@
 #if os(macOS)
+    import LocalHistoryCore
     import SwiftUI
 
     struct SettingsPage: View {
@@ -39,7 +40,7 @@
                         captureCard
                         privacyCard
                         verificationCard
-                        exclusionsCard
+                        captureScopeCard
                         advancedCard
                     }
                     .padding(.horizontal, 24)
@@ -190,8 +191,8 @@
                         Image(systemName: "checkmark.shield.fill")
                             .foregroundStyle(LHTheme.success)
                         Text(model.deviceProtectionSummary)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .padding(11)
@@ -201,26 +202,31 @@
             }
         }
 
-        private var exclusionsCard: some View {
+        private var captureScopeCard: some View {
             settingsCard(
-                symbol: "eye.slash.fill",
-                title: "Exclusions",
+                symbol: "scope",
+                title: "Capture scope",
                 subtitle:
-                    "Excluded contexts remain visible only as coverage gaps; their detailed contents are not stored"
+                    "Applications and websites have independent policies. Include-only mode fails closed when an identity cannot be verified."
             ) {
                 HStack(alignment: .top, spacing: 14) {
-                    exclusionEditor(
-                        title: "Excluded website domains",
-                        placeholder: "example.com\nprivate.company.com",
-                        text: $model.settingsDraft.excludedDomainsText,
-                        help:
-                            "One host per line. Subdomains of a listed domain are also excluded by the recorder policy."
+                    captureScopeEditor(
+                        title: "Website domains",
+                        mode: $model.settingsDraft.websiteCaptureMode,
+                        excludedText: $model.settingsDraft.excludedDomainsText,
+                        includedText: $model.settingsDraft.includedDomainsText,
+                        excludedPlaceholder: "example.com\nprivate.company.com",
+                        includedPlaceholder: "docs.company.com\nlinear.app",
+                        identityHelp: "One host per line. A rule also applies to its subdomains."
                     )
-                    exclusionEditor(
-                        title: "Excluded application bundle IDs",
-                        placeholder: "com.example.privateapp",
-                        text: $model.settingsDraft.excludedApplicationsText,
-                        help: "One bundle identifier per line. Password managers are excluded by default."
+                    captureScopeEditor(
+                        title: "Application bundle IDs",
+                        mode: $model.settingsDraft.applicationCaptureMode,
+                        excludedText: $model.settingsDraft.excludedApplicationsText,
+                        includedText: $model.settingsDraft.includedApplicationsText,
+                        excludedPlaceholder: "com.example.privateapp",
+                        includedPlaceholder: "com.apple.TextEdit\ncom.apple.Safari",
+                        identityHelp: "One exact bundle identifier per line. Password managers remain excluded by default."
                     )
                 }
             }
@@ -332,6 +338,54 @@
             .padding(13)
             .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+
+        private func captureScopeEditor(
+            title: String,
+            mode: Binding<CaptureListMode>,
+            excludedText: Binding<String>,
+            includedText: Binding<String>,
+            excludedPlaceholder: String,
+            includedPlaceholder: String,
+            identityHelp: String
+        ) -> some View {
+            let isIncludeOnly = mode.wrappedValue == .includeOnly
+            return VStack(alignment: .leading, spacing: 10) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+
+                Picker("Capture policy", selection: mode) {
+                    Text("All except listed").tag(CaptureListMode.excludeListed)
+                    Text("Only listed").tag(CaptureListMode.includeOnly)
+                }
+                .pickerStyle(.segmented)
+
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: isIncludeOnly ? "checklist.checked" : "eye.slash")
+                        .foregroundStyle(isIncludeOnly ? LHTheme.warning : LHTheme.accent)
+                    Text(
+                        isIncludeOnly
+                            ? "Only identities listed below are captured. Unknown or unavailable identities are suppressed."
+                            : "Every identity is captured except entries listed below."
+                    )
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                exclusionEditor(
+                    title: isIncludeOnly ? "Included identities" : "Excluded identities",
+                    placeholder: isIncludeOnly ? includedPlaceholder : excludedPlaceholder,
+                    text: isIncludeOnly ? includedText : excludedText,
+                    help: identityHelp
+                )
+            }
+            .padding(13)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(
+                Color.primary.opacity(0.035),
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
         }
 
         private func exclusionEditor(

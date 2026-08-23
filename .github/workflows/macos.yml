@@ -15,18 +15,35 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Environment
         run: |
           sw_vers
           xcrun swift --version
 
+      - name: Diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_BRANCH="${GITHUB_BASE_REF:-main}"
+          git fetch --no-tags origin "$BASE_BRANCH"
+          BASE_SHA="$(git merge-base HEAD "origin/$BASE_BRANCH")"
+          git diff --check "$BASE_SHA" HEAD
+
       - name: Validate scripts
         run: |
           bash -n Install.command Uninstall.command install.sh uninstall.sh
           find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
-          python3 -m py_compile scripts/check_computer_history_memory.py
-          bash scripts/validate_computer_history_parity.sh --help >/dev/null
+          python3 -m py_compile \
+            scripts/check_computer_history_memory.py \
+            scripts/make_computer_history_parity_fixture.py \
+            scripts/real_computer_history_benchmark.py
+          python3 -m unittest discover \
+            -s scripts/tests \
+            -p 'test_real_computer_history_benchmark.py' \
+            -v
 
       - name: Privacy-boundary and dependency audit
         run: ./scripts/audit_privacy_boundaries.sh
@@ -47,6 +64,42 @@ jobs:
               exit "$STATUS"
             fi
           fi
+
+      - name: Synthetic Computer History reconstruction regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$(mktemp)"
+          bash scripts/validate_computer_history_fixture.sh | tee "$LOG"
+          python3 - "$LOG" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          payload = None
+          for line in reversed(pathlib.Path(sys.argv[1]).read_text().splitlines()):
+              try:
+                  candidate = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if isinstance(candidate, dict) and "synthetic_fixture" in candidate:
+                  payload = candidate
+                  break
+
+          if payload is None:
+              raise SystemExit("Synthetic regression did not emit its scope declaration")
+          expected = {
+              "synthetic_regression_valid": True,
+              "synthetic_fixture": True,
+              "real_capture_measured": False,
+              "public_parity_validated": False,
+          }
+          for key, value in expected.items():
+              if payload.get(key) is not value:
+                  raise SystemExit(
+                      f"Synthetic regression scope mismatch: {key}={payload.get(key)!r}"
+                  )
+          PY
 
       - name: Build installable app bundle
         env:

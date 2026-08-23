@@ -142,27 +142,33 @@
                 .map { AXReader.elementSnapshot($0, config: config) }
 
             var urlSnapshot: URLSnapshot?
-            if isBrowser, config.captureURLs {
-                let shouldProbeURL =
-                    cachedBrowserIdentity != windowIdentity
-                    || Date().timeIntervalSince(lastURLProbe) >= 1.25
+            if isBrowser {
+                if config.captureURLs {
+                    let shouldProbeURL =
+                        cachedBrowserIdentity != windowIdentity
+                        || Date().timeIntervalSince(lastURLProbe) >= 1.25
 
-                if shouldProbeURL {
-                    let rawURL = AXReader.browserURL(
-                        from: windowElement,
-                        addressFieldMarkers: config.addressFieldMarkers
-                    )
-                    cachedURL = URLRedactor.sanitize(
-                        rawURL,
-                        redactAllQueryValues: config.redactAllURLQueryValues,
-                        maxLength: config.maxStringLength
-                    )
-                    cachedBrowserIdentity = windowIdentity
-                    lastURLProbe = Date()
+                    if shouldProbeURL {
+                        let rawURL = AXReader.browserURL(
+                            from: windowElement,
+                            addressFieldMarkers: config.addressFieldMarkers
+                        )
+                        cachedURL = URLRedactor.sanitize(
+                            rawURL,
+                            redactAllQueryValues: config.redactAllURLQueryValues,
+                            maxLength: config.maxStringLength
+                        )
+                        cachedBrowserIdentity = windowIdentity
+                        lastURLProbe = Date()
+                    }
+                    urlSnapshot = cachedURL
                 }
-                urlSnapshot = cachedURL
 
-                if URLRedactor.domain(urlSnapshot?.host, matches: config.excludedDomains) {
+                // Website scope is evaluated independently from the application scope.
+                // Include-only mode deliberately fails closed when no host is available
+                // (for example when URL capture is disabled or Accessibility cannot expose it).
+                if !config.allowsWebsite(host: urlSnapshot?.host) {
+                    clearCachedURL()
                     return ContextSnapshot(
                         app: app,
                         window: nil,
@@ -222,11 +228,12 @@
             }
             guard isBrowser else { return nil }
 
-            if let sanitized = URLRedactor.sanitize(
+            let sanitized = URLRedactor.sanitize(
                 rawURL,
                 redactAllQueryValues: config.redactAllURLQueryValues,
                 maxLength: config.maxStringLength
-            ), URLRedactor.domain(sanitized.host, matches: config.excludedDomains) {
+            )
+            if !config.allowsWebsite(host: sanitized?.host) {
                 return .excludedDomain
             }
 
@@ -261,8 +268,7 @@
         }
 
         private func isExcluded(app: AppSnapshot, config: RecorderConfig) -> Bool {
-            guard let bundleIdentifier = app.bundleIdentifier else { return false }
-            return config.excludedBundleIdentifiers.contains(bundleIdentifier)
+            !config.allowsApplication(bundleIdentifier: app.bundleIdentifier)
         }
 
         private func rememberBrowser(_ app: AppSnapshot) {

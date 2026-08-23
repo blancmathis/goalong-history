@@ -242,8 +242,12 @@
         var verificationEnabled: Bool
         var verificationServerURL: String
         var enableAppAttest: Bool
+        var applicationCaptureMode: CaptureListMode
+        var websiteCaptureMode: CaptureListMode
         var excludedDomainsText: String
         var excludedApplicationsText: String
+        var includedDomainsText: String
+        var includedApplicationsText: String
 
         init(config: RecorderConfig) {
             captureClicks = config.captureClicks
@@ -258,8 +262,12 @@
             verificationEnabled = config.verificationEnabled == true
             verificationServerURL = config.verificationServerURL ?? ""
             enableAppAttest = config.enableAppAttest != false
+            applicationCaptureMode = config.effectiveApplicationCaptureMode
+            websiteCaptureMode = config.effectiveWebsiteCaptureMode
             excludedDomainsText = config.excludedDomains.joined(separator: "\n")
             excludedApplicationsText = config.excludedBundleIdentifiers.joined(separator: "\n")
+            includedDomainsText = config.effectiveIncludedDomains.joined(separator: "\n")
+            includedApplicationsText = config.effectiveIncludedBundleIdentifiers.joined(separator: "\n")
         }
 
         func applying(to base: RecorderConfig) -> RecorderConfig {
@@ -276,7 +284,11 @@
             output.verificationEnabled = verificationEnabled
             output.verificationServerURL = verificationServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
             output.enableAppAttest = enableAppAttest
+            output.applicationCaptureMode = applicationCaptureMode
+            output.websiteCaptureMode = websiteCaptureMode
             output.excludedDomains = Self.lines(from: excludedDomainsText).map { $0.lowercased() }
+            output.includedDomains = Self.lines(from: includedDomainsText).map { $0.lowercased() }
+            output.includedBundleIdentifiers = Self.lines(from: includedApplicationsText)
 
             var excludedApps = Self.lines(from: excludedApplicationsText)
             if !excludedApps.contains("ai.goalong.localhistory") {

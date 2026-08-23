@@ -104,7 +104,7 @@ run_logged() {
 cat "$OUTPUT/environment.txt"
 
 run_logged parity-unit-tests bash -lc \
-  "cd \"$REPO\" && swift test --filter ComputerHistoryParityTests && swift test --filter ComputerHistoryEpisodeQualityTests"
+  "cd \"$REPO\" && swift test --filter ComputerHistoryParityTests && swift test --filter ComputerHistoryEpisodeQualityTests && swift test --filter ComputerHistoryInteractionIsolationTests && swift test --filter ComputerHistoryHardeningTests"
 run_logged privacy-boundary-audit bash -lc \
   "cd \"$REPO\" && ./scripts/audit_privacy_boundaries.sh"
 run_logged query-cli-build bash -lc \
@@ -136,7 +136,7 @@ run_logged causal-invariants "${CHECK_ARGS[@]}"
 run_logged ask-resume "$QUERY_CLI" --root "$DATA_ROOT" ask --days 30 \
   "Where was I before my most recent observable break?"
 run_logged ask-resource "$QUERY_CLI" --root "$DATA_ROOT" ask --days 30 \
-  "Which source document or file was I working on most recently?"
+  "Which document was I working on most recently?"
 run_logged ask-status "$QUERY_CLI" --root "$DATA_ROOT" ask --days 30 \
   "What work is completed, in progress, blocked, or waiting?"
 run_logged ask-workflows "$QUERY_CLI" --root "$DATA_ROOT" ask --days 30 \
@@ -177,7 +177,7 @@ print(json.dumps({"valid": True, "questions_checked": 4}, sort_keys=True))
 PY
 
 cat >"$OUTPUT/MANUAL_REAL_SESSION_CHECKLIST.txt" <<'TXT'
-Real-session evidence still required before claiming measured 100% parity on a Mac:
+Real-session evidence still required before claiming measured public parity on a Mac:
 
 1. Use the signed Goalong History build with Accessibility and any required Input
    Monitoring permission granted to that exact installed application identity.
@@ -194,19 +194,25 @@ Real-session evidence still required before claiming measured 100% parity on a M
 6. Create a visible failure, retry, then success; confirm the latest successful state
    wins while the earlier failure remains in the action evidence.
 7. Perform five actions inside one minute; confirm all five interactions remain.
-8. Verify private browsing, an excluded source, Secure Input, and a protected control
-   expose only coverage gaps and never hidden titles, URLs, text, or input details.
-9. Ask the four validation questions and manually verify each cited source.
-10. Re-run this script with:
+8. Verify private browsing, an excluded source, include-only scope, Secure Input, and a
+   protected control expose only coverage gaps and never hidden titles, URLs, text, or
+   input details.
+9. Exercise Calculator or TextEdit, Finder, Safari, Chrome, Terminal, an editor, Notes,
+   ChatGPT, Slack, Google Docs, lock/unlock, sleep/wake, Spaces, and full screen when
+   available. Record expected and observed event counts per scenario.
+10. Ask the four validation questions and manually verify every cited source and reopen
+    action.
+11. Re-run this script with:
 
    bash scripts/validate_computer_history_parity.sh \
      --day YYYY-MM-DD \
      --require-real-context \
-     --minimum-pair-ratio 0.80
+     --minimum-pair-ratio 0.90
 
-Passing this checklist validates the documented analysis behavior on the tested apps
-and macOS build. It cannot prove undocumented private implementation equivalence or
-complete observability of every third-party application.
+Passing this checklist validates only the documented analysis behavior on the tested
+apps and macOS build. It cannot prove undocumented private implementation equivalence,
+complete observability of every third-party application, or parity with Codex unless the
+same black-box scenarios were actually executed there.
 TXT
 
 printf '\nComputer History parity artifacts: %s\n' "$OUTPUT"

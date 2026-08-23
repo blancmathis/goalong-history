@@ -38,7 +38,8 @@
                         ComputerHistoryPage(
                             model: computerHistoryModel,
                             day: model.selectedDay,
-                            fullContextEnabled: richContextEnabled
+                            fullContextEnabled: richContextEnabled,
+                            runtime: model.runtime
                         )
                     case .dayRecap:
                         recapBody
@@ -64,7 +65,7 @@
                 analysisModel.refresh(day: model.selectedDay)
             }
             .onChange(of: richContextEnabled) { _ in
-                computerHistoryModel.refresh(day: model.selectedDay)
+                computerHistoryModel.refresh(day: model.selectedDay, force: true)
             }
             .alert("Enable Rich Context?", isPresented: $showRichContextConfirmation) {
                 Button("Cancel", role: .cancel) {}
@@ -123,7 +124,10 @@
                     )
                     Button {
                         model.refreshEverything()
-                        refreshAnalyses(day: model.selectedDay)
+                        refreshAnalyses(
+                            day: model.selectedDay,
+                            forceComputerHistory: true
+                        )
                     } label: {
                         Image(
                             systemName: analysesLoading
@@ -156,9 +160,15 @@
             }
         }
 
-        private func refreshAnalyses(day: Date) {
+        private func refreshAnalyses(
+            day: Date,
+            forceComputerHistory: Bool = false
+        ) {
             analysisModel.refresh(day: day)
-            computerHistoryModel.refresh(day: day)
+            computerHistoryModel.refresh(
+                day: day,
+                force: forceComputerHistory
+            )
         }
 
         func headlineCard(_ analysis: ActivityDayAnalysis) -> some View {

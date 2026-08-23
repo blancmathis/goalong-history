@@ -6,15 +6,21 @@
     /// analysis. A Markdown mirror is also written to Codex's local memory extension
     /// directory so future Codex sessions can discover the same reviewed history.
     final class ComputerHistoryStore {
-        private let fileManager = FileManager.default
+        private let fileManager: FileManager
         private let rootDirectory: URL
         private let memoryDirectory: URL
         private let codexMemoryDirectory: URL
 
-        init(rootDirectory: URL = AppPaths.applicationSupportDirectory) {
+        init(
+            rootDirectory: URL = AppPaths.applicationSupportDirectory,
+            codexMemoryDirectory: URL? = nil,
+            fileManager: FileManager = .default
+        ) {
             self.rootDirectory = rootDirectory
+            self.fileManager = fileManager
             memoryDirectory = rootDirectory.appendingPathComponent("computer-history", isDirectory: true)
-            codexMemoryDirectory = Self.codexMemoryDirectoryURL()
+            self.codexMemoryDirectory = codexMemoryDirectory
+                ?? Self.codexMemoryDirectoryURL(fileManager: fileManager)
         }
 
         /// Directories containing Computer History's long-lived memories.
@@ -78,6 +84,51 @@
             return try? eventFile.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         }
 
+        @discardableResult
+        func removeStored(for day: Date) -> Int {
+            let normalized = Calendar.current.startOfDay(for: day)
+            return remove([
+                JSONFile(for: normalized),
+                MarkdownFile(for: normalized),
+                codexMemoryDirectory.appendingPathComponent(
+                    dayString(normalized) + "-goalong-computer-history.md"
+                ),
+            ])
+        }
+
+        @discardableResult
+        func removeStored(from day: Date) -> Int {
+            let normalized = Calendar.current.startOfDay(for: day)
+            return storedDays().filter { $0 >= normalized }
+                .reduce(0) { $0 + removeStored(for: $1) }
+        }
+
+        @discardableResult
+        func removeAllStored() -> Int {
+            let local = contents(of: memoryDirectory)
+            let mirrored = contents(of: codexMemoryDirectory).filter {
+                $0.lastPathComponent.hasSuffix("-goalong-computer-history.md")
+            }
+            return remove(local + mirrored)
+        }
+
+        func storedDays() -> [Date] {
+            contents(of: memoryDirectory)
+                .compactMap { URL -> Date? in
+                    let name = URL.lastPathComponent
+                    guard name.hasSuffix(".computer-history.json"),
+                        let range = name.range(
+                            of: #"^\d{4}-\d{2}-\d{2}"#,
+                            options: .regularExpression
+                        )
+                    else { return nil }
+                    return Self.dayFormatter.date(from: String(name[range])).map {
+                        Calendar.current.startOfDay(for: $0)
+                    }
+                }
+                .sorted()
+        }
+
         private func loadRecent(before date: Date, maximumDays: Int) -> [ComputerHistoryDayMemory] {
             guard let files = try? fileManager.contentsOfDirectory(
                 at: memoryDirectory,
@@ -120,12 +171,6 @@
             }
         }
 
-        private func removeStored(for day: Date) {
-            for URL in [JSONFile(for: day), MarkdownFile(for: day)] {
-                try? fileManager.removeItem(at: URL)
-            }
-        }
-
         private func JSONFile(for day: Date) -> URL {
             memoryDirectory.appendingPathComponent(dayString(day) + ".computer-history.json")
         }
@@ -143,6 +188,27 @@
             try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: URL.path)
         }
 
+        private func contents(of directory: URL) -> [URL] {
+            (try? fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )) ?? []
+        }
+
+        private func remove(_ URLs: [URL]) -> Int {
+            var removed = 0
+            for URL in URLs where fileManager.fileExists(atPath: URL.path) {
+                do {
+                    try fileManager.removeItem(at: URL)
+                    removed += 1
+                } catch {
+                    Diagnostics.write("Could not remove Computer History memory \(URL.path): \(error)")
+                }
+            }
+            return removed
+        }
+
         private func secure(_ URLs: [URL]) {
             for URL in URLs {
                 try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: URL.path)
@@ -153,8 +219,9 @@
             Self.dayFormatter.string(from: Calendar.current.startOfDay(for: date))
         }
 
-        private static func codexMemoryDirectoryURL() -> URL {
-            let fileManager = FileManager.default
+        private static func codexMemoryDirectoryURL(
+            fileManager: FileManager = .default
+        ) -> URL {
             let configuredCodexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
                 .map { URL(fileURLWithPath: NSString(string: $0).expandingTildeInPath, isDirectory: true) }
                 ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)

@@ -36,6 +36,30 @@ public struct ComputerHistorySearchService {
         }
     }
 
+    /// Explicit resource lookup for the read-only CLI and local integrations.
+    /// Unlike a generic answer, this never falls back to an unrelated episode.
+    public func findResources(
+        _ rawQuery: String,
+        now: Date = Date(),
+        maximumHits: Int = 12
+    ) -> ComputerHistoryAnswer {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return emptyAnswer(query) }
+        return resourceAnswer(
+            query: query,
+            now: now,
+            maximumHits: min(max(1, maximumHits), 100)
+        )
+    }
+
+    public func resource(identifier: String) -> ComputerHistoryResourceReference? {
+        allResources().first { $0.id == identifier }
+    }
+
+    public func episodes(referencing resourceID: String) -> [ComputerHistoryEpisode] {
+        allEpisodes().filter { $0.resourceIDs.contains(resourceID) }
+    }
+
     private enum SearchIntent {
         case resume
         case findResource
@@ -384,6 +408,7 @@ public struct ComputerHistorySearchService {
     ) -> [ScoredResource] {
         let queryValue = SearchText.normalized(query)
         let kindHints = SearchText.resourceKindHints(queryValue)
+        let subjectTokens = SearchText.subjectTokens(query)
         return resources.compactMap { resource -> ScoredResource? in
             let document = [
                 resource.title,
@@ -398,6 +423,14 @@ public struct ComputerHistorySearchService {
                 query: query,
                 document: document
             )
+            let subjectScore = SearchText.subjectRelevance(
+                subjectTokens: subjectTokens,
+                document: document
+            )
+            // Type words such as "document" or "conversation" may narrow a search,
+            // but they cannot satisfy a named subject such as "strategic" by themselves.
+            guard subjectTokens.isEmpty || subjectScore > 0 else { return nil }
+
             let kindScore = kindHints.contains(resource.kind) ? 2.4 : 0
             let hostScore: Double
             if let host = resource.host,
@@ -407,7 +440,7 @@ public struct ComputerHistorySearchService {
             } else {
                 hostScore = 0
             }
-            let evidenceScore = semanticScore + kindScore + hostScore
+            let evidenceScore = semanticScore + subjectScore * 1.5 + kindScore + hostScore
             guard evidenceScore > 0 || queryValue.isEmpty else { return nil }
             let score = evidenceScore
                 + recencyScore(date: resource.lastSeen, now: now) * 1.4
@@ -698,6 +731,44 @@ private enum SearchText {
         return score
     }
 
+    /// Removes retrieval boilerplate and resource-type words. Any remaining token is a
+    /// named subject and must be present in the candidate before kind/recency can rank it.
+    static func subjectTokens(_ value: String) -> [String] {
+        tokens(value).filter { !genericRetrievalTerms.contains($0) }
+    }
+
+    static func subjectRelevance(
+        subjectTokens: [String],
+        document: String
+    ) -> Double {
+        guard !subjectTokens.isEmpty else { return 0 }
+        let documentTokens = tokens(document)
+        guard !documentTokens.isEmpty else { return 0 }
+
+        var score = 0.0
+        for subject in subjectTokens {
+            if documentTokens.contains(subject) {
+                score += 1.0
+                continue
+            }
+            if documentTokens.contains(where: {
+                ($0.hasPrefix(subject) || subject.hasPrefix($0))
+                    && min($0.count, subject.count) >= 4
+            }) {
+                score += 0.65
+                continue
+            }
+            if subject.count >= 5,
+                documentTokens.contains(where: {
+                    $0.count >= 5 && $0.prefix(5) == subject.prefix(5)
+                })
+            {
+                score += 0.45
+            }
+        }
+        return score
+    }
+
     static func resourceKindHints(
         _ query: String
     ) -> Set<ComputerHistoryResourceKind> {
@@ -763,6 +834,19 @@ private enum SearchText {
         var seen = Set<T>()
         return values.filter { seen.insert($0).inserted }
     }
+
+    private static let genericRetrievalTerms: Set<String> = [
+        "find", "found", "locate", "location", "open", "reopen", "source",
+        "resource", "document", "documents", "doc", "file", "files", "folder",
+        "page", "website", "site", "url", "conversation", "chat", "thread",
+        "issue", "ticket", "pull", "request", "which", "most", "recent",
+        "recently", "latest", "last", "working", "worked", "work", "used",
+        "retrieve", "retrouve", "trouve", "trouver", "ouvrir", "rouvre",
+        "source", "ressource", "fichier", "fichiers", "dossier", "document",
+        "documents", "page", "site", "conversation", "ticket", "dernier",
+        "derniere", "dernière", "recent", "recente", "récente", "recemment",
+        "récemment", "travaillais", "travaille", "utilise", "utilisé",
+    ]
 
     private static let stopWords: Set<String> = [
         "the", "and", "for", "with", "what", "where", "when", "was", "were",
