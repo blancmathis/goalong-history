@@ -6,18 +6,22 @@ source recovery, natural questions about recent work, and reviewed suggestions f
 repeatable work.
 
 It does **not** claim access to, or equivalence with, undocumented OpenAI internals.
-It also does not claim measured public parity until the live macOS benchmark in
-[`COMPUTER_HISTORY_PARITY_MATRIX.md`](COMPUTER_HISTORY_PARITY_MATRIX.md) is complete.
+It also does not claim measured public parity until the foreground macOS protocol in
+[`COMPUTER_HISTORY_REAL_BENCHMARK.md`](COMPUTER_HISTORY_REAL_BENCHMARK.md) has been
+executed on the exact signed build and every threshold in
+[`COMPUTER_HISTORY_PARITY_MATRIX.md`](COMPUTER_HISTORY_PARITY_MATRIX.md) has measured
+evidence.
 
 Reference contract: <https://learn.chatgpt.com/docs/customization/computer-history>
 
 ## Current validation status
 
-The deterministic model and integration path are exercised in macOS CI. A signed live
-session is still required to prove TCC behavior, callback recall, private-mode handling,
-third-party Accessibility quality, resource reopening, timeline performance, and answer
-accuracy. See the matrix for the exact implemented, CI-proven, live-unproven, and open
-gap status of every public behavior.
+The deterministic model and integration path are exercised in macOS CI. Those tests are
+synthetic reconstruction regressions, not real capture or parity evidence. A Developer
+ID-signed foreground session on Mathis's Mac is still required to measure TCC behavior,
+callback recall, private-mode handling, third-party Accessibility quality, resource
+reopening, timeline performance and answer accuracy. Until that report exists, the
+accurate status is **validation blocked by the required live macOS session**.
 
 ## Analysis pipeline
 
@@ -193,9 +197,10 @@ The macOS quality gate runs:
 
 ```text
 script syntax and Python compilation
+real-benchmark analyzer fail-closed unit tests
 privacy-boundary audit
 full Swift tests
-strict deterministic Computer History fixture
+synthetic Computer History reconstruction regression
 release query-CLI build
 installable app build
 Info.plist lint
@@ -203,18 +208,30 @@ strict code-signature verification
 package smoke test
 ```
 
-The strict fixture executes:
+The synthetic reconstruction regression executes:
 
 ```bash
 bash scripts/validate_computer_history_fixture.sh
 ```
 
-It generates an isolated positive store with four actions and four complete
-before/after pairs, requires a pair ratio of at least `0.90`, verifies stable
-`find`/`resource` lookup, rejects an unsupported named resource query, and confirms the
-strict checker fails on a negative fixture with actions but no semantic pairs.
+It generates an isolated store with four actions and four complete before/after pairs,
+requires a pair ratio of at least `0.90`, verifies stable `find`/`resource` behavior,
+rejects an unsupported named resource query, and confirms the checker rejects a fixture
+with actions but no semantic pairs. Its output explicitly sets:
 
-For a real recorded day:
+```json
+{
+  "synthetic_fixture": true,
+  "real_capture_measured": false,
+  "public_parity_validated": false
+}
+```
+
+The result is useful for preventing reconstruction regressions. It cannot establish any
+real input-recall, privacy, TCC, resource-reopening, performance, answer-accuracy or Codex
+parity measurement.
+
+For a basic read-only inspection of an already recorded real day:
 
 ```bash
 bash scripts/validate_computer_history_parity.sh \
@@ -223,8 +240,19 @@ bash scripts/validate_computer_history_parity.sh \
   --minimum-pair-ratio 0.90
 ```
 
-The validator is read-only with respect to history and emits a manual real-session
-checklist. Deterministic success is necessary but insufficient for a parity claim.
+That day-level checker is necessary but still does not provide independent action ground
+truth or the full privacy/resource/performance protocol.
+
+The public-parity benchmark is instead:
+
+```bash
+bash scripts/run_real_computer_history_benchmark.sh \
+  --expected-head "$(git rev-parse HEAD)"
+```
+
+See [`COMPUTER_HISTORY_REAL_BENCHMARK.md`](COMPUTER_HISTORY_REAL_BENCHMARK.md) for the
+Developer ID requirement, foreground scenarios, independent counters, privacy markers,
+manual reviews, Codex comparison and exact thresholds.
 
 ## Real-session proof boundary
 
@@ -237,6 +265,7 @@ Unit and fixture tests cannot prove:
 - real callback recall, resource reopening, answer correctness, or timeline CPU usage;
 - black-box equivalence with Codex Computer History.
 
-A public-parity statement is permitted only after the matrix's live thresholds are
-measured on the exact signed build and application set. Until then the accurate status
-is **partial parity with deterministic evidence and explicitly listed live gaps**.
+A public-parity statement is permitted only when the real benchmark report for the exact
+Developer ID-signed build sets `public_parity_validated: true` after measuring every
+required threshold. Until then, do not convert a green CI run or a synthetic `4/4` result
+into a public-parity conclusion.
