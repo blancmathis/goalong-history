@@ -313,6 +313,7 @@
                     processIdentifier: 42
                 ),
                 window: WindowSnapshot(title: "Semantic context", role: "AXWindow", subrole: nil),
+                url: nil,
                 focusedRole: "AXTextArea",
                 source: .visibleText,
                 text: text,
@@ -395,7 +396,7 @@
                 root.appendingPathComponent("analysis", isDirectory: true),
                 root.appendingPathComponent("memories", isDirectory: true),
                 root.appendingPathComponent("computer-history", isDirectory: true),
-                codexRoot,
+                codexRoot!,
             ] {
                 guard FileManager.default.fileExists(atPath: directory.path) else { continue }
                 for file in try FileManager.default.contentsOfDirectory(
@@ -415,7 +416,7 @@
                 root.appendingPathComponent("analysis", isDirectory: true),
                 root.appendingPathComponent("memories", isDirectory: true),
                 root.appendingPathComponent("computer-history", isDirectory: true),
-                codexRoot,
+                codexRoot!,
             ].reduce(0) { partial, directory in
                 guard FileManager.default.fileExists(atPath: directory.path) else { return partial }
                 return partial + (try FileManager.default.contentsOfDirectory(
