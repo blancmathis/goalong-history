@@ -319,17 +319,17 @@
 
         private var stableIdentityLabel: String {
             switch readiness.stablePermissionIdentity {
-            case true: return "Stable signature"
-            case false: return "Unstable signature"
-            case nil: return "Unknown"
+            case .some(true): return "Stable signature"
+            case .some(false): return "Unstable signature"
+            case .none: return "Unknown"
             }
         }
 
         private var stableIdentityTint: Color {
             switch readiness.stablePermissionIdentity {
-            case true: return LHTheme.success
-            case false: return LHTheme.warning
-            case nil: return .secondary
+            case .some(true): return LHTheme.success
+            case .some(false): return LHTheme.warning
+            case .none: return .secondary
             }
         }
 
