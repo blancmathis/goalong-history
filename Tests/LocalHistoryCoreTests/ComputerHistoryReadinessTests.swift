@@ -34,7 +34,7 @@ final class ComputerHistoryReadinessTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .ready)
-        XCTAssertEqual(result.semanticPairRatio, 0.9, accuracy: 0.0001)
+        XCTAssertEqual(result.semanticPairRatio ?? -1, 0.9, accuracy: 0.0001)
         XCTAssertEqual(result.stablePermissionIdentity, true)
     }
 
@@ -50,7 +50,7 @@ final class ComputerHistoryReadinessTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .partialSemanticCoverage)
-        XCTAssertEqual(result.semanticPairRatio, 0.4, accuracy: 0.0001)
+        XCTAssertEqual(result.semanticPairRatio ?? -1, 0.4, accuracy: 0.0001)
         XCTAssertTrue(result.detail.contains("40%"))
     }
 
