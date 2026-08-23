@@ -14,7 +14,7 @@ enum ComputerHistoryWorkflowDetector {
         let candidates = historical + currentEpisodes
         var clusters: [[ComputerHistoryEpisode]] = []
 
-        for episode in candidates where episode.interactions.count >= 3 {
+        for episode in candidates where isGroundedWorkflowCandidate(episode) {
             if let index = clusters.firstIndex(where: { cluster in
                 guard let representative = cluster.first else { return false }
                 return representative.workflowFingerprint == episode.workflowFingerprint
@@ -40,6 +40,42 @@ enum ComputerHistoryWorkflowDetector {
             patterns: patterns,
             suggestions: suggestions
         )
+    }
+
+    /// A workflow needs more than a repeated app-navigation trace. It must contain
+    /// multiple user-significant actions, a concrete resource, and evidence of an
+    /// observable result such as a semantic change or an explicit save/submit action.
+    private static func isGroundedWorkflowCandidate(
+        _ episode: ComputerHistoryEpisode
+    ) -> Bool {
+        guard episode.interactions.count >= 3 else { return false }
+
+        let significant = episode.interactions.filter {
+            [.click, .typing, .shortcut, .navigationKey].contains($0.action)
+        }
+        guard significant.count >= 2 else { return false }
+
+        let hasSpecificResource = !episode.resourceIDs.isEmpty
+            && (!episode.sites.isEmpty || !episode.title.hasPrefix("Worked in "))
+        guard hasSpecificResource else { return false }
+
+        let hasSemanticResult = episode.interactions.contains {
+            !$0.semanticDelta.isEmpty || $0.afterContext != nil
+        }
+        let hasExplicitOutcome = episode.observableOutcomes.contains {
+            !$0.hasPrefix("Last observable action:")
+        }
+        let resultMarkers = [
+            "save", "saved", "send", "sent", "submit", "submitted", "publish",
+            "published", "merge", "merged", "create", "created", "update", "updated",
+            "close", "closed", "deploy", "deployed", "run", "ran",
+        ]
+        let hasResultAction = significant.last.map { interaction in
+            let label = ComputerHistorySupport.normalized(interaction.label)
+            return resultMarkers.contains { label.contains($0) }
+        } ?? false
+
+        return hasSemanticResult || hasExplicitOutcome || hasResultAction
     }
 
     private static func makePattern(
