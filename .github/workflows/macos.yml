@@ -15,11 +15,22 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Environment
         run: |
           sw_vers
           xcrun swift --version
+
+      - name: Diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_BRANCH="${GITHUB_BASE_REF:-main}"
+          git fetch --no-tags origin "$BASE_BRANCH"
+          BASE_SHA="$(git merge-base HEAD "origin/$BASE_BRANCH")"
+          git diff --check "$BASE_SHA" HEAD
 
       - name: Validate scripts
         run: |
