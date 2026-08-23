@@ -1,174 +1,154 @@
-# Goalong History — Computer History analysis parity
+# Goalong History — Computer History public-parity work
 
-This document describes the Goalong implementation of the publicly documented
-Computer History analysis behavior: chronological interaction capture, local causal
-memories, source recovery, natural questions about recent work, task status, and
-repeatable-workflow suggestions.
+This document describes Goalong's implementation of the **publicly documented**
+Computer History behavior: chronological interaction capture, local causal memories,
+source recovery, natural questions about recent work, and reviewed suggestions for
+repeatable work.
 
-It does **not** claim access to, or equivalence with, any undocumented private
-implementation. Parity claims must be limited to behavior that has been exercised on
-the tested macOS build and applications.
+It does **not** claim access to, or equivalence with, undocumented OpenAI internals.
+It also does not claim measured public parity until the live macOS benchmark in
+[`COMPUTER_HISTORY_PARITY_MATRIX.md`](COMPUTER_HISTORY_PARITY_MATRIX.md) is complete.
 
-Reference behavior: <https://learn.chatgpt.com/docs/customization/computer-history>
+Reference contract: <https://learn.chatgpt.com/docs/customization/computer-history>
 
-## Product behavior
+## Current validation status
 
-With **Full Computer History context** enabled, Goalong History can reconstruct:
-
-- the ordered stream of clicks, grouped typing, shortcuts, navigation keys, scrolling,
-  app changes, windows, pages, and focused controls;
-- bounded semantic state before an interaction, shortly after it, and after the UI has
-  settled;
-- visible changes caused by the interaction without reconstructing ordinary characters
-  from keyboard keycodes;
-- task-shaped work episodes rather than one representative event per minute;
-- likely source resources: files, pages, cloud documents, conversations, issues,
-  terminal sessions, and applications;
-- observable intentions, outcomes, and a cautious task status;
-- repeated action sequences that may justify a reviewed skill or automation;
-- natural local answers such as:
-  - “Where was I before my break?”
-  - “Find the proposal document.”
-  - “What is completed, in progress, blocked, or waiting?”
-  - “Summarize yesterday.”
-  - “Which repeated workflow could become a skill?”
-
-The existing compact day recap remains available for fast reporting. It is no longer
-the primary causal representation.
+The deterministic model and integration path are exercised in macOS CI. A signed live
+session is still required to prove TCC behavior, callback recall, private-mode handling,
+third-party Accessibility quality, resource reopening, timeline performance, and answer
+accuracy. See the matrix for the exact implemented, CI-proven, live-unproven, and open
+gap status of every public behavior.
 
 ## Analysis pipeline
 
 ```text
-CGEventTap + NSWorkspace + AXObserver + foreground polling
-                         │
-                         ▼
-             privacy-aware context sampler
-                         │
-                         ▼
-   semantic before → input action → after → settled
-                         │
-                         ▼
-           ComputerHistoryInteractionBuilder
-                         │
-                         ▼
-             ComputerHistoryResourceResolver
-                         │
-                         ▼
-              ComputerHistoryEpisodeBuilder
-                         │
-                         ▼
-             ComputerHistoryWorkflowDetector
-                         │
-                         ▼
-        JSON + Markdown causal memory + local search
+CGEventTap + NSWorkspace + AXObserver + bounded fallback polling
+                              │
+                              ▼
+        independent app/site capture policies + privacy guard
+                              │
+                              ▼
+          semantic before → input action → after → settled
+                              │
+                              ▼
+              application and resource continuity gate
+                              │
+                              ▼
+             ComputerHistoryInteractionBuilder
+                              │
+                              ▼
+              ComputerHistoryResourceResolver
+                              │
+                              ▼
+               ComputerHistoryEpisodeBuilder
+                              │
+                              ▼
+              ComputerHistoryWorkflowDetector
+                              │
+                              ▼
+         JSON + Markdown causal memory + local search/CLI
 ```
 
-### Interaction capture
+Polling remains a fallback and is never presented as proof that every rapid interaction
+was preserved.
 
-Every eligible click, shortcut, special key, grouped typing burst, and grouped scroll
+## Capture scope
+
+Application and website policies are independent:
+
+- `excludeListed` captures every identifiable source except listed entries;
+- `includeOnly` captures only listed identities and fails closed when the required
+  bundle identifier or host cannot be verified.
+
+Both modes are exposed in Settings. Existing config files without the new fields migrate
+to `excludeListed`, preserving their previous capture scope. This migration does not
+enable Rich Context or otherwise enlarge semantic consent.
+
+## Causal interaction attribution
+
+Every eligible click, shortcut, navigation key, grouped typing burst, and grouped scroll
 burst receives an interaction identifier. Semantic observations linked to the same
 identifier use these phases:
 
-- `before` — shallow, low-latency state captured before the action;
+- `before` — shallow state immediately before the action;
 - `after` — broader state shortly after the action;
-- `settled` — full bounded state after the UI has had time to settle.
+- `settled` — bounded state after the UI has had time to stabilize.
 
-The budgets are intentionally phase-aware so full analysis does not make the event tap
-unresponsive:
+A delayed observation is eligible only when both the application and the concrete
+resource remain continuous. Canonical URL, resolved resource IDs, or an unambiguous
+window/document title are used in that order. A callback from a new page, document, or
+application is rejected rather than silently attributed to the old action.
 
-| Phase | Maximum characters | AX nodes |
-|---|---:|---:|
-| before | 2,400 | 72 |
-| after | 4,800 | 160 |
-| settled | 6,000 | 260 |
-| event-driven AX observation | 4,800 | 180 |
-| periodic fallback | 6,000 | 260 |
+When an explicit pair is unavailable, the builder may use a nearby semantic observation
+within 20 seconds only if the same application and resource continuity checks pass.
+Coverage reports distinguish complete pairs from partial or metadata-only interactions.
 
-`AXObserver` also reacts to focused-element, focused-window, window-created, title,
-value, and selected-text changes. These observations are debounced and fingerprint-
-deduplicated. Polling remains a fallback rather than the only source.
+## Source resolution and retrieval
 
-### Causal interactions
+The resource resolver currently classifies local files, web pages, known cloud
+documents, conversations, issues/pull requests, terminal sessions, and applications.
+Every reference contains a stable local ID, sanitized locator where available,
+confidence, observation times, and source-event provenance.
 
-`ComputerHistoryInteractionBuilder` keeps every action and links its semantic evidence.
-It never replaces all activity within a minute with one representative row.
+Search combines lexical evidence, resource type, recency, task continuity, and
+provenance. Resource type and recency cannot satisfy a named query by themselves. For
+example, asking for a nonexistent “strategic acquisition document” returns no result
+rather than the most recent unrelated document.
 
-Each interaction stores:
+The read-only CLI exposes:
 
-- action kind and human-readable label;
-- start and end;
-- application, site, and source resource IDs;
-- bounded before and after context;
-- semantic lines visible only after the action;
-- confidence and source-event provenance.
+```bash
+swift build -c release --product goalong-history-query
 
-When an explicit before/after pair is unavailable, the builder may use the nearest
-eligible semantic observation from the same application within a bounded 20-second
-window. Coverage reports distinguish complete pairs from partial context.
+"$(swift build -c release --show-bin-path)/goalong-history-query" \
+  computer-history 2026-08-20
 
-### Source resolution
+"$(swift build -c release --show-bin-path)/goalong-history-query" \
+  ask --days 30 "Where was I before my most recent break?"
 
-`ComputerHistoryResourceResolver` turns observed locators into stable source objects:
+"$(swift build -c release --show-bin-path)/goalong-history-query" \
+  find --days 30 "Find the enterprise launch proposal document"
 
-- `file` for `file://` and local paths;
-- `document` for known cloud-document products or document-like app windows;
-- `conversation` for chat and thread URLs;
-- `issue` for issue and pull-request systems;
-- `webPage` for other sanitized URLs;
-- `terminalSession` where a terminal exposes a stable window context;
-- `application` as a fallback when no more precise source exists.
+"$(swift build -c release --show-bin-path)/goalong-history-query" \
+  resource --days 30 RESOURCE_ID
+```
 
-Every resource includes first/last observation time, locator confidence, and source
-provenance. Query results may reopen a local path or sanitized URL, but never execute
-captured content.
+`find` is evidence-gated resource retrieval. `resource` resolves one stable identifier
+and returns its related episodes and provenance. Neither command opens or executes the
+captured source.
 
-### Episode reconstruction
+## Episodes and task status
 
-`ComputerHistoryEpisodeBuilder` groups interactions only when evidence supports a
-continuous task. It considers:
+The primary representation is:
 
-- shared resources;
-- same site;
-- same application with compatible source continuity;
-- semantic similarity;
-- elapsed time;
-- suppressed/private gaps.
+```text
+events → causal interactions → chronological episodes → memories → search index
+```
 
-Different browser hosts are separated by default unless the switch is immediate and the
-semantic context is clearly related. Different specific resources in the same app are
-also prevented from becoming one generic app block.
+Minute aggregates may remain for statistics and UI rendering, but are not the primary
+source of task understanding. Episodes retain action order, transitions, resources,
+semantic changes, gaps, uncertainty, source event IDs, sequences, and hashes where
+available.
 
-An episode contains the full chronological action sequence, applications, sites,
-resources, requests or intentions, observable outcomes, and source provenance.
+Task status is a bounded interpretation, not a verified claim. The latest observable
+state has priority over earlier transient evidence. A failed operation followed by a
+visible successful retry may be `completed`, while the failure remains in provenance.
 
-### Task status
+## Workflow suggestions
 
-Status is a bounded interpretation, never a verified claim. Possible values are:
+A suggestion now requires:
 
-- `planned`
-- `inProgress`
-- `completed`
-- `blocked`
-- `waiting`
-- `unknown`
+- at least three interactions;
+- at least two significant user actions;
+- a concrete resource rather than an application-only trace;
+- an observable semantic result, explicit outcome, or meaningful final action;
+- at least two similar occurrences.
 
-The latest visible state has priority over earlier transient evidence. For example, a
-failed deployment followed by a visible successful retry is `completed`, while the
-failure remains in the action history.
+An application-switch sequence such as ChatGPT → Finder → Safari cannot produce a
+workflow suggestion. Suggestions remain proposals for human review; Goalong never
+installs or runs a skill or automation automatically.
 
-### Repeated workflows
-
-A workflow candidate requires at least three meaningful interactions. Similar sequences
-are clustered across locally retained causal memories. A suggestion appears only after
-at least two observed occurrences:
-
-- a **skill** for a reusable reviewed procedure;
-- an **automation** only for stronger repeated cross-application evidence.
-
-Suggestions contain the source episode IDs, observed sequence, rationale, confidence,
-and a proposed request. Goalong does not create or run an automation automatically.
-
-## Local storage
+## Local storage and retention
 
 Causal memories are stored separately from raw events and regenerable compact analyses:
 
@@ -183,127 +163,80 @@ Causal memories are stored separately from raw events and regenerable compact an
     └── YYYY-MM-DD.computer-history.md
 ```
 
-The Markdown mirror is also written, when possible, to:
+The Markdown mirror may also be written to
+`$CODEX_HOME/memories/extensions/goalong/` or
+`~/.codex/memories/extensions/goalong/`. The Goalong Application Support copy remains
+authoritative.
 
-```text
-$CODEX_HOME/memories/extensions/goalong/
-```
-
-or to `~/.codex/memories/extensions/goalong/` when `CODEX_HOME` is not configured.
-The Goalong Application Support copy remains authoritative.
-
-## Read-only query interface
-
-Build the CLI:
-
-```bash
-swift build -c release --product goalong-history-query
-```
-
-Generate one day’s causal memory:
-
-```bash
-"$(swift build -c release --show-bin-path)/goalong-history-query" \
-  computer-history 2026-08-21
-```
-
-Ask a natural local question over recent days:
-
-```bash
-"$(swift build -c release --show-bin-path)/goalong-history-query" \
-  ask --days 30 "Where was I before my most recent break?"
-```
-
-All responses include evidence limitations and source provenance. Search requires a real
-content, resource-kind, host, or status match before recency can increase a result’s
-score. An unrelated query therefore cannot receive a recent source merely because it is
-recent.
+New configurations default detailed events to two days (48 hours). Existing explicit
+retention values are preserved during migration. Memories and cryptographic proof
+classes have separate retention policies.
 
 ## Privacy boundary
 
 Full context remains permissioned and local. It does not add:
 
 - screenshots or screen video;
-- camera, microphone, or system audio;
-- clipboard capture;
-- raw character reconstruction from keyboard keycodes;
+- camera, microphone, system audio, or clipboard capture;
+- general reconstruction of ordinary typed characters from keycodes;
 - private-window content;
-- excluded application or domain content;
+- excluded or out-of-scope application/site content;
 - Secure Input or protected-field content.
 
 Common credential patterns are redacted before semantic persistence. Captured text is
-untrusted observed data and must never be treated as an instruction by the local
-summarizer, query service, or external recap agent.
-
-A user may choose **Metadata-only history** during onboarding. That preserves apps,
-windows, sanitized URLs, controls, clicks, shortcuts, scrolling, and grouped typing
-signals, but exact intentions, semantic changes, status, and resume answers may remain
-unknown.
+untrusted observed data and is never executed as an instruction by the summarizer,
+query service, or external recap integration.
 
 ## Automated validation
 
 The macOS quality gate runs:
 
 ```text
-swift test
+script syntax and Python compilation
 privacy-boundary audit
+full Swift tests
+strict deterministic Computer History fixture
+release query-CLI build
 installable app build
-bundle validation
+Info.plist lint
+strict code-signature verification
 package smoke test
 ```
 
-Dedicated deterministic scenarios verify:
-
-1. before/action/after linkage;
-2. full preservation of several actions inside one minute;
-3. file, document, conversation, and issue resolution;
-4. natural resource lookup;
-5. resume-before-break behavior;
-6. separate completed and blocked work;
-7. repeated workflow suggestions;
-8. zero reconstruction of suppressed private content;
-9. separation of unrelated browser tasks;
-10. latest success overriding an earlier transient failure.
-
-Run the focused validator:
+The strict fixture executes:
 
 ```bash
-bash scripts/validate_computer_history_parity.sh \
-  --day YYYY-MM-DD
+bash scripts/validate_computer_history_fixture.sh
 ```
 
-For a controlled real-input day:
+It generates an isolated positive store with four actions and four complete
+before/after pairs, requires a pair ratio of at least `0.90`, verifies stable
+`find`/`resource` lookup, rejects an unsupported named resource query, and confirms the
+strict checker fails on a negative fixture with actions but no semantic pairs.
+
+For a real recorded day:
 
 ```bash
 bash scripts/validate_computer_history_parity.sh \
   --day YYYY-MM-DD \
   --require-real-context \
-  --minimum-pair-ratio 0.80
+  --minimum-pair-ratio 0.90
 ```
 
-`check_computer_history_memory.py` validates that:
-
-- every action event becomes exactly one interaction;
-- no interaction is duplicated across episodes;
-- episode and interaction provenance is non-empty;
-- resources, workflows, and suggestions reference valid IDs;
-- episodes and interactions are chronological;
-- coverage counts equal the actual stored arrays;
-- optional semantic-pair thresholds are met.
+The validator is read-only with respect to history and emits a manual real-session
+checklist. Deterministic success is necessary but insufficient for a parity claim.
 
 ## Real-session proof boundary
 
-Unit tests cannot prove macOS TCC behavior, third-party Accessibility quality, browser URL
-exposure, private-mode detection, or the timing of a live UI transition. Before a
-measured parity claim is published, run the generated real-session checklist against the
-signed app identity and the applications included in that claim.
+Unit and fixture tests cannot prove:
 
-A passing real-session validation supports this statement:
+- Accessibility, Input Monitoring, Event Tap, Secure Input, TCC persistence, or stable
+  signature identity on the installed app;
+- browser private-mode detection across versions/locales;
+- third-party Accessibility timing and resource exposure;
+- real callback recall, resource reopening, answer correctness, or timeline CPU usage;
+- black-box equivalence with Codex Computer History.
 
-> On the tested macOS build and applications, Goalong History reproduced the publicly
-> documented analysis behaviors covered by the parity suite.
-
-It does not support this statement:
-
-> Goalong is byte-for-byte or internally identical to a private proprietary
-> implementation.
+A public-parity statement is permitted only after the matrix's live thresholds are
+measured on the exact signed build and application set. Until then the accurate status
+is **partial parity with deterministic evidence and explicitly listed live gaps**.
