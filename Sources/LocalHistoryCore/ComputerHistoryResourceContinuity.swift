@@ -11,8 +11,8 @@ extension ComputerHistorySupport {
         _ right: HistoryEvent,
         eventResourceIDs: [String: [String]]
     ) -> Bool {
-        let leftURL = left.url?.value.flatMap(canonicalURL)
-        let rightURL = right.url?.value.flatMap(canonicalURL)
+        let leftURL = left.url.flatMap { canonicalURL($0.value) }
+        let rightURL = right.url.flatMap { canonicalURL($0.value) }
         if leftURL != nil || rightURL != nil {
             guard let leftURL, let rightURL else { return false }
             return leftURL == rightURL
