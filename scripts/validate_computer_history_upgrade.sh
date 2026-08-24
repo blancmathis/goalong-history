@@ -8,6 +8,8 @@ DATA_ROOT="$DEFAULT_DATA_ROOT"
 DAY=""
 OUTPUT=""
 REQUIRE_REAL_EVENTS=0
+EXPECTED_BUNDLE_ID="ai.goalong.localhistory"
+PRIVACY_MARKER_KEY="LocalHistoryAgentActivityDirectSourceV2"
 
 usage() {
   cat <<'USAGE'
@@ -76,7 +78,44 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 if [[ -z "$OUTPUT" ]]; then
   OUTPUT="/tmp/goalong-history-validation-$STAMP"
 fi
+umask 077
+if [[ -L "$OUTPUT" ]]; then
+  echo "Validation output must not be a symlink." >&2
+  exit 73
+fi
+if [[ -d "$OUTPUT" && -n "$(find "$OUTPUT" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+  echo "Validation output must be a new or empty directory." >&2
+  exit 73
+fi
+
+DATA_ROOT_CANONICAL="$(python3 - "$DATA_ROOT" <<'PYCANON'
+import os
+import sys
+print(os.path.realpath(sys.argv[1]))
+PYCANON
+)"
+OUTPUT_CANONICAL="$(python3 - "$OUTPUT" <<'PYCANON'
+import os
+import sys
+print(os.path.realpath(sys.argv[1]))
+PYCANON
+)"
+if [[ "$OUTPUT_CANONICAL" == "/" || "$DATA_ROOT_CANONICAL" == "/" ]]; then
+  echo "Validation roots must not resolve to the filesystem root." >&2
+  exit 73
+fi
+case "$OUTPUT_CANONICAL/" in
+  "$DATA_ROOT_CANONICAL/"*)
+    echo "Validation output must be disjoint from the data root." >&2
+    exit 73 ;;
+esac
 mkdir -p "$OUTPUT"
+chmod 700 "$OUTPUT"
+case "$DATA_ROOT_CANONICAL/" in
+  "$OUTPUT_CANONICAL/"*)
+    echo "Validation output must be disjoint from the data root." >&2
+    exit 73 ;;
+esac
 
 run_logged() {
   local name="$1"
@@ -98,6 +137,61 @@ capture_nonfatal() {
   cat "$OUTPUT/$name.log"
   printf '\nexit_status=%s\n' "$status" >>"$OUTPUT/$name.log"
   return 0
+}
+
+TRANSIENT_OUTPUT=""
+cleanup_transient_output() {
+  if [[ -n "$TRANSIENT_OUTPUT" && -f "$TRANSIENT_OUTPUT" && ! -L "$TRANSIENT_OUTPUT" ]]; then
+    /bin/rm -f -- "$TRANSIENT_OUTPUT"
+  fi
+  TRANSIENT_OUTPUT=""
+}
+trap cleanup_transient_output EXIT
+trap 'cleanup_transient_output; exit 129' HUP
+trap 'cleanup_transient_output; exit 130' INT
+trap 'cleanup_transient_output; exit 143' TERM
+
+run_transient() {
+  local name="$1"
+  shift
+  echo
+  echo "== $name (content not retained) =="
+  TRANSIENT_OUTPUT="$(mktemp "${TMPDIR:-/tmp}/goalong-history-validation.XXXXXX")"
+  chmod 600 "$TRANSIENT_OUTPUT"
+  set +e
+  "$@" >"$TRANSIENT_OUTPUT" 2>&1
+  local status=$?
+  set -e
+  cat "$TRANSIENT_OUTPUT"
+  {
+    printf 'exit_status=%s\n' "$status"
+    printf 'output_bytes=%s\n' "$(wc -c <"$TRANSIENT_OUTPUT" | tr -d ' ')"
+    printf 'output_sha256=%s\n' "$(/usr/bin/shasum -a 256 "$TRANSIENT_OUTPUT" | awk '{print $1}')"
+  } >"$OUTPUT/$name.metrics"
+  cleanup_transient_output
+  return "$status"
+}
+
+verify_expected_bundle() {
+  local app_path="$1"
+  local plist_identifier
+  local signature_details
+  local signature_identifier
+  local privacy_marker
+
+  if [[ ! -d "$app_path" || -L "$app_path" ]]; then
+    echo "Expected a regular app bundle: $app_path" >&2
+    return 1
+  fi
+  plist_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Contents/Info.plist" 2>/dev/null)" || return 1
+  signature_details="$(/usr/bin/codesign -dv --verbose=4 "$app_path" 2>&1)" || return 1
+  signature_identifier="$(/usr/bin/awk -F= '/^Identifier=/{print $2; exit}' <<<"$signature_details")"
+  privacy_marker="$(/usr/libexec/PlistBuddy -c "Print :$PRIVACY_MARKER_KEY" "$app_path/Contents/Info.plist" 2>/dev/null || true)"
+  if [[ "$plist_identifier" != "$EXPECTED_BUNDLE_ID" || "$signature_identifier" != "$EXPECTED_BUNDLE_ID" || "$privacy_marker" != "true" ]]; then
+    echo "Unexpected bundle identifier: plist=${plist_identifier:-missing} signature=${signature_identifier:-missing}" >&2
+    return 1
+  fi
+  /usr/bin/codesign --verify --deep --strict --verbose=2 "$app_path"
 }
 
 {
@@ -122,6 +216,11 @@ capture_nonfatal() {
 } >"$OUTPUT/environment.txt"
 cat "$OUTPUT/environment.txt"
 
+if [[ "${LOCALHISTORY_VALIDATE_SETUP_ONLY:-0}" == "1" ]]; then
+  printf 'Validation output prepared safely: %s\n' "$OUTPUT"
+  exit 0
+fi
+
 run_logged swift-test bash -lc "cd \"$REPO\" && swift test"
 run_logged privacy-boundary-audit bash -lc "cd \"$REPO\" && ./scripts/audit_privacy_boundaries.sh"
 run_logged official-app-build bash -lc "cd \"$REPO\" && ./scripts/build_app.sh"
@@ -136,12 +235,17 @@ fi
 
 run_logged built-app-codesign-details /usr/bin/codesign -d --verbose=4 "$BUILT_APP"
 run_logged built-app-designated-requirement /usr/bin/codesign -d -r- "$BUILT_APP"
+run_logged built-app-bundle-verification verify_expected_bundle "$BUILT_APP"
+run_logged built-app-privacy-audit env \
+  LOCALHISTORY_AUDIT_BINARY="$BUILT_APP/Contents/MacOS/Goalong History" \
+  "$REPO/scripts/audit_privacy_boundaries.sh"
 capture_nonfatal built-app-gatekeeper /usr/sbin/spctl --assess --type execute --verbose=4 "$BUILT_APP"
 
 INSTALLED_APP="/Applications/Goalong History.app"
 if [[ -d "$INSTALLED_APP" ]]; then
   run_logged installed-app-codesign-details /usr/bin/codesign -d --verbose=4 "$INSTALLED_APP"
   run_logged installed-app-designated-requirement /usr/bin/codesign -d -r- "$INSTALLED_APP"
+  run_logged installed-app-bundle-verification verify_expected_bundle "$INSTALLED_APP"
   capture_nonfatal installed-app-gatekeeper /usr/sbin/spctl --assess --type execute --verbose=4 "$INSTALLED_APP"
 else
   echo "Installed app not found at $INSTALLED_APP" | tee "$OUTPUT/installed-app-missing.log"
@@ -153,7 +257,7 @@ if [[ ! -x "$QUERY_CLI" ]]; then
   echo "Read-only query CLI was not produced: $QUERY_CLI" >&2
   exit 70
 fi
-run_logged query-status "$QUERY_CLI" --root "$DATA_ROOT" status
+run_transient query-status "$QUERY_CLI" --root "$DATA_ROOT" status
 
 INSPECT_ARGS=("$INSPECTOR" --data-root "$DATA_ROOT" --json)
 if [[ -n "$DAY" ]]; then
@@ -162,7 +266,7 @@ fi
 if [[ "$REQUIRE_REAL_EVENTS" -eq 1 ]]; then
   INSPECT_ARGS+=(--require-real-events)
 fi
-run_logged capture-inspection "${INSPECT_ARGS[@]}"
+run_transient capture-inspection "${INSPECT_ARGS[@]}"
 
 LATEST_FILE=""
 if [[ -z "$DAY" && -d "$DATA_ROOT/events" ]]; then
@@ -174,7 +278,7 @@ elif [[ -n "$DAY" ]]; then
   LATEST_FILE="$DATA_ROOT/events/$DAY.jsonl"
 fi
 if [[ -n "$LATEST_FILE" && -f "$LATEST_FILE" ]]; then
-  run_logged repository-jsonl-verifier python3 "$REPO/scripts/verify_jsonl.py" "$LATEST_FILE"
+  run_transient repository-jsonl-verifier python3 "$REPO/scripts/verify_jsonl.py" "$LATEST_FILE"
 fi
 if [[ -n "$DAY" ]]; then
   DAY_END="$(python3 - "$DAY" <<'PYDATE'
@@ -183,8 +287,8 @@ import sys
 print((date.fromisoformat(sys.argv[1]) + timedelta(days=1)).isoformat())
 PYDATE
 )"
-  run_logged day-summary "$QUERY_CLI" --root "$DATA_ROOT" summary "$DAY"
-  run_logged day-gaps "$QUERY_CLI" --root "$DATA_ROOT" gaps --start "$DAY" --end "$DAY_END"
+  run_transient day-summary "$QUERY_CLI" --root "$DATA_ROOT" summary "$DAY"
+  run_transient day-gaps "$QUERY_CLI" --root "$DATA_ROOT" gaps --start "$DAY" --end "$DAY_END"
 fi
 
 cat >"$OUTPUT/NEXT_MANUAL_VALIDATION.txt" <<'TXT'

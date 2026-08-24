@@ -73,7 +73,7 @@
         }
 
         func updateStatus() {
-            let permissionStatus = permissions.currentStatus
+            let permissionStatus = permissions.snapshot
             let recording = state.isCapturing
             let suppression = recording ? currentSuppression() : nil
             let health = captureHealth()

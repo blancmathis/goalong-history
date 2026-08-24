@@ -4,9 +4,11 @@
     import SwiftUI
 
     struct ScreenTimePage: View {
+        @ObservedObject private var dashboard: DashboardViewModel
         @StateObject private var screenTime: AppleScreenTimeDashboardModel
 
         init(model: DashboardViewModel) {
+            _dashboard = ObservedObject(wrappedValue: model)
             _screenTime = StateObject(
                 wrappedValue: AppleScreenTimeDashboardModel(
                     rootDirectory: AppPaths.screenTimeDirectory,
@@ -60,7 +62,9 @@
                 .padding(.bottom, 50)
             }
             .background(LHTheme.pageBackground)
-            .onAppear { screenTime.refresh() }
+            .onAppear { screenTime.setActive(dashboard.dashboardIsVisible) }
+            .onDisappear { screenTime.setActive(false) }
+            .onChange(of: dashboard.dashboardIsVisible) { screenTime.setActive($0) }
             .alert(item: $screenTime.alert) { item in
                 Alert(
                     title: Text(item.title),

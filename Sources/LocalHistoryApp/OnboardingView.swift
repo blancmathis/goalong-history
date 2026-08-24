@@ -274,6 +274,7 @@
                 fullContextPreference,
                 forKey: ActivityAnalysisPreferences.richContextEnabledKey
             )
+            ActivityAnalysisRuntime.shared.richContextPreferenceDidChange()
             guard launchAtLogin.setEnabled(launchAtLoginPreference) else {
                 note = launchAtLogin.message
                     ?? "macOS could not update the login-item setting."

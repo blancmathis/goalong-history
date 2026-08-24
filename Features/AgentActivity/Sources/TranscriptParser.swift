@@ -1,28 +1,269 @@
 import Foundation
 
 public enum AgentTranscriptParser {
+    /// A single transcript line is intentionally capped. Oversized payload lines are still
+    /// hashed by the source reader, but are skipped for transient semantic analysis.
+    static let maximumBufferedLineBytes = 512 * 1_024
+
     public static func parse(data: Data, fileURL: URL, provider: AgentProvider) -> AgentDocumentSummary {
-        if let envelope = decodeHookEnvelope(data) {
-            var summary = parsePayload(envelope.payload, fileURL: fileURL, provider: envelope.provider)
-            summary.format = .hookEvent
-            if summary.title == nil { summary.title = humanized(envelope.eventName) }
-            if summary.startedAt == nil { summary.startedAt = envelope.capturedAt }
-            if summary.endedAt == nil { summary.endedAt = envelope.capturedAt }
-            if envelope.eventName.lowercased().contains("tool"), summary.toolCallCount == 0 {
-                summary.toolCallCount = 1
-            }
-            if envelope.eventName.lowercased().contains("error"), summary.errorCount == 0 {
-                summary.errorCount = 1
-            }
-            if envelope.eventName.lowercased().contains("subagent"), summary.subagentCount == 0 {
-                summary.subagentCount = 1
-            }
-            return summary
+        let ext = fileURL.pathExtension.lowercased()
+        if jsonLineExtensions.contains(ext) {
+            var parser = IncrementalJSONLines(fileURL: fileURL, provider: provider)
+            parser.consume(data)
+            return parser.finish()
+        }
+        if markdownExtensions.contains(ext) || textExtensions.contains(ext) {
+            var parser = IncrementalText(
+                fileURL: fileURL,
+                markdown: markdownExtensions.contains(ext)
+            )
+            parser.consume(data)
+            return parser.finish()
         }
         return parsePayload(data, fileURL: fileURL, provider: provider)
     }
 
-    private static func parsePayload(_ data: Data, fileURL: URL, provider: AgentProvider) -> AgentDocumentSummary {
+    static func unanalyzedSummary(for fileURL: URL) -> AgentDocumentSummary {
+        AgentDocumentSummary(
+            format: documentFormat(for: fileURL),
+            title: fileURL.deletingPathExtension().lastPathComponent
+        )
+    }
+
+    static func documentFormat(for fileURL: URL) -> AgentDocumentFormat {
+        let ext = fileURL.pathExtension.lowercased()
+        if databaseExtensions.contains(ext) { return .database }
+        if jsonLineExtensions.contains(ext) { return .jsonLines }
+        if jsonExtensions.contains(ext) { return .json }
+        if markdownExtensions.contains(ext) { return .markdown }
+        if textExtensions.contains(ext) { return .text }
+        return .unknown
+    }
+
+    /// Incremental JSONL parser shared by regular files and virtual OpenCode rows.
+    /// It never retains more than `maximumBufferedLineBytes` of transcript content.
+    struct IncrementalJSONLines {
+        private var accumulator: Accumulator
+        private var pendingLine = Data()
+        private var discardingOversizedLine = false
+        private var parsedAny = false
+        private(set) var peakBufferedBytes = 0
+
+        init(fileURL: URL, provider: AgentProvider) {
+            accumulator = Accumulator(fileURL: fileURL, provider: provider, format: .jsonLines)
+        }
+
+        mutating func consume(_ chunk: Data) {
+            guard !chunk.isEmpty else { return }
+            var cursor = chunk.startIndex
+            while cursor < chunk.endIndex {
+                if let newline = chunk[cursor...].firstIndex(of: 0x0A) {
+                    append(chunk[cursor..<newline])
+                    completeLine()
+                    cursor = chunk.index(after: newline)
+                } else {
+                    append(chunk[cursor..<chunk.endIndex])
+                    break
+                }
+            }
+        }
+
+        /// Consumes a borrowed read buffer without first materializing another `Data` value.
+        /// The source reader reuses the same fixed-size buffer for the whole file, while this
+        /// parser copies only the current bounded line into `pendingLine`.
+        mutating func consume(bytes: UnsafeRawBufferPointer) {
+            guard let baseAddress = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                !bytes.isEmpty
+            else { return }
+            var fragmentStart = 0
+            for index in 0..<bytes.count where baseAddress[index] == 0x0A {
+                append(bytes: baseAddress.advanced(by: fragmentStart), count: index - fragmentStart)
+                completeLine()
+                fragmentStart = index + 1
+            }
+            append(
+                bytes: baseAddress.advanced(by: fragmentStart),
+                count: bytes.count - fragmentStart
+            )
+        }
+
+        mutating func consumeLine(_ line: Data) {
+            guard line.count <= AgentTranscriptParser.maximumBufferedLineBytes else {
+                peakBufferedBytes = max(peakBufferedBytes, AgentTranscriptParser.maximumBufferedLineBytes)
+                return
+            }
+            peakBufferedBytes = max(peakBufferedBytes, line.count)
+            parseLine(line)
+        }
+
+        mutating func consumeLine(bytes: UnsafeRawBufferPointer) {
+            guard bytes.count <= AgentTranscriptParser.maximumBufferedLineBytes else {
+                peakBufferedBytes = max(peakBufferedBytes, AgentTranscriptParser.maximumBufferedLineBytes)
+                return
+            }
+            consumeLine(Data(bytes))
+        }
+
+        mutating func finish() -> AgentDocumentSummary {
+            if !pendingLine.isEmpty || discardingOversizedLine {
+                completeLine()
+            }
+            return parsedAny
+                ? accumulator.finish()
+                : AgentDocumentSummary(
+                    format: .jsonLines,
+                    title: accumulator.fileURL.deletingPathExtension().lastPathComponent
+                )
+        }
+
+        private mutating func append(_ fragment: Data.SubSequence) {
+            guard !discardingOversizedLine, !fragment.isEmpty else { return }
+            let remaining = AgentTranscriptParser.maximumBufferedLineBytes - pendingLine.count
+            guard fragment.count <= remaining else {
+                peakBufferedBytes = max(peakBufferedBytes, AgentTranscriptParser.maximumBufferedLineBytes)
+                pendingLine.removeAll(keepingCapacity: false)
+                discardingOversizedLine = true
+                return
+            }
+            pendingLine.append(contentsOf: fragment)
+            peakBufferedBytes = max(peakBufferedBytes, pendingLine.count)
+        }
+
+        private mutating func append(bytes: UnsafePointer<UInt8>, count: Int) {
+            guard !discardingOversizedLine, count > 0 else { return }
+            let remaining = AgentTranscriptParser.maximumBufferedLineBytes - pendingLine.count
+            guard count <= remaining else {
+                peakBufferedBytes = max(peakBufferedBytes, AgentTranscriptParser.maximumBufferedLineBytes)
+                pendingLine.removeAll(keepingCapacity: false)
+                discardingOversizedLine = true
+                return
+            }
+            pendingLine.append(bytes, count: count)
+            peakBufferedBytes = max(peakBufferedBytes, pendingLine.count)
+        }
+
+        private mutating func completeLine() {
+            defer {
+                pendingLine.removeAll(keepingCapacity: true)
+                discardingOversizedLine = false
+            }
+            guard !discardingOversizedLine, !pendingLine.isEmpty else { return }
+            if pendingLine.last == 0x0D { pendingLine.removeLast() }
+            parseLine(pendingLine)
+        }
+
+        private mutating func parseLine(_ line: Data) {
+            autoreleasepool {
+                guard !line.isEmpty,
+                    let object = try? JSONSerialization.jsonObject(with: line)
+                else { return }
+                parsedAny = true
+                accumulator.walk(object, currentKey: nil)
+            }
+        }
+    }
+
+    /// Text and Markdown use the same bounded line discipline as JSONL, avoiding a complete
+    /// `String` copy for large logs.
+    struct IncrementalText {
+        private let fileURL: URL
+        private let markdown: Bool
+        private var pendingLine = Data()
+        private var discardingOversizedLine = false
+        private var summary: AgentDocumentSummary
+        private(set) var peakBufferedBytes = 0
+
+        init(fileURL: URL, markdown: Bool) {
+            self.fileURL = fileURL
+            self.markdown = markdown
+            summary = AgentDocumentSummary(
+                format: markdown ? .markdown : .text,
+                title: fileURL.deletingPathExtension().lastPathComponent
+            )
+        }
+
+        mutating func consume(_ chunk: Data) {
+            guard !chunk.isEmpty else { return }
+            var cursor = chunk.startIndex
+            while cursor < chunk.endIndex {
+                if let newline = chunk[cursor...].firstIndex(of: 0x0A) {
+                    append(chunk[cursor..<newline])
+                    completeLine()
+                    cursor = chunk.index(after: newline)
+                } else {
+                    append(chunk[cursor..<chunk.endIndex])
+                    break
+                }
+            }
+        }
+
+        /// Raw-buffer sibling of `consume(_:)`; see `IncrementalJSONLines.consume(bytes:)`.
+        mutating func consume(bytes: UnsafeRawBufferPointer) {
+            guard let baseAddress = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                !bytes.isEmpty
+            else { return }
+            var fragmentStart = 0
+            for index in 0..<bytes.count where baseAddress[index] == 0x0A {
+                append(bytes: baseAddress.advanced(by: fragmentStart), count: index - fragmentStart)
+                completeLine()
+                fragmentStart = index + 1
+            }
+            append(
+                bytes: baseAddress.advanced(by: fragmentStart),
+                count: bytes.count - fragmentStart
+            )
+        }
+
+        mutating func finish() -> AgentDocumentSummary {
+            if !pendingLine.isEmpty || discardingOversizedLine { completeLine() }
+            return summary
+        }
+
+        private mutating func append(_ fragment: Data.SubSequence) {
+            guard !discardingOversizedLine, !fragment.isEmpty else { return }
+            let remaining = AgentTranscriptParser.maximumBufferedLineBytes - pendingLine.count
+            guard fragment.count <= remaining else {
+                peakBufferedBytes = max(peakBufferedBytes, AgentTranscriptParser.maximumBufferedLineBytes)
+                pendingLine.removeAll(keepingCapacity: false)
+                discardingOversizedLine = true
+                return
+            }
+            pendingLine.append(contentsOf: fragment)
+            peakBufferedBytes = max(peakBufferedBytes, pendingLine.count)
+        }
+
+        private mutating func append(bytes: UnsafePointer<UInt8>, count: Int) {
+            guard !discardingOversizedLine, count > 0 else { return }
+            let remaining = AgentTranscriptParser.maximumBufferedLineBytes - pendingLine.count
+            guard count <= remaining else {
+                peakBufferedBytes = max(peakBufferedBytes, AgentTranscriptParser.maximumBufferedLineBytes)
+                pendingLine.removeAll(keepingCapacity: false)
+                discardingOversizedLine = true
+                return
+            }
+            pendingLine.append(bytes, count: count)
+            peakBufferedBytes = max(peakBufferedBytes, pendingLine.count)
+        }
+
+        private mutating func completeLine() {
+            defer {
+                pendingLine.removeAll(keepingCapacity: true)
+                discardingOversizedLine = false
+            }
+            guard !discardingOversizedLine, !pendingLine.isEmpty else { return }
+            if pendingLine.last == 0x0D { pendingLine.removeLast() }
+            autoreleasepool {
+                guard let text = String(data: pendingLine, encoding: .utf8) else { return }
+                inspectTextLine(text, summary: &summary)
+            }
+        }
+    }
+
+    private static func parsePayload(
+        _ data: Data,
+        fileURL: URL,
+        provider: AgentProvider
+    ) -> AgentDocumentSummary {
         let ext = fileURL.pathExtension.lowercased()
         if databaseExtensions.contains(ext) {
             return AgentDocumentSummary(
@@ -31,29 +272,21 @@ public enum AgentTranscriptParser {
             )
         }
 
-        if jsonLineExtensions.contains(ext), let text = String(data: data, encoding: .utf8) {
-            var accumulator = Accumulator(fileURL: fileURL, provider: provider, format: .jsonLines)
-            var parsedAny = false
-            for line in text.split(whereSeparator: \.isNewline) {
-                guard let lineData = String(line).data(using: .utf8),
-                    let object = try? JSONSerialization.jsonObject(with: lineData)
-                else { continue }
-                parsedAny = true
-                accumulator.walk(object, path: [])
-            }
-            if parsedAny { return accumulator.finish() }
-        }
-
         if jsonExtensions.contains(ext),
             let object = try? JSONSerialization.jsonObject(with: data)
         {
             var accumulator = Accumulator(fileURL: fileURL, provider: provider, format: .json)
-            accumulator.walk(object, path: [])
+            accumulator.walk(object, currentKey: nil)
             return accumulator.finish()
         }
 
-        if let text = String(data: data, encoding: .utf8), !looksBinary(data) {
-            return parseText(text, fileURL: fileURL, markdown: markdownExtensions.contains(ext))
+        if !looksBinary(data), let text = String(data: data, encoding: .utf8) {
+            var summary = AgentDocumentSummary(
+                format: markdownExtensions.contains(ext) ? .markdown : .text,
+                title: fileURL.deletingPathExtension().lastPathComponent
+            )
+            text.enumerateLines { line, _ in inspectTextLine(line, summary: &summary) }
+            return summary
         }
 
         return AgentDocumentSummary(
@@ -62,44 +295,27 @@ public enum AgentTranscriptParser {
         )
     }
 
-    private static func parseText(_ text: String, fileURL: URL, markdown: Bool) -> AgentDocumentSummary {
-        let lines = text.components(separatedBy: .newlines)
-        var summary = AgentDocumentSummary(
-            format: markdown ? .markdown : .text,
-            title: fileURL.deletingPathExtension().lastPathComponent
-        )
-
-        for rawLine in lines {
-            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !line.isEmpty else { continue }
-            if summary.excerpt == nil {
-                summary.excerpt = bounded(line, maximum: 360)
-            }
-            let lower = line.lowercased()
-            if lower.hasPrefix("user:") || lower.hasPrefix("human:") || lower.hasPrefix("utilisateur:") {
-                summary.messageCount += 1
-                summary.userMessageCount += 1
-            } else if lower.hasPrefix("assistant:") || lower.hasPrefix("agent:") {
-                summary.messageCount += 1
-                summary.assistantMessageCount += 1
-            } else if lower.hasPrefix("system:") || lower.hasPrefix("developer:") {
-                summary.messageCount += 1
-                summary.systemMessageCount += 1
-            }
-            if lower.contains("tool call") || lower.hasPrefix("tool:") || lower.hasPrefix("command:") {
-                summary.toolCallCount += 1
-            }
-            if lower.contains(" error:") || lower.hasPrefix("error:") || lower.contains(" failed") {
-                summary.errorCount += 1
-            }
+    private static func inspectTextLine(_ rawLine: String, summary: inout AgentDocumentSummary) {
+        let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty else { return }
+        if summary.excerpt == nil { summary.excerpt = bounded(line, maximum: 360) }
+        let lower = line.lowercased()
+        if lower.hasPrefix("user:") || lower.hasPrefix("human:") || lower.hasPrefix("utilisateur:") {
+            summary.messageCount += 1
+            summary.userMessageCount += 1
+        } else if lower.hasPrefix("assistant:") || lower.hasPrefix("agent:") {
+            summary.messageCount += 1
+            summary.assistantMessageCount += 1
+        } else if lower.hasPrefix("system:") || lower.hasPrefix("developer:") {
+            summary.messageCount += 1
+            summary.systemMessageCount += 1
         }
-        return summary
-    }
-
-    private static func decodeHookEnvelope(_ data: Data) -> AgentHookEnvelope? {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(AgentHookEnvelope.self, from: data)
+        if lower.contains("tool call") || lower.hasPrefix("tool:") || lower.hasPrefix("command:") {
+            summary.toolCallCount += 1
+        }
+        if lower.contains(" error:") || lower.hasPrefix("error:") || lower.contains(" failed") {
+            summary.errorCount += 1
+        }
     }
 
     private struct Accumulator {
@@ -111,7 +327,8 @@ public enum AgentTranscriptParser {
         var title: String?
         var excerpt: String?
         var projectPath: String?
-        var dates: [Date] = []
+        var earliestDate: Date?
+        var latestDate: Date?
         var messageCount = 0
         var userMessageCount = 0
         var assistantMessageCount = 0
@@ -124,26 +341,41 @@ public enum AgentTranscriptParser {
         var touchedFiles = OrderedSet(limit: 160)
         var commands = OrderedSet(limit: 80)
 
-        mutating func walk(_ value: Any, path: [String]) {
+        mutating func walk(_ value: Any, currentKey: String?) {
             if let dictionary = value as? [String: Any] {
-                inspect(dictionary, path: path)
-                for (key, child) in dictionary {
-                    walk(child, path: path + [key])
+                let orderedKeys = stableDictionaryKeys(dictionary)
+                inspect(dictionary, currentKey: currentKey, orderedKeys: orderedKeys)
+                let serializedCopilotKey =
+                    provider == .copilot
+                    ? copilotSerializedStorageKey(from: dictionary)
+                    : nil
+                for key in orderedKeys {
+                    guard let child = dictionary[key] else { continue }
+                    let childKey =
+                        normalizeKey(key) == "v"
+                        ? (serializedCopilotKey ?? key)
+                        : key
+                    walk(child, currentKey: childKey)
                 }
             } else if let array = value as? [Any] {
-                for child in array { walk(child, path: path) }
+                for child in array { walk(child, currentKey: currentKey) }
             } else if let string = value as? String {
-                inspectLooseString(string, path: path)
+                inspectLooseString(string, key: currentKey)
             }
         }
 
-        mutating func inspect(_ dictionary: [String: Any], path: [String]) {
+        mutating func inspect(
+            _ dictionary: [String: Any],
+            currentKey: String?,
+            orderedKeys: [String]
+        ) {
             var normalized: [String: Any] = [:]
             normalized.reserveCapacity(dictionary.count)
-            for key in dictionary.keys.sorted() {
+            for key in orderedKeys {
+                guard let value = dictionary[key] else { continue }
                 let normalizedKey = normalizeKey(key)
                 guard !normalizedKey.isEmpty, normalized[normalizedKey] == nil else { continue }
-                normalized[normalizedKey] = dictionary[key]
+                normalized[normalizedKey] = value
             }
 
             if sessionID == nil {
@@ -171,8 +403,17 @@ public enum AgentTranscriptParser {
                 }
             }
 
-            let role = normalizedRole(from: normalized)
-            let content = messageContent(from: normalized)
+            var role = normalizedRole(from: normalized)
+            if role == nil, provider == .gemini {
+                role = geminiRole(from: normalized)
+            }
+            if role == nil,
+                provider == .copilot,
+                normalizeKey(currentKey ?? "") == "requests",
+                copilotUserInput(from: normalized) != nil
+            {
+                role = "user"
+            }
             if let role {
                 messageCount += 1
                 switch role {
@@ -181,22 +422,31 @@ public enum AgentTranscriptParser {
                 case "system", "developer": systemMessageCount += 1
                 default: break
                 }
-                if let content, excerpt == nil, role == "user" || role == "human" {
+            }
+            if excerpt == nil, let content = messageContent(from: normalized) {
+                if role == nil || role == "user" || role == "human", content.count >= 12 {
                     excerpt = bounded(content, maximum: 360)
                 }
-            } else if excerpt == nil, let content, content.count >= 12 {
-                excerpt = bounded(content, maximum: 360)
             }
 
             let type =
-                firstString(normalized, keys: ["type", "event", "eventname", "hookeventname", "kind"])?
-                .lowercased() ?? ""
+                firstString(
+                    normalized,
+                    keys: ["type", "event", "eventname", "hookeventname", "kind"]
+                )?.lowercased() ?? ""
             let status =
-                firstString(normalized, keys: ["status", "outcome", "resultstatus"])?
-                .lowercased() ?? ""
+                firstString(
+                    normalized,
+                    keys: ["status", "outcome", "resultstatus"]
+                )?.lowercased() ?? ""
 
             var countedTool = false
-            if type.contains("tool") || normalized["toolname"] != nil || normalized["tool"] != nil {
+            if type.contains("tool")
+                || type == "function_call"
+                || type == "custom_tool_call"
+                || normalized["toolname"] != nil
+                || normalized["tool"] != nil
+            {
                 toolCallCount += 1
                 countedTool = true
             }
@@ -205,7 +455,12 @@ public enum AgentTranscriptParser {
                 if !countedTool { toolCallCount += 1 }
             }
 
-            if type.contains("subagent") || type.contains("sub_agent") {
+            let source = firstString(normalized, keys: ["source", "sessionsource"])?.lowercased() ?? ""
+            if type.contains("subagent")
+                || type.contains("sub_agent")
+                || source.contains("subagent")
+                || source.contains("sub_agent")
+            {
                 subagentCount += 1
             }
             if type.contains("error") || status == "failed" || status == "failure" || status == "error" {
@@ -214,39 +469,46 @@ public enum AgentTranscriptParser {
                 errorCount += 1
             }
 
-            for (key, rawValue) in normalized {
-                if timestampKeys.contains(key), let date = parseDate(rawValue) {
-                    dates.append(date)
-                }
+            for key in stableDictionaryKeys(normalized) {
+                guard let rawValue = normalized[key] else { continue }
+                if timestampKeys.contains(key), let date = parseDate(rawValue) { observe(date) }
                 if fileKeys.contains(key), let raw = rawValue as? String, plausibleFilePath(raw) {
                     touchedFiles.insert(bounded(raw, maximum: 500))
                 }
-                if commandKeys.contains(key), let raw = flattenText(rawValue, depth: 0), plausibleCommand(raw) {
+                if commandKeys.contains(key),
+                    let raw = flattenText(rawValue, depth: 0, maximum: 4_000),
+                    plausibleCommand(raw)
+                {
                     commands.insert(bounded(raw, maximum: 500))
                 }
             }
         }
 
-        mutating func inspectLooseString(_ string: String, path: [String]) {
-            guard let key = path.last.map(normalizeKey) else { return }
-            if excerpt == nil, ["prompt", "userprompt", "instruction", "request"].contains(key), string.count >= 12 {
-                excerpt = bounded(string, maximum: 360)
+        mutating func inspectLooseString(_ string: String, key rawKey: String?) {
+            guard let key = rawKey.map(normalizeKey) else { return }
+            if excerpt == nil,
+                ["prompt", "userprompt", "instruction", "request"].contains(key),
+                string.count >= 12
+            {
+                excerpt = bounded(String(string.prefix(1_024)), maximum: 360)
             }
-            if timestampKeys.contains(key), let date = parseDate(string) {
-                dates.append(date)
-            }
+            if timestampKeys.contains(key), let date = parseDate(string) { observe(date) }
+        }
+
+        mutating func observe(_ date: Date) {
+            if earliestDate.map({ date < $0 }) ?? true { earliestDate = date }
+            if latestDate.map({ date > $0 }) ?? true { latestDate = date }
         }
 
         func finish() -> AgentDocumentSummary {
-            let sortedDates = dates.sorted()
-            return AgentDocumentSummary(
+            AgentDocumentSummary(
                 format: format,
                 sessionID: sessionID,
                 title: title ?? fileURL.deletingPathExtension().lastPathComponent,
                 excerpt: excerpt,
                 projectPath: projectPath,
-                startedAt: sortedDates.first,
-                endedAt: sortedDates.last,
+                startedAt: earliestDate,
+                endedAt: latestDate,
                 messageCount: messageCount,
                 userMessageCount: userMessageCount,
                 assistantMessageCount: assistantMessageCount,
@@ -281,6 +543,7 @@ public enum AgentTranscriptParser {
     private static let jsonLineExtensions: Set<String> = ["jsonl", "ndjson", "trace"]
     private static let jsonExtensions: Set<String> = ["json", "agent-event"]
     private static let markdownExtensions: Set<String> = ["md", "markdown"]
+    private static let textExtensions: Set<String> = ["txt", "log"]
     private static let databaseExtensions: Set<String> = ["db", "sqlite", "sqlite3", "vscdb"]
     private static let timestampKeys: Set<String> = [
         "timestamp", "time", "createdat", "updatedat", "startedat", "endedat", "completedat", "date",
@@ -289,6 +552,18 @@ public enum AgentTranscriptParser {
         "filepath", "file", "filename", "path", "targetpath", "absolutepath", "relativepath",
     ]
     private static let commandKeys: Set<String> = ["command", "cmd", "shellcommand", "script"]
+
+    private static let iso8601Lock = NSLock()
+    private static let fractionalISO8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let standardISO8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
     private static func normalizedRole(from dictionary: [String: Any]) -> String? {
         let raw = firstString(dictionary, keys: ["role", "speaker", "authorrole", "messagerole"])?
@@ -299,9 +574,45 @@ public enum AgentTranscriptParser {
         return allowed.contains(raw) ? raw : nil
     }
 
+    private static func geminiRole(from dictionary: [String: Any]) -> String? {
+        let raw = firstString(dictionary, keys: ["type"])?
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        switch raw {
+        case "user", "human": return "user"
+        case "gemini", "model", "assistant", "agent": return "assistant"
+        case "system", "developer": return raw
+        default: return nil
+        }
+    }
+
+    private static func copilotUserInput(from dictionary: [String: Any]) -> String? {
+        for key in ["message", "userinput", "inputtext", "input", "prompt"] {
+            guard let value = dictionary[key],
+                let text = flattenText(value, depth: 0, maximum: 1_024),
+                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { continue }
+            return text
+        }
+        return nil
+    }
+
+    /// Current VS Code chat sessions can serialize top-level properties as JSONL key/value
+    /// records (`{"k":["requests"],"v":[...]}`). Preserve that key while walking `v` so
+    /// request dictionaries are interpreted the same way as the equivalent JSON document.
+    private static func copilotSerializedStorageKey(from dictionary: [String: Any]) -> String? {
+        guard let path = dictionary["k"] as? [Any],
+            let last = path.last as? String,
+            !last.isEmpty
+        else { return nil }
+        return last
+    }
+
     private static func messageContent(from dictionary: [String: Any]) -> String? {
         for key in ["content", "text", "message", "prompt", "response", "output", "result", "instruction"] {
-            guard let value = dictionary[key], let flattened = flattenText(value, depth: 0) else { continue }
+            guard let value = dictionary[key],
+                let flattened = flattenText(value, depth: 0, maximum: 1_024)
+            else { continue }
             let clean = flattened.trimmingCharacters(in: .whitespacesAndNewlines)
             if !clean.isEmpty { return clean }
         }
@@ -311,7 +622,8 @@ public enum AgentTranscriptParser {
     private static func toolName(from dictionary: [String: Any]) -> String? {
         for key in ["toolname", "tool", "functionname", "commandname"] {
             if let value = dictionary[key] as? String, plausibleIdentifier(value) { return value }
-            if let value = dictionary[key] as? [String: Any], let name = value["name"] as? String,
+            if let value = dictionary[key] as? [String: Any],
+                let name = value["name"] as? String,
                 plausibleIdentifier(name)
             {
                 return name
@@ -328,17 +640,32 @@ public enum AgentTranscriptParser {
         return nil
     }
 
-    private static func flattenText(_ value: Any, depth: Int) -> String? {
-        guard depth <= 4 else { return nil }
-        if let string = value as? String { return string }
-        if let number = value as? NSNumber { return number.stringValue }
+    private static func flattenText(_ value: Any, depth: Int, maximum: Int) -> String? {
+        guard depth <= 4, maximum > 0 else { return nil }
+        if let string = value as? String { return String(string.prefix(maximum)) }
+        if let number = value as? NSNumber { return String(number.stringValue.prefix(maximum)) }
         if let array = value as? [Any] {
-            let pieces = array.compactMap { flattenText($0, depth: depth + 1) }.filter { !$0.isEmpty }
-            return pieces.isEmpty ? nil : pieces.joined(separator: "\n")
+            var output = ""
+            for child in array where output.count < maximum {
+                guard
+                    let text = flattenText(
+                        child,
+                        depth: depth + 1,
+                        maximum: maximum - output.count
+                    ), !text.isEmpty
+                else { continue }
+                if !output.isEmpty, output.count < maximum { output.append("\n") }
+                output.append(contentsOf: text.prefix(maximum - output.count))
+            }
+            return output.isEmpty ? nil : output
         }
         if let dictionary = value as? [String: Any] {
             for key in ["text", "content", "message", "value"] {
-                if let child = dictionary[key], let text = flattenText(child, depth: depth + 1) { return text }
+                if let child = dictionary[key],
+                    let text = flattenText(child, depth: depth + 1, maximum: maximum)
+                {
+                    return text
+                }
             }
         }
         return nil
@@ -353,16 +680,27 @@ public enum AgentTranscriptParser {
         if let raw = Double(string) {
             return Date(timeIntervalSince1970: raw > 10_000_000_000 ? raw / 1_000 : raw)
         }
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let result = fractional.date(from: string) { return result }
-        let standard = ISO8601DateFormatter()
-        standard.formatOptions = [.withInternetDateTime]
-        return standard.date(from: string)
+        iso8601Lock.lock()
+        defer { iso8601Lock.unlock() }
+        return fractionalISO8601.date(from: string) ?? standardISO8601.date(from: string)
     }
 
     private static func normalizeKey(_ key: String) -> String {
         key.lowercased().filter(\.isLetter)
+    }
+
+    /// Foundation dictionaries deliberately do not promise iteration order. Canonicalize by
+    /// normalized key first, then by the original UTF-8 bytes so normalization collisions and
+    /// first-observed fields have one stable winner on every process and platform.
+    private static func stableDictionaryKeys(_ dictionary: [String: Any]) -> [String] {
+        dictionary.keys.sorted { lhs, rhs in
+            let normalizedLHS = normalizeKey(lhs)
+            let normalizedRHS = normalizeKey(rhs)
+            if normalizedLHS != normalizedRHS {
+                return normalizedLHS.utf8.lexicographicallyPrecedes(normalizedRHS.utf8)
+            }
+            return lhs.utf8.lexicographicallyPrecedes(rhs.utf8)
+        }
     }
 
     private static func plausibleTitle(_ value: String) -> Bool {
@@ -382,7 +720,8 @@ public enum AgentTranscriptParser {
     private static func plausibleFilePath(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count <= 1_000, !trimmed.contains("\n") else { return false }
-        return trimmed.contains("/") || trimmed.contains("\\") || URL(fileURLWithPath: trimmed).pathExtension.count > 0
+        return trimmed.contains("/") || trimmed.contains("\\")
+            || URL(fileURLWithPath: trimmed).pathExtension.count > 0
     }
 
     private static func plausibleCommand(_ value: String) -> Bool {
@@ -397,7 +736,9 @@ public enum AgentTranscriptParser {
 
     private static func isNullOrEmpty(_ value: Any) -> Bool {
         if value is NSNull { return true }
-        if let string = value as? String { return string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if let string = value as? String {
+            return string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
         if let array = value as? [Any] { return array.isEmpty }
         if let dictionary = value as? [String: Any] { return dictionary.isEmpty }
         return false
@@ -405,8 +746,7 @@ public enum AgentTranscriptParser {
 
     private static func looksBinary(_ data: Data) -> Bool {
         guard !data.isEmpty else { return false }
-        let sample = data.prefix(8_192)
-        return sample.contains(0)
+        return data.prefix(8_192).contains(0)
     }
 
     private static func bounded(_ value: String, maximum: Int) -> String {
@@ -416,14 +756,5 @@ public enum AgentTranscriptParser {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard compact.count > maximum else { return compact }
         return String(compact.prefix(maximum - 1)) + "…"
-    }
-
-    private static func humanized(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: ".", with: " ")
-            .split(separator: " ")
-            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-            .joined(separator: " ")
     }
 }

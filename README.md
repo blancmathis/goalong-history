@@ -7,21 +7,27 @@
 
 A native menu-bar app that turns foreground activity into a clear local timeline, seals it against later rewriting, and lets the user disclose only what they choose.
 
-[Download the latest Mac release](https://github.com/blancmathis/goalong-history/releases/tag/latest-main) · [Guide français](GUIDE_FR.md) · [Security model](SECURITY.md)
+[Install the audited source build](#build-from-source) · [Guide français](GUIDE_FR.md) · [Security model](SECURITY.md)
 </div>
+
+> **Agent Activity privacy notice:** the currently published `latest-main` bundle predates
+> direct-source indexing. Do not install that bundle. From this checkout, use
+> `./install.sh --source`; the installer builds, audits, stages, and validates the
+> direct-source app before replacing an existing installation.
 
 > Goalong History is for a Mac you own and use yourself. Never use it to monitor another person without their prior, explicit consent.
 
 ## A Mac installation that feels like a product
 
-The normal installation does **not** require Terminal, Xcode, Homebrew, Python, or administrator commands.
+The current public `latest-main` artifact is intentionally rejected by the installer because it
+predates the direct-source Agent Activity privacy boundary. Until a replacement release is
+published, build and install this checkout with `./install.sh --source`. That workflow runs the
+tests and privacy audit, builds the app for the current Mac architecture, validates its identity and direct-source marker,
+then replaces an existing installation atomically with rollback on failure.
 
-1. Download `Goalong-History-macOS-universal.dmg` from Releases.
-2. Drag **Goalong History** to **Applications**.
-3. Open the app.
-4. Follow the native setup assistant.
-
-The rolling release is universal (`arm64 + x86_64`), authenticated for in-app updates with Sparkle EdDSA, and compatible with macOS 13 Ventura or later. Until Developer ID is configured, the first downloaded copy is ad-hoc code signed and macOS may require **Open Anyway**. Developer ID signing and notarization will turn on automatically once the optional Apple credentials are added.
+After installation, open **Goalong History** and follow the native setup assistant. The app is
+compatible with macOS 13 Ventura or later. A source build is ad-hoc code signed unless a Developer
+ID identity is configured, so macOS may require renewed permission for a changed build.
 
 The first launch guides the user through five focused screens:
 
@@ -52,7 +58,8 @@ Recognized and capability-detected private-browser windows are fail-closed. The 
 
 ## Local-first by default
 
-Detailed activity is written to the current user’s private Application Support directory:
+Detailed activity is written to the current user’s private Application Support directory.
+This abridged tree includes the principal preserved data stores:
 
 ```text
 ~/Library/Application Support/LocalHistory/
@@ -66,6 +73,12 @@ Detailed activity is written to the current user’s private Application Support
 │   └── YYYY-MM-DD.seals.jsonl
 ├── receipts/
 │   └── YYYY-MM-DD.receipts.jsonl
+├── semantic/
+├── analysis/
+├── memories/
+├── computer-history/
+├── apple-screen-time/
+├── agent-activity-v2/
 └── shares/
 ```
 
@@ -97,11 +110,17 @@ Website rules take priority over the containing browser rule. The original JSONL
 
 ## Native dashboard
 
-The SwiftUI dashboard is split into six areas:
+The SwiftUI dashboard is split into eight areas:
 
 - **Overview** — runtime state, daily metrics, coverage, top apps, and recent sessions;
-- **Activity** — every observed app and website with bounded foreground time, plus the searchable session timeline;
+- **Activity** — apps and sites, causal
+  [Computer History](docs/COMPUTER_HISTORY_PARITY.md), the compact day recap,
+  and the searchable timeline;
 - **Apple Screen Time** — isolated import and analysis of user-exported Apple device activity;
+- **[Agentic work](Features/AgentActivity/README.md)** — bounded direct-source
+  metadata and on-demand analysis without a stored transcript copy;
+- **[AI recap](docs/CHATGPT_RECAP.md)** — optional bounded synthesis through
+  the user's ChatGPT/Codex account;
 - **Share** — persistent per-app and per-site rules with verified event-level export;
 - **Privacy & Security** — permission state, data flow, storage, identity, and safe deletion;
 - **Settings** — capture signals, retention, URL redaction, verification, and exclusions.
@@ -112,7 +131,7 @@ A menu-bar control keeps pause/resume, status, dashboard access, and sharing imm
 
 Start-at-login is an explicit onboarding choice implemented with Apple’s `SMAppService`. Goalong History no longer installs a hand-written LaunchAgent. Upgrading preserves the local history and settings directory.
 
-A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. Starting with the first manually installed Sparkle-enabled build, later EdDSA-authenticated releases can be reviewed and installed from the update button inside Goalong History.
+A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. The current audited source build deliberately disables in-app updates so it cannot consume the older public Agent Activity bundle. Update controls can be enabled again only in a compatible Sparkle release that carries the direct-source privacy marker and passes the installer’s identity, signature, checksum, and update-policy checks.
 
 ## Build from source
 

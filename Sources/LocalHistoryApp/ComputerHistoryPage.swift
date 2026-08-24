@@ -4,43 +4,105 @@
     import LocalHistoryCore
     import SwiftUI
 
+    enum ComputerHistorySourceStatus: Equatable {
+        case unverified
+        case checking
+        case available
+        case absent
+        case inaccessible(String)
+    }
+
     final class ComputerHistoryPageModel: ObservableObject {
         @Published private(set) var memory: ComputerHistoryDayMemory?
         @Published private(set) var answer: ComputerHistoryAnswer?
         @Published private(set) var isLoading = false
         @Published private(set) var isAnswering = false
         @Published private(set) var errorMessage: String?
+        @Published private(set) var sourceStatus: ComputerHistorySourceStatus = .unverified
         @Published var question = ""
 
-        private let store = ComputerHistoryStore()
+        private let store: ComputerHistoryStore
+        private let refreshRuntime: ActivityAnalysisRefreshServing
+        private let storedMemoryLoader: (Date) -> ComputerHistoryDayMemory?
         private let queue = DispatchQueue(
             label: "ai.goalong.localhistory.computer-history-page",
             qos: .userInitiated
         )
-        private var requestedDay: Date?
+        private var refreshRequestID = UUID()
 
-        func refresh(day: Date) {
+        init(
+            store: ComputerHistoryStore = ComputerHistoryStore(),
+            refreshRuntime: ActivityAnalysisRefreshServing = ActivityAnalysisRuntime.shared,
+            storedMemoryLoader: ((Date) -> ComputerHistoryDayMemory?)? = nil
+        ) {
+            self.store = store
+            self.refreshRuntime = refreshRuntime
+            self.storedMemoryLoader = storedMemoryLoader ?? { store.loadStored(for: $0) }
+        }
+
+        func refresh(day: Date, forceRebuild: Bool = false) {
             let normalized = Calendar.current.startOfDay(for: day)
-            requestedDay = normalized
-            isLoading = true
+            let requestID = UUID()
+            refreshRequestID = requestID
             errorMessage = nil
-            queue.async { [weak self] in
-                guard let self else { return }
-                do {
-                    let memory = try self.store.buildAndWrite(for: normalized)
-                    DispatchQueue.main.async {
-                        guard self.requestedDay == normalized else { return }
-                        self.memory = memory
-                        self.isLoading = false
-                    }
-                } catch {
-                    DispatchQueue.main.async {
-                        guard self.requestedDay == normalized else { return }
-                        self.memory = self.store.loadStored(for: normalized)
+            let retainedMemory = storedMemoryLoader(normalized)
+            if !forceRebuild, let retainedMemory {
+                // Display the bounded derived view immediately, but still verify the
+                // source revision asynchronously. An exact cache hit performs no body
+                // read and lets the UI distinguish retained data from a live source.
+                memory = retainedMemory
+                isLoading = false
+            } else {
+                isLoading = true
+            }
+            sourceStatus = .checking
+            refreshRuntime.refresh(day: normalized, force: forceRebuild) { [weak self] result in
+                let publish = { [weak self] in
+                    guard let self, self.refreshRequestID == requestID else { return }
+                    switch result {
+                    case .success(let cycleResult):
+                        self.memory = self.storedMemoryLoader(normalized) ?? retainedMemory
+                        self.sourceStatus = cycleResult.sourceAbsent ? .absent : .available
+                    case .failure(let error):
+                        if Self.wasInvalidatedByHistoryClear(error) {
+                            self.memory = nil
+                            self.sourceStatus = .unverified
+                        } else {
+                            self.memory = self.storedMemoryLoader(normalized) ?? retainedMemory
+                            self.sourceStatus = Self.sourceStatus(for: error)
+                        }
                         self.errorMessage = error.localizedDescription
-                        self.isLoading = false
                     }
+                    self.isLoading = false
                 }
+                if Thread.isMainThread {
+                    publish()
+                } else {
+                    DispatchQueue.main.async(execute: publish)
+                }
+            }
+        }
+
+        private static func sourceStatus(for error: Error) -> ComputerHistorySourceStatus {
+            guard let cycleError = error as? ActivityAnalysisCycleError else {
+                return .unverified
+            }
+            switch cycleError {
+            case .sourceInaccessible, .sourceChangedDuringRead, .oversizedJSONLine,
+                .reentrantCycle:
+                return .inaccessible(error.localizedDescription)
+            }
+        }
+
+        private static func wasInvalidatedByHistoryClear(_ error: Error) -> Bool {
+            guard let refreshError = error as? ActivityAnalysisRefreshError else {
+                return false
+            }
+            switch refreshError {
+            case .temporarilySuspended, .invalidatedByHistoryClear:
+                return true
+            case .runtimeUnavailable:
+                return false
             }
         }
 
@@ -68,36 +130,22 @@
                 NSWorkspace.shared.open(URL(fileURLWithPath: localPath))
                 return
             }
-            if let raw = resource.canonicalURI, let URL = URL(string: raw) {
-                NSWorkspace.shared.open(URL)
+            if let raw = resource.canonicalURI, let url = URL(string: raw) {
+                NSWorkspace.shared.open(url)
             }
         }
 
         func revealMemoryFiles(for day: Date) {
             let directory = AppPaths.applicationSupportDirectory
                 .appendingPathComponent("computer-history", isDirectory: true)
-            let base = Self.dayFormatter.string(
-                from: Calendar.current.startOfDay(for: day)
-            )
-            let files = [
-                directory.appendingPathComponent(base + ".computer-history.md"),
-                directory.appendingPathComponent(base + ".computer-history.json"),
-            ].filter { FileManager.default.fileExists(atPath: $0.path) }
+            let files = store.memoryFileURLs(for: day)
+                .filter { FileManager.default.fileExists(atPath: $0.path) }
             if files.isEmpty {
                 NSWorkspace.shared.open(directory)
             } else {
                 NSWorkspace.shared.activateFileViewerSelecting(files)
             }
         }
-
-        private static let dayFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.calendar = Calendar(identifier: .gregorian)
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = .current
-            formatter.dateFormat = "yyyy-MM-dd"
-            return formatter
-        }()
     }
 
     struct ComputerHistoryPage: View {
@@ -113,6 +161,7 @@
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     contextStateCard
+                    sourceStatusCard
                     questionCard
                     answerCard
 
@@ -133,6 +182,61 @@
             }
         }
 
+        @ViewBuilder private var sourceStatusCard: some View {
+            switch model.sourceStatus {
+            case .absent:
+                sourceStatusNotice(
+                    title: "Source journal absent",
+                    message: model.memory == nil
+                        ? "No raw event journal exists for this day. "
+                            + "There is no retained Computer History to show."
+                        : "The raw event journal for this day is no longer present. "
+                            + "The last known-good Computer History remains available and was not deleted.",
+                    symbol: "doc.badge.ellipsis",
+                    tint: LHTheme.warning
+                )
+            case .inaccessible(let message):
+                sourceStatusNotice(
+                    title: "Source journal inaccessible",
+                    message: model.memory == nil
+                        ? "Goalong could not safely read the raw event journal: \(message)"
+                        : "Showing the last known-good Computer History. "
+                            + "Goalong could not safely read the raw event journal: \(message)",
+                    symbol: "exclamationmark.lock.fill",
+                    tint: LHTheme.warning
+                )
+            case .unverified, .checking, .available:
+                EmptyView()
+            }
+        }
+
+        private func sourceStatusNotice(
+            title: String,
+            message: String,
+            symbol: String,
+            tint: Color
+        ) -> some View {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(tint)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(message)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(15)
+            .background(
+                tint.opacity(0.08),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+        }
+
         private var contextStateCard: some View {
             Group {
                 if fullContextEnabled {
@@ -144,18 +248,14 @@
                             Text("Full causal context is enabled")
                                 .font(.system(size: 12, weight: .semibold))
                             Text(
-                                "Eligible interactions can be linked as before → action → after → settled. Private browsing, exclusions, Secure Input and protected fields remain suppressed."
+                                "Eligible interactions can be linked as prior context → action → after → settled. Near-event context is never mislabeled as guaranteed pre-action state. Private browsing, exclusions, Secure Input and protected fields remain suppressed."
                             )
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
-                        StatusPill(
-                            title: "Computer History ready",
-                            symbol: "checkmark.seal.fill",
-                            tint: LHTheme.success
-                        )
+                        sourceReadinessPill
                     }
                     .padding(15)
                     .background(
@@ -184,6 +284,41 @@
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                     )
                 }
+            }
+        }
+
+        @ViewBuilder private var sourceReadinessPill: some View {
+            switch model.sourceStatus {
+            case .available:
+                StatusPill(
+                    title: "Computer History ready",
+                    symbol: "checkmark.seal.fill",
+                    tint: LHTheme.success
+                )
+            case .absent:
+                StatusPill(
+                    title: "Source absent",
+                    symbol: "doc.badge.ellipsis",
+                    tint: LHTheme.warning
+                )
+            case .inaccessible:
+                StatusPill(
+                    title: "Source inaccessible",
+                    symbol: "exclamationmark.lock.fill",
+                    tint: LHTheme.warning
+                )
+            case .checking:
+                StatusPill(
+                    title: "Checking source",
+                    symbol: "arrow.triangle.2.circlepath",
+                    tint: LHTheme.accent
+                )
+            case .unverified:
+                StatusPill(
+                    title: "Source unverified",
+                    symbol: "questionmark.circle.fill",
+                    tint: LHTheme.warning
+                )
             }
         }
 
@@ -257,6 +392,14 @@
                             .font(.system(size: 11))
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
+                        if let retainedGap = answer.limitations.first(where: {
+                            $0.hasPrefix("Retained Computer History loading was incomplete")
+                        }) {
+                            Label(retainedGap, systemImage: "exclamationmark.triangle.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         if !answer.hits.isEmpty {
                             Divider()
                             Text("SOURCES")
@@ -325,8 +468,8 @@
             LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 12) {
                 MetricCard(
                     title: "EPISODES",
-                    value: "\(memory.episodes.count)",
-                    detail: "Task-shaped chronological work",
+                    value: "\(memory.coverage.episodeCount)",
+                    detail: episodeCoverageDetail(memory),
                     symbol: "list.bullet.rectangle.portrait.fill",
                     tint: LHTheme.accent
                 )
@@ -346,12 +489,28 @@
                 )
                 MetricCard(
                     title: "SOURCES",
-                    value: "\(memory.resources.count)",
-                    detail: "Files, pages, conversations and issues",
+                    value: "\(memory.coverage.resourceCount)",
+                    detail: resourceCoverageDetail(memory),
                     symbol: "link.circle.fill",
                     tint: LHTheme.privateTint
                 )
             }
+        }
+
+        private func episodeCoverageDetail(_ memory: ComputerHistoryDayMemory) -> String {
+            guard let retained = memory.coverage.retainedEpisodeCount,
+                retained < memory.coverage.episodeCount
+            else {
+                return "Task-shaped chronological work"
+            }
+            return "\(retained) representative episodes retained"
+        }
+
+        private func resourceCoverageDetail(_ memory: ComputerHistoryDayMemory) -> String {
+            guard let retained = memory.coverage.retainedResourceCount else {
+                return "Files, pages, conversations and issues"
+            }
+            return "\(retained) representative source links retained"
         }
 
         private func episodes(_ memory: ComputerHistoryDayMemory) -> some View {
@@ -407,11 +566,15 @@
                                             Text(resource.title)
                                                 .font(.system(size: 10, weight: .semibold))
                                                 .lineLimit(2)
-                                            Text(resource.localPath ?? resource.canonicalURI ?? "Locator unavailable")
-                                                .font(.system(size: 8, design: .monospaced))
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(2)
-                                            Text("\(resource.kind.rawValue) · \(Int((resource.locatorConfidence * 100).rounded()))% confidence")
+                                            Text(
+                                                resource.localPath
+                                                    ?? resource.canonicalURI
+                                                    ?? "Locator unavailable"
+                                            )
+                                            .font(.system(size: 8, design: .monospaced))
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                            Text(resourceConfidenceLabel(resource))
                                                 .font(.system(size: 8, weight: .medium))
                                                 .foregroundStyle(.tertiary)
                                         }
@@ -570,6 +733,13 @@
             case .unknown: return "questionmark.square.fill"
             }
         }
+
+        private func resourceConfidenceLabel(
+            _ resource: ComputerHistoryResourceReference
+        ) -> String {
+            let percentage = Int((resource.locatorConfidence * 100).rounded())
+            return "\(resource.kind.rawValue) · \(percentage)% confidence"
+        }
     }
 
     private struct ComputerHistoryEpisodeCard: View {
@@ -596,7 +766,7 @@
                                     )
                                 }
                                 Text(
-                                    "\(timeFormatter.string(from: episode.start))–\(timeFormatter.string(from: episode.end)) · \(episode.interactions.count) interactions · \(episode.eventCount) source events"
+                                    episodeMetrics
                                 )
                                 .font(.system(size: 9, weight: .medium, design: .rounded))
                                 .foregroundStyle(.secondary)
@@ -688,6 +858,20 @@
                     }
                 }
             }
+        }
+
+        private var episodeMetrics: String {
+            let interval =
+                "\(timeFormatter.string(from: episode.start))–\(timeFormatter.string(from: episode.end))"
+            let interactions: String
+            if episode.totalInteractionCount > episode.interactions.count {
+                interactions =
+                    "\(episode.totalInteractionCount) interactions "
+                    + "(\(episode.interactions.count) representative)"
+            } else {
+                interactions = "\(episode.totalInteractionCount) interactions"
+            }
+            return "\(interval) · \(interactions) · \(episode.eventCount) source events"
         }
 
         private func detailSection(title: String, values: [String]) -> some View {

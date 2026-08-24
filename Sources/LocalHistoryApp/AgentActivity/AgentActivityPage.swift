@@ -16,12 +16,15 @@
                         eyebrow: "Local agent memory",
                         title: "Agentic work",
                         subtitle:
-                            "Capture available local agent conversations, provider events, tool activity and changing files. Everything is processed and stored on this Mac unless you explicitly export it."
+                            "Analyze local agent conversations directly from each provider’s original storage. Goalong keeps only a bounded source index, never a second transcript archive."
                     ) {
                         HStack(spacing: 9) {
                             DateSelectionControl(date: agents.selectedDay, onChange: agents.selectDay)
                             Button {
-                                agents.scanNow()
+                                agents.scanNow(
+                                    forceFullDiscovery: true,
+                                    analyzeSelectedDay: true
+                                )
                             } label: {
                                 Label(agents.isScanning ? "Scanning…" : "Scan now", systemImage: "arrow.clockwise")
                             }
@@ -49,7 +52,12 @@
                 .padding(.bottom, 50)
             }
             .background(LHTheme.pageBackground)
-            .onAppear { agents.scanNow() }
+            .onAppear {
+                agents.scanNow(
+                    forceFullDiscovery: false,
+                    analyzeSelectedDay: true
+                )
+            }
             .alert(item: $agents.alert) { item in
                 Alert(
                     title: Text(item.title),
@@ -79,19 +87,26 @@
                 .frame(width: 38, height: 38)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Full local capture")
+                    Text("Direct source analysis")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "Raw transcripts and hook payloads are copied into an immutable local vault. No agent content uses the network path reserved for opaque Goalong commitments."
+                        "Conversation bodies are read in place from Codex, Claude Code, OpenCode and configured folders. The local index contains only provider, stable ID, source reference, timestamps, size, offsets and SHA-256."
                     )
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     Text(
-                        "Common standalone credential stores, cookies and private-key files are excluded by filename. Secrets echoed inside a transcript or tool result remain part of that local capture."
+                        "No blob, snapshot, materialized copy or hook payload is stored by Goalong History."
                     )
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(LHTheme.privateTint)
+                    if agents.lastScanResult.capacityLimitedFolderCount > 0 {
+                        Text(
+                            "A source exceeded the lightweight index ceiling; Goalong retained its newest bounded metadata projection without retrying an eviction loop."
+                        )
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(LHTheme.warning)
+                    }
                 }
                 Spacer(minLength: 18)
                 if agents.isScanning {
@@ -99,9 +114,9 @@
                         .controlSize(.small)
                 }
                 StatusPill(
-                    title: agents.chainIsValid ? "Hash chain intact" : "Chain needs attention",
-                    symbol: agents.chainIsValid ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
-                    tint: agents.chainIsValid ? LHTheme.success : LHTheme.danger
+                    title: agents.indexIsValid ? "Lightweight index valid" : "Index needs attention",
+                    symbol: agents.indexIsValid ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
+                    tint: agents.indexIsValid ? LHTheme.success : LHTheme.danger
                 )
             }
             .padding(14)
@@ -138,10 +153,10 @@
                     tint: agents.overview.errorCount == 0 ? LHTheme.success : LHTheme.warning
                 )
                 MetricCard(
-                    title: "New versions",
+                    title: "Indexed sources",
                     value: String(agents.overview.captures.count),
-                    detail: formatBytes(agents.overview.storedBytes) + " stored today",
-                    symbol: "doc.on.doc.fill",
+                    detail: formatBytes(agents.overview.indexBytes) + " total index",
+                    symbol: "list.bullet.rectangle.fill",
                     tint: LHTheme.privateTint
                 )
             }
@@ -156,11 +171,11 @@
                             tint: LHTheme.accent,
                             title: "Live agent integrations",
                             subtitle:
-                                "Install lightweight local hooks in addition to folder monitoring. Goalong preserves the JSON event payloads exposed by each provider as they happen."
+                                "Optional hooks only wake incremental discovery. Their stdin is discarded and never added to the index."
                         )
                         Spacer()
-                        Button("Open hook inbox") {
-                            agents.openHookInbox()
+                        Button("Open rescan signals") {
+                            agents.openSignalsFolder()
                         }
                         .buttonStyle(.bordered)
                     }
@@ -190,15 +205,19 @@
                 Spacer()
                 StatusPill(
                     title: agents.configuration.watchedFolders.contains(where: {
-                        $0.provider == .codex && !$0.isManaged
+                        $0.provider == .codex && !$0.isManaged && $0.isEnabled
                     })
-                        ? "Folder active" : "Not detected",
+                        ? "Folder active"
+                        : agents.configuration.watchedFolders.contains(where: {
+                            $0.provider == .codex && !$0.isManaged
+                        }) ? "Detected — off" : "Not detected",
                     symbol: agents.configuration.watchedFolders.contains(where: {
-                        $0.provider == .codex && !$0.isManaged
+                        $0.provider == .codex && !$0.isManaged && $0.isEnabled
                     })
                         ? "checkmark.circle.fill" : "folder.badge.questionmark",
-                    tint: agents.configuration.watchedFolders.contains(where: { $0.provider == .codex && !$0.isManaged }
-                    )
+                    tint: agents.configuration.watchedFolders.contains(where: {
+                        $0.provider == .codex && !$0.isManaged && $0.isEnabled
+                    })
                         ? LHTheme.success : Color.secondary
                 )
                 Button("Detect") {
@@ -223,7 +242,7 @@
                 }
                 Spacer()
                 StatusPill(
-                    title: status.isInstalled ? "Live capture installed" : "Folder capture only",
+                    title: status.isInstalled ? "Rescan signal installed" : "Periodic discovery",
                     symbol: status.isInstalled ? "bolt.shield.fill" : "bolt.slash",
                     tint: status.isInstalled ? LHTheme.success : Color.secondary
                 )
@@ -250,7 +269,7 @@
                             tint: LHTheme.teal,
                             title: "Folders monitored",
                             subtitle:
-                                "Add any transcript, agent-state or project folder. Provider, recursion and capture breadth can be changed at any time."
+                                "Stopped default sources stay stopped after relaunch. Detect or add one explicitly to allow it again. Goalong stores only lightweight references."
                         )
                         Spacer()
                         Button("Detect common folders") {
@@ -349,9 +368,9 @@
                         sectionHeader(
                             symbol: "clock.arrow.circlepath",
                             tint: LHTheme.privateTint,
-                            title: "Captured agent history",
+                            title: "Indexed original conversations",
                             subtitle:
-                                "Every changed version is content-addressed and linked to the previous manifest. Append-only transcripts use lossless deltas."
+                                "One replaceable index entry per stable conversation. Selecting or analyzing it reads the provider’s original source directly."
                         )
                         Spacer()
                         Picker("Provider", selection: $providerFilter) {
@@ -369,10 +388,10 @@
                     if filteredCaptures.isEmpty {
                         EmptyStateView(
                             symbol: agents.isScanning ? "arrow.triangle.2.circlepath" : "cpu",
-                            title: agents.isScanning ? "Scanning agent folders" : "No matching agent capture",
+                            title: agents.isScanning ? "Checking agent sources" : "No matching indexed source",
                             message: agents.isScanning
-                                ? "New and changed local files are being hashed and stored."
-                                : "Launch an agent, install a live integration, or add the folder where it stores its history."
+                                ? "Known sources are checked incrementally; changed originals are re-read in place."
+                                : "Launch an agent, install an optional rescan signal, or add its original history folder."
                         )
                         .frame(minHeight: 210)
                     } else {
@@ -381,7 +400,7 @@
                             if index < min(filteredCaptures.count, 120) - 1 { Divider() }
                         }
                         if filteredCaptures.count > 120 {
-                            Text("Showing the 120 newest matching versions.")
+                            Text("Showing the 120 newest matching source references.")
                                 .font(.system(size: 9))
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .center)
@@ -413,21 +432,20 @@
                 }
                 Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(DashboardFormatters.fullTimestamp.string(from: record.capturedAt))
+                    Text(DashboardFormatters.fullTimestamp.string(from: record.sourceModifiedAt ?? record.capturedAt))
                         .font(.system(size: 8, weight: .medium))
                         .foregroundStyle(.secondary)
                     HStack(spacing: 5) {
                         compactPill("\(record.summary.messageCount) msg", symbol: "bubble.left")
                         compactPill("\(record.summary.toolCallCount) tools", symbol: "wrench")
-                        compactPill("v\(record.version)", symbol: "doc.on.doc")
-                        compactPill(formatBytes(record.storedByteCount), symbol: "internaldrive")
+                        compactPill(record.availability.displayName, symbol: statusSymbol(record.availability))
+                        compactPill(formatBytes(record.byteCount), symbol: "doc")
                     }
                 }
                 Menu {
-                    Button("Open immutable copy") { agents.openCapturedCopy(record) }
-                    Button("Reveal original") { agents.openOriginal(record) }
+                    Button("Reveal original source") { agents.openOriginal(record) }
                     Divider()
-                    Button("Verify SHA-256") { agents.verify(record) }
+                    Button("Verify original SHA-256") { agents.verify(record) }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -444,15 +462,15 @@
                         sectionHeader(
                             symbol: "lock.square.stack.fill",
                             tint: LHTheme.success,
-                            title: "Private agent vault",
+                            title: "Lightweight source index",
                             subtitle:
-                                "Raw content remains in Goalong History’s private Application Support folder with user-only permissions."
+                                "Only bounded source metadata is stored in Goalong History’s private Application Support folder."
                         )
-                        detailLine("Vault size", value: formatBytes(agents.storageBytes))
-                        detailLine("Stored today", value: formatBytes(agents.overview.storedBytes))
-                        detailLine("Original bytes represented", value: formatBytes(agents.overview.capturedBytes))
-                        detailLine("Manifest chain", value: agents.chainIsValid ? "Valid" : "Invalid")
-                        Button("Open local agent vault") {
+                        detailLine("Agent Activity total", value: formatBytes(agents.storageBytes))
+                        detailLine("Index file", value: formatBytes(agents.overview.indexBytes))
+                        detailLine("Original bytes read today", value: formatBytes(agents.overview.sourceBytes))
+                        detailLine("Index structure", value: agents.indexIsValid ? "Valid" : "Invalid")
+                        Button("Open Agent Activity metadata") {
                             agents.openRootFolder()
                         }
                         .buttonStyle(.bordered)
@@ -467,14 +485,14 @@
                             tint: LHTheme.privateTint,
                             title: "What Goalong adds",
                             subtitle:
-                                "A provider-independent history that can later be selectively disclosed and verified."
+                                "Provider-independent analysis without becoming another transcript repository."
                         )
-                        privacyBullet("Full raw bytes are retained locally, not only a summary.")
-                        privacyBullet("Changed files are hashed and chained immediately after capture.")
-                        privacyBullet("Append-only histories store exact deltas without losing earlier states.")
-                        privacyBullet("Live hook integrations only append to the local inbox and cannot upload.")
+                        privacyBullet("Conversation bodies stay exclusively in each provider’s original storage.")
+                        privacyBullet("A changed source replaces its prior fingerprint instead of creating a version.")
+                        privacyBullet("Missing and unreadable originals remain explicit index states.")
+                        privacyBullet("Hooks overwrite one tiny signal per provider and discard their stdin.")
                         privacyBullet(
-                            "Common standalone credential files are hard-excluded; transcript and tool-result contents are preserved as-is."
+                            "Full discovery is periodic; ordinary checks use the known index and provider metadata."
                         )
                     }
                 }
@@ -557,7 +575,17 @@
             case .claudeCode: return "brain.head.profile"
             case .cursor: return "cursorarrow.rays"
             case .openCode: return "chevron.left.forwardslash.chevron.right"
+            case .gemini: return "sparkles"
+            case .copilot: return "chevron.left.forwardslash.chevron.right"
             case .custom: return "cpu.fill"
+            }
+        }
+
+        private func statusSymbol(_ status: AgentSourceAvailability) -> String {
+            switch status {
+            case .available: return "checkmark.circle"
+            case .missing: return "questionmark.folder"
+            case .inaccessible: return "lock.slash"
             }
         }
 
@@ -567,6 +595,8 @@
             case .claudeCode: return LHTheme.warning
             case .cursor: return LHTheme.accent
             case .openCode: return LHTheme.teal
+            case .gemini: return LHTheme.warning
+            case .copilot: return LHTheme.success
             case .custom: return LHTheme.privateTint
             }
         }
@@ -622,8 +652,8 @@
 
                 Text(
                     draft.captureMode == .everyFile
-                        ? "Every regular file is copied except common standalone credential stores, cookies, private keys, caches and Goalong’s own vault."
-                        : "Goalong captures common transcript, chat, log, trace, state and database formats."
+                        ? "Every supported regular file is indexed in place except common credential stores, cookies, private keys and caches."
+                        : "Goalong directly reads common transcript, chat, log, trace and state formats without copying them."
                 )
                 .font(.system(size: 9))
                 .foregroundStyle(.secondary)

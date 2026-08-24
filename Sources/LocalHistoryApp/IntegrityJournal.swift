@@ -15,7 +15,9 @@
             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         }
 
-        func commit(_ baseEvent: HistoryEvent) -> HistoryEvent {
+        /// Builds a chained event without advancing the cursor. The recorder calls
+        /// `commitPersisted` only after the complete JSONL row has been written.
+        func prepare(_ baseEvent: HistoryEvent) -> HistoryEvent {
             lock.lock()
             defer { lock.unlock() }
 
@@ -67,8 +69,32 @@
                 eventHash: eventHash,
                 fieldCommitments: fields
             )
-            stateStore.commitEvent(sequence: position.sequence, eventHash: eventHash)
             return event.replacingIntegrity(integrity)
+        }
+
+        func commitPersisted(_ event: HistoryEvent) throws {
+            guard let integrity = event.integrity else {
+                throw IntegrityJournalError.missingIntegrity
+            }
+            try stateStore.commitPersistedEvent(
+                sequence: integrity.sequence,
+                eventHash: integrity.eventHash
+            )
+        }
+
+        func checkpointPersistedEvents() throws {
+            try stateStore.checkpointPersistedEvents()
+        }
+
+        @discardableResult
+        func reconcilePersistedTail(_ event: HistoryEvent) throws -> Bool {
+            guard let integrity = event.integrity else {
+                throw IntegrityJournalError.missingIntegrity
+            }
+            return try stateStore.reconcilePersistedEventTail(
+                sequence: integrity.sequence,
+                eventHash: integrity.eventHash
+            )
         }
 
         private func makeFieldCommitments(for event: HistoryEvent) -> [LocalFieldCommitment] {
@@ -223,6 +249,14 @@
 
         private static func stableDouble(_ value: Double) -> String {
             String(format: "%.6f", locale: Locale(identifier: "en_US_POSIX"), value)
+        }
+    }
+
+    private enum IntegrityJournalError: LocalizedError {
+        case missingIntegrity
+
+        var errorDescription: String? {
+            "A persisted history event is missing its integrity envelope."
         }
     }
 #endif

@@ -7,12 +7,295 @@ PREVIOUS_APP_NAME="GoLong History"
 LEGACY_APP_NAME="LocalHistory"
 DISPLAY_NAME="Goalong History"
 BUNDLE_ID="ai.goalong.localhistory"
+PRIVACY_MARKER_KEY="LocalHistoryAgentActivityDirectSourceV2"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY="blancmathis/goalong-history"
 RELEASE_TAG="${GOALONG_RELEASE_TAG:-latest-main}"
 RELEASE_ASSET="Goalong-History-macOS-universal.zip"
 SOURCE_ONLY=false
 VERBOSE=false
+WORK_DIR=""
+INSTALL_STAGE_ROOT=""
+STAGED_APP=""
+TARGET_DIR=""
+TARGET_APP=""
+BACKUP_APP=""
+REPLACEMENT_ACTIVE=0
+ORIGINAL_TARGET_PRESENT=0
+
+bundle_identifier_from_plist() {
+  /usr/bin/plutil -extract CFBundleIdentifier raw -expect string -o - "$1/Contents/Info.plist" 2>/dev/null
+}
+
+bundle_identifier_from_signature() {
+  local details
+  if ! details="$(/usr/bin/codesign -dv --verbose=4 "$1" 2>&1)"; then
+    return 1
+  fi
+  /usr/bin/awk -F= '/^Identifier=/{print $2; exit}' <<<"$details"
+}
+
+bundle_has_expected_identity() {
+  local app_path="$1"
+  local plist_identifier
+  local signature_identifier
+
+  [[ -d "$app_path" && ! -L "$app_path" ]] || return 1
+  plist_identifier="$(bundle_identifier_from_plist "$app_path")" || return 1
+  signature_identifier="$(bundle_identifier_from_signature "$app_path")" || return 1
+  [[ "$plist_identifier" == "$BUNDLE_ID" && "$signature_identifier" == "$BUNDLE_ID" ]]
+}
+
+bundle_has_direct_source_privacy_marker() {
+  [[ "$(/usr/bin/plutil -extract "$PRIVACY_MARKER_KEY" raw -expect bool -o - "$1/Contents/Info.plist" 2>/dev/null)" == "true" ]]
+}
+
+verify_bundle_signature() {
+  /usr/bin/codesign --verify --deep --strict --verbose=2 "$1"
+}
+
+audit_bundle_privacy() {
+  local app_path="$1"
+  local audit_script="$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
+  local executable="$app_path/Contents/MacOS/$EXECUTABLE_NAME"
+
+  if [[ ! -f "$audit_script" || -L "$audit_script" || ! -x "$audit_script" ]]; then
+    echo "The required privacy audit is unavailable or unsafe: $audit_script" >&2
+    return 1
+  fi
+  if [[ ! -f "$executable" || -L "$executable" || ! -r "$executable" || ! -x "$executable" ]]; then
+    echo "Expected a readable regular executable at $executable" >&2
+    return 1
+  fi
+  env LOCALHISTORY_AUDIT_BINARY="$executable" "$audit_script" >/dev/null
+}
+
+bundle_has_required_update_policy() {
+  local app_path="$1"
+  local info_plist="$app_path/Contents/Info.plist"
+  local feed_url
+  local public_key
+  local public_key_bytes
+  local require_signed_feed
+  local verify_before_extraction
+
+  [[ -f "$info_plist" && ! -L "$info_plist" ]] || return 1
+  feed_url="$(/usr/bin/plutil -extract SUFeedURL raw -expect string -o - "$info_plist" 2>/dev/null)" || return 1
+  public_key="$(/usr/bin/plutil -extract SUPublicEDKey raw -expect string -o - "$info_plist" 2>/dev/null)" || return 1
+  require_signed_feed="$(/usr/bin/plutil -extract SURequireSignedFeed raw -expect bool -o - "$info_plist" 2>/dev/null)" || return 1
+  verify_before_extraction="$(/usr/bin/plutil -extract SUVerifyUpdateBeforeExtraction raw -expect bool -o - "$info_plist" 2>/dev/null)" || return 1
+  public_key_bytes="$(printf '%s' "$public_key" | /usr/bin/base64 -D 2>/dev/null | /usr/bin/wc -c | /usr/bin/tr -d ' ')" || return 1
+
+  [[ "$feed_url" == "$BASE_URL/appcast.xml" &&
+     "$public_key_bytes" == "32" &&
+     "$require_signed_feed" == "true" &&
+     "$verify_before_extraction" == "true" ]]
+}
+
+validate_release_bundle() {
+  local app_path="$1"
+
+  if ! bundle_has_expected_identity "$app_path"; then
+    echo "Refusing bundle with an identifier other than $BUNDLE_ID: $app_path" >&2
+    return 1
+  fi
+  if ! bundle_has_direct_source_privacy_marker "$app_path"; then
+    echo "Refusing a bundle without the direct-source Agent Activity privacy marker: $app_path" >&2
+    return 1
+  fi
+  if ! verify_bundle_signature "$app_path"; then
+    echo "Refusing a bundle with an invalid code signature: $app_path" >&2
+    return 1
+  fi
+  if ! audit_bundle_privacy "$app_path"; then
+    echo "Refusing a bundle that failed the direct-source privacy audit: $app_path" >&2
+    return 1
+  fi
+  if ! bundle_has_required_update_policy "$app_path"; then
+    echo "Refusing a bundle without the required Sparkle verification policy: $app_path" >&2
+    return 1
+  fi
+}
+
+safe_remove_download_stage() {
+  local path="$1"
+  local parent
+
+  [[ ! -e "$path" && ! -L "$path" ]] && return 0
+  [[ -n "$TARGET_DIR" && -d "$path" && ! -L "$path" ]] || return 1
+  parent="$(cd "$(/usr/bin/dirname "$path")" && pwd -P)" || return 1
+  if [[ "$parent" != "$TARGET_DIR" || "$(/usr/bin/basename "$path")" != .goalong-history-download-stage.* ]]; then
+    echo "Refusing to remove unexpected download staging directory: $path" >&2
+    return 1
+  fi
+  /bin/rm -rf -- "$path"
+}
+
+safe_remove_work_directory() {
+  local path="$1"
+
+  [[ ! -e "$path" && ! -L "$path" ]] && return 0
+  if [[ -z "$path" || ! -d "$path" || -L "$path" || "$(/usr/bin/basename "$path")" != localhistory-install.* ]]; then
+    echo "Refusing to remove unexpected installer work directory: $path" >&2
+    return 1
+  fi
+  /bin/rm -rf -- "$path"
+}
+
+safe_remove_backup_bundle() {
+  local path="$1"
+  local expected="$TARGET_DIR/.Goalong History.download-install-backup.app"
+
+  [[ ! -e "$path" && ! -L "$path" ]] && return 0
+  if [[ "$path" != "$expected" || ! -d "$path" || -L "$path" ]]; then
+    echo "Refusing to remove unexpected rollback bundle: $path" >&2
+    return 1
+  fi
+  if ! bundle_has_expected_identity "$path" || ! verify_bundle_signature "$path" >/dev/null 2>&1; then
+    echo "Refusing to remove an unverified rollback bundle: $path" >&2
+    return 1
+  fi
+  /bin/rm -rf -- "$path"
+}
+
+rollback_replacement() {
+  local failed_app
+
+  [[ "$REPLACEMENT_ACTIVE" -eq 1 ]] || return 0
+  failed_app="$INSTALL_STAGE_ROOT/failed-$APP_NAME.app"
+  if [[ -e "$TARGET_APP" || -L "$TARGET_APP" ]]; then
+    if [[ ! -d "$INSTALL_STAGE_ROOT" || -L "$INSTALL_STAGE_ROOT" || -e "$failed_app" || -L "$failed_app" ]]; then
+      echo "Cannot move the failed replacement into the verified staging directory." >&2
+      return 1
+    fi
+    /bin/mv "$TARGET_APP" "$failed_app" || return 1
+  fi
+  if [[ "$ORIGINAL_TARGET_PRESENT" -eq 1 && -d "$BACKUP_APP" && ! -L "$BACKUP_APP" && ! -e "$TARGET_APP" && ! -L "$TARGET_APP" ]]; then
+    /bin/mv "$BACKUP_APP" "$TARGET_APP" || return 1
+  fi
+  REPLACEMENT_ACTIVE=0
+}
+
+cleanup_install() {
+  local status=$?
+
+  trap - EXIT
+  rollback_replacement || true
+  safe_remove_download_stage "$INSTALL_STAGE_ROOT" || true
+  safe_remove_work_directory "$WORK_DIR" || true
+  exit "$status"
+}
+
+recover_interrupted_replacement() {
+  [[ ! -e "$BACKUP_APP" && ! -L "$BACKUP_APP" ]] && return 0
+  if [[ ! -d "$BACKUP_APP" || -L "$BACKUP_APP" ]] ||
+     ! bundle_has_expected_identity "$BACKUP_APP" ||
+     ! verify_bundle_signature "$BACKUP_APP" >/dev/null 2>&1; then
+    echo "An unexpected rollback artifact requires manual inspection: $BACKUP_APP" >&2
+    return 1
+  fi
+
+  if [[ ! -e "$TARGET_APP" && ! -L "$TARGET_APP" ]]; then
+    /bin/mv "$BACKUP_APP" "$TARGET_APP"
+    verify_bundle_signature "$TARGET_APP"
+    echo "Restored the previous app after an interrupted installation."
+    return 0
+  fi
+
+  if ! validate_release_bundle "$TARGET_APP"; then
+    echo "Both an installed app and a rollback app exist; refusing to choose between them." >&2
+    return 1
+  fi
+  safe_remove_backup_bundle "$BACKUP_APP"
+}
+
+preflight_existing_target() {
+  [[ ! -e "$TARGET_APP" && ! -L "$TARGET_APP" ]] && return 0
+  if [[ ! -d "$TARGET_APP" || -L "$TARGET_APP" ]] ||
+     ! bundle_has_expected_identity "$TARGET_APP" ||
+     ! verify_bundle_signature "$TARGET_APP" >/dev/null 2>&1; then
+    echo "Refusing to replace an unexpected or invalid item at $TARGET_APP" >&2
+    return 1
+  fi
+}
+
+set_verified_target_directory() {
+  local requested_directory="$1"
+  local canonical_directory
+
+  if [[ -z "$requested_directory" || ! -d "$requested_directory" || -L "$requested_directory" || ! -w "$requested_directory" ]]; then
+    echo "Refusing an unavailable, symlinked, or non-writable application directory: $requested_directory" >&2
+    return 1
+  fi
+  canonical_directory="$(cd "$requested_directory" && pwd -P)" || return 1
+  if [[ -z "$canonical_directory" || "$canonical_directory" == "/" ]]; then
+    echo "Refusing unsafe application directory: $canonical_directory" >&2
+    return 1
+  fi
+  TARGET_DIR="$canonical_directory"
+}
+
+stage_release_bundle() {
+  local source_app="$1"
+
+  INSTALL_STAGE_ROOT="$(/usr/bin/mktemp -d "$TARGET_DIR/.goalong-history-download-stage.XXXXXX")"
+  /bin/chmod 700 "$INSTALL_STAGE_ROOT"
+  STAGED_APP="$INSTALL_STAGE_ROOT/$APP_NAME.app"
+  /usr/bin/ditto "$source_app" "$STAGED_APP"
+  validate_release_bundle "$STAGED_APP"
+}
+
+replace_staged_bundle() {
+  local staged_app="$1"
+
+  if [[ ! -d "$staged_app" || -L "$staged_app" || "$(cd "$(/usr/bin/dirname "$staged_app")" && pwd -P)" != "$INSTALL_STAGE_ROOT" ]]; then
+    echo "Refusing an unexpected staged application path: $staged_app" >&2
+    return 1
+  fi
+  if [[ -e "$BACKUP_APP" || -L "$BACKUP_APP" ]]; then
+    echo "Refusing to overwrite an existing rollback bundle: $BACKUP_APP" >&2
+    return 1
+  fi
+
+  ORIGINAL_TARGET_PRESENT=0
+  REPLACEMENT_ACTIVE=1
+  if [[ -e "$TARGET_APP" || -L "$TARGET_APP" ]]; then
+    ORIGINAL_TARGET_PRESENT=1
+    if ! /bin/mv "$TARGET_APP" "$BACKUP_APP"; then
+      REPLACEMENT_ACTIVE=0
+      return 1
+    fi
+  fi
+  if ! /bin/mv "$staged_app" "$TARGET_APP"; then
+    rollback_replacement
+    return 1
+  fi
+  if ! validate_release_bundle "$TARGET_APP"; then
+    rollback_replacement
+    return 1
+  fi
+}
+
+finalize_replacement() {
+  if [[ "$ORIGINAL_TARGET_PRESENT" -eq 1 ]]; then
+    safe_remove_backup_bundle "$BACKUP_APP" || return 1
+  fi
+  REPLACEMENT_ACTIVE=0
+}
+
+remove_verified_legacy_bundle() {
+  local legacy_app="$1"
+
+  [[ ! -e "$legacy_app" && ! -L "$legacy_app" ]] && return 0
+  if [[ ! -d "$legacy_app" || -L "$legacy_app" ]] ||
+     ! bundle_has_expected_identity "$legacy_app" ||
+     ! verify_bundle_signature "$legacy_app" >/dev/null 2>&1; then
+    return 0
+  fi
+  /bin/rm -rf -- "$legacy_app"
+}
+
+main() {
 
 for argument in "$@"; do
   case "$argument" in
@@ -109,8 +392,11 @@ headline "Preparing $DISPLAY_NAME"
 status "macOS $(sw_vers -productVersion) detected"
 status "$(uname -m) Mac detected"
 
-WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/localhistory-install.XXXXXX")"
-trap 'rm -rf "$WORK_DIR"' EXIT
+WORK_DIR="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/localhistory-install.XXXXXX")"
+trap cleanup_install EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 ZIP_PATH="$WORK_DIR/$RELEASE_ASSET"
 CHECKSUM_PATH="$WORK_DIR/$RELEASE_ASSET.sha256"
 BASE_URL="https://github.com/$REPOSITORY/releases/download/$RELEASE_TAG"
@@ -158,29 +444,16 @@ echo "verified"
 printf '  • Verifying the release bundle… '
 /usr/bin/ditto -x -k "$ZIP_PATH" "$WORK_DIR/unpacked"
 SOURCE_APP="$WORK_DIR/unpacked/$APP_NAME.app"
-if [[ ! -d "$SOURCE_APP" ]]; then
+if [[ ! -d "$SOURCE_APP" || -L "$SOURCE_APP" ]]; then
   echo "failed"
-  fail "The release archive does not contain $APP_NAME.app."
+  fail "The release archive does not contain a regular $APP_NAME.app bundle."
   exit 1
 fi
 
-IDENTIFIER="$(/usr/bin/codesign -dv --verbose=4 "$SOURCE_APP" 2>&1 | awk -F= '/^Identifier=/{print $2; exit}')"
-if [[ "$IDENTIFIER" != "$BUNDLE_ID" ]]; then
+if ! validate_release_bundle "$SOURCE_APP"; then
   echo "failed"
-  fail "Unexpected application identifier: ${IDENTIFIER:-missing}"
-  exit 1
-fi
-/usr/bin/codesign --verify --deep --strict "$SOURCE_APP"
-INFO_PLIST="$SOURCE_APP/Contents/Info.plist"
-FEED_URL="$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$INFO_PLIST" 2>/dev/null || true)"
-PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$INFO_PLIST" 2>/dev/null || true)"
-REQUIRE_SIGNED_FEED="$(/usr/libexec/PlistBuddy -c 'Print :SURequireSignedFeed' "$INFO_PLIST" 2>/dev/null || true)"
-VERIFY_BEFORE_EXTRACTION="$(/usr/libexec/PlistBuddy -c 'Print :SUVerifyUpdateBeforeExtraction' "$INFO_PLIST" 2>/dev/null || true)"
-PUBLIC_KEY_BYTES="$(printf '%s' "$PUBLIC_KEY" | /usr/bin/base64 -D 2>/dev/null | /usr/bin/wc -c | /usr/bin/tr -d ' ')"
-
-if [[ "$FEED_URL" != "$BASE_URL/appcast.xml" || "$PUBLIC_KEY_BYTES" != "32" || "$REQUIRE_SIGNED_FEED" != "true" || "$VERIFY_BEFORE_EXTRACTION" != "true" ]]; then
-  echo "failed"
-  fail "This release is missing the required Sparkle update verification policy."
+  fail "The downloaded bundle failed identity, signature, update-policy, or privacy validation."
+  note "Use ./install.sh --source until a privacy-compatible release is published."
   exit 1
 fi
 
@@ -199,38 +472,61 @@ else
   echo "verified by Sparkle (Apple verification pending)"
 fi
 
-if [[ -d "/Applications/$APP_NAME.app" && -w "/Applications/$APP_NAME.app" ]]; then
+SYSTEM_INSTALL_PRESENT=false
+USER_INSTALL_PRESENT=false
+for related_app in "$APP_NAME" "$PREVIOUS_APP_NAME" "$LEGACY_APP_NAME"; do
+  if [[ -e "/Applications/$related_app.app" || -L "/Applications/$related_app.app" ]]; then
+    SYSTEM_INSTALL_PRESENT=true
+  fi
+  if [[ -e "$HOME/Applications/$related_app.app" || -L "$HOME/Applications/$related_app.app" ]]; then
+    USER_INSTALL_PRESENT=true
+  fi
+done
+
+if [[ "$SYSTEM_INSTALL_PRESENT" == true ]]; then
+  if [[ ! -d /Applications || ! -w /Applications ]]; then
+    echo "failed"
+    fail "The existing system-wide app cannot be replaced atomically without write access to /Applications."
+    exit 1
+  fi
   TARGET_DIR="/Applications"
-elif [[ -d "/Applications/$PREVIOUS_APP_NAME.app" && -w "/Applications/$PREVIOUS_APP_NAME.app" ]]; then
-  TARGET_DIR="/Applications"
-elif [[ -d "/Applications/$LEGACY_APP_NAME.app" && -w "/Applications/$LEGACY_APP_NAME.app" ]]; then
-  TARGET_DIR="/Applications"
-elif [[ -w /Applications ]]; then
+elif [[ "$USER_INSTALL_PRESENT" == true ]]; then
+  TARGET_DIR="$HOME/Applications"
+  /bin/mkdir -p "$TARGET_DIR"
+elif [[ -d /Applications && -w /Applications ]]; then
   TARGET_DIR="/Applications"
 else
   TARGET_DIR="$HOME/Applications"
-  mkdir -p "$TARGET_DIR"
+  /bin/mkdir -p "$TARGET_DIR"
+fi
+if ! set_verified_target_directory "$TARGET_DIR"; then
+  echo "failed"
+  fail "No safe writable application directory is available."
+  exit 1
 fi
 TARGET_APP="$TARGET_DIR/$APP_NAME.app"
+BACKUP_APP="$TARGET_DIR/.Goalong History.download-install-backup.app"
+recover_interrupted_replacement
+preflight_existing_target
+stage_release_bundle "$SOURCE_APP"
+status "Verified a target-filesystem staging copy"
 
 headline "Installing"
 /usr/bin/launchctl bootout "gui/$UID" "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist" >/dev/null 2>&1 || true
-rm -f "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
+/bin/rm -f -- "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
 /usr/bin/pkill -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true
 /usr/bin/pkill -x "$PREVIOUS_APP_NAME" >/dev/null 2>&1 || true
 /usr/bin/pkill -x "$LEGACY_APP_NAME" >/dev/null 2>&1 || true
-sleep 0.4
-rm -rf "$TARGET_APP"
-/usr/bin/ditto "$SOURCE_APP" "$TARGET_APP"
-/usr/bin/codesign --verify --deep --strict "$TARGET_APP"
+/bin/sleep 0.4
+replace_staged_bundle "$STAGED_APP"
+validate_release_bundle "$TARGET_APP"
+finalize_replacement
 for legacy_app in \
   "/Applications/$PREVIOUS_APP_NAME.app" \
   "$HOME/Applications/$PREVIOUS_APP_NAME.app" \
   "/Applications/$LEGACY_APP_NAME.app" \
   "$HOME/Applications/$LEGACY_APP_NAME.app"; do
-  if [[ -d "$legacy_app" ]] && [[ "$(/usr/bin/codesign -dv --verbose=4 "$legacy_app" 2>&1 | awk -F= '/^Identifier=/{print $2; exit}')" == "$BUNDLE_ID" ]]; then
-    rm -rf "$legacy_app"
-  fi
+  remove_verified_legacy_bundle "$legacy_app"
 done
 status "Installed in $TARGET_DIR"
 status "Legacy background service cleaned up"
@@ -247,3 +543,8 @@ note "Opening the guided setup now…"
 /usr/bin/open "$TARGET_APP"
 
 printf '\n%bInstallation complete.%b The rest happens inside %s.\n\n' "$BOLD$GREEN" "$RESET" "$DISPLAY_NAME"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

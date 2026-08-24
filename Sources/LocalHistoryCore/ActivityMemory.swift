@@ -218,8 +218,8 @@ public struct DeterministicActivitySummarizer: ActivitySummarizer {
 
         let start = input.intervalStart ?? ordered.first!.timestamp
         let end = input.intervalEnd ?? ordered.last!.timestamp
-        let captured = ordered.filter { $0.suppressionReason == nil }
-        let suppressed = ordered.filter { $0.suppressionReason != nil }
+        let captured = ordered.filter { !$0.isObservationContinuityBoundary }
+        let suppressed = ordered.filter(\.isObservationContinuityBoundary)
         let semantic = captured.filter { ActivityMemoryUtilities.semanticText(from: $0, semanticSnapshots: input.semanticSnapshots) != nil }
 
         let applications = ActivityMemoryUtilities.rankedDistinct(captured.compactMap { $0.app?.name })

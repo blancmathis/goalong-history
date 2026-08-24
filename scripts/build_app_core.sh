@@ -225,6 +225,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>$VERSION</string>
     <key>CFBundleVersion</key>
     <string>$BUILD_NUMBER</string>
+    <key>LocalHistoryAgentActivityDirectSourceV2</key>
+    <true/>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.productivity</string>
     <key>LSMinimumSystemVersion</key>
@@ -309,6 +311,8 @@ rm -rf "$OUTPUT_DIR/$APP_NAME.app"
 ditto "$APP_DIR" "$OUTPUT_DIR/$APP_NAME.app"
 
 LOCALHISTORY_APP_PATH="$OUTPUT_DIR/$APP_NAME.app" "$ROOT_DIR/scripts/verify_sparkle_bundle.sh"
+LOCALHISTORY_AUDIT_BINARY="$OUTPUT_DIR/$APP_NAME.app/Contents/MacOS/$EXECUTABLE_NAME" \
+  "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
 
 echo
 printf 'Built %s %s (%s)\n' "$APP_NAME" "$VERSION" "$ARCHS"

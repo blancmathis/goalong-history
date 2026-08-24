@@ -1,8 +1,135 @@
 import Foundation
 import XCTest
+
 @testable import LocalHistoryCore
 
 final class ComputerHistoryInteractionIsolationTests: XCTestCase {
+    func testLinkedNonBeforePhasesNeverBecomeGenericBeforeFallback() {
+        let start = makeDate("2026-08-21T08:00:00Z")
+        let safari = AppSnapshot(
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            processIdentifier: 41
+        )
+        let phases = [
+            ComputerHistoryMetadata.Phase.nearEvent,
+            ComputerHistoryMetadata.Phase.after,
+            ComputerHistoryMetadata.Phase.settled,
+        ]
+
+        for (index, phase) in phases.enumerated() {
+            let interactionID = "antedated-\(phase)"
+            let antedated = payload(
+                id: "antedated-\(phase)-payload",
+                text: "This \(phase) state existed before the click",
+                at: start,
+                app: safari,
+                URL: "https://docs.example.com/proposal"
+            )
+            let events = [
+                event(
+                    id: "antedated-\(phase)-event",
+                    sequence: UInt64(index * 2 + 1),
+                    at: start,
+                    kind: .semanticSnapshot,
+                    app: safari,
+                    title: "Proposal",
+                    URL: "https://docs.example.com/proposal",
+                    semanticContext: antedated.reference,
+                    metadata: [
+                        ComputerHistoryMetadata.interactionID: interactionID,
+                        ComputerHistoryMetadata.interactionPhase: phase,
+                    ]
+                ),
+                event(
+                    id: "action-\(phase)-event",
+                    sequence: UInt64(index * 2 + 2),
+                    at: start.addingTimeInterval(1),
+                    kind: .mouseClick,
+                    app: safari,
+                    title: "Proposal",
+                    URL: "https://docs.example.com/proposal",
+                    pointer: PointerSnapshot(
+                        button: "left",
+                        x: 120,
+                        y: 80,
+                        clickCount: 1
+                    ),
+                    metadata: [ComputerHistoryMetadata.interactionID: interactionID]
+                ),
+            ]
+
+            let memory = ComputerHistoryEngine.analyze(
+                events: events,
+                semanticSnapshots: [antedated.id: antedated],
+                day: start,
+                calendar: utcCalendar
+            )
+
+            let interaction = try! XCTUnwrap(memory.episodes.first?.interactions.first)
+            XCTAssertNil(interaction.beforeContext, "phase \(phase)")
+            XCTAssertNil(interaction.afterContext, "phase \(phase)")
+            XCTAssertFalse(
+                interaction.provenance.sourceEventIDs.contains("antedated-\(phase)-event"),
+                "phase \(phase)"
+            )
+        }
+    }
+
+    func testUnlinkedObservationRemainsAvailableAsGenericBeforeFallback() {
+        let start = makeDate("2026-08-21T08:30:00Z")
+        let safari = AppSnapshot(
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            processIdentifier: 41
+        )
+        let before = payload(
+            id: "unlinked-before-payload",
+            text: "Generic context before the click",
+            at: start,
+            app: safari,
+            URL: "https://docs.example.com/proposal"
+        )
+        let events = [
+            event(
+                id: "unlinked-before-event",
+                sequence: 1,
+                at: start,
+                kind: .semanticSnapshot,
+                app: safari,
+                title: "Proposal",
+                URL: "https://docs.example.com/proposal",
+                semanticContext: before.reference
+            ),
+            event(
+                id: "action-event",
+                sequence: 2,
+                at: start.addingTimeInterval(1),
+                kind: .mouseClick,
+                app: safari,
+                title: "Proposal",
+                URL: "https://docs.example.com/proposal",
+                pointer: PointerSnapshot(
+                    button: "left",
+                    x: 120,
+                    y: 80,
+                    clickCount: 1
+                ),
+                metadata: [ComputerHistoryMetadata.interactionID: "click-without-linked-before"]
+            ),
+        ]
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            semanticSnapshots: [before.id: before],
+            day: start,
+            calendar: utcCalendar
+        )
+
+        let interaction = try! XCTUnwrap(memory.episodes.first?.interactions.first)
+        XCTAssertEqual(interaction.beforeContext, before.text)
+    }
+
     func testDelayedAfterSnapshotFromAnotherApplicationIsRejected() {
         let start = makeDate("2026-08-21T09:00:00Z")
         let safari = AppSnapshot(

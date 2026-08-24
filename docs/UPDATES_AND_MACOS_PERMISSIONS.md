@@ -65,7 +65,7 @@ Never commit private values. The repository contains only their names, public co
 
 ## Development/source builds
 
-A source build does not contain the release Sparkle public key and cannot safely self-update. It now shows **Enable app updates** in the sidebar. That button downloads the current release DMG once. The release app keeps the same bundle ID and data paths, so local history and settings remain available. Until Apple verification is added, macOS may require **Open Anyway** on this first downloaded copy. The guided permission flow handles any separate one-time permission requests for the replacement copy.
+A privacy-audited source build deliberately disables its update controls. The currently published `latest-main` DMG predates Agent Activity's direct-source, no-transcript-copy contract, so neither the app nor the installer may download or install it as an upgrade. Install the current checkout with the audited source workflow documented in the root README; it preserves the same bundle ID and data paths, so local history and settings remain available. Update controls may be enabled again only in a compatible release that carries the direct-source privacy marker and passes the installer's identity, signature, checksum, and update-policy checks.
 
 The normal installer no longer silently falls back to a source build when a release is missing. Developers can still opt in explicitly with:
 

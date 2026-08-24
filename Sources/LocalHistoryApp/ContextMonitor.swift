@@ -17,6 +17,9 @@
         private var accessibilityEventMonitor: AccessibilityEventMonitor?
         private var previous: ContextSnapshot?
         private var lastHeartbeat = Date.distantPast
+        private var pollingIsActive = false
+        private var scheduledPollInProgress = false
+        private var consecutiveCaptureFailures = 0
 
         private let snapshotLock = NSLock()
         private var _latestSnapshot: ContextSnapshot?
@@ -56,15 +59,7 @@
 
         func start() {
             stop()
-            let interval = max(
-                0.25,
-                Double(configManager.config.pollIntervalMilliseconds) / 1_000.0
-            )
-            let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-                self?.sampleNow()
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            self.timer = timer
+            pollingIsActive = true
             sampleNow()
             ActivityAnalysisRuntime.shared.start(
                 recorder: recorder,
@@ -72,7 +67,9 @@
                 configManager: configManager,
                 currentContext: { [weak self] in
                     guard let self else { return nil }
-                    return self.sampleNow() ?? self.latestSnapshot
+                    // Semantic text capture is privacy-sensitive. A failed fresh probe
+                    // must not fall back to a previously safe window or URL.
+                    return self.sampleNow()
                 },
                 semanticContextStore: semanticContextStore,
                 memoryStore: memoryStore
@@ -81,6 +78,7 @@
         }
 
         func stop() {
+            pollingIsActive = false
             accessibilityEventMonitor?.stop()
             timer?.invalidate()
             timer = nil
@@ -92,8 +90,72 @@
             sampleNow()
         }
 
+        private func scheduleNextPoll() {
+            timer?.invalidate()
+            let configuredInterval = Double(configManager.config.pollIntervalMilliseconds) / 1_000.0
+            guard pollingIsActive,
+                  let interval = Self.nextPollInterval(
+                configuredInterval: configuredInterval,
+                idleSeconds: idleSeconds(),
+                isCapturing: state.isCapturing,
+                suppressionReason: latestSnapshot?.suppressionReason,
+                eventDrivenCoverageAvailable: accessibilityEventMonitor?.hasReliableEventCoverage == true
+                    && consecutiveCaptureFailures == 0
+            ) else {
+                timer = nil
+                return
+            }
+            let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                self.timer = nil
+                self.scheduledPollInProgress = true
+                self.sampleNow()
+                self.scheduledPollInProgress = false
+                self.scheduleNextPoll()
+            }
+            // Give macOS a small coalescing window while keeping the fallback refresh
+            // comfortably below one minute even after timer tolerance.
+            timer.tolerance = min(1.0, interval * 0.1)
+            RunLoop.main.add(timer, forMode: .common)
+            self.timer = timer
+        }
+
+        /// The event tap, workspace notifications and AX observers remain immediate.
+        /// This timer is only their fallback, so it can back off when the user is idle
+        /// while retaining the configured high-frequency sampling during active input.
+        static func nextPollInterval(
+            configuredInterval: TimeInterval,
+            idleSeconds: TimeInterval,
+            isCapturing: Bool,
+            suppressionReason: SuppressionReason?,
+            eventDrivenCoverageAvailable: Bool
+        ) -> TimeInterval? {
+            let base = min(45.0, max(0.25, configuredInterval))
+            guard isCapturing else { return nil }
+            guard eventDrivenCoverageAvailable else { return base }
+
+            switch suppressionReason {
+            case .secureInput, .accessibilityUnavailable, .sessionUnavailable:
+                return min(5.0, max(base, 1.0))
+            default:
+                break
+            }
+
+            let idle = max(0, idleSeconds)
+            if idle < 3 { return base }
+            if idle < 15 { return min(45.0, max(base, 2.0)) }
+            if idle < 60 { return min(45.0, max(base, 5.0)) }
+            if idle < 300 { return min(45.0, max(base, 15.0)) }
+            return min(45.0, max(base, 30.0))
+        }
+
         @discardableResult
         func sampleNow() -> ContextSnapshot? {
+            defer {
+                if pollingIsActive, !scheduledPollInProgress {
+                    scheduleNextPoll()
+                }
+            }
             guard state.isCapturing else { return nil }
             if IsSecureEventInputEnabled() {
                 let safeContext = latestSnapshot.map { current in
@@ -107,13 +169,16 @@
                 }
                 setLatest(safeContext)
                 previous = safeContext
+                consecutiveCaptureFailures = 0
                 captureHealth.setSuppression(.secureInput)
                 return safeContext
             }
             guard let current = provider.capture() else {
+                consecutiveCaptureFailures = min(consecutiveCaptureFailures + 1, 1_000)
                 captureHealth.markAXFailure()
                 return nil
             }
+            consecutiveCaptureFailures = 0
             setLatest(current)
             captureHealth.setSuppression(current.suppressionReason)
             if current.suppressionReason == .accessibilityUnavailable {

@@ -2,6 +2,7 @@
     import AppKit
     import Combine
     import Foundation
+    import LocalHistoryCore
     import UniformTypeIdentifiers
 
     enum ChatGPTConnectionState: Equatable {
@@ -44,6 +45,142 @@
         }
     }
 
+    enum ChatGPTRecapPersistence {
+        typealias Writer = (Data, URL) throws -> Void
+
+        static let maximumMarkdownBytes = CodexAppServerLimits.production.maximumRecapMarkdownBytes
+        static let maximumJSONBytes = 8 * 1_024 * 1_024
+
+        static func write(
+            _ recap: ChatGPTDailyRecap,
+            to directory: URL,
+            fileManager: FileManager = .default,
+            writer: Writer? = nil
+        ) throws {
+            guard let redactedMarkdown = ActivitySemanticTextSanitizer.redact(recap.markdown),
+                !redactedMarkdown.isEmpty
+            else {
+                throw CodexAppServerError.generationFailed("The recap contained no persistable text.")
+            }
+            let persistedRecap = ChatGPTDailyRecap(
+                schemaVersion: recap.schemaVersion,
+                day: recap.day,
+                generatedAt: recap.generatedAt,
+                provider: recap.provider,
+                planType: recap.planType,
+                contextDigest: recap.contextDigest,
+                sourceCounts: recap.sourceCounts,
+                markdown: redactedMarkdown
+            )
+            let markdownData = Data(redactedMarkdown.utf8)
+            guard markdownData.count <= maximumMarkdownBytes else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "recap Markdown exceeded \(maximumMarkdownBytes) bytes before persistence"
+                )
+            }
+
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            let jsonData = try encoder.encode(persistedRecap)
+            guard jsonData.count <= maximumJSONBytes else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "recap JSON exceeded \(maximumJSONBytes) bytes before persistence"
+                )
+            }
+
+            try ChatGPTSecureStorage.prepareDirectory(directory)
+            let jsonURL = jsonURL(for: persistedRecap.day, in: directory)
+            let markdownURL = markdownURL(for: persistedRecap.day, in: directory)
+            let previousRecap = load(for: persistedRecap.day, from: directory)
+            let writeData =
+                writer ?? { data, destination in
+                    try secureWrite(data, to: destination, fileManager: fileManager)
+                }
+
+            // JSON is the sole canonical commit. Install the Markdown mirror first, then
+            // atomically replace JSON. A failed JSON commit restores/removes the mirror so
+            // readers never accept a partially advanced recap.
+            try writeData(markdownData, markdownURL)
+            do {
+                try writeData(jsonData, jsonURL)
+            } catch {
+                if let previousRecap {
+                    try? secureWrite(
+                        Data(previousRecap.markdown.utf8),
+                        to: markdownURL,
+                        fileManager: fileManager
+                    )
+                } else {
+                    try? ChatGPTSecureStorage.removeRegularFileIfPresent(at: markdownURL)
+                }
+                throw error
+            }
+        }
+
+        static func load(
+            for day: Date,
+            from directory: URL,
+            fileManager _: FileManager = .default
+        ) -> ChatGPTDailyRecap? {
+            let url = jsonURL(for: day, in: directory)
+            guard
+                let data = try? ChatGPTHistoryStore.readStableSource(
+                    at: url,
+                    maximumBytes: Int64(maximumJSONBytes)
+                )
+            else { return nil }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            guard let recap = try? decoder.decode(ChatGPTDailyRecap.self, from: data),
+                recap.schemaVersion == 1,
+                recap.markdown.utf8.count <= maximumMarkdownBytes
+            else { return nil }
+            return recap
+        }
+
+        static func revealFiles(
+            for day: Date,
+            in directory: URL,
+            fileManager: FileManager = .default
+        ) throws -> [URL] {
+            let markdownURL = markdownURL(for: day, in: directory)
+            guard let recap = load(for: day, from: directory) else {
+                try ChatGPTSecureStorage.removeRegularFileIfPresent(at: markdownURL)
+                return []
+            }
+            let jsonURL = jsonURL(for: day, in: directory)
+            try secureWrite(
+                Data(recap.markdown.utf8),
+                to: markdownURL,
+                fileManager: fileManager
+            )
+            return [markdownURL, jsonURL]
+        }
+
+        static func jsonURL(for day: Date, in directory: URL) -> URL {
+            directory.appendingPathComponent(
+                "\(AppPaths.localDayString(for: day)).chatgpt-recap.json",
+                isDirectory: false
+            )
+        }
+
+        static func markdownURL(for day: Date, in directory: URL) -> URL {
+            directory.appendingPathComponent(
+                "\(AppPaths.localDayString(for: day)).chatgpt-recap.md",
+                isDirectory: false
+            )
+        }
+
+        private static func secureWrite(
+            _ data: Data,
+            to destination: URL,
+            fileManager _: FileManager
+        ) throws {
+            try ChatGPTSecureStorage.writeFileAtomically(data, to: destination)
+        }
+    }
+
     struct ChatGPTRecapAlert: Identifiable {
         let id = UUID()
         let title: String
@@ -74,36 +211,77 @@
             label: "ai.goalong.localhistory.chatgpt-recap",
             qos: .userInitiated
         )
-        private let chatHistoryStore = ChatGPTHistoryStore(rootDirectory: AppPaths.chatGPTHistoryDirectory)
-        private let fileManager = FileManager.default
+        private let chatHistoryStore: ChatGPTHistoryStore
+        private let fileManager: FileManager
+        private let recapsDirectory: URL
+        private let executableLocator: () -> URL?
+        private let sessionFactory: (URL) throws -> CodexAppServerSession
+        private let directoryOpener: (URL) -> Void
+        private let fileRevealer: ([URL]) -> Void
+        private let delayedAutomaticScheduler: (DispatchWorkItem) -> Void
+        private let derivedWriteBarrier = DerivedHistoryWriteBarrier.shared
         private let sessionLock = NSLock()
+        private let runStateLock = NSLock()
         private var activeSession: CodexAppServerSession?
+        private var activeRecapRunID: UUID?
         private var deviceID = ""
         private var timer: Timer?
+        private var delayedAutomaticWorkItem: DispatchWorkItem?
         private var started = false
 
         private static let automaticRecapsKey = "chatgptRecap.automaticEnabled"
         private static let automaticRefreshInterval: TimeInterval = 4 * 60 * 60
 
-        private init() {
+        init(
+            chatHistoryStore: ChatGPTHistoryStore = ChatGPTHistoryStore(
+                rootDirectory: AppPaths.chatGPTHistoryDirectory
+            ),
+            fileManager: FileManager = .default,
+            recapsDirectory: URL = AppPaths.chatGPTRecapsDirectory,
+            executableLocator: @escaping () -> URL? = { CodexExecutableLocator.locate() },
+            sessionFactory: @escaping (URL) throws -> CodexAppServerSession = {
+                try CodexAppServerSession(executableURL: $0)
+            },
+            directoryOpener: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) },
+            fileRevealer: @escaping ([URL]) -> Void = {
+                NSWorkspace.shared.activateFileViewerSelecting($0)
+            },
+            delayedAutomaticScheduler: @escaping (DispatchWorkItem) -> Void = {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: $0)
+            }
+        ) {
+            self.chatHistoryStore = chatHistoryStore
+            self.fileManager = fileManager
+            self.recapsDirectory = recapsDirectory
+            self.executableLocator = executableLocator
+            self.sessionFactory = sessionFactory
+            self.directoryOpener = directoryOpener
+            self.fileRevealer = fileRevealer
+            self.delayedAutomaticScheduler = delayedAutomaticScheduler
             let today = Calendar.current.startOfDay(for: Date())
             selectedDay = today
             automaticRecapsEnabled = UserDefaults.standard.bool(forKey: Self.automaticRecapsKey)
-            recap = Self.loadStoredRecap(for: today)
+            recap = ChatGPTRecapPersistence.load(for: today, from: recapsDirectory)
             importSummary = chatHistoryStore.summary()
         }
 
         deinit {
             timer?.invalidate()
+            delayedAutomaticWorkItem?.cancel()
         }
 
-        var codexExecutableURL: URL? { CodexExecutableLocator.locate() }
+        var codexExecutableURL: URL? { executableLocator() }
 
         func configure(deviceID: String) {
             let clean = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
             if !clean.isEmpty { self.deviceID = clean }
-            recap = Self.loadStoredRecap(for: selectedDay)
+            recap = ChatGPTRecapPersistence.load(for: selectedDay, from: recapsDirectory)
             importSummary = chatHistoryStore.summary()
+        }
+
+        /// Page activation is the only passive account refresh trigger. App startup,
+        /// `configure`, and `start` retain cached state without launching Codex.
+        func activate() {
             refreshAccount()
         }
 
@@ -115,29 +293,41 @@
             }
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
-            DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in
-                self?.maybeGenerateAutomaticRecap()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.started else { return }
+                self.maybeGenerateAutomaticRecap()
             }
+            delayedAutomaticWorkItem = workItem
+            delayedAutomaticScheduler(workItem)
         }
 
         func stop() {
             timer?.invalidate()
             timer = nil
+            delayedAutomaticWorkItem?.cancel()
+            delayedAutomaticWorkItem = nil
             started = false
-            closeActiveSession()
+            invalidateActiveRun(closeSession: true)
+        }
+
+        /// Invalidates UI callbacks and interrupts any active recap session before the
+        /// clear-history path waits for the shared derived-write barrier to drain.
+        func prepareForHistoryClear() {
+            invalidateActiveRun(closeSession: true)
         }
 
         func selectDay(_ date: Date) {
             let normalized = Calendar.current.startOfDay(for: date)
             guard normalized != selectedDay else { return }
+            invalidateActiveRun(closeSession: true)
             selectedDay = normalized
             streamedMarkdown = ""
-            recap = Self.loadStoredRecap(for: normalized)
+            recap = ChatGPTRecapPersistence.load(for: normalized, from: recapsDirectory)
         }
 
         func refreshAccount() {
             guard !isCheckingAccount, !isConnecting else { return }
-            guard let executable = CodexExecutableLocator.locate() else {
+            guard let executable = executableLocator() else {
                 connectionState = .codexUnavailable
                 return
             }
@@ -163,7 +353,7 @@
 
         func connectChatGPT() {
             guard !isConnecting else { return }
-            guard let executable = CodexExecutableLocator.locate() else {
+            guard let executable = executableLocator() else {
                 connectionState = .codexUnavailable
                 return
             }
@@ -203,7 +393,7 @@
         }
 
         func disconnectChatGPT() {
-            guard let executable = CodexExecutableLocator.locate() else {
+            guard let executable = executableLocator() else {
                 connectionState = .codexUnavailable
                 return
             }
@@ -217,7 +407,8 @@
                         self.connectionState = .signedOut
                         self.alert = ChatGPTRecapAlert(
                             title: "ChatGPT disconnected",
-                            message: "Codex removed the managed ChatGPT credentials from Goalong's isolated account directory. Your normal Codex CLI login was not changed."
+                            message:
+                                "Codex removed the managed ChatGPT credentials from Goalong's isolated account directory. Your normal Codex CLI login was not changed."
                         )
                     }
                 } catch {
@@ -298,16 +489,20 @@
 
         func revealRecapFiles() {
             do {
-                try Self.prepareDirectories()
-                let files = [Self.markdownURL(for: selectedDay), Self.JSONURL(for: selectedDay)]
-                    .filter { fileManager.fileExists(atPath: $0.path) }
+                try ChatGPTSecureStorage.prepareDirectory(recapsDirectory)
+                let files = try ChatGPTRecapPersistence.revealFiles(
+                    for: selectedDay,
+                    in: recapsDirectory,
+                    fileManager: fileManager
+                )
                 if files.isEmpty {
-                    NSWorkspace.shared.open(AppPaths.chatGPTRecapsDirectory)
+                    directoryOpener(recapsDirectory)
                 } else {
-                    NSWorkspace.shared.activateFileViewerSelecting(files)
+                    fileRevealer(files)
                 }
             } catch {
-                alert = ChatGPTRecapAlert(title: "Recap folder could not be opened", message: error.localizedDescription)
+                alert = ChatGPTRecapAlert(
+                    title: "Recap folder could not be opened", message: error.localizedDescription)
             }
         }
 
@@ -322,7 +517,7 @@
                 }
                 return
             }
-            guard let executable = CodexExecutableLocator.locate() else {
+            guard let executable = executableLocator() else {
                 connectionState = .codexUnavailable
                 if !automatic {
                     alert = ChatGPTRecapAlert(
@@ -332,13 +527,26 @@
                 }
                 return
             }
+            guard let admission = derivedWriteBarrier.admission() else { return }
 
             let normalizedDay = Calendar.current.startOfDay(for: day)
+            let runID = UUID()
+            activateRun(runID)
             isGenerating = true
             streamedMarkdown = ""
 
             workQueue.async { [weak self] in
                 guard let self else { return }
+                guard self.isRunActive(runID) else { return }
+                guard let permit = self.derivedWriteBarrier.beginJob(admission: admission) else {
+                    DispatchQueue.main.async {
+                        guard self.finishRun(runID) else { return }
+                        self.isGenerating = false
+                        self.streamedMarkdown = ""
+                    }
+                    return
+                }
+                defer { self.derivedWriteBarrier.endJob(permit) }
                 var runDirectory: URL?
                 do {
                     let context = try ChatGPTRecapContextBuilder.build(
@@ -349,11 +557,17 @@
                     guard context.hasMeaningfulData else {
                         throw CodexAppServerError.generationFailed("There is no captured context for this day yet.")
                     }
+                    guard self.derivedWriteBarrier.isCurrent(permit), self.isRunActive(runID) else {
+                        throw RecapGenerationInterruption.historyCleared
+                    }
 
                     let directory = try Self.makeRunDirectory()
                     runDirectory = directory
                     let session = try self.makeSession(executableURL: executable)
                     defer { self.closeSession(session) }
+                    guard self.derivedWriteBarrier.isCurrent(permit), self.isRunActive(runID) else {
+                        throw RecapGenerationInterruption.historyCleared
+                    }
                     guard let account = try session.readAccount(refreshToken: true) else {
                         throw CodexAppServerError.accountNotChatGPT("signed-out")
                     }
@@ -361,20 +575,21 @@
                         throw CodexAppServerError.accountNotChatGPT(account.type)
                     }
 
-                    let prompt = ChatGPTRecapContextBuilder.prompt(
+                    let prompt = try ChatGPTRecapContextBuilder.prompt(
                         for: context,
                         outputLanguage: Self.outputLanguage
                     )
-                    var accumulated = ""
                     let markdown = try session.generateRecap(
                         prompt: prompt,
                         workingDirectory: directory,
                         onDelta: { [weak self] delta in
-                            accumulated += delta
-                            let snapshot = accumulated
                             DispatchQueue.main.async {
-                                guard let self, self.isGenerating else { return }
-                                self.streamedMarkdown = snapshot
+                                guard let self,
+                                    self.isRunActive(runID),
+                                    Calendar.current.isDate(self.selectedDay, inSameDayAs: normalizedDay),
+                                    self.derivedWriteBarrier.isCurrent(permit)
+                                else { return }
+                                self.streamedMarkdown.append(delta)
                             }
                         }
                     )
@@ -385,10 +600,16 @@
                         sourceCounts: context.sourceCounts,
                         markdown: markdown
                     )
-                    try Self.write(result)
+                    guard self.derivedWriteBarrier.isCurrent(permit), self.isRunActive(runID) else {
+                        throw RecapGenerationInterruption.historyCleared
+                    }
+                    try ChatGPTRecapPersistence.write(result, to: self.recapsDirectory)
                     if let runDirectory { try? self.fileManager.removeItem(at: runDirectory) }
 
                     DispatchQueue.main.async {
+                        guard self.derivedWriteBarrier.isCurrent(permit),
+                            self.finishRun(runID)
+                        else { return }
                         self.isGenerating = false
                         self.streamedMarkdown = ""
                         self.publishAccount(account)
@@ -405,14 +626,22 @@
                     }
                 } catch {
                     if let runDirectory { try? self.fileManager.removeItem(at: runDirectory) }
-                    Diagnostics.write("ChatGPT recap generation failed: \(error)")
+                    if !(error is RecapGenerationInterruption) {
+                        let detail = CodexAppServerLimits.boundedUTF8(
+                            ActivitySemanticTextSanitizer.redact(error.localizedDescription) ?? "",
+                            maximumBytes: CodexAppServerLimits.production.maximumErrorBytes
+                        )
+                        Diagnostics.write("ChatGPT recap generation failed: \(detail)")
+                    }
                     DispatchQueue.main.async {
+                        guard self.finishRun(runID) else { return }
                         self.isGenerating = false
                         self.streamedMarkdown = ""
                         if let codexError = error as? CodexAppServerError {
                             switch codexError {
                             case .accountNotChatGPT(let mode):
-                                self.connectionState = mode == "signed-out"
+                                self.connectionState =
+                                    mode == "signed-out"
                                     ? .signedOut
                                     : .unsupportedCredentialMode(mode)
                             case .executableUnavailable:
@@ -433,7 +662,7 @@
         }
 
         private func makeSession(executableURL: URL) throws -> CodexAppServerSession {
-            let session = try CodexAppServerSession(executableURL: executableURL)
+            let session = try sessionFactory(executableURL)
             sessionLock.lock()
             activeSession = session
             sessionLock.unlock()
@@ -457,11 +686,64 @@
             session?.close()
         }
 
+        private func activateRun(_ runID: UUID) {
+            runStateLock.lock()
+            activeRecapRunID = runID
+            runStateLock.unlock()
+        }
+
+        private func isRunActive(_ runID: UUID) -> Bool {
+            runStateLock.lock()
+            let active = activeRecapRunID == runID
+            runStateLock.unlock()
+            return active
+        }
+
+        @discardableResult
+        private func finishRun(_ runID: UUID) -> Bool {
+            runStateLock.lock()
+            guard activeRecapRunID == runID else {
+                runStateLock.unlock()
+                return false
+            }
+            activeRecapRunID = nil
+            runStateLock.unlock()
+            return true
+        }
+
+        private func invalidateActiveRun(closeSession: Bool) {
+            runStateLock.lock()
+            activeRecapRunID = nil
+            runStateLock.unlock()
+            isGenerating = false
+            streamedMarkdown = ""
+            if closeSession { closeActiveSession() }
+        }
+
+        #if DEBUG
+            func beginRunForTesting(streamed: String = "preview") {
+                activateRun(UUID())
+                isGenerating = true
+                streamedMarkdown = streamed
+            }
+
+            var hasActiveRunForTesting: Bool {
+                runStateLock.lock()
+                let active = activeRecapRunID != nil
+                runStateLock.unlock()
+                return active
+            }
+
+            func setConnectionStateForTesting(_ state: ChatGPTConnectionState) {
+                connectionState = state
+            }
+        #endif
+
         private func maybeGenerateAutomaticRecap() {
-            guard automaticRecapsEnabled, !isGenerating else { return }
+            guard started, automaticRecapsEnabled, !isGenerating else { return }
             guard case .connected = connectionState else { return }
             let today = Calendar.current.startOfDay(for: Date())
-            if let stored = Self.loadStoredRecap(for: today),
+            if let stored = ChatGPTRecapPersistence.load(for: today, from: recapsDirectory),
                 Date().timeIntervalSince(stored.generatedAt) < Self.automaticRefreshInterval
             {
                 return
@@ -489,55 +771,15 @@
                 AppPaths.chatGPTRunsDirectory,
                 AppPaths.chatGPTCodexHomeDirectory,
             ] {
-                try FileManager.default.createDirectory(
-                    at: directory,
-                    withIntermediateDirectories: true,
-                    attributes: [.posixPermissions: 0o700]
-                )
-                try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+                try ChatGPTSecureStorage.prepareDirectory(directory)
             }
         }
 
         private static func makeRunDirectory() throws -> URL {
             try prepareDirectories()
             let directory = AppPaths.chatGPTRunsDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-            try FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: false,
-                attributes: [.posixPermissions: 0o700]
-            )
+            try ChatGPTSecureStorage.prepareDirectory(directory)
             return directory
-        }
-
-        private static func write(_ recap: ChatGPTDailyRecap) throws {
-            try prepareDirectories()
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            try secureWrite(try encoder.encode(recap), to: JSONURL(for: recap.day))
-            try secureWrite(Data(recap.markdown.utf8), to: markdownURL(for: recap.day))
-        }
-
-        private static func loadStoredRecap(for day: Date) -> ChatGPTDailyRecap? {
-            guard let data = try? Data(contentsOf: JSONURL(for: day)) else { return nil }
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try? decoder.decode(ChatGPTDailyRecap.self, from: data)
-        }
-
-        private static func secureWrite(_ data: Data, to destination: URL) throws {
-            try data.write(to: destination, options: [.atomic])
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
-        }
-
-        private static func JSONURL(for day: Date) -> URL {
-            AppPaths.chatGPTRecapsDirectory.appendingPathComponent(
-                "\(AppPaths.localDayString(for: day)).chatgpt-recap.json", isDirectory: false)
-        }
-
-        private static func markdownURL(for day: Date) -> URL {
-            AppPaths.chatGPTRecapsDirectory.appendingPathComponent(
-                "\(AppPaths.localDayString(for: day)).chatgpt-recap.md", isDirectory: false)
         }
 
         private static var outputLanguage: String {
@@ -545,6 +787,10 @@
                 return "French"
             }
             return "English"
+        }
+
+        private enum RecapGenerationInterruption: Error {
+            case historyCleared
         }
     }
 #endif

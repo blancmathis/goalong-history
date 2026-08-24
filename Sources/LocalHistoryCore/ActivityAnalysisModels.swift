@@ -61,6 +61,7 @@ public struct ActivityFocusBlock: Codable, Equatable, Identifiable {
     public let applications: [String]
     public let hosts: [String]
     public let pageTitles: [String]
+    // swift-format-ignore: AlwaysUseLowerCamelCase
     public let URLs: [String]
     public let category: String?
     public let isWork: Bool?
@@ -126,6 +127,7 @@ public struct ActivityWebInteractionSummary: Codable, Equatable, Identifiable, S
     public let label: String
     public let role: String?
     public let pageTitle: String?
+    // swift-format-ignore: AlwaysUseLowerCamelCase
     public let URL: String?
     public let count: Int
     public let firstSeen: Date
@@ -159,6 +161,7 @@ public struct ActivityWebInteractionSummary: Codable, Equatable, Identifiable, S
 
 public struct ActivityPageSummary: Codable, Equatable, Identifiable {
     public let title: String
+    // swift-format-ignore: AlwaysUseLowerCamelCase
     public let URL: String?
     public let activeSeconds: Int
     public let firstSeen: Date
@@ -417,30 +420,68 @@ public struct ActivityDayAnalysis: Codable, Equatable {
 /// Conservative local redaction for optional rich context. This does not try to
 /// infer every possible secret; it removes common credentials before persistence.
 public enum ActivitySemanticTextSanitizer {
-    public static func clean(_ raw: String?, maximumLength: Int = 6_000) -> String? {
-        guard var value = raw else { return nil }
-        value = value.replacingOccurrences(of: "\u{0000}", with: "")
-        value = value.replacingOccurrences(of: "[\\t ]+", with: " ", options: .regularExpression)
-        value = value.replacingOccurrences(of: "\\r\\n?", with: "\n", options: .regularExpression)
-        value = value.replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+    private struct ReplacementRule {
+        let expression: NSRegularExpression
+        let template: String
 
-        let credentialPatterns: [(String, String)] = [
-            (#"(?i)\b(password|passwd|secret|api[ _-]?key|access[ _-]?token|authorization)\s*[:=]\s*[^\s,;]+"#, "$1=[REDACTED]"),
-            (#"\bsk-[A-Za-z0-9_-]{16,}\b"#, "[REDACTED_KEY]"),
-            (#"\bgh[pousr]_[A-Za-z0-9]{20,}\b"#, "[REDACTED_TOKEN]"),
-            (#"\beyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"#, "[REDACTED_TOKEN]"),
-            (#"\b(?:\d[ -]*?){13,19}\b"#, "[REDACTED_NUMBER]"),
-        ]
-        for (pattern, replacement) in credentialPatterns {
-            value = value.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+        init(_ pattern: String, template: String) {
+            // These are compile-time literals covered by sanitizer regression tests.
+            expression = try! NSRegularExpression(pattern: pattern)
+            self.template = template
         }
 
-        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return nil }
+        func apply(to value: String) -> String {
+            expression.stringByReplacingMatches(
+                in: value,
+                range: NSRange(value.startIndex..<value.endIndex, in: value),
+                withTemplate: template
+            )
+        }
+    }
+
+    // `String.replacingOccurrences(..., .regularExpression)` recompiles each pattern.
+    // Computer History sanitizes thousands of bounded Accessibility observations per
+    // busy day, so immutable compiled expressions avoid repeated ICU allocation while
+    // preserving the exact ordered replacements.
+    private static let replacementRules: [ReplacementRule] = [
+        ReplacementRule("[\\t ]+", template: " "),
+        ReplacementRule("\\r\\n?", template: "\n"),
+        ReplacementRule("\\n{3,}", template: "\n\n"),
+        ReplacementRule(
+            #"(?i)\b(password|passwd|secret|api[ _-]?key|access[ _-]?token|authorization)\s*[:=]\s*(?:(?:bearer|basic)\s+)?[^\s,;]+"#,
+            template: "$1=[REDACTED]"
+        ),
+        ReplacementRule(#"\bsk-[A-Za-z0-9_-]{16,}\b"#, template: "[REDACTED_KEY]"),
+        ReplacementRule(#"\bgh[pousr]_[A-Za-z0-9]{20,}\b"#, template: "[REDACTED_TOKEN]"),
+        ReplacementRule(
+            #"\beyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"#,
+            template: "[REDACTED_TOKEN]"
+        ),
+        ReplacementRule(#"\b(?:\d[ -]*?){13,19}\b"#, template: "[REDACTED_NUMBER]"),
+    ]
+
+    public static func clean(_ raw: String?, maximumLength: Int = 6_000) -> String? {
+        guard var value = redact(raw) else { return nil }
+
         let limit = max(64, min(maximumLength, 40_000))
         if value.count > limit {
             value = String(value.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        return value.isEmpty ? nil : value
+    }
+
+    /// Applies the same conservative normalization and credential redaction as `clean`
+    /// without clipping the result. Callers that assemble several independently bounded
+    /// sections can therefore preserve late coverage metadata while still applying one
+    /// fail-safe redaction pass before transmission or persistence.
+    public static func redact(_ raw: String?) -> String? {
+        guard var value = raw else { return nil }
+        value = value.replacingOccurrences(of: "\u{0000}", with: "")
+        for rule in replacementRules {
+            value = rule.apply(to: value)
+        }
+
+        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
 }

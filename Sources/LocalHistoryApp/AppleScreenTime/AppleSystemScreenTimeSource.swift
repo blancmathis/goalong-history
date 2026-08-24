@@ -64,6 +64,129 @@
         }()
     }
 
+    struct AppleBiomeFileFingerprint: Equatable {
+        let size: Int
+        let modifiedAt: Date
+    }
+
+    struct AppleBiomeFileCacheLimits: Equatable {
+        let maximumEntries: Int
+        let maximumBytes: Int
+
+        static let production = AppleBiomeFileCacheLimits(
+            maximumEntries: 64,
+            maximumBytes: 8 * 1_024 * 1_024
+        )
+    }
+
+    struct AppleBiomeFileCacheSnapshot: Equatable {
+        let entryCount: Int
+        let retainedBytes: Int
+        let paths: Set<String>
+    }
+
+    private struct AppleBiomeCachedFile {
+        let fingerprint: AppleBiomeFileFingerprint
+        let events: [AppleBiomeFocusEvent]
+        let retainedBytes: Int
+        var lastAccess: UInt64
+    }
+
+    struct AppleBiomeFileCache {
+        private let limits: AppleBiomeFileCacheLimits
+        private var entries: [String: AppleBiomeCachedFile] = [:]
+        private var retainedBytes = 0
+        private var accessCounter: UInt64 = 0
+
+        init(limits: AppleBiomeFileCacheLimits = .production) {
+            self.limits = AppleBiomeFileCacheLimits(
+                maximumEntries: max(1, limits.maximumEntries),
+                maximumBytes: max(1, limits.maximumBytes)
+            )
+        }
+
+        mutating func events(
+            for path: String,
+            fingerprint: AppleBiomeFileFingerprint
+        ) -> [AppleBiomeFocusEvent]? {
+            guard var entry = entries[path] else { return nil }
+            guard entry.fingerprint == fingerprint else {
+                entries.removeValue(forKey: path)
+                retainedBytes -= entry.retainedBytes
+                return nil
+            }
+            accessCounter &+= 1
+            entry.lastAccess = accessCounter
+            entries[path] = entry
+            return entry.events
+        }
+
+        mutating func insert(
+            path: String,
+            fingerprint: AppleBiomeFileFingerprint,
+            events: [AppleBiomeFocusEvent],
+            retainedBytes incomingBytes: Int
+        ) {
+            if let previous = entries.removeValue(forKey: path) {
+                retainedBytes -= previous.retainedBytes
+            }
+            let boundedBytes = max(1, incomingBytes)
+            guard boundedBytes <= limits.maximumBytes else { return }
+
+            while !entries.isEmpty,
+                entries.count >= limits.maximumEntries
+                    || retainedBytes > limits.maximumBytes - boundedBytes
+            {
+                guard let oldest = entries.min(
+                    by: { left, right in
+                        if left.value.lastAccess == right.value.lastAccess {
+                            return left.key < right.key
+                        }
+                        return left.value.lastAccess < right.value.lastAccess
+                    }
+                ) else { break }
+                retainedBytes -= oldest.value.retainedBytes
+                entries.removeValue(forKey: oldest.key)
+            }
+
+            accessCounter &+= 1
+            entries[path] = AppleBiomeCachedFile(
+                fingerprint: fingerprint,
+                events: events,
+                retainedBytes: boundedBytes,
+                lastAccess: accessCounter
+            )
+            retainedBytes += boundedBytes
+        }
+
+        mutating func retainFiles(_ existingPaths: Set<String>, under directoryPath: String) {
+            let prefix = directoryPath.hasSuffix("/") ? directoryPath : directoryPath + "/"
+            removeEntries { path in
+                path.hasPrefix(prefix) && !existingPaths.contains(path)
+            }
+        }
+
+        mutating func removeMissingFiles(_ exists: (String) -> Bool) {
+            removeEntries { !exists($0) }
+        }
+
+        var snapshot: AppleBiomeFileCacheSnapshot {
+            AppleBiomeFileCacheSnapshot(
+                entryCount: entries.count,
+                retainedBytes: retainedBytes,
+                paths: Set(entries.keys)
+            )
+        }
+
+        private mutating func removeEntries(where shouldRemove: (String) -> Bool) {
+            for key in entries.keys.filter(shouldRemove) {
+                if let removed = entries.removeValue(forKey: key) {
+                    retainedBytes -= removed.retainedBytes
+                }
+            }
+        }
+    }
+
     /// Reads Apple-generated Screen Time data already present on the Mac.
     ///
     /// - `knowledgeC.db` provides Apple `/app/usage` intervals for the Mac and any device
@@ -80,19 +203,21 @@
         private let fileManager: FileManager
         private let calendar: Calendar
         private let nowProvider: () -> Date
-        private var biomeFileCache: [String: CachedBiomeFile] = [:]
+        private var biomeFileCache: AppleBiomeFileCache
 
         init(
             deviceID: String,
             paths: AppleSystemScreenTimePaths = .default,
             fileManager: FileManager = .default,
             calendar: Calendar = .current,
-            nowProvider: @escaping () -> Date = Date.init
+            nowProvider: @escaping () -> Date = Date.init,
+            biomeCacheLimits: AppleBiomeFileCacheLimits = .production
         ) {
             self.paths = paths
             self.fileManager = fileManager
             self.calendar = calendar
             self.nowProvider = nowProvider
+            biomeFileCache = AppleBiomeFileCache(limits: biomeCacheLimits)
             self.currentMacDevice = AppleScreenTimeDevice(
                 id: "apple-system-current-mac:\(deviceID)",
                 name: Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
@@ -345,6 +470,11 @@
             now: Date,
             catalog: [String: DeviceCatalogEntry]
         ) -> SourceRead<UsageInterval> {
+            defer {
+                biomeFileCache.removeMissingFiles { [fileManager] path in
+                    fileManager.fileExists(atPath: path)
+                }
+            }
             var values: [UsageInterval] = []
             var latestUpdate: Date?
             var permissionDenied = false
@@ -421,15 +551,23 @@
                     let fingerprint = try fileFingerprint(file)
                     latestModification = maxDate(latestModification, fingerprint.modifiedAt)
                     let key = file.standardizedFileURL.path
-                    if let cached = biomeFileCache[key], cached.fingerprint == fingerprint {
-                        allEvents.append(contentsOf: cached.events)
+                    if let cachedEvents = biomeFileCache.events(for: key, fingerprint: fingerprint) {
+                        allEvents.append(contentsOf: cachedEvents)
                         continue
                     }
 
                     do {
                         let data = try Data(contentsOf: file, options: [.mappedIfSafe])
                         let events = try AppleBiomeSEGBDecoder.decode(data)
-                        biomeFileCache[key] = CachedBiomeFile(fingerprint: fingerprint, events: events)
+                        biomeFileCache.insert(
+                            path: key,
+                            fingerprint: fingerprint,
+                            events: events,
+                            retainedBytes: Self.estimatedRetainedBytes(
+                                sourceBytes: fingerprint.size,
+                                events: events
+                            )
+                        )
                         allEvents.append(contentsOf: events)
                     } catch AppleBiomeFormatError.unsupportedFormat {
                         malformedCount += 1
@@ -439,7 +577,7 @@
                 }
 
                 let existing = Set(files.map { $0.standardizedFileURL.path })
-                biomeFileCache = biomeFileCache.filter { existing.contains($0.key) || !$0.key.hasPrefix(directory.path) }
+                biomeFileCache.retainFiles(existing, under: directory.standardizedFileURL.path)
 
                 let latestEvent = allEvents.map(\.timestamp).max()
                 let canCloseLiveInterval = calendar.isDateInToday(interval.start)
@@ -916,19 +1054,21 @@
             let warning: String?
         }
 
-        private struct BiomeFileFingerprint: Equatable {
-            let size: Int
-            let modifiedAt: Date
+        private static func estimatedRetainedBytes(
+            sourceBytes: Int,
+            events: [AppleBiomeFocusEvent]
+        ) -> Int {
+            let decodedBytes = events.reduce(into: 0) { result, event in
+                let addition = MemoryLayout<AppleBiomeFocusEvent>.stride
+                    + event.bundleIdentifier.utf8.count + 32
+                result = result > Int.max - addition ? Int.max : result + addition
+            }
+            return max(max(1, sourceBytes), decodedBytes)
         }
 
-        private struct CachedBiomeFile {
-            let fingerprint: BiomeFileFingerprint
-            let events: [AppleBiomeFocusEvent]
-        }
-
-        private func fileFingerprint(_ url: URL) throws -> BiomeFileFingerprint {
+        private func fileFingerprint(_ url: URL) throws -> AppleBiomeFileFingerprint {
             let values = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-            return BiomeFileFingerprint(
+            return AppleBiomeFileFingerprint(
                 size: values.fileSize ?? 0,
                 modifiedAt: values.contentModificationDate ?? .distantPast
             )

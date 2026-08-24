@@ -52,8 +52,11 @@
             }
             .background(LHTheme.pageBackground)
             .onAppear {
+                screenTime.setActive(model.dashboardIsVisible)
                 synchronizeSecondarySources(with: model.selectedDay)
             }
+            .onDisappear { screenTime.setActive(false) }
+            .onChange(of: model.dashboardIsVisible) { screenTime.setActive($0) }
             .onChange(of: model.selectedDay) { day in
                 synchronizeSecondarySources(with: day)
             }

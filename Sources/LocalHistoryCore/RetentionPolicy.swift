@@ -17,29 +17,50 @@ public enum HistoryDataClass: String, Codable, CaseIterable {
     }
 }
 
-/// `days == nil` means keep until explicit deletion. A non-nil value is clamped
-/// to a conservative maximum and never interpreted as permission to delete a
-/// different data class.
+/// `days == nil` means keep until explicit deletion. Non-positive values become
+/// indefinite retention; positive values are clamped to a conservative maximum
+/// and never interpreted as permission to delete a different data class.
 public struct RetentionDuration: Codable, Equatable {
+    public static let maximumDays = 3_650
+
     public let days: Int?
 
     public init(days: Int?) {
-        if let days {
-            self.days = min(max(0, days), 3_650)
-        } else {
+        guard let days, days > 0 else {
             self.days = nil
+            return
         }
+        self.days = min(days, Self.maximumDays)
     }
 
     public static let indefinite = RetentionDuration(days: nil)
 
     public func cutoff(relativeTo now: Date, calendar: Calendar = .current) -> Date? {
-        guard let days else { return nil }
+        // Defend the deletion boundary even if a value came from an older or
+        // hand-edited policy. Zero, negative and out-of-range values never become
+        // implicit permission to erase history.
+        guard let days, (1 ... Self.maximumDays).contains(days) else { return nil }
         return calendar.date(byAdding: .day, value: -days, to: now)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case days
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(days: try container.decodeIfPresent(Int.self, forKey: .days))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(days, forKey: .days)
     }
 }
 
 public struct HistoryRetentionPolicy: Codable, Equatable {
+    public static let currentSchemaVersion = 1
+
     public let schemaVersion: Int
     public var detailedEvents: RetentionDuration
     public var semanticSnapshots: RetentionDuration
@@ -73,7 +94,7 @@ public struct HistoryRetentionPolicy: Codable, Equatable {
     /// Existing raw and semantic data keep the old window; memories and proofs are
     /// retained until the user explicitly chooses a policy for them.
     public static func migratingLegacy(retentionDays: Int) -> HistoryRetentionPolicy {
-        let legacy = min(max(0, retentionDays), 3_650)
+        let legacy = min(max(0, retentionDays), RetentionDuration.maximumDays)
         let inherited: RetentionDuration = legacy == 0 ? .indefinite : RetentionDuration(days: legacy)
         return HistoryRetentionPolicy(
             detailedEvents: inherited,
@@ -95,6 +116,15 @@ public struct HistoryRetentionPolicy: Codable, Equatable {
         case .minuteSeals: return minuteSeals
         case .anchorReceipts: return anchorReceipts
         }
+    }
+
+    /// Automatic cleanup is deliberately fail-closed for policy versions this
+    /// build does not understand. Durations are normalized by `RetentionDuration`;
+    /// the legacy provenance value is validation-only and must also be bounded.
+    public var isSupportedForAutomaticCleanup: Bool {
+        guard schemaVersion == Self.currentSchemaVersion else { return false }
+        guard let migratedFromLegacyRetentionDays else { return true }
+        return (0 ... RetentionDuration.maximumDays).contains(migratedFromLegacyRetentionDays)
     }
 }
 

@@ -4,6 +4,36 @@
     import Foundation
     import LocalHistoryCore
 
+    struct BoundedIdentifierCache<Value: Hashable> {
+        private let capacity: Int
+        private var values = Set<Value>()
+        private var accessOrder: [Value] = []
+
+        init(capacity: Int = 64) {
+            self.capacity = max(1, capacity)
+        }
+
+        mutating func insert(_ value: Value) {
+            if values.contains(value) {
+                accessOrder.removeAll { $0 == value }
+            } else {
+                values.insert(value)
+            }
+            accessOrder.append(value)
+            while accessOrder.count > capacity {
+                values.remove(accessOrder.removeFirst())
+            }
+        }
+
+        func contains(_ value: Value) -> Bool {
+            values.contains(value)
+        }
+
+        var count: Int { values.count }
+    }
+
+    typealias BoundedProcessIdentifierCache = BoundedIdentifierCache<Int32>
+
     final class ContextProvider {
         private let configManager: ConfigManager
         private let permissions: PermissionManager
@@ -15,8 +45,8 @@
         private var cachedPrivateWindow = false
         private var cachedPrivacyIdentity: String?
         private var lastPrivacyProbe = Date.distantPast
-        private var discoveredBrowserBundleIdentifiers = Set<String>()
-        private var discoveredBrowserProcessIdentifiers = Set<Int32>()
+        private var discoveredBrowserBundleIdentifiers = BoundedIdentifierCache<String>(capacity: 128)
+        private var discoveredBrowserProcessIdentifiers = BoundedProcessIdentifierCache()
 
         init(configManager: ConfigManager, permissions: PermissionManager) {
             self.configManager = configManager
@@ -266,9 +296,10 @@
         }
 
         private func rememberBrowser(_ app: AppSnapshot) {
-            discoveredBrowserProcessIdentifiers.insert(app.processIdentifier)
             if let bundleIdentifier = app.bundleIdentifier, !bundleIdentifier.isEmpty {
                 discoveredBrowserBundleIdentifiers.insert(bundleIdentifier)
+            } else {
+                discoveredBrowserProcessIdentifiers.insert(app.processIdentifier)
             }
         }
 

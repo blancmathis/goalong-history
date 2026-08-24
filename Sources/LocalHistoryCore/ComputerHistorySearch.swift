@@ -1,14 +1,578 @@
 import Foundation
 
+package struct ComputerHistorySourceSearchLimits: Equatable {
+    package var maximumEventBytes: Int64
+    package var maximumSemanticBytes: Int64
+    package var maximumElapsedSeconds: TimeInterval
+
+    package static let production = ComputerHistorySourceSearchLimits(
+        maximumEventBytes: 384 * 1_024 * 1_024,
+        maximumSemanticBytes: 128 * 1_024 * 1_024,
+        maximumElapsedSeconds: 45
+    )
+
+    package init(
+        maximumEventBytes: Int64,
+        maximumSemanticBytes: Int64,
+        maximumElapsedSeconds: TimeInterval
+    ) {
+        self.maximumEventBytes = maximumEventBytes
+        self.maximumSemanticBytes = maximumSemanticBytes
+        self.maximumElapsedSeconds = maximumElapsedSeconds
+    }
+
+    package var validated: ComputerHistorySourceSearchLimits {
+        ComputerHistorySourceSearchLimits(
+            maximumEventBytes: min(
+                max(0, maximumEventBytes),
+                Self.production.maximumEventBytes
+            ),
+            maximumSemanticBytes: min(
+                max(0, maximumSemanticBytes),
+                Self.production.maximumSemanticBytes
+            ),
+            maximumElapsedSeconds: min(
+                max(0, maximumElapsedSeconds),
+                Self.production.maximumElapsedSeconds
+            )
+        )
+    }
+}
+
+/// One shared budget for a CLI `ask` reconstruction and its optional raw-source
+/// fallback. Projection bytes count the compact encoded day memories retained
+/// for the answer, never journal contents or a persisted cache.
+package struct ComputerHistoryAskBudget: Equatable {
+    package static let productionMaximumProjectionBytes: Int64 = 128 * 1_024 * 1_024
+    package static let productionMaximumElapsedSeconds: TimeInterval = 45
+
+    package let maximumProjectionBytes: Int64
+    package let deadlineUptime: TimeInterval
+    package private(set) var retainedProjectionBytes: Int64 = 0
+
+    package init(
+        maximumProjectionBytes: Int64 = Self.productionMaximumProjectionBytes,
+        maximumElapsedSeconds: TimeInterval = Self.productionMaximumElapsedSeconds,
+        startedAtUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) {
+        self.maximumProjectionBytes = min(
+            max(0, maximumProjectionBytes),
+            Self.productionMaximumProjectionBytes
+        )
+        deadlineUptime =
+            startedAtUptime
+            + min(
+                max(0, maximumElapsedSeconds),
+                Self.productionMaximumElapsedSeconds
+            )
+    }
+
+    package mutating func reserveProjectionBytes(_ byteCount: Int64) -> Bool {
+        let boundedCount = max(0, byteCount)
+        guard boundedCount <= maximumProjectionBytes - retainedProjectionBytes else {
+            return false
+        }
+        retainedProjectionBytes += boundedCount
+        return true
+    }
+
+    package func remainingElapsedSeconds(
+        atUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> TimeInterval {
+        max(0, deadlineUptime - atUptime)
+    }
+
+    package func hasTimeRemaining(
+        atUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Bool {
+        remainingElapsedSeconds(atUptime: atUptime) > 0
+    }
+}
+
+/// Bounded output from a direct, read-only pass over the raw Computer History
+/// journal. The result exists only for one question; callers never persist it.
+package struct ComputerHistorySourceSearchResult {
+    package let query: String
+    package let hits: [ComputerHistorySearchHit]
+    package let sourceEventCount: Int
+    package let semanticSnapshotCount: Int
+    package let eventBytesRead: Int64
+    package let semanticBytesRead: Int64
+    package let peakStreamBufferBytes: Int
+    package let issues: [HistoryLoadIssue]
+
+    package var isComplete: Bool { issues.isEmpty }
+
+    package func addingCoverageIssues(
+        _ additionalIssues: [HistoryLoadIssue]
+    ) -> ComputerHistorySourceSearchResult {
+        guard !additionalIssues.isEmpty else { return self }
+        let mergedIssues = Array((additionalIssues + issues).prefix(32))
+        return ComputerHistorySourceSearchResult(
+            query: query,
+            hits: hits,
+            sourceEventCount: sourceEventCount,
+            semanticSnapshotCount: semanticSnapshotCount,
+            eventBytesRead: eventBytesRead,
+            semanticBytesRead: semanticBytesRead,
+            peakStreamBufferBytes: peakStreamBufferBytes,
+            issues: mergedIssues
+        )
+    }
+}
+
+/// Keeps raw-source search memory independent of the retention horizon. Semantic
+/// text is retained only for the best candidate rows and is emitted only after a
+/// non-suppressed, non-secure source event proves that the payload is eligible.
+package struct ComputerHistorySourceSearchAccumulator {
+    private struct SemanticCandidate {
+        let identifierKey: String
+        let capturedAt: Date
+        let applicationName: String
+        let bundleIdentifier: String?
+        let windowTitle: String?
+        let urlHost: String?
+        let urlValue: String?
+        let snippet: String
+        let score: Double
+
+        init(payload: SemanticContextPayload, score: Double) {
+            identifierKey = ComputerHistorySupport.stableIdentifier(payload.id)
+            capturedAt = payload.capturedAt
+            applicationName = ComputerHistorySupport.bounded(
+                payload.application.name,
+                maximum: 300
+            )
+            bundleIdentifier = payload.application.bundleIdentifier.map {
+                ComputerHistorySupport.bounded($0, maximum: 300)
+            }
+            windowTitle = payload.window?.title.map {
+                ComputerHistorySupport.bounded($0, maximum: 300)
+            }
+            urlHost = payload.url?.host.map {
+                ComputerHistorySupport.bounded($0, maximum: 300)
+            }
+            urlValue = payload.url.map {
+                ComputerHistorySupport.bounded($0.value, maximum: 2_048)
+            }
+            snippet = ComputerHistorySupport.bounded(payload.text, maximum: 500)
+            self.score = score
+        }
+    }
+
+    private let preparedQuery: SearchText.PreparedQuery
+    private let start: Date
+    private let endExclusive: Date
+    private let maximumHits: Int
+    private var semanticCandidates: [SemanticCandidate] = []
+    private var rankedHits: [ComputerHistorySearchHit] = []
+    private var sourceEventCount = 0
+    private var semanticSnapshotCount = 0
+    private var eventBytesRead: Int64 = 0
+    private var semanticBytesRead: Int64 = 0
+    private var peakStreamBufferBytes = 0
+    private var issues: [HistoryLoadIssue] = []
+
+    package init(
+        query: String,
+        start: Date,
+        endExclusive: Date,
+        maximumHits: Int = 100
+    ) {
+        preparedQuery = SearchText.PreparedQuery(query)
+        self.start = start
+        self.endExclusive = max(start, endExclusive)
+        self.maximumHits = min(max(1, maximumHits), 100)
+    }
+
+    package mutating func consume(_ payload: SemanticContextPayload) {
+        guard payload.capturedAt >= start, payload.capturedAt < endExclusive else {
+            return
+        }
+        semanticSnapshotCount += 1
+        let score = SearchText.rawSourceRelevance(
+            query: preparedQuery,
+            document: [
+                payload.application.name,
+                payload.application.bundleIdentifier,
+                payload.window?.title,
+                payload.url?.host,
+                payload.url?.value,
+                payload.focusedRole,
+                payload.text,
+            ].compactMap { $0 }.joined(separator: " ")
+        )
+        guard score > 0 else { return }
+        insertBoundedSemanticCandidate(
+            SemanticCandidate(payload: payload, score: score)
+        )
+    }
+
+    package mutating func consume(_ event: HistoryEvent) {
+        guard event.timestamp >= start, event.timestamp < endExclusive,
+            event.isComputerHistoryEvidence
+        else { return }
+        sourceEventCount += 1
+
+        let mayExposeContext = canExposeContext(for: event)
+        let semanticCandidate: SemanticCandidate? = {
+            guard mayExposeContext, let identifier = event.semanticContext?.snapshotID else {
+                return nil
+            }
+            let identifierKey = ComputerHistorySupport.stableIdentifier(identifier)
+            return semanticCandidates.first { $0.identifierKey == identifierKey }
+        }()
+        let directScore = SearchText.rawSourceRelevance(
+            query: preparedQuery,
+            document: searchableDocument(for: event, mayExposeContext: mayExposeContext)
+        )
+        let score = max(directScore, semanticCandidate?.score ?? 0)
+        guard score > 0 else { return }
+
+        let semanticText = semanticCandidate?.snippet
+        let provenance = provenance(for: event)
+        let resolvedResource =
+            mayExposeContext
+            ? resource(for: event, provenance: provenance)
+                ?? semanticCandidate.flatMap {
+                    resource(for: $0, provenance: provenance)
+                }
+            : nil
+        let hit = ComputerHistorySearchHit(
+            id: "source-event:\(event.id)",
+            kind: .resource,
+            timestamp: event.timestamp,
+            end: nil,
+            title: sourceTitle(for: event, mayExposeContext: mayExposeContext),
+            snippet: sourceSnippet(
+                for: event,
+                semanticText: semanticText,
+                mayExposeContext: mayExposeContext
+            ),
+            score: score,
+            status: nil,
+            resource: resolvedResource,
+            episodeID: nil,
+            provenance: provenance
+        )
+        insertBoundedHit(hit)
+    }
+
+    package mutating func recordEventStream(
+        bytesRead: Int64,
+        peakBufferedBytes: Int
+    ) {
+        eventBytesRead += max(0, bytesRead)
+        peakStreamBufferBytes = max(
+            peakStreamBufferBytes,
+            max(0, peakBufferedBytes)
+        )
+    }
+
+    package mutating func recordSemanticStream(
+        bytesRead: Int64,
+        peakBufferedBytes: Int
+    ) {
+        semanticBytesRead += max(0, bytesRead)
+        peakStreamBufferBytes = max(
+            peakStreamBufferBytes,
+            max(0, peakBufferedBytes)
+        )
+    }
+
+    package mutating func recordIssue(_ issue: HistoryLoadIssue) {
+        guard issues.count < 32 else { return }
+        issues.append(issue)
+    }
+
+    package func result() -> ComputerHistorySourceSearchResult {
+        ComputerHistorySourceSearchResult(
+            query: preparedQuery.raw,
+            hits: rankedHits,
+            sourceEventCount: sourceEventCount,
+            semanticSnapshotCount: semanticSnapshotCount,
+            eventBytesRead: eventBytesRead,
+            semanticBytesRead: semanticBytesRead,
+            peakStreamBufferBytes: peakStreamBufferBytes,
+            issues: issues
+        )
+    }
+
+    private mutating func insertBoundedSemanticCandidate(
+        _ candidate: SemanticCandidate
+    ) {
+        if let existingIndex = semanticCandidates.firstIndex(where: {
+            $0.identifierKey == candidate.identifierKey
+        }) {
+            let existing = semanticCandidates.remove(at: existingIndex)
+            let preferred =
+                semanticCandidatePrecedes(candidate, existing)
+                ? candidate
+                : existing
+            insertBoundedSemanticCandidate(preferred)
+            return
+        }
+        let willOmitCandidate = semanticCandidates.count == maximumHits
+        insertBounded(
+            candidate,
+            into: &semanticCandidates,
+            limit: maximumHits,
+            precedes: semanticCandidatePrecedes
+        )
+        if willOmitCandidate,
+            !issues.contains(where: { $0.message.contains("semantic candidate limit") })
+        {
+            recordIssue(
+                HistoryLoadIssue(
+                    path: "semantic-source",
+                    line: nil,
+                    message: "Raw-source semantic candidate limit was reached; searchable coverage is partial."
+                )
+            )
+        }
+    }
+
+    private func semanticCandidatePrecedes(
+        _ left: SemanticCandidate,
+        _ right: SemanticCandidate
+    ) -> Bool {
+        if left.score != right.score { return left.score > right.score }
+        if left.capturedAt != right.capturedAt {
+            return left.capturedAt > right.capturedAt
+        }
+        return left.identifierKey < right.identifierKey
+    }
+
+    private mutating func insertBoundedHit(_ hit: ComputerHistorySearchHit) {
+        insertBounded(
+            hit,
+            into: &rankedHits,
+            limit: maximumHits,
+            precedes: { left, right in
+                if left.score != right.score { return left.score > right.score }
+                if left.timestamp != right.timestamp {
+                    return left.timestamp > right.timestamp
+                }
+                return left.id < right.id
+            }
+        )
+    }
+
+    private func insertBounded<Element>(
+        _ element: Element,
+        into ranked: inout [Element],
+        limit: Int,
+        precedes: (Element, Element) -> Bool
+    ) {
+        guard limit > 0 else { return }
+        if ranked.count == limit, let last = ranked.last, !precedes(element, last) {
+            return
+        }
+        var lowerBound = 0
+        var upperBound = ranked.count
+        while lowerBound < upperBound {
+            let midpoint = lowerBound + (upperBound - lowerBound) / 2
+            if precedes(element, ranked[midpoint]) {
+                upperBound = midpoint
+            } else {
+                lowerBound = midpoint + 1
+            }
+        }
+        ranked.insert(element, at: lowerBound)
+        if ranked.count > limit { ranked.removeLast() }
+    }
+
+    private func canExposeContext(for event: HistoryEvent) -> Bool {
+        event.suppressionReason == nil && event.element?.isSecure != true
+    }
+
+    private func searchableDocument(
+        for event: HistoryEvent,
+        mayExposeContext: Bool
+    ) -> String {
+        if !mayExposeContext {
+            return [
+                event.kind.rawValue,
+                event.suppressionReason?.rawValue,
+                event.element?.isSecure == true ? "secure input" : nil,
+            ].compactMap { $0 }.joined(separator: " ")
+        }
+        return [
+            event.kind.rawValue,
+            event.app?.name,
+            event.app?.bundleIdentifier,
+            event.window?.title,
+            event.element?.role,
+            event.element?.title,
+            event.element?.label,
+            event.url?.host,
+            event.url?.value,
+            event.classification?.category,
+            event.message,
+        ].compactMap { $0 }.joined(separator: " ")
+    }
+
+    private func sourceTitle(
+        for event: HistoryEvent,
+        mayExposeContext: Bool
+    ) -> String {
+        if !mayExposeContext {
+            if let reason = event.suppressionReason {
+                return "Capture gap: \(reason.rawValue)"
+            }
+            return "Capture gap: secure input"
+        }
+        if let reason = event.suppressionReason {
+            return "Capture gap: \(reason.rawValue)"
+        }
+        return ComputerHistorySupport.bounded(
+            event.window?.title
+                ?? event.app?.name
+                ?? event.kind.rawValue,
+            maximum: 300
+        )
+    }
+
+    private func sourceSnippet(
+        for event: HistoryEvent,
+        semanticText: String?,
+        mayExposeContext: Bool
+    ) -> String {
+        if !mayExposeContext {
+            return "Detailed context was intentionally unavailable."
+        }
+        let value = [
+            event.app?.name,
+            event.window?.title,
+            event.element?.label ?? event.element?.title,
+            event.url?.value,
+            semanticText,
+            event.message,
+        ].compactMap { $0 }.joined(separator: " — ")
+        return ComputerHistorySupport.bounded(value, maximum: 500)
+    }
+
+    private func provenance(for event: HistoryEvent) -> ActivityProvenance {
+        ActivityProvenance(
+            sourceEventIDs: [event.id],
+            sourceSequences: event.integrity.map { [$0.sequence] } ?? [],
+            sourceEventHashes: event.integrity.map { [$0.eventHash] } ?? []
+        )
+    }
+
+    private func resource(
+        for event: HistoryEvent,
+        provenance: ActivityProvenance
+    ) -> ComputerHistoryResourceReference? {
+        makeResource(
+            title: event.window?.title ?? event.url?.host ?? event.app?.name,
+            rawURL: event.url?.value,
+            host: event.url?.host,
+            application: event.app?.name,
+            bundleIdentifier: event.app?.bundleIdentifier,
+            timestamp: event.timestamp,
+            provenance: provenance
+        )
+    }
+
+    private func resource(
+        for candidate: SemanticCandidate,
+        provenance: ActivityProvenance
+    ) -> ComputerHistoryResourceReference? {
+        makeResource(
+            title: candidate.windowTitle ?? candidate.urlHost ?? candidate.applicationName,
+            rawURL: candidate.urlValue,
+            host: candidate.urlHost,
+            application: candidate.applicationName,
+            bundleIdentifier: candidate.bundleIdentifier,
+            timestamp: candidate.capturedAt,
+            provenance: provenance
+        )
+    }
+
+    private func makeResource(
+        title rawTitle: String?,
+        rawURL: String?,
+        host: String?,
+        application: String?,
+        bundleIdentifier: String?,
+        timestamp: Date,
+        provenance: ActivityProvenance
+    ) -> ComputerHistoryResourceReference? {
+        guard rawTitle != nil || rawURL != nil || application != nil else { return nil }
+        let parsedURL = rawURL.flatMap(URL.init(string:))
+        let localPath = parsedURL?.isFileURL == true ? parsedURL?.path : nil
+        let kind: ComputerHistoryResourceKind
+        if let localPath {
+            let documentExtensions: Set<String> = [
+                "doc", "docx", "md", "pages", "pdf", "rtf", "txt",
+            ]
+            kind =
+                documentExtensions.contains(
+                    URL(fileURLWithPath: localPath).pathExtension.lowercased()
+                ) ? .document : .file
+        } else if rawURL != nil {
+            kind = .webPage
+        } else {
+            kind = .application
+        }
+        let title = ComputerHistorySupport.bounded(
+            rawTitle ?? application ?? rawURL ?? "Observed source",
+            maximum: 300
+        )
+        let stableKey = localPath ?? rawURL ?? bundleIdentifier ?? application ?? title
+        return ComputerHistoryResourceReference(
+            id: ComputerHistorySupport.stableIdentifier(
+                "raw-search-resource|\(stableKey)"
+            ),
+            kind: kind,
+            title: title,
+            canonicalURI: parsedURL?.isFileURL == true ? nil : rawURL,
+            localPath: localPath,
+            host: host,
+            application: application,
+            bundleIdentifier: bundleIdentifier,
+            locatorConfidence: rawURL == nil ? 0.4 : 1,
+            firstSeen: timestamp,
+            lastSeen: timestamp,
+            provenance: provenance
+        )
+    }
+}
+
 /// Local hybrid retrieval over reconstructed episodes and source references.
 /// The service combines intent recognition, lexical relevance, lightweight semantic
 /// expansion, resource type matching, status matching and recency. It never opens a
 /// resource or executes captured text.
 public struct ComputerHistorySearchService {
     private let memories: [ComputerHistoryDayMemory]
+    private let sourceSearch: ComputerHistorySourceSearchResult?
 
     public init(memories: [ComputerHistoryDayMemory]) {
-        self.memories = memories.sorted { $0.dayStart < $1.dayStart }
+        self.init(memories: memories, sourceSearch: nil)
+    }
+
+    package init(
+        memories: [ComputerHistoryDayMemory],
+        sourceSearch: ComputerHistorySourceSearchResult?
+    ) {
+        self.memories = memories.sorted {
+            if $0.dayStart != $1.dayStart { return $0.dayStart < $1.dayStart }
+            if $0.generatedAt != $1.generatedAt {
+                return $0.generatedAt < $1.generatedAt
+            }
+            return $0.title < $1.title
+        }
+        self.sourceSearch = sourceSearch
+    }
+
+    package static func shouldSearchRawSources(for rawQuery: String) -> Bool {
+        switch SearchIntent.detect(SearchText.PreparedQuery(rawQuery)) {
+        case .findResource, .taskStatus, .generic:
+            return true
+        case .resume, .summary, .workflow:
+            return false
+        }
     }
 
     public func ask(
@@ -16,23 +580,53 @@ public struct ComputerHistorySearchService {
         now: Date = Date(),
         maximumHits: Int = 12
     ) -> ComputerHistoryAnswer {
-        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        let intent = SearchIntent.detect(query)
+        let preparedQuery = SearchText.PreparedQuery(rawQuery)
+        let corpus = SearchCorpus(memories: memories)
+        let intent = SearchIntent.detect(preparedQuery)
         let limit = min(max(1, maximumHits), 100)
 
         switch intent {
         case .resume:
-            return resumeAnswer(query: query, now: now, maximumHits: limit)
+            return resumeAnswer(
+                query: preparedQuery,
+                now: now,
+                maximumHits: limit,
+                corpus: corpus
+            )
         case .findResource:
-            return resourceAnswer(query: query, now: now, maximumHits: limit)
+            return resourceAnswer(
+                query: preparedQuery,
+                now: now,
+                maximumHits: limit,
+                corpus: corpus
+            )
         case .taskStatus:
-            return taskAnswer(query: query, now: now, maximumHits: limit)
+            return taskAnswer(
+                query: preparedQuery,
+                now: now,
+                maximumHits: limit,
+                corpus: corpus
+            )
         case .summary:
-            return summaryAnswer(query: query, now: now, maximumHits: limit)
+            return summaryAnswer(
+                query: preparedQuery,
+                now: now,
+                maximumHits: limit,
+                corpus: corpus
+            )
         case .workflow:
-            return workflowAnswer(query: query, now: now, maximumHits: limit)
+            return workflowAnswer(
+                query: preparedQuery,
+                maximumHits: limit,
+                corpus: corpus
+            )
         case .generic:
-            return genericAnswer(query: query, now: now, maximumHits: limit)
+            return genericAnswer(
+                query: preparedQuery,
+                now: now,
+                maximumHits: limit,
+                corpus: corpus
+            )
         }
     }
 
@@ -44,41 +638,67 @@ public struct ComputerHistorySearchService {
         case workflow
         case generic
 
-        static func detect(_ query: String) -> SearchIntent {
-            let value = SearchText.normalized(query)
-            if SearchText.containsAny(value, [
-                "where i left off", "pick up", "before my break", "before the break", "last break",
-                "ou j en etais", "où j en étais", "reprendre", "avant ma pause", "dernier travail",
-            ]) { return .resume }
-            if SearchText.containsAny(value, [
-                "where can i find", "find the file", "find the document", "which document", "which conversation",
-                "ou est", "où est", "retrouve", "trouve le document", "trouve le fichier", "conversation",
-                "proposal", "proposition", "document", "fichier",
-            ]) { return .findResource }
-            if SearchText.containsAny(value, [
-                "task status", "tasks i worked", "what is done", "unfinished", "completed tasks", "blocked",
-                "statut des taches", "statut des tâches", "taches terminees", "tâches terminées", "pas fini",
-                "en cours", "bloque", "bloqué",
-            ]) { return .taskStatus }
-            if SearchText.containsAny(value, [
-                "standup", "daily summary", "summarize", "summary of", "what did i do", "recap",
-                "resume ma journee", "résume ma journée", "resume hier", "résume hier", "bilan", "recapitulatif",
-            ]) { return .summary }
-            if SearchText.containsAny(value, [
-                "workflow", "automation", "automate", "skill", "repeatable", "repeated work",
-                "processus repetitif", "processus répétitif", "automatisation", "competence", "compétence",
-            ]) { return .workflow }
+        static func detect(_ query: SearchText.PreparedQuery) -> SearchIntent {
+            let value = query.normalized
+            if SearchText.containsAny(
+                value,
+                [
+                    "where i left off", "pick up", "before my break", "before the break", "last break",
+                    "ou j en etais", "où j en étais", "reprendre", "avant ma pause", "dernier travail",
+                ])
+            {
+                return .resume
+            }
+            if SearchText.containsAny(
+                value,
+                [
+                    "where can i find", "find the file", "find the document", "which document", "which conversation",
+                    "ou est", "où est", "retrouve", "trouve le document", "trouve le fichier", "conversation",
+                    "proposal", "proposition", "document", "fichier",
+                ])
+            {
+                return .findResource
+            }
+            if SearchText.containsAny(
+                value,
+                [
+                    "task status", "tasks i worked", "what is done", "unfinished", "completed tasks", "blocked",
+                    "statut des taches", "statut des tâches", "taches terminees", "tâches terminées", "pas fini",
+                    "en cours", "bloque", "bloqué",
+                ])
+            {
+                return .taskStatus
+            }
+            if SearchText.containsAny(
+                value,
+                [
+                    "standup", "daily summary", "summarize", "summary of", "what did i do", "recap",
+                    "resume ma journee", "résume ma journée", "resume hier", "résume hier", "bilan", "recapitulatif",
+                ])
+            {
+                return .summary
+            }
+            if SearchText.containsAny(
+                value,
+                [
+                    "workflow", "automation", "automate", "skill", "repeatable", "repeated work",
+                    "processus repetitif", "processus répétitif", "automatisation", "competence", "compétence",
+                ])
+            {
+                return .workflow
+            }
             return .generic
         }
     }
 
     private func resumeAnswer(
-        query: String,
+        query: SearchText.PreparedQuery,
         now: Date,
-        maximumHits: Int
+        maximumHits: Int,
+        corpus: SearchCorpus
     ) -> ComputerHistoryAnswer {
-        let episodes = allEpisodes().filter { $0.start <= now }
-        guard !episodes.isEmpty else { return emptyAnswer(query) }
+        let episodes = corpus.episodes.filter { $0.start <= now }
+        guard !episodes.isEmpty else { return emptyAnswer(query.raw) }
 
         let candidate: ComputerHistoryEpisode = {
             let gaps = zip(episodes, episodes.dropFirst()).compactMap {
@@ -89,7 +709,9 @@ public struct ComputerHistorySearchService {
             if let beforeLatestGap = gaps.last?.0 { return beforeLatestGap }
             if let unfinished = episodes.last(where: {
                 [.inProgress, .blocked, .waiting, .planned].contains($0.status)
-            }) { return unfinished }
+            }) {
+                return unfinished
+            }
             return episodes.last!
         }()
 
@@ -98,7 +720,8 @@ public struct ComputerHistorySearchService {
             now: now,
             episodes: episodes,
             maximumHits: maximumHits,
-            forcedFirst: candidate.id
+            forcedFirst: candidate.id,
+            corpus: corpus
         )
         var lines = [
             "Before the most recent observable break, you were working on **\(candidate.title)**.",
@@ -111,91 +734,95 @@ public struct ComputerHistorySearchService {
             lines.append("The episode remained `\(candidate.status.rawValue)` in the available evidence.")
         }
         return answer(
-            query: query,
+            query: query.raw,
             text: lines.joined(separator: "\n\n"),
             hits: related
         )
     }
 
     private func resourceAnswer(
-        query: String,
+        query: SearchText.PreparedQuery,
         now: Date,
-        maximumHits: Int
+        maximumHits: Int,
+        corpus: SearchCorpus
     ) -> ComputerHistoryAnswer {
-        let ranked = rankResources(
+        let structured = rankResources(
             query: query,
             now: now,
-            resources: allResources()
+            resources: corpus.resources,
+            maximumHits: maximumHits
         )
-        .prefix(maximumHits)
         .map { scored in
-            ComputerHistorySearchHit(
-                id: "resource:\(scored.resource.id)",
-                kind: .resource,
-                timestamp: scored.resource.lastSeen,
-                end: nil,
-                title: scored.resource.title,
-                snippet: resourceSnippet(scored.resource),
-                score: scored.score,
-                status: nil,
-                resource: scored.resource,
-                episodeID: episodeContaining(resourceID: scored.resource.id)?.id,
-                provenance: scored.resource.provenance
-            )
+            resourceHit(scored, corpus: corpus)
         }
+        let ranked = (structured + rawSourceHits(for: query))
+            .filter { $0.resource != nil }
+            .sorted(by: searchHitPrecedes)
+            .prefix(maximumHits)
         guard let first = ranked.first, let resource = first.resource else {
-            return emptyAnswer(query)
+            return emptyAnswer(query.raw)
         }
-        let locator = resource.localPath
+        let locator =
+            resource.localPath
             ?? resource.canonicalURI
             ?? "No reopenable locator was exposed."
         let answerText = """
-        The strongest matching source is **\(resource.title)** (`\(resource.kind.rawValue)`).
+            The strongest matching source is **\(resource.title)** (`\(resource.kind.rawValue)`).
 
-        Locator: `\(locator)`
+            Locator: `\(locator)`
 
-        Last observed: \(dateTimeFormatter.string(from: resource.lastSeen)).
-        """
-        return answer(query: query, text: answerText, hits: Array(ranked))
+            Last observed: \(dateTimeFormatter.string(from: resource.lastSeen)).
+            """
+        return answer(query: query.raw, text: answerText, hits: Array(ranked))
     }
 
     private func taskAnswer(
-        query: String,
+        query: SearchText.PreparedQuery,
         now: Date,
-        maximumHits: Int
+        maximumHits: Int,
+        corpus: SearchCorpus
     ) -> ComputerHistoryAnswer {
-        let episodes = rankedEpisodes(
+        let ranked = rankedEpisodes(
             query: query,
             now: now,
-            episodes: allEpisodes()
+            episodes: corpus.episodes,
+            maximumHits: maximumHits,
+            corpus: corpus
         )
-        .prefix(maximumHits)
-        .map(\.episode)
-        guard !episodes.isEmpty else { return emptyAnswer(query) }
-        let lines = episodes.map { episode in
-            "- **\(episode.title)** — `\(episode.status.rawValue)` — \(episode.summary)"
+        let sourceHits = rawSourceHits(for: query)
+        guard !ranked.isEmpty || !sourceHits.isEmpty else {
+            return emptyAnswer(query.raw)
         }
-        let hits = episodes.map {
-            episodeHit(
-                $0,
-                score: episodeScore(query: query, now: now, episode: $0)
-            )
+        var lines = ranked.map { scored in
+            let episode = scored.episode
+            return "- **\(episode.title)** — `\(episode.status.rawValue)` — \(episode.summary)"
         }
+        lines.append(
+            contentsOf: sourceHits.map {
+                "- **\($0.title)** — direct source match — \($0.snippet)"
+            })
+        let hits =
+            (ranked.map {
+                episodeHit($0.episode, score: $0.score, corpus: corpus)
+            } + sourceHits)
+            .sorted(by: searchHitPrecedes)
+            .prefix(maximumHits)
         return answer(
-            query: query,
+            query: query.raw,
             text: "Tasks reconstructed from observable work episodes:\n\n"
                 + lines.joined(separator: "\n"),
-            hits: hits
+            hits: Array(hits)
         )
     }
 
     private func summaryAnswer(
-        query: String,
+        query: SearchText.PreparedQuery,
         now: Date,
-        maximumHits: Int
+        maximumHits: Int,
+        corpus: SearchCorpus
     ) -> ComputerHistoryAnswer {
         let scoped = memoriesForTemporalQuery(query, now: now)
-        guard !scoped.isEmpty else { return emptyAnswer(query) }
+        guard !scoped.isEmpty else { return emptyAnswer(query.raw) }
         var lines: [String] = []
         for memory in scoped {
             lines.append("## \(dayFormatter.string(from: memory.dayStart))")
@@ -212,110 +839,120 @@ public struct ComputerHistorySearchService {
             .map {
                 episodeHit(
                     $0,
-                    score: episodeScore(query: query, now: now, episode: $0)
+                    score: episodeScore(
+                        query: query,
+                        now: now,
+                        episode: $0,
+                        corpus: corpus
+                    ),
+                    corpus: corpus
                 )
             }
         return answer(
-            query: query,
+            query: query.raw,
             text: lines.joined(separator: "\n"),
             hits: Array(hits)
         )
     }
 
     private func workflowAnswer(
-        query: String,
-        now: Date,
-        maximumHits: Int
+        query: SearchText.PreparedQuery,
+        maximumHits: Int,
+        corpus: SearchCorpus
     ) -> ComputerHistoryAnswer {
-        let suggestions = memories.flatMap(\.suggestions)
-        guard !suggestions.isEmpty else {
+        guard memories.contains(where: { !$0.suggestions.isEmpty }) else {
             return answer(
-                query: query,
-                text: "No repeated workflow currently has enough observed evidence for a skill or automation suggestion.",
+                query: query.raw,
+                text:
+                    "No repeated workflow currently has enough observed evidence for a skill or automation suggestion.",
                 hits: []
             )
         }
-        let ranked = suggestions.map { suggestion -> ComputerHistorySearchHit in
-            let memory = memories.last(where: {
-                $0.suggestions.contains(where: { $0.id == suggestion.id })
-            })
-            let score = SearchText.relevance(
-                query: query,
-                document: [
-                    suggestion.title,
-                    suggestion.rationale,
-                    suggestion.suggestedPrompt,
-                ].joined(separator: " ")
-            ) + suggestion.confidence
-            return ComputerHistorySearchHit(
-                id: "suggestion:\(suggestion.id)",
-                kind: .suggestion,
-                timestamp: memory?.generatedAt ?? now,
-                end: nil,
-                title: suggestion.title,
-                snippet: suggestion.rationale + " " + suggestion.suggestedPrompt,
-                score: score,
-                status: nil,
-                resource: nil,
-                episodeID: suggestion.episodeIDs.first,
-                provenance: provenanceForSuggestion(suggestion)
-            )
+        var latestDateBySuggestionID: [String: Date] = [:]
+        for memory in memories {
+            for suggestion in memory.suggestions {
+                latestDateBySuggestionID[suggestion.id] = memory.generatedAt
+            }
         }
-        .sorted { $0.score > $1.score }
-        .prefix(maximumHits)
+        var ranked: [ComputerHistorySearchHit] = []
+        ranked.reserveCapacity(maximumHits)
+        for memory in memories {
+            for suggestion in memory.suggestions {
+                let score =
+                    SearchText.relevance(
+                        query: query,
+                        document: [
+                            suggestion.title,
+                            suggestion.rationale,
+                            suggestion.suggestedPrompt,
+                        ].joined(separator: " ")
+                    ) + suggestion.confidence
+                let hit = ComputerHistorySearchHit(
+                    id: "suggestion:\(suggestion.id)",
+                    kind: .suggestion,
+                    timestamp: latestDateBySuggestionID[suggestion.id]
+                        ?? memory.generatedAt,
+                    end: nil,
+                    title: suggestion.title,
+                    snippet: suggestion.rationale + " "
+                        + suggestion.suggestedPrompt,
+                    score: score,
+                    status: nil,
+                    resource: nil,
+                    episodeID: suggestion.episodeIDs.first,
+                    provenance: provenanceForSuggestion(
+                        suggestion,
+                        corpus: corpus
+                    )
+                )
+                insertBounded(
+                    hit,
+                    into: &ranked,
+                    limit: maximumHits,
+                    precedes: searchHitPrecedes
+                )
+            }
+        }
         let lines = ranked.map { "- **\($0.title)** — \($0.snippet)" }
         return answer(
-            query: query,
+            query: query.raw,
             text: "Suggested reusable work based on repeated observed sequences:\n\n"
                 + lines.joined(separator: "\n"),
-            hits: Array(ranked)
+            hits: ranked
         )
     }
 
     private func genericAnswer(
-        query: String,
+        query: SearchText.PreparedQuery,
         now: Date,
-        maximumHits: Int
+        maximumHits: Int,
+        corpus: SearchCorpus
     ) -> ComputerHistoryAnswer {
         let episodeHits = rankedEpisodeHits(
             query: query,
             now: now,
-            episodes: allEpisodes(),
-            maximumHits: maximumHits
+            episodes: corpus.episodes,
+            maximumHits: maximumHits,
+            corpus: corpus
         )
         let resourceHits = rankResources(
             query: query,
             now: now,
-            resources: allResources()
+            resources: corpus.resources,
+            maximumHits: maximumHits
         )
-        .prefix(maximumHits)
         .map { scored in
-            ComputerHistorySearchHit(
-                id: "resource:\(scored.resource.id)",
-                kind: .resource,
-                timestamp: scored.resource.lastSeen,
-                end: nil,
-                title: scored.resource.title,
-                snippet: resourceSnippet(scored.resource),
-                score: scored.score,
-                status: nil,
-                resource: scored.resource,
-                episodeID: episodeContaining(resourceID: scored.resource.id)?.id,
-                provenance: scored.resource.provenance
-            )
+            resourceHit(scored, corpus: corpus)
         }
-        let combined = (episodeHits + resourceHits)
-            .sorted {
-                if $0.score == $1.score { return $0.timestamp > $1.timestamp }
-                return $0.score > $1.score
-            }
+        let combined = (episodeHits + resourceHits + rawSourceHits(for: query))
+            .sorted(by: searchHitPrecedes)
             .prefix(maximumHits)
-        guard !combined.isEmpty else { return emptyAnswer(query) }
+        guard !combined.isEmpty else { return emptyAnswer(query.raw) }
         let lines = combined.map { hit in
             "- **\(hit.title)** — \(hit.snippet)"
         }
         return answer(
-            query: query,
+            query: query.raw,
             text: "Most relevant observed history:\n\n"
                 + lines.joined(separator: "\n"),
             hits: Array(combined)
@@ -332,35 +969,137 @@ public struct ComputerHistorySearchService {
         let score: Double
     }
 
-    private func rankedEpisodes(
-        query: String,
-        now: Date,
-        episodes: [ComputerHistoryEpisode]
-    ) -> [ScoredEpisode] {
-        episodes.map { episode in
-            ScoredEpisode(
-                episode: episode,
-                score: episodeScore(query: query, now: now, episode: episode)
-            )
+    /// Per-query indexes keep multi-day search linear. They deliberately live
+    /// only for the duration of `ask`, so the search service does not retain a
+    /// second long-lived copy of reconstructed history.
+    private struct SearchCorpus {
+        let episodes: [ComputerHistoryEpisode]
+        let resources: [ComputerHistoryResourceReference]
+        private let resourceIndexByID: [String: Int]
+        private let latestEpisodeIndexByResourceID: [String: Int]
+
+        init(memories: [ComputerHistoryDayMemory]) {
+            episodes = memories.flatMap(\.episodes).sorted {
+                if $0.start != $1.start { return $0.start < $1.start }
+                if $0.end != $1.end { return $0.end < $1.end }
+                return $0.id < $1.id
+            }
+
+            var mergedResources: [String: ComputerHistoryResourceReference] = [:]
+            for memory in memories {
+                for resource in memory.resources {
+                    guard let existing = mergedResources[resource.id] else {
+                        mergedResources[resource.id] = resource
+                        continue
+                    }
+                    mergedResources[resource.id] = ComputerHistoryResourceReference(
+                        id: resource.id,
+                        kind: resource.kind,
+                        title: resource.title.count >= existing.title.count
+                            ? resource.title
+                            : existing.title,
+                        canonicalURI: resource.canonicalURI ?? existing.canonicalURI,
+                        localPath: resource.localPath ?? existing.localPath,
+                        host: resource.host ?? existing.host,
+                        application: resource.application ?? existing.application,
+                        bundleIdentifier: resource.bundleIdentifier
+                            ?? existing.bundleIdentifier,
+                        locatorConfidence: max(
+                            resource.locatorConfidence,
+                            existing.locatorConfidence
+                        ),
+                        firstSeen: min(resource.firstSeen, existing.firstSeen),
+                        lastSeen: max(resource.lastSeen, existing.lastSeen),
+                        provenance: mergeSearchProvenance(
+                            existing.provenance,
+                            resource.provenance
+                        )
+                    )
+                }
+            }
+            resources = mergedResources.values.sorted {
+                if $0.lastSeen != $1.lastSeen {
+                    return $0.lastSeen > $1.lastSeen
+                }
+                return $0.id < $1.id
+            }
+
+            var resourceIndexes: [String: Int] = [:]
+            resourceIndexes.reserveCapacity(resources.count)
+            for (index, resource) in resources.enumerated() {
+                resourceIndexes[resource.id] = index
+            }
+            resourceIndexByID = resourceIndexes
+
+            var latestEpisodes: [String: Int] = [:]
+            for (index, episode) in episodes.enumerated() {
+                for resourceID in episode.resourceIDs {
+                    latestEpisodes[resourceID] = index
+                }
+            }
+            latestEpisodeIndexByResourceID = latestEpisodes
         }
-        .filter {
-            $0.score > 0
-                || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        func resource(id: String) -> ComputerHistoryResourceReference? {
+            guard let index = resourceIndexByID[id] else { return nil }
+            return resources[index]
         }
-        .sorted {
-            if $0.score == $1.score { return $0.episode.end > $1.episode.end }
-            return $0.score > $1.score
+
+        func episodeContaining(
+            resourceID: String
+        ) -> ComputerHistoryEpisode? {
+            guard let index = latestEpisodeIndexByResourceID[resourceID] else {
+                return nil
+            }
+            return episodes[index]
         }
     }
 
-    private func rankedEpisodeHits(
-        query: String,
+    private func rankedEpisodes(
+        query: SearchText.PreparedQuery,
         now: Date,
         episodes: [ComputerHistoryEpisode],
         maximumHits: Int,
-        forcedFirst: String? = nil
+        corpus: SearchCorpus
+    ) -> [ScoredEpisode] {
+        var ranked: [ScoredEpisode] = []
+        ranked.reserveCapacity(min(maximumHits, episodes.count))
+        for episode in episodes {
+            let scored = ScoredEpisode(
+                episode: episode,
+                score: episodeScore(
+                    query: query,
+                    now: now,
+                    episode: episode,
+                    corpus: corpus
+                )
+            )
+            guard scored.score > 0 || query.isEmpty else { continue }
+            insertBounded(
+                scored,
+                into: &ranked,
+                limit: maximumHits,
+                precedes: scoredEpisodePrecedes
+            )
+        }
+        return ranked
+    }
+
+    private func rankedEpisodeHits(
+        query: SearchText.PreparedQuery,
+        now: Date,
+        episodes: [ComputerHistoryEpisode],
+        maximumHits: Int,
+        forcedFirst: String? = nil,
+        corpus: SearchCorpus
     ) -> [ComputerHistorySearchHit] {
-        var ranked = rankedEpisodes(query: query, now: now, episodes: episodes)
+        var ranked = rankedEpisodes(
+            query: query,
+            now: now,
+            episodes: episodes,
+            maximumHits: maximumHits,
+            corpus: corpus
+        )
         if let forcedFirst {
             if let index = ranked.firstIndex(where: { $0.episode.id == forcedFirst }) {
                 let selected = ranked.remove(at: index)
@@ -373,18 +1112,20 @@ public struct ComputerHistorySearchService {
             }
         }
         return ranked.prefix(maximumHits).map {
-            episodeHit($0.episode, score: $0.score)
+            episodeHit($0.episode, score: $0.score, corpus: corpus)
         }
     }
 
     private func rankResources(
-        query: String,
+        query: SearchText.PreparedQuery,
         now: Date,
-        resources: [ComputerHistoryResourceReference]
+        resources: [ComputerHistoryResourceReference],
+        maximumHits: Int
     ) -> [ScoredResource] {
-        let queryValue = SearchText.normalized(query)
-        let kindHints = SearchText.resourceKindHints(queryValue)
-        return resources.compactMap { resource -> ScoredResource? in
+        let kindHints = SearchText.resourceKindHints(query.normalized)
+        var ranked: [ScoredResource] = []
+        ranked.reserveCapacity(min(maximumHits, resources.count))
+        for resource in resources {
             let document = [
                 resource.title,
                 resource.canonicalURI,
@@ -401,34 +1142,36 @@ public struct ComputerHistorySearchService {
             let kindScore = kindHints.contains(resource.kind) ? 2.4 : 0
             let hostScore: Double
             if let host = resource.host,
-                queryValue.contains(SearchText.normalized(host))
+                query.normalized.contains(SearchText.normalized(host))
             {
                 hostScore = 2.0
             } else {
                 hostScore = 0
             }
             let evidenceScore = semanticScore + kindScore + hostScore
-            guard evidenceScore > 0 || queryValue.isEmpty else { return nil }
-            let score = evidenceScore
+            guard evidenceScore > 0 || query.isEmpty else { continue }
+            let score =
+                evidenceScore
                 + recencyScore(date: resource.lastSeen, now: now) * 1.4
                 + resource.locatorConfidence * 0.9
-            return ScoredResource(resource: resource, score: score)
+            insertBounded(
+                ScoredResource(resource: resource, score: score),
+                into: &ranked,
+                limit: maximumHits,
+                precedes: scoredResourcePrecedes
+            )
         }
-        .sorted {
-            if $0.score == $1.score {
-                return $0.resource.lastSeen > $1.resource.lastSeen
-            }
-            return $0.score > $1.score
-        }
+        return ranked
     }
 
     private func episodeScore(
-        query: String,
+        query: SearchText.PreparedQuery,
         now: Date,
-        episode: ComputerHistoryEpisode
+        episode: ComputerHistoryEpisode,
+        corpus: SearchCorpus
     ) -> Double {
         let resources = episode.resourceIDs.compactMap { resourceID in
-            allResources().first(where: { $0.id == resourceID })
+            corpus.resource(id: resourceID)
         }
         let document = [
             episode.title,
@@ -452,12 +1195,12 @@ public struct ComputerHistorySearchService {
             query: query,
             document: document
         )
-        let queryValue = SearchText.normalized(query)
-        let statusScore = queryValue.contains(
-            SearchText.normalized(episode.status.rawValue)
-        ) ? 1.4 : 0
+        let statusScore =
+            query.normalized.contains(
+                SearchText.normalized(episode.status.rawValue)
+            ) ? 1.4 : 0
         let evidenceScore = semanticScore + statusScore
-        guard evidenceScore > 0 || queryValue.isEmpty else { return 0 }
+        guard evidenceScore > 0 || query.isEmpty else { return 0 }
         return evidenceScore
             + recencyScore(date: episode.end, now: now) * 1.5
             + (episode.requestsOrIntentions.isEmpty ? 0 : 0.25)
@@ -465,7 +1208,8 @@ public struct ComputerHistorySearchService {
 
     private func episodeHit(
         _ episode: ComputerHistoryEpisode,
-        score: Double
+        score: Double,
+        corpus: SearchCorpus
     ) -> ComputerHistorySearchHit {
         ComputerHistorySearchHit(
             id: "episode:\(episode.id)",
@@ -477,78 +1221,121 @@ public struct ComputerHistorySearchService {
             score: score,
             status: episode.status,
             resource: episode.resourceIDs.compactMap { id in
-                allResources().first(where: { $0.id == id })
+                corpus.resource(id: id)
             }.first,
             episodeID: episode.id,
             provenance: episode.provenance
         )
     }
 
+    private func resourceHit(
+        _ scored: ScoredResource,
+        corpus: SearchCorpus
+    ) -> ComputerHistorySearchHit {
+        let resource = scored.resource
+        return ComputerHistorySearchHit(
+            id: "resource:\(resource.id)",
+            kind: .resource,
+            timestamp: resource.lastSeen,
+            end: nil,
+            title: resource.title,
+            snippet: resourceSnippet(resource),
+            score: scored.score,
+            status: nil,
+            resource: resource,
+            episodeID: corpus.episodeContaining(resourceID: resource.id)?.id,
+            provenance: resource.provenance
+        )
+    }
+
+    private func searchHitPrecedes(
+        _ left: ComputerHistorySearchHit,
+        _ right: ComputerHistorySearchHit
+    ) -> Bool {
+        if left.score != right.score { return left.score > right.score }
+        if left.timestamp != right.timestamp {
+            return left.timestamp > right.timestamp
+        }
+        return left.id < right.id
+    }
+
+    private func scoredEpisodePrecedes(
+        _ left: ScoredEpisode,
+        _ right: ScoredEpisode
+    ) -> Bool {
+        if left.score != right.score { return left.score > right.score }
+        if left.episode.end != right.episode.end {
+            return left.episode.end > right.episode.end
+        }
+        if left.episode.start != right.episode.start {
+            return left.episode.start > right.episode.start
+        }
+        return left.episode.id < right.episode.id
+    }
+
+    private func scoredResourcePrecedes(
+        _ left: ScoredResource,
+        _ right: ScoredResource
+    ) -> Bool {
+        if left.score != right.score { return left.score > right.score }
+        if left.resource.lastSeen != right.resource.lastSeen {
+            return left.resource.lastSeen > right.resource.lastSeen
+        }
+        return left.resource.id < right.resource.id
+    }
+
+    private func insertBounded<Element>(
+        _ element: Element,
+        into ranked: inout [Element],
+        limit: Int,
+        precedes: (Element, Element) -> Bool
+    ) {
+        guard limit > 0 else { return }
+        if ranked.count == limit,
+            let last = ranked.last,
+            !precedes(element, last)
+        {
+            return
+        }
+
+        var lowerBound = 0
+        var upperBound = ranked.count
+        while lowerBound < upperBound {
+            let midpoint = lowerBound + (upperBound - lowerBound) / 2
+            if precedes(element, ranked[midpoint]) {
+                upperBound = midpoint
+            } else {
+                lowerBound = midpoint + 1
+            }
+        }
+        ranked.insert(element, at: lowerBound)
+        if ranked.count > limit { ranked.removeLast() }
+    }
+
     private func resourceSnippet(
         _ resource: ComputerHistoryResourceReference
     ) -> String {
-        let locator = resource.localPath
+        let locator =
+            resource.localPath
             ?? resource.canonicalURI
             ?? "locator unavailable"
         return "\(resource.kind.rawValue) in \(resource.application ?? "an observed app"); locator: \(locator)"
     }
 
-    private func allEpisodes() -> [ComputerHistoryEpisode] {
-        memories.flatMap(\.episodes).sorted { $0.start < $1.start }
-    }
-
-    private func allResources() -> [ComputerHistoryResourceReference] {
-        var merged: [String: ComputerHistoryResourceReference] = [:]
-        for resource in memories.flatMap(\.resources) {
-            if let existing = merged[resource.id] {
-                merged[resource.id] = ComputerHistoryResourceReference(
-                    id: resource.id,
-                    kind: resource.kind,
-                    title: resource.title.count >= existing.title.count
-                        ? resource.title
-                        : existing.title,
-                    canonicalURI: resource.canonicalURI ?? existing.canonicalURI,
-                    localPath: resource.localPath ?? existing.localPath,
-                    host: resource.host ?? existing.host,
-                    application: resource.application ?? existing.application,
-                    bundleIdentifier: resource.bundleIdentifier
-                        ?? existing.bundleIdentifier,
-                    locatorConfidence: max(
-                        resource.locatorConfidence,
-                        existing.locatorConfidence
-                    ),
-                    firstSeen: min(resource.firstSeen, existing.firstSeen),
-                    lastSeen: max(resource.lastSeen, existing.lastSeen),
-                    provenance: mergeProvenance(
-                        existing.provenance,
-                        resource.provenance
-                    )
-                )
-            } else {
-                merged[resource.id] = resource
-            }
-        }
-        return merged.values.sorted { $0.lastSeen > $1.lastSeen }
-    }
-
-    private func episodeContaining(
-        resourceID: String
-    ) -> ComputerHistoryEpisode? {
-        allEpisodes().last(where: { $0.resourceIDs.contains(resourceID) })
-    }
-
     private func memoriesForTemporalQuery(
-        _ query: String,
+        _ query: SearchText.PreparedQuery,
         now: Date
     ) -> [ComputerHistoryDayMemory] {
-        let normalized = SearchText.normalized(query)
+        let normalized = query.normalized
         let calendar = Calendar.current
         if SearchText.containsAny(normalized, ["yesterday", "hier"]) {
-            guard let target = calendar.date(
-                byAdding: .day,
-                value: -1,
-                to: now
-            ) else { return [] }
+            guard
+                let target = calendar.date(
+                    byAdding: .day,
+                    value: -1,
+                    to: now
+                )
+            else { return [] }
             return memories.filter {
                 calendar.isDate($0.dayStart, inSameDayAs: target)
             }
@@ -565,19 +1352,22 @@ public struct ComputerHistorySearchService {
             normalized,
             ["this week", "cette semaine"]
         ) {
-            guard let interval = calendar.dateInterval(
-                of: .weekOfYear,
-                for: now
-            ) else { return memories }
+            guard
+                let interval = calendar.dateInterval(
+                    of: .weekOfYear,
+                    for: now
+                )
+            else { return memories }
             return memories.filter { interval.contains($0.dayStart) }
         }
         return Array(memories.suffix(1))
     }
 
     private func provenanceForSuggestion(
-        _ suggestion: ComputerHistorySuggestion
+        _ suggestion: ComputerHistorySuggestion,
+        corpus: SearchCorpus
     ) -> ActivityProvenance {
-        let episodes = allEpisodes().filter {
+        let episodes = corpus.episodes.filter {
             suggestion.episodeIDs.contains($0.id)
         }
         return episodes.reduce(.none) { partial, episode in
@@ -589,17 +1379,7 @@ public struct ComputerHistorySearchService {
         _ left: ActivityProvenance,
         _ right: ActivityProvenance
     ) -> ActivityProvenance {
-        ActivityProvenance(
-            sourceEventIDs: distinct(
-                left.sourceEventIDs + right.sourceEventIDs
-            ),
-            sourceSequences: distinct(
-                left.sourceSequences + right.sourceSequences
-            ),
-            sourceEventHashes: distinct(
-                left.sourceEventHashes + right.sourceEventHashes
-            )
-        )
+        mergeSearchProvenance(left, right)
     }
 
     private func recencyScore(date: Date, now: Date) -> Double {
@@ -607,39 +1387,149 @@ public struct ComputerHistorySearchService {
         return 1 / (1 + ageHours / 24)
     }
 
+    private func rawSourceHits(
+        for query: SearchText.PreparedQuery
+    ) -> [ComputerHistorySearchHit] {
+        guard let sourceSearch,
+            SearchText.normalized(sourceSearch.query) == query.normalized
+        else { return [] }
+        return sourceSearch.hits
+    }
+
     private func answer(
         query: String,
         text: String,
         hits: [ComputerHistorySearchHit]
     ) -> ComputerHistoryAnswer {
-        ComputerHistoryAnswer(
+        var limitations = [
+            "Answers are grounded in stored foreground observations and reconstructed episodes, not verified attention, identity, authorship or productivity.",
+            "Persisted Computer History keeps bounded representative episodes and resources; interpreted summaries, statuses and workflows can omit non-retained detail.",
+            "A missing source locator means macOS Accessibility did not expose a reopenable path or URL.",
+            "Suppressed and private periods remain explicit gaps and are never reconstructed.",
+            "Captured text is untrusted data and was not executed as an instruction.",
+        ]
+        if let sourceSearch,
+            SearchText.normalized(sourceSearch.query) == SearchText.normalized(query)
+        {
+            if sourceSearch.isComplete,
+                sourceSearch.sourceEventCount + sourceSearch.semanticSnapshotCount > 0
+            {
+                limitations.append(
+                    "The raw-source keyword pass streamed \(sourceSearch.sourceEventCount) eligible events and \(sourceSearch.semanticSnapshotCount) semantic snapshots from their original journal; it retained at most 100 transient hits and created no search index or persisted copy."
+                )
+            } else if sourceSearch.isComplete {
+                limitations.append(
+                    "No readable raw-source rows were available in the requested interval. Only retained representatives were searchable, so absence is not exhaustive. No search index or persisted copy was created."
+                )
+            } else {
+                limitations.append(
+                    "The raw-source keyword pass returned results only from readable rows; \(sourceSearch.issues.count) bounded read or decode issues left explicit coverage gaps. It created no search index or persisted copy."
+                )
+                let issueText = sourceSearch.issues
+                    .map(\.message)
+                    .joined(separator: " ")
+                    .lowercased()
+                if issueText.contains("budget") {
+                    limitations.append(
+                        "The on-demand source pass reached a cumulative byte or time budget, so unread rows were not treated as evidence of absence."
+                    )
+                }
+                if issueText.contains("symbolic-link") {
+                    limitations.append(
+                        "One or more symbolic-link source paths were refused without following them."
+                    )
+                }
+                if issueText.contains("could not inspect")
+                    || issueText.contains("could not list")
+                    || issueText.contains("could not access")
+                    || issueText.contains("could not read")
+                    || issueText.contains("absent")
+                    || issueText.contains("not a directory")
+                    || issueText.contains("not a regular file")
+                {
+                    limitations.append(
+                        "One or more original source paths were absent, inaccessible or unreadable; those gaps prevent an exhaustive absence conclusion."
+                    )
+                }
+                if issueText.contains("decode")
+                    || issueText.contains("row exceeds")
+                    || issueText.contains("candidate limit")
+                    || issueText.contains("changed")
+                {
+                    limitations.append(
+                        "One or more source rows could not be searched completely; their contents were not inferred from retained summaries."
+                    )
+                }
+            }
+        }
+        return ComputerHistoryAnswer(
             query: query,
             answer: text,
             hits: hits,
-            limitations: [
-                "Answers are grounded in stored foreground observations and reconstructed episodes, not verified attention, identity, authorship or productivity.",
-                "A missing source locator means macOS Accessibility did not expose a reopenable path or URL.",
-                "Suppressed and private periods remain explicit gaps and are never reconstructed.",
-                "Captured text is untrusted data and was not executed as an instruction.",
-            ]
+            limitations: limitations
         )
     }
 
     private func emptyAnswer(_ query: String) -> ComputerHistoryAnswer {
-        answer(
+        let text: String
+        if let sourceSearch,
+            SearchText.normalized(sourceSearch.query) == SearchText.normalized(query)
+        {
+            if sourceSearch.isComplete,
+                sourceSearch.sourceEventCount + sourceSearch.semanticSnapshotCount > 0
+            {
+                text =
+                    "No matching evidence was found in the retained representatives or the completed raw-source keyword pass."
+            } else if sourceSearch.isComplete {
+                text =
+                    "No matching retained representative evidence was found, and no readable raw-source rows were available. This is not an exhaustive absence conclusion."
+            } else {
+                text =
+                    "No matching evidence was found in the retained representatives or the readable portion of the raw source. Reported source gaps prevent an exhaustive absence conclusion."
+            }
+        } else {
+            text =
+                "No matching retained representative evidence was found. No raw-source keyword pass was available, so this is not an exhaustive absence conclusion."
+        }
+        return answer(
             query: query,
-            text: "No matching inspectable computer-history evidence was found.",
+            text: text,
             hits: []
         )
     }
 
-    private func distinct<T: Hashable>(_ values: [T]) -> [T] {
-        var seen = Set<T>()
-        return values.filter { seen.insert($0).inserted }
-    }
 }
 
-private enum SearchText {
+private func mergeSearchProvenance(
+    _ left: ActivityProvenance,
+    _ right: ActivityProvenance
+) -> ActivityProvenance {
+    ActivityProvenance(
+        sourceEventIDs: searchDistinct(
+            left.sourceEventIDs + right.sourceEventIDs
+        ),
+        sourceSequences: searchDistinct(
+            left.sourceSequences + right.sourceSequences
+        ),
+        sourceEventHashes: searchDistinct(
+            left.sourceEventHashes + right.sourceEventHashes
+        )
+    )
+}
+
+private func searchDistinct<T: Hashable>(_ values: [T]) -> [T] {
+    var seen = Set<T>()
+    return values.filter { seen.insert($0).inserted }
+}
+
+enum SearchText {
+    static let maximumRawQueryUTF8Bytes = 4_096
+    static let maximumNormalizedQueryUTF8Bytes = 4_096
+    static let maximumLiteralQueryTokens = 64
+    static let maximumSemanticExpansionTokens = 64
+    static let maximumExpandedQueryTokens = 128
+    static let maximumQueryTokenUTF8Bytes = 128
+
     private static let semanticExpansions: [String: [String]] = [
         "document": [
             "file", "doc", "proposal", "brief", "note", "pdf",
@@ -667,35 +1557,103 @@ private enum SearchText {
         ],
     ]
 
-    static func relevance(query: String, document: String) -> Double {
-        let queryTokens = expandedTokens(query)
-        let documentTokens = tokens(document)
-        guard !queryTokens.isEmpty, !documentTokens.isEmpty else { return 0 }
+    struct PreparedQuery {
+        let raw: String
+        let normalized: String
+        let literalTokens: [String]
+        let tokens: [String]
+        let tokenSet: Set<String>
+
+        var isEmpty: Bool { normalized.isEmpty }
+
+        init(_ raw: String) {
+            self.raw = SearchText.boundedUTF8Prefix(
+                raw,
+                maximumBytes: SearchText.maximumRawQueryUTF8Bytes
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            normalized = SearchText.boundedUTF8Prefix(
+                SearchText.normalized(self.raw),
+                maximumBytes: SearchText.maximumNormalizedQueryUTF8Bytes
+            )
+            literalTokens = SearchText.queryTokens(normalized)
+            tokens = SearchText.expandedTokens(literalTokens)
+            tokenSet = Set(tokens)
+        }
+    }
+
+    static func relevance(
+        query: PreparedQuery,
+        document: String
+    ) -> Double {
+        let normalizedDocument = normalized(document)
+        let documentTokens = tokens(normalizedDocument)
+        return relevance(
+            query: query,
+            normalizedDocument: normalizedDocument,
+            documentTokens: documentTokens,
+            documentSet: Set(documentTokens)
+        )
+    }
+
+    private static func relevance(
+        query: PreparedQuery,
+        normalizedDocument: String,
+        documentTokens: [String],
+        documentSet: Set<String>
+    ) -> Double {
+        guard !query.tokens.isEmpty, !documentTokens.isEmpty else { return 0 }
         let documentCounts = documentTokens.reduce(
             into: [String: Int]()
         ) { $0[$1, default: 0] += 1 }
         var score = 0.0
-        for token in queryTokens {
+        for token in query.tokens {
             if let count = documentCounts[token] {
                 score += 1.0 + log1p(Double(count))
-            } else if documentTokens.contains(where: {
+            } else if documentSet.contains(where: {
                 $0.hasPrefix(token) || token.hasPrefix($0)
             }) {
                 score += 0.45
             }
         }
-        let normalizedQuery = normalized(query)
-        let normalizedDocument = normalized(document)
-        if normalizedQuery.count >= 4,
-            normalizedDocument.contains(normalizedQuery)
+        if query.normalized.count >= 4,
+            normalizedDocument.contains(query.normalized)
         {
             score += 4.0
         }
-        let querySet = Set(queryTokens)
-        let documentSet = Set(documentTokens)
-        score += Double(querySet.intersection(documentSet).count)
-            / Double(max(1, querySet.union(documentSet).count)) * 3.0
+        score +=
+            Double(query.tokenSet.intersection(documentSet).count)
+            / Double(max(1, query.tokenSet.union(documentSet).count)) * 3.0
         return score
+    }
+
+    /// Raw-source fallback must not accept the fuzzy prefix-only coincidences
+    /// that are useful when ranking an already relevant reconstructed corpus.
+    /// At least one literal query token (or a >=4-character prefix) must occur
+    /// before semantic expansion contributes to ranking.
+    static func rawSourceRelevance(
+        query: PreparedQuery,
+        document: String
+    ) -> Double {
+        let normalizedDocument = normalized(document)
+        let documentTokenList = tokens(normalizedDocument)
+        let documentTokens = Set(documentTokenList)
+        guard !query.literalTokens.isEmpty else { return 0 }
+        let hasLiteralMatch = query.literalTokens.contains { queryToken in
+            if documentTokens.contains(queryToken) { return true }
+            guard queryToken.count >= 4 else { return false }
+            return documentTokens.contains { documentToken in
+                documentToken.count >= 4
+                    && (documentToken.hasPrefix(queryToken)
+                        || queryToken.hasPrefix(documentToken))
+            }
+        }
+        guard hasLiteralMatch else { return 0 }
+        return relevance(
+            query: query,
+            normalizedDocument: normalizedDocument,
+            documentTokens: documentTokenList,
+            documentSet: documentTokens
+        )
     }
 
     static func resourceKindHints(
@@ -705,39 +1663,94 @@ private enum SearchText {
         if containsAny(
             query,
             ["file", "fichier", "path", "folder", "dossier"]
-        ) { output.insert(.file) }
+        ) {
+            output.insert(.file)
+        }
         if containsAny(
             query,
             ["document", "doc", "proposal", "proposition", "brief", "note"]
-        ) { output.insert(.document) }
+        ) {
+            output.insert(.document)
+        }
         if containsAny(
             query,
             ["conversation", "chat", "slack", "thread", "message", "discussion"]
-        ) { output.insert(.conversation) }
+        ) {
+            output.insert(.conversation)
+        }
         if containsAny(
             query,
             ["issue", "ticket", "pull request", "pr", "bug"]
-        ) { output.insert(.issue) }
+        ) {
+            output.insert(.issue)
+        }
         if containsAny(
             query,
             ["website", "site", "page", "url"]
-        ) { output.insert(.webPage) }
+        ) {
+            output.insert(.webPage)
+        }
         return output
     }
 
-    static func expandedTokens(_ value: String) -> [String] {
-        var output = tokens(value)
-        let base = Set(output)
-        for (key, expansions) in semanticExpansions {
-            if base.contains(key) || !base.isDisjoint(with: Set(expansions)) {
-                output.append(contentsOf: expansions.map(normalized))
+    static func expandedTokens(_ literalTokens: [String]) -> [String] {
+        var output: [String] = []
+        output.reserveCapacity(maximumExpandedQueryTokens)
+        var seen = Set<String>()
+        for token in literalTokens where output.count < maximumLiteralQueryTokens {
+            if seen.insert(token).inserted {
+                output.append(token)
             }
         }
-        return distinct(output)
+        let base = Set(output)
+        var expansionCount = 0
+        for key in semanticExpansions.keys.sorted() {
+            guard let expansions = semanticExpansions[key] else { continue }
+            if base.contains(key) || !base.isDisjoint(with: Set(expansions)) {
+                for expansion in expansions {
+                    guard
+                        output.count < maximumExpandedQueryTokens,
+                        expansionCount < maximumSemanticExpansionTokens
+                    else {
+                        return output
+                    }
+                    let token = boundedUTF8Prefix(
+                        normalized(expansion),
+                        maximumBytes: maximumQueryTokenUTF8Bytes
+                    )
+                    if seen.insert(token).inserted {
+                        output.append(token)
+                        expansionCount += 1
+                    }
+                }
+            }
+        }
+        return output
     }
 
-    static func tokens(_ value: String) -> [String] {
-        normalized(value)
+    private static func queryTokens(_ normalizedValue: String) -> [String] {
+        var output: [String] = []
+        output.reserveCapacity(maximumLiteralQueryTokens)
+        var seen = Set<String>()
+        for component in normalizedValue.components(
+            separatedBy: CharacterSet.alphanumerics.inverted
+        ) {
+            guard output.count < maximumLiteralQueryTokens else { break }
+            let token = boundedUTF8Prefix(
+                component,
+                maximumBytes: maximumQueryTokenUTF8Bytes
+            )
+            guard token.count >= 2, !stopWords.contains(token) else { continue }
+            if seen.insert(token).inserted {
+                output.append(token)
+            }
+        }
+        return output
+    }
+
+    private static func tokens(_ normalizedValue: String) -> [String] {
+        return
+            normalizedValue
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.count >= 2 && !stopWords.contains($0) }
     }
@@ -755,13 +1768,30 @@ private enum SearchText {
             .joined(separator: " ")
     }
 
-    static func containsAny(_ value: String, _ markers: [String]) -> Bool {
-        markers.contains { value.contains(normalized($0)) }
+    private static func boundedUTF8Prefix(
+        _ value: String,
+        maximumBytes: Int
+    ) -> String {
+        guard maximumBytes > 0 else { return "" }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(maximumBytes)
+        var iterator = value.utf8.makeIterator()
+        for _ in 0..<maximumBytes {
+            guard let byte = iterator.next() else { return value }
+            bytes.append(byte)
+        }
+        guard iterator.next() != nil else { return value }
+        while !bytes.isEmpty {
+            if let prefix = String(bytes: bytes, encoding: .utf8) {
+                return prefix
+            }
+            bytes.removeLast()
+        }
+        return ""
     }
 
-    private static func distinct<T: Hashable>(_ values: [T]) -> [T] {
-        var seen = Set<T>()
-        return values.filter { seen.insert($0).inserted }
+    static func containsAny(_ value: String, _ markers: [String]) -> Bool {
+        markers.contains { value.contains(normalized($0)) }
     }
 
     private static let stopWords: Set<String> = [

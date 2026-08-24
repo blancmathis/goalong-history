@@ -12,6 +12,15 @@ public enum ComputerHistoryMarkdownRenderer {
         let resources = Dictionary(uniqueKeysWithValues: memory.resources.map { ($0.id, $0) })
 
         lines.append(contentsOf: ["", "## Timeline"])
+        if let retained = memory.coverage.retainedEpisodeCount,
+            retained < memory.coverage.episodeCount
+        {
+            lines.append(contentsOf: [
+                "",
+                "Representative episodes retained: \(retained) of "
+                    + "\(memory.coverage.episodeCount) exact reconstructed episodes.",
+            ])
+        }
         if memory.episodes.isEmpty {
             lines.append(contentsOf: ["", "No inspectable episodes were reconstructed."])
         } else {
@@ -55,6 +64,12 @@ public enum ComputerHistoryMarkdownRenderer {
                         lines.append("  - \(value)")
                     }
                 }
+                if episode.totalInteractionCount > episode.interactions.count {
+                    lines.append(
+                        "- Interactions represented: \(episode.interactions.count) of "
+                            + "\(episode.totalInteractionCount) exact interactions"
+                    )
+                }
                 lines.append("- Action sequence:")
                 for interaction in episode.interactions {
                     var detail = "  - \(timeFormatter.string(from: interaction.start)) — \(interaction.label)"
@@ -72,6 +87,15 @@ public enum ComputerHistoryMarkdownRenderer {
 
         if !memory.resources.isEmpty {
             lines.append(contentsOf: ["", "## Source index"])
+            if let retained = memory.coverage.retainedResourceCount,
+                retained < memory.coverage.resourceCount
+            {
+                lines.append("")
+                lines.append(
+                    "Representative links retained: \(retained) of "
+                        + "\(memory.coverage.resourceCount) exact identified resources."
+                )
+            }
             for resource in memory.resources {
                 let locator = resource.localPath
                     ?? resource.canonicalURI
@@ -108,11 +132,22 @@ public enum ComputerHistoryMarkdownRenderer {
             "- Source events: \(memory.coverage.sourceEventCount)",
             "- Action events: \(memory.coverage.actionEventCount)",
             "- Semantic snapshots: \(memory.coverage.semanticSnapshotCount)",
+            "- Reconstructed episodes: \(memory.coverage.episodeCount)",
             "- Linked interactions: \(memory.coverage.linkedInteractionCount)",
+            "- Identified resources: \(memory.coverage.resourceCount)",
             "- Before/after semantic pairs: \(memory.coverage.interactionsWithBeforeAndAfterContext)",
             "- Suppressed events: \(memory.coverage.suppressedEventCount)",
             "- Foreground observations do not prove attention, identity, authorship, productivity or completion. Statuses are bounded interpretations of observable evidence.",
         ])
+        if let retained = memory.coverage.retainedEpisodeCount {
+            lines.append("- Representative episodes retained: \(retained)")
+        }
+        if let retained = memory.coverage.retainedInteractionCount {
+            lines.append("- Representative interactions retained: \(retained)")
+        }
+        if let retained = memory.coverage.retainedResourceCount {
+            lines.append("- Representative resource links retained: \(retained)")
+        }
         if let first = memory.coverage.firstSourceSequence,
             let last = memory.coverage.lastSourceSequence
         {

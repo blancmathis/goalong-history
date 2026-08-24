@@ -4,6 +4,22 @@
     import Foundation
     import LocalHistoryCore
 
+    struct DailyMaintenanceGate {
+        private let calendar: Calendar
+        private var lastRunDay: Date?
+
+        init(calendar: Calendar = .current) {
+            self.calendar = calendar
+        }
+
+        mutating func admit(now: Date = Date()) -> Bool {
+            let day = calendar.startOfDay(for: now)
+            guard lastRunDay != day else { return false }
+            lastRunDay = day
+            return true
+        }
+    }
+
     final class AppDelegate: NSObject, NSApplicationDelegate {
         private var configManager: ConfigManager!
         private var permissions: PermissionManager!
@@ -32,6 +48,7 @@
         private var lastPermissionStatus: PermissionStatus?
         private var lastRecordedHealthState: CaptureHealthState?
         private var workspaceObservers: [NSObjectProtocol] = []
+        private var retentionCleanupGate = DailyMaintenanceGate()
 
         func applicationDidFinishLaunching(_ notification: Notification) {
             guard !anotherInstanceIsRunning() else {
@@ -43,6 +60,23 @@
 
             do {
                 try AppPaths.prepare()
+                let retentionDirectories = ComputerHistoryStore.retentionDirectories(
+                    rootDirectory: AppPaths.applicationSupportDirectory
+                )
+                let scavengingReport = AbandonedTemporaryScavenger(
+                    rootDirectory: AppPaths.applicationSupportDirectory,
+                    codexMemoryDirectory: retentionDirectories.last
+                ).scavenge()
+                if scavengingReport.deletedFiles > 0 {
+                    Diagnostics.write(
+                        "Recovered abandoned temporary files: "
+                            + "count=\(scavengingReport.deletedFiles) "
+                            + "bytes=\(scavengingReport.deletedBytes)"
+                    )
+                }
+                for diagnostic in scavengingReport.diagnostics {
+                    Diagnostics.write(diagnostic)
+                }
                 configManager = ConfigManager()
                 permissions = PermissionManager()
                 captureHealthStore = CaptureHealthStore(permissions: permissions)
@@ -84,14 +118,15 @@
                     captureHealth: captureHealthStore
                 )
                 sharingRulesStore = SharingRulesStore()
-                let executableURL = Bundle.main.executableURL
-                    ?? URL(fileURLWithPath: CommandLine.arguments.first ?? "/Applications/Goalong History.app/Contents/MacOS/Goalong History")
+                let executableURL =
+                    Bundle.main.executableURL
+                    ?? URL(
+                        fileURLWithPath: CommandLine.arguments.first
+                            ?? "/Applications/Goalong History.app/Contents/MacOS/Goalong History")
                 agentActivityRuntime = try AgentActivityRuntime(
                     rootDirectory: AppPaths.agentActivityDirectory,
                     executableURL: executableURL,
-                    onCaptured: { [weak self] captures in
-                        self?.recordAgentCaptures(captures)
-                    }
+                    onCaptured: { _ in }
                 )
 
                 dashboardViewModel = DashboardViewModel(
@@ -143,7 +178,7 @@
                 return
             }
 
-            retentionStore.applyCleanup()
+            applyDailyRetentionCleanupIfNeeded()
             minuteSealer.start()
             commitmentUploader?.replayPending()
 
@@ -157,9 +192,10 @@
                     "verification_server": configManager.config.verificationServerURL ?? "none",
                     "device_trust_tier": deviceIdentity.info.trustTier,
                     "raw_text_capture": "disabled",
-                    "interface_version": (Bundle.main.object(
-                        forInfoDictionaryKey: "CFBundleShortVersionString"
-                    ) as? String) ?? "0.5.1-dev",
+                    "interface_version":
+                        (Bundle.main.object(
+                            forInfoDictionaryKey: "CFBundleShortVersionString"
+                        ) as? String) ?? "0.5.1-dev",
                 ]
             )
             agentActivityRuntime.start()
@@ -168,7 +204,6 @@
 
             installWorkspaceObservers()
             contextMonitor.start()
-            startPermissionPolling()
             checkPermissionsAndStartTap()
             showDashboardOnFirstV3Launch()
         }
@@ -201,7 +236,8 @@
             if captureState.isManuallyPaused {
                 captureState.setManualPaused(false)
                 captureHealthStore.setPaused(false)
-                recorder.record(kind: .recordingResumed, message: "Recording resumed from the Goalong History interface")
+                recorder.record(
+                    kind: .recordingResumed, message: "Recording resumed from the Goalong History interface")
                 contextMonitor.resetAndSample()
             } else {
                 recorder.record(kind: .recordingPaused, message: "Recording paused from the Goalong History interface")
@@ -210,46 +246,6 @@
                 captureHealthStore.setPaused(true)
             }
             menuBarController.updateStatus()
-        }
-
-        private func recordAgentCaptures(_ captures: [AgentCaptureRecord]) {
-            for capture in captures {
-                let context = ContextSnapshot(
-                    app: AppSnapshot(
-                        name: capture.provider.displayName,
-                        bundleIdentifier: "ai.goalong.agent.\(capture.provider.rawValue.lowercased())",
-                        processIdentifier: ProcessInfo.processInfo.processIdentifier
-                    ),
-                    window: nil,
-                    focusedElement: nil,
-                    url: nil,
-                    suppressionReason: nil
-                )
-                var metadata: [String: String] = [
-                    "agent_capture_id": capture.id,
-                    "agent_provider": capture.provider.rawValue,
-                    "agent_source_key": capture.sourceKey,
-                    "agent_relative_path_sha256": SHA256Digest.hashHex(capture.relativePath),
-                    "agent_content_sha256": capture.sha256,
-                    "agent_manifest_hash": capture.manifestHash,
-                    "agent_storage_kind": capture.storageKind.rawValue,
-                    "agent_version": String(capture.version),
-                    "agent_byte_count": String(capture.byteCount),
-                    "agent_stored_byte_count": String(capture.storedByteCount),
-                    "agent_message_count": String(capture.summary.messageCount),
-                    "agent_tool_call_count": String(capture.summary.toolCallCount),
-                ]
-                if let sessionID = capture.summary.sessionID {
-                    metadata["agent_session_sha256"] = SHA256Digest.hashHex(sessionID)
-                }
-                recorder.record(
-                    kind: .agentArtifactCaptured,
-                    context: context,
-                    message: "Agent activity captured locally",
-                    metadata: metadata,
-                    timestamp: capture.capturedAt
-                )
-            }
         }
 
         private func applyConfiguration(_ config: RecorderConfig) throws -> RecorderConfig {
@@ -282,52 +278,97 @@
             since cutoff: Date?,
             completion: @escaping (Result<Int, Error>) -> Void
         ) {
+            let barrier = DerivedHistoryWriteBarrier.shared
+            let suspension = barrier.suspend()
+            ActivityAnalysisRuntime.shared.prepareForHistoryClear()
+            ChatGPTRecapRuntime.shared.prepareForHistoryClear()
+            barrier.notifyWhenDrained(suspension) { [self] in
+                deleteDetailsAfterDerivedWritersDrain(
+                    since: cutoff,
+                    suspension: suspension,
+                    completion: completion
+                )
+            }
+        }
+
+        private func deleteDetailsAfterDerivedWritersDrain(
+            since cutoff: Date?,
+            suspension: DerivedHistoryWriteBarrier.Suspension,
+            completion: @escaping (Result<Int, Error>) -> Void
+        ) {
+            let derivedPlan: DerivedHistoryDeletionPlan
+            do {
+                // Preflight every derived target before the irreversible raw and
+                // semantic deletions begin. The write barrier remains suspended while
+                // the resulting plan is held and later executed.
+                derivedPlan = try DerivedHistoryCleaner().prepareDeletion(since: cutoff)
+            } catch {
+                // No source or derived file has been modified yet. Resume without
+                // invalidating caches or starting a forced rewrite against the unsafe
+                // target that caused preflight to fail.
+                DerivedHistoryWriteBarrier.shared.resume(suspension)
+                completion(.failure(error))
+                return
+            }
+
             if let cutoff {
-                store.deleteEvents(since: cutoff) { [weak self] rawResult in
-                    guard let self else { completion(rawResult); return }
+                store.deleteEvents(since: cutoff) { [self] rawResult in
                     switch rawResult {
-                    case .failure:
-                        completion(rawResult)
+                    case .failure(let error):
+                        completeHistoryClear(
+                            .failure(error),
+                            suspension: suspension,
+                            completion: completion
+                        )
                     case .success(let rawCount):
-                        self.semanticContextStore.deleteEvents(since: cutoff) { semanticResult in
+                        semanticContextStore.deleteEvents(since: cutoff) { [self] semanticResult in
                             switch semanticResult {
-                            case .failure(let error): completion(.failure(error))
-                            case .success(let semanticCount):
-                                let total = rawCount + semanticCount
-                                self.recorder.record(
-                                    kind: .historyCleared,
-                                    message: "Detailed local activity and semantic snapshots deleted",
-                                    metadata: [
-                                        "deleted_events": String(rawCount),
-                                        "deleted_semantic_snapshots": String(semanticCount),
-                                    ]
+                            case .failure(let error):
+                                completeHistoryClear(
+                                    .failure(error),
+                                    suspension: suspension,
+                                    completion: completion
                                 )
-                                completion(.success(total))
+                            case .success(let semanticCount):
+                                finishHistoryDeletion(
+                                    rawCount: rawCount,
+                                    semanticCount: semanticCount,
+                                    since: cutoff,
+                                    derivedPlan: derivedPlan,
+                                    suspension: suspension,
+                                    completion: completion
+                                )
                             }
                         }
                     }
                 }
             } else {
-                store.deleteAll { [weak self] rawResult in
-                    guard let self else { completion(rawResult); return }
+                store.deleteAll { [self] rawResult in
                     switch rawResult {
-                    case .failure:
-                        completion(rawResult)
+                    case .failure(let error):
+                        completeHistoryClear(
+                            .failure(error),
+                            suspension: suspension,
+                            completion: completion
+                        )
                     case .success(let rawCount):
-                        self.semanticContextStore.deleteAll { semanticResult in
+                        semanticContextStore.deleteAll { [self] semanticResult in
                             switch semanticResult {
-                            case .failure(let error): completion(.failure(error))
-                            case .success(let semanticCount):
-                                let total = rawCount + semanticCount
-                                self.recorder.record(
-                                    kind: .historyCleared,
-                                    message: "All detailed local activity and semantic snapshots deleted",
-                                    metadata: [
-                                        "deleted_files": String(rawCount),
-                                        "deleted_semantic_files": String(semanticCount),
-                                    ]
+                            case .failure(let error):
+                                completeHistoryClear(
+                                    .failure(error),
+                                    suspension: suspension,
+                                    completion: completion
                                 )
-                                completion(.success(total))
+                            case .success(let semanticCount):
+                                finishHistoryDeletion(
+                                    rawCount: rawCount,
+                                    semanticCount: semanticCount,
+                                    since: nil,
+                                    derivedPlan: derivedPlan,
+                                    suspension: suspension,
+                                    completion: completion
+                                )
                             }
                         }
                     }
@@ -335,11 +376,73 @@
             }
         }
 
+        private func finishHistoryDeletion(
+            rawCount: Int,
+            semanticCount: Int,
+            since cutoff: Date?,
+            derivedPlan: DerivedHistoryDeletionPlan,
+            suspension: DerivedHistoryWriteBarrier.Suspension,
+            completion: @escaping (Result<Int, Error>) -> Void
+        ) {
+            do {
+                let derived = try derivedPlan.execute()
+                recorder.record(
+                    kind: .historyCleared,
+                    message: cutoff == nil
+                        ? "All detailed local activity, semantic snapshots, and derived memories deleted"
+                        : "Detailed local activity, semantic snapshots, and derived memories deleted",
+                    metadata: [
+                        "deleted_events": String(rawCount),
+                        "deleted_semantic_snapshots": String(semanticCount),
+                        "deleted_activity_analysis_files": String(derived.activityAnalysisFiles),
+                        "deleted_activity_memory_files": String(derived.activityMemoryFiles),
+                        "deleted_computer_history_files": String(derived.computerHistoryFiles),
+                    ]
+                )
+                completeHistoryClear(
+                    .success(rawCount + semanticCount + derived.total),
+                    suspension: suspension,
+                    completion: completion
+                )
+            } catch {
+                completeHistoryClear(
+                    .failure(error),
+                    suspension: suspension,
+                    completion: completion
+                )
+            }
+        }
+
+        private func completeHistoryClear(
+            _ result: Result<Int, Error>,
+            suspension: DerivedHistoryWriteBarrier.Suspension,
+            completion: @escaping (Result<Int, Error>) -> Void
+        ) {
+            var completedResult = result
+            do {
+                try ActivityAnalysisRuntime.shared.invalidateRevisionCacheForHistoryClear()
+            } catch {
+                switch result {
+                case .success:
+                    completedResult = .failure(error)
+                case .failure:
+                    Diagnostics.write(
+                        "Could not invalidate activity-analysis revisions after a failed history clear: \(error)"
+                    )
+                }
+            }
+
+            DerivedHistoryWriteBarrier.shared.resume(suspension)
+            ActivityAnalysisRuntime.shared.refreshAfterHistoryClear()
+            completion(completedResult)
+        }
+
         private func requestPermissionsAndExplain() {
             permissions.requestAll()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 guard let self else { return }
-                let status = self.permissions.currentStatus
+                self.checkPermissionsAndStartTap(forceRefresh: true)
+                let status = self.permissions.snapshot
                 if !status.accessibility {
                     self.permissions.openAccessibilitySettings()
                 } else if !status.inputMonitoring {
@@ -355,17 +458,26 @@
             }
         }
 
-        private func startPermissionPolling() {
+        private func schedulePermissionWatchdog() {
             permissionTimer?.invalidate()
-            let timer = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
-                self?.checkPermissionsAndStartTap()
+            let interval = PermissionWatchdogPolicy.interval(
+                status: permissions.snapshot,
+                eventTapRunning: eventTapMonitor.isRunning
+            )
+            let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+                self?.checkPermissionsAndStartTap(forceRefresh: true)
             }
+            timer.tolerance = interval >= PermissionWatchdogPolicy.healthyInterval ? 6 : 0.3
             RunLoop.main.add(timer, forMode: .common)
             permissionTimer = timer
         }
 
-        private func checkPermissionsAndStartTap() {
-            let status = permissions.currentStatus
+        private func checkPermissionsAndStartTap(forceRefresh: Bool = false) {
+            applyDailyRetentionCleanupIfNeeded()
+            let status =
+                forceRefresh
+                ? permissions.refresh(force: true)
+                : permissions.snapshot
             captureHealthStore.updatePermissions(status)
 
             if status != lastPermissionStatus {
@@ -388,7 +500,9 @@
 
             if status.canAttemptInputTap, !eventTapMonitor.isRunning {
                 _ = eventTapMonitor.start()
-            } else if !status.canAttemptInputTap, eventTapMonitor.isRunning {
+            } else if !status.canAttemptInputTap,
+                eventTapMonitor.isRunning || eventTapMonitor.hasPendingUnexpectedRestart
+            {
                 eventTapMonitor.stop()
             }
 
@@ -405,6 +519,12 @@
                 lastRecordedHealthState = assessment.state
             }
             menuBarController.updateStatus()
+            schedulePermissionWatchdog()
+        }
+
+        private func applyDailyRetentionCleanupIfNeeded(now: Date = Date()) {
+            guard retentionCleanupGate.admit(now: now) else { return }
+            retentionStore.applyCleanup(now: now)
         }
 
         private func installWorkspaceObservers() {
@@ -444,7 +564,7 @@
                     self.captureState.setUserSessionActive(true)
                     self.recorder.record(kind: .sessionUnlocked, message: "macOS user session became active")
                     self.contextMonitor.resetAndSample()
-                    self.menuBarController.updateStatus()
+                    self.checkPermissionsAndStartTap(forceRefresh: true)
                 }
             )
 
@@ -471,6 +591,7 @@
                     self.captureState.setSystemAwake(true)
                     self.recorder.record(kind: .systemWake, message: "Mac woke from sleep")
                     self.contextMonitor.resetAndSample()
+                    self.checkPermissionsAndStartTap(forceRefresh: true)
                 }
             )
 
@@ -498,6 +619,7 @@
                     if self.captureState.setSystemAwake(true) {
                         self.recorder.record(kind: .systemWake, message: "Displays woke")
                         self.contextMonitor.resetAndSample()
+                        self.checkPermissionsAndStartTap()
                     }
                 }
             )

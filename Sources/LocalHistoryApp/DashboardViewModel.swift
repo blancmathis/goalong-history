@@ -5,6 +5,97 @@
     import LocalHistoryCore
     import UniformTypeIdentifiers
 
+    protocol DashboardScheduledTask: AnyObject {
+        func cancel()
+    }
+
+    private final class DashboardTimerTask: DashboardScheduledTask {
+        private var timer: Timer?
+
+        init(timer: Timer) {
+            self.timer = timer
+        }
+
+        func cancel() {
+            timer?.invalidate()
+            timer = nil
+        }
+
+        deinit {
+            cancel()
+        }
+    }
+
+    private final class DashboardCancellationToken {
+        private let lock = NSLock()
+        private var cancelled = false
+
+        var isCancelled: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return cancelled
+        }
+
+        func cancel() {
+            lock.lock()
+            cancelled = true
+            lock.unlock()
+        }
+    }
+
+    /// Owns only the two UI refresh wakeups. It is deliberately independent from the
+    /// view model so lifecycle/cadence can be proven with a virtual scheduler in tests.
+    final class DashboardRefreshScheduler {
+        typealias Schedule = (TimeInterval, @escaping () -> Void) -> DashboardScheduledTask
+
+        static let runtimeInterval: TimeInterval = 5
+        static let todayDataInterval: TimeInterval = 60
+
+        private let schedule: Schedule
+        private var runtimeTask: DashboardScheduledTask?
+        private var dataTask: DashboardScheduledTask?
+
+        init(schedule: @escaping Schedule) {
+            self.schedule = schedule
+        }
+
+        convenience init() {
+            self.init(schedule: Self.scheduleLiveTimer)
+        }
+
+        func activate(
+            isToday: Bool,
+            refreshRuntime: @escaping () -> Void,
+            refreshData: @escaping () -> Void
+        ) {
+            deactivate()
+            runtimeTask = schedule(Self.runtimeInterval, refreshRuntime)
+            if isToday {
+                dataTask = schedule(Self.todayDataInterval, refreshData)
+            }
+        }
+
+        func deactivate() {
+            runtimeTask?.cancel()
+            dataTask?.cancel()
+            runtimeTask = nil
+            dataTask = nil
+        }
+
+        var activeTaskCount: Int {
+            (runtimeTask == nil ? 0 : 1) + (dataTask == nil ? 0 : 1)
+        }
+
+        private static func scheduleLiveTimer(
+            interval: TimeInterval,
+            action: @escaping () -> Void
+        ) -> DashboardScheduledTask {
+            let timer = Timer(timeInterval: interval, repeats: true) { _ in action() }
+            RunLoop.main.add(timer, forMode: .common)
+            return DashboardTimerTask(timer: timer)
+        }
+    }
+
     final class DashboardViewModel: ObservableObject {
         typealias SaveConfiguration = (RecorderConfig) throws -> RecorderConfig
         typealias DeleteDetails = (Date?, @escaping (Result<Int, Error>) -> Void) -> Void
@@ -49,12 +140,35 @@
         private let onRequestPermissions: () -> Void
         private let onSaveConfiguration: SaveConfiguration
         private let onDeleteDetails: DeleteDetails
-        private let dataReader = DashboardDataReader()
+        private let refreshScheduler: DashboardRefreshScheduler
+        private let dataReader: DashboardDataReader
         private let shareBuilder = SharePackageBuilder()
         private let dataQueue = DispatchQueue(label: "ai.goalong.localhistory.dashboard-data", qos: .userInitiated)
+        private let metadataQueue = DispatchQueue(
+            label: "ai.goalong.localhistory.dashboard-metadata",
+            qos: .utility
+        )
         private let shareQueue = DispatchQueue(label: "ai.goalong.localhistory.dashboard-share", qos: .userInitiated)
-        private var runtimeTimer: Timer?
-        private var dataTimer: Timer?
+        @Published private(set) var dashboardIsVisible = false
+        private var dataRequestSequence: UInt64 = 0
+        private var metadataRequestSequence: UInt64 = 0
+        private var activeDataRequest:
+            (
+                day: Date,
+                token: DashboardCancellationToken,
+                workItem: DispatchWorkItem
+            )?
+        private var dataRefreshPending = false
+        private var activeMetadataRequest: (token: DashboardCancellationToken, workItem: DispatchWorkItem)?
+        private var shareRequestSequence: UInt64 = 0
+        private var activeShareRequest:
+            (
+                day: Date,
+                token: DashboardCancellationToken,
+                workItem: DispatchWorkItem
+            )?
+        private var shareRefreshPending = false
+        private var activeShareExportToken: DashboardCancellationToken?
 
         init(
             state: CaptureState,
@@ -70,7 +184,9 @@
             onTogglePause: @escaping () -> Void,
             onRequestPermissions: @escaping () -> Void,
             onSaveConfiguration: @escaping SaveConfiguration,
-            onDeleteDetails: @escaping DeleteDetails
+            onDeleteDetails: @escaping DeleteDetails,
+            refreshScheduler: DashboardRefreshScheduler = DashboardRefreshScheduler(),
+            dataReader: DashboardDataReader = DashboardDataReader()
         ) {
             self.state = state
             self.permissions = permissions
@@ -92,6 +208,8 @@
             self.onRequestPermissions = onRequestPermissions
             self.onSaveConfiguration = onSaveConfiguration
             self.onDeleteDetails = onDeleteDetails
+            self.refreshScheduler = refreshScheduler
+            self.dataReader = dataReader
 
             let today = Calendar.current.startOfDay(for: Date())
             selectedDay = today
@@ -101,14 +219,14 @@
             savedSettingsDraft = draft
             showWelcome = !UserDefaults.standard.bool(forKey: "didShowLocalHistoryOnboardingV3")
 
-            refreshRuntime()
-            refreshData(force: true)
-            startTimers()
         }
 
         deinit {
-            runtimeTimer?.invalidate()
-            dataTimer?.invalidate()
+            refreshScheduler.deactivate()
+            cancelDataRequest()
+            cancelMetadataRequest()
+            cancelShareRequest()
+            cancelShareExport()
         }
 
         var isTodaySelected: Bool {
@@ -190,25 +308,78 @@
             selectedDay = normalized
             selectedSessionID = nil
             selectedShareSegmentID = nil
+            cancelShareRequest()
+            shareSegments = []
+            updateRefreshSchedule()
             refreshData(force: true)
-            reloadShareSegments()
+            if selectedSection == .share { reloadShareSegments() }
         }
 
         func selectSection(_ section: DashboardSection) {
+            let previousSection = selectedSection
             selectedSection = section
-            if section == .share, shareSegments.isEmpty {
+            if section == .share {
                 reloadShareSegments()
+            } else if previousSection == .share, section != .share {
+                cancelShareRequest()
             }
-            if section == .agentActivity {
-                agentActivityRuntime.scanNow()
+            if dashboardIsVisible, section == .agentActivity {
+                agentActivityRuntime.scanNow(
+                    forceFullDiscovery: false,
+                    analyzeSelectedDay: true
+                )
             }
         }
 
         func refreshEverything() {
+            guard dashboardIsVisible else { return }
             refreshRuntime()
             refreshData(force: true)
+            refreshMetadataIfNeeded(force: false)
             if selectedSection == .share { reloadShareSegments() }
-            if selectedSection == .agentActivity { agentActivityRuntime.scanNow() }
+            if selectedSection == .agentActivity {
+                agentActivityRuntime.scanNow(analyzeSelectedDay: true)
+            }
+        }
+
+        func dashboardDidBecomeVisible() {
+            guard !dashboardIsVisible else { return }
+            dashboardIsVisible = true
+            agentActivityRuntime.dashboardDidBecomeVisible()
+            refreshRuntime()
+            refreshData(force: true)
+            refreshMetadataIfNeeded(force: false)
+            if selectedSection == .share { reloadShareSegments() }
+            if selectedSection == .agentActivity {
+                agentActivityRuntime.scanNow(
+                    forceFullDiscovery: false,
+                    analyzeSelectedDay: true
+                )
+            }
+            updateRefreshSchedule()
+        }
+
+        func dashboardDidBecomeHidden() {
+            guard dashboardIsVisible else { return }
+            dashboardIsVisible = false
+            refreshScheduler.deactivate()
+            dataRequestSequence &+= 1
+            metadataRequestSequence &+= 1
+            cancelDataRequest()
+            cancelMetadataRequest()
+            cancelShareRequest()
+            cancelShareExport()
+            discardShareCache()
+            dataRefreshPending = false
+            isRefreshing = false
+            snapshot = .empty(day: selectedDay)
+            shareSegments = []
+            selectedShareSegmentID = nil
+            agentActivityRuntime.dashboardDidBecomeHidden()
+            let reader = dataReader
+            dataQueue.async {
+                reader.discardTransientCaches()
+            }
         }
 
         func togglePause() {
@@ -291,31 +462,65 @@
         }
 
         func reloadShareSegments() {
-            guard !isLoadingShare else { return }
+            guard dashboardIsVisible, selectedSection == .share else { return }
+            if let activeShareRequest {
+                if activeShareRequest.day == selectedDay {
+                    // Coalesce repeated timer/UI requests into one latest-state pass.
+                    shareRefreshPending = true
+                    return
+                }
+                cancelShareRequest()
+            }
             isLoadingShare = true
+            shareRequestSequence &+= 1
+            let requestSequence = shareRequestSequence
             let day = selectedDay
+            let token = DashboardCancellationToken()
             let previousLevels = Dictionary(
                 uniqueKeysWithValues: shareSegments.flatMap { segment in
                     segment.anchorSequences.map { ($0, segment.level) }
                 }
             )
 
-            shareQueue.async { [weak self] in
+            let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
+                let result: Result<[ShareSegment], Error>
                 do {
-                    var rows = try self.shareBuilder.minuteRows(for: day)
+                    var rows = try self.shareBuilder.minuteRows(
+                        for: day,
+                        cancellation: { token.isCancelled }
+                    )
                     for index in rows.indices {
+                        guard !token.isCancelled else { throw ShareBuildError.cancelled }
                         if let level = previousLevels[rows[index].anchorSequence] {
                             rows[index].level = rows[index].canRevealDetails ? level : .privateOnly
                         }
                     }
-                    let segments = Self.makeShareSegments(from: rows)
-                    DispatchQueue.main.async {
-                        self.isLoadingShare = false
-                        guard self.selectedDay == day else {
-                            self.reloadShareSegments()
-                            return
-                        }
+                    guard !token.isCancelled else { throw ShareBuildError.cancelled }
+                    result = .success(Self.makeShareSegments(from: rows))
+                } catch ShareBuildError.noSeals {
+                    result = .success([])
+                } catch {
+                    result = .failure(error)
+                }
+
+                DispatchQueue.main.async {
+                    guard self.shareRequestSequence == requestSequence else { return }
+                    self.activeShareRequest = nil
+                    self.isLoadingShare = false
+                    let shouldCatchUp = self.shareRefreshPending
+                    self.shareRefreshPending = false
+                    guard self.dashboardIsVisible,
+                        self.selectedSection == .share,
+                        !token.isCancelled
+                    else { return }
+                    guard self.selectedDay == day else {
+                        self.reloadShareSegments()
+                        return
+                    }
+
+                    switch result {
+                    case .success(let segments):
                         self.shareSegments = segments
                         if let selected = self.selectedShareSegmentID,
                             !segments.contains(where: { $0.id == selected })
@@ -324,22 +529,10 @@
                         } else if self.selectedShareSegmentID == nil {
                             self.selectedShareSegmentID = segments.first?.id
                         }
-                    }
-                } catch ShareBuildError.noSeals {
-                    DispatchQueue.main.async {
-                        self.isLoadingShare = false
-                        guard self.selectedDay == day else {
-                            self.reloadShareSegments()
-                            return
-                        }
-                        self.shareSegments = []
-                        self.selectedShareSegmentID = nil
-                    }
-                } catch {
-                    DispatchQueue.main.async {
-                        self.isLoadingShare = false
-                        guard self.selectedDay == day else {
-                            self.reloadShareSegments()
+                    case .failure(let error):
+                        if let buildError = error as? ShareBuildError,
+                            case .cancelled = buildError
+                        {
                             return
                         }
                         self.shareSegments = []
@@ -349,8 +542,11 @@
                             message: String(describing: error)
                         )
                     }
+                    if shouldCatchUp { self.reloadShareSegments() }
                 }
             }
+            activeShareRequest = (day, token, workItem)
+            shareQueue.async(execute: workItem)
         }
 
         func exportSharePackage() {
@@ -372,6 +568,9 @@
             let day = selectedDay
             let rules = sharingRules
             let defaultVisibility = defaultSharingVisibility
+            activeShareExportToken?.cancel()
+            let token = DashboardCancellationToken()
+            activeShareExportToken = token
             isExportingShare = true
 
             shareQueue.async { [weak self] in
@@ -380,13 +579,21 @@
                     let package = try self.shareBuilder.build(
                         for: day,
                         sharingRules: rules,
-                        defaultVisibility: defaultVisibility
+                        defaultVisibility: defaultVisibility,
+                        cancellation: { token.isCancelled }
                     )
+                    guard !token.isCancelled else { throw ShareBuildError.cancelled }
                     guard package.minutes.allSatisfy({ $0.verifiesStructure() }) else {
                         throw ShareBuildError.brokenSeal(package.minutes.first?.anchorSequence ?? 0)
                     }
-                    try self.shareBuilder.write(package, to: destination)
+                    try self.shareBuilder.write(
+                        package,
+                        to: destination,
+                        cancellation: { token.isCancelled }
+                    )
                     DispatchQueue.main.async {
+                        guard self.activeShareExportToken === token else { return }
+                        self.activeShareExportToken = nil
                         self.isExportingShare = false
                         self.alert = DashboardAlert(
                             kind: .information,
@@ -398,7 +605,14 @@
                     }
                 } catch {
                     DispatchQueue.main.async {
+                        guard self.activeShareExportToken === token else { return }
+                        self.activeShareExportToken = nil
                         self.isExportingShare = false
+                        if let buildError = error as? ShareBuildError,
+                            case .cancelled = buildError
+                        {
+                            return
+                        }
                         self.alert = DashboardAlert(
                             kind: .error,
                             title: "Export failed",
@@ -474,23 +688,26 @@
             }
         }
 
-        private func startTimers() {
-            let runtimeTimer = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
-                self?.refreshRuntime()
+        private func updateRefreshSchedule() {
+            guard dashboardIsVisible else {
+                refreshScheduler.deactivate()
+                return
             }
-            let dataTimer = Timer(timeInterval: 12, repeats: true) { [weak self] _ in
-                guard let self, self.isTodaySelected else { return }
-                self.refreshData(force: false)
-                if self.selectedSection == .share { self.reloadShareSegments() }
-            }
-            RunLoop.main.add(runtimeTimer, forMode: .common)
-            RunLoop.main.add(dataTimer, forMode: .common)
-            self.runtimeTimer = runtimeTimer
-            self.dataTimer = dataTimer
+            refreshScheduler.activate(
+                isToday: isTodaySelected,
+                refreshRuntime: { [weak self] in self?.refreshRuntime() },
+                refreshData: { [weak self] in
+                    guard let self else { return }
+                    self.refreshData(force: false)
+                    self.refreshMetadataIfNeeded(force: false)
+                    if self.selectedSection == .share { self.reloadShareSegments() }
+                }
+            )
         }
 
         private func refreshRuntime() {
-            let status = permissions.currentStatus
+            guard dashboardIsVisible else { return }
+            let status = permissions.snapshot
             let tap = eventTapStatus()
             let healthSnapshot = captureHealthSnapshot()
             let health = CaptureHealthEvaluator.assess(healthSnapshot)
@@ -523,14 +740,35 @@
         }
 
         private func refreshData(force: Bool) {
-            guard !isRefreshing else { return }
+            guard dashboardIsVisible else { return }
+            if let activeDataRequest {
+                if activeDataRequest.day == selectedDay {
+                    // One active pass plus one latest-state catch-up keeps repeated
+                    // UI/timer requests from building an unbounded queue.
+                    dataRefreshPending = true
+                    return
+                }
+                cancelDataRequest()
+                dataRefreshPending = false
+            }
             isRefreshing = true
+            dataRequestSequence &+= 1
+            let requestSequence = dataRequestSequence
             let day = selectedDay
-            dataQueue.async { [weak self] in
+            let token = DashboardCancellationToken()
+            let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
-                let next = self.dataReader.snapshot(for: day)
+                let next = self.dataReader.snapshot(
+                    for: day,
+                    cancellation: { token.isCancelled }
+                )
                 DispatchQueue.main.async {
+                    guard self.dataRequestSequence == requestSequence else { return }
+                    self.activeDataRequest = nil
                     self.isRefreshing = false
+                    let shouldCatchUp = self.dataRefreshPending
+                    self.dataRefreshPending = false
+                    guard self.dashboardIsVisible, !token.isCancelled, let next else { return }
                     guard self.selectedDay == day else {
                         self.refreshData(force: true)
                         return
@@ -541,7 +779,73 @@
                     {
                         self.selectedSessionID = self.filteredSessions.first?.id
                     }
+                    if shouldCatchUp {
+                        self.refreshData(force: force)
+                    }
                 }
+            }
+            activeDataRequest = (day, token, workItem)
+            dataQueue.async(execute: workItem)
+        }
+
+        private func refreshMetadataIfNeeded(force: Bool) {
+            guard dashboardIsVisible, dataReader.metadataNeedsRefresh(force: force) else { return }
+            if activeMetadataRequest != nil {
+                guard force else { return }
+                cancelMetadataRequest()
+            }
+
+            metadataRequestSequence &+= 1
+            let requestSequence = metadataRequestSequence
+            let token = DashboardCancellationToken()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                let updated = self.dataReader.refreshMetadataIfNeeded(
+                    force: force,
+                    cancellation: { token.isCancelled }
+                )
+                DispatchQueue.main.async {
+                    guard self.metadataRequestSequence == requestSequence else { return }
+                    self.activeMetadataRequest = nil
+                    guard self.dashboardIsVisible, !token.isCancelled, updated else { return }
+                    self.snapshot = self.dataReader.applyingCachedMetadata(to: self.snapshot)
+                }
+            }
+            activeMetadataRequest = (token, workItem)
+            metadataQueue.async(execute: workItem)
+        }
+
+        private func cancelDataRequest() {
+            activeDataRequest?.token.cancel()
+            activeDataRequest?.workItem.cancel()
+            activeDataRequest = nil
+        }
+
+        private func cancelMetadataRequest() {
+            activeMetadataRequest?.token.cancel()
+            activeMetadataRequest?.workItem.cancel()
+            activeMetadataRequest = nil
+        }
+
+        private func cancelShareRequest() {
+            shareRequestSequence &+= 1
+            activeShareRequest?.token.cancel()
+            activeShareRequest?.workItem.cancel()
+            activeShareRequest = nil
+            shareRefreshPending = false
+            isLoadingShare = false
+        }
+
+        private func cancelShareExport() {
+            activeShareExportToken?.cancel()
+            activeShareExportToken = nil
+            isExportingShare = false
+        }
+
+        private func discardShareCache() {
+            let builder = shareBuilder
+            shareQueue.async {
+                builder.discardTransientCaches()
             }
         }
 

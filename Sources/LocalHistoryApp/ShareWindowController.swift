@@ -4,13 +4,140 @@
     import LocalHistoryCore
     import UniformTypeIdentifiers
 
-    final class ShareWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
+    final class ShareWindowWorkCoordinator {
+        typealias Scheduler = (@escaping () -> Void) -> Void
+
+        private final class Token {
+            private let lock = NSLock()
+            private var cancelled = false
+
+            var isCancelled: Bool {
+                lock.lock()
+                defer { lock.unlock() }
+                return cancelled
+            }
+
+            func cancel() {
+                lock.lock()
+                cancelled = true
+                lock.unlock()
+            }
+        }
+
+        private static let defaultQueue = DispatchQueue(
+            label: "ai.goalong.localhistory.share-window-work",
+            qos: .userInitiated
+        )
+
+        private let lock = NSLock()
+        private let schedule: Scheduler
+        private let deliver: Scheduler
+        private var activeToken: Token?
+
+        init(
+            schedule: @escaping Scheduler = { work in defaultQueue.async(execute: work) },
+            deliver: @escaping Scheduler = { work in DispatchQueue.main.async(execute: work) }
+        ) {
+            self.schedule = schedule
+            self.deliver = deliver
+        }
+
+        @discardableResult
+        func start<Output>(
+            onStart: () -> Void = {},
+            work: @escaping (_ cancellation: @escaping () -> Bool) throws -> Output,
+            completion: @escaping (Result<Output, Error>) -> Void
+        ) -> Bool {
+            let token = replaceActiveToken()
+            onStart()
+            schedule { [weak self] in
+                let result: Result<Output, Error>
+                if token.isCancelled {
+                    result = .failure(ShareBuildError.cancelled)
+                } else {
+                    result = Result { try work { token.isCancelled } }
+                }
+                self?.deliverResult(result, token: token, completion: completion)
+            }
+            return true
+        }
+
+        @discardableResult
+        func startAfterChoosingDestination<Output>(
+            chooseDestination: () -> URL?,
+            onStart: () -> Void = {},
+            work: @escaping (URL, _ cancellation: @escaping () -> Bool) throws -> Output,
+            completion: @escaping (Result<Output, Error>) -> Void
+        ) -> Bool {
+            guard let destination = chooseDestination() else { return false }
+            return start(
+                onStart: onStart,
+                work: { cancellation in
+                    try work(destination, cancellation)
+                },
+                completion: completion
+            )
+        }
+
+        func cancel() {
+            lock.lock()
+            let token = activeToken
+            activeToken = nil
+            lock.unlock()
+            token?.cancel()
+        }
+
+        var hasActiveWork: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return activeToken != nil
+        }
+
+        private func replaceActiveToken() -> Token {
+            let token = Token()
+            lock.lock()
+            let previous = activeToken
+            activeToken = token
+            lock.unlock()
+            previous?.cancel()
+            return token
+        }
+
+        private func deliverResult<Output>(
+            _ result: Result<Output, Error>,
+            token: Token,
+            completion: @escaping (Result<Output, Error>) -> Void
+        ) {
+            deliver { [weak self] in
+                guard let self else { return }
+                self.lock.lock()
+                guard self.activeToken === token else {
+                    self.lock.unlock()
+                    return
+                }
+                self.activeToken = nil
+                self.lock.unlock()
+                completion(result)
+            }
+        }
+    }
+
+    final class ShareWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate,
+        NSWindowDelegate
+    {
         private let selectableLevels: [ShareLevel] = [.everything, .applicationOnly, .categoryOnly, .privateOnly]
         private let builder: SharePackageBuilder
         private let day: Date
         private var rows: [ShareMinuteRow] = []
         private let tableView = NSTableView()
         private let statusLabel = NSTextField(labelWithString: "")
+        private let exportButton = NSButton(
+            title: "Export verified share package…",
+            target: nil,
+            action: nil
+        )
+        private let reloadWork = ShareWindowWorkCoordinator()
+        private let exportWork = ShareWindowWorkCoordinator()
 
         init(builder: SharePackageBuilder, day: Date = Date()) {
             self.builder = builder
@@ -25,17 +152,24 @@
             window.title = "Share verified Goalong History"
             window.center()
             super.init(window: window)
+            window.delegate = self
             buildUI()
             reload()
         }
 
         required init?(coder: NSCoder) { nil }
 
+        deinit {
+            reloadWork.cancel()
+            exportWork.cancel()
+        }
+
         private func buildUI() {
             guard let content = window?.contentView else { return }
 
-            let explanation = NSTextField(wrappingLabelWithString:
-                "Nothing is uploaded by this window until you export/share the package. Choose what each sealed minute may reveal. Completely private reveals only the existence/time/coverage proof; it cannot be counted as verified work."
+            let explanation = NSTextField(
+                wrappingLabelWithString:
+                    "Nothing is uploaded by this window until you export/share the package. Choose what each sealed minute may reveal. Completely private reveals only the existence/time/coverage proof; it cannot be counted as verified work."
             )
             explanation.translatesAutoresizingMaskIntoConstraints = false
 
@@ -79,9 +213,11 @@
             statusLabel.translatesAutoresizingMaskIntoConstraints = false
             statusLabel.textColor = .secondaryLabelColor
 
-            let exportButton = NSButton(title: "Export verified share package…", target: self, action: #selector(exportPackage))
+            exportButton.target = self
+            exportButton.action = #selector(exportPackage)
             exportButton.translatesAutoresizingMaskIntoConstraints = false
             exportButton.bezelStyle = .rounded
+            exportButton.isEnabled = false
 
             content.addSubview(explanation)
             content.addSubview(scroll)
@@ -111,15 +247,31 @@
         }
 
         private func reload() {
-            do {
-                rows = try builder.minuteRows(for: day)
-                statusLabel.stringValue = "\(rows.count) sealed minute(s)"
-                tableView.reloadData()
-            } catch {
-                rows = []
-                statusLabel.stringValue = String(describing: error)
-                tableView.reloadData()
-            }
+            let builder = builder
+            let day = day
+            reloadWork.start(
+                onStart: { [weak self] in
+                    self?.statusLabel.stringValue = "Loading sealed minutes…"
+                    self?.exportButton.isEnabled = false
+                },
+                work: { cancellation in
+                    try builder.minuteRows(for: day, cancellation: cancellation)
+                },
+                completion: { [weak self] result in
+                    guard let self else { return }
+                    switch result {
+                    case .success(let rows):
+                        self.rows = rows
+                        self.statusLabel.stringValue = "\(rows.count) sealed minute(s)"
+                        self.exportButton.isEnabled = !rows.isEmpty
+                    case .failure(let error):
+                        self.rows = []
+                        self.statusLabel.stringValue = String(describing: error)
+                        self.exportButton.isEnabled = false
+                    }
+                    self.tableView.reloadData()
+                }
+            )
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
@@ -156,8 +308,8 @@
 
         @objc private func rowPrivacyChanged(_ sender: NSPopUpButton) {
             guard sender.tag >= 0, sender.tag < rows.count,
-                  let title = sender.selectedItem?.title,
-                  let level = selectableLevels.first(where: { $0.title == title })
+                let title = sender.selectedItem?.title,
+                let level = selectableLevels.first(where: { $0.title == title })
             else { return }
             rows[sender.tag].level = rows[sender.tag].canRevealDetails ? level : .privateOnly
         }
@@ -173,21 +325,64 @@
         }
 
         @objc private func exportPackage() {
-            do {
-                let levels = Dictionary(uniqueKeysWithValues: rows.map { ($0.anchorSequence, $0.level) })
-                let package = try builder.build(for: day, levels: levels)
+            var levels: [UInt64: ShareLevel] = [:]
+            levels.reserveCapacity(rows.count)
+            for row in rows { levels[row.anchorSequence] = row.level }
+            let builder = builder
+            let day = day
+            let panel = NSSavePanel()
+            panel.canCreateDirectories = true
+            panel.nameFieldStringValue = "\(AppPaths.localDayString(for: day)).verified-share.json"
+            panel.allowedContentTypes = [.json]
 
-                let panel = NSSavePanel()
-                panel.canCreateDirectories = true
-                panel.nameFieldStringValue = "\(AppPaths.localDayString(for: day)).verified-share.json"
-                panel.allowedContentTypes = [.json]
-                guard panel.runModal() == .OK, let url = panel.url else { return }
-                try builder.write(package, to: url)
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            } catch {
-                let alert = NSAlert(error: error)
-                alert.messageText = "Could not export verified share package"
-                alert.runModal()
+            exportWork.startAfterChoosingDestination(
+                chooseDestination: {
+                    panel.runModal() == .OK ? panel.url : nil
+                },
+                onStart: { [weak self] in
+                    self?.exportButton.isEnabled = false
+                    self?.statusLabel.stringValue = "Building verified package…"
+                },
+                work: { destination, cancellation in
+                    let package = try builder.build(
+                        for: day,
+                        levels: levels,
+                        cancellation: cancellation
+                    )
+                    try builder.write(
+                        package,
+                        to: destination,
+                        cancellation: cancellation
+                    )
+                    return destination
+                },
+                completion: { [weak self] result in
+                    guard let self else { return }
+                    self.exportButton.isEnabled = !self.rows.isEmpty
+                    switch result {
+                    case .success(let destination):
+                        self.statusLabel.stringValue = "Verified package exported"
+                        NSWorkspace.shared.activateFileViewerSelecting([destination])
+                    case .failure(let error):
+                        if let buildError = error as? ShareBuildError,
+                            case .cancelled = buildError
+                        {
+                            return
+                        }
+                        self.statusLabel.stringValue = String(describing: error)
+                        let alert = NSAlert(error: error)
+                        alert.messageText = "Could not export verified share package"
+                        alert.runModal()
+                    }
+                }
+            )
+        }
+
+        func windowWillClose(_ notification: Notification) {
+            reloadWork.cancel()
+            exportWork.cancel()
+            if reloadWork.hasActiveWork || exportWork.hasActiveWork {
+                statusLabel.stringValue = "Cancelling…"
             }
         }
 

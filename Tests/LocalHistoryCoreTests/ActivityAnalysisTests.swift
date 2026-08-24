@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import LocalHistoryCore
 
 final class ActivityAnalysisTests: XCTestCase {
@@ -41,9 +42,15 @@ final class ActivityAnalysisTests: XCTestCase {
         let start = makeDate("2026-08-18T09:00:00Z")
         let events = [
             webEvent(at: start, host: "github.com", title: "Pull requests · goalong-history", path: "/pulls"),
-            webEvent(at: start.addingTimeInterval(60), host: "github.com", title: "Improve analysis · Pull Request", path: "/pull/4"),
-            webEvent(at: start.addingTimeInterval(120), host: "developer.apple.com", title: "Accessibility API", path: "/accessibility"),
-            webEvent(at: start.addingTimeInterval(180), host: "developer.apple.com", title: "AXUIElement", path: "/axuielement"),
+            webEvent(
+                at: start.addingTimeInterval(60), host: "github.com", title: "Improve analysis · Pull Request",
+                path: "/pull/4"),
+            webEvent(
+                at: start.addingTimeInterval(120), host: "developer.apple.com", title: "Accessibility API",
+                path: "/accessibility"),
+            webEvent(
+                at: start.addingTimeInterval(180), host: "developer.apple.com", title: "AXUIElement",
+                path: "/axuielement"),
         ]
 
         let analysis = ActivityAnalysisEngine.analyze(
@@ -128,11 +135,51 @@ final class ActivityAnalysisTests: XCTestCase {
         XCTAssertTrue(cleaned?.contains("[REDACTED") == true)
     }
 
+    func testCompiledSemanticSanitizerRulesPreserveOrderedReplacementBehavior() {
+        let corpus = [
+            "  tabs\tand   spaces\r\n\rline\n\n\nend  ",
+            "PASSWORD: basic hidden-value, access_token=Bearer another-value",
+            "sk-abcdefghijklmnop ghp_abcdefghijklmnopqrstuvwxyz1234",
+            "eyJabcdefghijkl.abcdefgh.abcdefgh 4111 1111 1111 1111",
+            "Résumé sans secret et texte 日本語",
+        ]
+        let rules: [(String, String)] = [
+            ("[\\t ]+", " "),
+            ("\\r\\n?", "\n"),
+            ("\\n{3,}", "\n\n"),
+            (
+                #"(?i)\b(password|passwd|secret|api[ _-]?key|access[ _-]?token|authorization)\s*[:=]\s*(?:(?:bearer|basic)\s+)?[^\s,;]+"#,
+                "$1=[REDACTED]"
+            ),
+            (#"\bsk-[A-Za-z0-9_-]{16,}\b"#, "[REDACTED_KEY]"),
+            (#"\bgh[pousr]_[A-Za-z0-9]{20,}\b"#, "[REDACTED_TOKEN]"),
+            (
+                #"\beyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"#,
+                "[REDACTED_TOKEN]"
+            ),
+            (#"\b(?:\d[ -]*?){13,19}\b"#, "[REDACTED_NUMBER]"),
+        ]
+
+        for raw in corpus {
+            var expected = raw.replacingOccurrences(of: "\u{0000}", with: "")
+            for (pattern, replacement) in rules {
+                expected = expected.replacingOccurrences(
+                    of: pattern,
+                    with: replacement,
+                    options: .regularExpression
+                )
+            }
+            expected = expected.trimmingCharacters(in: .whitespacesAndNewlines)
+            XCTAssertEqual(ActivitySemanticTextSanitizer.redact(raw), expected)
+        }
+    }
+
     func testAgentDigestIsDeterministicForTheSameInputs() {
         let start = makeDate("2026-08-18T14:00:00Z")
         let events = [
             webEvent(at: start, host: "github.com", title: "goalong-history", path: "/blancmathis/goalong-history"),
-            webEvent(at: start.addingTimeInterval(60), host: "github.com", title: "Activity analysis", path: "/issues/10"),
+            webEvent(
+                at: start.addingTimeInterval(60), host: "github.com", title: "Activity analysis", path: "/issues/10"),
         ]
         let generatedAt = makeDate("2026-08-18T23:00:00Z")
         let first = ActivityAnalysisEngine.analyze(

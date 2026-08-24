@@ -285,11 +285,7 @@
                 Text(ProductIdentity.displayName)
                 Spacer()
                 Button {
-                    if updates.isConfigured {
-                        updates.checkForUpdates()
-                    } else {
-                        updates.installUpdateEnabledBuild()
-                    }
+                    updates.checkForUpdates()
                 } label: {
                     if updates.isPreparingAvailableUpdate {
                         ProgressView()
@@ -299,11 +295,11 @@
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(updates.isPreparingAvailableUpdate)
+                .disabled(!updates.isConfigured || updates.isPreparingAvailableUpdate)
                 .help(
                     updates.isConfigured
                         ? "Check for updates"
-                        : "Install the release build to enable in-app updates"
+                        : "Updates are disabled in this privacy-audited source build"
                 )
             }
             .font(.system(size: 9, weight: .medium))

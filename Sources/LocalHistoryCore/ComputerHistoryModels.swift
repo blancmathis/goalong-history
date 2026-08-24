@@ -12,6 +12,9 @@ public enum ComputerHistoryMetadata {
 
     public enum Phase {
         public static let before = "before"
+        /// Context sampled close to an input callback without a guarantee that the
+        /// foreground application had not already reacted to that input.
+        public static let nearEvent = "near_event"
         public static let after = "after"
         public static let settled = "settled"
     }
@@ -19,6 +22,7 @@ public enum ComputerHistoryMetadata {
 
 public enum ComputerHistoryActionKind: String, Codable, CaseIterable {
     case click
+    case drag
     case typing
     case shortcut
     case navigationKey
@@ -161,6 +165,10 @@ public struct ComputerHistoryEpisode: Codable, Equatable, Identifiable {
     public let requestsOrIntentions: [String]
     public let observableOutcomes: [String]
     public let interactions: [ComputerHistoryInteraction]
+    /// Exact number of interactions analyzed for this episode when `interactions`
+    /// is a bounded representative projection. A missing value means the legacy
+    /// payload retained the complete interaction array.
+    public let sourceInteractionCount: Int?
     public let eventCount: Int
     public let semanticSnapshotCount: Int
     public let workflowFingerprint: String
@@ -180,6 +188,7 @@ public struct ComputerHistoryEpisode: Codable, Equatable, Identifiable {
         requestsOrIntentions: [String],
         observableOutcomes: [String],
         interactions: [ComputerHistoryInteraction],
+        sourceInteractionCount: Int? = nil,
         eventCount: Int,
         semanticSnapshotCount: Int,
         workflowFingerprint: String,
@@ -198,10 +207,19 @@ public struct ComputerHistoryEpisode: Codable, Equatable, Identifiable {
         self.requestsOrIntentions = requestsOrIntentions
         self.observableOutcomes = observableOutcomes
         self.interactions = interactions
+        self.sourceInteractionCount = sourceInteractionCount.map {
+            max(interactions.count, $0)
+        }
         self.eventCount = max(0, eventCount)
         self.semanticSnapshotCount = max(0, semanticSnapshotCount)
         self.workflowFingerprint = workflowFingerprint
         self.provenance = provenance
+    }
+
+    /// Exact interaction count independent of whether the persisted memory uses
+    /// the full legacy array or the bounded representative projection.
+    public var totalInteractionCount: Int {
+        sourceInteractionCount ?? interactions.count
     }
 }
 
@@ -279,6 +297,12 @@ public struct ComputerHistoryCoverage: Codable, Equatable {
     public let firstSourceSequence: UInt64?
     public let lastSourceSequence: UInt64?
     public let lastSourceEventHash: String?
+    /// Present only when the derived memory is a representative projection.
+    /// The corresponding unqualified counts above always describe the complete
+    /// source sequence that was analyzed.
+    public let retainedEpisodeCount: Int?
+    public let retainedInteractionCount: Int?
+    public let retainedResourceCount: Int?
 
     public init(
         sourceEventCount: Int,
@@ -291,24 +315,70 @@ public struct ComputerHistoryCoverage: Codable, Equatable {
         suppressedEventCount: Int,
         firstSourceSequence: UInt64?,
         lastSourceSequence: UInt64?,
-        lastSourceEventHash: String?
+        lastSourceEventHash: String?,
+        retainedEpisodeCount: Int? = nil,
+        retainedInteractionCount: Int? = nil,
+        retainedResourceCount: Int? = nil
     ) {
         self.sourceEventCount = max(0, sourceEventCount)
         self.actionEventCount = max(0, actionEventCount)
         self.semanticSnapshotCount = max(0, semanticSnapshotCount)
-        self.linkedInteractionCount = max(0, linkedInteractionCount)
+        let normalizedLinkedInteractionCount = max(0, linkedInteractionCount)
+        let normalizedResourceCount = max(0, resourceCount)
+        self.linkedInteractionCount = normalizedLinkedInteractionCount
         self.interactionsWithBeforeAndAfterContext = max(0, interactionsWithBeforeAndAfterContext)
-        self.resourceCount = max(0, resourceCount)
-        self.episodeCount = max(0, episodeCount)
+        self.resourceCount = normalizedResourceCount
+        let normalizedEpisodeCount = max(0, episodeCount)
+        self.episodeCount = normalizedEpisodeCount
         self.suppressedEventCount = max(0, suppressedEventCount)
         self.firstSourceSequence = firstSourceSequence
         self.lastSourceSequence = lastSourceSequence
         self.lastSourceEventHash = lastSourceEventHash
+        self.retainedEpisodeCount = retainedEpisodeCount.map {
+            min(normalizedEpisodeCount, max(0, $0))
+        }
+        self.retainedInteractionCount = retainedInteractionCount.map {
+            min(normalizedLinkedInteractionCount, max(0, $0))
+        }
+        self.retainedResourceCount = retainedResourceCount.map {
+            min(normalizedResourceCount, max(0, $0))
+        }
     }
 
     public var semanticPairCoverage: Double? {
         guard linkedInteractionCount > 0 else { return nil }
         return Double(interactionsWithBeforeAndAfterContext) / Double(linkedInteractionCount)
+    }
+
+    public var usesRepresentativeProjection: Bool {
+        retainedEpisodeCount != nil
+            || retainedInteractionCount != nil
+            || retainedResourceCount != nil
+    }
+}
+
+/// Constant-size facts collected while streaming the complete raw journal. The
+/// analysis can therefore discard high-volume maintenance rows from RAM without
+/// misreporting how much source evidence existed or where continuity was lost.
+public struct ComputerHistorySourceJournalSummary: Equatable {
+    public let eventCount: Int
+    public let continuityBoundaryCount: Int
+    public let firstSourceSequence: UInt64?
+    public let lastSourceSequence: UInt64?
+    public let lastSourceEventHash: String?
+
+    public init(
+        eventCount: Int,
+        continuityBoundaryCount: Int,
+        firstSourceSequence: UInt64?,
+        lastSourceSequence: UInt64?,
+        lastSourceEventHash: String?
+    ) {
+        self.eventCount = max(0, eventCount)
+        self.continuityBoundaryCount = max(0, continuityBoundaryCount)
+        self.firstSourceSequence = firstSourceSequence
+        self.lastSourceSequence = lastSourceSequence
+        self.lastSourceEventHash = lastSourceEventHash
     }
 }
 

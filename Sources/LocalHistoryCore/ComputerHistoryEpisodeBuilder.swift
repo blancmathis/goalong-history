@@ -11,15 +11,300 @@ enum ComputerHistoryEpisodeBuilder {
         }
     }
 
+    /// Scans every line while retaining only bounded first/last, state-changing
+    /// and deterministic landmark evidence. Small fixtures keep their historical
+    /// byte-for-byte behavior.
+    private struct BoundedTextEvidence {
+        private let compact: Bool
+        private var count = 0
+        private var all: [String] = []
+        private var first: [String] = []
+        private var signals: [String] = []
+        private var landmarks: [String] = []
+        private var last: [String] = []
+
+        init(compact: Bool) {
+            self.compact = compact
+        }
+
+        mutating func append(_ value: String) {
+            guard !value.isEmpty else { return }
+            guard compact else {
+                all.append(value)
+                return
+            }
+
+            count += 1
+            if first.count < 24 { first.append(value) }
+            if ComputerHistorySupport.isHighValueComputerHistoryText(value),
+                signals.count < 64
+            {
+                signals.append(value)
+            }
+            if (count & (count - 1)) == 0 || count.isMultiple(of: 256),
+                landmarks.count < 48
+            {
+                landmarks.append(value)
+            }
+            last.append(value)
+            if last.count > 24 { last.removeFirst() }
+        }
+
+        mutating func append(contentsOf values: [String]) {
+            for value in values { append(value) }
+        }
+
+        var values: [String] {
+            guard compact else { return all }
+            return ComputerHistorySupport.distinctText(
+                first + signals + landmarks + last,
+                maximum: 160,
+                maximumLength: 360
+            )
+        }
+    }
+
+    private struct EpisodeEventSummary {
+        let eventCount: Int
+        let semanticSnapshotCount: Int
+        let provenance: ActivityProvenance
+    }
+
+    /// One bounded index per build replaces repeated full-event scans for every
+    /// episode while preserving the caller's original event order.
+    private struct EventLookup {
+        private let events: [HistoryEvent]
+        private let chronologicalIndices: [Int]
+        private let chronologyMatchesOriginalOrder: Bool
+        private let linkedIndicesByID: [String: [Int]]
+        private let linkedIndicesBySequence: [UInt64: [Int]]
+        private let suppressedTimestamps: [Date]
+
+        init(
+            events: [HistoryEvent],
+            linkedSourceIDs: Set<String>,
+            linkedSourceSequences: Set<UInt64>
+        ) {
+            self.events = events
+            let originalIndices = Array(events.indices)
+            let alreadyChronological = zip(originalIndices, originalIndices.dropFirst())
+                .allSatisfy { left, right in
+                    events[left].timestamp <= events[right].timestamp
+                }
+            let chronologicalIndices =
+                alreadyChronological
+                ? originalIndices
+                : originalIndices.sorted { left, right in
+                    let leftTimestamp = events[left].timestamp
+                    let rightTimestamp = events[right].timestamp
+                    if leftTimestamp == rightTimestamp { return left < right }
+                    return leftTimestamp < rightTimestamp
+                }
+            self.chronologicalIndices = chronologicalIndices
+            chronologyMatchesOriginalOrder = alreadyChronological
+
+            var linkedIndicesByID: [String: [Int]] = [:]
+            var linkedIndicesBySequence: [UInt64: [Int]] = [:]
+            var suppressedTimestamps: [Date] = []
+            for index in originalIndices {
+                let event = events[index]
+                if event.isObservationContinuityBoundary {
+                    suppressedTimestamps.append(event.timestamp)
+                }
+                if linkedSourceIDs.contains(event.id) {
+                    linkedIndicesByID[event.id, default: []].append(index)
+                }
+                if let sequence = event.integrity?.sequence,
+                    linkedSourceSequences.contains(sequence)
+                {
+                    linkedIndicesBySequence[sequence, default: []].append(index)
+                }
+            }
+            self.linkedIndicesByID = linkedIndicesByID
+            self.linkedIndicesBySequence = linkedIndicesBySequence
+            self.suppressedTimestamps = suppressedTimestamps.sorted()
+        }
+
+        func hasSuppressedEvent(after lowerBound: Date, before upperBound: Date) -> Bool {
+            guard lowerBound < upperBound else { return false }
+            let index = firstSuppressedIndex { $0 > lowerBound }
+            return index < suppressedTimestamps.count
+                && suppressedTimestamps[index] < upperBound
+        }
+
+        func temporalIndices(from start: Date, through end: Date) -> [Int] {
+            let lowerBound = firstChronologicalIndex {
+                events[$0].timestamp >= start
+            }
+            let upperBound = firstChronologicalIndex {
+                events[$0].timestamp > end
+            }
+            guard lowerBound < upperBound else { return [] }
+            var result = Array(chronologicalIndices[lowerBound..<upperBound])
+            if !chronologyMatchesOriginalOrder {
+                result.sort()
+            }
+            return result
+        }
+
+        func contextLines(at indices: [Int]) -> [String] {
+            var evidence = BoundedTextEvidence(compact: indices.count > 512)
+            for index in indices {
+                autoreleasepool {
+                    let event = events[index]
+                    guard event.suppressionReason == nil,
+                        !event.isObservationContinuityBoundary
+                    else { return }
+                    for value in [event.window?.title, event.message].compactMap({ $0 }) {
+                        if let clean = ActivitySemanticTextSanitizer.clean(
+                            value,
+                            maximumLength: 360
+                        ) {
+                            evidence.append(clean)
+                        }
+                    }
+                }
+            }
+            return evidence.values
+        }
+
+        func episodeEvents(
+            temporalIndices: [Int],
+            temporalStart: Date,
+            temporalEnd: Date,
+            linkedSourceIDs: Set<String>,
+            linkedSourceSequences: Set<UInt64>,
+            provenanceReferenceLimit: Int?
+        ) -> EpisodeEventSummary {
+            var linkedOutsideTemporalRange: [Int] = []
+            for sourceID in linkedSourceIDs {
+                if let indices = linkedIndicesByID[sourceID] {
+                    for index in indices
+                    where
+                        !(events[index].timestamp >= temporalStart
+                        && events[index].timestamp <= temporalEnd)
+                    {
+                        linkedOutsideTemporalRange.append(index)
+                    }
+                }
+            }
+            for sequence in linkedSourceSequences {
+                if let indices = linkedIndicesBySequence[sequence] {
+                    for index in indices
+                    where
+                        !(events[index].timestamp >= temporalStart
+                        && events[index].timestamp <= temporalEnd)
+                    {
+                        linkedOutsideTemporalRange.append(index)
+                    }
+                }
+            }
+            linkedOutsideTemporalRange.sort()
+
+            var eventCount = 0
+            var semanticSnapshotCount = 0
+            var completeEvents: [HistoryEvent] = []
+            if provenanceReferenceLimit == nil {
+                completeEvents.reserveCapacity(
+                    temporalIndices.count + linkedOutsideTemporalRange.count
+                )
+            }
+            var firstEvents: [HistoryEvent] = []
+            var lastEvents: [HistoryEvent] = []
+            var temporalPosition = 0
+            var linkedPosition = 0
+            var lastSelectedIndex: Int?
+            while temporalPosition < temporalIndices.count
+                || linkedPosition < linkedOutsideTemporalRange.count
+            {
+                let nextIndex: Int
+                if temporalPosition >= temporalIndices.count {
+                    nextIndex = linkedOutsideTemporalRange[linkedPosition]
+                    linkedPosition += 1
+                } else if linkedPosition >= linkedOutsideTemporalRange.count
+                    || temporalIndices[temporalPosition]
+                        < linkedOutsideTemporalRange[linkedPosition]
+                {
+                    nextIndex = temporalIndices[temporalPosition]
+                    temporalPosition += 1
+                } else {
+                    nextIndex = linkedOutsideTemporalRange[linkedPosition]
+                    linkedPosition += 1
+                }
+                if nextIndex != lastSelectedIndex {
+                    let event = events[nextIndex]
+                    eventCount += 1
+                    if event.kind == .semanticSnapshot {
+                        semanticSnapshotCount += 1
+                    }
+                    if provenanceReferenceLimit == nil {
+                        completeEvents.append(event)
+                    } else if firstEvents.count < 8 {
+                        firstEvents.append(event)
+                    } else {
+                        lastEvents.append(event)
+                        if lastEvents.count > 8 { lastEvents.removeFirst() }
+                    }
+                    lastSelectedIndex = nextIndex
+                }
+            }
+            return EpisodeEventSummary(
+                eventCount: eventCount,
+                semanticSnapshotCount: semanticSnapshotCount,
+                provenance: ComputerHistorySupport.provenance(
+                    for: provenanceReferenceLimit == nil
+                        ? completeEvents
+                        : firstEvents + lastEvents
+                )
+            )
+        }
+
+        private func firstChronologicalIndex(
+            where predicate: (Int) -> Bool
+        ) -> Int {
+            var lower = 0
+            var upper = chronologicalIndices.count
+            while lower < upper {
+                let middle = lower + (upper - lower) / 2
+                if predicate(chronologicalIndices[middle]) {
+                    upper = middle
+                } else {
+                    lower = middle + 1
+                }
+            }
+            return lower
+        }
+
+        private func firstSuppressedIndex(where predicate: (Date) -> Bool) -> Int {
+            var lower = 0
+            var upper = suppressedTimestamps.count
+            while lower < upper {
+                let middle = lower + (upper - lower) / 2
+                if predicate(suppressedTimestamps[middle]) {
+                    upper = middle
+                } else {
+                    lower = middle + 1
+                }
+            }
+            return lower
+        }
+    }
+
     static func build(
         interactions: [ComputerHistoryInteraction],
         events: [HistoryEvent],
-        resources: [ComputerHistoryResourceReference]
+        resources: [ComputerHistoryResourceReference],
+        provenanceReferenceLimit: Int? = nil
     ) -> [ComputerHistoryEpisode] {
         guard !interactions.isEmpty else { return [] }
-        let suppressedTimestamps = events
-            .filter { $0.suppressionReason != nil }
-            .map(\.timestamp)
+        let (linkedSourceIDs, linkedSourceSequences) = sourceReferences(
+            for: interactions
+        )
+        let eventLookup = EventLookup(
+            events: events,
+            linkedSourceIDs: linkedSourceIDs,
+            linkedSourceSequences: linkedSourceSequences
+        )
         let resourcesByID = Dictionary(
             uniqueKeysWithValues: resources.map { ($0.id, $0) }
         )
@@ -34,7 +319,7 @@ enum ComputerHistoryEpisodeBuilder {
                 previous,
                 interaction,
                 resources: resourcesByID,
-                suppressedTimestamps: suppressedTimestamps
+                eventLookup: eventLookup
             ) {
                 previous.append(interaction)
                 builders.append(previous)
@@ -44,8 +329,15 @@ enum ComputerHistoryEpisodeBuilder {
             }
         }
 
-        return builders.map {
-            finish($0, events: events, resources: resourcesByID)
+        return builders.map { builder in
+            autoreleasepool {
+                finish(
+                    builder,
+                    eventLookup: eventLookup,
+                    resources: resourcesByID,
+                    provenanceReferenceLimit: provenanceReferenceLimit
+                )
+            }
         }
     }
 
@@ -53,14 +345,12 @@ enum ComputerHistoryEpisodeBuilder {
         _ builder: Builder,
         _ next: ComputerHistoryInteraction,
         resources: [String: ComputerHistoryResourceReference],
-        suppressedTimestamps: [Date]
+        eventLookup: EventLookup
     ) -> Bool {
         let previous = builder.last
         let gap = next.start.timeIntervalSince(previous.end)
         guard gap >= -1, gap <= 20 * 60 else { return false }
-        if suppressedTimestamps.contains(where: {
-            $0 > previous.end && $0 < next.start
-        }) {
+        if eventLookup.hasSuppressedEvent(after: previous.end, before: next.start) {
             return false
         }
 
@@ -89,7 +379,8 @@ enum ComputerHistoryEpisodeBuilder {
         let nextKinds = Set(
             next.resourceIDs.compactMap { resources[$0]?.kind }
         )
-        let bothHaveSpecificResources = !previousResources.isEmpty
+        let bothHaveSpecificResources =
+            !previousResources.isEmpty
             && !nextResources.isEmpty
             && !previousKinds.isSubset(of: [.application])
             && !nextKinds.isSubset(of: [.application])
@@ -118,15 +409,21 @@ enum ComputerHistoryEpisodeBuilder {
 
     private static func finish(
         _ builder: Builder,
-        events: [HistoryEvent],
-        resources: [String: ComputerHistoryResourceReference]
+        eventLookup: EventLookup,
+        resources: [String: ComputerHistoryResourceReference],
+        provenanceReferenceLimit: Int?
     ) -> ComputerHistoryEpisode {
         let interactions = builder.interactions
         let start = interactions.first?.start ?? Date()
         let end = interactions.last?.end ?? start
-        let resourceIDs = ComputerHistorySupport.distinct(
-            interactions.flatMap(\.resourceIDs)
-        )
+        var seenResourceIDs = Set<String>()
+        var resourceIDs: [String] = []
+        for interaction in interactions {
+            for resourceID in interaction.resourceIDs
+            where seenResourceIDs.insert(resourceID).inserted {
+                resourceIDs.append(resourceID)
+            }
+        }
         let episodeResources = resourceIDs.compactMap { resources[$0] }
         let applications = ComputerHistorySupport.rankedDistinct(
             interactions.compactMap(\.application)
@@ -134,30 +431,28 @@ enum ComputerHistoryEpisodeBuilder {
         let sites = ComputerHistorySupport.rankedDistinct(
             interactions.compactMap(\.host)
         )
-        let semanticLines = interactions.flatMap { interaction -> [String] in
-            var lines = interaction.semanticDelta
+        var semanticEvidence = BoundedTextEvidence(
+            compact: interactions.count > 512
+        )
+        for interaction in interactions {
+            semanticEvidence.append(contentsOf: interaction.semanticDelta)
             if let after = interaction.afterContext {
-                lines.append(contentsOf: ComputerHistorySupport.splitSemanticLines(after))
+                semanticEvidence.append(
+                    contentsOf: ComputerHistorySupport.splitSemanticLines(after)
+                )
             }
-            return lines
         }
+        let semanticLines = semanticEvidence.values
 
         // Window titles and recorder messages are also observable foreground evidence.
         // They matter when an application exposes a state such as “tests failed” in its
         // title bar but does not expose equivalent Accessibility text inside the page.
         // Suppressed events never contribute content to status inference.
-        let visibleEventContextLines = events
-            .filter {
-                $0.suppressionReason == nil
-                    && $0.timestamp >= start
-                    && $0.timestamp <= end.addingTimeInterval(1)
-            }
-            .flatMap { event -> [String] in
-                [event.window?.title, event.message]
-                    .compactMap {
-                        ActivitySemanticTextSanitizer.clean($0, maximumLength: 360)
-                    }
-            }
+        let temporalEventIndices = eventLookup.temporalIndices(
+            from: start,
+            through: end.addingTimeInterval(1)
+        )
+        let visibleEventContextLines = eventLookup.contextLines(at: temporalEventIndices)
 
         let requests = ComputerHistorySupport.distinctText(
             semanticLines.filter(ComputerHistorySupport.looksLikeRequestOrIntention),
@@ -185,19 +480,21 @@ enum ComputerHistoryEpisodeBuilder {
             interactions: interactions,
             resources: resources
         )
-        let sourceIDs = Set(interactions.flatMap { $0.provenance.sourceEventIDs })
-        let sourceSequences = Set(interactions.flatMap { $0.provenance.sourceSequences })
-        let episodeEvents = events.filter { event in
-            let isLinked = sourceIDs.contains(event.id)
-                || event.integrity.map { sourceSequences.contains($0.sequence) } == true
-            let isInside = event.timestamp >= start
-                && event.timestamp <= end.addingTimeInterval(1)
-            return isLinked || isInside
-        }
+        let (sourceIDs, sourceSequences) = sourceReferences(for: interactions)
+        let episodeEvents = eventLookup.episodeEvents(
+            temporalIndices: temporalEventIndices,
+            temporalStart: start,
+            temporalEnd: end.addingTimeInterval(1),
+            linkedSourceIDs: sourceIDs,
+            linkedSourceSequences: sourceSequences,
+            provenanceReferenceLimit: provenanceReferenceLimit
+        )
+        let firstInteractionID = interactions.first?.id ?? "missing-first"
+        let lastInteractionID = interactions.last?.id ?? "missing-last"
 
         return ComputerHistoryEpisode(
             id: ComputerHistorySupport.stableIdentifier(
-                "episode|\(start.timeIntervalSince1970)|\(fingerprint)"
+                "episode|\(start.timeIntervalSince1970)|\(end.timeIntervalSince1970)|\(firstInteractionID)|\(lastInteractionID)|\(fingerprint)"
             ),
             start: start,
             end: end,
@@ -218,12 +515,10 @@ enum ComputerHistoryEpisodeBuilder {
             requestsOrIntentions: requests,
             observableOutcomes: outcomes,
             interactions: interactions,
-            eventCount: episodeEvents.count,
-            semanticSnapshotCount: episodeEvents.filter {
-                $0.kind == .semanticSnapshot
-            }.count,
+            eventCount: episodeEvents.eventCount,
+            semanticSnapshotCount: episodeEvents.semanticSnapshotCount,
             workflowFingerprint: fingerprint,
-            provenance: ComputerHistorySupport.provenance(for: episodeEvents)
+            provenance: episodeEvents.provenance
         )
     }
 
@@ -238,15 +533,18 @@ enum ComputerHistoryEpisodeBuilder {
         ]
         var output = semanticLines.compactMap { line -> String? in
             let normalized = ComputerHistorySupport.normalized(line)
-            guard ComputerHistorySupport.containsAny(
-                normalized,
-                markers: completionMarkers
-            ) else { return nil }
+            guard
+                ComputerHistorySupport.containsAny(
+                    normalized,
+                    markers: completionMarkers
+                )
+            else { return nil }
             return ComputerHistorySupport.bounded(line, maximum: 360)
         }
-        if output.isEmpty,
-            let lastDelta = interactions.reversed().flatMap(\.semanticDelta).first
-        {
+        let lastDelta = interactions.reversed().lazy.compactMap {
+            $0.semanticDelta.first
+        }.first
+        if output.isEmpty, let lastDelta {
             output.append(
                 "Last observable change: "
                     + ComputerHistorySupport.bounded(lastDelta, maximum: 320)
@@ -260,6 +558,18 @@ enum ComputerHistoryEpisodeBuilder {
             maximum: 8,
             maximumLength: 360
         )
+    }
+
+    private static func sourceReferences(
+        for interactions: [ComputerHistoryInteraction]
+    ) -> (ids: Set<String>, sequences: Set<UInt64>) {
+        var ids = Set<String>()
+        var sequences = Set<UInt64>()
+        for interaction in interactions {
+            ids.formUnion(interaction.provenance.sourceEventIDs)
+            sequences.formUnion(interaction.provenance.sourceSequences)
+        }
+        return (ids, sequences)
     }
 
     private struct StatusResult {
@@ -299,9 +609,11 @@ enum ComputerHistoryEpisodeBuilder {
             return values
         }
         recentLines.append(contentsOf: eventContextLines.suffix(3))
-        let recentText = " " + ComputerHistorySupport.normalized(
-            recentLines.joined(separator: " ")
-        ) + " "
+        let recentText =
+            " "
+            + ComputerHistorySupport.normalized(
+                recentLines.joined(separator: " ")
+            ) + " "
         if let recent = explicitStatus(
             in: recentText,
             blocked: blocked,
@@ -312,9 +624,21 @@ enum ComputerHistoryEpisodeBuilder {
             return recent
         }
 
-        let allText = " " + ComputerHistorySupport.normalized(
-            (semanticLines + eventContextLines + interactions.map(\.label)).joined(separator: " ")
-        ) + " "
+        let interactionLabels: [String]
+        if interactions.count > 512 {
+            var labelEvidence = BoundedTextEvidence(compact: true)
+            for interaction in interactions {
+                labelEvidence.append(interaction.label)
+            }
+            interactionLabels = labelEvidence.values
+        } else {
+            interactionLabels = interactions.map(\.label)
+        }
+        let allText =
+            " "
+            + ComputerHistorySupport.normalized(
+                (semanticLines + eventContextLines + interactionLabels).joined(separator: " ")
+            ) + " "
         if let historical = explicitStatus(
             in: allText,
             blocked: blocked,
@@ -344,7 +668,8 @@ enum ComputerHistoryEpisodeBuilder {
         completed: [String],
         confidence: Double
     ) -> StatusResult? {
-        let completionIsNegated = text.contains(" not completed ")
+        let completionIsNegated =
+            text.contains(" not completed ")
             || text.contains(" not done ")
             || text.contains(" pas termine ")
             || text.contains(" non termine ")
@@ -381,7 +706,7 @@ enum ComputerHistoryEpisodeBuilder {
         {
             return ComputerHistorySupport.sentenceTitle(outcome, maximum: 100)
         }
-        if let delta = interactions.flatMap(\.semanticDelta).first {
+        if let delta = interactions.lazy.compactMap({ $0.semanticDelta.first }).first {
             return ComputerHistorySupport.sentenceTitle(delta, maximum: 100)
         }
         if let application = applications.first { return "Worked in \(application)" }
@@ -403,10 +728,11 @@ enum ComputerHistoryEpisodeBuilder {
                     + resources.prefix(4).map(\.title).joined(separator: ", ")
             )
         }
-        let meaningful = interactions.filter {
-            ![.scroll, .focusChange, .contextObservation].contains($0.action)
-        }
-        let sequence = meaningful.prefix(10).map(\.label)
+        let sequence = Array(
+            interactions.lazy.filter {
+                ![.scroll, .focusChange, .contextObservation].contains($0.action)
+            }.prefix(10).map(\.label)
+        )
         if !sequence.isEmpty {
             parts.append("Observed sequence: " + sequence.joined(separator: " → "))
         }
@@ -423,20 +749,23 @@ enum ComputerHistoryEpisodeBuilder {
         interactions: [ComputerHistoryInteraction],
         resources: [String: ComputerHistoryResourceReference]
     ) -> String {
-        let sequence = interactions.compactMap { interaction -> String? in
-            guard ![.scroll, .focusChange, .contextObservation]
-                .contains(interaction.action)
-            else { return nil }
-            let application = interaction.bundleIdentifier
+        var compact: [String] = []
+        for interaction in interactions {
+            guard
+                ![.scroll, .focusChange, .contextObservation]
+                    .contains(interaction.action)
+            else { continue }
+            let application =
+                interaction.bundleIdentifier
                 ?? ComputerHistorySupport.normalized(interaction.application ?? "unknown")
-            let resourceKind = interaction.resourceIDs
+            let resourceKind =
+                interaction.resourceIDs
                 .compactMap { resources[$0]?.kind.rawValue }
                 .first ?? "none"
-            return "\(application):\(interaction.action.rawValue):\(resourceKind)"
+            let value = "\(application):\(interaction.action.rawValue):\(resourceKind)"
+            if compact.last != value { compact.append(value) }
+            if compact.count == 12 { break }
         }
-        let compact = Array(
-            ComputerHistorySupport.collapseConsecutive(sequence).prefix(12)
-        )
         return ComputerHistorySupport.stableIdentifier(
             "workflow|" + compact.joined(separator: "→")
         )

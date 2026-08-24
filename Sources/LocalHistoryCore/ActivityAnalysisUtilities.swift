@@ -1,5 +1,90 @@
 import Foundation
 
+extension HistoryEvent {
+    /// Drops per-field integrity commitments from a transient analysis copy.
+    ///
+    /// The complete commitments remain authoritative in the raw JSONL journal. Every
+    /// derived-history consumer uses only the sequence and event hash for provenance,
+    /// plus the event's ordinary observable fields for reconstruction. Retaining the
+    /// commitment array for every useful row therefore multiplies the working set
+    /// without changing any derived result.
+    package var compactedForDerivedAnalysis: HistoryEvent {
+        guard let integrity, !integrity.fieldCommitments.isEmpty else { return self }
+        return HistoryEvent(
+            schemaVersion: schemaVersion,
+            id: id,
+            sessionID: sessionID,
+            timestamp: timestamp,
+            kind: kind,
+            app: app,
+            window: window,
+            element: element,
+            url: url,
+            pointer: pointer,
+            keyboard: keyboard,
+            scroll: scroll,
+            inputOrigin: inputOrigin,
+            semanticContext: semanticContext,
+            classification: classification,
+            suppressionReason: suppressionReason,
+            message: message,
+            metadata: metadata,
+            integrity: EventIntegrity(
+                sequence: integrity.sequence,
+                previousEventHash: integrity.previousEventHash,
+                eventRoot: integrity.eventRoot,
+                eventHash: integrity.eventHash,
+                fieldCommitments: []
+            )
+        )
+    }
+
+    /// Raw recorder bookkeeping remains available for diagnostics and integrity,
+    /// but it must not dominate user-facing analyses or their in-memory working set.
+    package var isDerivedAnalysisEvidence: Bool {
+        if isObservationContinuityBoundary { return true }
+        switch kind {
+        case .agentArtifactCaptured, .recorderHealth, .permissionStatus, .diagnostic:
+            return false
+        default:
+            return true
+        }
+    }
+
+    /// These events prove that observation was interrupted or that continuity
+    /// cannot safely be inferred across the timestamp, even without an attached
+    /// `suppressionReason` on older journals.
+    package var isObservationContinuityBoundary: Bool {
+        if suppressionReason != nil { return true }
+        switch kind {
+        case .recorderStarted, .recorderStopped, .recordingPaused, .recordingResumed,
+            .captureSuppressed, .captureResumed, .secureInputSuppressed,
+            .secureInputResumed, .sessionLocked, .sessionUnlocked, .systemSleep,
+            .systemWake, .historyCleared:
+            return true
+        case .permissionStatus:
+            return metadata?["accessibility"] == "false"
+                || metadata?["input_monitoring"] == "false"
+        case .recorderHealth:
+            return metadata?["observation_gap"] == "true"
+        default:
+            return false
+        }
+    }
+
+    package var isComputerHistoryEvidence: Bool {
+        if isObservationContinuityBoundary { return true }
+        switch kind {
+        case .applicationActivated, .windowChanged, .focusChanged, .semanticSnapshot,
+            .urlChanged, .mouseClick, .keyboardShortcut, .keyPressed, .typingBurst,
+            .scrollBurst:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 extension ActivityAnalysisEngine {
     static func isUseful(_ event: HistoryEvent) -> Bool {
         if semanticText(from: event) != nil { return true }

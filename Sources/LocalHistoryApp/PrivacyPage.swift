@@ -368,10 +368,10 @@
             LHCard {
                 HStack(alignment: .top, spacing: 18) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Delete detailed local activity")
+                        Text("Delete local activity and derived memories")
                             .font(.system(size: 14, weight: .semibold))
                         Text(
-                            "Deleting details does not erase existing minute commitments or server receipts. Those periods remain cryptographically present, but can only be shared as private afterward."
+                            "Deleting activity also removes its local semantic context, Activity Analysis, Activity Memory and Computer History projections. Agent Activity's source index, Screen Time, minute commitments and server receipts remain."
                         )
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -386,7 +386,7 @@
                             deletionScope = .lastHour
                         }
                         Divider()
-                        Button("All detailed history", role: .destructive) {
+                        Button("All local activity and memories", role: .destructive) {
                             deletionScope = .all
                         }
                     } label: {
@@ -518,12 +518,12 @@
             switch self {
             case .lastTenMinutes: return "Delete the last 10 minutes?"
             case .lastHour: return "Delete the last hour?"
-            case .all: return "Delete all detailed history?"
+            case .all: return "Delete all local activity and derived memories?"
             }
         }
 
         var message: String {
-            "This permanently removes the detailed local JSONL data. Existing cryptographic seals and receipts remain, so the affected periods cannot disappear and will become private-only."
+            "This permanently removes the selected JSONL events, semantic context and the Activity Analysis, Activity Memory and Computer History files derived from them, including Goalong's Codex mirror. Agent Activity's metadata-only source index, Screen Time, cryptographic seals and receipts remain."
         }
     }
 #endif

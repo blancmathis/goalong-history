@@ -29,7 +29,8 @@ enum ComputerHistorySupport {
 
     static func actionKind(for event: HistoryEvent) -> ComputerHistoryActionKind {
         switch event.kind {
-        case .mouseClick: return .click
+        case .mouseClick:
+            return event.metadata?["pointer_gesture"] == "drag" ? .drag : .click
         case .typingBurst: return .typing
         case .keyboardShortcut: return .shortcut
         case .keyPressed: return .navigationKey
@@ -49,12 +50,23 @@ enum ComputerHistorySupport {
 
         switch event.kind {
         case .mouseClick:
+            if event.metadata?["pointer_gesture"] == "drag" {
+                let button = event.pointer?.button ?? "pointer"
+                let distance = event.metadata?["drag_distance"].flatMap(Int.init)
+                if let target, let distance {
+                    return "Dragged to \(target) with the \(button) button (\(distance) px)"
+                }
+                if let target { return "Dragged to \(target) with the \(button) button" }
+                if let distance { return "Dragged with the \(button) button (\(distance) px)" }
+                return "Dragged with the \(button) button"
+            }
             let button = event.pointer?.button ?? "pointer"
             let count = event.pointer?.clickCount ?? 1
             let suffix = count > 1 ? " (\(count)-click sequence)" : ""
             if let target { return "Clicked \(target) with the \(button) button\(suffix)" }
             if let pointer = event.pointer {
-                return "Clicked at \(Int(pointer.x.rounded())), \(Int(pointer.y.rounded())) with the \(button) button\(suffix)"
+                return
+                    "Clicked at \(Int(pointer.x.rounded())), \(Int(pointer.y.rounded())) with the \(button) button\(suffix)"
             }
             return "Clicked with the \(button) button\(suffix)"
 
@@ -128,6 +140,57 @@ enum ComputerHistorySupport {
             sourceSequences: distinct(ordered.compactMap { $0.integrity?.sequence }),
             sourceEventHashes: distinct(ordered.compactMap { $0.integrity?.eventHash })
         )
+    }
+
+    static func compactProvenance(
+        _ provenance: ActivityProvenance,
+        maximumReferences: Int = 16
+    ) -> ActivityProvenance {
+        ActivityProvenance(
+            sourceEventIDs: representativeElements(
+                provenance.sourceEventIDs,
+                maximum: maximumReferences
+            ),
+            sourceSequences: representativeElements(
+                provenance.sourceSequences,
+                maximum: maximumReferences
+            ),
+            sourceEventHashes: representativeElements(
+                provenance.sourceEventHashes,
+                maximum: maximumReferences
+            )
+        )
+    }
+
+    /// Deterministic, order-preserving first/last/even sampling. This is used only
+    /// for reopenable references in derived data; exact counts remain in coverage
+    /// and the complete records remain in the raw journal.
+    static func representativeElements<T>(
+        _ values: [T],
+        maximum: Int
+    ) -> [T] {
+        let maximum = Swift.max(0, maximum)
+        guard maximum > 0, values.count > maximum else {
+            return maximum == 0 ? [] : values
+        }
+        guard maximum > 1 else { return [values[0]] }
+
+        var indices = Set<Int>()
+        indices.reserveCapacity(maximum)
+        for position in 0..<maximum {
+            let scaled =
+                Double(position) * Double(values.count - 1)
+                / Double(maximum - 1)
+            indices.insert(Int(scaled.rounded()))
+        }
+        // Floating-point rounding can theoretically collapse adjacent samples;
+        // fill any remaining slots deterministically without changing order.
+        if indices.count < maximum {
+            for index in values.indices where indices.insert(index).inserted {
+                if indices.count == maximum { break }
+            }
+        }
+        return indices.sorted().map { values[$0] }
     }
 
     static func distinctEvents(_ events: [HistoryEvent]) -> [HistoryEvent] {
@@ -228,11 +291,25 @@ enum ComputerHistorySupport {
 
     static func semanticDelta(before: String?, after: String?) -> [String] {
         guard let after else { return [] }
-        let beforeLines = splitSemanticLines(before ?? "")
-        let candidates = splitSemanticLines(after).filter { line in
-            !beforeLines.contains(where: { tokenSimilarity([$0], [line]) >= 0.88 })
+        let beforeTokenSets = splitSemanticLines(before ?? "").map { line in
+            autoreleasepool { Set(tokens(line)) }
         }
-        return Array(candidates.filter { $0.count >= 3 }.prefix(10))
+        var output: [String] = []
+        output.reserveCapacity(10)
+        for line in splitSemanticLines(after) where line.count >= 3 {
+            let matchesBefore = autoreleasepool {
+                let lineTokens = Set(tokens(line))
+                return beforeTokenSets.contains {
+                    jaccard($0, lineTokens) >= 0.88
+                }
+            }
+            guard !matchesBefore else { continue }
+            output.append(line)
+            // The persisted delta has always retained only the first ten useful
+            // lines. Stop comparing once later evidence cannot affect the result.
+            if output.count == 10 { break }
+        }
+        return output
     }
 
     static func looksLikeRequestOrIntention(_ value: String) -> Bool {
@@ -248,6 +325,23 @@ enum ComputerHistorySupport {
             "vérifie ", "write ", "we need ", "i want ",
         ]
         return clean.contains("?") || prefixes.contains(where: { lower.hasPrefix($0) })
+    }
+
+    static func isHighValueComputerHistoryText(_ value: String) -> Bool {
+        if looksLikeRequestOrIntention(value) { return true }
+        let padded = " " + normalized(value) + " "
+        return containsAny(
+            padded,
+            markers: [
+                " error ", " failed ", " failure ", " blocked ", " cannot ",
+                " waiting ", " pending ", " awaiting ", " saved ", " sent ",
+                " submitted ", " published ", " merged ", " closed ", " resolved ",
+                " deployed ", " passed ", " success ", " completed ", " done ",
+                " erreur ", " echoue ", " bloque ", " attente ", " enregistre ",
+                " envoye ", " publie ", " fusionne ", " ferme ", " resolu ",
+                " reussi ", " termine ",
+            ]
+        )
     }
 
     static func normalized(_ value: String) -> String {
@@ -274,7 +368,14 @@ enum ComputerHistorySupport {
 
     static func jaccard<T: Hashable>(_ left: Set<T>, _ right: Set<T>) -> Double {
         guard !left.isEmpty, !right.isEmpty else { return 0 }
-        return Double(left.intersection(right).count) / Double(left.union(right).count)
+        let smaller = left.count <= right.count ? left : right
+        let larger = left.count <= right.count ? right : left
+        var intersectionCount = 0
+        for value in smaller where larger.contains(value) {
+            intersectionCount += 1
+        }
+        let unionCount = left.count + right.count - intersectionCount
+        return Double(intersectionCount) / Double(unionCount)
     }
 
     static func collapseConsecutive(_ values: [String]) -> [String] {
@@ -304,4 +405,5 @@ enum ComputerHistorySupport {
     static func stableIdentifier(_ value: String) -> String {
         String(SHA256Digest.hashHex(value).prefix(24))
     }
+
 }

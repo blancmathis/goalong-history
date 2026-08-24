@@ -61,10 +61,11 @@
                 refreshAnalyses(day: day)
             }
             .onChange(of: agentTokenBudget) { _ in
-                analysisModel.refresh(day: model.selectedDay)
+                analysisModel.refresh(day: model.selectedDay, forceRebuild: true)
             }
             .onChange(of: richContextEnabled) { _ in
-                computerHistoryModel.refresh(day: model.selectedDay)
+                ActivityAnalysisRuntime.shared.richContextPreferenceDidChange()
+                computerHistoryModel.refresh(day: model.selectedDay, forceRebuild: true)
             }
             .alert("Enable Rich Context?", isPresented: $showRichContextConfirmation) {
                 Button("Cancel", role: .cancel) {}
@@ -123,7 +124,7 @@
                     )
                     Button {
                         model.refreshEverything()
-                        refreshAnalyses(day: model.selectedDay)
+                        refreshAnalyses(day: model.selectedDay, forceRebuild: true)
                     } label: {
                         Image(
                             systemName: analysesLoading
@@ -156,9 +157,9 @@
             }
         }
 
-        private func refreshAnalyses(day: Date) {
-            analysisModel.refresh(day: day)
-            computerHistoryModel.refresh(day: day)
+        private func refreshAnalyses(day: Date, forceRebuild: Bool = false) {
+            analysisModel.refresh(day: day, forceRebuild: forceRebuild)
+            computerHistoryModel.refresh(day: day, forceRebuild: forceRebuild)
         }
 
         func headlineCard(_ analysis: ActivityDayAnalysis) -> some View {

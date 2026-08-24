@@ -86,8 +86,8 @@
 
     /// Owns the Sparkle lifecycle and exposes a quiet update surface in the dashboard.
     /// Release builds check the rolling main-channel feed immediately at launch. Development/source
-    /// builds cannot safely self-update because they do not contain the release EdDSA key; those
-    /// builds instead offer a one-time migration to the latest update-enabled release.
+    /// builds fail closed because they do not contain the release EdDSA key and must never offer an
+    /// older public artifact that could reintroduce retired transcript-vault behavior.
     @MainActor
     final class SoftwareUpdateManager: NSObject, ObservableObject {
         static let shared = SoftwareUpdateManager()
@@ -130,7 +130,7 @@
 
             guard Self.hasValidSparkleConfiguration(in: .main) else {
                 requiresSignedBuild = true
-                statusMessage = "Install the release build once to enable in-app updates."
+                statusMessage = "In-app updates are disabled in this privacy-audited source build."
                 return
             }
 
@@ -207,11 +207,6 @@
             case .check:
                 break
             }
-        }
-
-        func installUpdateEnabledBuild() {
-            statusMessage = "Downloading the latest release build…"
-            NSWorkspace.shared.open(ProductIdentity.rollingDMGURL)
         }
 
         func openRollingReleasePage() {

@@ -60,12 +60,14 @@
             }
             .background(LHTheme.pageBackground)
             .onAppear {
+                screenTime.setActive(dashboard.dashboardIsVisible)
                 if screenTime.selectedDay != dashboard.selectedDay {
                     screenTime.selectDay(dashboard.selectedDay)
                 }
                 dashboard.refreshEverything()
-                screenTime.refresh()
             }
+            .onDisappear { screenTime.setActive(false) }
+            .onChange(of: dashboard.dashboardIsVisible) { screenTime.setActive($0) }
             .onChange(of: dashboard.selectedDay) { day in
                 if screenTime.selectedDay != day {
                     screenTime.selectDay(day)

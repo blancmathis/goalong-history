@@ -14,14 +14,16 @@
 
         let provider = AgentProvider(rawValue: CommandLine.arguments[hookIndex + 1]) ?? .custom
         let eventName = CommandLine.arguments[hookIndex + 2]
-        let payload = FileHandle.standardInput.readDataToEndOfFile()
+        let discardedPayloadBytes = AgentHookInputDrainer.discard(
+            fromFileDescriptor: FileHandle.standardInput.fileDescriptor
+        )
         do {
-            try AppPaths.prepare()
-            try AgentHookInboxWriter.write(
-                rootDirectory: AppPaths.agentActivityDirectory,
+            let signalRoot = try AppPaths.prepareAgentActivityHookStorage()
+            try AgentHookSignalWriter.write(
+                rootDirectory: signalRoot,
                 provider: provider,
                 eventName: eventName,
-                payload: payload,
+                discardedPayloadBytes: discardedPayloadBytes,
                 processIdentifier: getppid()
             )
             try? FileHandle.standardOutput.write(contentsOf: Data("{}\n".utf8))

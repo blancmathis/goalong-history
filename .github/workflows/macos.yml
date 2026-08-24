@@ -25,7 +25,16 @@ jobs:
         run: |
           bash -n Install.command Uninstall.command install.sh uninstall.sh
           find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
-          python3 -m py_compile scripts/check_computer_history_memory.py
+          python3 -m py_compile \
+            scripts/check_computer_history_answer.py \
+            scripts/check_computer_history_memory.py \
+            scripts/probe_computer_history_parity.py \
+            scripts/test_probe_computer_history_parity.py
+          bash scripts/test_check_computer_history_memory.sh
+          bash scripts/test_probe_computer_history_parity.sh
+          bash scripts/test_public_install_safety.sh
+          bash scripts/test_install_from_source_safety.sh
+          bash scripts/test_validate_computer_history_upgrade_safety.sh
           bash scripts/validate_computer_history_parity.sh --help >/dev/null
 
       - name: Privacy-boundary and dependency audit

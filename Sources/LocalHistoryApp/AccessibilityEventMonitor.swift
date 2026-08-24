@@ -16,6 +16,12 @@
     /// The observer never captures data itself; it only asks the existing privacy-aware
     /// sampler to refresh and persist an eligible, bounded semantic observation.
     final class AccessibilityEventMonitor {
+        private static let requiredApplicationNotifications = Set([
+            kAXFocusedUIElementChangedNotification as String,
+            kAXFocusedWindowChangedNotification as String,
+            kAXTitleChangedNotification as String,
+        ])
+
         private let onChange: (String) -> Void
         private var observer: AXObserver?
         private var applicationElement: AXUIElement?
@@ -24,6 +30,23 @@
         private var activationToken: NSObjectProtocol?
         private var debounceWorkItem: DispatchWorkItem?
         private var pendingNotifications = Set<String>()
+        private var registeredApplicationNotifications = Set<String>()
+        private var registeredFocusedNotifications = Set<String>()
+
+        /// Long polling backoff is safe only when the observer can cover the
+        /// foreground window/focus and the focused control's changing value.
+        var hasReliableEventCoverage: Bool {
+            guard observer != nil else { return false }
+            guard Self.requiredApplicationNotifications.isSubset(
+                of: registeredApplicationNotifications
+            ) else { return false }
+            guard focusedElement != nil else { return true }
+            return registeredFocusedNotifications.contains(
+                kAXValueChangedNotification as String
+            ) || registeredFocusedNotifications.contains(
+                kAXSelectedTextChangedNotification as String
+            )
+        }
 
         private let applicationNotifications: [CFString] = [
             kAXFocusedUIElementChangedNotification as CFString,
@@ -132,6 +155,8 @@
                     Diagnostics.write(
                         "Could not observe \(notification) for PID \(application.processIdentifier): \(error.rawValue)"
                     )
+                } else {
+                    registeredApplicationNotifications.insert(notification as String)
                 }
             }
 
@@ -154,6 +179,7 @@
                     _ = AXObserverRemoveNotification(observer, previous, notification)
                 }
             }
+            registeredFocusedNotifications.removeAll()
             focusedElement = AXReader.focusedElement(for: applicationElement)
             guard let focusedElement else { return }
             AXUIElementSetMessagingTimeout(focusedElement, 0.15)
@@ -171,6 +197,8 @@
                     Diagnostics.write(
                         "Could not observe focused element \(notification): \(error.rawValue)"
                     )
+                } else if error == .success || error == .notificationAlreadyRegistered {
+                    registeredFocusedNotifications.insert(notification as String)
                 }
             }
         }
@@ -180,6 +208,8 @@
                 applicationElement = nil
                 focusedElement = nil
                 observedPID = nil
+                registeredApplicationNotifications.removeAll()
+                registeredFocusedNotifications.removeAll()
                 return
             }
             if let focusedElement {
@@ -201,6 +231,8 @@
             applicationElement = nil
             focusedElement = nil
             observedPID = nil
+            registeredApplicationNotifications.removeAll()
+            registeredFocusedNotifications.removeAll()
         }
 
         private static func shortName(_ notification: String) -> String {

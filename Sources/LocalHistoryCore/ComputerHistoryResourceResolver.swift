@@ -3,9 +3,34 @@ import Foundation
 struct ComputerHistoryResourceResolution {
     let resources: [ComputerHistoryResourceReference]
     let eventResourceIDs: [String: [String]]
+    let semanticSnapshotCount: Int
+    /// Sanitized semantic text aligned with the input event array. Values retain the
+    /// sanitizer's 6,000-character inference window and are transferred once into
+    /// the interaction builder so a second validation, hash and redaction pass is
+    /// unnecessary.
+    private(set) var interactionSemanticTexts: [String?]
+
+    /// Transfers ownership of the transient inference cache without copying its
+    /// backing buffer. The resolution keeps only resources and identifiers after
+    /// interaction construction.
+    mutating func takeInteractionSemanticTexts() -> [String?] {
+        let values = interactionSemanticTexts
+        interactionSemanticTexts = []
+        return values
+    }
 }
 
 enum ComputerHistoryResourceResolver {
+    private static let largeDayEventThreshold = 1_024
+    private static let maximumLargeDayProvenanceReferences = 8
+    private static let localPathExpressions: [NSRegularExpression] = [
+        try! NSRegularExpression(
+            pattern:
+                #"(?:file://)?/(?:Users|Volumes|private|tmp|var|Applications|Library)/[^\n\r\t\"'<>]{2,500}"#
+        ),
+        try! NSRegularExpression(pattern: #"~/[^\n\r\t\"'<>]{2,500}"#),
+    ]
+
     private struct Candidate {
         let key: String
         let kind: ComputerHistoryResourceKind
@@ -18,11 +43,116 @@ enum ComputerHistoryResourceResolver {
         let confidence: Double
     }
 
+    /// Keeps only the fields needed to reopen source evidence. Retaining complete
+    /// `HistoryEvent` values here used to multiply the transient working set for
+    /// resources observed many times before the final representative projection.
+    private struct SourceReference {
+        let timestamp: Date
+        let eventID: String
+        let sequence: UInt64?
+        let eventHash: String?
+
+        init(event: HistoryEvent) {
+            timestamp = event.timestamp
+            eventID = event.id
+            sequence = event.integrity?.sequence
+            eventHash = event.integrity?.eventHash
+        }
+    }
+
     private struct Builder {
+        let resourceID: String
         var candidate: Candidate
         var firstSeen: Date
         var lastSeen: Date
-        var sourceEvents: [HistoryEvent]
+        var firstSource: SourceReference
+        var additionalSources: [SourceReference]?
+
+        init(candidate: Candidate, event: HistoryEvent) {
+            resourceID = ComputerHistorySupport.stableIdentifier(
+                "resource|\(candidate.key)"
+            )
+            self.candidate = candidate
+            firstSeen = event.timestamp
+            lastSeen = event.timestamp
+            firstSource = SourceReference(event: event)
+            additionalSources = nil
+        }
+
+        mutating func record(
+            event: HistoryEvent,
+            maximumReferences: Int?
+        ) {
+            firstSeen = min(firstSeen, event.timestamp)
+            lastSeen = max(lastSeen, event.timestamp)
+            let reference = SourceReference(event: event)
+
+            guard let maximumReferences else {
+                if additionalSources == nil { additionalSources = [] }
+                additionalSources?.append(reference)
+                return
+            }
+
+            let maximum = max(1, maximumReferences)
+            var references = [firstSource]
+            references.append(contentsOf: additionalSources ?? [])
+            references.append(reference)
+            references.sort(by: Self.sourceOrder)
+
+            var seenEventIDs = Set<String>()
+            references = references.filter {
+                seenEventIDs.insert($0.eventID).inserted
+            }
+            if references.count > maximum {
+                let leadingCount = (maximum + 1) / 2
+                let trailingCount = maximum - leadingCount
+                references =
+                    Array(references.prefix(leadingCount))
+                    + Array(references.suffix(trailingCount))
+            }
+
+            firstSource = references[0]
+            additionalSources =
+                references.count > 1
+                ? Array(references.dropFirst())
+                : nil
+        }
+
+        func provenance(maximumReferences: Int?) -> ActivityProvenance {
+            var references = [firstSource]
+            references.append(contentsOf: additionalSources ?? [])
+            references.sort(by: Self.sourceOrder)
+
+            var seenEventIDs = Set<String>()
+            references = references.filter {
+                seenEventIDs.insert($0.eventID).inserted
+            }
+            if let maximumReferences, references.count > maximumReferences {
+                references = ComputerHistorySupport.representativeElements(
+                    references,
+                    maximum: maximumReferences
+                )
+            }
+            return ActivityProvenance(
+                sourceEventIDs: references.map(\.eventID),
+                sourceSequences: ComputerHistorySupport.distinct(
+                    references.compactMap(\.sequence)
+                ),
+                sourceEventHashes: ComputerHistorySupport.distinct(
+                    references.compactMap(\.eventHash)
+                )
+            )
+        }
+
+        private static func sourceOrder(
+            _ left: SourceReference,
+            _ right: SourceReference
+        ) -> Bool {
+            if left.timestamp == right.timestamp {
+                return left.eventID < right.eventID
+            }
+            return left.timestamp < right.timestamp
+        }
     }
 
     static func resolve(
@@ -30,45 +160,59 @@ enum ComputerHistoryResourceResolver {
         semanticSnapshots: [String: SemanticContextPayload]
     ) -> ComputerHistoryResourceResolution {
         var builders: [String: Builder] = [:]
-        var candidateKeysByEvent: [String: [String]] = [:]
+        var eventResourceIDs: [String: [String]] = [:]
+        eventResourceIDs.reserveCapacity(events.count)
+        var semanticSnapshotCount = 0
+        var interactionSemanticTexts: [String?] = []
+        interactionSemanticTexts.reserveCapacity(events.count)
+        let maximumProvenanceReferences =
+            events.count > largeDayEventThreshold
+            ? maximumLargeDayProvenanceReferences
+            : nil
 
         for event in events {
-            let semantic = ComputerHistorySupport.semanticText(
-                for: event,
-                semanticSnapshots: semanticSnapshots
-            )
-            let candidates = candidates(for: event, semantic: semantic)
-            candidateKeysByEvent[event.id] = ComputerHistorySupport.distinct(candidates.map(\.key))
+            autoreleasepool {
+                let semantic = ComputerHistorySupport.semanticText(
+                    for: event,
+                    semanticSnapshots: semanticSnapshots
+                )
+                if semantic != nil { semanticSnapshotCount += 1 }
+                interactionSemanticTexts.append(semantic)
+                let candidates = candidates(for: event, semantic: semantic)
+                var resourceIDs: [String] = []
+                resourceIDs.reserveCapacity(candidates.count)
 
-            for candidate in candidates {
-                if var existing = builders[candidate.key] {
-                    existing.firstSeen = min(existing.firstSeen, event.timestamp)
-                    existing.lastSeen = max(existing.lastSeen, event.timestamp)
-                    existing.sourceEvents.append(event)
-                    if candidate.confidence > existing.candidate.confidence
-                        || ComputerHistorySupport.isGenericTitle(existing.candidate.title)
-                    {
-                        existing.candidate = candidate
+                for candidate in candidates {
+                    if var existing = builders[candidate.key] {
+                        resourceIDs.append(existing.resourceID)
+                        existing.record(
+                            event: event,
+                            maximumReferences: maximumProvenanceReferences
+                        )
+                        if candidate.confidence > existing.candidate.confidence
+                            || ComputerHistorySupport.isGenericTitle(existing.candidate.title)
+                        {
+                            existing.candidate = candidate
+                        }
+                        builders[candidate.key] = existing
+                    } else {
+                        let builder = Builder(candidate: candidate, event: event)
+                        resourceIDs.append(builder.resourceID)
+                        builders[candidate.key] = builder
                     }
-                    builders[candidate.key] = existing
-                } else {
-                    builders[candidate.key] = Builder(
-                        candidate: candidate,
-                        firstSeen: event.timestamp,
-                        lastSeen: event.timestamp,
-                        sourceEvents: [event]
+                }
+                if !resourceIDs.isEmpty {
+                    eventResourceIDs[event.id] = ComputerHistorySupport.distinct(
+                        resourceIDs
                     )
                 }
             }
         }
 
-        let IDs = Dictionary(uniqueKeysWithValues: builders.keys.map { key in
-            (key, ComputerHistorySupport.stableIdentifier("resource|\(key)"))
-        })
-        let resources = builders.map { key, builder in
+        var resources = builders.map { _, builder in
             let candidate = builder.candidate
             return ComputerHistoryResourceReference(
-                id: IDs[key]!,
+                id: builder.resourceID,
                 kind: candidate.kind,
                 title: ComputerHistorySupport.bounded(candidate.title, maximum: 300),
                 canonicalURI: candidate.canonicalURI,
@@ -79,19 +223,23 @@ enum ComputerHistoryResourceResolver {
                 locatorConfidence: candidate.confidence,
                 firstSeen: builder.firstSeen,
                 lastSeen: builder.lastSeen,
-                provenance: ComputerHistorySupport.provenance(for: builder.sourceEvents)
+                provenance: builder.provenance(
+                    maximumReferences: maximumProvenanceReferences
+                )
             )
         }
-        .sorted {
-            if $0.firstSeen == $1.firstSeen { return $0.title < $1.title }
+        resources.sort {
+            if $0.firstSeen == $1.firstSeen {
+                if $0.title == $1.title { return $0.id < $1.id }
+                return $0.title < $1.title
+            }
             return $0.firstSeen < $1.firstSeen
-        }
-        let eventResourceIDs = candidateKeysByEvent.mapValues { keys in
-            keys.compactMap { IDs[$0] }
         }
         return ComputerHistoryResourceResolution(
             resources: resources,
-            eventResourceIDs: eventResourceIDs
+            eventResourceIDs: eventResourceIDs,
+            semanticSnapshotCount: semanticSnapshotCount,
+            interactionSemanticTexts: interactionSemanticTexts
         )
     }
 
@@ -215,9 +363,10 @@ enum ComputerHistoryResourceResolver {
         let parsed = Foundation.URL(string: value)
         let host = ComputerHistorySupport.normalizedHost(rawHost ?? parsed?.host)
         let kind = resourceKind(host: host, URL: value)
-        let title = rawTitle.flatMap {
-            ComputerHistorySupport.isGenericTitle($0) ? nil : $0
-        } ?? host ?? ComputerHistorySupport.bounded(value, maximum: 180)
+        let title =
+            rawTitle.flatMap {
+                ComputerHistorySupport.isGenericTitle($0) ? nil : $0
+            } ?? host ?? ComputerHistorySupport.bounded(value, maximum: 180)
         let canonical = ComputerHistorySupport.canonicalURL(value)
         return Candidate(
             key: "url:\(canonical ?? value)",
@@ -257,14 +406,16 @@ enum ComputerHistoryResourceResolver {
     }
 
     private static func isIssueURL(host: String, URL: String) -> Bool {
-        let issueHost = host.contains("github")
+        let issueHost =
+            host.contains("github")
             || host.contains("gitlab")
             || host.contains("linear")
             || host.contains("atlassian")
             || host.contains("jira")
-        return issueHost && [
-            "/issues/", "/pull/", "/merge_requests/", "/browse/", "/issue/",
-        ].contains { URL.contains($0) }
+        return issueHost
+            && [
+                "/issues/", "/pull/", "/merge_requests/", "/browse/", "/issue/",
+            ].contains { URL.contains($0) }
     }
 
     private static func isDocumentHost(_ host: String) -> Bool {
@@ -308,13 +459,8 @@ enum ComputerHistoryResourceResolver {
 
     private static func extractLocalPaths(from text: String) -> [String] {
         guard !text.isEmpty else { return [] }
-        let patterns = [
-            #"(?:file://)?/(?:Users|Volumes|private|tmp|var|Applications|Library)/[^\n\r\t\"'<>]{2,500}"#,
-            #"~/[^\n\r\t\"'<>]{2,500}"#,
-        ]
         var output: [String] = []
-        for pattern in patterns {
-            guard let expression = try? NSRegularExpression(pattern: pattern) else { continue }
+        for expression in localPathExpressions {
             let range = NSRange(text.startIndex..., in: text)
             for match in expression.matches(in: text, range: range) {
                 guard let swiftRange = Range(match.range, in: text) else { continue }

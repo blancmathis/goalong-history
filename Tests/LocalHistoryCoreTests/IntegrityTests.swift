@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import LocalHistoryCore
 
 final class IntegrityTests: XCTestCase {
@@ -7,6 +8,13 @@ final class IntegrityTests: XCTestCase {
         XCTAssertEqual(
             SHA256Digest.hashHex("abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        )
+    }
+
+    func testHexEncodingPreservesLeadingZeroesAndLowercase() {
+        XCTAssertEqual(
+            SHA256Digest.hex(Data([0x00, 0x01, 0x0F, 0x10, 0x7F, 0x80, 0xFE, 0xFF])),
+            "00010f107f80feff"
         )
     }
 
@@ -37,7 +45,8 @@ final class IntegrityTests: XCTestCase {
         let root = MerkleTree.root(labeledHexValues: leaves)
         let proof = MerkleTree.proof(labeledHexValues: leaves, index: 1)!
         XCTAssertTrue(MerkleTree.verify(label: "b", valueHex: leaves[1].1, proof: proof, expectedRoot: root))
-        XCTAssertFalse(MerkleTree.verify(label: "b", valueHex: SHA256Digest.hashHex("fake"), proof: proof, expectedRoot: root))
+        XCTAssertFalse(
+            MerkleTree.verify(label: "b", valueHex: SHA256Digest.hashHex("fake"), proof: proof, expectedRoot: root))
     }
 
     func testApplicationOnlyDisclosureCanHideContext() {

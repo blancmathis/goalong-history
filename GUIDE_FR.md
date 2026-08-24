@@ -4,17 +4,23 @@ Goalong History crée sur votre Mac une chronologie privée de l’activité aut
 
 L’application est destinée à votre propre Mac. Elle ne doit jamais servir à surveiller une autre personne sans son accord explicite préalable.
 
-## Installation recommandée
+## Installation recommandée actuellement
 
-L’installation normale ne demande **ni Terminal, ni Xcode, ni Homebrew, ni commande administrateur**.
+Le bundle public `latest-main` actuellement publié est antérieur à l’indexation
+directe des historiques d’agents. Ne téléchargez pas son DMG : l’installateur le
+refuse volontairement pour éviter de recréer un coffre de transcriptions.
 
-1. Ouvrez la page **Releases** du dépôt.
-2. Téléchargez `Goalong-History-macOS-universal.dmg`.
-3. Ouvrez le fichier téléchargé.
-4. Glissez **Goalong History** vers **Applications**.
-5. Ouvrez Goalong History et suivez l’assistant.
+Depuis ce dépôt, utilisez l’[installation auditée depuis les
+sources](#installation-actuelle-depuis-les-sources). Elle nécessite le Terminal
+et les Command Line Tools de Xcode, exécute les tests et l’audit de
+confidentialité, puis remplace l’application avec une protection de retour en
+arrière. Aucune commande administrateur n’est nécessaire lorsque votre dossier
+Applications est accessible en écriture.
 
-Le même fichier fonctionne sur les Mac Apple Silicon et Intel équipés de macOS 13 Ventura ou d’une version plus récente. La version publique doit être signée avec Developer ID et notarisée par Apple afin que Gatekeeper puisse la vérifier normalement.
+Après l’installation, ouvrez **Goalong History** et suivez l’assistant. La build
+locale fonctionne sur le Mac qui l’a construite et exige macOS 13 Ventura ou une
+version plus récente. Comme elle est signée localement, macOS peut demander de
+renouveler une autorisation lorsque son identité de build change.
 
 ## L’assistant de première ouverture
 
@@ -114,7 +120,12 @@ L’icône de barre des menus permet de :
 - consulter les diagnostics ;
 - quitter l’application.
 
-Le tableau de bord contient : **Vue d’ensemble**, **Activité**, **Apple Screen Time**, **Partager**, **Confidentialité et sécurité**, et **Réglages**.
+Le tableau de bord contient : **Vue d’ensemble**, **Activité**, **Apple Screen
+Time**, **Travail agentique**, **Récap IA**, **Partager**, **Confidentialité et
+sécurité**, et **Réglages**. La vue **Activité** réunit les apps et sites,
+Computer History, le récapitulatif compact de la journée et la chronologie.
+**Travail agentique** lit les historiques locaux configurés directement à leur
+emplacement d’origine et ne conserve pas une seconde copie des transcriptions.
 
 Dans **Activité → Apps & sites**, toutes les applications et tous les sites observés sont listés avec leur temps estimé au premier plan et leurs minutes d’entrée active. Le temps au premier plan est volontairement prudent : Goalong History n’invente jamais plus de 75 secondes entre deux observations.
 
@@ -130,7 +141,13 @@ La clé qui signe les preuves est liée à la signature stable de l’applicatio
 
 ## Mises à jour
 
-Cette version doit être installée manuellement une première fois. Les versions publiques suivantes, lorsqu’elles sont signées et publiées dans le flux officiel, apparaissent ensuite directement dans Goalong History. Le bouton de mise à jour permet de consulter la version proposée avant de lancer son installation ; l’application ne l’installe pas silencieusement.
+La build directe depuis les sources désactive la mise à jour intégrée. Elle ne
+doit pas pouvoir remplacer silencieusement la frontière de confidentialité par
+le bundle public ancien. Lorsqu’une release compatible avec l’indexation directe
+sera publiée, l’installateur public devra encore vérifier son identité, sa
+signature, son marqueur de confidentialité et sa politique Sparkle avant de
+l’installer. L’état courant de la release est indiqué dans le
+[`README`](README.md).
 
 ## Désinstallation
 
@@ -146,15 +163,20 @@ Par défaut, l’application et ses autorisations sont supprimées, mais l’his
 ./uninstall.sh --purge-data
 ```
 
-## Installation depuis les sources
+## Installation actuelle depuis les sources
 
-Cette voie est réservée au développement. Elle nécessite les Command Line Tools de Xcode :
+Cette voie nécessite macOS 13 ou une version plus récente et les Command Line
+Tools de Xcode. Dans ce checkout :
 
 ```bash
 ./install.sh --source
 ```
 
-L’installateur vérifie les frontières de confidentialité, exécute les tests, construit l’application native, signe localement le bundle et l’ouvre. Les logs techniques sont placés dans :
+L’installateur vérifie les frontières de confidentialité, exécute la suite de
+tests complète, construit l’application native, valide et signe localement le
+bundle, le copie d’abord dans une zone de staging sur le disque de destination,
+puis l’ouvre. Une installation existante est conservée comme retour en arrière
+jusqu’à la validation du remplacement. Les logs techniques sont placés dans :
 
 ```text
 ~/Library/Logs/LocalHistory/installer.log

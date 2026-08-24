@@ -28,7 +28,10 @@ let package = Package(
         .target(
             name: "AgentActivity",
             dependencies: ["LocalHistoryCore"],
-            path: "Features/AgentActivity/Sources"
+            path: "Features/AgentActivity/Sources",
+            linkerSettings: [
+                .linkedLibrary("sqlite3", .when(platforms: [.macOS]))
+            ]
         ),
         .executableTarget(
             name: "LocalHistoryApp",

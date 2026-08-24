@@ -17,7 +17,7 @@
                         eyebrow: "ChatGPT-powered local synthesis",
                         title: "AI daily recap",
                         subtitle:
-                            "Combine Goalong activity, document context, Apple Screen Time, local agent transcripts and an optional ChatGPT export into one evidence-aware recap."
+                            "Combine Goalong activity, document context, Apple Screen Time, content-free local agent metadata and an optional ChatGPT export into one evidence-aware recap."
                     ) {
                         HStack(spacing: 10) {
                             DateSelectionControl(date: recapRuntime.selectedDay, onChange: recapRuntime.selectDay)
@@ -54,6 +54,7 @@
             .onAppear {
                 recapRuntime.configure(deviceID: model.deviceID)
                 recapRuntime.selectDay(model.selectedDay)
+                recapRuntime.activate()
             }
             .onChange(of: model.selectedDay) { next in
                 recapRuntime.selectDay(next)
@@ -186,9 +187,9 @@
                         )
                         sourceTile(
                             symbol: "cpu",
-                            title: "Agent chats",
-                            value: sourceCounts.map { "\($0.agentMessages) message(s)" } ?? "Local vault",
-                            detail: "Codex, Claude Code, Cursor, OpenCode and watched folders"
+                            title: "Agent activity",
+                            value: sourceCounts.map { "\($0.agentMessages) message(s)" } ?? "Metadata only",
+                            detail: "Direct-source counts only; message bodies are not retained"
                         )
                         sourceTile(
                             symbol: "bubble.left.and.bubble.right",
@@ -299,9 +300,11 @@
                             HStack(spacing: 10) {
                                 ProgressView()
                                     .controlSize(.small)
-                                Text("Assembling the local context and starting an isolated, network-disabled Codex thread…")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
+                                Text(
+                                    "Assembling the local context and starting an isolated, network-disabled Codex thread…"
+                                )
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
                             }
                             .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
                         } else {
@@ -381,13 +384,16 @@
             case .checking:
                 return "Goalong is asking the local Codex app-server for its account state."
             case .codexUnavailable:
-                return "Install the official Codex CLI once. A future signed release can bundle the reviewed helper so normal users do not need a developer toolchain."
+                return
+                    "Install the official Codex CLI once. A future signed release can bundle the reviewed helper so normal users do not need a developer toolchain."
             case .signedOut:
                 return "The browser flow uses your ChatGPT plan’s included Codex usage instead of an OpenAI API key."
             case .connected:
-                return "Ready to launch ephemeral in-memory recap threads. They are not written to Codex conversation history."
+                return
+                    "Ready to launch ephemeral in-memory recap threads. They are not written to Codex conversation history."
             case .unsupportedCredentialMode(let mode):
-                return "Codex currently reports “\(mode)”. Goalong refuses to run recaps with it so API-billed credentials are never used by surprise."
+                return
+                    "Codex currently reports “\(mode)”. Goalong refuses to run recaps with it so API-billed credentials are never used by surprise."
             case .failed(let message):
                 return message
             }

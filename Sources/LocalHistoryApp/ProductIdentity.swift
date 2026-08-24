@@ -28,11 +28,6 @@
         static let rollingReleasePageURL = URL(
             string: "https://github.com/blancmathis/goalong-history/releases/tag/\(rollingReleaseTag)"
         )!
-        static let rollingDMGURL = URL(
-            string:
-                "https://github.com/blancmathis/goalong-history/releases/download/\(rollingReleaseTag)/Goalong-History-macOS-universal.dmg"
-        )!
-
         static var installationPath: String {
             Bundle.main.bundleURL.path
         }

@@ -68,15 +68,87 @@
         }
     }
 
+    enum PermissionWatchdogPolicy {
+        static let healthyInterval: TimeInterval = 60
+        static let recoveryInterval: TimeInterval = 3
+
+        static func interval(status: PermissionStatus, eventTapRunning: Bool) -> TimeInterval {
+            let accessibilityHealthy = status.accessibilityUsable
+            let inputPathAvailable = status.canAttemptInputTap
+            return accessibilityHealthy && inputPathAvailable && eventTapRunning
+                ? healthyInterval
+                : recoveryInterval
+        }
+    }
+
     /// Reads macOS TCC state and owns the guided permission experience.
     ///
     /// Reports macOS Accessibility and direct Input Monitoring preflights independently.
     /// Neither switch nor event-tap creation is treated as proof of capture: the recorder health
     /// state requires a functional AX read and a real click/key/scroll callback in this process.
     final class PermissionManager {
-        private var guideController: PermissionGuideController?
+        typealias StatusProbe = () -> PermissionStatus
 
-        var currentStatus: PermissionStatus {
+        private var guideController: PermissionGuideController?
+        private let statusLock = NSLock()
+        private let statusProbe: StatusProbe
+        private let clock: () -> Date
+        private var cachedStatus: PermissionStatus
+        private var lastRefreshAt: Date
+        private var refreshInFlight = false
+        private(set) var probeCount = 0
+
+        init(
+            statusProbe: @escaping StatusProbe = PermissionManager.liveStatus,
+            clock: @escaping () -> Date = Date.init
+        ) {
+            self.statusProbe = statusProbe
+            self.clock = clock
+            let initial = statusProbe()
+            cachedStatus = initial
+            lastRefreshAt = clock()
+            probeCount = 1
+        }
+
+        /// Shared, zero-probe snapshot used by AX readers, dashboard and menu.
+        var snapshot: PermissionStatus {
+            statusLock.lock()
+            defer { statusLock.unlock() }
+            return cachedStatus
+        }
+
+        /// Compatibility accessor. Reading it never calls TCC or Accessibility.
+        var currentStatus: PermissionStatus { snapshot }
+
+        @discardableResult
+        func refresh(
+            force: Bool = false,
+            minimumInterval: TimeInterval = 1.0
+        ) -> PermissionStatus {
+            let now = clock()
+            statusLock.lock()
+            if refreshInFlight
+                || (!force && now.timeIntervalSince(lastRefreshAt) < max(0, minimumInterval))
+            {
+                let value = cachedStatus
+                statusLock.unlock()
+                return value
+            }
+            refreshInFlight = true
+            statusLock.unlock()
+
+            let value = statusProbe()
+
+            statusLock.lock()
+            cachedStatus = value
+            lastRefreshAt = clock()
+            refreshInFlight = false
+            probeCount += 1
+            statusLock.unlock()
+            return value
+        }
+
+        private static func liveStatus() -> PermissionStatus {
             let accessibilityPreflight = AXIsProcessTrusted()
             let accessibilityFunctionalProbe = Self.canReadFocusedApplication()
             let accessibility = accessibilityPreflight || accessibilityFunctionalProbe
@@ -98,19 +170,23 @@
                 [
                     kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
                 ] as CFDictionary
-            return AXIsProcessTrustedWithOptions(options)
+            let requested = AXIsProcessTrustedWithOptions(options)
+            _ = refresh(force: true)
+            return requested
         }
 
         @discardableResult
         func requestInputMonitoring() -> Bool {
             // Input Monitoring preflight is reported independently from Accessibility.
             // A successful callback remains the authoritative runtime proof.
-            if currentStatus.inputMonitoring { return true }
-            return CGRequestListenEventAccess()
+            if snapshot.inputMonitoring { return true }
+            let requested = CGRequestListenEventAccess()
+            _ = refresh(force: true)
+            return requested
         }
 
         func requestAll() {
-            let status = currentStatus
+            let status = refresh(force: true)
             if !status.accessibility {
                 _ = requestAccessibility()
             } else if !status.inputMonitoring {
@@ -237,6 +313,11 @@
             super.init()
         }
 
+        deinit {
+            closeWorkItem?.cancel()
+            stopPolling()
+        }
+
         func present(_ permission: MacPermissionKind) {
             closeWorkItem?.cancel()
             model.permission = permission
@@ -250,10 +331,16 @@
             let panel = makePanelIfNeeded()
             position(panel)
             panel.orderFrontRegardless()
-            startPolling()
+            if model.isGranted {
+                scheduleClose()
+            } else {
+                startPolling()
+            }
         }
 
         func windowWillClose(_ notification: Notification) {
+            closeWorkItem?.cancel()
+            closeWorkItem = nil
             stopPolling()
         }
 
@@ -311,9 +398,17 @@
 
         private func refreshStatus() {
             let wasGranted = model.isGranted
-            model.status = permissionManager.currentStatus
+            // The guide is the only intentionally fast poller while the user is
+            // actively changing a TCC switch.
+            model.status = permissionManager.refresh(force: true)
 
             guard model.isGranted, !wasGranted else { return }
+            stopPolling()
+            scheduleClose()
+        }
+
+        private func scheduleClose() {
+            closeWorkItem?.cancel()
             let workItem = DispatchWorkItem { [weak self] in
                 self?.close()
             }
@@ -323,9 +418,14 @@
 
         private func startPolling() {
             stopPolling()
+            guard !model.isGranted else {
+                scheduleClose()
+                return
+            }
             let timer = Timer(timeInterval: 0.75, repeats: true) { [weak self] _ in
                 self?.refreshStatus()
             }
+            timer.tolerance = 0.15
             RunLoop.main.add(timer, forMode: .common)
             pollingTimer = timer
         }

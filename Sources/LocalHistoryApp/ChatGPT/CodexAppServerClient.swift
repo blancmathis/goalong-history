@@ -1,13 +1,16 @@
 #if os(macOS)
     import AppKit
+    import CoreFoundation
     import Darwin
     import Foundation
+    import LocalHistoryCore
 
     enum CodexAppServerError: LocalizedError {
         case executableUnavailable
         case launchFailed(String)
         case processExited(String)
         case timeout(String)
+        case protocolLimitExceeded(String)
         case malformedResponse(String)
         case server(String)
         case loginFailed(String)
@@ -19,24 +22,420 @@
             case .executableUnavailable:
                 return "Codex is not installed. Install the Codex CLI, then return here to connect ChatGPT."
             case .launchFailed(let message):
-                return "Codex app-server could not start: \(message)"
+                return "Codex app-server could not start: \(Self.boundedDetail(message))"
             case .processExited(let message):
                 return message.isEmpty
                     ? "Codex app-server stopped unexpectedly."
-                    : "Codex app-server stopped unexpectedly: \(message)"
+                    : "Codex app-server stopped unexpectedly: \(Self.boundedDetail(message))"
             case .timeout(let operation):
-                return "Codex timed out while \(operation)."
+                return "Codex timed out while \(Self.boundedDetail(operation))."
+            case .protocolLimitExceeded(let message):
+                return "Codex app-server exceeded Goalong's output safety limit: \(Self.boundedDetail(message))"
             case .malformedResponse(let message):
-                return "Codex returned an invalid response: \(message)"
+                return "Codex returned an invalid response: \(Self.boundedDetail(message))"
             case .server(let message):
-                return "Codex reported an error: \(message)"
+                return "Codex reported an error: \(Self.boundedDetail(message))"
             case .loginFailed(let message):
-                return message.isEmpty ? "ChatGPT sign-in did not complete." : "ChatGPT sign-in failed: \(message)"
+                return message.isEmpty
+                    ? "ChatGPT sign-in did not complete."
+                    : "ChatGPT sign-in failed: \(Self.boundedDetail(message))"
             case .accountNotChatGPT(let mode):
-                return "Goalong will not use the active \(mode) credentials because they may be billed as API usage. Connect with ChatGPT instead."
+                return
+                    "Goalong will not use the active \(Self.boundedDetail(mode)) credentials because they may be billed as API usage. Connect with ChatGPT instead."
             case .generationFailed(let message):
-                return message.isEmpty ? "The recap agent failed." : "The recap agent failed: \(message)"
+                return message.isEmpty
+                    ? "The recap agent failed."
+                    : "The recap agent failed: \(Self.boundedDetail(message))"
             }
+        }
+
+        private static func boundedDetail(_ value: String) -> String {
+            CodexAppServerLimits.boundedUTF8(
+                ActivitySemanticTextSanitizer.redact(value) ?? "",
+                maximumBytes: 4_096
+            )
+        }
+    }
+
+    struct CodexAppServerLimits {
+        var maximumProtocolLineBytes = 8 * 1_024 * 1_024
+        var maximumBufferedStdoutBytes = 8 * 1_024 * 1_024 + 65_536
+        var maximumDeferredMessages = 512
+        var maximumDeferredBytes = 16 * 1_024 * 1_024
+        var maximumMessages = 20_000
+        var maximumBlankLines = 4_096
+        var maximumBlankLineBytes = 65_536
+        var maximumRecapCandidateBytes = 2 * 1_024 * 1_024
+        var maximumRecapMarkdownBytes = 1 * 1_024 * 1_024
+        var maximumStderrBytes = 65_536
+        var maximumErrorBytes = 4_096
+
+        static let production = CodexAppServerLimits()
+
+        static func boundedUTF8(_ value: String, maximumBytes: Int) -> String {
+            guard maximumBytes > 0, value.utf8.count > maximumBytes else {
+                return maximumBytes > 0 ? value : ""
+            }
+            let marker = Data("…".utf8)
+            let prefixLimit =
+                maximumBytes >= marker.count
+                ? maximumBytes - marker.count
+                : maximumBytes
+            var prefix = Data(value.utf8.prefix(prefixLimit))
+            while !prefix.isEmpty, String(data: prefix, encoding: .utf8) == nil {
+                prefix.removeLast()
+            }
+            let suffix = maximumBytes >= marker.count ? "…" : ""
+            return (String(data: prefix, encoding: .utf8) ?? "") + suffix
+        }
+    }
+
+    enum CodexAppServerWireEncoder {
+        static func encode(
+            _ object: [String: Any],
+            limits: CodexAppServerLimits = .production
+        ) throws -> Data {
+            guard JSONSerialization.isValidJSONObject(object) else {
+                throw CodexAppServerError.malformedResponse("client attempted to send invalid JSON")
+            }
+            var data = try JSONSerialization.data(withJSONObject: object, options: [])
+            guard data.count <= limits.maximumProtocolLineBytes else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "an outgoing JSON line exceeded \(limits.maximumProtocolLineBytes) bytes"
+                )
+            }
+            data.append(0x0A)
+            return data
+        }
+    }
+
+    enum CodexAppServerTimedWriter {
+        static func prepareNonBlocking(_ descriptor: Int32) throws {
+            let flags = Darwin.fcntl(descriptor, F_GETFL)
+            guard flags >= 0,
+                Darwin.fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) >= 0
+            else {
+                throw CodexAppServerError.launchFailed(String(cString: strerror(errno)))
+            }
+        }
+
+        static func write(
+            _ data: Data,
+            to descriptor: Int32,
+            deadline: Date,
+            operation: String,
+            errorDetail: () -> String = { "" }
+        ) throws {
+            var offset = 0
+            try data.withUnsafeBytes { bytes in
+                while offset < bytes.count {
+                    let remaining = deadline.timeIntervalSinceNow
+                    guard remaining > 0 else {
+                        throw CodexAppServerError.timeout(operation)
+                    }
+                    var pollDescriptor = pollfd(
+                        fd: descriptor,
+                        events: Int16(POLLOUT | POLLHUP | POLLERR),
+                        revents: 0
+                    )
+                    let timeoutMilliseconds = Int32(
+                        min(max(remaining * 1_000, 0), Double(Int32.max))
+                    )
+                    let pollResult = Darwin.poll(&pollDescriptor, 1, timeoutMilliseconds)
+                    if pollResult == 0 {
+                        throw CodexAppServerError.timeout(operation)
+                    }
+                    if pollResult < 0 {
+                        if errno == EINTR { continue }
+                        throw CodexAppServerError.processExited(errorDetail())
+                    }
+                    if pollDescriptor.revents & Int16(POLLHUP | POLLERR | POLLNVAL) != 0 {
+                        throw CodexAppServerError.processExited(errorDetail())
+                    }
+
+                    let written = Darwin.write(
+                        descriptor,
+                        bytes.baseAddress?.advanced(by: offset),
+                        bytes.count - offset
+                    )
+                    if written < 0, errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK {
+                        continue
+                    }
+                    guard written > 0 else {
+                        throw CodexAppServerError.processExited(errorDetail())
+                    }
+                    offset += written
+                }
+            }
+        }
+    }
+
+    enum CodexAppServerMessageRouter {
+        static func strictIntegerID(from value: Any?) -> Int? {
+            guard let number = value as? NSNumber,
+                CFGetTypeID(number) != CFBooleanGetTypeID()
+            else { return nil }
+            let integerEncodings: Set<String> = ["c", "s", "i", "l", "q", "C", "S", "I", "L", "Q"]
+            guard integerEncodings.contains(String(cString: number.objCType)) else { return nil }
+            return Int(number.stringValue)
+        }
+
+        static func responseID(in message: [String: Any]) throws -> Int? {
+            guard message.keys.contains("id") else { return nil }
+            guard let id = strictIntegerID(from: message["id"]) else {
+                throw CodexAppServerError.malformedResponse(
+                    "a JSON-RPC response id was not a strict integer"
+                )
+            }
+            return id
+        }
+
+        static func notificationMethod(in message: [String: Any]) throws -> String {
+            guard try responseID(in: message) == nil else {
+                throw CodexAppServerError.malformedResponse(
+                    "an unmatched JSON-RPC response was received"
+                )
+            }
+            guard let method = message["method"] as? String, !method.isEmpty else {
+                throw CodexAppServerError.malformedResponse(
+                    "a JSON-RPC notification method was missing"
+                )
+            }
+            return method
+        }
+    }
+
+    struct CodexStreamingRedactor {
+        private var pending = ""
+
+        mutating func append(_ delta: String) -> String {
+            guard !delta.isEmpty else { return "" }
+            pending.append(delta)
+            guard let newline = pending.lastIndex(of: "\n") else { return "" }
+            let boundary = pending.index(after: newline)
+            let completeLines = String(pending[..<boundary])
+            pending = String(pending[boundary...])
+            guard let redacted = ActivitySemanticTextSanitizer.redact(completeLines) else {
+                return ""
+            }
+            return redacted + "\n"
+        }
+
+        mutating func finish() -> String {
+            defer { pending = "" }
+            return ActivitySemanticTextSanitizer.redact(pending) ?? ""
+        }
+    }
+
+    struct CodexAppServerMessageDecoder {
+        private(set) var outputBuffer = Data()
+        private(set) var messageCount = 0
+        private(set) var blankLineCount = 0
+        private(set) var blankLineBytes = 0
+
+        let limits: CodexAppServerLimits
+
+        init(limits: CodexAppServerLimits = .production) {
+            self.limits = limits
+        }
+
+        mutating func append(_ data: Data) throws {
+            guard !data.isEmpty else { return }
+            guard data.count <= limits.maximumBufferedStdoutBytes - outputBuffer.count else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "stdout buffered more than \(limits.maximumBufferedStdoutBytes) bytes"
+                )
+            }
+            outputBuffer.append(data)
+            try validateLineLengths()
+        }
+
+        mutating func popMessage() throws -> [String: Any]? {
+            while let newline = outputBuffer.firstIndex(of: 0x0A) {
+                let line = Data(outputBuffer[..<newline])
+                outputBuffer.removeSubrange(...newline)
+                guard !line.isEmpty else {
+                    try recordBlankLine(byteCount: 1)
+                    continue
+                }
+                return try decode(line)
+            }
+            return nil
+        }
+
+        mutating func finish() throws -> [String: Any]? {
+            guard !outputBuffer.isEmpty else { return nil }
+            let line = outputBuffer
+            outputBuffer.removeAll(keepingCapacity: false)
+            return try decode(line)
+        }
+
+        private func validateLineLengths() throws {
+            var lineStart = outputBuffer.startIndex
+            while lineStart < outputBuffer.endIndex,
+                let newline = outputBuffer[lineStart...].firstIndex(of: 0x0A)
+            {
+                guard outputBuffer.distance(from: lineStart, to: newline) <= limits.maximumProtocolLineBytes else {
+                    throw CodexAppServerError.protocolLimitExceeded(
+                        "a JSON line exceeded \(limits.maximumProtocolLineBytes) bytes"
+                    )
+                }
+                lineStart = outputBuffer.index(after: newline)
+            }
+            guard
+                outputBuffer.distance(from: lineStart, to: outputBuffer.endIndex)
+                    <= limits.maximumProtocolLineBytes
+            else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "a JSON line exceeded \(limits.maximumProtocolLineBytes) bytes without a newline"
+                )
+            }
+        }
+
+        private mutating func decode(_ line: Data) throws -> [String: Any] {
+            guard messageCount < limits.maximumMessages else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "more than \(limits.maximumMessages) JSON messages were received"
+                )
+            }
+            messageCount += 1
+            do {
+                let value = try JSONSerialization.jsonObject(with: line, options: [])
+                guard let dictionary = value as? [String: Any] else {
+                    throw CodexAppServerError.malformedResponse("a JSON line was not an object")
+                }
+                return dictionary
+            } catch let error as CodexAppServerError {
+                throw error
+            } catch {
+                let preview = CodexAppServerLimits.boundedUTF8(
+                    String(decoding: line, as: UTF8.self),
+                    maximumBytes: limits.maximumErrorBytes
+                )
+                throw CodexAppServerError.malformedResponse(
+                    "\(error.localizedDescription): \(preview)"
+                )
+            }
+        }
+
+        private mutating func recordBlankLine(byteCount: Int) throws {
+            guard blankLineCount < limits.maximumBlankLines,
+                byteCount <= limits.maximumBlankLineBytes - blankLineBytes
+            else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "blank JSONL records exceeded their configured work budget"
+                )
+            }
+            blankLineCount += 1
+            blankLineBytes += byteCount
+        }
+    }
+
+    struct CodexAppServerDeferredMessageQueue {
+        private struct Entry {
+            let message: [String: Any]
+            let byteCount: Int
+        }
+
+        private var entries: [Entry] = []
+        private(set) var byteCount = 0
+        let limits: CodexAppServerLimits
+
+        init(limits: CodexAppServerLimits = .production) {
+            self.limits = limits
+        }
+
+        var count: Int { entries.count }
+
+        mutating func append(_ message: [String: Any]) throws {
+            let encoded = try JSONSerialization.data(withJSONObject: message, options: [])
+            guard entries.count < limits.maximumDeferredMessages else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "more than \(limits.maximumDeferredMessages) unmatched messages were deferred"
+                )
+            }
+            guard encoded.count <= limits.maximumDeferredBytes - byteCount else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "deferred messages exceeded \(limits.maximumDeferredBytes) bytes"
+                )
+            }
+            entries.append(Entry(message: message, byteCount: encoded.count))
+            byteCount += encoded.count
+        }
+
+        mutating func removeFirst() -> [String: Any]? {
+            guard !entries.isEmpty else { return nil }
+            let entry = entries.removeFirst()
+            byteCount -= entry.byteCount
+            return entry.message
+        }
+
+        mutating func removeFirst(where predicate: ([String: Any]) -> Bool) -> [String: Any]? {
+            guard let index = entries.firstIndex(where: { predicate($0.message) }) else { return nil }
+            let entry = entries.remove(at: index)
+            byteCount -= entry.byteCount
+            return entry.message
+        }
+    }
+
+    struct CodexRecapOutputCollector {
+        private var streamed = ""
+        private var streamedBytes = 0
+        private var finalText: String?
+        let limits: CodexAppServerLimits
+
+        init(limits: CodexAppServerLimits = .production) {
+            self.limits = limits
+        }
+
+        mutating func append(delta: String) throws {
+            let deltaBytes = delta.utf8.count
+            guard deltaBytes <= limits.maximumRecapCandidateBytes - streamedBytes else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "streamed recap output exceeded \(limits.maximumRecapCandidateBytes) bytes"
+                )
+            }
+            streamed.append(delta)
+            streamedBytes += deltaBytes
+        }
+
+        mutating func setFinalText(_ text: String) throws {
+            guard text.utf8.count <= limits.maximumRecapCandidateBytes else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "final recap output exceeded \(limits.maximumRecapCandidateBytes) bytes"
+                )
+            }
+            finalText = text
+        }
+
+        func completedMarkdown() throws -> String {
+            let trimmed = (finalText ?? streamed).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
+            }
+
+            let markdown: String
+            if let data = trimmed.data(using: .utf8),
+                let object = try? JSONSerialization.jsonObject(with: data, options: []),
+                let dictionary = object as? [String: Any],
+                let structuredMarkdown = dictionary["markdown"] as? String,
+                !structuredMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                markdown = structuredMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                markdown = trimmed
+            }
+            guard let redactedMarkdown = ActivitySemanticTextSanitizer.redact(markdown),
+                !redactedMarkdown.isEmpty
+            else {
+                throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
+            }
+            guard redactedMarkdown.utf8.count <= limits.maximumRecapMarkdownBytes else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "recap Markdown exceeded \(limits.maximumRecapMarkdownBytes) bytes"
+                )
+            }
+            return redactedMarkdown
         }
     }
 
@@ -97,10 +496,11 @@
             ])
 
             if let path = environment["PATH"] {
-                candidates.append(contentsOf: path.split(separator: ":").map {
-                    URL(fileURLWithPath: String($0), isDirectory: true)
-                        .appendingPathComponent("codex", isDirectory: false)
-                })
+                candidates.append(
+                    contentsOf: path.split(separator: ":").map {
+                        URL(fileURLWithPath: String($0), isDirectory: true)
+                            .appendingPathComponent("codex", isDirectory: false)
+                    })
             }
 
             let nodeVersions = home.appendingPathComponent(".nvm/versions/node", isDirectory: true)
@@ -109,9 +509,10 @@
                 includingPropertiesForKeys: nil,
                 options: [.skipsHiddenFiles]
             ) {
-                candidates.append(contentsOf: versions.sorted { $0.lastPathComponent > $1.lastPathComponent }.map {
-                    $0.appendingPathComponent("bin/codex", isDirectory: false)
-                })
+                candidates.append(
+                    contentsOf: versions.sorted { $0.lastPathComponent > $1.lastPathComponent }.map {
+                        $0.appendingPathComponent("bin/codex", isDirectory: false)
+                    })
             }
 
             var seen = Set<String>()
@@ -138,8 +539,9 @@
         private let inputPipe = Pipe()
         private let outputPipe = Pipe()
         private let errorPipe = Pipe()
-        private var outputBuffer = Data()
-        private var deferredMessages: [[String: Any]] = []
+        private let limits: CodexAppServerLimits
+        private var stdoutDecoder: CodexAppServerMessageDecoder
+        private var deferredMessages: CodexAppServerDeferredMessageQueue
         private var nextRequestID = 1
         private let stderrLock = NSLock()
         private var stderrData = Data()
@@ -148,8 +550,12 @@
 
         init(
             executableURL: URL,
-            codexHomeURL: URL = AppPaths.chatGPTCodexHomeDirectory
+            codexHomeURL: URL = AppPaths.chatGPTCodexHomeDirectory,
+            limits: CodexAppServerLimits = .production
         ) throws {
+            self.limits = limits
+            stdoutDecoder = CodexAppServerMessageDecoder(limits: limits)
+            deferredMessages = CodexAppServerDeferredMessageQueue(limits: limits)
             guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
                 throw CodexAppServerError.executableUnavailable
             }
@@ -160,6 +566,9 @@
             process.standardInput = inputPipe
             process.standardOutput = outputPipe
             process.standardError = errorPipe
+            try CodexAppServerTimedWriter.prepareNonBlocking(
+                inputPipe.fileHandleForWriting.fileDescriptor
+            )
 
             process.environment = Self.codexEnvironment(
                 inheriting: ProcessInfo.processInfo.environment,
@@ -171,7 +580,7 @@
                 guard !data.isEmpty, let self else { return }
                 self.stderrLock.lock()
                 defer { self.stderrLock.unlock() }
-                let remaining = max(0, 65_536 - self.stderrData.count)
+                let remaining = max(0, self.limits.maximumStderrBytes - self.stderrData.count)
                 if remaining > 0 {
                     self.stderrData.append(data.prefix(remaining))
                 }
@@ -213,7 +622,11 @@
                         "Codex ignored Goalong's isolated CODEX_HOME directory."
                     )
                 }
-                try send(["method": "initialized", "params": [:] as [String: Any]])
+                try send(
+                    ["method": "initialized", "params": [:] as [String: Any]],
+                    deadline: Date().addingTimeInterval(15),
+                    operation: "acknowledging app-server initialization"
+                )
             } catch {
                 close()
                 throw error
@@ -381,8 +794,8 @@
             )
 
             let deadline = Date().addingTimeInterval(900)
-            var streamed = ""
-            var finalText: String?
+            var output = CodexRecapOutputCollector(limits: limits)
+            var streamingRedactor = CodexStreamingRedactor()
             var failureMessage: String?
 
             while Date() < deadline {
@@ -390,17 +803,15 @@
                     deadline: deadline,
                     operation: "generating the recap"
                 )
-                guard let method = message["method"] as? String else {
-                    deferredMessages.append(message)
-                    continue
-                }
+                let method = try CodexAppServerMessageRouter.notificationMethod(in: message)
                 let params = message["params"] as? [String: Any] ?? [:]
 
                 switch method {
                 case "item/agentMessage/delta":
                     if let delta = params["delta"] as? String, !delta.isEmpty {
-                        streamed += delta
-                        onDelta?(delta)
+                        try output.append(delta: delta)
+                        let safeDelta = streamingRedactor.append(delta)
+                        if !safeDelta.isEmpty { onDelta?(safeDelta) }
                     }
                 case "item/completed":
                     if let item = params["item"] as? [String: Any],
@@ -410,12 +821,17 @@
                     {
                         let phase = item["phase"] as? String
                         if phase == nil || phase == "final_answer" {
-                            finalText = text
+                            try output.setFinalText(text)
                         }
                     }
                 case "error":
                     if let error = params["error"] as? [String: Any] {
-                        failureMessage = error["message"] as? String
+                        failureMessage = (error["message"] as? String).map {
+                            CodexAppServerLimits.boundedUTF8(
+                                $0,
+                                maximumBytes: limits.maximumErrorBytes
+                            )
+                        }
                     }
                 case "turn/completed":
                     guard let turn = params["turn"] as? [String: Any] else {
@@ -423,11 +839,15 @@
                     }
                     let status = turn["status"] as? String ?? "unknown"
                     if status == "completed" {
-                        let candidate = finalText ?? streamed
-                        return try Self.extractMarkdown(from: candidate)
+                        let safeTail = streamingRedactor.finish()
+                        if !safeTail.isEmpty { onDelta?(safeTail) }
+                        return try output.completedMarkdown()
                     }
                     let error = turn["error"] as? [String: Any]
-                    let message = error?["message"] as? String ?? failureMessage ?? status
+                    let message = CodexAppServerLimits.boundedUTF8(
+                        error?["message"] as? String ?? failureMessage ?? status,
+                        maximumBytes: limits.maximumErrorBytes
+                    )
                     throw CodexAppServerError.generationFailed(message)
                 default:
                     break
@@ -462,22 +882,25 @@
         ) throws -> [String: Any] {
             let id = nextRequestID
             nextRequestID += 1
-            try send(["method": method, "id": id, "params": params])
             let deadline = Date().addingTimeInterval(timeout)
+            try send(
+                ["method": method, "id": id, "params": params],
+                deadline: deadline,
+                operation: operation
+            )
 
             while Date() < deadline {
                 let message = try nextMessage(deadline: deadline, operation: operation)
-                if Self.integerID(from: message["id"]) == id {
-                    if let error = message["error"] as? [String: Any] {
-                        throw CodexAppServerError.server(error["message"] as? String ?? "Unknown JSON-RPC error")
+                if let responseID = try CodexAppServerMessageRouter.responseID(in: message) {
+                    guard responseID == id else {
+                        throw CodexAppServerError.malformedResponse(
+                            "an unmatched JSON-RPC response was received"
+                        )
                     }
-                    guard let result = message["result"] as? [String: Any] else {
-                        if message["result"] is NSNull { return [:] }
-                        throw CodexAppServerError.malformedResponse("result for \(method) is missing")
-                    }
-                    return result
+                    return try responseResult(message, method: method)
                 }
-                deferredMessages.append(message)
+                _ = try CodexAppServerMessageRouter.notificationMethod(in: message)
+                try deferredMessages.append(message)
             }
             throw CodexAppServerError.timeout(operation)
         }
@@ -487,58 +910,51 @@
             operation: String,
             predicate: ([String: Any]) -> Bool
         ) throws -> [String: Any] {
-            if let index = deferredMessages.firstIndex(where: predicate) {
-                return deferredMessages.remove(at: index)
+            if let message = deferredMessages.removeFirst(where: predicate) {
+                return message
             }
 
             let deadline = Date().addingTimeInterval(timeout)
             while Date() < deadline {
                 let message = try nextMessage(deadline: deadline, operation: operation)
+                _ = try CodexAppServerMessageRouter.notificationMethod(in: message)
                 if predicate(message) { return message }
-                deferredMessages.append(message)
+                try deferredMessages.append(message)
             }
             throw CodexAppServerError.timeout(operation)
         }
 
-        private func send(_ object: [String: Any]) throws {
-            guard JSONSerialization.isValidJSONObject(object) else {
-                throw CodexAppServerError.malformedResponse("client attempted to send invalid JSON")
-            }
-            var data = try JSONSerialization.data(withJSONObject: object, options: [])
-            data.append(0x0A)
-            do {
-                try inputPipe.fileHandleForWriting.write(contentsOf: data)
-            } catch {
-                throw CodexAppServerError.processExited(stderrText())
-            }
+        private func send(
+            _ object: [String: Any],
+            deadline: Date,
+            operation: String
+        ) throws {
+            let data = try CodexAppServerWireEncoder.encode(object, limits: limits)
+            try CodexAppServerTimedWriter.write(
+                data,
+                to: inputPipe.fileHandleForWriting.fileDescriptor,
+                deadline: deadline,
+                operation: operation,
+                errorDetail: { [weak self] in self?.stderrText() ?? "" }
+            )
         }
 
         private func nextDeferredOrMessage(
             deadline: Date,
             operation: String
         ) throws -> [String: Any] {
-            if !deferredMessages.isEmpty {
-                return deferredMessages.removeFirst()
+            if let message = deferredMessages.removeFirst(where: { $0["method"] is String }) {
+                return message
             }
-            return try nextMessage(deadline: deadline, operation: operation)
+            let message = try nextMessage(deadline: deadline, operation: operation)
+            _ = try CodexAppServerMessageRouter.notificationMethod(in: message)
+            return message
         }
 
         private func nextMessage(deadline: Date, operation: String) throws -> [String: Any] {
             while true {
-                if let line = popBufferedLine() {
-                    guard !line.isEmpty else { continue }
-                    do {
-                        let value = try JSONSerialization.jsonObject(with: line, options: [])
-                        guard let dictionary = value as? [String: Any] else {
-                            throw CodexAppServerError.malformedResponse("a JSON line was not an object")
-                        }
-                        return dictionary
-                    } catch let error as CodexAppServerError {
-                        throw error
-                    } catch {
-                        let preview = String(data: line.prefix(512), encoding: .utf8) ?? "<binary>"
-                        throw CodexAppServerError.malformedResponse("\(error.localizedDescription): \(preview)")
-                    }
+                if let message = try stdoutDecoder.popMessage() {
+                    return message
                 }
 
                 let remaining = deadline.timeIntervalSinceNow
@@ -565,41 +981,47 @@
                     throw CodexAppServerError.processExited(stderrText())
                 }
                 if data.isEmpty {
+                    if let message = try stdoutDecoder.finish() {
+                        return message
+                    }
                     throw CodexAppServerError.processExited(stderrText())
                 }
-                outputBuffer.append(data)
+                try stdoutDecoder.append(data)
             }
-        }
-
-        private func popBufferedLine() -> Data? {
-            guard let newline = outputBuffer.firstIndex(of: 0x0A) else { return nil }
-            let line = Data(outputBuffer[..<newline])
-            outputBuffer.removeSubrange(...newline)
-            return line
         }
 
         private func stderrText() -> String {
             stderrLock.lock()
             let data = stderrData
             stderrLock.unlock()
-            return String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let text = String(decoding: data, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return CodexAppServerLimits.boundedUTF8(
+                text,
+                maximumBytes: limits.maximumErrorBytes
+            )
         }
 
-        private static func integerID(from value: Any?) -> Int? {
-            if let number = value as? NSNumber { return number.intValue }
-            if let integer = value as? Int { return integer }
-            return nil
+        private func responseResult(
+            _ message: [String: Any],
+            method: String
+        ) throws -> [String: Any] {
+            if let error = message["error"] as? [String: Any] {
+                let detail = CodexAppServerLimits.boundedUTF8(
+                    error["message"] as? String ?? "Unknown JSON-RPC error",
+                    maximumBytes: limits.maximumErrorBytes
+                )
+                throw CodexAppServerError.server(detail)
+            }
+            guard let result = message["result"] as? [String: Any] else {
+                if message["result"] is NSNull { return [:] }
+                throw CodexAppServerError.malformedResponse("result for \(method) is missing")
+            }
+            return result
         }
 
         static func prepareCodexHome(at directory: URL) throws {
-            let fileManager = FileManager.default
-            try fileManager.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-            try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            try ChatGPTSecureStorage.prepareDirectory(directory)
 
             // This file is app-managed and intentionally rewritten at every launch. Authentication
             // remains in Codex-owned files inside this isolated directory; stale or user-modified
@@ -637,8 +1059,7 @@
                 enabled = false
                 """.utf8
             )
-            try config.write(to: configURL, options: [.atomic])
-            try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+            try ChatGPTSecureStorage.writeFileAtomically(config, to: configURL)
         }
 
         static func codexEnvironment(
@@ -676,23 +1097,6 @@
                 $0.standardizedFileURL.resolvingSymlinksInPath()
             }
             return actual == wanted
-        }
-
-        private static func extractMarkdown(from raw: String) throws -> String {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
-            }
-
-            if let data = trimmed.data(using: .utf8),
-                let object = try? JSONSerialization.jsonObject(with: data, options: []),
-                let dictionary = object as? [String: Any],
-                let markdown = dictionary["markdown"] as? String,
-                !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
-                return markdown.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            return trimmed
         }
 
         private static var applicationVersion: String {

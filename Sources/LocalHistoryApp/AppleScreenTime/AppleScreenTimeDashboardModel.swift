@@ -6,6 +6,8 @@
     import UniformTypeIdentifiers
 
     final class AppleScreenTimeDashboardModel: ObservableObject {
+        typealias CollectionProvider = (Date) -> AppleSystemScreenTimeCollection
+
         @Published var selectedDay: Date
         @Published var configuration: AppleScreenTimeConfiguration
         @Published private(set) var summary: AppleScreenTimeDaySummary?
@@ -22,16 +24,28 @@
 
         private let store: AppleScreenTimeStore?
         private let appleSource: AppleSystemScreenTimeSource
+        private let collectionProvider: CollectionProvider
+        private let refreshInterval: TimeInterval
         private let queue = DispatchQueue(
             label: "ai.goalong.localhistory.apple-system-screen-time.dashboard",
             qos: .userInitiated
         )
         private var refreshTimer: Timer?
         private var deviceSourceLabels: [String: String] = [:]
+        private var isActive = false
+        private var lifecycleGeneration: UInt64 = 0
 
-        init(rootDirectory: URL, deviceID: String, selectedDay: Date = Date()) {
+        init(
+            rootDirectory: URL,
+            deviceID: String,
+            selectedDay: Date = Date(),
+            refreshInterval: TimeInterval = 5,
+            collectionProvider: CollectionProvider? = nil
+        ) {
             let source = AppleSystemScreenTimeSource(deviceID: deviceID)
             self.appleSource = source
+            self.collectionProvider = collectionProvider ?? { source.collect(for: $0) }
+            self.refreshInterval = max(1, refreshInterval)
             self.currentMacDevice = source.currentMacDevice
             self.selectedDay = Calendar.current.startOfDay(for: selectedDay)
 
@@ -54,9 +68,6 @@
                     message: String(describing: error)
                 )
             }
-
-            refresh()
-            startRefreshTimer()
         }
 
         deinit {
@@ -89,15 +100,33 @@
             refresh()
         }
 
+        /// Apple system stores are comparatively expensive to enumerate. Keep their live
+        /// refresh work strictly coupled to a dashboard page that is actually visible.
+        func setActive(_ active: Bool) {
+            guard active != isActive else { return }
+            isActive = active
+            lifecycleGeneration &+= 1
+            if active {
+                refresh()
+                startRefreshTimer()
+            } else {
+                stopRefreshTimer()
+                isBusy = false
+            }
+        }
+
         func refresh() {
+            guard isActive else { return }
             guard !isBusy else { return }
             isBusy = true
             let day = selectedDay
             let requestedScope = configuration.scope
             let source = appleSource
+            let collectionProvider = collectionProvider
+            let generation = lifecycleGeneration
 
             queue.async { [weak self] in
-                let rawCollection = source.collect(for: day)
+                let rawCollection = collectionProvider(day)
                 let collection = AppleScreenTimeDeviceNormalizer.normalize(
                     rawCollection,
                     currentMac: source.currentMacDevice
@@ -123,6 +152,10 @@
 
                 DispatchQueue.main.async {
                     guard let self else { return }
+                    guard self.isActive, self.lifecycleGeneration == generation else {
+                        self.isBusy = false
+                        return
+                    }
                     guard self.selectedDay == day else {
                         self.isBusy = false
                         self.refresh()
@@ -263,13 +296,22 @@
         }
 
         private func startRefreshTimer() {
-            let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
-                guard let self, self.selectedDayIsToday else { return }
+            stopRefreshTimer()
+            guard isActive else { return }
+            let timer = Timer(timeInterval: refreshInterval, repeats: true) { [weak self] _ in
+                guard let self, self.isActive, self.selectedDayIsToday else { return }
                 self.refresh()
             }
             RunLoop.main.add(timer, forMode: .common)
             refreshTimer = timer
         }
+
+        private func stopRefreshTimer() {
+            refreshTimer?.invalidate()
+            refreshTimer = nil
+        }
+
+        var hasActiveRefreshTimerForTesting: Bool { refreshTimer != nil }
 
         private func saveConfigurationAndRefresh(refreshSummary: Bool = true) {
             guard let store else {
