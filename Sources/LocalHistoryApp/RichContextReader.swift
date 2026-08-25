@@ -40,25 +40,27 @@
             var truncated = false
             var addedVisibleText = false
 
-            if let focused = AXReader.focusedElement(for: application), !isSecure(focused) {
-                if let selected = sanitized(
-                    AXReader.string(focused, attribute: selectedText),
-                    maximum: min(1_200, characterLimit)
-                ) {
-                    snippets.append(selected)
-                    sources.append("selected")
-                    rawCharacterCount += selected.count
-                }
+            if let focused = AXReader.focusedElement(for: application) {
                 let focusedRole = AXReader.string(focused, attribute: role) ?? ""
-                if shouldReadValue(role: focusedRole),
-                    let focusedValue = sanitized(
-                        AXReader.string(focused, attribute: value),
-                        maximum: min(1_800, characterLimit)
-                    )
-                {
-                    snippets.append(focusedValue)
-                    sources.append("focused")
-                    rawCharacterCount += focusedValue.count
+                if !isSecure(focused, role: focusedRole) {
+                    if let selected = sanitized(
+                        AXReader.string(focused, attribute: selectedText),
+                        maximum: min(1_200, characterLimit)
+                    ) {
+                        snippets.append(selected)
+                        sources.append("selected")
+                        rawCharacterCount += selected.count
+                    }
+                    if shouldReadValue(role: focusedRole),
+                        let focusedValue = sanitized(
+                            AXReader.string(focused, attribute: value),
+                            maximum: min(1_800, characterLimit)
+                        )
+                    {
+                        snippets.append(focusedValue)
+                        sources.append("focused")
+                        rawCharacterCount += focusedValue.count
+                    }
                 }
             }
 
@@ -73,9 +75,8 @@
                     let element = queue[index]
                     index += 1
                     visited += 1
-                    guard !isSecure(element) else { continue }
-
                     let elementRole = AXReader.string(element, attribute: role) ?? ""
+                    guard !isSecure(element, role: elementRole) else { continue }
                     if shouldReadVisibleText(role: elementRole) {
                         for attribute in [title, description, value] {
                             if let text = sanitized(
@@ -89,7 +90,9 @@
                         }
                     }
 
-                    if queue.count < nodeLimit * 2 {
+                    if queue.count < nodeLimit * 2,
+                        shouldTraverseChildren(role: elementRole)
+                    {
                         queue.append(contentsOf: AXReader.elements(element, attribute: children))
                     }
                 }
@@ -151,9 +154,15 @@
             ].contains(role)
         }
 
-        private static func isSecure(_ element: AXUIElement) -> Bool {
+        private static func shouldTraverseChildren(role: String) -> Bool {
+            ![
+                "AXStaticText", "AXHeading", "AXTextArea", "AXTextField",
+            ].contains(role)
+        }
+
+        private static func isSecure(_ element: AXUIElement, role: String) -> Bool {
             if AXReader.bool(element, attribute: protectedContent) == true { return true }
-            let roleValue = (AXReader.string(element, attribute: role) ?? "").lowercased()
+            let roleValue = role.lowercased()
             return roleValue.contains("secure") || roleValue.contains("password")
         }
 

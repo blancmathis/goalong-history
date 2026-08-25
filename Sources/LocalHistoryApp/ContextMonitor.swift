@@ -35,6 +35,7 @@
             recorder: EventRecorder,
             state: CaptureState,
             configManager: ConfigManager,
+            permissions: PermissionManager,
             captureHealth: CaptureHealthStore,
             semanticContextStore: SemanticContextStore,
             memoryStore: LocalActivityMemoryStore
@@ -46,15 +47,20 @@
             self.captureHealth = captureHealth
             self.semanticContextStore = semanticContextStore
             self.memoryStore = memoryStore
-            accessibilityEventMonitor = AccessibilityEventMonitor { [weak self] trigger in
-                guard let self,
-                    let snapshot = self.sampleNow()
-                else { return }
-                ActivityAnalysisRuntime.shared.captureObservedContext(
-                    trigger: trigger,
-                    context: snapshot
-                )
-            }
+            accessibilityEventMonitor = AccessibilityEventMonitor(
+                isAccessibilityAvailable: { [weak permissions] in
+                    permissions?.currentStatus.accessibilityUsable == true
+                },
+                onChange: { [weak self] trigger in
+                    guard let self,
+                        let snapshot = self.sampleNow()
+                    else { return }
+                    ActivityAnalysisRuntime.shared.captureObservedContext(
+                        trigger: trigger,
+                        context: snapshot
+                    )
+                }
+            )
         }
 
         func start() {
@@ -132,14 +138,19 @@
         ) -> TimeInterval? {
             let base = min(45.0, max(0.25, configuredInterval))
             guard isCapturing else { return nil }
-            guard eventDrivenCoverageAvailable else { return base }
 
             switch suppressionReason {
-            case .secureInput, .accessibilityUnavailable, .sessionUnavailable:
+            case .accessibilityUnavailable, .sessionUnavailable:
+                // The permission watchdog already performs a cached-status recovery
+                // check every three seconds. Sampling foreground context faster cannot
+                // succeed while AX/session access is absent and only creates wakeups.
+                return min(5.0, max(base, 3.0))
+            case .secureInput:
                 return min(5.0, max(base, 1.0))
             default:
                 break
             }
+            guard eventDrivenCoverageAvailable else { return base }
 
             let idle = max(0, idleSeconds)
             if idle < 3 { return base }

@@ -36,8 +36,44 @@ final class ComputerHistoryEpisodeQualityTests: XCTestCase {
         XCTAssertEqual(memory.episodes.map(\.sites), [["github.com"], ["news.example.com"]])
     }
 
-    func testLatestVisibleSuccessOverridesAnEarlierTransientFailure() {
+    func testImmediateCrossSiteNavigationRemainsOneTaskEpisode() {
         let safari = fixtureApp("Safari")
+        let events = [
+            fixtureEvent(
+                id: "issue-link",
+                sequence: 1,
+                offset: 0,
+                kind: .urlChanged,
+                app: safari,
+                windowTitle: "Fix onboarding · Issue #42",
+                host: "github.com"
+            ),
+            fixtureEvent(
+                id: "linked-document",
+                sequence: 2,
+                offset: 5,
+                kind: .urlChanged,
+                app: safari,
+                windowTitle: "Onboarding specification",
+                host: "docs.example.com"
+            ),
+        ]
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        XCTAssertEqual(memory.episodes.count, 1)
+        XCTAssertEqual(
+            Set(memory.episodes[0].sites),
+            Set(["github.com", "docs.example.com"])
+        )
+        XCTAssertEqual(memory.episodes[0].interactions.count, 2)
+    }
+
+    func testLatestVisibleSuccessOverridesAnEarlierTransientFailure() {
         let failedBefore = payload(
             id: "failed-before",
             text: "Deploy production",

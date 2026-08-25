@@ -133,6 +133,7 @@
     final class ActivityAnalysisRuntime: ActivityAnalysisRefreshServing {
         static let shared = ActivityAnalysisRuntime()
         static let backgroundRefreshInterval: TimeInterval = 10 * 60
+        static let observedContextRecentCaptureCooldown: TimeInterval = 2
 
         private weak var recorder: EventRecorder?
         private weak var state: CaptureState?
@@ -144,6 +145,7 @@
         private var richContextTimer: Timer?
         private var analysisTimer: Timer?
         private var lastRichContextFingerprints: [String: String] = [:]
+        private var lastSemanticCaptureDates: [String: Date] = [:]
         private var lastRichContextCapture = Date.distantPast
         private var interactionCaptureGeneration: UInt64 = 0
         private var started = false
@@ -239,6 +241,14 @@
             context explicitContext: ContextSnapshot? = nil
         ) {
             guard let snapshot = explicitContext ?? currentContext?() else { return }
+            let now = Date()
+            let contextKey = Self.semanticContextKey(snapshot)
+            if Self.observedContextUsesRecentCaptureCooldown(trigger: trigger) {
+                guard Self.shouldAttemptObservedContextCapture(
+                    lastCaptureAt: lastSemanticCaptureDates[contextKey],
+                    now: now
+                ) else { return }
+            }
             _ = persistSemanticContext(
                 snapshot: snapshot,
                 maximumCharacters: 4_800,
@@ -277,7 +287,32 @@
         func prepareForHistoryClear() {
             interactionCaptureGeneration &+= 1
             lastRichContextFingerprints.removeAll(keepingCapacity: false)
+            lastSemanticCaptureDates.removeAll(keepingCapacity: false)
             lastRichContextCapture = .distantPast
+        }
+
+        static func shouldAttemptObservedContextCapture(
+            lastCaptureAt: Date?,
+            now: Date
+        ) -> Bool {
+            guard let lastCaptureAt else { return true }
+            return now.timeIntervalSince(lastCaptureAt) >= observedContextRecentCaptureCooldown
+        }
+
+        static func observedContextUsesRecentCaptureCooldown(trigger: String) -> Bool {
+            let normalized = trigger.lowercased()
+            return normalized.contains("value_changed")
+                || normalized.contains("selected_text_changed")
+                || normalized.contains("title_changed")
+        }
+
+        private static func semanticContextKey(_ snapshot: ContextSnapshot) -> String {
+            [
+                snapshot.app.bundleIdentifier
+                    ?? "pid:\(snapshot.app.processIdentifier)",
+                snapshot.url?.value ?? "",
+                snapshot.window?.title ?? "",
+            ].joined(separator: "|")
         }
 
         private func semanticBudget(for phase: String) -> (characters: Int, nodes: Int) {
@@ -389,12 +424,7 @@
                 )
             else { return nil }
 
-            let contextKey = [
-                validatedSnapshot.app.bundleIdentifier
-                    ?? "pid:\(validatedSnapshot.app.processIdentifier)",
-                validatedSnapshot.url?.value ?? "",
-                validatedSnapshot.window?.title ?? "",
-            ].joined(separator: "|")
+            let contextKey = Self.semanticContextKey(validatedSnapshot)
             if deduplicate {
                 guard lastRichContextFingerprints[contextKey] != capture.fingerprint else {
                     return nil
@@ -429,6 +459,12 @@
                     semanticContext: reference,
                     metadata: metadata
                 )
+                lastSemanticCaptureDates[contextKey] = Date()
+                if lastSemanticCaptureDates.count > 256,
+                    let oldest = lastSemanticCaptureDates.min(by: { $0.value < $1.value })?.key
+                {
+                    lastSemanticCaptureDates.removeValue(forKey: oldest)
+                }
                 return reference
             } catch {
                 Diagnostics.write("Semantic context persistence failed: \(error)")
@@ -1354,7 +1390,10 @@
             self.limits = limits
         }
 
-        func load(day: Date) throws -> ActivityAnalysisDaySnapshot {
+        func load(
+            day: Date,
+            sourceRevision: ActivityAnalysisSourceRevision? = nil
+        ) throws -> ActivityAnalysisDaySnapshot {
             let calendar = Calendar.current
             let start = calendar.startOfDay(for: day)
             guard let next = calendar.date(byAdding: .day, value: 1, to: start) else {
@@ -1400,13 +1439,9 @@
                     integrity = event.integrity.map(SourceIntegrityPoint.init)
                 }
 
-                static func precedes(_ left: Self, _ right: Self) -> Bool {
-                    if left.timestamp == right.timestamp { return left.eventID < right.eventID }
-                    return left.timestamp < right.timestamp
-                }
             }
-            var firstRawEvent: SourceEventBoundary?
-            var lastRawEvent: SourceEventBoundary?
+            var firstPhysicalEvent: SourceEventBoundary?
+            var lastPhysicalEvent: SourceEventBoundary?
             var previousPhysicalEvent: SourceEventBoundary?
             var sourceTailIsValid = true
             var retainedRowCount = 0
@@ -1432,9 +1467,10 @@
                 estimatedRetainedBytes += valueBytes
             }
 
-            let eventResult: ([HistoryEvent], Int64, String) = try readJSONLines(
+            let eventResult: ([HistoryEvent], Int64, String, Bool) = try readJSONLines(
                 HistoryEvent.self,
                 at: eventURL,
+                expectedStamp: sourceRevision?.event,
                 start: start,
                 end: end,
                 timestamp: { $0.timestamp },
@@ -1449,20 +1485,8 @@
                     if event.isObservationContinuityBoundary {
                         rawContinuityBoundaryCount += 1
                     }
-                    if let first = firstRawEvent {
-                        if SourceEventBoundary.precedes(boundary, first) {
-                            firstRawEvent = boundary
-                        }
-                    } else {
-                        firstRawEvent = boundary
-                    }
-                    if let last = lastRawEvent {
-                        if SourceEventBoundary.precedes(last, boundary) {
-                            lastRawEvent = boundary
-                        }
-                    } else {
-                        lastRawEvent = boundary
-                    }
+                    if firstPhysicalEvent == nil { firstPhysicalEvent = boundary }
+                    lastPhysicalEvent = boundary
                     guard let integrity = event.integrity else {
                         sourceTailIsValid = false
                         previousPhysicalEvent = boundary
@@ -1480,9 +1504,6 @@
                         return
                     }
                     if let previous = previousPhysicalEvent {
-                        if SourceEventBoundary.precedes(boundary, previous) {
-                            sourceTailIsValid = false
-                        }
                         guard let previousIntegrity = previous.integrity else {
                             sourceTailIsValid = false
                             previousPhysicalEvent = boundary
@@ -1519,10 +1540,13 @@
 
             var semanticSnapshots: [String: SemanticContextPayload] = [:]
             let semanticResult: (Int64, String?)
-            if Self.fileExistsWithoutFollowingSymlinks(semanticURL) {
-                let loaded: ([SemanticContextPayload], Int64, String) = try readJSONLines(
+            let shouldReadSemantic = sourceRevision.map { $0.semantic != nil }
+                ?? Self.fileExistsWithoutFollowingSymlinks(semanticURL)
+            if shouldReadSemantic {
+                let loaded: ([SemanticContextPayload], Int64, String, Bool) = try readJSONLines(
                     SemanticContextPayload.self,
                     at: semanticURL,
+                    expectedStamp: sourceRevision?.semantic,
                     start: start,
                     end: end,
                     timestamp: { $0.capturedAt },
@@ -1556,9 +1580,9 @@
             let sourceJournalSummary = ComputerHistorySourceJournalSummary(
                 eventCount: rawEventCount,
                 continuityBoundaryCount: rawContinuityBoundaryCount,
-                firstSourceSequence: firstRawEvent?.integrity?.sequence,
-                lastSourceSequence: lastRawEvent?.integrity?.sequence,
-                lastSourceEventHash: lastRawEvent?.integrity?.eventHash
+                firstSourceSequence: firstPhysicalEvent?.integrity?.sequence,
+                lastSourceSequence: lastPhysicalEvent?.integrity?.sequence,
+                lastSourceEventHash: lastPhysicalEvent?.integrity?.eventHash
             )
             let sourceTail =
                 issues.isEmpty && sourceTailIsValid
@@ -1568,9 +1592,9 @@
                     firstSourceSequence: sourceJournalSummary.firstSourceSequence,
                     lastSourceSequence: sourceJournalSummary.lastSourceSequence,
                     lastSourceEventHash: sourceJournalSummary.lastSourceEventHash,
-                    lastEventTimestamp: lastRawEvent?.timestamp,
-                    lastEventID: lastRawEvent?.eventID,
-                    endedWithNewline: try Self.fileEndsWithNewline(eventURL)
+                    lastEventTimestamp: lastPhysicalEvent?.timestamp,
+                    lastEventID: lastPhysicalEvent?.eventID,
+                    endedWithNewline: eventResult.3
                 )
                 : nil
 
@@ -1699,8 +1723,6 @@
                         event.timestamp >= start,
                         event.timestamp < end,
                         !event.isDerivedAnalysisEvidence,
-                        event.timestamp > lastTimestamp
-                            || (event.timestamp == lastTimestamp && event.id >= lastID),
                         let integrity = event.integrity
                     else { return nil }
                     let nextSequence = lastSequence.addingReportingOverflow(1)
@@ -1758,6 +1780,7 @@
         private func readJSONLines<T: Decodable>(
             _ type: T.Type,
             at URL: URL,
+            expectedStamp: ActivityAnalysisFileStamp? = nil,
             start: Date,
             end: Date,
             timestamp: (T) -> Date,
@@ -1766,16 +1789,36 @@
             transform: (T) -> T = { $0 },
             retain: (T) throws -> Bool = { _ in true },
             issues: inout [HistoryLoadIssue]
-        ) throws -> ([T], Int64, String) {
-            let handle: FileHandle
-            do {
-                handle = try FileHandle(forReadingFrom: URL)
-            } catch {
+        ) throws -> ([T], Int64, String, Bool) {
+            let descriptor = Darwin.open(
+                URL.path,
+                O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK
+            )
+            guard descriptor >= 0 else {
                 throw ActivityAnalysisCycleError.sourceInaccessible(
-                    "Could not open \(URL.path) read-only: \(error)"
+                    "Could not open \(URL.path) read-only without following links: "
+                        + String(cString: strerror(errno))
                 )
             }
+            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
             defer { try? handle.close() }
+
+            var openedInformation = stat()
+            guard Darwin.fstat(descriptor, &openedInformation) == 0,
+                (openedInformation.st_mode & S_IFMT) == S_IFREG
+            else {
+                throw ActivityAnalysisCycleError.sourceInaccessible(
+                    "Could not inspect \(URL.path) through its pinned read-only descriptor"
+                )
+            }
+            let snapshotStamp = expectedStamp ?? Self.fileStamp(openedInformation)
+            guard Self.isAppendOnlySuccessor(openedInformation, of: snapshotStamp) else {
+                throw ActivityAnalysisCycleError.sourceChangedDuringRead
+            }
+            let readCeiling = snapshotStamp.size
+            guard readCeiling >= 0 else {
+                throw ActivityAnalysisCycleError.sourceChangedDuringRead
+            }
 
             let decoder = Self.makeDecoder()
             var hasher = CryptoKit.SHA256()
@@ -1784,9 +1827,16 @@
             var output: [T] = []
             var bytesRead: Int64 = 0
             var lineNumber = 0
+            var lastByte: UInt8?
 
-            while let chunk = try handle.read(upToCount: Self.readChunkBytes), !chunk.isEmpty {
+            while bytesRead < readCeiling {
+                let remaining = readCeiling - bytesRead
+                let requested = min(Self.readChunkBytes, Int(min(remaining, Int64(Int.max))))
+                guard let chunk = try handle.read(upToCount: requested), !chunk.isEmpty else {
+                    throw ActivityAnalysisCycleError.sourceChangedDuringRead
+                }
                 bytesRead += Int64(chunk.count)
+                lastByte = chunk.last
                 hasher.update(data: chunk)
                 buffer.append(chunk)
 
@@ -1827,6 +1877,16 @@
             }
 
             if !buffer.isEmpty {
+                var currentInformation = stat()
+                guard Darwin.fstat(descriptor, &currentInformation) == 0 else {
+                    throw ActivityAnalysisCycleError.sourceChangedDuringRead
+                }
+                // A snapshot taken while the recorder was extending a row is not a
+                // valid JSONL boundary. Wait for the next cycle instead of decoding a
+                // prefix that only became complete after the captured byte ceiling.
+                guard Int64(currentInformation.st_size) == readCeiling else {
+                    throw ActivityAnalysisCycleError.sourceChangedDuringRead
+                }
                 lineNumber += 1
                 guard buffer.count <= Self.maximumJSONLineBytes else {
                     throw ActivityAnalysisCycleError.oversizedJSONLine(
@@ -1851,8 +1911,34 @@
                 )
             }
 
+            var finalInformation = stat()
+            var pathInformation = stat()
+            guard Darwin.fstat(descriptor, &finalInformation) == 0,
+                lstat(URL.path, &pathInformation) == 0,
+                (pathInformation.st_mode & S_IFMT) == S_IFREG,
+                finalInformation.st_dev == pathInformation.st_dev,
+                finalInformation.st_ino == pathInformation.st_ino,
+                Self.isAppendOnlySuccessor(finalInformation, of: snapshotStamp),
+                Self.isAppendOnlySuccessor(pathInformation, of: snapshotStamp)
+            else {
+                throw ActivityAnalysisCycleError.sourceChangedDuringRead
+            }
+
             let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
-            return (output, bytesRead, digest)
+            return (output, bytesRead, digest, lastByte == 0x0A || readCeiling == 0)
+        }
+
+        private static func isAppendOnlySuccessor(
+            _ information: stat,
+            of snapshot: ActivityAnalysisFileStamp
+        ) -> Bool {
+            guard UInt64(information.st_dev) == snapshot.device,
+                UInt64(information.st_ino) == snapshot.inode,
+                Int64(information.st_size) >= snapshot.size
+            else { return false }
+            if Int64(information.st_size) > snapshot.size { return true }
+            return Int64(information.st_mtimespec.tv_sec) == snapshot.modificationSeconds
+                && Int64(information.st_mtimespec.tv_nsec) == snapshot.modificationNanoseconds
         }
 
         private func decode<T: Decodable>(
@@ -1909,33 +1995,6 @@
             var information = stat()
             guard lstat(URL.path, &information) == 0 else { return false }
             return (information.st_mode & S_IFMT) == S_IFREG
-        }
-
-        private static func fileEndsWithNewline(_ URL: URL) throws -> Bool {
-            let descriptor = Darwin.open(URL.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
-            guard descriptor >= 0 else {
-                throw ActivityAnalysisCycleError.sourceInaccessible(
-                    "Could not open \(URL.path) read-only without following links: "
-                        + String(cString: strerror(errno))
-                )
-            }
-            defer { Darwin.close(descriptor) }
-            var information = stat()
-            guard Darwin.fstat(descriptor, &information) == 0,
-                (information.st_mode & S_IFMT) == S_IFREG
-            else {
-                throw ActivityAnalysisCycleError.sourceInaccessible(
-                    "Could not inspect \(URL.path) through its read-only descriptor"
-                )
-            }
-            guard information.st_size > 0 else { return true }
-            var byte: UInt8 = 0
-            guard Darwin.pread(descriptor, &byte, 1, information.st_size - 1) == 1 else {
-                throw ActivityAnalysisCycleError.sourceInaccessible(
-                    "Could not inspect the final byte of \(URL.path)"
-                )
-            }
-            return byte == 0x0A
         }
 
         private static func fileStamp(_ information: stat) -> ActivityAnalysisFileStamp {
@@ -2166,6 +2225,10 @@
     /// runtime so every background trigger shares the same serialization and cache.
     final class ActivityAnalysisCycleCoordinator {
         private static let maximumPriorComputerHistoryDays = 30
+        /// Bump only when a derived-analysis algorithm or persisted contract changes.
+        /// Tying this key to CFBundleVersion made every UI-only application update
+        /// rebuild the complete raw day on first launch.
+        static let currentEngineRevision = "shared-day-analysis-v2"
         /// Codex produces ten-minute activity memories. Matching that cadence keeps
         /// the active journal fresh without rereading an ever-growing day once per
         /// minute. Explicit user refreshes bypass this background debounce.
@@ -2284,7 +2347,7 @@
             let start = Calendar.current.startOfDay(for: day)
             let dayKey = ActivityAnalysisPaths.dayString(start)
             let currentProbe = probe(day: start, tokenBudget: tokenBudget)
-            let revision: ActivityAnalysisSourceRevision
+            var revision: ActivityAnalysisSourceRevision
             switch currentProbe {
             case .absent:
                 try cache.removeValue(for: dayKey)
@@ -2336,7 +2399,10 @@
                     now: Date()
                 )
             {
-                guard probe(day: start, tokenBudget: tokenBudget) == .available(revision) else {
+                guard case .available(let latest) = probe(
+                    day: start,
+                    tokenBudget: tokenBudget
+                ), Self.isAppendOnlySuccessor(latest, of: revision) else {
                     throw ActivityAnalysisCycleError.sourceChangedDuringRead
                 }
                 return ActivityAnalysisCycleResult(
@@ -2368,6 +2434,18 @@
                 priorComputerHistory = []
             }
 
+            // Loading prior retained days may compact one legacy derived file. Refresh
+            // the processing key before pinning the raw-source snapshot so that this
+            // bounded migration cannot invalidate the same analysis cycle.
+            switch probe(day: start, tokenBudget: tokenBudget) {
+            case .available(let refreshed):
+                revision = refreshed
+            case .absent:
+                throw ActivityAnalysisCycleError.sourceChangedDuringRead
+            case .inaccessible(let message):
+                throw ActivityAnalysisCycleError.sourceInaccessible(message)
+            }
+
             if let cached,
                 let incremental = try processMaintenanceOnlyAppend(
                     day: start,
@@ -2381,14 +2459,17 @@
                 return incremental
             }
 
-            let snapshot = try loader.load(day: start)
+            let snapshot = try loader.load(day: start, sourceRevision: revision)
             guard snapshot.issues.isEmpty else {
                 throw ActivityAnalysisCycleError.sourceInaccessible(
                     "Derived analysis kept the last-known-good views because the source "
                         + "contained \(snapshot.issues.count) unreadable row(s)"
                 )
             }
-            guard probe(day: start, tokenBudget: tokenBudget) == .available(revision) else {
+            guard case .available(let latest) = probe(
+                day: start,
+                tokenBudget: tokenBudget
+            ), Self.isAppendOnlySuccessor(latest, of: revision) else {
                 throw ActivityAnalysisCycleError.sourceChangedDuringRead
             }
 
@@ -2526,7 +2607,8 @@
                     to: revision,
                     priorTail: priorTail
                 ),
-                probe(day: day, tokenBudget: tokenBudget) == .available(revision),
+                case .available(let latest) = probe(day: day, tokenBudget: tokenBudget),
+                Self.isAppendOnlySuccessor(latest, of: revision),
                 let existing = computerHistoryStore.loadStored(for: day),
                 existing.coverage.sourceEventCount == priorTail.eventCount,
                 existing.coverage.suppressedEventCount == priorTail.continuityBoundaryCount,
@@ -2889,6 +2971,36 @@
             )
         }
 
+        static func isAppendOnlySuccessor(
+            _ current: ActivityAnalysisSourceRevision,
+            of snapshot: ActivityAnalysisSourceRevision
+        ) -> Bool {
+            guard current.processingKey == snapshot.processingKey,
+                isAppendOnlySuccessor(current.event, of: snapshot.event)
+            else { return false }
+            switch (snapshot.semantic, current.semantic) {
+            case (nil, _):
+                return true
+            case (.some, nil):
+                return false
+            case let (.some(previous), .some(latest)):
+                return isAppendOnlySuccessor(latest, of: previous)
+            }
+        }
+
+        private static func isAppendOnlySuccessor(
+            _ current: ActivityAnalysisFileStamp,
+            of snapshot: ActivityAnalysisFileStamp
+        ) -> Bool {
+            guard current.device == snapshot.device,
+                current.inode == snapshot.inode,
+                current.size >= snapshot.size
+            else { return false }
+            if current.size > snapshot.size { return true }
+            return current.modificationSeconds == snapshot.modificationSeconds
+                && current.modificationNanoseconds == snapshot.modificationNanoseconds
+        }
+
         private static func fileStamp(at URL: URL) throws -> ActivityAnalysisFileStamp? {
             var information = stat()
             guard lstat(URL.path, &information) == 0 else {
@@ -2945,13 +3057,7 @@
         }
 
         private static func defaultEngineRevision() -> String {
-            let shortVersion =
-                Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
-                as? String ?? "development"
-            let buildVersion =
-                Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")
-                as? String ?? "development"
-            return "shared-day-analysis-v1|\(shortVersion)|\(buildVersion)"
+            currentEngineRevision
         }
     }
 #endif

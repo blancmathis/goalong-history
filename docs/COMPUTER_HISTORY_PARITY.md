@@ -11,6 +11,42 @@ the tested macOS build and applications.
 
 Reference behavior: <https://learn.chatgpt.com/docs/customization/computer-history>
 
+## Observable target and public-use signals
+
+The parity target is the public product surface, not a guessed private design. The
+official documentation establishes the interaction stream, Accessibility context,
+timeline, memories, source recovery, natural questions, repeated-workflow suggestions,
+pause/exclusion/deletion controls, local persistence, and the absence of screenshots or
+audio. Public discussion emphasizes two useful outcomes — resuming work without manually
+restating context and recovering a vaguely remembered source — plus a non-negotiable
+failure mode: repeated Accessibility work must not make foreground applications lag.
+
+Public evidence used for this acceptance surface:
+
+- OpenAI Computer History documentation:
+  <https://learn.chatgpt.com/docs/customization/computer-history>
+- public workflow/recall discussion:
+  <https://www.reddit.com/r/CodexAutomation/comments/1vnzmkf/chatgpt_computer_history_gives_codex_a_searchable/>
+- public macOS performance report:
+  <https://www.reddit.com/r/codex/comments/1vwyyo9/computer_history_was_slowing_down_my_mac/>
+- public capture-loss report after an Accessibility observer crash:
+  <https://github.com/openai/codex/issues/39183>
+
+These reports are individual public signals, not representative user research. They are
+used to strengthen the local acceptance criteria, not to infer undocumented behavior.
+
+| Publicly observable capability | Goalong behavior | Current proof boundary |
+| --- | --- | --- |
+| clicks, grouped typing, shortcuts, scrolling, app/window/site context | one local input pipeline with event-time, near-event, after, and settled observations | deterministic capture tests pass; the installed signed identity still needs a fresh physical-input/TCC run |
+| searchable chronology and local memories | causal episodes plus exact coverage totals and a bounded representative projection | parity/evidence/storage tests and installed UI inspection pass |
+| resume after a break and summarize recent work | intent-aware local search over causal episodes, including French resume phrasing | English/French query tests and a real local source query pass |
+| recover a file, page, document, conversation, issue, or terminal context | stable source references with direct-source fallback and provenance | resource-resolution and query tests pass; unavailable locators stay explicit |
+| distinguish completed, in-progress, blocked, waiting, planned, and unknown work | cautious evidence-derived status with latest visible state taking priority | deterministic status scenarios pass; status remains an interpretation |
+| suggest skills or automations from repeated work | bounded cross-day workflow clustering; suggestions never auto-run | repeatability scenarios pass; real multi-day usefulness remains data-dependent |
+| pause, resume, exclude, and delete | menu-bar/UI controls, app/domain exclusions, private/secure suppression, and 10-minute/hour/all deletion | privacy audit and deletion tests pass |
+| avoid screenshots, audio, clipboard, keystroke reconstruction, and private browsing | Accessibility text and interaction metadata only, with credential redaction | privacy audit and suppression tests pass |
+| stay unobtrusive and recoverable | one process, no helper, health state, bounded queues/caches, AX storm debounce, polling fallback | resource measurements pass; final physical wake/input recovery is pending TCC refresh |
+
 ## Architecture migration
 
 | Before this hardening | Current architecture |
@@ -18,6 +54,10 @@ Reference behavior: <https://learn.chatgpt.com/docs/customization/computer-histo
 | Derived days could retain the complete causal arrays and a second local Markdown copy. | An eligible day is analyzed completely only when it fits the documented source-integrity, row, byte, and working-set bounds; then one compact JSON keeps exact totals plus a bounded representative projection, and only one optional Codex Markdown projection remains. |
 | Search depended on retained derived detail. | Stored-memory search is complemented, for lexical questions, by a bounded read-only pass over the original journals. |
 | Repeated refreshes could independently decode the same day and retain large integrity arrays in memory. | Activity Analysis and Computer History share one day pass, drop regenerable per-field commitments from transient copies, and use a small revision cache plus append debounce. |
+| A live append during a full-day pass invalidated the whole refresh even when the recorder only extended the same journal. | The runtime pins the probed event and semantic byte ceilings, reads exactly those validated prefixes, accepts only same-inode append-only growth, and catches up on the following cycle. Replacement, truncation, same-size mutation, or an incomplete row boundary still fails closed. |
+| Every application build number changed the analysis revision, and timestamp jitter could invalidate an otherwise intact append cursor. | The revision is scoped to the analysis algorithm, physical journal order is verified by sequence/hash continuity independently of timestamp sorting, and a maintenance-only append reads just its pinned suffix even while newer bytes arrive. |
+| Whitespace cleanup created one Foundation regular-expression result per ordinary match and retained a complete pass of autoreleased temporaries. | Layout normalization is one linear Unicode-scalar pass; credential patterns remain compiled regexes, and their temporary Foundation objects drain once per bounded observation. |
+| The Computer History page eagerly built every retained episode card and rebuilt the same source dictionary for each card. | The timeline and page body are lazy, one source index is shared by all visible cards, transient dashboard caches are cleared on close, and free allocator pages are returned after the window graph drains. |
 | Missing or unsafe raw input could erase or replace the useful derived view. | The last known-good memory remains visible with an explicit `absent` or `inaccessible` source state. |
 
 The raw Goalong event and semantic journals remain the authoritative evidence.
@@ -106,6 +146,13 @@ unresponsive:
 `AXObserver` also reacts to focused-element, focused-window, window-created, title,
 value, and selected-text changes. These observations are debounced and fingerprint-
 deduplicated. Polling remains a fallback rather than the only source.
+
+When the cached Accessibility preflight/functional pair is unavailable, the observer
+stays detached instead of issuing and logging four failed registrations on every
+foreground-app switch. The permission watchdog remains on its three-second recovery
+cadence, and the context fallback also sleeps at least three seconds in that degraded
+state. A later app activation attaches the observer after the cached permission becomes
+usable; no extra helper or TCC probe loop is introduced.
 
 ### Causal interactions
 
@@ -325,6 +372,46 @@ suffix and update exact source coverage without rebuilding causal results. Any a
 containing user-facing evidence, any replacement, or any tail-integrity uncertainty
 falls back to streaming the changed day again from byte zero. The debounce reduces how
 often that full cost is paid; it is not a general suffix-only causal engine.
+
+The source tail follows physical JSONL append order and verifies every adjacent sequence,
+previous hash, event root, and event hash. Event timestamps are still sorted for causal
+analysis, but normal asynchronous timestamp jitter no longer discards a valid physical
+cursor. The maintenance suffix continues that exact integrity chain and may finish against
+a pinned prefix while the same inode grows again; the later bytes remain pending for the
+next cycle. The engine revision changes only when the derived algorithm or persisted
+contract changes, so an unrelated application build no longer forces a full-day rebuild.
+
+A full rebuild also uses an immutable read boundary instead of chasing the live end of
+file. The coordinator refreshes its prior-memory processing key after any bounded legacy
+compaction, pins the event and optional semantic file identities and byte sizes, then the
+loader reads only those prefixes through no-follow descriptors. Growth is accepted only
+when the device and inode are unchanged and size is monotonic; an unchanged size must
+also retain the exact modification timestamp. A prefix that ended in a row still being
+written is deferred rather than decoded. The cached revision describes exactly the
+accepted prefix, so later bytes remain visible to the next incremental cycle without
+duplicating any derived row.
+
+The standalone reader makes the same distinction between identity and membership. The
+application-support root must retain its exact device/inode path identity, while the
+`events` and `semantic` directories must also retain their complete listing snapshot.
+Creating an unrelated derived/cache entry under the root therefore cannot reject a
+read-only source pass; replacing the root, either source directory, or an examined source
+file still rejects the complete projection.
+
+The rendered Computer History page uses lazy stacks for the outer page and causal
+timeline. It constructs one resource-ID lookup per memory instead of one copy per
+episode. Closing the dashboard removes its hosting controller, clears decoded dashboard
+and Agent Activity summaries, then requests allocator pressure relief after those
+references drain. These steps bound work by visible rows and allow the menu-bar recorder
+to return transient UI pages to macOS; measured RSS still depends on SwiftUI/macOS and is
+validated separately on the installed build.
+
+Semantic layout cleanup collapses spaces/tabs, CRLF, and long newline runs in a single
+bounded scalar pass before the credential expressions run. The regex rules remain ordered
+and behavior-equivalent under the sanitizer regression corpus. Each observation owns a
+small autorelease pool, so match objects and bridged Foundation strings do not accumulate
+until the complete day finishes. This changes transient allocation only; the sanitized
+text, redaction patterns, clipping limits, and persisted result are unchanged.
 
 The prior-memory dependency revision is also discovered lazily: it visits at most 20,000
 entries for at most two seconds, retains only the latest 30 eligible names, and caches at
@@ -598,6 +685,41 @@ The checker does not independently reread the raw journal, prove that every oper
 system action was captured, validate workflow-pattern episode IDs, or inspect details
 omitted from a representative projection. The controlled real-input validation remains
 necessary for those claims.
+
+## Measured local acceptance snapshot
+
+The following measurements were taken on 2026-08-25 on macOS 26.5.1 (25F80), an
+Apple M4 Pro with 24 GB RAM, using the installed source build
+`20260825.202039` (`CDHash c28d23d6409a54598985d607eb23fd91d1d011a3`). The
+application was one process with no child/helper process. Before idle sampling, the
+dashboard was closed through its real close button, its absence from the on-screen
+window list was verified, and more than 60 seconds elapsed.
+
+| Surface | Measured result |
+| --- | --- |
+| background CPU, 600 one-second samples | median 0.2%, p95 1.3%, maximum 99.7%; 8 samples exceeded 15%, with a longest consecutive run of exactly 5 seconds |
+| closed-window memory | macOS physical footprint 44 MB; lifetime physical peak 146 MB; raw `ps` RSS median 150.1 MiB, p95 203.5 MiB, maximum 222.6 MiB |
+| UI peak improvement | lifetime physical peak 146.1 MB versus the prior measured 476.3 MB view peak, a 69.3% reduction |
+| derived Computer History storage | 4 compact JSON days, 3,431,360 logical bytes / 3,360 allocated KiB after the final installed-UI read, down from 33,536 allocated KiB before legacy-derived compaction |
+| direct-source Agent Activity index | 792 entries in 773,900 bytes (977.1 bytes per entry) after the final direct-source UI read: Codex 777, Claude Code 1, OpenCode 14; all available |
+| transcript duplication check | zero files and zero bytes in `agent-activity/blobs`; durable Agent Activity files are the bounded index, configuration, one small wake-up signal, and an empty lock |
+| real French resume query | one current day reconstructed in 3.07 seconds; maximum RSS 83,361,792 bytes and physical footprint 74,842,712 bytes; 12 source-backed episode hits |
+| complete automated suite | 575 tests, 2 skipped, 0 failures; Agent Activity selection 93 tests, 1 skipped, 0 failures |
+| parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 18/18 metadata-probe tests passed; output directory was 52 allocated KiB and contained metadata/checklists only |
+
+Raw RSS includes reclaimable mappings and allocator pages and is therefore reported
+separately from macOS `phys_footprint`, the memory-pressure measure used for the
+closed-window budget. The single one-second CPU maximum is not hidden; the sustained
+limit is satisfied because no run above 15% lasted more than five samples.
+
+The current installed identity still reports Accessibility functional/preflight and
+Input Monitoring preflight as unavailable. Consequently these measurements prove the
+degraded-permission idle path, bounded analysis, storage, queries, build, launch, and UI
+behavior. They do **not** prove current-build physical input capture, live
+Codex-versus-Goalong coverage, permission recovery after a real TCC grant, or third-party
+application AX quality. That final claim remains gated on the controlled real-input
+checklist below and must be rerun after any reinstall that changes the app's ad-hoc
+`CDHash`.
 
 ## Real-session proof boundary
 

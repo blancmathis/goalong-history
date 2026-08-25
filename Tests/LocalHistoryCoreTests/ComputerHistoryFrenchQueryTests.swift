@@ -38,13 +38,22 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
             calendar: utcCalendar
         )
 
-        let answer = ComputerHistorySearchService(memories: [memory]).ask(
+        for query in [
             "Ou j en etais avant ma pause ?",
-            now: fixtureStart.addingTimeInterval(30 * 60)
-        )
+            "Où en étais-je avant ma dernière pause ?",
+        ] {
+            let answer = ComputerHistorySearchService(memories: [memory]).ask(
+                query,
+                now: fixtureStart.addingTimeInterval(30 * 60)
+            )
 
-        XCTAssertTrue(answer.answer.contains("Proposition commerciale"))
-        XCTAssertEqual(answer.hits.first?.kind, .episode)
+            XCTAssertTrue(answer.answer.contains("Proposition commerciale"))
+            XCTAssertEqual(answer.hits.first?.kind, .episode)
+            XCTAssertFalse(
+                ComputerHistorySearchService.shouldSearchRawSources(for: query),
+                "Resume questions should not trigger the expensive raw lexical pass"
+            )
+        }
     }
 
     func testFrenchResourceQuestionFindsTheProposalDocument() {

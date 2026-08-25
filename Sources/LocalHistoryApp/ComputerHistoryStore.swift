@@ -194,8 +194,9 @@
             guard let loaded = loadPersistedMemory(at: JSONFile(for: day)),
                 dayString(loaded.stored.dayStart) == dayString(day)
             else { return nil }
+            let memory = loaded.stored.rehydrated()
             migrateLegacyStorageIfNeeded(loaded)
-            return loaded.stored.rehydrated()
+            return memory
         }
 
         func loadRecent(maximumDays: Int = 30) -> ComputerHistoryRecentLoadResult {
@@ -512,6 +513,7 @@
             // unbounded scan. Results remain oldest-to-newest, matching the prior contract.
             var memories: [ComputerHistoryDayMemory] = []
             memories.reserveCapacity(limit)
+            var preparedLegacyMigration: LoadedPersistedMemory?
             var consumedEncodedBytes = 0
             var hadCandidateGap = false
             var examinedCandidates: [RecentCandidate] = []
@@ -541,7 +543,10 @@
                 // budget too, preventing a directory full of bad maximum-sized files from
                 // forcing an unbounded sequence of transient allocations.
                 consumedEncodedBytes += candidate.byteCount
-                let memory: ComputerHistoryDayMemory? = autoreleasepool {
+                let decoded: (
+                    memory: ComputerHistoryDayMemory,
+                    migration: LoadedPersistedMemory?
+                )? = autoreleasepool {
                     guard let loaded = try? loadPersistedMemory(
                         name: candidate.URL.lastPathComponent,
                         directoryDescriptor: directoryDescriptor,
@@ -556,9 +561,32 @@
                     // `loadRecent` must stay read-only until its complete listing and all
                     // selected path identities have been revalidated. Direct `loadStored`
                     // reads still perform the best-effort CAS migration.
-                    return loaded.stored.rehydrated(renderMarkdown: renderMarkdown)
+                    let memory = loaded.stored.rehydrated(renderMarkdown: renderMarkdown)
+                    let needsMigration =
+                        (loaded.stored.storageFormatVersion ?? 1)
+                            < Self.currentStorageFormatVersion
+                        || !loaded.stored.hasSameAnalysis(as: memory)
+                    var migration: LoadedPersistedMemory?
+                    if needsMigration, preparedLegacyMigration == nil {
+                        // Keep at most one original byte buffer until the complete
+                        // listing/path snapshot is validated. The full legacy arrays
+                        // are released with `loaded`; this candidate shares only the
+                        // already compact returned analysis and one bounded source file.
+                        var compactStored = PersistedMemory(memory)
+                        compactStored.storageFormatVersion = 1
+                        migration = LoadedPersistedMemory(
+                            URL: loaded.URL,
+                            data: loaded.data,
+                            stored: compactStored,
+                            directoryIdentity: loaded.directoryIdentity
+                        )
+                    }
+                    return (
+                        memory,
+                        migration
+                    )
                 }
-                guard let memory else {
+                guard let decoded else {
                     hadCandidateGap = true
                     diagnostics.report(
                         "Computer History skipped \(candidate.key): encoded memory is corrupt, "
@@ -566,7 +594,10 @@
                     )
                     continue
                 }
-                memories.append(memory)
+                memories.append(decoded.memory)
+                if preparedLegacyMigration == nil, let migration = decoded.migration {
+                    preparedLegacyMigration = migration
+                }
                 if memories.count == limit { break }
             }
 
@@ -609,6 +640,14 @@
                         + "loaded; no partial newest-day result was returned."
                 )
                 return result([], isComplete: false)
+            }
+
+            // The complete read-only snapshot is now proven. Compact at most one
+            // selected legacy day through the normal CAS/barrier path. This makes
+            // progress on every load without a second read or an unbounded collection
+            // of original byte buffers. Failure never invalidates the readable result.
+            if let preparedLegacyMigration {
+                migrateLegacyStorageIfNeeded(preparedLegacyMigration)
             }
             return result(
                 Array(memories.reversed()),
@@ -816,6 +855,8 @@
             else { return }
 
             let legacyMarkdownURL = MarkdownFile(for: loaded.stored.dayStart)
+            let compacted = loaded.stored.rehydrated(renderMarkdown: false)
+            let needsAnalysisCompaction = !loaded.stored.hasSameAnalysis(as: compacted)
             let hasRedundantMarkdown: Bool
             do {
                 hasRedundantMarkdown = try redundantLocalMarkdownExists(
@@ -829,7 +870,10 @@
                 )
                 return
             }
-            guard version < Self.currentStorageFormatVersion || hasRedundantMarkdown else { return }
+            guard version < Self.currentStorageFormatVersion
+                || hasRedundantMarkdown
+                || needsAnalysisCompaction
+            else { return }
 
             // Although migration is triggered by a read, it rewrites a derived file and
             // removes the redundant Markdown projection. Admit it through the same clear
@@ -843,7 +887,7 @@
 
             do {
                 try Self.withStorageMutationLock {
-                    var upgraded = loaded.stored
+                    var upgraded = PersistedMemory(compacted)
                     upgraded.storageFormatVersion = Self.currentStorageFormatVersion
                     let replaced = try writeAtomically(
                         Self.encode(upgraded),
@@ -1914,21 +1958,25 @@
                     markdown: "",
                     securityNotice: securityNotice
                 )
-                guard renderMarkdown else { return base }
+                let compacted = ComputerHistoryEngine.compactStoredMemory(
+                    base,
+                    renderMarkdown: false
+                )
+                guard renderMarkdown else { return compacted }
                 return ComputerHistoryDayMemory(
-                    schemaVersion: schemaVersion,
-                    dayStart: dayStart,
-                    dayEnd: dayEnd,
-                    generatedAt: generatedAt,
-                    title: title,
-                    executiveSummary: executiveSummary,
-                    episodes: episodes,
-                    resources: resources,
-                    workflowPatterns: workflowPatterns,
-                    suggestions: suggestions,
-                    coverage: coverage,
-                    markdown: ComputerHistoryMarkdownRenderer.render(base),
-                    securityNotice: securityNotice
+                    schemaVersion: compacted.schemaVersion,
+                    dayStart: compacted.dayStart,
+                    dayEnd: compacted.dayEnd,
+                    generatedAt: compacted.generatedAt,
+                    title: compacted.title,
+                    executiveSummary: compacted.executiveSummary,
+                    episodes: compacted.episodes,
+                    resources: compacted.resources,
+                    workflowPatterns: compacted.workflowPatterns,
+                    suggestions: compacted.suggestions,
+                    coverage: compacted.coverage,
+                    markdown: ComputerHistoryMarkdownRenderer.render(compacted),
+                    securityNotice: compacted.securityNotice
                 )
             }
         }

@@ -232,10 +232,14 @@ private struct HistoryPinnedDirectoryIdentity {
         changeTime = value.st_ctimespec
     }
 
-    func matches(_ value: stat) -> Bool {
+    func matchesPathIdentity(_ value: stat) -> Bool {
         (value.st_mode & S_IFMT) == S_IFDIR
             && value.st_dev == device
             && value.st_ino == inode
+    }
+
+    func matchesSnapshot(_ value: stat) -> Bool {
+        matchesPathIdentity(value)
             && value.st_size == size
             && value.st_mtimespec.tv_sec == modificationTime.tv_sec
             && value.st_mtimespec.tv_nsec == modificationTime.tv_nsec
@@ -320,7 +324,7 @@ private final class HistoryPinnedSourceDirectory {
             )
         }
         let pinnedIdentity = HistoryPinnedDirectoryIdentity(descriptorStat)
-        guard pinnedIdentity.matches(pathStat) else {
+        guard pinnedIdentity.matchesSnapshot(pathStat) else {
             close(openedDescriptor)
             throw HistoryPinnedDirectoryError.changed(path: rootURL.path)
         }
@@ -336,7 +340,7 @@ private final class HistoryPinnedSourceDirectory {
             )
         }
         let childURL = parent.url.appendingPathComponent(name, isDirectory: true)
-        guard parent.isStable() else {
+        guard parent.isPathStable() else {
             throw HistoryPinnedDirectoryError.changed(path: parent.url.path)
         }
         var pathStat = stat()
@@ -381,7 +385,7 @@ private final class HistoryPinnedSourceDirectory {
             )
         }
         let pinnedIdentity = HistoryPinnedDirectoryIdentity(descriptorStat)
-        guard pinnedIdentity.matches(pathStat), parent.isStable() else {
+        guard pinnedIdentity.matchesSnapshot(pathStat), parent.isPathStable() else {
             close(openedDescriptor)
             throw HistoryPinnedDirectoryError.changed(path: childURL.path)
         }
@@ -397,11 +401,24 @@ private final class HistoryPinnedSourceDirectory {
     func isStable() -> Bool {
         var descriptorStat = stat()
         guard fstat(descriptor, &descriptorStat) == 0,
-            identity.matches(descriptorStat)
+            identity.matchesSnapshot(descriptorStat)
         else { return false }
         var pathStat = stat()
         guard lstat(url.path, &pathStat) == 0 else { return false }
-        return identity.matches(pathStat)
+        return identity.matchesSnapshot(pathStat)
+    }
+
+    /// A pinned parent remains a valid capability while unrelated children are
+    /// created or removed. Device/inode equality still rejects a path replacement;
+    /// directories whose membership is source evidence use `isStable()`.
+    func isPathStable() -> Bool {
+        var descriptorStat = stat()
+        guard fstat(descriptor, &descriptorStat) == 0,
+            identity.matchesPathIdentity(descriptorStat)
+        else { return false }
+        var pathStat = stat()
+        guard lstat(url.path, &pathStat) == 0 else { return false }
+        return identity.matchesPathIdentity(pathStat)
     }
 
     func matchingFiles(
@@ -1057,8 +1074,15 @@ public struct HistoryLocalStoreReader {
             )
         }
 
-        func revalidate(_ directory: HistoryPinnedSourceDirectory?) {
-            guard let directory, !directory.isStable() else { return }
+        func revalidate(
+            _ directory: HistoryPinnedSourceDirectory?,
+            membershipIsSourceEvidence: Bool = true
+        ) {
+            guard let directory else { return }
+            let stable = membershipIsSourceEvidence
+                ? directory.isStable()
+                : directory.isPathStable()
+            guard !stable else { return }
             sourceChangedDuringRead = true
             appendComputerHistoryIssue(
                 HistoryLoadIssue(
@@ -1497,7 +1521,7 @@ public struct HistoryLocalStoreReader {
         }
         revalidate(pinnedSemanticDirectory)
         revalidate(pinnedEventsDirectory)
-        revalidate(pinnedSourceRoot)
+        revalidate(pinnedSourceRoot, membershipIsSourceEvidence: false)
 
         let projectionWasRejected =
             sourceChangedDuringRead || sourceAccessWasIncomplete || evidenceBudgetExceeded

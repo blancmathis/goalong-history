@@ -179,6 +179,111 @@ final class ComputerHistoryMemoryCompactionTests: XCTestCase {
         )
     }
 
+    func testLegacyUnboundedMemoryCanBeCompactedWithoutRawJournalReplay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let seed = ComputerHistoryEngine.analyze(
+            events: [
+                fixtureEvent(
+                    id: "legacy-seed",
+                    sequence: 1,
+                    offset: 0,
+                    kind: .mouseClick,
+                    windowTitle: "Legacy source",
+                    host: "legacy.example"
+                )
+            ],
+            day: fixtureStart,
+            calendar: calendar,
+            generatedAt: fixtureStart.addingTimeInterval(86_000)
+        )
+        let seedEpisode = try XCTUnwrap(seed.episodes.first)
+        let seedInteraction = try XCTUnwrap(seedEpisode.interactions.first)
+        let episodes = (0..<300).map { index in
+            let timestamp = fixtureStart.addingTimeInterval(TimeInterval(index * 2))
+            let interaction = ComputerHistoryInteraction(
+                id: "legacy-interaction-\(index)",
+                start: timestamp,
+                end: timestamp,
+                action: seedInteraction.action,
+                label: seedInteraction.label,
+                application: seedInteraction.application,
+                bundleIdentifier: seedInteraction.bundleIdentifier,
+                host: seedInteraction.host,
+                resourceIDs: seedInteraction.resourceIDs,
+                beforeContext: seedInteraction.beforeContext,
+                afterContext: seedInteraction.afterContext,
+                semanticDelta: seedInteraction.semanticDelta,
+                confidence: seedInteraction.confidence,
+                provenance: seedInteraction.provenance
+            )
+            return ComputerHistoryEpisode(
+                id: "legacy-episode-\(index)",
+                start: timestamp,
+                end: timestamp,
+                title: "Legacy episode \(index)",
+                summary: "Legacy derived detail \(index)",
+                status: .inProgress,
+                statusConfidence: 0.7,
+                applications: seedEpisode.applications,
+                sites: seedEpisode.sites,
+                resourceIDs: seedEpisode.resourceIDs,
+                requestsOrIntentions: [],
+                observableOutcomes: [],
+                interactions: [interaction],
+                eventCount: 1,
+                semanticSnapshotCount: 0,
+                workflowFingerprint: "legacy-workflow-\(index)",
+                provenance: seedEpisode.provenance
+            )
+        }
+        let legacy = ComputerHistoryDayMemory(
+            dayStart: seed.dayStart,
+            dayEnd: seed.dayEnd,
+            generatedAt: seed.generatedAt,
+            title: seed.title,
+            executiveSummary: seed.executiveSummary,
+            episodes: episodes,
+            resources: seed.resources,
+            workflowPatterns: [],
+            suggestions: [],
+            coverage: ComputerHistoryCoverage(
+                sourceEventCount: 300,
+                actionEventCount: 300,
+                semanticSnapshotCount: 0,
+                linkedInteractionCount: 300,
+                interactionsWithBeforeAndAfterContext: 0,
+                resourceCount: seed.resources.count,
+                episodeCount: 300,
+                suppressedEventCount: 0,
+                firstSourceSequence: 1,
+                lastSourceSequence: 300,
+                lastSourceEventHash: "legacy-last-hash"
+            ),
+            markdown: "legacy redundant markdown"
+        )
+
+        let compacted = ComputerHistoryEngine.compactStoredMemory(
+            legacy,
+            renderMarkdown: false
+        )
+
+        XCTAssertEqual(compacted.coverage.episodeCount, 300)
+        XCTAssertEqual(compacted.coverage.linkedInteractionCount, 300)
+        XCTAssertEqual(compacted.coverage.retainedEpisodeCount, compacted.episodes.count)
+        XCTAssertEqual(
+            compacted.coverage.retainedInteractionCount,
+            compacted.episodes.reduce(0) { $0 + $1.interactions.count }
+        )
+        XCTAssertLessThanOrEqual(compacted.episodes.count, 256)
+        XCTAssertTrue(compacted.coverage.usesRepresentativeProjection)
+        XCTAssertTrue(compacted.markdown.isEmpty)
+        XCTAssertEqual(
+            ComputerHistoryEngine.compactStoredMemory(compacted, renderMarkdown: false),
+            compacted
+        )
+    }
+
     func testFragmentedDayBoundsEpisodesWithoutLosingExactCoverage() throws {
         let actionCount = 600
         var events: [HistoryEvent] = []

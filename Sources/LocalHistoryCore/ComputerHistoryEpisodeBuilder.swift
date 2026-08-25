@@ -368,6 +368,16 @@ enum ComputerHistoryEpisodeBuilder {
             let rightHost = next.host
         {
             if leftHost == rightHost { return gap <= 10 * 60 }
+            let sameApplication =
+                (previous.bundleIdentifier != nil
+                    && previous.bundleIdentifier == next.bundleIdentifier)
+                || (previous.application != nil
+                    && previous.application == next.application)
+            // A cross-site navigation completed within a few seconds is normally one
+            // observed workflow step (for example, opening a linked document from an
+            // issue). Longer visits remain separate unless their semantic evidence is
+            // related, preserving task boundaries for unrelated tab switches.
+            if sameApplication, gap <= 5 { return true }
             // A browser switch to a different host is normally a new task unless it is
             // immediate and the surrounding semantic evidence is clearly related.
             return gap <= 120 && similarity >= 0.25

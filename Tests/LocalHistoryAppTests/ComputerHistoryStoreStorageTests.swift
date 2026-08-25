@@ -108,6 +108,70 @@
             }
         }
 
+        func testLoadRecentCompactsLegacyUnboundedAnalysisAfterValidatedRead() throws {
+            let fixtureRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let codexRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            defer {
+                try? FileManager.default.removeItem(at: fixtureRoot)
+                try? FileManager.default.removeItem(at: codexRoot)
+            }
+
+            let day = makeDay(year: 2026, month: 8, day: 20)
+            let legacy = makeUnboundedLegacyMemory(day: day, episodeCount: 700)
+            let memoryDirectory = fixtureRoot.appendingPathComponent(
+                "computer-history",
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(
+                at: memoryDirectory,
+                withIntermediateDirectories: true
+            )
+            let jsonURL = memoryDirectory.appendingPathComponent(
+                "2026-08-20.computer-history.json"
+            )
+            let localMarkdownURL = memoryDirectory.appendingPathComponent(
+                "2026-08-20.computer-history.md"
+            )
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            let legacyBytes = try encoder.encode(legacy)
+            try legacyBytes.write(to: jsonURL, options: [.atomic])
+            try Data(legacy.markdown.utf8).write(to: localMarkdownURL, options: [.atomic])
+
+            let store = ComputerHistoryStore(
+                rootDirectory: fixtureRoot,
+                codexMemoryDirectory: codexRoot,
+                diagnosticSink: { _ in }
+            )
+            let recent = store.loadRecent(maximumDays: 1)
+
+            XCTAssertTrue(recent.isComplete)
+            let loaded = try XCTUnwrap(recent.memories.first)
+            XCTAssertEqual(loaded.coverage.episodeCount, 700)
+            XCTAssertEqual(loaded.coverage.linkedInteractionCount, 700)
+            XCTAssertEqual(loaded.coverage.retainedEpisodeCount, loaded.episodes.count)
+            XCTAssertEqual(
+                loaded.coverage.retainedInteractionCount,
+                loaded.episodes.reduce(0) { $0 + $1.interactions.count }
+            )
+            XCTAssertLessThanOrEqual(loaded.episodes.count, 256)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: localMarkdownURL.path))
+
+            let compactBytes = try Data(contentsOf: jsonURL)
+            let persisted = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: compactBytes) as? [String: Any]
+            )
+            XCTAssertEqual(persisted["storageFormatVersion"] as? Int, 2)
+            XCTAssertLessThan(compactBytes.count, legacyBytes.count / 2)
+            print(
+                "ComputerHistoryStore legacy-analysis bytes before=\(legacyBytes.count) "
+                    + "after=\(compactBytes.count) saved=\(legacyBytes.count - compactBytes.count)"
+            )
+        }
+
         func testLegacyReadMigrationIsSuppressedWhileDerivedHistoryClearIsSuspended() throws {
             let fixtureRoot = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -2168,6 +2232,99 @@
                 title: title,
                 executiveSummary: summary,
                 episodes: [],
+                resources: [],
+                workflowPatterns: [],
+                suggestions: [],
+                coverage: coverage,
+                markdown: ""
+            )
+            return ComputerHistoryDayMemory(
+                schemaVersion: base.schemaVersion,
+                dayStart: base.dayStart,
+                dayEnd: base.dayEnd,
+                generatedAt: base.generatedAt,
+                title: base.title,
+                executiveSummary: base.executiveSummary,
+                episodes: base.episodes,
+                resources: base.resources,
+                workflowPatterns: base.workflowPatterns,
+                suggestions: base.suggestions,
+                coverage: base.coverage,
+                markdown: ComputerHistoryMarkdownRenderer.render(base),
+                securityNotice: base.securityNotice
+            )
+        }
+
+        private func makeUnboundedLegacyMemory(
+            day: Date,
+            episodeCount: Int
+        ) -> ComputerHistoryDayMemory {
+            let dayStart = Calendar.current.startOfDay(for: day)
+            let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)!
+                .addingTimeInterval(-0.001)
+            let provenance = ActivityProvenance(
+                sourceEventIDs: ["legacy-source"],
+                sourceSequences: [1],
+                sourceEventHashes: ["legacy-source-hash"]
+            )
+            let episodes = (0..<episodeCount).map { index in
+                let timestamp = dayStart.addingTimeInterval(TimeInterval(index * 2))
+                let interaction = ComputerHistoryInteraction(
+                    id: "legacy-interaction-\(index)",
+                    start: timestamp,
+                    end: timestamp,
+                    action: .click,
+                    label: "Legacy action \(index)",
+                    application: "Fixture",
+                    bundleIdentifier: "com.goalong.fixture",
+                    host: "fixture.example",
+                    resourceIDs: [],
+                    beforeContext: nil,
+                    afterContext: nil,
+                    semanticDelta: ["Observed legacy state \(index)"],
+                    confidence: 0.9,
+                    provenance: provenance
+                )
+                return ComputerHistoryEpisode(
+                    id: "legacy-episode-\(index)",
+                    start: timestamp,
+                    end: timestamp,
+                    title: "Legacy episode \(index)",
+                    summary: "Legacy derived summary \(index)",
+                    status: .inProgress,
+                    statusConfidence: 0.7,
+                    applications: ["Fixture"],
+                    sites: ["fixture.example"],
+                    resourceIDs: [],
+                    requestsOrIntentions: [],
+                    observableOutcomes: [],
+                    interactions: [interaction],
+                    eventCount: 1,
+                    semanticSnapshotCount: 0,
+                    workflowFingerprint: "legacy-workflow-\(index)",
+                    provenance: provenance
+                )
+            }
+            let coverage = ComputerHistoryCoverage(
+                sourceEventCount: episodeCount,
+                actionEventCount: episodeCount,
+                semanticSnapshotCount: 0,
+                linkedInteractionCount: episodeCount,
+                interactionsWithBeforeAndAfterContext: 0,
+                resourceCount: 0,
+                episodeCount: episodeCount,
+                suppressedEventCount: 0,
+                firstSourceSequence: 1,
+                lastSourceSequence: UInt64(episodeCount),
+                lastSourceEventHash: "legacy-last-hash"
+            )
+            let base = ComputerHistoryDayMemory(
+                dayStart: dayStart,
+                dayEnd: dayEnd,
+                generatedAt: dayStart.addingTimeInterval(43_200),
+                title: "Legacy unbounded fixture",
+                executiveSummary: "All exact counts must survive derived-memory compaction.",
+                episodes: episodes,
                 resources: [],
                 workflowPatterns: [],
                 suggestions: [],

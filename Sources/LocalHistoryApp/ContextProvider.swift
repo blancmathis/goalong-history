@@ -108,7 +108,10 @@
             ].joined(separator: "|")
 
             var capabilityURL: String?
-            if config.captureURLs {
+            if Self.shouldProbeBrowserCapability(
+                isKnownBrowser: isBrowser,
+                capturesURLs: config.captureURLs
+            ) {
                 capabilityURL = AXReader.browserURL(
                     from: windowElement,
                     addressFieldMarkers: config.addressFieldMarkers
@@ -276,6 +279,16 @@
 
         func frontmostProcessIdentifier() -> pid_t? {
             NSWorkspace.shared.frontmostApplication?.processIdentifier
+        }
+
+        /// A known browser is handled by the rate-limited URL/privacy probes below.
+        /// Re-running the bounded AX tree discovery on every keyboard or pointer input
+        /// adds no coverage and can starve the event-tap drain on complex web views.
+        static func shouldProbeBrowserCapability(
+            isKnownBrowser: Bool,
+            capturesURLs: Bool
+        ) -> Bool {
+            capturesURLs && !isKnownBrowser
         }
 
         func element(at point: CGPoint, expectedProcessIdentifier: pid_t? = nil) -> ElementSnapshot? {

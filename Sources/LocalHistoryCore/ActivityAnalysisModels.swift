@@ -441,12 +441,10 @@ public enum ActivitySemanticTextSanitizer {
 
     // `String.replacingOccurrences(..., .regularExpression)` recompiles each pattern.
     // Computer History sanitizes thousands of bounded Accessibility observations per
-    // busy day, so immutable compiled expressions avoid repeated ICU allocation while
-    // preserving the exact ordered replacements.
+    // busy day, so immutable compiled expressions are reserved for the credential
+    // patterns that need them. Layout normalization is a single linear scalar pass;
+    // using regex matches for every ordinary space previously dominated CPU and peak RAM.
     private static let replacementRules: [ReplacementRule] = [
-        ReplacementRule("[\\t ]+", template: " "),
-        ReplacementRule("\\r\\n?", template: "\n"),
-        ReplacementRule("\\n{3,}", template: "\n\n"),
         ReplacementRule(
             #"(?i)\b(password|passwd|secret|api[ _-]?key|access[ _-]?token|authorization)\s*[:=]\s*(?:(?:bearer|basic)\s+)?[^\s,;]+"#,
             template: "$1=[REDACTED]"
@@ -475,13 +473,62 @@ public enum ActivitySemanticTextSanitizer {
     /// sections can therefore preserve late coverage metadata while still applying one
     /// fail-safe redaction pass before transmission or persistence.
     public static func redact(_ raw: String?) -> String? {
-        guard var value = raw else { return nil }
-        value = value.replacingOccurrences(of: "\u{0000}", with: "")
-        for rule in replacementRules {
-            value = rule.apply(to: value)
-        }
+        guard let raw else { return nil }
+        // NSRegularExpression produces autoreleased match/result objects. A busy day
+        // sanitizes thousands of independently bounded AX observations, so leaving all
+        // of those temporaries in the analysis pass's outer pool makes peak memory grow
+        // with the complete day. Drain them per observation while returning only the
+        // final Swift String that the caller needs.
+        return autoreleasepool {
+            var value = normalizeLayout(raw)
+            for rule in replacementRules {
+                value = rule.apply(to: value)
+            }
 
-        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+    }
+
+    private static func normalizeLayout(_ raw: String) -> String {
+        var output = ""
+        output.reserveCapacity(raw.utf8.count)
+        var previousWasCarriageReturn = false
+        var previousWasHorizontalWhitespace = false
+        var consecutiveNewlines = 0
+
+        for scalar in raw.unicodeScalars {
+            if scalar.value == 0 { continue }
+            if scalar == "\r" {
+                if consecutiveNewlines < 2 { output.unicodeScalars.append("\n") }
+                consecutiveNewlines += 1
+                previousWasCarriageReturn = true
+                previousWasHorizontalWhitespace = false
+                continue
+            }
+            if scalar == "\n" {
+                if previousWasCarriageReturn {
+                    previousWasCarriageReturn = false
+                    continue
+                }
+                if consecutiveNewlines < 2 { output.unicodeScalars.append("\n") }
+                consecutiveNewlines += 1
+                previousWasHorizontalWhitespace = false
+                continue
+            }
+
+            previousWasCarriageReturn = false
+            consecutiveNewlines = 0
+            if scalar == " " || scalar == "\t" {
+                if !previousWasHorizontalWhitespace {
+                    output.unicodeScalars.append(" ")
+                }
+                previousWasHorizontalWhitespace = true
+            } else {
+                output.unicodeScalars.append(scalar)
+                previousWasHorizontalWhitespace = false
+            }
+        }
+        return output
     }
 }

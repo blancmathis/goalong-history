@@ -105,6 +105,7 @@
                     recorder: recorder,
                     state: captureState,
                     configManager: configManager,
+                    permissions: permissions,
                     captureHealth: captureHealthStore,
                     semanticContextStore: semanticContextStore,
                     memoryStore: memoryStore

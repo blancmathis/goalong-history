@@ -1,10 +1,126 @@
 #if os(macOS)
+    import Darwin
     import Foundation
     import LocalHistoryCore
     import XCTest
     @testable import LocalHistoryApp
 
     final class ActivityAnalysisRuntimeIncrementalTests: XCTestCase {
+        func testEngineRevisionIsAlgorithmScopedInsteadOfBuildScoped() {
+            XCTAssertEqual(
+                ActivityAnalysisCycleCoordinator.currentEngineRevision,
+                "shared-day-analysis-v2"
+            )
+        }
+
+        func testDayLoaderReadsOnlyThePinnedPrefixOfAGrowingJournal() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let first = fixtureEvent(at: fixture.day, id: "before-snapshot")
+            let initialData = try writeEvents([first], fixture: fixture)
+            let sourceURL = fixture.eventsDirectory.appendingPathComponent(
+                fixture.dayKey + ".jsonl"
+            )
+            let pinnedRevision = ActivityAnalysisSourceRevision(
+                event: try fileStamp(sourceURL),
+                semantic: nil,
+                processingKey: String(repeating: "a", count: 64)
+            )
+            let second = fixtureEvent(
+                at: fixture.day.addingTimeInterval(1),
+                id: "after-snapshot"
+            )
+            _ = try appendEvent(second, fixture: fixture)
+
+            let loader = ActivityAnalysisDayLoader(rootDirectory: fixture.root)
+            let pinned = try loader.load(
+                day: fixture.day,
+                sourceRevision: pinnedRevision
+            )
+            XCTAssertEqual(pinned.events.map(\.id), [first.id])
+            XCTAssertEqual(pinned.sourceJournalSummary.eventCount, 1)
+            XCTAssertEqual(pinned.bytesRead, Int64(initialData.count))
+
+            let latest = try loader.load(day: fixture.day)
+            XCTAssertEqual(latest.events.map(\.id), [first.id, second.id])
+            XCTAssertEqual(latest.sourceJournalSummary.eventCount, 2)
+        }
+
+        func testAppendOnlyRevisionValidationRejectsReplacementAndMutation() {
+            let processingKey = String(repeating: "a", count: 64)
+            let event = ActivityAnalysisFileStamp(
+                device: 1,
+                inode: 2,
+                size: 100,
+                modificationSeconds: 3,
+                modificationNanoseconds: 4
+            )
+            let snapshot = ActivityAnalysisSourceRevision(
+                event: event,
+                semantic: nil,
+                processingKey: processingKey
+            )
+            let appended = ActivityAnalysisSourceRevision(
+                event: ActivityAnalysisFileStamp(
+                    device: 1,
+                    inode: 2,
+                    size: 140,
+                    modificationSeconds: 5,
+                    modificationNanoseconds: 6
+                ),
+                semantic: ActivityAnalysisFileStamp(
+                    device: 1,
+                    inode: 3,
+                    size: 20,
+                    modificationSeconds: 5,
+                    modificationNanoseconds: 6
+                ),
+                processingKey: processingKey
+            )
+            XCTAssertTrue(
+                ActivityAnalysisCycleCoordinator.isAppendOnlySuccessor(
+                    appended,
+                    of: snapshot
+                )
+            )
+
+            let replaced = ActivityAnalysisSourceRevision(
+                event: ActivityAnalysisFileStamp(
+                    device: 1,
+                    inode: 99,
+                    size: 140,
+                    modificationSeconds: 5,
+                    modificationNanoseconds: 6
+                ),
+                semantic: nil,
+                processingKey: processingKey
+            )
+            XCTAssertFalse(
+                ActivityAnalysisCycleCoordinator.isAppendOnlySuccessor(
+                    replaced,
+                    of: snapshot
+                )
+            )
+
+            let sameSizeMutation = ActivityAnalysisSourceRevision(
+                event: ActivityAnalysisFileStamp(
+                    device: 1,
+                    inode: 2,
+                    size: 100,
+                    modificationSeconds: 7,
+                    modificationNanoseconds: 8
+                ),
+                semantic: nil,
+                processingKey: processingKey
+            )
+            XCTAssertFalse(
+                ActivityAnalysisCycleCoordinator.isAppendOnlySuccessor(
+                    sameSizeMutation,
+                    of: snapshot
+                )
+            )
+        }
+
         func testSemanticBoundaryValidationRejectsPrivateOrChangedContext() {
             let safe = ContextSnapshot(
                 app: AppSnapshot(
@@ -710,6 +826,67 @@
                 2
             )
             XCTAssertEqual(try Data(contentsOf: sourceURL), sourceAfterActionAppend)
+        }
+
+        func testIntegrityChainedMaintenanceAppendAcceptsPhysicalTimestampReordering() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let genesis = String(repeating: "0", count: 64)
+            let first = eventWithIntegrity(
+                fixtureEvent(
+                    at: fixture.day.addingTimeInterval(60),
+                    id: "click-physical-1"
+                ),
+                sequence: 1,
+                previousHash: genesis
+            )
+            let second = eventWithIntegrity(
+                fixtureEvent(
+                    at: fixture.day.addingTimeInterval(30),
+                    id: "click-physical-2"
+                ),
+                sequence: 2,
+                previousHash: try XCTUnwrap(first.integrity?.eventHash)
+            )
+            _ = try writeEvents([first, second], fixture: fixture)
+            let coordinator = makeCoordinator(fixture: fixture)
+            _ = try coordinator.process(
+                day: fixture.day,
+                tokenBudget: 1_600,
+                forceVerification: true,
+                includeActivityMemory: true
+            )
+
+            let maintenance = eventWithIntegrity(
+                HistoryEvent(
+                    id: "maintenance-physical-3",
+                    sessionID: "runtime-test",
+                    timestamp: fixture.day.addingTimeInterval(20),
+                    kind: .agentArtifactCaptured
+                ),
+                sequence: 3,
+                previousHash: try XCTUnwrap(second.integrity?.eventHash)
+            )
+            let appended = try appendEvent(maintenance, fixture: fixture)
+            let incremental = try coordinator.process(
+                day: fixture.day,
+                tokenBudget: 1_600,
+                forceVerification: true,
+                includeActivityMemory: true
+            )
+
+            XCTAssertEqual(incremental.sourceReadPasses, 1)
+            XCTAssertEqual(incremental.sourceBytesRead, Int64(appended.count))
+            XCTAssertEqual(incremental.derivedViewsWritten, 1)
+            let memory = try XCTUnwrap(
+                ComputerHistoryStore(
+                    rootDirectory: fixture.root,
+                    codexMemoryDirectory: fixture.codexMirror
+                ).loadStored(for: fixture.day)
+            )
+            XCTAssertEqual(memory.coverage.sourceEventCount, 3)
+            XCTAssertEqual(memory.coverage.lastSourceSequence, 3)
+            XCTAssertEqual(memory.coverage.lastSourceEventHash, maintenance.integrity?.eventHash)
         }
 
         func testMaintenanceAppendFallsBackToFullReadWhenCachedTailHashWasInvalid() throws {
@@ -1483,6 +1660,18 @@
                     "\(fixture.dayKey)-goalong-computer-history.md"
                 ),
             ]
+        }
+
+        private func fileStamp(_ URL: URL) throws -> ActivityAnalysisFileStamp {
+            var information = stat()
+            XCTAssertEqual(lstat(URL.path, &information), 0)
+            return ActivityAnalysisFileStamp(
+                device: UInt64(information.st_dev),
+                inode: UInt64(information.st_ino),
+                size: Int64(information.st_size),
+                modificationSeconds: Int64(information.st_mtimespec.tv_sec),
+                modificationNanoseconds: Int64(information.st_mtimespec.tv_nsec)
+            )
         }
 
         private func modificationDates(_ URLs: [URL]) throws -> [Date] {

@@ -1,5 +1,6 @@
 #if os(macOS)
     import AppKit
+    import Darwin
     import SwiftUI
 
     struct DashboardVisibilityState: Equatable {
@@ -186,6 +187,12 @@
                 }
                 if !hasVisibleApplicationWindow {
                     application.setActivationPolicy(.accessory)
+                }
+                // SwiftUI and the day readers release their large transient graphs on
+                // close. Ask malloc to return the now-free pages once those references
+                // have drained so the menu-bar recorder does not retain dashboard RSS.
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.25) {
+                    _ = malloc_zone_pressure_relief(nil, 0)
                 }
             }
         }

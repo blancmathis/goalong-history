@@ -151,6 +151,76 @@ public enum ComputerHistoryEngine {
         )
     }
 
+    /// Applies the current bounded representative projection to a readable memory
+    /// produced by an older build. Exact coverage totals stay unchanged and the raw
+    /// journals remain authoritative; only the derived display/search payload is
+    /// reduced. This lets storage migrate legacy large days without replaying or
+    /// rewriting their original event stream.
+    public static func compactStoredMemory(
+        _ memory: ComputerHistoryDayMemory,
+        renderMarkdown: Bool = true
+    ) -> ComputerHistoryDayMemory {
+        guard !memory.coverage.usesRepresentativeProjection else { return memory }
+        let projection = representativeProjection(
+            episodes: memory.episodes,
+            resources: memory.resources,
+            workflowPatterns: memory.workflowPatterns,
+            suggestions: memory.suggestions
+        )
+        guard projection.isCompact else { return memory }
+
+        let coverage = ComputerHistoryCoverage(
+            sourceEventCount: memory.coverage.sourceEventCount,
+            actionEventCount: memory.coverage.actionEventCount,
+            semanticSnapshotCount: memory.coverage.semanticSnapshotCount,
+            linkedInteractionCount: memory.coverage.linkedInteractionCount,
+            interactionsWithBeforeAndAfterContext: memory.coverage
+                .interactionsWithBeforeAndAfterContext,
+            resourceCount: memory.coverage.resourceCount,
+            episodeCount: memory.coverage.episodeCount,
+            suppressedEventCount: memory.coverage.suppressedEventCount,
+            firstSourceSequence: memory.coverage.firstSourceSequence,
+            lastSourceSequence: memory.coverage.lastSourceSequence,
+            lastSourceEventHash: memory.coverage.lastSourceEventHash,
+            retainedEpisodeCount: projection.episodes.count,
+            retainedInteractionCount: projection.episodes.reduce(0) {
+                $0 + $1.interactions.count
+            },
+            retainedResourceCount: projection.resources.count
+        )
+        let base = ComputerHistoryDayMemory(
+            schemaVersion: memory.schemaVersion,
+            dayStart: memory.dayStart,
+            dayEnd: memory.dayEnd,
+            generatedAt: memory.generatedAt,
+            title: memory.title,
+            executiveSummary: memory.executiveSummary,
+            episodes: projection.episodes,
+            resources: projection.resources,
+            workflowPatterns: projection.workflowPatterns,
+            suggestions: projection.suggestions,
+            coverage: coverage,
+            markdown: "",
+            securityNotice: memory.securityNotice
+        )
+        guard renderMarkdown else { return base }
+        return ComputerHistoryDayMemory(
+            schemaVersion: base.schemaVersion,
+            dayStart: base.dayStart,
+            dayEnd: base.dayEnd,
+            generatedAt: base.generatedAt,
+            title: base.title,
+            executiveSummary: base.executiveSummary,
+            episodes: base.episodes,
+            resources: base.resources,
+            workflowPatterns: base.workflowPatterns,
+            suggestions: base.suggestions,
+            coverage: base.coverage,
+            markdown: ComputerHistoryMarkdownRenderer.render(base),
+            securityNotice: base.securityNotice
+        )
+    }
+
     private struct RepresentativeProjection {
         let episodes: [ComputerHistoryEpisode]
         let resources: [ComputerHistoryResourceReference]

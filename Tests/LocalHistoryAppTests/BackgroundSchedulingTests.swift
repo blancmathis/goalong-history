@@ -1,4 +1,5 @@
 #if os(macOS)
+    import ApplicationServices
     import Foundation
     import LocalHistoryCore
     import XCTest
@@ -32,6 +33,93 @@
                 ActivityAnalysisRuntime.shouldScheduleRichContextTimer(
                     started: true,
                     enabled: true
+                )
+            )
+        }
+
+        func testKnownBrowserSkipsRedundantCapabilityTreeProbe() {
+            XCTAssertTrue(
+                ContextProvider.shouldProbeBrowserCapability(
+                    isKnownBrowser: false,
+                    capturesURLs: true
+                )
+            )
+            XCTAssertFalse(
+                ContextProvider.shouldProbeBrowserCapability(
+                    isKnownBrowser: true,
+                    capturesURLs: true
+                )
+            )
+            XCTAssertFalse(
+                ContextProvider.shouldProbeBrowserCapability(
+                    isKnownBrowser: false,
+                    capturesURLs: false
+                )
+            )
+        }
+
+        func testAccessibilityValueStormWaitsForQuietButStructuralChangesStayFast() {
+            XCTAssertEqual(
+                AccessibilityEventMonitor.debounceDelay(
+                    for: [kAXValueChangedNotification as String]
+                ),
+                1.4,
+                accuracy: 0.001
+            )
+            XCTAssertEqual(
+                AccessibilityEventMonitor.debounceDelay(
+                    for: [
+                        kAXValueChangedNotification as String,
+                        kAXFocusedWindowChangedNotification as String,
+                    ]
+                ),
+                0.18,
+                accuracy: 0.001
+            )
+        }
+
+        func testAccessibilityObserverSleepsWhileCachedPermissionIsUnavailable() {
+            let unavailable = AccessibilityEventMonitor(
+                isAccessibilityAvailable: { false },
+                onChange: { _ in }
+            )
+            let available = AccessibilityEventMonitor(
+                isAccessibilityAvailable: { true },
+                onChange: { _ in }
+            )
+
+            XCTAssertFalse(unavailable.canAttemptAttachment)
+            XCTAssertTrue(available.canAttemptAttachment)
+        }
+
+        func testRecentOwnedSemanticCaptureSuppressesRedundantObservedTreeWalk() {
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            XCTAssertFalse(
+                ActivityAnalysisRuntime.shouldAttemptObservedContextCapture(
+                    lastCaptureAt: now.addingTimeInterval(-1.99),
+                    now: now
+                )
+            )
+            XCTAssertTrue(
+                ActivityAnalysisRuntime.shouldAttemptObservedContextCapture(
+                    lastCaptureAt: now.addingTimeInterval(-2),
+                    now: now
+                )
+            )
+            XCTAssertTrue(
+                ActivityAnalysisRuntime.shouldAttemptObservedContextCapture(
+                    lastCaptureAt: nil,
+                    now: now
+                )
+            )
+            XCTAssertTrue(
+                ActivityAnalysisRuntime.observedContextUsesRecentCaptureCooldown(
+                    trigger: "ax:value_changed+selected_text_changed"
+                )
+            )
+            XCTAssertFalse(
+                ActivityAnalysisRuntime.observedContextUsesRecentCaptureCooldown(
+                    trigger: "ax:focused_element_changed"
                 )
             )
         }
@@ -112,6 +200,17 @@
                     5
                 )
             }
+            XCTAssertEqual(
+                ContextMonitor.nextPollInterval(
+                    configuredInterval: 0.65,
+                    idleSeconds: 600,
+                    isCapturing: true,
+                    suppressionReason: .accessibilityUnavailable,
+                    eventDrivenCoverageAvailable: false
+                ) ?? -1,
+                3,
+                accuracy: 0.001
+            )
         }
 
         func testMinuteSealerAlignsFirstWakeupAfterBoundaryGrace() {
@@ -293,6 +392,7 @@
             XCTAssertTrue(close.contains("visibilityCoordinator.update(.hidden)"))
             XCTAssertTrue(close.contains("closingWindow?.contentViewController = nil"))
             XCTAssertTrue(close.contains("self.window = nil"))
+            XCTAssertTrue(close.contains("malloc_zone_pressure_relief(nil, 0)"))
             XCTAssertTrue(windowController.contains("windowDidMiniaturize"))
             XCTAssertTrue(windowController.contains("windowDidDeminiaturize"))
             XCTAssertTrue(windowController.contains("windowDidChangeOcclusionState"))
@@ -300,6 +400,34 @@
             XCTAssertTrue(windowController.contains("NSApplication.didUnhideNotification"))
             XCTAssertTrue(hidden.contains("refreshScheduler.deactivate()"))
             XCTAssertTrue(hidden.contains("snapshot = .empty(day: selectedDay)"))
+        }
+
+        func testComputerHistoryTimelineBuildsRowsLazilyAndIndexesSourcesOnce() throws {
+            let repositoryRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let page = try String(
+                contentsOf:
+                    repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/ComputerHistoryPage.swift"),
+                encoding: .utf8
+            )
+            let timeline = try XCTUnwrap(
+                page.slice(
+                    from: "        private func episodes(",
+                    through: "        private func sources("
+                )
+            )
+
+            XCTAssertTrue(page.contains("ScrollView {\n                LazyVStack"))
+            XCTAssertTrue(timeline.contains("LazyVStack(alignment: .leading"))
+            XCTAssertEqual(
+                timeline.components(
+                    separatedBy: "uniqueKeysWithValues: memory.resources.map"
+                ).count - 1,
+                1
+            )
         }
     }
 

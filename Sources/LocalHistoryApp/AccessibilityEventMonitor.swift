@@ -22,6 +22,7 @@
             kAXTitleChangedNotification as String,
         ])
 
+        private let isAccessibilityAvailable: () -> Bool
         private let onChange: (String) -> Void
         private var observer: AXObserver?
         private var applicationElement: AXUIElement?
@@ -61,7 +62,11 @@
             kAXUIElementDestroyedNotification as CFString,
         ]
 
-        init(onChange: @escaping (String) -> Void) {
+        init(
+            isAccessibilityAvailable: @escaping () -> Bool,
+            onChange: @escaping (String) -> Void
+        ) {
+            self.isAccessibilityAvailable = isAccessibilityAvailable
             self.onChange = onChange
         }
 
@@ -114,10 +119,40 @@
                 self.onChange(trigger.isEmpty ? "accessibility_change" : trigger)
             }
             debounceWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.debounceDelay(for: pendingNotifications),
+                execute: workItem
+            )
+        }
+
+        /// Text/value notifications can arrive for every character. The owned input
+        /// pipeline already captures the near-event and settled states, so waiting for
+        /// a quiet window preserves the final programmatic state without repeatedly
+        /// walking the same AX tree. Structural focus/window changes remain immediate.
+        static func debounceDelay(for notifications: Set<String>) -> TimeInterval {
+            let structural = Set([
+                kAXFocusedUIElementChangedNotification as String,
+                kAXFocusedWindowChangedNotification as String,
+                kAXUIElementDestroyedNotification as String,
+                kAXWindowCreatedNotification as String,
+            ])
+            return notifications.isDisjoint(with: structural) ? 1.4 : 0.18
+        }
+
+        var canAttemptAttachment: Bool {
+            isAccessibilityAvailable()
         }
 
         private func attach(to application: NSRunningApplication?) {
+            // NSWorkspace activation notifications continue while TCC is absent. Avoid
+            // four doomed AXObserverAddNotification calls and diagnostics writes for
+            // every foreground-app switch. The injected value is the PermissionManager's
+            // cached snapshot, so this guard does not itself probe TCC. A later app
+            // activation retries immediately after the permission watchdog refreshes it.
+            guard canAttemptAttachment else {
+                detachObserver()
+                return
+            }
             guard let application, application.isTerminated == false else {
                 detachObserver()
                 return

@@ -644,7 +644,9 @@ public struct ComputerHistorySearchService {
                 value,
                 [
                     "where i left off", "pick up", "before my break", "before the break", "last break",
-                    "ou j en etais", "où j en étais", "reprendre", "avant ma pause", "dernier travail",
+                    "ou j en etais", "où j en étais", "ou en etais-je", "où en étais-je",
+                    "reprendre", "avant ma pause", "avant ma derniere pause", "avant ma dernière pause",
+                    "dernier travail",
                 ])
             {
                 return .resume
@@ -823,20 +825,24 @@ public struct ComputerHistorySearchService {
     ) -> ComputerHistoryAnswer {
         let scoped = memoriesForTemporalQuery(query, now: now)
         guard !scoped.isEmpty else { return emptyAnswer(query.raw) }
+        let selectedEpisodes = standupEpisodes(
+            from: scoped.flatMap(\.episodes),
+            maximum: maximumHits
+        )
+        let selectedIDs = Set(selectedEpisodes.map(\.id))
         var lines: [String] = []
         for memory in scoped {
+            let dayEpisodes = memory.episodes.filter { selectedIDs.contains($0.id) }
+            guard !dayEpisodes.isEmpty else { continue }
             lines.append("## \(dayFormatter.string(from: memory.dayStart))")
             lines.append(memory.executiveSummary)
-            for episode in memory.episodes {
+            for episode in dayEpisodes {
                 lines.append(
                     "- **\(episode.title)** — `\(episode.status.rawValue)` — \(episode.summary)"
                 )
             }
         }
-        let hits = scoped.flatMap(\.episodes)
-            .suffix(maximumHits)
-            .reversed()
-            .map {
+        let hits = selectedEpisodes.reversed().map {
                 episodeHit(
                     $0,
                     score: episodeScore(
@@ -853,6 +859,45 @@ public struct ComputerHistorySearchService {
             text: lines.joined(separator: "\n"),
             hits: Array(hits)
         )
+    }
+
+    /// A standup should surface state changes and the most recent work, not emit up
+    /// to 256 timeline rows per day. Selection remains deterministic and every row
+    /// keeps its source-backed hit; the full retained timeline stays available below.
+    private func standupEpisodes(
+        from episodes: [ComputerHistoryEpisode],
+        maximum: Int
+    ) -> [ComputerHistoryEpisode] {
+        let limit = min(max(1, maximum), 100)
+        let chronological = episodes.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            if $0.end != $1.end { return $0.end < $1.end }
+            return $0.id < $1.id
+        }
+        var selected: [ComputerHistoryEpisode] = []
+        var selectedIDs = Set<String>()
+        for status in [
+            ComputerHistoryTaskStatus.blocked,
+            .waiting,
+            .inProgress,
+            .planned,
+            .completed,
+        ] {
+            guard selected.count < limit,
+                let candidate = chronological.last(where: { $0.status == status }),
+                selectedIDs.insert(candidate.id).inserted
+            else { continue }
+            selected.append(candidate)
+        }
+        for candidate in chronological.reversed()
+        where selected.count < limit && selectedIDs.insert(candidate.id).inserted {
+            selected.append(candidate)
+        }
+        return selected.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            if $0.end != $1.end { return $0.end < $1.end }
+            return $0.id < $1.id
+        }
     }
 
     private func workflowAnswer(

@@ -159,7 +159,7 @@
 
         var body: some View {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     contextStateCard
                     sourceStatusCard
                     questionCard
@@ -514,7 +514,10 @@
         }
 
         private func episodes(_ memory: ComputerHistoryDayMemory) -> some View {
-            VStack(alignment: .leading, spacing: 10) {
+            let resourcesByID = Dictionary(
+                uniqueKeysWithValues: memory.resources.map { ($0.id, $0) }
+            )
+            return VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(
                     title: "Causal timeline",
                     subtitle: "Every retained action stays chronological and source-backed"
@@ -522,14 +525,14 @@
                 if memory.episodes.isEmpty {
                     compactEmpty("No causal episode could be reconstructed")
                 } else {
-                    ForEach(memory.episodes) { episode in
-                        ComputerHistoryEpisodeCard(
-                            episode: episode,
-                            resources: Dictionary(
-                                uniqueKeysWithValues: memory.resources.map { ($0.id, $0) }
-                            ),
-                            openResource: model.open
-                        )
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(memory.episodes) { episode in
+                            ComputerHistoryEpisodeCard(
+                                episode: episode,
+                                resources: resourcesByID,
+                                openResource: model.open
+                            )
+                        }
                     }
                 }
             }

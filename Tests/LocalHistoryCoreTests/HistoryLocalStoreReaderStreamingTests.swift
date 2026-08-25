@@ -873,6 +873,65 @@ final class HistoryLocalStoreReaderStreamingTests: XCTestCase {
         )
     }
 
+    func testComputerHistoryEvidenceAllowsUnrelatedRootEntryDuringRead() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "goalong-unrelated-root-write-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let eventsDirectory = root.appendingPathComponent("events", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: eventsDirectory,
+            withIntermediateDirectories: true
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let source = eventsDirectory.appendingPathComponent("2027-01-15.jsonl")
+        let events = (0..<1_000).map { index in
+            fixtureEvent(
+                id: "unrelated-root-write-\(index)",
+                sequence: UInt64(index + 1),
+                offset: TimeInterval(index + 1),
+                kind: .applicationActivated
+            )
+        }
+        try writeJSONLines(events, encoder: encoder, to: source)
+
+        var continuationChecks = 0
+        var createdUnrelatedEntry = false
+        let dayStart = Calendar.current.startOfDay(for: fixtureStart)
+        let dayEnd = try XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: 1, to: dayStart)
+        )
+        let loaded = HistoryLocalStoreReader(rootDirectory: root)
+            .loadComputerHistoryEvidence(
+                start: dayStart,
+                endExclusive: dayEnd,
+                shouldContinue: {
+                    continuationChecks += 1
+                    guard continuationChecks == 2 else { return true }
+                    let unrelated = root.appendingPathComponent("derived-state.tmp")
+                    do {
+                        try Data("not source evidence".utf8).write(to: unrelated)
+                        createdUnrelatedEntry = true
+                        return true
+                    } catch {
+                        XCTFail("Could not create unrelated root entry: \(error)")
+                        return false
+                    }
+                }
+            )
+
+        XCTAssertTrue(createdUnrelatedEntry)
+        XCTAssertFalse(loaded.metrics.sourceChangedDuringRead)
+        XCTAssertFalse(loaded.metrics.sourceAccessWasIncomplete)
+        XCTAssertEqual(loaded.sourceJournalSummary.eventCount, events.count)
+        XCTAssertEqual(loaded.events.count, events.count)
+    }
+
     func testComputerHistoryEvidenceRejectsSemanticJSONThatGrowsPastTheLimit() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(

@@ -353,6 +353,41 @@ final class ComputerHistoryParityTests: XCTestCase {
         XCTAssertEqual(memory.episodes.first?.provenance.sourceEventIDs.count, 5)
     }
 
+    func testStandupSummaryIsBoundedToSourceBackedHighlights() {
+        let start = makeDate("2026-08-20T06:00:00Z")
+        let safari = app("Safari", "com.apple.Safari")
+        var events: [HistoryEvent] = []
+        for index in 0..<30 {
+            let timestamp = start.addingTimeInterval(TimeInterval(index * 21 * 60))
+            events.append(event(
+                id: "standup-\(index)",
+                sequence: UInt64(index + 1),
+                at: timestamp,
+                kind: .urlChanged,
+                app: safari,
+                title: "Observed task \(index)",
+                URL: "https://task-\(index).example.com/work"
+            ))
+        }
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            day: start,
+            calendar: utcCalendar
+        )
+
+        let answer = ComputerHistorySearchService(memories: [memory]).ask(
+            "Give me a standup summary",
+            now: start.addingTimeInterval(23 * 60 * 60),
+            maximumHits: 12
+        )
+
+        XCTAssertEqual(memory.episodes.count, 30)
+        XCTAssertEqual(answer.hits.count, 12)
+        XCTAssertEqual(answer.answer.components(separatedBy: "\n- **").count - 1, 12)
+        XCTAssertTrue(answer.hits.allSatisfy { !$0.provenance.isEmpty })
+        XCTAssertLessThan(answer.answer.count, 12_000)
+    }
+
     private struct PairedResult {
         let events: [HistoryEvent]
         let payloads: [String: SemanticContextPayload]
