@@ -608,6 +608,19 @@ bundle validation
 package smoke test
 ```
 
+Reproduce the installed-app resource measurement after closing the dashboard:
+
+```bash
+bash scripts/measure_computer_history_runtime.sh --enforce-targets
+```
+
+The read-only script waits 60 seconds, takes 600 one-second samples, verifies that no
+layer-zero Goalong window is on screen at the start and end, and reports CPU, raw RSS,
+physical/lifetime-peak footprint, child processes, process wakeups, disk I/O, and logical
+storage deltas by data class. Its output contains numeric metadata only; it does not
+launch or control the app or read any history body. The interval precondition is still
+operational: do not reopen the dashboard during the run.
+
 Dedicated deterministic scenarios verify:
 
 1. before/action/after linkage;
