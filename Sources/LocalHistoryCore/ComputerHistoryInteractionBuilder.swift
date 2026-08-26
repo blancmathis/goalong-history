@@ -13,14 +13,65 @@ enum ComputerHistoryInteractionBuilder {
         case value(String)
     }
 
+    private struct ContinuityBarrierLookup {
+        private let sequenced: [UInt64]
+        private let unsequenced: [HistoryEvent]
+
+        init(_ events: [HistoryEvent]) {
+            sequenced = events.compactMap { $0.integrity?.sequence }.sorted()
+            unsequenced = events
+                .filter { $0.integrity?.sequence == nil }
+                .sorted(by: ComputerHistorySupport.eventOrder)
+        }
+
+        func separates(_ left: HistoryEvent, _ right: HistoryEvent) -> Bool {
+            if let leftSequence = left.integrity?.sequence,
+                let rightSequence = right.integrity?.sequence,
+                leftSequence < rightSequence
+            {
+                let candidate = firstIndex(in: sequenced) { $0 > leftSequence }
+                if candidate < sequenced.count, sequenced[candidate] < rightSequence {
+                    return true
+                }
+            }
+
+            let candidate = firstIndex(in: unsequenced) {
+                ComputerHistorySupport.eventOrder(left, $0)
+            }
+            return candidate < unsequenced.count
+                && ComputerHistorySupport.eventOrder(unsequenced[candidate], right)
+        }
+
+        private func firstIndex<T>(
+            in values: [T],
+            where predicate: (T) -> Bool
+        ) -> Int {
+            var lower = 0
+            var upper = values.count
+            while lower < upper {
+                let middle = lower + (upper - lower) / 2
+                if predicate(values[middle]) {
+                    upper = middle
+                } else {
+                    lower = middle + 1
+                }
+            }
+            return lower
+        }
+    }
+
     /// Timestamp-sorted observation indices partitioned with the exact matching
     /// semantics from `ComputerHistorySupport.sameApplication`.
     private struct ObservationLookup {
+        private static let maximumCarriedBeforeCandidates = 64
+
+        private var all: [Int] = []
         private var byBundleIdentifier: [String: [Int]] = [:]
         private var byApplicationName: [ApplicationNameKey: [Int]] = [:]
         private var unbundledByApplicationName: [ApplicationNameKey: [Int]] = [:]
 
         mutating func append(_ observation: SemanticObservation, at index: Int) {
+            all.append(index)
             let nameKey = Self.nameKey(for: observation.event)
             byApplicationName[nameKey, default: []].append(index)
             if let bundleIdentifier = observation.event.app?.bundleIdentifier {
@@ -76,6 +127,75 @@ enum ComputerHistoryInteractionBuilder {
                 }
             }
             return bestIndex.map { observations[$0] }
+        }
+
+        /// Reuses a completed prior interaction state as the next interaction's
+        /// chronological before-state. This adds no Accessibility read: it only
+        /// consumes an already persisted after/settled observation from a different
+        /// interaction in the same resource context. The bounded reverse scan keeps
+        /// bursty days from turning this fallback into an unbounded search.
+        func nearestPriorOutcome(
+            before event: HistoryEvent,
+            excludingInteractionID interactionID: String,
+            allowsApplicationTransition: Bool,
+            barriers: ContinuityBarrierLookup,
+            observations: [SemanticObservation]
+        ) -> SemanticObservation? {
+            var bestIndex: Int?
+            let consider: ([Int]) -> Void = { indices in
+                guard
+                    let candidate = Self.nearestPriorOutcome(
+                        before: event,
+                        excludingInteractionID: interactionID,
+                        allowsApplicationTransition: allowsApplicationTransition,
+                        barriers: barriers,
+                        in: indices,
+                        observations: observations
+                    )
+                else { return }
+                if Self.isBetterBefore(
+                    candidate,
+                    than: bestIndex,
+                    observations: observations
+                ) {
+                    bestIndex = candidate
+                }
+            }
+            if allowsApplicationTransition {
+                consider(all)
+            } else {
+                forEachCandidateList(for: event, consider)
+            }
+            return bestIndex.map { observations[$0] }
+        }
+
+        /// Returns the latest semantic state that was already recorded before an
+        /// application transition. Unlike an input action, an app switch is itself
+        /// the resource boundary, so its useful before-state normally belongs to the
+        /// application being left. Sequence ordering and continuity barriers keep
+        /// this fallback causal without performing another Accessibility capture.
+        func nearestChronologicalState(
+            before event: HistoryEvent,
+            barriers: ContinuityBarrierLookup,
+            observations: [SemanticObservation]
+        ) -> SemanticObservation? {
+            var cursor = Self.firstIndex(in: all) {
+                observations[$0].event.timestamp > event.timestamp
+            }
+            var examined = 0
+            while cursor > 0, examined < Self.maximumCarriedBeforeCandidates {
+                cursor -= 1
+                examined += 1
+                let candidate = observations[all[cursor]]
+                let age = event.timestamp.timeIntervalSince(candidate.event.timestamp)
+                if age > 20 { break }
+                guard age >= 0,
+                    ComputerHistoryInteractionBuilder.occursBefore(candidate.event, event),
+                    !barriers.separates(candidate.event, event)
+                else { continue }
+                return candidate
+            }
+            return nil
         }
 
         private func forEachCandidateList(
@@ -140,6 +260,39 @@ enum ComputerHistoryInteractionBuilder {
             return candidate
         }
 
+        private static func nearestPriorOutcome(
+            before event: HistoryEvent,
+            excludingInteractionID interactionID: String,
+            allowsApplicationTransition: Bool,
+            barriers: ContinuityBarrierLookup,
+            in indices: [Int],
+            observations: [SemanticObservation]
+        ) -> Int? {
+            var cursor = firstIndex(in: indices) {
+                observations[$0].event.timestamp > event.timestamp
+            }
+            var examined = 0
+            while cursor > 0, examined < maximumCarriedBeforeCandidates {
+                cursor -= 1
+                examined += 1
+                let candidateIndex = indices[cursor]
+                let candidate = observations[candidateIndex]
+                let age = event.timestamp.timeIntervalSince(candidate.event.timestamp)
+                if age > 20 { break }
+                guard age >= 0,
+                    candidate.interactionID != interactionID,
+                    candidate.phase == ComputerHistoryMetadata.Phase.after
+                        || candidate.phase == ComputerHistoryMetadata.Phase.settled,
+                    ComputerHistoryInteractionBuilder.occursBefore(candidate.event, event),
+                    !barriers.separates(candidate.event, event),
+                    allowsApplicationTransition
+                        || ComputerHistoryInteractionBuilder.sameResourceContext(candidate.event, event)
+                else { continue }
+                return candidateIndex
+            }
+            return nil
+        }
+
         private static func firstIndex(
             in indices: [Int],
             upperBound: Int? = nil,
@@ -190,11 +343,41 @@ enum ComputerHistoryInteractionBuilder {
         }
     }
 
+    private static func occursBefore(_ left: HistoryEvent, _ right: HistoryEvent) -> Bool {
+        if let leftSequence = left.integrity?.sequence,
+            let rightSequence = right.integrity?.sequence,
+            leftSequence != rightSequence
+        {
+            return leftSequence < rightSequence
+        }
+        return ComputerHistorySupport.eventOrder(left, right)
+    }
+
+    private static func sameResourceContext(_ left: HistoryEvent, _ right: HistoryEvent) -> Bool {
+        guard ComputerHistorySupport.sameApplication(left, right) else { return false }
+
+        let leftHost = ComputerHistorySupport.normalizedHost(left.url?.host)
+        let rightHost = ComputerHistorySupport.normalizedHost(right.url?.host)
+        if leftHost != nil || rightHost != nil {
+            return leftHost == rightHost
+        }
+
+        let leftWindow = left.window?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rightWindow = right.window?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let leftWindow, !leftWindow.isEmpty,
+            let rightWindow, !rightWindow.isEmpty
+        {
+            return leftWindow == rightWindow
+        }
+        return true
+    }
+
     static func build(
         events: [HistoryEvent],
         semanticSnapshots: [String: SemanticContextPayload],
         eventResourceIDs: [String: [String]],
-        precomputedSemanticTexts: [String?]? = nil
+        precomputedSemanticTexts: [String?]? = nil,
+        continuityBoundaries: [HistoryEvent] = []
     ) -> [ComputerHistoryInteraction] {
         let eventIndices = events.indices
         let eventsAreOrdered = zip(eventIndices, eventIndices.dropFirst())
@@ -223,6 +406,11 @@ enum ComputerHistoryInteractionBuilder {
         // An explicit interaction identity is causal evidence, not a generic
         // temporal "before" candidate for the same or another interaction.
         var unlinkedLookup = ObservationLookup()
+        // A completed interaction may become the chronological before-state of the
+        // next action in the same resource. Keeping this separate preserves the rule
+        // above for near-event and same-interaction observations.
+        var priorOutcomeLookup = ObservationLookup()
+        let continuityBarrierLookup = ContinuityBarrierLookup(continuityBoundaries)
         for (eventIndex, event) in ordered.enumerated() {
             autoreleasepool {
                 let resolvedText: String?
@@ -249,6 +437,11 @@ enum ComputerHistoryInteractionBuilder {
                 lookup.append(observation, at: index)
                 if let interactionID = observation.interactionID {
                     linked[interactionID, default: []].append(index)
+                    if observation.phase == ComputerHistoryMetadata.Phase.after
+                        || observation.phase == ComputerHistoryMetadata.Phase.settled
+                    {
+                        priorOutcomeLookup.append(observation, at: index)
+                    }
                 } else {
                     unlinkedLookup.append(observation, at: index)
                 }
@@ -269,11 +462,29 @@ enum ComputerHistoryInteractionBuilder {
                     .map { observations[$0] }
                     .filter { ComputerHistorySupport.sameApplication($0.event, event) }
                     .sorted { $0.event.timestamp < $1.event.timestamp }
-                let before =
-                    explicit.last(where: {
+                let explicitBefore = explicit.last(where: {
                         $0.phase == ComputerHistoryMetadata.Phase.before
                             && $0.event.timestamp <= event.timestamp
-                    }) ?? unlinkedLookup.nearest(before: event, observations: observations)
+                    })
+                let before: SemanticObservation?
+                if event.kind == .applicationActivated {
+                    before = explicitBefore
+                        ?? lookup.nearestChronologicalState(
+                            before: event,
+                            barriers: continuityBarrierLookup,
+                            observations: observations
+                        )
+                } else {
+                    before = explicitBefore
+                        ?? unlinkedLookup.nearest(before: event, observations: observations)
+                        ?? priorOutcomeLookup.nearestPriorOutcome(
+                            before: event,
+                            excludingInteractionID: interactionID,
+                            allowsApplicationTransition: false,
+                            barriers: continuityBarrierLookup,
+                            observations: observations
+                        )
+                }
                 let settled = explicit.last(where: {
                     $0.phase == ComputerHistoryMetadata.Phase.settled
                         && $0.event.timestamp >= event.timestamp

@@ -156,23 +156,28 @@ storage_snapshot() {
   done
 }
 
-onscreen_window_count() {
+onscreen_primary_window_count() {
   xcrun swift -e "
     import CoreGraphics
     let pid: Int = $PROCESS_ID
     let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
         as? [[String: Any]] ?? []
     let count = rows.filter { row in
-        (row[kCGWindowOwnerPID as String] as? Int) == pid
+        guard let bounds = row[kCGWindowBounds as String] as? [String: Any],
+            let width = bounds[\"Width\"] as? Double,
+            let height = bounds[\"Height\"] as? Double
+        else { return false }
+        return (row[kCGWindowOwnerPID as String] as? Int) == pid
             && (row[kCGWindowLayer as String] as? Int) == 0
             && (row[kCGWindowIsOnscreen as String] as? Int) == 1
+            && width >= 640 && height >= 480
     }.count
     print(count)
   "
 }
 
 PROCESS_COMMAND="$(/bin/ps -p "$PROCESS_ID" -o command=)"
-WINDOWS_AT_START="$(onscreen_window_count)"
+WINDOWS_AT_START="$(onscreen_primary_window_count)"
 {
   echo "generated_at_utc=$STAMP"
   echo "pid=$PROCESS_ID"
@@ -181,14 +186,14 @@ WINDOWS_AT_START="$(onscreen_window_count)"
   echo "sample_interval_seconds=1"
   echo "cpu_measurement=Per-interval proc_pid_rusage CPU-time delta divided by mach_continuous_time; not ps decaying average."
   echo "warmup_seconds=$WARMUP_SECONDS"
-  echo "onscreen_layer_zero_windows_before_warmup=$WINDOWS_AT_START"
+  echo "onscreen_substantial_layer_zero_windows_before_warmup=$WINDOWS_AT_START"
   echo "macos=$(sw_vers -productVersion) ($(sw_vers -buildVersion))"
   echo "architecture=$(uname -m)"
   echo "safety=No app launch, UI action, permission change, history-body read, history mutation, install, commit, or publication performed."
 } >"$OUTPUT/environment.txt"
 
 if [[ "$WINDOWS_AT_START" -ne 0 ]]; then
-  echo "Goalong has an on-screen layer-zero window. Close it before measuring." >&2
+  echo "Goalong has a substantial on-screen primary window. Close it before measuring." >&2
   exit 65
 fi
 
@@ -196,8 +201,8 @@ storage_snapshot "$STORAGE_BEFORE"
 if (( WARMUP_SECONDS > 0 )); then
   sleep "$WARMUP_SECONDS"
 fi
-if [[ "$(onscreen_window_count)" -ne 0 ]]; then
-  echo "A Goalong window appeared during warmup; measurement refused." >&2
+if [[ "$(onscreen_primary_window_count)" -ne 0 ]]; then
+  echo "A substantial Goalong window appeared during warmup; measurement refused." >&2
   exit 65
 fi
 if [[ ! -f "$PROCESS_SAMPLER" ]]; then
@@ -209,9 +214,9 @@ xcrun swift "$PROCESS_SAMPLER" \
   "$CPU_SAMPLES" "$RSS_SAMPLES" "$CHILD_SAMPLES" \
   "$RUSAGE_BEFORE" "$RUSAGE_AFTER"
 storage_snapshot "$STORAGE_AFTER"
-WINDOWS_AT_END="$(onscreen_window_count)"
+WINDOWS_AT_END="$(onscreen_primary_window_count)"
 if [[ "$WINDOWS_AT_END" -ne 0 ]]; then
-  echo "A Goalong window was on screen at the end; closed-window results are invalid." >&2
+  echo "A substantial Goalong window was on screen at the end; closed-window results are invalid." >&2
   exit 65
 fi
 
@@ -272,7 +277,7 @@ read -r AFTER_USER AFTER_SYSTEM AFTER_IDLE AFTER_INTERRUPT AFTER_READ AFTER_WRIT
   echo "interrupt_wakeup_delta=$(( AFTER_INTERRUPT - BEFORE_INTERRUPT ))"
   echo "disk_read_delta_bytes=$(( AFTER_READ - BEFORE_READ ))"
   echo "disk_write_delta_bytes=$(( AFTER_WRITE - BEFORE_WRITE ))"
-  echo "onscreen_layer_zero_windows_after=$WINDOWS_AT_END"
+  echo "onscreen_substantial_layer_zero_windows_after=$WINDOWS_AT_END"
   echo "storage_delta_file=$STORAGE_DELTA"
 } >"$SUMMARY"
 

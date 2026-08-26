@@ -83,6 +83,8 @@ TIMESTAMP_PATHS = (
     ("timestamp",),
     ("time",),
     ("ts",),
+    ("capturedAt",),
+    ("captured_at",),
     ("observedAt",),
     ("observed_at",),
     ("createdAt",),
@@ -186,9 +188,23 @@ AFTER_PHASES = {
     "settled",
     "stable",
 }
-DAILY_JSONL_NAME = re.compile(r"^(\d{4})-(\d{2})-(\d{2})\.jsonl$")
+DAILY_JSONL_NAME = re.compile(
+    r"^(\d{4})-(\d{2})-(\d{2})(?:\.semantic)?\.jsonl$"
+)
 SEGMENT_DIRECTORY_NAME = re.compile(
     r"^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})Z$"
+)
+MAX_EVENT_SPAN_MILLISECONDS = 60_000
+EVENT_START_MILLISECOND_PATHS = (
+    ("metadata", "computer_history.input_observed_at_unix_ms"),
+    ("metadata", "input_observed_at_unix_ms"),
+    ("inputObservedAtUnixMs",),
+    ("input_observed_at_unix_ms",),
+)
+EVENT_DURATION_MILLISECOND_PATHS = (
+    ("metadata", "duration_ms"),
+    ("durationMilliseconds",),
+    ("duration_ms",),
 )
 
 
@@ -216,6 +232,8 @@ class Limits:
 class SourceSummary:
     label: str
     bucket_seconds: int
+    interval_start_ms: int
+    interval_end_ms: int
     input_count: int = 0
     files_opened: int = 0
     directory_entries_seen: int = 0
@@ -229,6 +247,9 @@ class SourceSummary:
     semantic_without_before_after_phase_events: int = 0
     category_counts: Counter[str] = field(default_factory=Counter)
     category_timestamps_ms: dict[str, array[int]] = field(
+        default_factory=lambda: {category: array("q") for category in CATEGORIES}
+    )
+    category_span_starts_ms: dict[str, array[int]] = field(
         default_factory=lambda: {category: array("q") for category in CATEGORIES}
     )
     issues: Counter[str] = field(default_factory=Counter)
@@ -253,15 +274,52 @@ class SourceSummary:
         if self.last_timestamp is None or timestamp > self.last_timestamp:
             self.last_timestamp = timestamp
 
-    def add_category(self, category: str, timestamp: dt.datetime) -> None:
+    def add_category(
+        self,
+        category: str,
+        timestamp: dt.datetime,
+        span_start_ms: int,
+    ) -> None:
+        timestamp_ms = int(timestamp.timestamp() * 1_000)
         self.category_counts[category] += 1
-        self.category_timestamps_ms[category].append(int(timestamp.timestamp() * 1_000))
+        self.category_timestamps_ms[category].append(timestamp_ms)
+        self.category_span_starts_ms[category].append(min(span_start_ms, timestamp_ms))
+
+    def occupied_bucket_intervals_ms(
+        self, category: str
+    ) -> tuple[array[int], array[int]]:
+        bucket_ms = self.bucket_seconds * 1_000
+        occupied: dict[int, tuple[int, int]] = {}
+        for start_ms, end_ms in zip(
+            self.category_span_starts_ms[category],
+            self.category_timestamps_ms[category],
+        ):
+            clipped_start = max(start_ms, self.interval_start_ms)
+            clipped_end = min(end_ms, self.interval_end_ms - 1)
+            if clipped_end < clipped_start:
+                continue
+            for bucket in range(
+                clipped_start // bucket_ms, clipped_end // bucket_ms + 1
+            ):
+                bucket_start = max(clipped_start, bucket * bucket_ms)
+                bucket_end = min(clipped_end, (bucket + 1) * bucket_ms - 1)
+                prior = occupied.get(bucket)
+                if prior is None:
+                    occupied[bucket] = (bucket_start, bucket_end)
+                else:
+                    occupied[bucket] = (
+                        min(prior[0], bucket_start),
+                        max(prior[1], bucket_end),
+                    )
+        ordered = [occupied[bucket] for bucket in sorted(occupied)]
+        return (
+            array("q", (interval[0] for interval in ordered)),
+            array("q", (interval[1] for interval in ordered)),
+        )
 
     def occupied_bucket_count(self, category: str) -> int:
-        bucket_ms = self.bucket_seconds * 1_000
-        return len(
-            {timestamp // bucket_ms for timestamp in self.category_timestamps_ms[category]}
-        )
+        starts, _ = self.occupied_bucket_intervals_ms(category)
+        return len(starts)
 
     def output(self) -> dict[str, Any]:
         return {
@@ -410,6 +468,42 @@ def event_interaction_digest(payload: dict[str, Any]) -> bytes | None:
             if encoded and len(encoded) <= 512:
                 return hashlib.blake2s(encoded, digest_size=16).digest()
     return None
+
+
+def bounded_millisecond_value(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        if not value or len(value) > 32:
+            return None
+        try:
+            parsed = float(value)
+        except ValueError:
+            return None
+    elif isinstance(value, (int, float)):
+        parsed = float(value)
+    else:
+        return None
+    if not math.isfinite(parsed) or parsed < 0 or parsed > 100_000_000_000_000:
+        return None
+    return int(parsed)
+
+
+def event_span_start_ms(payload: dict[str, Any], timestamp: dt.datetime) -> int:
+    """Return a bounded metadata-only start for a coalesced interaction row."""
+
+    timestamp_ms = int(timestamp.timestamp() * 1_000)
+    for path in EVENT_START_MILLISECOND_PATHS:
+        candidate = bounded_millisecond_value(nested_value(payload, path))
+        if candidate is None:
+            continue
+        if 0 <= timestamp_ms - candidate <= MAX_EVENT_SPAN_MILLISECONDS:
+            return candidate
+    for path in EVENT_DURATION_MILLISECOND_PATHS:
+        duration = bounded_millisecond_value(nested_value(payload, path))
+        if duration is not None:
+            return timestamp_ms - min(duration, MAX_EVENT_SPAN_MILLISECONDS)
+    return timestamp_ms
 
 
 def is_semantic(tokens: set[str]) -> bool:
@@ -603,8 +697,9 @@ def process_payload(
     if not categories:
         return
     summary.target_event_rows += 1
+    span_start_ms = event_span_start_ms(payload, timestamp)
     for category in categories:
-        summary.add_category(category, timestamp)
+        summary.add_category(category, timestamp, span_start_ms)
 
     if semantic_phase is not None:
         interaction_digest = event_interaction_digest(payload)
@@ -798,7 +893,12 @@ def read_source(
     start: dt.datetime,
     end: dt.datetime,
 ) -> SourceSummary:
-    summary = SourceSummary(label=label, bucket_seconds=bucket_seconds)
+    summary = SourceSummary(
+        label=label,
+        bucket_seconds=bucket_seconds,
+        interval_start_ms=int(start.timestamp() * 1_000),
+        interval_end_ms=int(end.timestamp() * 1_000),
+    )
     for path in paths:
         summary.input_count += 1
         if summary.files_opened >= limits.max_files:
@@ -845,6 +945,34 @@ def timestamp_match_count(
     return matched
 
 
+def interval_match_count(
+    left_starts: array[int],
+    left_ends: array[int],
+    right_starts: array[int],
+    right_ends: array[int],
+    tolerance_ms: int,
+) -> int:
+    """Return maximum ordered one-to-one interval matches within tolerance."""
+
+    left_index = 0
+    right_index = 0
+    matched = 0
+    while left_index < len(left_starts) and right_index < len(right_starts):
+        left_start = left_starts[left_index]
+        left_end = left_ends[left_index]
+        right_start = right_starts[right_index]
+        right_end = right_ends[right_index]
+        if right_end < left_start - tolerance_ms:
+            right_index += 1
+        elif left_end < right_start - tolerance_ms:
+            left_index += 1
+        else:
+            matched += 1
+            left_index += 1
+            right_index += 1
+    return matched
+
+
 def timestamp_match_ratio(event_count: int, matched_count: int, other_count: int) -> float:
     if event_count == 0:
         return 1.0 if other_count == 0 else 0.0
@@ -867,35 +995,63 @@ def compare_sources(
     for category in CATEGORIES:
         codex_count = codex.category_counts[category]
         goalong_count = goalong.category_counts[category]
-        maximum_count = max(codex_count, goalong_count)
-        allowed_delta = max(
-            absolute_count_tolerance,
-            math.ceil(maximum_count * relative_count_tolerance),
+        raw_paired_event_count = timestamp_match_count(
+            codex.category_timestamps_ms[category],
+            goalong.category_timestamps_ms[category],
+            tolerance_ms,
         )
-        directional_count_delta = goalong_count - codex_count
-        count_delta = abs(directional_count_delta)
-        codex_times = codex.category_timestamps_ms[category]
-        goalong_times = goalong.category_timestamps_ms[category]
-        paired_event_count = timestamp_match_count(codex_times, goalong_times, tolerance_ms)
-        codex_match = timestamp_match_ratio(codex_count, paired_event_count, goalong_count)
-        goalong_match = timestamp_match_ratio(goalong_count, paired_event_count, codex_count)
+        codex_raw_match = timestamp_match_ratio(
+            codex_count, raw_paired_event_count, goalong_count
+        )
+        goalong_raw_match = timestamp_match_ratio(
+            goalong_count, raw_paired_event_count, codex_count
+        )
 
-        if maximum_count == 0:
+        codex_bucket_starts, codex_bucket_ends = codex.occupied_bucket_intervals_ms(
+            category
+        )
+        goalong_bucket_starts, goalong_bucket_ends = (
+            goalong.occupied_bucket_intervals_ms(category)
+        )
+        codex_bucket_count = len(codex_bucket_starts)
+        goalong_bucket_count = len(goalong_bucket_starts)
+        maximum_bucket_count = max(codex_bucket_count, goalong_bucket_count)
+        allowed_bucket_delta = max(
+            absolute_count_tolerance,
+            math.ceil(maximum_bucket_count * relative_count_tolerance),
+        )
+        directional_bucket_delta = goalong_bucket_count - codex_bucket_count
+        bucket_delta = abs(directional_bucket_delta)
+        paired_bucket_count = interval_match_count(
+            codex_bucket_starts,
+            codex_bucket_ends,
+            goalong_bucket_starts,
+            goalong_bucket_ends,
+            tolerance_ms,
+        )
+        codex_match = timestamp_match_ratio(
+            codex_bucket_count, paired_bucket_count, goalong_bucket_count
+        )
+        goalong_match = timestamp_match_ratio(
+            goalong_bucket_count, paired_bucket_count, codex_bucket_count
+        )
+
+        if maximum_bucket_count == 0:
             status = "not_observed"
-        elif codex_count == 0:
+        elif codex_bucket_count == 0:
             status = "additional_goalong_evidence"
             has_additional_goalong_evidence = True
         else:
             codex_observed = True
             within = (
-                count_delta <= allowed_delta
+                bucket_delta <= allowed_bucket_delta
                 and codex_match >= minimum_time_match_ratio
                 and goalong_match >= minimum_time_match_ratio
             )
             if within:
                 status = "within_tolerance"
             elif (
-                goalong_count >= codex_count
+                goalong_bucket_count >= codex_bucket_count
                 and codex_match >= minimum_time_match_ratio
             ):
                 status = "goalong_additional_evidence"
@@ -905,14 +1061,18 @@ def compare_sources(
                 missing_goalong_evidence = True
         comparisons[category] = {
             "status": status,
+            "evaluation_unit": "occupied_time_bucket",
             "codex_event_count": codex_count,
             "goalong_event_count": goalong_count,
-            "count_delta": count_delta,
-            "goalong_minus_codex_event_count": directional_count_delta,
-            "allowed_count_delta": allowed_delta,
-            "paired_event_count": paired_event_count,
-            "codex_occupied_buckets": codex.occupied_bucket_count(category),
-            "goalong_occupied_buckets": goalong.occupied_bucket_count(category),
+            "paired_raw_event_count": raw_paired_event_count,
+            "codex_raw_event_time_match_ratio": round(codex_raw_match, 6),
+            "goalong_raw_event_time_match_ratio": round(goalong_raw_match, 6),
+            "codex_occupied_buckets": codex_bucket_count,
+            "goalong_occupied_buckets": goalong_bucket_count,
+            "occupied_bucket_count_delta": bucket_delta,
+            "goalong_minus_codex_occupied_buckets": directional_bucket_delta,
+            "allowed_occupied_bucket_delta": allowed_bucket_delta,
+            "paired_time_bucket_count": paired_bucket_count,
             "codex_time_match_ratio": round(codex_match, 6),
             "goalong_time_match_ratio": round(goalong_match, 6),
         }
@@ -1009,7 +1169,7 @@ def main(argv: list[str] | None = None) -> int:
         args.minimum_time_match_ratio,
     )
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "result": overall,
         "scope": {
             "start_utc": format_timestamp(start),
@@ -1040,6 +1200,8 @@ def main(argv: list[str] | None = None) -> int:
             "absolute_count_tolerance": args.absolute_count_tolerance,
             "relative_count_tolerance": args.relative_count_tolerance,
             "timestamp_resolution_milliseconds": 1,
+            "comparison_unit": "occupied_time_bucket",
+            "maximum_coalesced_event_span_milliseconds": MAX_EVENT_SPAN_MILLISECONDS,
             "minimum_codex_coverage_time_match_ratio": args.minimum_time_match_ratio,
         },
         "sources": {"codex": codex.output(), "goalong": goalong.output()},
@@ -1054,6 +1216,9 @@ def main(argv: list[str] | None = None) -> int:
             "silence is not inferred to be a capture gap; only explicit gap events and "
             "read issues are counted",
             "semantic_after includes explicit after or settled semantic phases",
+            "category status compares bounded occupied time buckets, including numeric "
+            "coalesced-event spans; raw row counts remain informational because providers "
+            "use different event granularities",
             "live evidence is valid only for a controlled sequence performed through physical "
             "user input",
         ],

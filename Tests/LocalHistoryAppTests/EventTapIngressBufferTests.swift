@@ -563,9 +563,15 @@
                     through: "        /// Cancels without persisting."
                 )
             )
+            let ingressDropReporting = try XCTUnwrap(
+                source.slice(
+                    from: "        private func reportIngressDropsIfNeeded(reason: String = \"bounded_ingress_overflow\") {",
+                    through: "        /// Collapses a burst of callback losses"
+                )
+            )
             let cancellation = try XCTUnwrap(
                 source.slice(
-                    from: "        private func cancelOpenInteractionsForBoundary(discardPendingInput: Bool = true) {",
+                    from: "        private func cancelOpenInteractionsForBoundary(discardPendingInput: Bool = false) {",
                     through: "        private func resumeAfterSecureInputIfNeeded(using context: ContextSnapshot) {"
                 )
             )
@@ -582,9 +588,16 @@
             XCTAssertTrue(secureSuppression.contains("cancelOpenInteractionsForBoundary()"))
             XCTAssertFalse(secureSuppression.contains("flushTypingBurst()"))
             XCTAssertFalse(secureSuppression.contains("flushScrollBurst()"))
+            XCTAssertTrue(
+                ingressDropReporting.contains(
+                    "cancelOpenInteractionsForBoundary(discardPendingInput: true)"
+                ),
+                "Only a proven ingress overflow should discard the independently vetted queue."
+            )
 
             for requiredReset in [
                 "interactionBoundaryGeneration &+= 1",
+                "if discardPendingInput",
                 "ingress.discardPending()",
                 "typingFlushWorkItem?.cancel()",
                 "scrollFlushWorkItem?.cancel()",

@@ -58,7 +58,8 @@ public enum ComputerHistoryEngine {
                 events: captured,
                 semanticSnapshots: semanticSnapshots,
                 eventResourceIDs: resolution.eventResourceIDs,
-                precomputedSemanticTexts: semanticTexts
+                precomputedSemanticTexts: semanticTexts,
+                continuityBoundaries: evidence.filter(\.isObservationContinuityBoundary)
             )
         }
         let episodes = ComputerHistoryEpisodeBuilder.build(
@@ -186,7 +187,8 @@ public enum ComputerHistoryEngine {
             events: captured,
             semanticSnapshots: semanticSnapshots,
             eventResourceIDs: resolution.eventResourceIDs,
-            precomputedSemanticTexts: semanticTexts
+            precomputedSemanticTexts: semanticTexts,
+            continuityBoundaries: evidence.filter(\.isObservationContinuityBoundary)
         )
         let episodes = ComputerHistoryEpisodeBuilder.build(
             interactions: interactions,

@@ -966,7 +966,7 @@
             var lastDroppedAt = report.lastObservedAt
             // Missing callbacks make it impossible to prove that an open burst or
             // pointer gesture stayed on the public side of a privacy boundary.
-            cancelOpenInteractionsForBoundary()
+            cancelOpenInteractionsForBoundary(discardPendingInput: true)
             if let boundaryDiscard = ingress.takeDropReport() {
                 let sum = droppedCount.addingReportingOverflow(boundaryDiscard.count)
                 droppedCount = sum.overflow ? Int.max : sum.partialValue
@@ -1166,7 +1166,7 @@
 
         /// Cancels without persisting. Once privacy, freshness or continuity becomes
         /// uncertain, a burst or gesture cannot be safely split at the boundary.
-        private func cancelOpenInteractionsForBoundary(discardPendingInput: Bool = true) {
+        private func cancelOpenInteractionsForBoundary(discardPendingInput: Bool = false) {
             interactionBoundaryGeneration &+= 1
             if discardPendingInput {
                 _ = ingress.discardPending()

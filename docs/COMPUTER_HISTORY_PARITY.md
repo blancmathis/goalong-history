@@ -57,7 +57,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 
 | Publicly observable capability | Goalong behavior | Current proof boundary |
 | --- | --- | --- |
-| clicks, grouped typing, shortcuts, scrolling, app/window/site context | one local input pipeline with event-time, near-event, after, and settled observations | deterministic capture tests pass; the installed signed identity still needs a fresh physical-input/TCC run |
+| clicks, grouped typing, shortcuts, scrolling, app/window/site context | one local input pipeline with event-time, near-event, after, and settled observations | deterministic capture tests and one 398-second physical interval pass the causal 80% threshold; that pre-fix interval still contains explicit gaps, so a gap-free post-fix physical run is not proved |
 | searchable chronology and local memories | causal episodes plus exact coverage totals and a bounded representative projection | parity/evidence/storage tests and installed UI inspection pass |
 | compact evidence for a later agent | deterministic on-demand evidence pack with exact totals, distributed high-value episodes, causal changes, and deduplicated source locators | unit evals and a real read-only day probe enforce token bounds and measure evidence slots per approximate token; no LLM runs in the capture loop |
 | resume after a break and summarize recent work | intent-aware local search over causal episodes, including French resume phrasing and explicit today/yesterday/week scoping | English/French query tests and real local source-query measurements pass |
@@ -67,7 +67,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | choose contributing apps and websites | exclusion lists plus fail-closed include-only app/domain scopes; exclusions, private browsing and protected apps always win | configuration and recorder-policy tests pass; old configs decode with allow-all include scopes |
 | pause, resume, exclude, and delete at documented scopes | menu-bar/UI controls, app/domain exclusions, private/secure suppression, 10-minute/hour/day/all deletion, exact Computer History-item deletion, and most-recent/selected app-session deletion | targeted fixtures prove full provenance recovery, exact raw/semantic removal, other-day preservation, malformed-row refusal, and bounded streaming; the installed stable-signature UI exposes item/session deletion, while a physical deletion exercise remains intentionally unperformed |
 | avoid screenshots, audio, clipboard, keystroke reconstruction, and private browsing | Accessibility text and interaction metadata only, with credential redaction | privacy audit and suppression tests pass |
-| stay unobtrusive and recoverable | one process, no helper, health state, bounded queues/caches, AX storm debounce, polling fallback | resource measurements pass; final physical wake/input recovery is pending TCC refresh |
+| stay unobtrusive and recoverable | one process, no helper, health state, bounded queues/caches, AX storm debounce, polling fallback | the Apple Development-signed installed build retained all TCC preflights and passed the 10-minute resource gate; post-fix physical wake/input recovery remains unproved |
 
 ## Architecture migration
 
@@ -84,6 +84,8 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | The optional Codex Markdown mirror could exceed 2 MB for one busy day and the ChatGPT recap could repeat the same causal text in its legacy minute digest. | The mirror now uses a deterministic 3,000-token ceiling, the on-demand agent pack accepts an 800–12,000-token budget, sources are aliased once, and a recap with causal history keeps only complementary duration aggregates from the legacy view. |
 | A compact episode retained only representative provenance, so deleting one visible summary would otherwise require an unsafe broad interval clear. | Explicit item deletion re-reads the original local journal on demand, rebuilds complete episode provenance, removes only the resolved event IDs and linked semantic snapshot IDs, invalidates only the affected day’s derived files, and records a continuity boundary while preserving seals, receipts, Screen Time and Agent Activity. |
 | An already indexed agent transcript that was still growing could be re-hashed in full on every 30-second metadata poll. | Background scans retain the prior complete fingerprint while the same inode grows, then perform one streaming re-hash after two minutes of quiescence. New files, truncation, replacement, forced reconciliation, explicit analysis, and direct reads bypass the delay. No body, version, or snapshot is persisted. |
+| A privacy, stale-input, or context boundary cancelled the open interaction and also emptied every later queued callback; those defensive discards were then mislabeled as `bounded_ingress_overflow`, amplifying one boundary into hundreds of apparent losses. | Boundaries still cancel every open burst, gesture, and deferred semantic capture, but later queued inputs remain bounded and independently repeat event-time privacy, target, fresh-context, protected-control, and freshness checks. Only a proven capacity overflow discards the remaining queue and records `bounded_ingress_overflow`. |
+| A missing explicit `before` snapshot left many otherwise continuous interactions context-poor, and the validator compared provider-specific raw row counts one-to-one. | The prior settled outcome becomes the next eligible interaction's bounded before-state without another AX read; app switches may carry the last chronological public state but never cross a continuity/privacy barrier or browser-host boundary. Physical comparison uses bounded occupied time buckets and numeric burst spans, while raw row counts remain informational. |
 
 The raw Goalong event and semantic journals remain the authoritative evidence.
 Compaction changes only derived storage and search working sets; it does not
@@ -190,8 +192,12 @@ scroll burst receives an interaction identifier. Semantic observations use these
 - `settled` — full bounded state after the UI has had time to settle.
 
 When no explicit chronological `before` exists, the interaction builder may use the
-nearest earlier eligible observation from the same application. A delayed callback can
-never masquerade as a causal pre-state.
+nearest earlier eligible observation from the same application or the bounded settled
+outcome of the prior interaction on the same resource. An application switch may use the
+latest chronological public state from the application being left. These fallbacks never
+cross a suppression/integrity boundary, a browser-host boundary, or the 64-candidate
+carry-forward bound. A delayed callback can never masquerade as a causal pre-state, and
+the fallback performs no new Accessibility read.
 
 The budgets are intentionally phase-aware so full analysis does not make the event tap
 unresponsive:
@@ -235,8 +241,8 @@ Each retained representative interaction stores:
 
 When an explicit before/after pair is unavailable, the builder may use the nearest
 eligible semantic observation from the same application within a bounded 20-second
-window and on the correct side of the action timestamp. Coverage reports distinguish
-complete pairs from partial context.
+window and on the correct side of the action timestamp, or the barrier-safe prior outcome
+described above. Coverage reports distinguish complete pairs from partial context.
 
 ### Source resolution
 
@@ -733,9 +739,11 @@ bash scripts/measure_computer_history_runtime.sh --enforce-targets
 ```
 
 The read-only script waits 60 seconds, takes 600 one-second samples, verifies that no
-layer-zero Goalong window is on screen at the start and end, and reports CPU, raw RSS,
-physical/lifetime-peak footprint, child processes, process wakeups, disk I/O, and logical
-storage deltas by data class. CPU percentages are calculated from per-interval
+substantial layer-zero Goalong window (at least 640×480) is on screen at the start and
+end, and reports CPU, raw RSS, physical/lifetime-peak footprint, child processes, process
+wakeups, disk I/O, and logical storage deltas by data class. The size floor excludes
+non-capturable macOS thumbnails while remaining well below Goalong's 1080×680 dashboard
+minimum. CPU percentages are calculated from per-interval
 `proc_pid_rusage` CPU-time deltas divided by `mach_continuous_time`; macOS `ps %cpu` is
 deliberately not used because it is a decaying average over up to one prior minute and
 can misattribute pre-benchmark activity. The process-time totals are converted from Mach
@@ -800,13 +808,17 @@ reports how many dated entries were skipped. The validator requires
 input, Computer Use, or other automation cannot satisfy that attestation or support a
 live parity claim.
 
-Event timestamps are paired one-to-one within the configured tolerance, so one Goalong
-row cannot falsely cover several Codex rows. The oracle is intentionally directional:
-missing or unmatched Codex-classified evidence in Goalong fails; comparable counts and
-timestamps pass as `observed_within_tolerance`; and complete Codex coverage plus extra
-Goalong-classified context passes separately as `goalong_at_least_codex`. Goalong-only
-activity cannot establish a Codex baseline, explicit capture gaps remain insufficient,
-and extra evidence is not automatically claimed to be useful merely because it exists.
+Provider rows are first projected into bounded occupied time buckets. Numeric interaction
+start/duration metadata can cover several buckets for one grouped typing, scrolling, or
+drag burst, up to a fixed 60-second span; raw row counts remain visible but do not decide
+parity because providers use different granularities. Bucket intervals are then paired
+one-to-one within the configured tolerance, so one bucket cannot falsely cover several
+distinct Codex buckets. The oracle is intentionally directional: missing or unmatched
+Codex-classified evidence in Goalong fails; comparable bucket coverage passes as
+`observed_within_tolerance`; and complete Codex coverage plus extra Goalong-classified
+context passes separately as `goalong_at_least_codex`. Goalong-only activity cannot
+establish a Codex baseline, explicit capture gaps remain insufficient, and extra evidence
+is not automatically claimed to be useful merely because it exists.
 
 Validation does not create a complete
 `YYYY-MM-DD.computer-history.json` artifact in its output directory. The transient CLI
@@ -833,6 +845,38 @@ omitted from a representative projection. The controlled real-input validation r
 necessary for those claims.
 
 ## Measured local acceptance snapshot
+
+### Current installed verification
+
+The final source installation measured on 2026-08-26 is Goalong History `0.5.1`
+build `20260826.144939`, signed by `Apple Development: mathis-blanc@hotmail.fr
+(M6Y4HJP9L3)` with Team `2L5SSLPX46` and CDHash
+`6f0d7d4065d79f92d173692aa1ae4a526268d33c`. The exact installed identity reports
+Accessibility preflight/functional probe and Input Monitoring preflight all true, with
+the event tap in `createdEnabled` state.
+
+| Surface | Current measured result |
+| --- | --- |
+| complete source-installer suite | 613 tests, 3 expected environment-dependent skips, 0 failures; source, staged, and installed bundles each passed signature and privacy validation |
+| background CPU, 600 one-second kernel-delta samples | median 0.000%, p95 0.696%, maximum 10.839%; 0 samples exceeded 15% |
+| closed-window memory | macOS physical footprint 40,535,048 bytes (38.7 MiB); lifetime physical peak 81,232,832 bytes (77.5 MiB); raw resident size median 72,784 KiB, p95 74,128 KiB, maximum 74,176 KiB |
+| ten-minute process activity | one process, 0 child/helper; 1,376,256 bytes read, 155,648 bytes written; 21 idle and 104 interrupt wakeups |
+| ten-minute logical storage growth | seals +10,769 bytes; Computer History, events, semantic, analysis, memories, Agent Activity, and Screen Time each +0 bytes |
+| direct-source Agent Activity | 797 entries / 778,752 bytes: Codex 782, Claude Code 1, OpenCode 14; one bounded Codex slice and the Claude source matched their stored hashes when reread from the original files, and all 14 OpenCode opaque locators resolved from SQLite in read-only/query-only mode with 0 changes |
+| transcript duplication check | no persisted body-like keys in the live index, index bytes and modification time unchanged during direct reads, and zero `agent-activity/blobs` directories |
+| controlled physical interval | 398 seconds, 599 source events, 282 actions/interactions, 226 semantic pairs (80.1%), 35 episodes, 14 resources, one workflow and one suggestion; all invariant and natural-question checks passed |
+| provider-granularity probe | typing covered 83.3% of Codex occupied buckets and passed as additional Goalong evidence; window context covered 85.7%; click 73.1% and shortcut 50.0% remained below threshold |
+| explicit physical gaps | 29 old-build gap rows keep the physical probe at `insufficient_coverage`; the installed queue fix prevents a defensive boundary from cascading into a false overflow, but no new gap-free physical interval has yet exercised that exact build |
+| real installed runtime/UI boundary | the signed bundle launched with one healthy process and a CoreGraphics-owned Goalong layer-zero thumbnail; Computer Use returned `cgWindowNotFound`, so the current build's full dashboard was not visually re-inspected and no UI claim is inferred from process liveness |
+
+The strict validator passed 9 causal-parity scenarios, 3 episode-quality scenarios,
+2 token-density scenarios, the privacy audit, causal invariant checker, 25 metadata-probe
+tests, runtime sampler tests, signing policy, Release CLI build, and all four real local
+questions. It then returned `insufficient_coverage` only at the physical metadata probe,
+where both source reads were complete and issue-free but the 29 pre-fix Goalong gaps were
+still correctly counted.
+
+### Earlier optimization baseline
 
 The following measurements were taken on 2026-08-26 on macOS 26.5.1 (25F80), an
 Apple M4 Pro with 24 GB RAM, using the installed source build
@@ -885,14 +929,14 @@ Agent Activity sample; the stable unlocked rerun above passed. The one-second ma
 not hidden; the sustained limit is satisfied because the only run above 15% lasted two
 seconds.
 
-The current Apple Development-signed identity still reports Accessibility
-functional/preflight and Input Monitoring preflight as unavailable. Consequently these
-measurements prove the degraded-permission idle path, bounded analysis, storage, queries,
-build, launch, and UI behavior. They do **not** prove current-build physical input capture, live
-Codex-versus-Goalong coverage, permission recovery after a real TCC grant, or third-party
-application AX quality. That final claim remains gated on the controlled real-input
-checklist below and must be rerun after a signed reinstall before claiming full live
-parity.
+That earlier build initially reported the TCC preflights as unavailable; the signed
+reinstallation documented in the current snapshot above now reports all three checks true
+and the event tap enabled. The completed physical interval proves current-day causal
+analysis and real input on the prior signed build, while the deterministic tests prove the
+new carry-forward and queue behavior. It does **not** prove a gap-free physical interval
+on build `20260826.144939`, complete third-party Accessibility quality, or a current visual
+dashboard inspection. Those claims remain gated on the controlled real-input checklist
+below and a functioning UI inspection surface.
 
 ## Real-session proof boundary
 

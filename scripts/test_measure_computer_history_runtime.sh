@@ -37,9 +37,15 @@ SLEEP_PID=$!
 
 grep -Fq 'samples=2' "$FIXTURE_ROOT/output/environment.txt"
 grep -Fq 'cpu_measurement=Per-interval proc_pid_rusage' "$FIXTURE_ROOT/output/environment.txt"
+grep -Fq 'onscreen_substantial_layer_zero_windows_before_warmup=0' \
+  "$FIXTURE_ROOT/output/environment.txt"
 grep -Fq 'child_process_max=0' "$FIXTURE_ROOT/output/summary.txt"
+grep -Fq 'onscreen_substantial_layer_zero_windows_after=0' \
+  "$FIXTURE_ROOT/output/summary.txt"
 grep -Fq $'computer-history\t0' "$FIXTURE_ROOT/output/storage-delta.tsv"
 grep -Fq 'safety=No app launch' "$FIXTURE_ROOT/output/environment.txt"
+grep -Fq 'width >= 640 && height >= 480' \
+  "$ROOT_DIR/scripts/measure_computer_history_runtime.sh"
 [[ "$(wc -l <"$FIXTURE_ROOT/output/cpu.samples" | tr -d ' ')" == 2 ]]
 /usr/bin/awk 'NF != 1 || $1 !~ /^[0-9]+([.][0-9]+)?$/ { exit 1 }' \
   "$FIXTURE_ROOT/output/cpu.samples"
@@ -72,4 +78,4 @@ busy_user_nanoseconds="$(
 /usr/bin/awk -v value="$busy_cpu_median" 'BEGIN { exit !(value > 50) }'
 (( busy_user_nanoseconds > 1000000000 ))
 
-echo "Computer History runtime measurement tests passed: bounded kernel-delta CPU samples, Mach nanoseconds, rusage, storage deltas, window gate, and invalid-input refusal."
+echo "Computer History runtime measurement tests passed: bounded kernel-delta CPU samples, Mach nanoseconds, rusage, storage deltas, substantial-window gate, and invalid-input refusal."

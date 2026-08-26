@@ -186,11 +186,34 @@ private enum LocalHistoryQueryCLI {
                 arguments.removeOption("--tokens")
                     ?? String(ComputerHistoryAgentContextRenderer.defaultTokenBudget)
             )
+            let requestedStart = arguments.removeOption("--start-utc")
+            let requestedEnd = arguments.removeOption("--end-utc")
             guard let raw = arguments.popFirst() else {
                 throw CLIError.usage("\(command) requires YYYY-MM-DD")
             }
-            let start = try day(raw)
-            let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
+            let dayStart = try day(raw)
+            let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)!
+            let start: Date
+            let end: Date
+            switch (requestedStart, requestedEnd) {
+            case (nil, nil):
+                start = dayStart
+                end = dayEnd
+            case (.some(let rawStart), .some(let rawEnd)):
+                guard rawStart.hasSuffix("Z"), rawEnd.hasSuffix("Z") else {
+                    throw CLIError.usage("--start-utc and --end-utc require explicit UTC timestamps")
+                }
+                start = try parseTimestamp(rawStart)
+                end = try parseTimestamp(rawEnd)
+                guard start >= dayStart, end <= dayEnd, end > start else {
+                    throw CLIError.usage("the requested UTC interval must be non-empty and contained in \(raw)")
+                }
+            default:
+                throw CLIError.usage("--start-utc and --end-utc must be provided together")
+            }
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("unexpected arguments for \(command)")
+            }
             let loaded = HistoryLocalStoreReader(rootDirectory: root).loadComputerHistoryEvidence(
                 start: start,
                 endExclusive: end
@@ -204,7 +227,7 @@ private enum LocalHistoryQueryCLI {
                 : ComputerHistoryEngine.analyze(
                     events: loaded.events,
                     semanticSnapshots: loaded.semanticSnapshots,
-                    day: start,
+                    day: dayStart,
                     sourceJournalSummary: loaded.sourceJournalSummary
                 )
             let error: String? =
@@ -619,8 +642,8 @@ private enum LocalHistoryQueryCLI {
           recent [--minutes N] [--actions-only] [--gaps-only] [--semantic-only]
           day YYYY-MM-DD
           summary YYYY-MM-DD
-          computer-history YYYY-MM-DD
-          computer-history-context YYYY-MM-DD [--tokens N]
+          computer-history YYYY-MM-DD [--start-utc ISO-8601Z --end-utc ISO-8601Z]
+          computer-history-context YYYY-MM-DD [--tokens N] [--start-utc ISO-8601Z --end-utc ISO-8601Z]
           ask [--days N] NATURAL_LANGUAGE_QUESTION
           search TEXT
           app NAME_OR_BUNDLE_ID
@@ -631,7 +654,9 @@ private enum LocalHistoryQueryCLI {
 
         All commands are read-only and return JSON with coverage, provenance and load issues.
         `computer-history` analyzes the complete causal action sequence and returns exact
-        coverage totals plus a bounded representative projection. `ask` uses those
+        coverage totals plus a bounded representative projection. Its optional UTC
+        interval reads and analyzes only that bounded portion of the original journals;
+        it never writes a clipped source or derived snapshot. `ask` uses those
         projections and a bounded transient source-keyword pass when useful; it supports
         questions about recent work, resources, status, standups and repeatable workflows.
         `computer-history-context` emits a deterministic, token-bounded evidence pack for

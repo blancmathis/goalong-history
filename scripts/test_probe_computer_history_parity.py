@@ -287,7 +287,7 @@ class ComputerHistoryParityProbeTests(unittest.TestCase):
             report["comparison"]["click"]["status"],
             "goalong_additional_evidence",
         )
-        self.assertEqual(report["comparison"]["click"]["paired_event_count"], 2)
+        self.assertEqual(report["comparison"]["click"]["paired_time_bucket_count"], 2)
 
         self.write_rows(
             self.goalong,
@@ -305,7 +305,7 @@ class ComputerHistoryParityProbeTests(unittest.TestCase):
             "missing_or_unmatched_goalong_evidence",
         )
 
-    def test_one_goalong_event_cannot_match_multiple_codex_events(self) -> None:
+    def test_one_goalong_bucket_cannot_match_multiple_codex_buckets(self) -> None:
         self.write_rows(
             self.codex,
             [
@@ -320,8 +320,92 @@ class ComputerHistoryParityProbeTests(unittest.TestCase):
         result = self.run_probe()
         self.assertEqual(result.returncode, 1, result.stdout)
         report = json.loads(result.stdout)
-        self.assertEqual(report["comparison"]["click"]["paired_event_count"], 1)
+        self.assertEqual(report["comparison"]["click"]["paired_time_bucket_count"], 1)
         self.assertEqual(report["comparison"]["click"]["codex_time_match_ratio"], 0.5)
+
+    def test_dense_provider_rows_in_one_bucket_compare_as_one_observation(self) -> None:
+        self.write_rows(
+            self.codex,
+            [
+                event("2026-08-24T10:00:02.100Z", "mouse_click"),
+                event("2026-08-24T10:00:02.300Z", "mouse_click"),
+                event("2026-08-24T10:00:02.500Z", "mouse_click"),
+                event("2026-08-24T10:00:02.700Z", "mouse_click"),
+            ],
+        )
+        self.write_rows(
+            self.goalong,
+            [event("2026-08-24T10:00:02.400Z", "mouseClick")],
+        )
+
+        result = self.run_probe()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        report = json.loads(result.stdout)
+        comparison = report["comparison"]["click"]
+        self.assertEqual(comparison["status"], "within_tolerance")
+        self.assertEqual(comparison["codex_event_count"], 4)
+        self.assertEqual(comparison["goalong_event_count"], 1)
+        self.assertEqual(comparison["codex_occupied_buckets"], 1)
+        self.assertEqual(comparison["goalong_occupied_buckets"], 1)
+        self.assertEqual(comparison["paired_time_bucket_count"], 1)
+
+    def test_bounded_coalesced_span_covers_rows_but_not_missing_time_buckets(self) -> None:
+        self.write_rows(
+            self.codex,
+            [
+                event("2026-08-24T10:00:04Z", "text_input"),
+                event("2026-08-24T10:00:06Z", "text_input"),
+                event("2026-08-24T10:00:08Z", "text_input"),
+                event("2026-08-24T10:00:10Z", "text_input"),
+            ],
+        )
+        self.write_rows(
+            self.goalong,
+            [
+                event(
+                    "2026-08-24T10:00:10Z",
+                    "typingBurst",
+                    metadata={"duration_ms": "6000", "keystroke_count": "24"},
+                )
+            ],
+        )
+
+        covered = self.run_probe()
+        self.assertEqual(covered.returncode, 0, covered.stdout)
+        covered_report = json.loads(covered.stdout)
+        self.assertEqual(
+            covered_report["comparison"]["typing"]["status"],
+            "within_tolerance",
+        )
+        self.assertEqual(
+            covered_report["comparison"]["typing"]["paired_time_bucket_count"],
+            4,
+        )
+
+        self.write_rows(
+            self.codex,
+            [
+                event("2026-08-24T10:00:02Z", "text_input"),
+                event("2026-08-24T10:00:12Z", "text_input"),
+            ],
+        )
+        self.write_rows(
+            self.goalong,
+            [
+                event(
+                    "2026-08-24T10:00:12Z",
+                    "typingBurst",
+                    metadata={"duration_ms": "2000"},
+                )
+            ],
+        )
+        missing = self.run_probe()
+        self.assertEqual(missing.returncode, 1, missing.stdout)
+        missing_report = json.loads(missing.stdout)
+        self.assertEqual(
+            missing_report["comparison"]["typing"]["status"],
+            "missing_or_unmatched_goalong_evidence",
+        )
 
     def test_goalong_only_activity_cannot_establish_a_codex_baseline(self) -> None:
         self.write_rows(self.codex, [])
@@ -537,6 +621,54 @@ class ComputerHistoryParityProbeTests(unittest.TestCase):
         self.assertEqual(report["sources"]["goalong"]["dated_entries_skipped"], 1)
         self.assertNotIn("byte_budget_exhausted", report["sources"]["codex"]["issues"])
         self.assertNotIn("byte_budget_exhausted", report["sources"]["goalong"]["issues"])
+        self.assertNotIn(SENSITIVE, result.stdout + result.stderr)
+
+    def test_goalong_semantic_journals_use_captured_at_and_day_pruning(self) -> None:
+        self.write_rows(
+            self.codex,
+            [event("2026-08-24T10:00:02Z", "mouse_click")],
+        )
+        goalong_root = self.root / "goalong-semantic-root"
+        goalong_root.mkdir()
+        self.write_rows(
+            goalong_root / "2026-08-24.jsonl",
+            [event("2026-08-24T10:00:02Z", "mouseClick")],
+        )
+        self.write_rows(
+            goalong_root / "2026-08-24.semantic.jsonl",
+            [
+                {
+                    "capturedAt": "2026-08-24T10:00:02Z",
+                    "id": "semantic-current",
+                    "text": SENSITIVE,
+                }
+            ],
+        )
+        self.write_rows(
+            goalong_root / "2026-08-01.semantic.jsonl",
+            [
+                {
+                    "capturedAt": "2026-08-01T10:00:02Z",
+                    "id": "semantic-old",
+                    "text": SENSITIVE * 100,
+                }
+            ],
+        )
+
+        result = self.run_probe(
+            self.codex,
+            goalong_root,
+            "--max-bytes-per-source",
+            "1024",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        report = json.loads(result.stdout)
+        goalong = report["sources"]["goalong"]
+        self.assertEqual(goalong["files_opened"], 2)
+        self.assertEqual(goalong["dated_entries_skipped"], 1)
+        self.assertEqual(goalong["rows_in_interval"], 2)
+        self.assertNotIn("missing_timestamp", goalong["issues"])
+        self.assertNotIn("byte_budget_exhausted", goalong["issues"])
         self.assertNotIn(SENSITIVE, result.stdout + result.stderr)
 
     def test_answer_checker_emits_only_metadata_for_sensitive_input(self) -> None:

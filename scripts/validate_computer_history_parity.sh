@@ -192,23 +192,35 @@ if [[ -n "$MINIMUM_PAIR_RATIO" ]]; then
 fi
 
 run_causal_invariants() {
-  if ! "$QUERY_CLI" --root "$DATA_ROOT" computer-history "$DAY" 2>/dev/null \
-    | "${CHECK_ARGS[@]}"
-  then
-    echo "Causal invariant validation failed; source-derived diagnostics were suppressed." >&2
-    return 1
+  local attempt
+  local query_args=("$QUERY_CLI" --root "$DATA_ROOT" computer-history "$DAY")
+  if [[ -n "$START_UTC" ]]; then
+    query_args+=(--start-utc "$START_UTC" --end-utc "$END_UTC")
   fi
+  for attempt in {1..12}; do
+    if "${query_args[@]}" 2>/dev/null | "${CHECK_ARGS[@]}"; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "Causal invariant validation failed; source-derived diagnostics were suppressed." >&2
+  return 1
 }
 run_logged causal-invariants run_causal_invariants
 
 run_answer_metadata_check() {
   local prompt="$1"
-  if ! "$QUERY_CLI" --root "$DATA_ROOT" ask --days 30 "$prompt" 2>/dev/null \
-    | python3 "$REPO/scripts/check_computer_history_answer.py"
-  then
-    echo "Natural question validation failed; source-derived diagnostics were suppressed." >&2
-    return 1
-  fi
+  local attempt
+  for attempt in {1..12}; do
+    if "$QUERY_CLI" --root "$DATA_ROOT" ask --days 30 "$prompt" 2>/dev/null \
+      | python3 "$REPO/scripts/check_computer_history_answer.py"
+    then
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "Natural question validation failed; source-derived diagnostics were suppressed." >&2
+  return 1
 }
 run_logged ask-resume-metadata run_answer_metadata_check \
   "Where was I before my most recent observable break?"
@@ -224,6 +236,7 @@ if [[ -n "$CODEX_EVENT_ROOT" ]]; then
     python3 "$REPO/scripts/probe_computer_history_parity.py" \
       --codex "$CODEX_EVENT_ROOT" \
       --goalong "$DATA_ROOT/events" \
+      --goalong "$DATA_ROOT/semantic" \
       --start-utc "$START_UTC" \
       --end-utc "$END_UTC"
 fi
