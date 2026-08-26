@@ -230,9 +230,113 @@ class ComputerHistoryParityProbeTests(unittest.TestCase):
         result = self.run_probe()
         self.assertEqual(result.returncode, 1)
         report = json.loads(result.stdout)
-        self.assertEqual(report["result"], "observed_outside_tolerance")
-        self.assertEqual(report["comparison"]["click"]["status"], "outside_tolerance")
+        self.assertEqual(report["result"], "codex_evidence_missing_in_goalong")
+        self.assertEqual(
+            report["comparison"]["click"]["status"],
+            "missing_or_unmatched_goalong_evidence",
+        )
         self.assertNotEqual(report["result"], "exact")
+
+    def test_additional_goalong_context_passes_without_becoming_exact_parity(self) -> None:
+        self.write_rows(
+            self.codex,
+            [event("2026-08-24T10:00:02Z", "mouse_click")],
+        )
+        self.write_rows(
+            self.goalong,
+            [
+                event("2026-08-24T10:00:02Z", "mouseClick"),
+                event("2026-08-24T10:00:03Z", "windowChanged"),
+                event("2026-08-24T10:00:04Z", "focusChanged"),
+                event("2026-08-24T10:00:05Z", "urlChanged"),
+            ],
+        )
+        result = self.run_probe()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["result"], "goalong_at_least_codex")
+        self.assertEqual(report["comparison"]["click"]["status"], "within_tolerance")
+        for category in ("window", "focus", "url"):
+            self.assertEqual(
+                report["comparison"][category]["status"],
+                "additional_goalong_evidence",
+            )
+
+    def test_more_goalong_events_pass_only_when_they_cover_codex_timestamps(self) -> None:
+        self.write_rows(
+            self.codex,
+            [
+                event("2026-08-24T10:00:02Z", "mouse_click"),
+                event("2026-08-24T10:00:12Z", "mouse_click"),
+            ],
+        )
+        self.write_rows(
+            self.goalong,
+            [
+                event("2026-08-24T10:00:02Z", "mouseClick"),
+                event("2026-08-24T10:00:12Z", "mouseClick"),
+                event("2026-08-24T10:00:22Z", "mouseClick"),
+                event("2026-08-24T10:00:32Z", "mouseClick"),
+            ],
+        )
+        result = self.run_probe()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["result"], "goalong_at_least_codex")
+        self.assertEqual(
+            report["comparison"]["click"]["status"],
+            "goalong_additional_evidence",
+        )
+        self.assertEqual(report["comparison"]["click"]["paired_event_count"], 2)
+
+        self.write_rows(
+            self.goalong,
+            [
+                event("2026-08-24T10:00:02Z", "mouseClick"),
+                event("2026-08-24T10:00:22Z", "mouseClick"),
+                event("2026-08-24T10:00:32Z", "mouseClick"),
+            ],
+        )
+        missing = self.run_probe()
+        self.assertEqual(missing.returncode, 1, missing.stdout)
+        missing_report = json.loads(missing.stdout)
+        self.assertEqual(
+            missing_report["comparison"]["click"]["status"],
+            "missing_or_unmatched_goalong_evidence",
+        )
+
+    def test_one_goalong_event_cannot_match_multiple_codex_events(self) -> None:
+        self.write_rows(
+            self.codex,
+            [
+                event("2026-08-24T10:00:01Z", "mouse_click"),
+                event("2026-08-24T10:00:03Z", "mouse_click"),
+            ],
+        )
+        self.write_rows(
+            self.goalong,
+            [event("2026-08-24T10:00:02Z", "mouseClick")],
+        )
+        result = self.run_probe()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["comparison"]["click"]["paired_event_count"], 1)
+        self.assertEqual(report["comparison"]["click"]["codex_time_match_ratio"], 0.5)
+
+    def test_goalong_only_activity_cannot_establish_a_codex_baseline(self) -> None:
+        self.write_rows(self.codex, [])
+        self.write_rows(
+            self.goalong,
+            [event("2026-08-24T10:00:02Z", "mouseClick")],
+        )
+        result = self.run_probe()
+        self.assertEqual(result.returncode, 2, result.stdout)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["result"], "insufficient_coverage")
+        self.assertEqual(
+            report["comparison"]["click"]["status"],
+            "additional_goalong_evidence",
+        )
 
     def test_time_tolerance_is_applied_to_exact_event_timestamps(self) -> None:
         self.write_rows(

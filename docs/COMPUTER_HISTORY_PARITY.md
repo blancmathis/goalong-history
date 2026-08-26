@@ -738,6 +738,14 @@ reports how many dated entries were skipped. The validator requires
 input, Computer Use, or other automation cannot satisfy that attestation or support a
 live parity claim.
 
+Event timestamps are paired one-to-one within the configured tolerance, so one Goalong
+row cannot falsely cover several Codex rows. The oracle is intentionally directional:
+missing or unmatched Codex-classified evidence in Goalong fails; comparable counts and
+timestamps pass as `observed_within_tolerance`; and complete Codex coverage plus extra
+Goalong-classified context passes separately as `goalong_at_least_codex`. Goalong-only
+activity cannot establish a Codex baseline, explicit capture gaps remain insufficient,
+and extra evidence is not automatically claimed to be useful merely because it exists.
+
 Validation does not create a complete
 `YYYY-MM-DD.computer-history.json` artifact in its output directory. The transient CLI
 JSON is piped directly into the invariant checker over standard input and discarded. The
@@ -782,7 +790,7 @@ window list was verified, and more than 60 seconds elapsed.
 | transcript duplication check | zero files and zero bytes in `agent-activity/blobs`; durable Agent Activity files are the bounded index, configuration, one small wake-up signal, and an empty lock |
 | real French resume query | one current day reconstructed in 3.07 seconds; maximum RSS 83,361,792 bytes and physical footprint 74,842,712 bytes; 12 source-backed episode hits |
 | complete automated suite | 586 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
-| parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 18/18 metadata-probe tests passed; the validator also runs the 2 token-density/context-pack scenarios, the sleeping-versus-saturated kernel CPU sampler regression, and the offline local-signing policy; output contains metadata/checklists only |
+| parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 22/22 metadata-probe tests passed; the validator also runs the 2 token-density/context-pack scenarios, the sleeping-versus-saturated kernel CPU sampler regression, and the offline local-signing policy; output contains metadata/checklists only |
 
 An additional read-only development-source probe on 2026-08-26 reconstructed the real
 2026-08-25 day and rendered a 1,600-token pack without exposing its body: 1,553 approximate
@@ -794,9 +802,9 @@ source reconstruction plus rendering. This proves a bounded local projection and
 no-write read path; it does not prove that 1,600 tokens retain every useful semantic fact
 or that an arbitrary downstream model will interpret them correctly.
 
-The same 2026-08-26 source revision passed the complete Swift suite: 583 tests executed,
-3 expected environment-dependent skips, and 0 failures in 101.7 seconds. The focused
-validator also passed 9 causal-parity, 3 episode-quality, 2 context-density, 18 metadata-
+The same 2026-08-26 source revision passed the complete Swift suite: 586 tests executed,
+3 expected environment-dependent skips, and 0 failures in 96.6 seconds. The focused
+validator also passed 9 causal-parity, 3 episode-quality, 2 context-density, 22 metadata-
 probe, privacy-boundary, checker-regression, release CLI build, and four real local query
 checks without emitting history bodies.
 

@@ -13,7 +13,6 @@ identity, or human-origin input.
 from __future__ import annotations
 
 import argparse
-import bisect
 import datetime as dt
 import errno
 import hashlib
@@ -822,18 +821,34 @@ def read_source(
     return summary
 
 
-def timestamp_match_ratio(
+def timestamp_match_count(
     left: array[int], right: array[int], tolerance_ms: int
-) -> float:
-    if not left:
-        return 1.0 if not right else 0.0
+) -> int:
+    """Return the maximum ordered one-to-one matches within the time tolerance."""
+
+    ordered_left = sorted(left)
     ordered_right = sorted(right)
+    left_index = 0
+    right_index = 0
     matched = 0
-    for timestamp in left:
-        index = bisect.bisect_left(ordered_right, timestamp - tolerance_ms)
-        if index < len(ordered_right) and ordered_right[index] <= timestamp + tolerance_ms:
+    while left_index < len(ordered_left) and right_index < len(ordered_right):
+        left_timestamp = ordered_left[left_index]
+        right_timestamp = ordered_right[right_index]
+        if right_timestamp < left_timestamp - tolerance_ms:
+            right_index += 1
+        elif left_timestamp < right_timestamp - tolerance_ms:
+            left_index += 1
+        else:
             matched += 1
-    return matched / len(left)
+            left_index += 1
+            right_index += 1
+    return matched
+
+
+def timestamp_match_ratio(event_count: int, matched_count: int, other_count: int) -> float:
+    if event_count == 0:
+        return 1.0 if other_count == 0 else 0.0
+    return matched_count / event_count
 
 
 def compare_sources(
@@ -846,7 +861,9 @@ def compare_sources(
 ) -> tuple[str, dict[str, Any]]:
     tolerance_ms = time_tolerance_seconds * 1_000
     comparisons: dict[str, Any] = {}
-    observed_statuses: list[str] = []
+    codex_observed = False
+    has_additional_goalong_evidence = False
+    missing_goalong_evidence = False
     for category in CATEGORIES:
         codex_count = codex.category_counts[category]
         goalong_count = goalong.category_counts[category]
@@ -855,28 +872,45 @@ def compare_sources(
             absolute_count_tolerance,
             math.ceil(maximum_count * relative_count_tolerance),
         )
-        count_delta = abs(codex_count - goalong_count)
+        directional_count_delta = goalong_count - codex_count
+        count_delta = abs(directional_count_delta)
         codex_times = codex.category_timestamps_ms[category]
         goalong_times = goalong.category_timestamps_ms[category]
-        codex_match = timestamp_match_ratio(codex_times, goalong_times, tolerance_ms)
-        goalong_match = timestamp_match_ratio(goalong_times, codex_times, tolerance_ms)
+        paired_event_count = timestamp_match_count(codex_times, goalong_times, tolerance_ms)
+        codex_match = timestamp_match_ratio(codex_count, paired_event_count, goalong_count)
+        goalong_match = timestamp_match_ratio(goalong_count, paired_event_count, codex_count)
 
         if maximum_count == 0:
             status = "not_observed"
+        elif codex_count == 0:
+            status = "additional_goalong_evidence"
+            has_additional_goalong_evidence = True
         else:
+            codex_observed = True
             within = (
                 count_delta <= allowed_delta
                 and codex_match >= minimum_time_match_ratio
                 and goalong_match >= minimum_time_match_ratio
             )
-            status = "within_tolerance" if within else "outside_tolerance"
-            observed_statuses.append(status)
+            if within:
+                status = "within_tolerance"
+            elif (
+                goalong_count >= codex_count
+                and codex_match >= minimum_time_match_ratio
+            ):
+                status = "goalong_additional_evidence"
+                has_additional_goalong_evidence = True
+            else:
+                status = "missing_or_unmatched_goalong_evidence"
+                missing_goalong_evidence = True
         comparisons[category] = {
             "status": status,
             "codex_event_count": codex_count,
             "goalong_event_count": goalong_count,
             "count_delta": count_delta,
+            "goalong_minus_codex_event_count": directional_count_delta,
             "allowed_count_delta": allowed_delta,
+            "paired_event_count": paired_event_count,
             "codex_occupied_buckets": codex.occupied_bucket_count(category),
             "goalong_occupied_buckets": goalong.occupied_bucket_count(category),
             "codex_time_match_ratio": round(codex_match, 6),
@@ -888,12 +922,14 @@ def compare_sources(
         or not goalong.read_complete
         or codex.explicit_gap_events > 0
         or goalong.explicit_gap_events > 0
-        or not observed_statuses
+        or not codex_observed
     )
     if insufficient:
         overall = "insufficient_coverage"
-    elif any(status == "outside_tolerance" for status in observed_statuses):
-        overall = "observed_outside_tolerance"
+    elif missing_goalong_evidence:
+        overall = "codex_evidence_missing_in_goalong"
+    elif has_additional_goalong_evidence:
+        overall = "goalong_at_least_codex"
     else:
         overall = "observed_within_tolerance"
     return overall, comparisons
@@ -973,7 +1009,7 @@ def main(argv: list[str] | None = None) -> int:
         args.minimum_time_match_ratio,
     )
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "result": overall,
         "scope": {
             "start_utc": format_timestamp(start),
@@ -1004,7 +1040,7 @@ def main(argv: list[str] | None = None) -> int:
             "absolute_count_tolerance": args.absolute_count_tolerance,
             "relative_count_tolerance": args.relative_count_tolerance,
             "timestamp_resolution_milliseconds": 1,
-            "minimum_bidirectional_time_match_ratio": args.minimum_time_match_ratio,
+            "minimum_codex_coverage_time_match_ratio": args.minimum_time_match_ratio,
         },
         "sources": {"codex": codex.output(), "goalong": goalong.output()},
         "comparison": comparisons,
@@ -1012,6 +1048,9 @@ def main(argv: list[str] | None = None) -> int:
             "read_complete_within_probe_bounds describes source-file reads, not complete "
             "operating-system capture",
             "observed_within_tolerance is not exact parity or private implementation equivalence",
+            "goalong_at_least_codex means every classified Codex category met the one-way "
+            "coverage threshold while Goalong retained additional classified evidence; it is "
+            "not proof that every additional event is useful",
             "silence is not inferred to be a capture gap; only explicit gap events and "
             "read issues are counted",
             "semantic_after includes explicit after or settled semantic phases",
@@ -1020,9 +1059,9 @@ def main(argv: list[str] | None = None) -> int:
         ],
     }
     print(json.dumps(report, sort_keys=True, separators=(",", ":")))
-    if overall == "observed_within_tolerance":
+    if overall in ("observed_within_tolerance", "goalong_at_least_codex"):
         return 0
-    if overall == "observed_outside_tolerance":
+    if overall == "codex_evidence_missing_in_goalong":
         return 1
     return 2
 
