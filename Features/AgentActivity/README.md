@@ -174,7 +174,12 @@ JSON document is semantically parsed only when it is at most 8 MiB. A larger
 monolithic document can still be fingerprinted as available by a metadata-only
 background scan; when semantic analysis is requested it is reported as
 inaccessible/unanalyzed rather than shown with an empty analyzed summary.
-Changed append-only files are currently reread as streams; the optional index
+An already-indexed file that is still growing is left on its previous complete
+fingerprint until it has been quiet for two minutes, then reread once as a stream.
+This prevents a large active JSONL conversation from being rehashed in full at
+every 30-second metadata poll. New files, truncations, same-size replacements,
+forced reconciliation, direct reads, and explicit selected-day analysis bypass
+the delay. The settled source replaces the same index entry; the optional index
 offsets do not form a copied delta log.
 
 OpenCode is opened through a `mode=ro&immutable=1` SQLite URI with
@@ -212,8 +217,10 @@ changes are still found by bounded polling, with less immediate wake-up. The
 runtime applies a minimum 30-second poll interval even if an older configuration
 contains a smaller value.
 
-Startup, timer, and hook-signal background scans update metadata and
-fingerprints without building transcript-derived summaries. Selected-day
+Startup, timer, and hook-signal background scans update settled metadata and
+fingerprints without building transcript-derived summaries. A growing known file
+continues to be checked by metadata and is fingerprinted after the quiescence
+window above. Selected-day
 content analysis runs on demand while the Agent Activity section is visible or
 after an explicit refresh. Hiding the dashboard window clears the transient
 full summaries while retaining compact per-revision aggregate metrics and the

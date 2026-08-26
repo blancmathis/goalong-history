@@ -11,6 +11,7 @@ struct AgentScannerCycleMetrics: Equatable, Sendable {
     var sourceTraversalVisitCount = 0
     var indexWriteCount = 0
     var stoppedByBudget = false
+    var deferredGrowingSourceCount = 0
     var sourceBodyReadBytes: Int64 = 0
     var sourceBodyReadStopReason: AgentSourceBodyReadStopReason?
 }
@@ -62,6 +63,12 @@ public final class AgentActivityScanner: @unchecked Sendable {
     private static let maximumPendingDiscoveryBytes = 24 * 1_024 * 1_024
     private static let maximumPendingBodyDeadlineExhaustions = 2
     private static let maximumRootOpenAttemptsPerCycle = 32
+    /// Active JSONL transcripts can grow on every agent turn. Rehashing the entire file at
+    /// the 30-second metadata cadence makes background I/O proportional to transcript size
+    /// instead of new activity. Metadata polling remains live, but an already-indexed file
+    /// that only grew is read once it has been quiet long enough. Explicit analysis, new
+    /// sources, truncations, replacements, and forced reconciliation are never deferred.
+    static let growingSourceQuiescenceSeconds: TimeInterval = 2 * 60
 
     private let store: AgentActivityStore
     private let fileManager: FileManager
@@ -967,6 +974,21 @@ public final class AgentActivityScanner: @unchecked Sendable {
                         && analyzedEntryIDs.contains(previous.id)
                 } ?? false
             let needsBodyRead = !sameMetadata || rehashUnchanged || needsExplicitAnalysis
+            if needsBodyRead,
+                let previous,
+                shouldDeferGrowingSourceRead(
+                    candidate: candidate,
+                    previous: previous,
+                    analyzeContent: shouldAnalyzeContent,
+                    rehashUnchanged: rehashUnchanged,
+                    observedAt: observedAt
+                )
+            {
+                seenStableIDs.insert(previous.id)
+                result.skippedSourceCount += 1
+                metrics.deferredGrowingSourceCount += 1
+                continue
+            }
             if isSummaryRehydration {
                 let expectedBytes = max(candidate.byteCount ?? previous?.byteCount ?? 0, 0)
                 guard remainingSummaryRehydrations > 0,
@@ -1657,6 +1679,30 @@ public final class AgentActivityScanner: @unchecked Sendable {
             else { return false }
         }
         return true
+    }
+
+    private func shouldDeferGrowingSourceRead(
+        candidate: AgentSourceCandidate,
+        previous: AgentSourceIndexEntry,
+        analyzeContent: Bool,
+        rehashUnchanged: Bool,
+        observedAt: Date
+    ) -> Bool {
+        guard !analyzeContent, !rehashUnchanged,
+            candidate.reference.kind == .file,
+            previous.availability == .available,
+            let currentByteCount = candidate.byteCount,
+            currentByteCount > previous.byteCount,
+            let currentDevice = candidate.sourceDevice,
+            let currentInode = candidate.sourceInode,
+            previous.sourceDevice == currentDevice,
+            previous.sourceInode == currentInode,
+            let modifiedAt = candidate.sourceModifiedAt
+        else { return false }
+
+        let quietSeconds = observedAt.timeIntervalSince(modifiedAt)
+        return quietSeconds >= 0
+            && quietSeconds < Self.growingSourceQuiescenceSeconds
     }
 
     /// The persisted index uses ISO-8601 dates, whose Foundation encoder rounds

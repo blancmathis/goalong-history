@@ -496,6 +496,152 @@ final class AgentActivityScannerLoadTests: XCTestCase {
         XCTAssertEqual(restartedScanner.cycleMetricsForTesting().indexWriteCount, 1)
     }
 
+    func testGrowingIndexedSourceWaitsForQuiescenceThenRehashesOnceWithoutDuplication() throws {
+        let fileManager = FileManager.default
+        let fixtureRoot = fileManager.temporaryDirectory.appendingPathComponent(
+            "agent-scanner-growing-source-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let sourceRoot = fixtureRoot.appendingPathComponent("source", isDirectory: true)
+        let storeRoot = fixtureRoot.appendingPathComponent("store", isDirectory: true)
+        try fileManager.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: fixtureRoot) }
+
+        let source = sourceRoot.appendingPathComponent("session.jsonl")
+        let startedAt = Date(timeIntervalSince1970: 1_787_472_100)
+        let original = Data("{\"role\":\"user\",\"content\":\"first\"}\n".utf8)
+        let appended = Data("{\"role\":\"assistant\",\"content\":\"second\"}\n".utf8)
+        try original.write(to: source)
+        try fileManager.setAttributes([.modificationDate: startedAt], ofItemAtPath: source.path)
+
+        let folder = AgentWatchedFolder(
+            id: "growing-source",
+            displayName: "Custom",
+            path: sourceRoot.path,
+            provider: .custom
+        )
+        let configuration = AgentActivityConfiguration(watchedFolders: [folder])
+        let store = try AgentActivityStore(rootDirectory: storeRoot)
+        let scanner = AgentActivityScanner(store: store)
+        _ = scanner.scan(
+            configuration: configuration,
+            forceFullDiscovery: true,
+            analyzeContent: false,
+            at: startedAt
+        )
+        let originalEntry = try XCTUnwrap(store.entries(folderID: folder.id).first)
+
+        let handle = try FileHandle(forWritingTo: source)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: appended)
+        try handle.synchronize()
+        try handle.close()
+        let appendedAt = startedAt.addingTimeInterval(10)
+        try fileManager.setAttributes([.modificationDate: appendedAt], ofItemAtPath: source.path)
+
+        let active = scanner.scan(
+            configuration: configuration,
+            analyzeContent: false,
+            at: appendedAt.addingTimeInterval(30)
+        )
+        XCTAssertEqual(active.scannedSourceCount, 0)
+        XCTAssertEqual(active.changedSourceCount, 0)
+        XCTAssertEqual(scanner.cycleMetricsForTesting().sourceBodyReadCount, 0)
+        XCTAssertEqual(scanner.cycleMetricsForTesting().sourceBodyReadBytes, 0)
+        XCTAssertEqual(scanner.cycleMetricsForTesting().deferredGrowingSourceCount, 1)
+        XCTAssertEqual(scanner.cycleMetricsForTesting().indexWriteCount, 0)
+        XCTAssertEqual(store.entries(folderID: folder.id), [originalEntry])
+
+        let settled = scanner.scan(
+            configuration: configuration,
+            analyzeContent: false,
+            at: appendedAt.addingTimeInterval(
+                AgentActivityScanner.growingSourceQuiescenceSeconds + 1
+            )
+        )
+        XCTAssertEqual(settled.scannedSourceCount, 1)
+        XCTAssertEqual(settled.changedSourceCount, 1)
+        XCTAssertEqual(scanner.cycleMetricsForTesting().sourceBodyReadCount, 1)
+        XCTAssertEqual(
+            scanner.cycleMetricsForTesting().sourceBodyReadBytes,
+            Int64(original.count + appended.count)
+        )
+        XCTAssertEqual(scanner.cycleMetricsForTesting().deferredGrowingSourceCount, 0)
+        XCTAssertEqual(scanner.cycleMetricsForTesting().indexWriteCount, 1)
+        let updatedEntries = store.entries(folderID: folder.id)
+        XCTAssertEqual(updatedEntries.count, 1)
+        XCTAssertEqual(updatedEntries[0].id, originalEntry.id)
+        XCTAssertEqual(updatedEntries[0].byteCount, Int64(original.count + appended.count))
+        XCTAssertNotEqual(updatedEntries[0].sha256, originalEntry.sha256)
+
+        let warm = scanner.scan(
+            configuration: configuration,
+            analyzeContent: false,
+            at: appendedAt.addingTimeInterval(
+                AgentActivityScanner.growingSourceQuiescenceSeconds + 30
+            )
+        )
+        XCTAssertEqual(warm.scannedSourceCount, 0)
+        XCTAssertEqual(scanner.cycleMetricsForTesting().sourceBodyReadCount, 0)
+        XCTAssertEqual(scanner.cycleMetricsForTesting().indexWriteCount, 0)
+        XCTAssertEqual(store.entries(folderID: folder.id).count, 1)
+    }
+
+    func testExplicitAnalysisDoesNotWaitForGrowingSourceQuiescence() throws {
+        let fileManager = FileManager.default
+        let fixtureRoot = fileManager.temporaryDirectory.appendingPathComponent(
+            "agent-scanner-growing-explicit-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let sourceRoot = fixtureRoot.appendingPathComponent("source", isDirectory: true)
+        try fileManager.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: fixtureRoot) }
+
+        let source = sourceRoot.appendingPathComponent("session.jsonl")
+        let startedAt = Date(timeIntervalSince1970: 1_787_472_100)
+        try Data("{\"role\":\"user\",\"content\":\"first\"}\n".utf8).write(to: source)
+        try fileManager.setAttributes([.modificationDate: startedAt], ofItemAtPath: source.path)
+        let folder = AgentWatchedFolder(
+            id: "growing-explicit",
+            displayName: "Custom",
+            path: sourceRoot.path,
+            provider: .custom
+        )
+        let configuration = AgentActivityConfiguration(watchedFolders: [folder])
+        let store = try AgentActivityStore(
+            rootDirectory: fixtureRoot.appendingPathComponent("store", isDirectory: true)
+        )
+        let scanner = AgentActivityScanner(store: store)
+        _ = scanner.scan(
+            configuration: configuration,
+            forceFullDiscovery: true,
+            analysisDay: startedAt,
+            analyzeContent: false,
+            at: startedAt
+        )
+
+        let handle = try FileHandle(forWritingTo: source)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("{\"role\":\"assistant\",\"content\":\"second\"}\n".utf8))
+        try handle.synchronize()
+        try handle.close()
+        let appendedAt = startedAt.addingTimeInterval(10)
+        try fileManager.setAttributes([.modificationDate: appendedAt], ofItemAtPath: source.path)
+
+        let explicit = scanner.scan(
+            configuration: configuration,
+            analysisDay: startedAt,
+            analyzeContent: true,
+            at: appendedAt.addingTimeInterval(1)
+        )
+        XCTAssertEqual(explicit.scannedSourceCount, 1)
+        XCTAssertEqual(explicit.changedSourceCount, 1)
+        XCTAssertEqual(scanner.cycleMetricsForTesting().sourceBodyReadCount, 1)
+        XCTAssertEqual(scanner.cycleMetricsForTesting().deferredGrowingSourceCount, 0)
+        XCTAssertEqual(store.entries(folderID: folder.id).count, 1)
+        XCTAssertEqual(store.transientAnalysisCount(), 1)
+    }
+
     func testExplicitDayRepopulatesTransientAnalysisButWarmMetadataPollReadsNothing() throws {
         let fileManager = FileManager.default
         let fixtureRoot = fileManager.temporaryDirectory.appendingPathComponent(
