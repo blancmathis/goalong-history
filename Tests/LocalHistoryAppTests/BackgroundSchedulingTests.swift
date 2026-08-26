@@ -37,6 +37,44 @@
             )
         }
 
+        func testPeriodicRichContextBacksOffAtRestButStaysImmediateDuringWork() {
+            XCTAssertEqual(
+                ActivityAnalysisRuntime.nextRichContextInterval(
+                    configuredInterval: 15,
+                    idleSeconds: 2
+                ),
+                15
+            )
+            XCTAssertEqual(
+                ActivityAnalysisRuntime.nextRichContextInterval(
+                    configuredInterval: 15,
+                    idleSeconds: 20
+                ),
+                30
+            )
+            XCTAssertEqual(
+                ActivityAnalysisRuntime.nextRichContextInterval(
+                    configuredInterval: 15,
+                    idleSeconds: 90
+                ),
+                60
+            )
+            XCTAssertEqual(
+                ActivityAnalysisRuntime.nextRichContextInterval(
+                    configuredInterval: 15,
+                    idleSeconds: 600
+                ),
+                120
+            )
+            XCTAssertEqual(
+                ActivityAnalysisRuntime.nextRichContextInterval(
+                    configuredInterval: 500,
+                    idleSeconds: .infinity
+                ),
+                120
+            )
+        }
+
         func testKnownBrowserSkipsRedundantCapabilityTreeProbe() {
             XCTAssertTrue(
                 ContextProvider.shouldProbeBrowserCapability(
@@ -54,6 +92,37 @@
                 ContextProvider.shouldProbeBrowserCapability(
                     isKnownBrowser: false,
                     capturesURLs: false
+                )
+            )
+        }
+
+        func testFastInputPrivacySkipsBrowserChromeWalkForOrdinaryWebWrappers() {
+            XCTAssertFalse(
+                ContextProvider.shouldProbeWebPrivacyOnInput(
+                    isWebContainer: true,
+                    privateWindowCapable: false,
+                    hasDomainRules: false
+                )
+            )
+            XCTAssertTrue(
+                ContextProvider.shouldProbeWebPrivacyOnInput(
+                    isWebContainer: true,
+                    privateWindowCapable: true,
+                    hasDomainRules: false
+                )
+            )
+            XCTAssertTrue(
+                ContextProvider.shouldProbeWebPrivacyOnInput(
+                    isWebContainer: true,
+                    privateWindowCapable: false,
+                    hasDomainRules: true
+                )
+            )
+            XCTAssertFalse(
+                ContextProvider.shouldProbeWebPrivacyOnInput(
+                    isWebContainer: false,
+                    privateWindowCapable: true,
+                    hasDomainRules: true
                 )
             )
         }

@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import datetime as dt
+import importlib.util
 import json
 import os
 import pathlib
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -18,6 +21,12 @@ VALIDATOR = REPO / "scripts" / "validate_computer_history_parity.sh"
 START = "2026-08-24T10:00:00Z"
 END = "2026-08-24T10:01:00Z"
 SENSITIVE = "DO-NOT-EMIT-sensitive.example/private-transcript-body"
+
+PROBE_SPEC = importlib.util.spec_from_file_location("goalong_parity_probe", PROBE)
+assert PROBE_SPEC is not None and PROBE_SPEC.loader is not None
+PROBE_MODULE = importlib.util.module_from_spec(PROBE_SPEC)
+sys.modules[PROBE_SPEC.name] = PROBE_MODULE
+PROBE_SPEC.loader.exec_module(PROBE_MODULE)
 
 
 def event(timestamp: str, kind: str, **values: object) -> dict[str, object]:
@@ -196,6 +205,98 @@ class ComputerHistoryParityProbeTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertEqual(report["comparison"]["typing"]["status"], "within_tolerance")
 
+    def test_codex_editing_keys_are_not_overcounted_as_goalong_shortcuts(self) -> None:
+        self.write_rows(
+            self.codex,
+            [
+                event(
+                    "2026-08-24T10:00:02Z",
+                    "keyboardShortcut",
+                    keyboard={"keyEquivalent": "delete", "modifiers": ["option"]},
+                ),
+                event(
+                    "2026-08-24T10:00:04Z",
+                    "keyboardShortcut",
+                    keyboard={"keyEquivalent": "a", "modifiers": ["command"]},
+                ),
+            ],
+        )
+        self.write_rows(
+            self.goalong,
+            [event("2026-08-24T10:00:04.400Z", "keyboardShortcut")],
+        )
+        result = self.run_probe()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["sources"]["codex"]["categories"]["shortcut"]["event_count"], 1)
+        self.assertEqual(report["comparison"]["shortcut"]["status"], "within_tolerance")
+
+    def test_metadata_probe_accepts_verified_append_but_rejects_prefix_mutation(self) -> None:
+        limits = PROBE_MODULE.Limits(
+            max_bytes=1_024,
+            max_rows=10,
+            max_files=2,
+            max_line_bytes=256,
+            max_depth=2,
+            max_directory_entries=10,
+        )
+
+        def summary() -> object:
+            return PROBE_MODULE.SourceSummary(
+                label="fixture",
+                bucket_seconds=2,
+                interval_start_ms=0,
+                interval_end_ms=1_000,
+            )
+
+        self.codex.write_bytes(b"first\n")
+        append_summary = summary()
+        appended = False
+
+        def append_during_line(*_: object) -> None:
+            nonlocal appended
+            if appended:
+                return
+            appended = True
+            with self.codex.open("ab") as writer:
+                writer.write(b"second\n")
+
+        with self.codex.open("rb") as reader, mock.patch.object(
+            PROBE_MODULE, "process_line", side_effect=append_during_line
+        ):
+            PROBE_MODULE.stream_file(
+                reader.fileno(),
+                append_summary,
+                limits,
+                dt.datetime.fromtimestamp(0, tz=dt.timezone.utc),
+                dt.datetime.fromtimestamp(1, tz=dt.timezone.utc),
+            )
+        self.assertNotIn("source_changed_during_read", append_summary.issues)
+
+        self.codex.write_bytes(b"first\n")
+        mutation_summary = summary()
+        mutated = False
+
+        def mutate_during_line(*_: object) -> None:
+            nonlocal mutated
+            if mutated:
+                return
+            mutated = True
+            with self.codex.open("r+b") as writer:
+                writer.write(b"other\nsecond\n")
+
+        with self.codex.open("rb") as reader, mock.patch.object(
+            PROBE_MODULE, "process_line", side_effect=mutate_during_line
+        ):
+            PROBE_MODULE.stream_file(
+                reader.fileno(),
+                mutation_summary,
+                limits,
+                dt.datetime.fromtimestamp(0, tz=dt.timezone.utc),
+                dt.datetime.fromtimestamp(1, tz=dt.timezone.utc),
+            )
+        self.assertEqual(mutation_summary.issues["source_changed_during_read"], 1)
+
     def test_gap_and_malformed_row_make_coverage_insufficient(self) -> None:
         self.write_rows(
             self.codex,
@@ -214,6 +315,45 @@ class ComputerHistoryParityProbeTests(unittest.TestCase):
         self.assertEqual(report["result"], "insufficient_coverage")
         self.assertEqual(report["sources"]["codex"]["explicit_gap_events"], 1)
         self.assertEqual(report["sources"]["codex"]["issues"]["malformed_json"], 1)
+
+    def test_healthy_recorder_health_is_not_a_gap_but_observation_gap_is(self) -> None:
+        self.write_rows(
+            self.codex,
+            [event("2026-08-24T10:00:02Z", "mouse_click")],
+        )
+        self.write_rows(
+            self.goalong,
+            [
+                event("2026-08-24T10:00:01Z", "recorderHealth"),
+                event("2026-08-24T10:00:02Z", "mouseClick"),
+            ],
+        )
+        healthy = self.run_probe()
+        self.assertEqual(healthy.returncode, 0, healthy.stdout)
+        healthy_report = json.loads(healthy.stdout)
+        self.assertEqual(
+            healthy_report["sources"]["goalong"]["explicit_gap_events"],
+            0,
+        )
+
+        self.write_rows(
+            self.goalong,
+            [
+                event("2026-08-24T10:00:02Z", "mouseClick"),
+                event(
+                    "2026-08-24T10:00:03Z",
+                    "recorderHealth",
+                    metadata={"observation_gap": "true"},
+                ),
+            ],
+        )
+        gapped = self.run_probe()
+        self.assertEqual(gapped.returncode, 2, gapped.stdout)
+        gapped_report = json.loads(gapped.stdout)
+        self.assertEqual(
+            gapped_report["sources"]["goalong"]["explicit_gap_events"],
+            1,
+        )
 
     def test_mismatched_observations_are_outside_tolerance_not_exact(self) -> None:
         self.write_rows(

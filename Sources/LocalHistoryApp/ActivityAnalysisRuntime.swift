@@ -148,7 +148,13 @@
         private var lastSemanticCaptureDates: [String: Date] = [:]
         private var lastRichContextCapture = Date.distantPast
         private var interactionCaptureGeneration: UInt64 = 0
+        private var pendingSemanticCaptureCount = 0
         private var started = false
+        private let semanticCaptureQueue = DispatchQueue(
+            label: "ai.goalong.localhistory.semantic-capture",
+            qos: .utility
+        )
+        private static let maximumPendingSemanticCaptures = 2
         private let store = ActivityAnalysisStore()
         private let derivedWriteBarrier = DerivedHistoryWriteBarrier.shared
         private let analysisCycleService = ActivityAnalysisCycleService.shared
@@ -195,6 +201,7 @@
         }
 
         func stop() {
+            interactionCaptureGeneration &+= 1
             started = false
             richContextTimer?.invalidate()
             analysisTimer?.invalidate()
@@ -218,7 +225,7 @@
             guard !interactionID.isEmpty else { return }
             guard let snapshot = explicitContext ?? currentContext?() else { return }
             let budget = semanticBudget(for: phase)
-            _ = persistSemanticContext(
+            persistSemanticContext(
                 snapshot: snapshot,
                 maximumCharacters: budget.characters,
                 maximumNodes: budget.nodes,
@@ -249,7 +256,7 @@
                     now: now
                 ) else { return }
             }
-            _ = persistSemanticContext(
+            persistSemanticContext(
                 snapshot: snapshot,
                 maximumCharacters: 4_800,
                 maximumNodes: 180,
@@ -345,7 +352,7 @@
             else { return }
 
             lastRichContextCapture = now
-            _ = persistSemanticContext(
+            persistSemanticContext(
                 snapshot: snapshot,
                 maximumCharacters: 6_000,
                 maximumNodes: 260,
@@ -364,7 +371,13 @@
                 )
             else { return }
             let timer = Timer(
-                timeInterval: ActivityAnalysisPreferences.richContextIntervalSeconds,
+                timeInterval: Self.nextRichContextInterval(
+                    configuredInterval: ActivityAnalysisPreferences.richContextIntervalSeconds,
+                    idleSeconds: CGEventSource.secondsSinceLastEventType(
+                        .combinedSessionState,
+                        eventType: .null
+                    )
+                ),
                 repeats: false
             ) { [weak self] _ in
                 guard let self else { return }
@@ -390,14 +403,28 @@
             started && enabled
         }
 
-        @discardableResult
+        /// Event-driven AX observations and per-interaction settled captures remain
+        /// immediate. Only the periodic safety net backs off while the whole session is
+        /// idle, avoiding repeated tree walks over an unchanged complex application.
+        static func nextRichContextInterval(
+            configuredInterval: TimeInterval,
+            idleSeconds: TimeInterval
+        ) -> TimeInterval {
+            let base = min(120, max(8, configuredInterval))
+            let idle = max(0, idleSeconds.isFinite ? idleSeconds : 0)
+            if idle < 15 { return base }
+            if idle < 60 { return max(base, 30) }
+            if idle < 300 { return max(base, 60) }
+            return max(base, 120)
+        }
+
         private func persistSemanticContext(
             snapshot: ContextSnapshot,
             maximumCharacters: Int,
             maximumNodes: Int,
             deduplicate: Bool,
             metadata additionalMetadata: [String: String]
-        ) -> SemanticContextReference? {
+        ) {
             guard ActivityAnalysisPreferences.richContextEnabled,
                 let recorder,
                 let state,
@@ -411,23 +438,59 @@
                     processIdentifier: validatedSnapshot.app.processIdentifier
                 ),
                 application.isTerminated == false,
+                pendingSemanticCaptureCount < Self.maximumPendingSemanticCaptures
+            else { return }
+
+            let captureGeneration = interactionCaptureGeneration
+            let processIdentifier = validatedSnapshot.app.processIdentifier
+            pendingSemanticCaptureCount += 1
+            semanticCaptureQueue.async { [weak self] in
                 let capture = AXRichContextReader.capture(
-                    processIdentifier: validatedSnapshot.app.processIdentifier,
+                    processIdentifier: processIdentifier,
                     maximumCharacters: maximumCharacters,
                     maximumNodes: maximumNodes
-                ),
-                !IsSecureEventInputEnabled(),
-                let postCaptureSnapshot = currentContext?(),
-                Self.semanticBoundaryMatches(
-                    postCaptureSnapshot,
-                    expected: validatedSnapshot
                 )
-            else { return nil }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.pendingSemanticCaptureCount = max(
+                        0,
+                        self.pendingSemanticCaptureCount - 1
+                    )
+                    guard captureGeneration == self.interactionCaptureGeneration,
+                        self.started,
+                        let capture,
+                        !IsSecureEventInputEnabled(),
+                        let postCaptureSnapshot = self.currentContext?(),
+                        Self.semanticBoundaryMatches(
+                            postCaptureSnapshot,
+                            expected: validatedSnapshot
+                        )
+                    else { return }
+                    self.commitSemanticContext(
+                        capture,
+                        snapshot: postCaptureSnapshot,
+                        deduplicate: deduplicate,
+                        metadata: additionalMetadata,
+                        recorder: recorder
+                    )
+                }
+            }
+        }
 
-            let contextKey = Self.semanticContextKey(validatedSnapshot)
+        /// Commits only after the background AX traversal has crossed a fresh public
+        /// boundary check on the main queue. The expensive read never blocks input
+        /// ingestion, while persistence and deduplication remain serialized here.
+        private func commitSemanticContext(
+            _ capture: AXRichContextCapture,
+            snapshot: ContextSnapshot,
+            deduplicate: Bool,
+            metadata additionalMetadata: [String: String],
+            recorder: EventRecorder
+        ) {
+            let contextKey = Self.semanticContextKey(snapshot)
             if deduplicate {
                 guard lastRichContextFingerprints[contextKey] != capture.fingerprint else {
-                    return nil
+                    return
                 }
                 lastRichContextFingerprints[contextKey] = capture.fingerprint
                 if lastRichContextFingerprints.count > 256,
@@ -437,11 +500,11 @@
                 }
             }
 
-            guard let semanticContextStore else { return nil }
+            guard let semanticContextStore else { return }
             do {
                 let reference = try semanticContextStore.append(
                     capture: capture,
-                    context: validatedSnapshot
+                    context: snapshot
                 )
                 var metadata: [String: String] = [
                     ActivitySemanticMetadata.version: "4",
@@ -455,7 +518,7 @@
                 for (key, value) in additionalMetadata { metadata[key] = value }
                 recorder.record(
                     kind: .semanticSnapshot,
-                    context: validatedSnapshot,
+                    context: snapshot,
                     semanticContext: reference,
                     metadata: metadata
                 )
@@ -465,10 +528,8 @@
                 {
                     lastSemanticCaptureDates.removeValue(forKey: oldest)
                 }
-                return reference
             } catch {
                 Diagnostics.write("Semantic context persistence failed: \(error)")
-                return nil
             }
         }
 

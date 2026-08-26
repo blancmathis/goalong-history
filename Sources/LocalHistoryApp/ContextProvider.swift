@@ -241,18 +241,35 @@
                 return .excludedApplication
             }
 
-            var isBrowser = isBrowser(app: app, config: config)
             guard permissions.currentStatus.accessibility else {
-                return isBrowser ? .accessibilityUnavailable : nil
+                return .accessibilityUnavailable
             }
 
             let applicationElement = AXUIElementCreateApplication(runningApplication.processIdentifier)
             AXUIElementSetMessagingTimeout(applicationElement, 0.12)
+            if let focusedElement = AXReader.focusedElement(for: applicationElement),
+                AXReader.isSecureElement(focusedElement)
+            {
+                return .secureInput
+            }
+            let isWebContainer = isBrowser(app: app, config: config)
+            let hasDomainRules = !config.excludedDomains.isEmpty
+                || config.includedDomains?.isEmpty == false
+            let canUsePrivateWindows = isPrivateWindowCapableBrowser(
+                app: app,
+                config: config
+            )
+            guard Self.shouldProbeWebPrivacyOnInput(
+                isWebContainer: isWebContainer,
+                privateWindowCapable: canUsePrivateWindows,
+                hasDomainRules: hasDomainRules
+            ) else { return nil }
+
             guard let windowElement = AXReader.focusedWindow(for: applicationElement) else {
-                return isBrowser ? .accessibilityUnavailable : nil
+                return .accessibilityUnavailable
             }
 
-            let rawURL = config.captureURLs
+            let rawURL = hasDomainRules && config.captureURLs
                 ? AXReader.browserURL(
                     from: windowElement,
                     addressFieldMarkers: config.addressFieldMarkers,
@@ -260,35 +277,40 @@
                 )
                 : nil
 
-            if !isBrowser,
-                rawURL != nil || AXReader.containsWebArea(windowElement, maxNodes: 120)
-            {
-                isBrowser = true
-                rememberBrowser(app)
-            }
-            guard isBrowser else { return nil }
-
-            let sanitized = URLRedactor.sanitize(
-                rawURL,
-                redactAllQueryValues: config.redactAllURLQueryValues,
-                maxLength: config.maxStringLength
-            )
-            if !config.allowsWebsite(host: sanitized?.host) {
-                return .excludedDomain
+            if hasDomainRules {
+                let sanitized = URLRedactor.sanitize(
+                    rawURL,
+                    redactAllQueryValues: config.redactAllURLQueryValues,
+                    maxLength: config.maxStringLength
+                )
+                if !config.allowsWebsite(host: sanitized?.host) {
+                    return .excludedDomain
+                }
             }
 
-            var signals: [String?] = [
-                AXReader.string(windowElement, attribute: "AXTitle" as CFString),
-                AXReader.string(windowElement, attribute: "AXDescription" as CFString),
-                AXReader.string(windowElement, attribute: "AXSubrole" as CFString),
-            ]
-            signals.append(contentsOf: AXReader.browserChromeLabels(windowElement, limit: 20))
-
-            if PrivacyClassifier.containsPrivateMarker(in: signals, markers: config.privateWindowMarkers) {
-                return .privateBrowserWindow
+            if canUsePrivateWindows {
+                let signals: [String?] = [
+                    AXReader.string(windowElement, attribute: "AXTitle" as CFString),
+                    AXReader.string(windowElement, attribute: "AXDescription" as CFString),
+                    AXReader.string(windowElement, attribute: "AXSubrole" as CFString),
+                ]
+                if PrivacyClassifier.containsPrivateMarker(
+                    in: signals,
+                    markers: config.privateWindowMarkers
+                ) {
+                    return .privateBrowserWindow
+                }
             }
 
             return nil
+        }
+
+        static func shouldProbeWebPrivacyOnInput(
+            isWebContainer: Bool,
+            privateWindowCapable: Bool,
+            hasDomainRules: Bool
+        ) -> Bool {
+            isWebContainer && (privateWindowCapable || hasDomainRules)
         }
 
         func frontmostProcessIdentifier() -> pid_t? {
@@ -356,6 +378,26 @@
                 "zen browser", "dia", "sigmaos", "browser",
             ]
             return browserNameMarkers.contains { identity.contains($0) }
+        }
+
+        private func isPrivateWindowCapableBrowser(
+            app: AppSnapshot,
+            config: RecorderConfig
+        ) -> Bool {
+            if let bundleIdentifier = app.bundleIdentifier,
+                config.browserBundleIdentifiers.contains(bundleIdentifier)
+            {
+                return true
+            }
+            let identity = [app.name, app.bundleIdentifier ?? ""]
+                .joined(separator: " ")
+                .lowercased()
+            let markers = [
+                "safari", "chrome", "chromium", "firefox", "librewolf", "floorp",
+                "edge", "brave", "arc", "opera", "vivaldi", "orion", "duckduckgo",
+                "zen browser", "dia", "sigmaos", "browser",
+            ]
+            return markers.contains { identity.contains($0) }
         }
     }
 #endif

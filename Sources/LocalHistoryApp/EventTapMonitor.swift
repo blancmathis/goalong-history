@@ -596,8 +596,6 @@
         private var scrollInteractionID: String?
         private var scrollFirstSequence: UInt64?
         private var scrollFlushWorkItem: DispatchWorkItem?
-        private var typingAfterWorkItem: DispatchWorkItem?
-        private var scrollAfterWorkItem: DispatchWorkItem?
         private var typingSettledWorkItem: DispatchWorkItem?
         private var scrollSettledWorkItem: DispatchWorkItem?
         private var deferredSemanticCaptures: [UUID: DispatchWorkItem] = [:]
@@ -1074,17 +1072,19 @@
                 return
             }
 
-            // Every drained logical input gets one fresh privacy/context probe. Typing
-            // and scroll callbacks may be coalesced before this point, but neither they
-            // nor pointer gestures may reuse the last known-safe snapshot. This work is
-            // deliberately off the event-tap callback thread.
+            // The callback-time snapshot is immutable evidence for the observed action.
+            // Admission still requires the original public boundary, the same target PID,
+            // current Secure Input state, and a fresh bounded secure/private/domain probe.
+            // A complete AX tree walk here can starve the drain and lose the very actions
+            // it is meant to contextualize, so rich context is captured asynchronously.
             let frontmostPID = contextProvider.frontmostProcessIdentifier()
             guard input.targetIsRepresented(frontmostProcessIdentifier: frontmostPID) else {
                 privacyInputDropCount += input.occurrences
                 cancelOpenInteractionsForBoundary()
                 return
             }
-            guard let context = contextMonitor.sampleNow() else {
+
+            guard let context = input.observedContext else {
                 noteObservationGap(
                     count: input.occurrences,
                     firstObservedAt: input.observedAt,
@@ -1094,7 +1094,12 @@
                 cancelOpenInteractionsForBoundary()
                 return
             }
-            if let suppressionReason = context.suppressionReason {
+            guard context.app.processIdentifier == frontmostPID else {
+                privacyInputDropCount += input.occurrences
+                cancelOpenInteractionsForBoundary()
+                return
+            }
+            if let suppressionReason = contextProvider.fastSuppressionReason() {
                 privacyInputDropCount += input.occurrences
                 if suppressionReason == .secureInput {
                     suppressForSecureInput(using: context)
@@ -1103,24 +1108,7 @@
                 }
                 return
             }
-            if context.focusedElement?.isSecure == true {
-                suppressForSecureInput(using: context)
-                return
-            }
-            guard Self.ingressAgeIsAcceptable(observedAt: input.lastObservedAt) else {
-                staleInputDropCount += input.occurrences
-                noteObservationGap(
-                    count: input.occurrences,
-                    firstObservedAt: input.observedAt,
-                    lastObservedAt: input.lastObservedAt,
-                    reason: "stale_after_context_sample"
-                )
-                cancelOpenInteractionsForBoundary()
-                return
-            }
             resumeAfterSecureInputIfNeeded(using: context)
-            // `observedContext` is only a callback-time rejection signal above. It is
-            // never reused as interaction evidence after a fresh probe succeeds.
             let nearEventContext = context
             // A callback only proves healthy capture after it crosses the event-time
             // privacy, target and freshness gates above.
@@ -1134,9 +1122,9 @@
             case .leftMouseUp, .rightMouseUp, .otherMouseUp:
                 handleMouseUp(input: input, context: context)
             case .scrollWheel:
-                handleScroll(input: input, context: context, nearEventContext: nearEventContext)
+                handleScroll(input: input, context: context)
             case .keyDown:
-                handleKeyDown(input: input, context: context, nearEventContext: nearEventContext)
+                handleKeyDown(input: input, context: context)
             default:
                 break
             }
@@ -1175,10 +1163,6 @@
             typingFlushWorkItem = nil
             scrollFlushWorkItem?.cancel()
             scrollFlushWorkItem = nil
-            typingAfterWorkItem?.cancel()
-            typingAfterWorkItem = nil
-            scrollAfterWorkItem?.cancel()
-            scrollAfterWorkItem = nil
             typingSettledWorkItem?.cancel()
             typingSettledWorkItem = nil
             scrollSettledWorkItem?.cancel()
@@ -1222,14 +1206,8 @@
                 at: location,
                 expectedProcessIdentifier: context.app.processIdentifier
             )
-            // Classify the gesture only at mouse-up. AX is sampled after the callback
-            // leaves the event-tap thread, so this is deliberately `near_event`, not a
-            // claim that the application had not yet reacted to the input.
-            captureNearEvent(
-                interactionID: interactionID,
-                trigger: "pointer",
-                context: nearEventContext
-            )
+            // Classify the gesture only at mouse-up. The public context and actionable
+            // target are sampled after the callback leaves the event-tap thread.
             activeDragStates.removeValue(forKey: button)
             pointerDownStates[button] = PointerDownState(
                 interactionID: interactionID,
@@ -1402,8 +1380,7 @@
 
         private func handleScroll(
             input: EventTapPendingInput,
-            context: ContextSnapshot,
-            nearEventContext: ContextSnapshot
+            context: ContextSnapshot
         ) {
             flushTypingBurst()
             guard configManager.config.captureScroll else { return }
@@ -1415,15 +1392,6 @@
                 let interactionID = UUID().uuidString
                 scrollInteractionID = interactionID
                 scrollFirstSequence = input.sequence
-                captureNearEvent(
-                    interactionID: interactionID,
-                    trigger: "scroll",
-                    context: nearEventContext
-                )
-                scheduleScrollAfter(
-                    interactionID: interactionID,
-                    observedAt: input.observedAt
-                )
             }
 
             scrollContext = context
@@ -1450,8 +1418,7 @@
 
         private func handleKeyDown(
             input: EventTapPendingInput,
-            context: ContextSnapshot,
-            nearEventContext: ContextSnapshot
+            context: ContextSnapshot
         ) {
             flushScrollBurst()
             let flags = CGEventFlags(rawValue: input.flagsRawValue)
@@ -1461,11 +1428,6 @@
             if isShortcut, configManager.config.captureShortcuts {
                 flushTypingBurst()
                 let interactionID = UUID().uuidString
-                captureNearEvent(
-                    interactionID: interactionID,
-                    trigger: "shortcut",
-                    context: nearEventContext
-                )
                 let keyboard = KeyboardSnapshot(
                     category: "shortcut",
                     key: KeyDescriptor.name(for: input.keyCode),
@@ -1501,11 +1463,6 @@
                 flushTypingBurst()
                 guard configManager.config.captureKeyboardActivity else { return }
                 let interactionID = UUID().uuidString
-                captureNearEvent(
-                    interactionID: interactionID,
-                    trigger: "navigation_key",
-                    context: nearEventContext
-                )
                 let keyboard = KeyboardSnapshot(
                     category: "navigation",
                     key: specialKey,
@@ -1539,8 +1496,7 @@
                 count: input.occurrences,
                 startedAt: input.observedAt,
                 endedAt: input.lastObservedAt,
-                sequence: input.sequence,
-                nearEventContext: nearEventContext
+                sequence: input.sequence
             )
         }
 
@@ -1550,8 +1506,7 @@
             count: Int,
             startedAt: Date,
             endedAt: Date,
-            sequence: UInt64,
-            nearEventContext: ContextSnapshot
+            sequence: UInt64
         ) {
             if typingContext?.fingerprint != context.fingerprint,
                 typingCount > 0
@@ -1563,15 +1518,6 @@
                 let interactionID = UUID().uuidString
                 typingInteractionID = interactionID
                 typingFirstSequence = sequence
-                captureNearEvent(
-                    interactionID: interactionID,
-                    trigger: "typing",
-                    context: nearEventContext
-                )
-                scheduleTypingAfter(
-                    interactionID: interactionID,
-                    observedAt: startedAt
-                )
             }
             typingContext = context
             typingOrigin = mergeOrigin(typingOrigin, origin)
@@ -1688,31 +1634,12 @@
             scrollFirstSequence = nil
         }
 
-        private func captureNearEvent(
-            interactionID: String,
-            trigger: String,
-            context: ContextSnapshot
-        ) {
-            ActivityAnalysisRuntime.shared.captureInteractionContext(
-                interactionID: interactionID,
-                phase: ComputerHistoryMetadata.Phase.nearEvent,
-                trigger: trigger,
-                context: context
-            )
-        }
-
         private func captureAfter(
             interactionID: String,
             trigger: String,
             observedAt: Date
         ) {
             let elapsed = max(0, Date().timeIntervalSince(observedAt))
-            scheduleOwnedSemanticCapture(
-                interactionID: interactionID,
-                phase: ComputerHistoryMetadata.Phase.after,
-                trigger: trigger,
-                delay: max(0, 0.28 - elapsed)
-            )
             scheduleOwnedSemanticCapture(
                 interactionID: interactionID,
                 phase: ComputerHistoryMetadata.Phase.settled,
@@ -1751,50 +1678,6 @@
             deferredSemanticCaptureOrder.append(token)
             DispatchQueue.main.asyncAfter(
                 deadline: .now() + max(0, delay),
-                execute: workItem
-            )
-        }
-
-        private func scheduleTypingAfter(
-            interactionID: String,
-            observedAt: Date
-        ) {
-            typingAfterWorkItem?.cancel()
-            let elapsed = max(0, Date().timeIntervalSince(observedAt))
-            let boundaryGeneration = interactionBoundaryGeneration
-            let workItem = DispatchWorkItem { [weak self] in
-                guard self?.interactionBoundaryGeneration == boundaryGeneration else { return }
-                ActivityAnalysisRuntime.shared.captureInteractionContext(
-                    interactionID: interactionID,
-                    phase: ComputerHistoryMetadata.Phase.after,
-                    trigger: "typing"
-                )
-            }
-            typingAfterWorkItem = workItem
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + max(0, 0.28 - elapsed),
-                execute: workItem
-            )
-        }
-
-        private func scheduleScrollAfter(
-            interactionID: String,
-            observedAt: Date
-        ) {
-            scrollAfterWorkItem?.cancel()
-            let elapsed = max(0, Date().timeIntervalSince(observedAt))
-            let boundaryGeneration = interactionBoundaryGeneration
-            let workItem = DispatchWorkItem { [weak self] in
-                guard self?.interactionBoundaryGeneration == boundaryGeneration else { return }
-                ActivityAnalysisRuntime.shared.captureInteractionContext(
-                    interactionID: interactionID,
-                    phase: ComputerHistoryMetadata.Phase.after,
-                    trigger: "scroll"
-                )
-            }
-            scrollAfterWorkItem = workItem
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + max(0, 0.28 - elapsed),
                 execute: workItem
             )
         }

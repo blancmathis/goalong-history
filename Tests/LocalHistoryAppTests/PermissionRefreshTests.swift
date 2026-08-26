@@ -61,6 +61,27 @@
             )
         }
 
+        func testFunctionalProbeAcceptsBoundedFrontmostAppFallback() {
+            XCTAssertTrue(
+                PermissionManager.functionalProbeIsUsable(
+                    systemWideReadable: true,
+                    frontmostApplicationReadable: false
+                )
+            )
+            XCTAssertTrue(
+                PermissionManager.functionalProbeIsUsable(
+                    systemWideReadable: false,
+                    frontmostApplicationReadable: true
+                )
+            )
+            XCTAssertFalse(
+                PermissionManager.functionalProbeIsUsable(
+                    systemWideReadable: false,
+                    frontmostApplicationReadable: false
+                )
+            )
+        }
+
         func testCaptureHealthSkipsUnchangedPermissionBooleans() throws {
             let manager = PermissionManager(statusProbe: { self.healthyStatus })
             let directory = FileManager.default.temporaryDirectory

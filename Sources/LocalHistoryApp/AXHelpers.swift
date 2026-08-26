@@ -141,6 +141,15 @@
             )
         }
 
+        /// Minimal secure-field check for the input fast path. It reads only fixed
+        /// AX role/protection attributes and never reads the control value.
+        static func isSecureElement(_ element: AXUIElement) -> Bool {
+            let role = string(element, attribute: AXAttribute.role)
+            let subrole = string(element, attribute: AXAttribute.subrole)
+            return bool(element, attribute: AXAttribute.protectedContent) == true
+                || isSecure(role: role, subrole: subrole)
+        }
+
         static func browserChromeLabels(_ window: AXUIElement, limit: Int = 160) -> [String?] {
             var output: [String?] = []
             var queue: [AXUIElement] = [window]

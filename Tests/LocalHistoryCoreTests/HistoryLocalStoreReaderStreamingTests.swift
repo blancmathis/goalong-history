@@ -542,6 +542,90 @@ final class HistoryLocalStoreReaderStreamingTests: XCTestCase {
         XCTAssertEqual(lines, ["first"])
     }
 
+    func testStreamingReaderAcceptsVerifiedAppendOnlyGrowthFromThePinnedPrefix() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "goalong-reader-verified-live-append-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        let file = root.appendingPathComponent("live.jsonl")
+        try Data("first\n".utf8).write(to: file)
+
+        var appended = false
+        var lines: [String] = []
+        let metrics = try HistoryJSONLinesStreamReader(chunkSize: 4).read(
+            file: file,
+            allowVerifiedAppendOnlyGrowth: true,
+            onLine: { line, _ in
+                lines.append(String(decoding: line, as: UTF8.self))
+                guard !appended else { return }
+                appended = true
+                let writer = try! FileHandle(forWritingTo: file)
+                try! writer.seekToEnd()
+                try! writer.write(contentsOf: Data("second\n".utf8))
+                try! writer.close()
+            },
+            onOversizedLine: { _, _ in }
+        )
+
+        XCTAssertTrue(appended)
+        XCTAssertFalse(metrics.sourceChangedDuringRead)
+        XCTAssertEqual(lines, ["first"])
+
+        var nextLines: [String] = []
+        let nextMetrics = try HistoryJSONLinesStreamReader(chunkSize: 4).read(
+            file: file,
+            allowVerifiedAppendOnlyGrowth: true,
+            onLine: { line, _ in
+                nextLines.append(String(decoding: line, as: UTF8.self))
+            },
+            onOversizedLine: { _, _ in }
+        )
+        XCTAssertFalse(nextMetrics.sourceChangedDuringRead)
+        XCTAssertEqual(nextLines, ["first", "second"])
+    }
+
+    func testStreamingReaderStillRejectsPrefixMutationFollowedByGrowth() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "goalong-reader-mutated-prefix-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        let file = root.appendingPathComponent("live.jsonl")
+        try Data("first\n".utf8).write(to: file)
+
+        var changed = false
+        var lines: [String] = []
+        let metrics = try HistoryJSONLinesStreamReader(chunkSize: 4).read(
+            file: file,
+            allowVerifiedAppendOnlyGrowth: true,
+            onLine: { line, _ in
+                lines.append(String(decoding: line, as: UTF8.self))
+                guard !changed else { return }
+                changed = true
+                let writer = try! FileHandle(forUpdating: file)
+                try! writer.seek(toOffset: 0)
+                try! writer.write(contentsOf: Data("other\nsecond\n".utf8))
+                try! writer.close()
+            },
+            onOversizedLine: { _, _ in }
+        )
+
+        XCTAssertTrue(changed)
+        XCTAssertTrue(metrics.sourceChangedDuringRead)
+        XCTAssertEqual(lines, ["first"])
+    }
+
     func testComputerHistoryEvidenceRejectsAnAtomicallyReplacedSourceDay() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -1027,7 +1111,7 @@ final class HistoryLocalStoreReaderStreamingTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: eventSourceURL), eventSourceBytesBefore)
     }
 
-    func testComputerHistoryEvidenceRejectsAnEventSourceChangedDuringLaterSemanticRead()
+    func testComputerHistoryEvidenceAcceptsAnEventSourceAppendedDuringLaterSemanticRead()
         throws
     {
         let root = FileManager.default.temporaryDirectory
@@ -1111,26 +1195,28 @@ final class HistoryLocalStoreReaderStreamingTests: XCTestCase {
             )
 
         XCTAssertTrue(appendedDuringSemanticRead)
-        XCTAssertTrue(loaded.metrics.sourceChangedDuringRead)
+        XCTAssertFalse(loaded.metrics.sourceChangedDuringRead)
         XCTAssertFalse(loaded.metrics.sourceAccessWasIncomplete)
         XCTAssertFalse(loaded.metrics.wasCancelled)
-        XCTAssertEqual(loaded.events, [])
-        XCTAssertEqual(loaded.semanticSnapshots, [:])
-        XCTAssertEqual(loaded.metrics.retainedEventCount, 0)
-        XCTAssertEqual(loaded.metrics.retainedSemanticSnapshotCount, 0)
-        XCTAssertEqual(loaded.sourceJournalSummary.eventCount, 0)
-        XCTAssertTrue(
-            loaded.issues.contains {
-                $0.path == eventSourceURL.path
-                    && $0.message.contains("changed after its initial read")
-                    && $0.message.contains("whole-day projection was rejected")
-            }
+        XCTAssertEqual(loaded.events.map(\.id), [event.id])
+        XCTAssertEqual(loaded.semanticSnapshots, [semantic.id: semantic])
+        XCTAssertEqual(loaded.metrics.retainedEventCount, 1)
+        XCTAssertEqual(loaded.metrics.retainedSemanticSnapshotCount, 1)
+        XCTAssertEqual(loaded.sourceJournalSummary.eventCount, 1)
+        XCTAssertFalse(
+            loaded.issues.contains { $0.path == eventSourceURL.path }
         )
         XCTAssertEqual(
             try Data(contentsOf: eventSourceURL),
             originalEventBytes + appendedEventBytes
         )
         XCTAssertEqual(try Data(contentsOf: semanticSourceURL), semanticBytes)
+
+        let nextLoad = HistoryLocalStoreReader(rootDirectory: root)
+            .loadComputerHistoryEvidence(start: dayStart, endExclusive: dayEnd)
+        XCTAssertFalse(nextLoad.metrics.sourceChangedDuringRead)
+        XCTAssertEqual(Set(nextLoad.events.map(\.id)), Set([event.id, appendedEvent.id]))
+        XCTAssertEqual(nextLoad.events.count, 2)
     }
 
     func testComputerHistoryEvidenceRejectsTheWholeDayForMalformedEventJSONL() throws {

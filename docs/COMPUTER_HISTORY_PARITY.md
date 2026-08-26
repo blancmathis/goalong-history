@@ -57,7 +57,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 
 | Publicly observable capability | Goalong behavior | Current proof boundary |
 | --- | --- | --- |
-| clicks, grouped typing, shortcuts, scrolling, app/window/site context | one local input pipeline with event-time, near-event, after, and settled observations | deterministic capture tests and one 398-second physical interval pass the causal 80% threshold; that pre-fix interval still contains explicit gaps, so a gap-free post-fix physical run is not proved |
+| clicks, grouped typing, shortcuts, scrolling, app/window/site context | one local input pipeline with event-time action metadata plus bounded asynchronous settled/observer context | deterministic capture tests pass; an exact-final-build 69-second physical run retained 42 causal interactions with 90.5% settled semantic coverage, matched every Codex-classified bucket and reported zero explicit gaps |
 | searchable chronology and local memories | causal episodes plus exact coverage totals and a bounded representative projection | parity/evidence/storage tests and installed UI inspection pass |
 | compact evidence for a later agent | deterministic on-demand evidence pack with exact totals, distributed high-value episodes, causal changes, and deduplicated source locators | unit evals and a real read-only day probe enforce token bounds and measure evidence slots per approximate token; no LLM runs in the capture loop |
 | resume after a break and summarize recent work | intent-aware local search over causal episodes, including French resume phrasing and explicit today/yesterday/week scoping | English/French query tests and real local source-query measurements pass |
@@ -84,8 +84,11 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | The optional Codex Markdown mirror could exceed 2 MB for one busy day and the ChatGPT recap could repeat the same causal text in its legacy minute digest. | The mirror now uses a deterministic 3,000-token ceiling, the on-demand agent pack accepts an 800–12,000-token budget, sources are aliased once, and a recap with causal history keeps only complementary duration aggregates from the legacy view. |
 | A compact episode retained only representative provenance, so deleting one visible summary would otherwise require an unsafe broad interval clear. | Explicit item deletion re-reads the original local journal on demand, rebuilds complete episode provenance, removes only the resolved event IDs and linked semantic snapshot IDs, invalidates only the affected day’s derived files, and records a continuity boundary while preserving seals, receipts, Screen Time and Agent Activity. |
 | An already indexed agent transcript that was still growing could be re-hashed in full on every 30-second metadata poll. | Background scans retain the prior complete fingerprint while the same inode grows, then perform one streaming re-hash after two minutes of quiescence. New files, truncation, replacement, forced reconciliation, explicit analysis, and direct reads bypass the delay. No body, version, or snapshot is persisted. |
-| A privacy, stale-input, or context boundary cancelled the open interaction and also emptied every later queued callback; those defensive discards were then mislabeled as `bounded_ingress_overflow`, amplifying one boundary into hundreds of apparent losses. | Boundaries still cancel every open burst, gesture, and deferred semantic capture, but later queued inputs remain bounded and independently repeat event-time privacy, target, fresh-context, protected-control, and freshness checks. Only a proven capacity overflow discards the remaining queue and records `bounded_ingress_overflow`. |
+| A privacy, stale-input, or context boundary cancelled the open interaction and also emptied every later queued callback; those defensive discards were then mislabeled as `bounded_ingress_overflow`, amplifying one boundary into hundreds of apparent losses. | Boundaries still cancel every open burst, gesture, and deferred semantic capture, but later queued inputs remain bounded and independently repeat event-time privacy, target, protected-control, private-window/domain, and freshness checks. Only a proven capacity overflow discards the remaining queue and records `bounded_ingress_overflow`. |
 | A missing explicit `before` snapshot left many otherwise continuous interactions context-poor, and the validator compared provider-specific raw row counts one-to-one. | The prior settled outcome becomes the next eligible interaction's bounded before-state without another AX read; app switches may carry the last chronological public state but never cross a continuity/privacy barrier or browser-host boundary. Physical comparison uses bounded occupied time buckets and numeric burst spans, while raw row counts remain informational. |
+| The first callback of an interaction synchronously traversed Accessibility up to three times (`near_event`, `after`, and `settled`) on the main queue, so a slow application could age later callbacks out of the bounded ingress window. | Event-time action metadata remains immediate; rich AX traversal runs on one in-process utility queue with at most two admitted captures, is invalidated across stop/clear generations, and crosses a fresh public-boundary check before commit. Physical interactions request one full `settled` state after inactivity, while debounced AXObserver and periodic observations retain intervening semantic evidence. No helper process or durable queue is added. |
+| Every drained input also forced a complete foreground context sample; Electron web wrappers such as WhatsApp could be mistaken for full browsers and repeatedly walk browser chrome before the next callback was admitted. | The immutable callback-time public context is accepted only while its PID remains frontmost. Admission separately rechecks global Secure Input, the focused protected-control state, app exclusions, and private-window/domain policy. Ordinary web wrappers skip browser-chrome traversal; configured or recognizable browsers retain the browser privacy probe. |
+| The periodic semantic fallback walked a complex but unchanged foreground AX tree every 15 seconds, creating regular CPU spikes even while the user was idle. | Actions and AXObserver notifications remain immediate. Only the fallback adapts to whole-session idle time: configured cadence while active, then 30, 60, and at most 120 seconds. This changes no durable schema and wakes less when no new user evidence can exist. |
 
 The raw Goalong event and semantic journals remain the authoritative evidence.
 Compaction changes only derived storage and search working sets; it does not
@@ -98,7 +101,7 @@ With **Full Computer History context** enabled, Goalong History can reconstruct:
 - the ordered stream of clicks, grouped typing, shortcuts, navigation keys, scrolling,
   app changes, windows, pages, and focused controls;
 - bounded semantic state observed chronologically before an interaction when available,
-  near the event, shortly after it, and after the UI has settled;
+  by debounced AX notifications during work, and once after the UI has settled;
 - visible changes caused by the interaction without reconstructing ordinary characters
   from keyboard keycodes;
 - task-shaped work episodes rather than one representative event per minute;
@@ -135,7 +138,7 @@ CGEventTap + NSWorkspace + AXObserver + foreground polling
              privacy-aware context sampler
                          │
                          ▼
- prior observation → input action + near-event → after → settled
+ prior observation → input action → asynchronous settled/AX observation
                          │
                          ▼
            ComputerHistoryInteractionBuilder
@@ -191,6 +194,12 @@ scroll burst receives an interaction identifier. Semantic observations use these
 - `after` — broader state shortly after the action;
 - `settled` — full bounded state after the UI has had time to settle.
 
+The reader keeps all four phase labels for backward compatibility and direct-source
+analysis. Current physical-input capture emits one linked `settled` snapshot per quiet
+interaction instead of synchronously walking AX at `near_event` and `after`. This removes
+redundant reads from the latency-critical path; event-driven and periodic observations
+still supply chronological public state between interactions.
+
 When no explicit chronological `before` exists, the interaction builder may use the
 nearest earlier eligible observation from the same application or the bounded settled
 outcome of the prior interaction on the same resource. An application switch may use the
@@ -199,8 +208,8 @@ cross a suppression/integrity boundary, a browser-host boundary, or the 64-candi
 carry-forward bound. A delayed callback can never masquerade as a causal pre-state, and
 the fallback performs no new Accessibility read.
 
-The budgets are intentionally phase-aware so full analysis does not make the event tap
-unresponsive:
+The supported budgets remain phase-aware. Rich traversal itself runs outside the input
+queue, with at most two captures admitted across running and queued work:
 
 | Phase | Maximum characters | AX nodes |
 |---|---:|---:|
@@ -849,32 +858,50 @@ necessary for those claims.
 ### Current installed verification
 
 The final source installation measured on 2026-08-26 is Goalong History `0.5.1`
-build `20260826.144939`, signed by `Apple Development: mathis-blanc@hotmail.fr
+build `20260826.191824`, signed by `Apple Development: mathis-blanc@hotmail.fr
 (M6Y4HJP9L3)` with Team `2L5SSLPX46` and CDHash
-`6f0d7d4065d79f92d173692aa1ae4a526268d33c`. The exact installed identity reports
+`90da90fdc3bb5eff9cbfc5cfc6c564cece7c8c9c`. The exact installed identity reports
 Accessibility preflight/functional probe and Input Monitoring preflight all true, with
 the event tap in `createdEnabled` state.
 
+The final reader additionally treats a live JSONL as a pinned prefix: when the same inode
+grows, Goalong hashes the exact prefix it consumed and accepts it only if those bytes are
+unchanged. The next read sees the appended rows. Replacement, truncation, in-place prefix
+mutation, symlinks, and inaccessible paths still fail closed. This lets the dashboard,
+causal query, raw fallback, and metadata-only parity probe read an active recorder without
+copying the journal or waiting for a quiet window.
+
 | Surface | Current measured result |
 | --- | --- |
-| complete source-installer suite | 613 tests, 3 expected environment-dependent skips, 0 failures; source, staged, and installed bundles each passed signature and privacy validation |
+| complete source-installer suite | 619 tests, 3 expected environment-dependent skips, 0 failures; source, staged, and installed bundles each passed signature and privacy validation |
 | background CPU, 600 one-second kernel-delta samples | median 0.000%, p95 0.696%, maximum 10.839%; 0 samples exceeded 15% |
 | closed-window memory | macOS physical footprint 40,535,048 bytes (38.7 MiB); lifetime physical peak 81,232,832 bytes (77.5 MiB); raw resident size median 72,784 KiB, p95 74,128 KiB, maximum 74,176 KiB |
 | ten-minute process activity | one process, 0 child/helper; 1,376,256 bytes read, 155,648 bytes written; 21 idle and 104 interrupt wakeups |
 | ten-minute logical storage growth | seals +10,769 bytes; Computer History, events, semantic, analysis, memories, Agent Activity, and Screen Time each +0 bytes |
 | direct-source Agent Activity | 797 entries / 778,752 bytes: Codex 782, Claude Code 1, OpenCode 14; one bounded Codex slice and the Claude source matched their stored hashes when reread from the original files, and all 14 OpenCode opaque locators resolved from SQLite in read-only/query-only mode with 0 changes |
 | transcript duplication check | no persisted body-like keys in the live index, index bytes and modification time unchanged during direct reads, and zero `agent-activity/blobs` directories |
-| controlled physical interval | 398 seconds, 599 source events, 282 actions/interactions, 226 semantic pairs (80.1%), 35 episodes, 14 resources, one workflow and one suggestion; all invariant and natural-question checks passed |
-| provider-granularity probe | typing covered 83.3% of Codex occupied buckets and passed as additional Goalong evidence; window context covered 85.7%; click 73.1% and shortcut 50.0% remained below threshold |
-| explicit physical gaps | 29 old-build gap rows keep the physical probe at `insufficient_coverage`; the installed queue fix prevents a defensive boundary from cascading into a false overflow, but no new gap-free physical interval has yet exercised that exact build |
-| real installed runtime/UI boundary | the signed bundle launched with one healthy process and a CoreGraphics-owned Goalong layer-zero thumbnail; Computer Use returned `cgWindowNotFound`, so the current build's full dashboard was not visually re-inspected and no UI claim is inferred from process liveness |
+| controlled physical interval on the exact final build | 69 seconds of physical input in a public browser surface produced 92 Goalong rows, 42 causal interactions, 38 settled semantic pairs (90.5%), 3 episodes and 4 reopenable resources; all causal invariants passed and neither provider reported an explicit gap or read issue |
+| provider-granularity probe | `goalong_at_least_codex`; Goalong matched all Codex-classified click, typing, shortcut and window buckets within tolerance, while additionally retaining scroll, URL, focus, application and settled-semantic evidence. Both bounded source reads were complete and metadata-only. |
+| active-source concurrency | a causal query and the metadata-only provider probe both completed while Goalong continued appending; tests prove the first pass returns one stable prefix, the next pass sees the append exactly once, and prefix mutation plus growth is rejected |
+| real installed runtime/UI boundary | one signed process, healthy real callbacks, and the full Computer History view were observed: 583 episodes, 3,274 interactions, 54 source links, 47% paired semantic states, 118 completion signals, 174 unfinished/blocked/waiting episodes, 8 workflow suggestions, and 1,217 explicit coverage gaps |
+| direct dashboard reader on the live root | fresh snapshot; 7,889 retained events, 298 active minutes, 17 applications, 96 timeline buckets, 0 partial sources and 0 budget failures; 4,407,226 cached estimated bytes plus 1,198,678 derived estimated bytes |
+| final ingress optimization | physical WhatsApp stress exposed stale AX backlog boundaries. The final build uses callback-time public context only while the PID remains frontmost, performs targeted fresh secure/private/domain checks, skips browser-chrome traversal for ordinary web wrappers, runs rich AX traversal on a bounded two-slot utility queue, and records one settled state per quiet interaction. The exact-build physical rerun observed typing, a shortcut, navigation input, clicks/drags and eight scroll bursts with 15 settled-semantic rows and zero explicit gap events. |
+
+The 600-second closed-window CPU, memory, process, and storage rows above were collected
+on the earlier installed build `20260826.144939`. Later changes affect on-demand,
+read-only source readers plus the active-input burst path; they do not add a background
+process, polling loop, or durable store. That long sampler was not repeated after the final
+install. On the final reader source, the verified 17-second causal query plus invariant
+checker completed in 3.92 seconds with a 33,488,896-byte maximum resident set and left the
+Agent Activity index size and modification time unchanged; this is foreground query
+evidence, not a replacement for the closed-window background sample.
 
 The strict validator passed 9 causal-parity scenarios, 3 episode-quality scenarios,
-2 token-density scenarios, the privacy audit, causal invariant checker, 25 metadata-probe
+2 token-density scenarios, the privacy audit, causal invariant checker, 28 metadata-probe
 tests, runtime sampler tests, signing policy, Release CLI build, and all four real local
-questions. It then returned `insufficient_coverage` only at the physical metadata probe,
-where both source reads were complete and issue-free but the 29 pre-fix Goalong gaps were
-still correctly counted.
+questions. The earlier broad physical interval remains documented because it contains 29
+pre-fix gaps; the exact final build's 69-second physical rerun passed without an explicit
+gap, so the ingress optimization is now observed as well as deterministic.
 
 ### Earlier optimization baseline
 
@@ -931,12 +958,12 @@ seconds.
 
 That earlier build initially reported the TCC preflights as unavailable; the signed
 reinstallation documented in the current snapshot above now reports all three checks true
-and the event tap enabled. The completed physical interval proves current-day causal
-analysis and real input on the prior signed build, while the deterministic tests prove the
-new carry-forward and queue behavior. It does **not** prove a gap-free physical interval
-on build `20260826.144939`, complete third-party Accessibility quality, or a current visual
-dashboard inspection. Those claims remain gated on the controlled real-input checklist
-below and a functioning UI inspection surface.
+and the event tap enabled. The exact-final-build physical interval proves gap-free capture
+for the tested public browser workflow and observes the new bounded queue behavior. It
+does **not** prove complete Accessibility quality across every third-party application,
+every browser's private-mode signal, or a visual dashboard inspection on this exact final
+bundle. Those broader claims remain gated on the controlled real-input checklist below
+and a functioning UI inspection surface.
 
 ## Real-session proof boundary
 

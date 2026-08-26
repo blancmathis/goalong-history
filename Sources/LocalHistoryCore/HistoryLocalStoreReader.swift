@@ -268,15 +268,100 @@ private struct HistoryPinnedRegularFileIdentity: Equatable {
     }
 
     func matches(_ value: stat) -> Bool {
-        (value.st_mode & S_IFMT) == S_IFREG
-            && value.st_dev == device
-            && value.st_ino == inode
+        matchesPathIdentity(value)
             && value.st_size == size
             && value.st_mtimespec.tv_sec == modificationSeconds
             && value.st_mtimespec.tv_nsec == modificationNanoseconds
             && value.st_ctimespec.tv_sec == changeSeconds
             && value.st_ctimespec.tv_nsec == changeNanoseconds
     }
+
+    func matchesPathIdentity(_ value: stat) -> Bool {
+        (value.st_mode & S_IFMT) == S_IFREG
+            && value.st_dev == device
+            && value.st_ino == inode
+    }
+}
+
+private struct HistoryPinnedFileView: Equatable {
+    let identity: HistoryPinnedRegularFileIdentity
+    let prefixByteCount: Int64
+    let prefixFingerprint: String
+    let permitsVerifiedAppendOnlyGrowth: Bool
+}
+
+/// A constant-memory digest of fixed-size source blocks. It is used only when
+/// a pinned JSONL grows during a read, so an append can be distinguished from
+/// an in-place edit without copying the source or retaining its contents.
+private struct HistorySourcePrefixFingerprint {
+    private static let blockSize = 64 * 1_024
+    private var pending = Data()
+    private var rolling = Data(repeating: 0, count: 32)
+    private var byteCount: UInt64 = 0
+
+    mutating func append(_ data: Data) {
+        byteCount += UInt64(data.count)
+        var cursor = data.startIndex
+        while cursor < data.endIndex {
+            let available = Self.blockSize - pending.count
+            let end = data.index(
+                cursor,
+                offsetBy: min(available, data.distance(from: cursor, to: data.endIndex))
+            )
+            pending.append(contentsOf: data[cursor..<end])
+            cursor = end
+            if pending.count == Self.blockSize {
+                fold(pending)
+                pending.removeAll(keepingCapacity: true)
+            }
+        }
+    }
+
+    mutating func finalize() -> String {
+        if !pending.isEmpty {
+            fold(pending)
+            pending.removeAll(keepingCapacity: false)
+        }
+        var material = Data("LH-SOURCE-PREFIX-V1\0".utf8)
+        material.append(rolling)
+        var length = byteCount.bigEndian
+        withUnsafeBytes(of: &length) { material.append(contentsOf: $0) }
+        return SHA256Digest.hashHex(material)
+    }
+
+    private mutating func fold(_ block: Data) {
+        var material = Data("LH-SOURCE-PREFIX-BLOCK-V1\0".utf8)
+        material.append(rolling)
+        var length = UInt64(block.count).bigEndian
+        withUnsafeBytes(of: &length) { material.append(contentsOf: $0) }
+        material.append(SHA256Digest.hash(block))
+        rolling = SHA256Digest.hash(material)
+    }
+}
+
+private func historyFingerprint(
+    descriptor: Int32,
+    prefixByteCount: Int64
+) throws -> String {
+    guard prefixByteCount >= 0 else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(EINVAL))
+    }
+    var fingerprint = HistorySourcePrefixFingerprint()
+    var offset: Int64 = 0
+    var buffer = [UInt8](repeating: 0, count: HistoryJSONLinesStreamReader.defaultChunkSize)
+    while offset < prefixByteCount {
+        let requested = min(buffer.count, Int(prefixByteCount - offset))
+        let count = pread(descriptor, &buffer, requested, off_t(offset))
+        guard count >= 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        guard count > 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(EIO))
+        }
+        fingerprint.append(Data(buffer[0..<count]))
+        offset += Int64(count)
+    }
+    return fingerprint.finalize()
 }
 
 private final class HistoryPinnedSourceDirectory {
@@ -537,6 +622,48 @@ private struct HistoryPinnedSourceFile {
         }
         return result == 0 && identity.matches(current)
     }
+
+    func isStable(relativeTo view: HistoryPinnedFileView) -> Bool {
+        var current = stat()
+        let result = name.withCString {
+            fstatat(directory.descriptor, $0, &current, AT_SYMLINK_NOFOLLOW)
+        }
+        guard result == 0 else { return false }
+        if view.identity.matches(current) { return true }
+        guard view.permitsVerifiedAppendOnlyGrowth,
+            view.identity.matchesPathIdentity(current),
+            Int64(current.st_size) >= view.prefixByteCount
+        else { return false }
+
+        let descriptor = name.withCString {
+            openat(
+                directory.descriptor,
+                $0,
+                O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK
+            )
+        }
+        guard descriptor >= 0 else { return false }
+        defer { close(descriptor) }
+        guard
+            (try? historyFingerprint(
+                descriptor: descriptor,
+                prefixByteCount: view.prefixByteCount
+            )) == view.prefixFingerprint
+        else { return false }
+
+        var final = stat()
+        guard fstat(descriptor, &final) == 0,
+            view.identity.matchesPathIdentity(final),
+            Int64(final.st_size) >= view.prefixByteCount
+        else { return false }
+        var path = stat()
+        let pathResult = name.withCString {
+            fstatat(directory.descriptor, $0, &path, AT_SYMLINK_NOFOLLOW)
+        }
+        return pathResult == 0
+            && view.identity.matchesPathIdentity(path)
+            && Int64(path.st_size) >= view.prefixByteCount
+    }
 }
 
 /// Metrics emitted by the same bounded JSONL primitive used by
@@ -552,6 +679,7 @@ package struct HistoryJSONLinesReadMetrics: Equatable {
     package var wasCancelled = false
     package var sourceChangedDuringRead = false
     fileprivate var pinnedIdentity: HistoryPinnedRegularFileIdentity?
+    fileprivate var pinnedFileView: HistoryPinnedFileView?
 }
 
 /// Incremental, read-only JSONL framing. A complete row must be buffered for
@@ -579,6 +707,7 @@ package struct HistoryJSONLinesStreamReader {
         directoryDescriptor: Int32? = nil,
         relativeName: String? = nil,
         maximumBytes: Int64? = nil,
+        allowVerifiedAppendOnlyGrowth: Bool = false,
         shouldContinue: () -> Bool = { true },
         onLine: (Data, Int) -> Void,
         onOversizedLine: (Int, Int) -> Void
@@ -637,23 +766,18 @@ package struct HistoryJSONLinesStreamReader {
         let sourceByteCount = Int64(sourceStat.st_size)
         let sourceDevice = sourceStat.st_dev
         let sourceInode = sourceStat.st_ino
-        let sourceModificationTime = sourceStat.st_mtimespec
-        let sourceChangeTime = sourceStat.st_ctimespec
         let callerByteLimit = maximumBytes.map { max(0, $0) }
         let readCeiling = min(sourceByteCount, callerByteLimit ?? sourceByteCount)
 
+        let initialIdentity = HistoryPinnedRegularFileIdentity(sourceStat)
+
         func matchesInitialIdentity(_ current: stat) -> Bool {
-            current.st_dev == sourceDevice
-                && current.st_ino == sourceInode
-                && Int64(current.st_size) == sourceByteCount
-                && current.st_mtimespec.tv_sec == sourceModificationTime.tv_sec
-                && current.st_mtimespec.tv_nsec == sourceModificationTime.tv_nsec
-                && current.st_ctimespec.tv_sec == sourceChangeTime.tv_sec
-                && current.st_ctimespec.tv_nsec == sourceChangeTime.tv_nsec
+            initialIdentity.matches(current)
         }
 
         var metrics = HistoryJSONLinesReadMetrics()
-        metrics.pinnedIdentity = HistoryPinnedRegularFileIdentity(sourceStat)
+        metrics.pinnedIdentity = initialIdentity
+        var prefixFingerprint = HistorySourcePrefixFingerprint()
         var pending = Data()
         pending.reserveCapacity(min(chunkSize, maximumLineBytes))
         var discardingOversizedLine = false
@@ -704,6 +828,7 @@ package struct HistoryJSONLinesStreamReader {
                 break
             }
             metrics.bytesRead += Int64(chunk.count)
+            prefixFingerprint.append(chunk)
             metrics.peakBufferedBytes = max(metrics.peakBufferedBytes, pending.count + chunk.count)
 
             var segmentStart = chunk.startIndex
@@ -720,15 +845,32 @@ package struct HistoryJSONLinesStreamReader {
             metrics.peakBufferedBytes = max(metrics.peakBufferedBytes, pending.count + chunk.count)
         }
 
-        if !metrics.reachedByteLimit, !metrics.wasCancelled,
-            discardingOversizedLine || !pending.isEmpty
-        {
-            finishLine()
-        }
+        let completedPinnedPrefix = !metrics.wasCancelled && metrics.bytesRead == readCeiling
+        let pinnedPrefixFingerprint =
+            completedPinnedPrefix
+            ? prefixFingerprint.finalize()
+            : nil
         var finalStat = stat()
+        var finalStatAvailable = false
         if fstat(descriptor, &finalStat) == 0 {
-            metrics.sourceChangedDuringRead =
-                metrics.sourceChangedDuringRead || !matchesInitialIdentity(finalStat)
+            finalStatAvailable = true
+            let exactMatch = matchesInitialIdentity(finalStat)
+            let sameFileWithGrowth =
+                allowVerifiedAppendOnlyGrowth
+                && completedPinnedPrefix
+                && initialIdentity.matchesPathIdentity(finalStat)
+                && Int64(finalStat.st_size) >= sourceByteCount
+            if !exactMatch, sameFileWithGrowth, let pinnedPrefixFingerprint {
+                metrics.sourceChangedDuringRead =
+                    metrics.sourceChangedDuringRead
+                    || (try? historyFingerprint(
+                        descriptor: descriptor,
+                        prefixByteCount: readCeiling
+                    )) != pinnedPrefixFingerprint
+            } else {
+                metrics.sourceChangedDuringRead =
+                    metrics.sourceChangedDuringRead || !exactMatch
+            }
         } else {
             metrics.sourceChangedDuringRead = true
         }
@@ -739,6 +881,29 @@ package struct HistoryJSONLinesStreamReader {
                 device: sourceDevice,
                 inode: sourceInode
             )
+        if !metrics.reachedByteLimit, !metrics.wasCancelled,
+            discardingOversizedLine || !pending.isEmpty
+        {
+            let endedInsideVerifiedAppend =
+                allowVerifiedAppendOnlyGrowth
+                && finalStatAvailable
+                && !metrics.sourceChangedDuringRead
+                && Int64(finalStat.st_size) > sourceByteCount
+                && !pending.isEmpty
+            if endedInsideVerifiedAppend {
+                pending.removeAll(keepingCapacity: false)
+            } else {
+                finishLine()
+            }
+        }
+        if let pinnedPrefixFingerprint, !metrics.sourceChangedDuringRead {
+            metrics.pinnedFileView = HistoryPinnedFileView(
+                identity: initialIdentity,
+                prefixByteCount: readCeiling,
+                prefixFingerprint: pinnedPrefixFingerprint,
+                permitsVerifiedAppendOnlyGrowth: allowVerifiedAppendOnlyGrowth
+            )
+        }
         return metrics
     }
 }
@@ -1028,7 +1193,7 @@ public struct HistoryLocalStoreReader {
         var pinnedReadFiles:
             [(
                 file: HistoryPinnedSourceFile,
-                identity: HistoryPinnedRegularFileIdentity
+                view: HistoryPinnedFileView
             )] = []
 
         func recordCancellationIfNeeded() {
@@ -1079,7 +1244,8 @@ public struct HistoryLocalStoreReader {
             membershipIsSourceEvidence: Bool = true
         ) {
             guard let directory else { return }
-            let stable = membershipIsSourceEvidence
+            let stable =
+                membershipIsSourceEvidence
                 ? directory.isStable()
                 : directory.isPathStable()
             guard !stable else { return }
@@ -1154,6 +1320,7 @@ public struct HistoryLocalStoreReader {
                     file: file,
                     directoryDescriptor: sourceFile.directory.descriptor,
                     relativeName: sourceFile.name,
+                    allowVerifiedAppendOnlyGrowth: true,
                     shouldContinue: continueEvidenceLoading,
                     onLine: { rawLine, lineNumber in
                         autoreleasepool {
@@ -1217,9 +1384,11 @@ public struct HistoryLocalStoreReader {
                 )
                 eventBytesRead += streamMetrics.bytesRead
                 peakStreamBufferBytes = max(peakStreamBufferBytes, streamMetrics.peakBufferedBytes)
-                if let identity = streamMetrics.pinnedIdentity {
-                    pinnedReadFiles.append((sourceFile, identity))
-                } else {
+                if let view = streamMetrics.pinnedFileView {
+                    pinnedReadFiles.append((sourceFile, view))
+                } else if !streamMetrics.wasCancelled,
+                    !streamMetrics.sourceChangedDuringRead
+                {
                     recordSourceContentIssue(
                         path: file.path,
                         line: nil,
@@ -1309,6 +1478,7 @@ public struct HistoryLocalStoreReader {
                         file: file,
                         directoryDescriptor: sourceFile.directory.descriptor,
                         relativeName: sourceFile.name,
+                        allowVerifiedAppendOnlyGrowth: true,
                         shouldContinue: continueEvidenceLoading,
                         onLine: { rawLine, lineNumber in
                             autoreleasepool {
@@ -1361,9 +1531,11 @@ public struct HistoryLocalStoreReader {
                     semanticBytesRead += streamMetrics.bytesRead
                     semanticRowsVisited += streamMetrics.rowsVisited
                     peakStreamBufferBytes = max(peakStreamBufferBytes, streamMetrics.peakBufferedBytes)
-                    if let identity = streamMetrics.pinnedIdentity {
-                        pinnedReadFiles.append((sourceFile, identity))
-                    } else {
+                    if let view = streamMetrics.pinnedFileView {
+                        pinnedReadFiles.append((sourceFile, view))
+                    } else if !streamMetrics.wasCancelled,
+                        !streamMetrics.sourceChangedDuringRead
+                    {
                         recordSourceContentIssue(
                             path: file.path,
                             line: nil,
@@ -1427,7 +1599,17 @@ public struct HistoryLocalStoreReader {
                         onPinnedIdentity: { pinnedIdentity = $0 }
                     )
                     if let pinnedIdentity {
-                        pinnedReadFiles.append((sourceFile, pinnedIdentity))
+                        pinnedReadFiles.append(
+                            (
+                                sourceFile,
+                                HistoryPinnedFileView(
+                                    identity: pinnedIdentity,
+                                    prefixByteCount: Int64(pinnedIdentity.size),
+                                    prefixFingerprint: "",
+                                    permitsVerifiedAppendOnlyGrowth: false
+                                )
+                            )
+                        )
                     } else {
                         recordSourceContentIssue(
                             path: file.path,
@@ -1507,7 +1689,7 @@ public struct HistoryLocalStoreReader {
         }
 
         for pinnedReadFile in pinnedReadFiles
-        where !pinnedReadFile.file.isStable(relativeTo: pinnedReadFile.identity) {
+        where !pinnedReadFile.file.isStable(relativeTo: pinnedReadFile.view) {
             sourceChangedDuringRead = true
             appendComputerHistoryIssue(
                 HistoryLoadIssue(
@@ -1630,7 +1812,7 @@ public struct HistoryLocalStoreReader {
         var pinnedSearchFiles:
             [(
                 file: HistoryPinnedSourceFile,
-                identity: HistoryPinnedRegularFileIdentity
+                view: HistoryPinnedFileView
             )] = []
         var semanticSourceDirectory: HistoryPinnedSourceDirectory?
         var eventSourceDirectory: HistoryPinnedSourceDirectory?
@@ -1712,6 +1894,7 @@ public struct HistoryLocalStoreReader {
                     directoryDescriptor: sourceFile.directory.descriptor,
                     relativeName: sourceFile.name,
                     maximumBytes: semanticBytesRemaining,
+                    allowVerifiedAppendOnlyGrowth: true,
                     shouldContinue: hasTimeRemaining,
                     onLine: { rawLine, lineNumber in
                         autoreleasepool {
@@ -1747,9 +1930,11 @@ public struct HistoryLocalStoreReader {
                     bytesRead: streamMetrics.bytesRead,
                     peakBufferedBytes: streamMetrics.peakBufferedBytes
                 )
-                if let identity = streamMetrics.pinnedIdentity {
-                    pinnedSearchFiles.append((sourceFile, identity))
-                } else {
+                if let view = streamMetrics.pinnedFileView {
+                    pinnedSearchFiles.append((sourceFile, view))
+                } else if !streamMetrics.wasCancelled,
+                    !streamMetrics.sourceChangedDuringRead
+                {
                     accumulator.recordIssue(
                         HistoryLoadIssue(
                             path: file.path,
@@ -1830,7 +2015,17 @@ public struct HistoryLocalStoreReader {
                     onPinnedIdentity: { pinnedIdentity = $0 }
                 )
                 if let pinnedIdentity {
-                    pinnedSearchFiles.append((sourceFile, pinnedIdentity))
+                    pinnedSearchFiles.append(
+                        (
+                            sourceFile,
+                            HistoryPinnedFileView(
+                                identity: pinnedIdentity,
+                                prefixByteCount: Int64(pinnedIdentity.size),
+                                prefixFingerprint: "",
+                                permitsVerifiedAppendOnlyGrowth: false
+                            )
+                        )
+                    )
                 } else {
                     accumulator.recordIssue(
                         HistoryLoadIssue(
@@ -1901,6 +2096,7 @@ public struct HistoryLocalStoreReader {
                     directoryDescriptor: sourceFile.directory.descriptor,
                     relativeName: sourceFile.name,
                     maximumBytes: eventBytesRemaining,
+                    allowVerifiedAppendOnlyGrowth: true,
                     shouldContinue: hasTimeRemaining,
                     onLine: { rawLine, lineNumber in
                         autoreleasepool {
@@ -1936,9 +2132,11 @@ public struct HistoryLocalStoreReader {
                     bytesRead: streamMetrics.bytesRead,
                     peakBufferedBytes: streamMetrics.peakBufferedBytes
                 )
-                if let identity = streamMetrics.pinnedIdentity {
-                    pinnedSearchFiles.append((sourceFile, identity))
-                } else {
+                if let view = streamMetrics.pinnedFileView {
+                    pinnedSearchFiles.append((sourceFile, view))
+                } else if !streamMetrics.wasCancelled,
+                    !streamMetrics.sourceChangedDuringRead
+                {
                     accumulator.recordIssue(
                         HistoryLoadIssue(
                             path: file.path,
@@ -1987,7 +2185,7 @@ public struct HistoryLocalStoreReader {
             recordTimeBudgetIssueIfNeeded()
         }
         for pinnedSearchFile in pinnedSearchFiles
-        where !pinnedSearchFile.file.isStable(relativeTo: pinnedSearchFile.identity) {
+        where !pinnedSearchFile.file.isStable(relativeTo: pinnedSearchFile.view) {
             accumulator.recordIssue(
                 HistoryLoadIssue(
                     path: pinnedSearchFile.file.url.path,
@@ -2220,6 +2418,7 @@ public struct HistoryLocalStoreReader {
             do {
                 let metrics = try streamReader.read(
                     file: file,
+                    allowVerifiedAppendOnlyGrowth: true,
                     onLine: { rawLine, lineNumber in
                         autoreleasepool {
                             do {

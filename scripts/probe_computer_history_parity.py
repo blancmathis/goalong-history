@@ -175,7 +175,6 @@ GAP_TOKENS = {
     "droppedevent",
     "observationgap",
     "permissionunavailable",
-    "recorderhealth",
     "secureinputsuppressed",
 }
 SEMANTIC_MARKERS = ("semantic", "axtree", "accessibilitytree")
@@ -531,6 +530,20 @@ def classified_categories(
     # retained or emitted.
     if nested_value(payload, ("keyboardShortcut",)) is not None:
         categories.add("shortcut")
+    structured_keyboard = nested_value(payload, ("keyboard",))
+    if "keyboardshortcut" in tokens and isinstance(structured_keyboard, dict):
+        modifiers = structured_keyboard.get("modifiers")
+        normalized_modifiers = {
+            token
+            for value in (modifiers if isinstance(modifiers, list) else [])
+            if (token := normalized_token(value)) is not None
+        }
+        if not normalized_modifiers.intersection({"command", "control"}):
+            # Codex labels editing/navigation keys (for example Delete or
+            # Option-Delete) as keyboardShortcut. Goalong deliberately keeps
+            # those as keyPressed and reserves shortcut for Command/Control
+            # chords, so omit the broader provider label from this category.
+            categories.discard("shortcut")
     if nested_value(payload, ("scroll",)) is not None:
         categories.add("scroll")
     if tokens.intersection({"mouse", "pointer"}) and any(
@@ -688,7 +701,16 @@ def process_payload(
     summary.rows_in_interval += 1
     summary.observe_timestamp(timestamp)
     tokens = discriminator_tokens(payload)
-    if tokens.intersection(GAP_TOKENS) or payload.get("suppressionReason") is not None:
+    metadata = payload.get("metadata")
+    observation_gap = (
+        isinstance(metadata, dict)
+        and str(metadata.get("observation_gap", "")).lower() == "true"
+    )
+    if (
+        tokens.intersection(GAP_TOKENS)
+        or payload.get("suppressionReason") is not None
+        or observation_gap
+    ):
         summary.explicit_gap_events += 1
 
     categories, semantic_phase = classified_categories(payload, tokens)
@@ -731,6 +753,25 @@ def process_line(
     process_payload(payload, summary, start, end)
 
 
+def prefix_fingerprint(file_fd: int, byte_count: int) -> bytes | None:
+    """Hash one pinned prefix without changing the descriptor's stream offset."""
+
+    if byte_count < 0:
+        return None
+    digest = hashlib.sha256()
+    offset = 0
+    while offset < byte_count:
+        try:
+            chunk = os.pread(file_fd, min(65_536, byte_count - offset), offset)
+        except OSError:
+            return None
+        if not chunk:
+            return None
+        digest.update(chunk)
+        offset += len(chunk)
+    return digest.digest()
+
+
 def stream_file(
     file_fd: int,
     summary: SourceSummary,
@@ -746,7 +787,10 @@ def stream_file(
         return
     initial_size = initial_metadata.st_size
     initial_mtime_ns = initial_metadata.st_mtime_ns
+    initial_device = initial_metadata.st_dev
+    initial_inode = initial_metadata.st_ino
     file_bytes_read = 0
+    streamed_prefix = hashlib.sha256()
     buffer = bytearray()
     discarding_oversized = False
     try:
@@ -768,6 +812,7 @@ def stream_file(
                 break
             file_bytes_read += len(chunk)
             summary.bytes_read += len(chunk)
+            streamed_prefix.update(chunk)
 
             for byte in chunk:
                 if byte == 0x0A:
@@ -792,10 +837,21 @@ def stream_file(
     finally:
         try:
             final_metadata = os.fstat(file_fd)
-            if (
-                final_metadata.st_size != initial_size
-                or final_metadata.st_mtime_ns != initial_mtime_ns
-            ):
+            exact_snapshot = (
+                final_metadata.st_dev == initial_device
+                and final_metadata.st_ino == initial_inode
+                and final_metadata.st_size == initial_size
+                and final_metadata.st_mtime_ns == initial_mtime_ns
+            )
+            verified_append_only_growth = (
+                file_bytes_read == initial_size
+                and final_metadata.st_dev == initial_device
+                and final_metadata.st_ino == initial_inode
+                and final_metadata.st_size >= initial_size
+                and prefix_fingerprint(file_fd, initial_size)
+                == streamed_prefix.digest()
+            )
+            if not exact_snapshot and not verified_append_only_growth:
                 summary.issue("source_changed_during_read")
         except OSError as error:
             summary.issue(issue_for_os_error(error))

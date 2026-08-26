@@ -269,7 +269,35 @@
                 kAXFocusedApplicationAttribute as CFString,
                 &focusedApplication
             )
-            return result == .success && focusedApplication != nil
+            let systemWideReadable = result == .success && focusedApplication != nil
+            guard !systemWideReadable,
+                AXIsProcessTrusted(),
+                let frontmost = NSWorkspace.shared.frontmostApplication
+            else { return systemWideReadable }
+
+            // macOS can transiently refuse the system-wide focused-application
+            // attribute during app activation even though app-scoped AX reads work.
+            // Reading the foreground application's role is a bounded, content-free
+            // functional fallback and avoids reporting a false permission failure.
+            let application = AXUIElementCreateApplication(frontmost.processIdentifier)
+            AXUIElementSetMessagingTimeout(application, 0.12)
+            var role: CFTypeRef?
+            let appResult = AXUIElementCopyAttributeValue(
+                application,
+                kAXRoleAttribute as CFString,
+                &role
+            )
+            return functionalProbeIsUsable(
+                systemWideReadable: systemWideReadable,
+                frontmostApplicationReadable: appResult == .success && role != nil
+            )
+        }
+
+        static func functionalProbeIsUsable(
+            systemWideReadable: Bool,
+            frontmostApplicationReadable: Bool
+        ) -> Bool {
+            systemWideReadable || frontmostApplicationReadable
         }
     }
 

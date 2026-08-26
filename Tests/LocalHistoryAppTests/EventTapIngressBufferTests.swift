@@ -464,7 +464,7 @@
             }
         }
 
-        func testBurstFollowUpPhasesAreScheduledAtInteractionStartNotFlush() throws {
+        func testBurstSemanticCaptureUsesOnlyOneSettledSnapshotAfterInactivity() throws {
             let repositoryRoot = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -487,10 +487,11 @@
                 source.slice(from: "        private func flushScrollBurst()", through: "        private func resetScrollBurst()")
             )
 
-            XCTAssertTrue(scrollStart.contains("scheduleScrollAfter("))
             XCTAssertTrue(scrollStart.contains("rescheduleScrollSettled("))
-            XCTAssertTrue(typingStart.contains("scheduleTypingAfter("))
             XCTAssertTrue(typingStart.contains("rescheduleTypingSettled("))
+            XCTAssertFalse(source.contains("scheduleTypingAfter("))
+            XCTAssertFalse(source.contains("scheduleScrollAfter("))
+            XCTAssertFalse(source.contains("private func captureNearEvent("))
             XCTAssertFalse(typingFlush.contains("captureAfter("))
             XCTAssertFalse(scrollFlush.contains("captureAfter("))
             XCTAssertTrue(source.contains("deadline: .now() + max(0, 1.20 - elapsed)"))
@@ -533,7 +534,8 @@
                 source.slice(from: "        private func handleMouseUp(", through: "        private func buttonName(")
             )
             XCTAssertFalse(mouseDown.contains("recorder.record("), "mouse-down must wait for click/drag classification")
-            XCTAssertTrue(mouseDown.contains("trigger: \"pointer\""))
+            XCTAssertTrue(mouseDown.contains("let interactionID = UUID().uuidString"))
+            XCTAssertTrue(mouseDown.contains("contextProvider.element("))
             XCTAssertTrue(mouseDragged.contains("interactionID: down.interactionID"))
             XCTAssertTrue(mouseUp.contains("timestamp: down.startedAt"))
             XCTAssertTrue(mouseUp.contains("completeDrag("))
@@ -576,14 +578,14 @@
                 )
             )
 
-            XCTAssertTrue(processing.contains("guard let context = contextMonitor.sampleNow() else"))
+            XCTAssertTrue(processing.contains("guard let context = input.observedContext else"))
+            XCTAssertTrue(processing.contains("context.app.processIdentifier == frontmostPID"))
+            XCTAssertTrue(processing.contains("contextProvider.fastSuppressionReason()"))
             XCTAssertTrue(processing.contains("let nearEventContext = context"))
-            XCTAssertFalse(processing.contains("context = contextMonitor.latestSnapshot"))
             XCTAssertFalse(processing.contains("input.observedContext ?? context"))
             XCTAssertFalse(processing.contains("needsFreshPrivacyCheck"))
             XCTAssertFalse(source.contains("ComputerHistoryMetadata.Phase.before"))
-            XCTAssertTrue(source.contains("private func captureNearEvent("))
-            XCTAssertTrue(source.contains("phase: ComputerHistoryMetadata.Phase.nearEvent"))
+            XCTAssertFalse(source.contains("phase: ComputerHistoryMetadata.Phase.nearEvent"))
             XCTAssertFalse(source.contains("ActivityAnalysisRuntime.shared.scheduleInteractionContext"))
             XCTAssertTrue(secureSuppression.contains("cancelOpenInteractionsForBoundary()"))
             XCTAssertFalse(secureSuppression.contains("flushTypingBurst()"))
@@ -601,8 +603,6 @@
                 "ingress.discardPending()",
                 "typingFlushWorkItem?.cancel()",
                 "scrollFlushWorkItem?.cancel()",
-                "typingAfterWorkItem?.cancel()",
-                "scrollAfterWorkItem?.cancel()",
                 "typingSettledWorkItem?.cancel()",
                 "scrollSettledWorkItem?.cancel()",
                 "deferredSemanticCaptures.removeAll",
@@ -623,13 +623,39 @@
             let deferredCapture = try XCTUnwrap(
                 source.slice(
                     from: "        private func scheduleOwnedSemanticCapture(",
-                    through: "        private func scheduleTypingAfter("
+                    through: "        private func rescheduleTypingSettled("
                 )
             )
             XCTAssertTrue(deferredCapture.contains("maximumDeferredSemanticCaptures"))
             XCTAssertTrue(deferredCapture.contains("boundaryGeneration"))
             XCTAssertTrue(deferredCapture.contains("wasPending"))
             XCTAssertFalse(deferredCapture.contains("scheduleInteractionContext"))
+        }
+
+        func testRichAccessibilityTraversalRunsOffInputQueueAndHasABoundedBacklog() throws {
+            let repositoryRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let source = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/ActivityAnalysisRuntime.swift"),
+                encoding: .utf8
+            )
+            let persistence = try XCTUnwrap(
+                source.slice(
+                    from: "        private func persistSemanticContext(",
+                    through: "        private func commitSemanticContext("
+                )
+            )
+
+            XCTAssertTrue(source.contains("maximumPendingSemanticCaptures = 2"))
+            XCTAssertTrue(persistence.contains("pendingSemanticCaptureCount < Self.maximumPendingSemanticCaptures"))
+            XCTAssertTrue(persistence.contains("semanticCaptureQueue.async"))
+            XCTAssertTrue(persistence.contains("AXRichContextReader.capture("))
+            XCTAssertTrue(persistence.contains("DispatchQueue.main.async"))
+            XCTAssertTrue(persistence.contains("captureGeneration == self.interactionCaptureGeneration"))
+            XCTAssertTrue(persistence.contains("Self.semanticBoundaryMatches("))
         }
 
         private func typing(
