@@ -122,6 +122,19 @@ prepare_installer_log
 [[ "$(/usr/bin/stat -f '%z' "$LOG_FILE.1")" -le "$LOG_MAX_BYTES" ]]
 [[ "$(/usr/bin/stat -f '%z' "$LOG_FILE.2")" -le "$LOG_MAX_BYTES" ]]
 
+VERBOSE=1
+run_step_state="before"
+mutate_run_step_state() {
+  run_step_state="after"
+  echo "verbose state preservation fixture"
+}
+run_step "Checking verbose state preservation" mutate_run_step_state \
+  >"$TEST_ROOT/run-step-output.log"
+[[ "$run_step_state" == "after" ]]
+/usr/bin/grep -Fq 'verbose state preservation fixture' "$TEST_ROOT/run-step-output.log"
+/usr/bin/grep -Fq 'verbose state preservation fixture' "$LOG_FILE"
+VERBOSE=0
+
 set +e
 test_override_output="$(LOCALHISTORY_RUN_TESTS=0 "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
 test_override_status=$?
@@ -142,4 +155,4 @@ if [[ "$marker_audit_status" -eq 0 ]] || ! /usr/bin/grep -Fq 'Legacy Agent Activ
   exit 1
 fi
 
-echo "Source installer safety tests passed: forced tests, unique target selection, symlink refusal, exact identity, staged validation, rollback, binary audit and bounded logs."
+echo "Source installer safety tests passed: forced tests, unique target selection, symlink refusal, exact identity, staged validation, rollback, verbose state preservation, binary audit and bounded logs."

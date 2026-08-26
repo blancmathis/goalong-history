@@ -144,14 +144,17 @@ prepare_installer_log() {
 run_step() {
   local title="$1"
   local status
+  local initial_log_bytes
   shift
 
   printf '  • %s… ' "$title"
   set +e
   if [[ "$VERBOSE" == "1" ]]; then
     echo
-    "$@" 2>&1 | /usr/bin/tee -a "$LOG_FILE"
-    status=${PIPESTATUS[0]}
+    initial_log_bytes="$(/usr/bin/stat -f '%z' "$LOG_FILE" 2>/dev/null || echo 0)"
+    "$@" >>"$LOG_FILE" 2>&1
+    status=$?
+    /usr/bin/tail -c "+$((initial_log_bytes + 1))" "$LOG_FILE"
   else
     "$@" >>"$LOG_FILE" 2>&1
     status=$?
