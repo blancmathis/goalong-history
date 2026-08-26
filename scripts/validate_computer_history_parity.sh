@@ -105,7 +105,9 @@ fi
 for helper in \
   "$REPO/scripts/check_computer_history_answer.py" \
   "$REPO/scripts/probe_computer_history_parity.py" \
-  "$REPO/scripts/test_probe_computer_history_parity.sh"
+  "$REPO/scripts/test_probe_computer_history_parity.sh" \
+  "$REPO/scripts/sample_macos_process.swift" \
+  "$REPO/scripts/test_measure_computer_history_runtime.sh"
 do
   if [[ ! -f "$helper" ]]; then
     echo "A metadata-only parity helper is missing." >&2
@@ -163,6 +165,7 @@ run_logged privacy-boundary-audit bash -lc \
   "cd \"$REPO\" && ./scripts/audit_privacy_boundaries.sh"
 run_logged checker-regression bash "$REPO/scripts/test_check_computer_history_memory.sh"
 run_logged metadata-probe-regression bash "$REPO/scripts/test_probe_computer_history_parity.sh"
+run_logged runtime-measurement-regression bash "$REPO/scripts/test_measure_computer_history_runtime.sh"
 run_logged query-cli-build bash -lc \
   "cd \"$REPO\" && swift build -c release --product goalong-history-query"
 

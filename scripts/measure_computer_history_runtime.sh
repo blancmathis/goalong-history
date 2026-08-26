@@ -3,6 +3,8 @@ set -euo pipefail
 
 APP_EXECUTABLE="/Applications/Goalong History.app/Contents/MacOS/Goalong History"
 DATA_ROOT="$HOME/Library/Application Support/LocalHistory"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROCESS_SAMPLER="$SCRIPT_DIR/sample_macos_process.swift"
 PROCESS_ID=""
 SAMPLE_COUNT=600
 WARMUP_SECONDS=60
@@ -154,26 +156,6 @@ storage_snapshot() {
   done
 }
 
-rusage_snapshot() {
-  local destination="$1"
-  xcrun swift -e "
-    import Darwin
-    let pid: Int32 = $PROCESS_ID
-    var info = rusage_info_v4()
-    let result = withUnsafeMutablePointer(to: &info) { pointer in
-        pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { rebound in
-            proc_pid_rusage(pid, RUSAGE_INFO_V4, rebound)
-        }
-    }
-    guard result == 0 else { exit(1) }
-    print([info.ri_user_time, info.ri_system_time, info.ri_pkg_idle_wkups,
-           info.ri_interrupt_wkups, info.ri_diskio_bytesread,
-           info.ri_diskio_byteswritten, info.ri_phys_footprint,
-           info.ri_lifetime_max_phys_footprint]
-        .map(String.init).joined(separator: \"\\t\"))
-  " >"$destination"
-}
-
 onscreen_window_count() {
   xcrun swift -e "
     import CoreGraphics
@@ -197,6 +179,7 @@ WINDOWS_AT_START="$(onscreen_window_count)"
   echo "process_command=$PROCESS_COMMAND"
   echo "samples=$SAMPLE_COUNT"
   echo "sample_interval_seconds=1"
+  echo "cpu_measurement=Per-interval proc_pid_rusage CPU-time delta divided by mach_continuous_time; not ps decaying average."
   echo "warmup_seconds=$WARMUP_SECONDS"
   echo "onscreen_layer_zero_windows_before_warmup=$WINDOWS_AT_START"
   echo "macos=$(sw_vers -productVersion) ($(sw_vers -buildVersion))"
@@ -217,25 +200,14 @@ if [[ "$(onscreen_window_count)" -ne 0 ]]; then
   echo "A Goalong window appeared during warmup; measurement refused." >&2
   exit 65
 fi
-rusage_snapshot "$RUSAGE_BEFORE"
-
-for (( sample = 1; sample <= SAMPLE_COUNT; sample++ )); do
-  if ! read -r cpu rss < <(/bin/ps -p "$PROCESS_ID" -o %cpu=,rss=); then
-    echo "Process $PROCESS_ID exited during measurement." >&2
-    exit 69
-  fi
-  printf '%s\n' "$cpu" >>"$CPU_SAMPLES"
-  printf '%s\n' "$rss" >>"$RSS_SAMPLES"
-  child_count="$(
-    { /usr/bin/pgrep -P "$PROCESS_ID" || true; } | /usr/bin/wc -l | tr -d ' '
-  )"
-  printf '%s\n' "$child_count" >>"$CHILD_SAMPLES"
-  if (( sample < SAMPLE_COUNT )); then
-    sleep 1
-  fi
-done
-
-rusage_snapshot "$RUSAGE_AFTER"
+if [[ ! -f "$PROCESS_SAMPLER" ]]; then
+  echo "Missing process sampler: $PROCESS_SAMPLER" >&2
+  exit 69
+fi
+xcrun swift "$PROCESS_SAMPLER" \
+  "$PROCESS_ID" "$SAMPLE_COUNT" \
+  "$CPU_SAMPLES" "$RSS_SAMPLES" "$CHILD_SAMPLES" \
+  "$RUSAGE_BEFORE" "$RUSAGE_AFTER"
 storage_snapshot "$STORAGE_AFTER"
 WINDOWS_AT_END="$(onscreen_window_count)"
 if [[ "$WINDOWS_AT_END" -ne 0 ]]; then

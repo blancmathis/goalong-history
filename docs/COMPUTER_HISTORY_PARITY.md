@@ -673,9 +673,13 @@ bash scripts/measure_computer_history_runtime.sh --enforce-targets
 The read-only script waits 60 seconds, takes 600 one-second samples, verifies that no
 layer-zero Goalong window is on screen at the start and end, and reports CPU, raw RSS,
 physical/lifetime-peak footprint, child processes, process wakeups, disk I/O, and logical
-storage deltas by data class. Its output contains numeric metadata only; it does not
-launch or control the app or read any history body. The interval precondition is still
-operational: do not reopen the dashboard during the run.
+storage deltas by data class. CPU percentages are calculated from per-interval
+`proc_pid_rusage` CPU-time deltas divided by `mach_continuous_time`; macOS `ps %cpu` is
+deliberately not used because it is a decaying average over up to one prior minute and
+can misattribute pre-benchmark activity. The process-time totals are converted from Mach
+absolute-time units to nanoseconds. The output contains numeric metadata only; it does
+not launch or control the app or read any history body. The interval precondition is
+still operational: do not reopen the dashboard during the run.
 
 Dedicated deterministic scenarios verify:
 
@@ -760,24 +764,25 @@ necessary for those claims.
 
 ## Measured local acceptance snapshot
 
-The following measurements were taken on 2026-08-25 on macOS 26.5.1 (25F80), an
+The following measurements were taken on 2026-08-26 on macOS 26.5.1 (25F80), an
 Apple M4 Pro with 24 GB RAM, using the installed source build
-`20260825.202039` (`CDHash c28d23d6409a54598985d607eb23fd91d1d011a3`). The
+`20260826.051316` (`CDHash 7b7a9d9ba75e444e0f11cbc34cf97b96a058debb`). The
 application was one process with no child/helper process. Before idle sampling, the
 dashboard was closed through its real close button, its absence from the on-screen
 window list was verified, and more than 60 seconds elapsed.
 
 | Surface | Measured result |
 | --- | --- |
-| background CPU, 600 one-second samples | median 0.2%, p95 1.3%, maximum 99.7%; 8 samples exceeded 15%, with a longest consecutive run of exactly 5 seconds |
-| closed-window memory | macOS physical footprint 44 MB; lifetime physical peak 146 MB; raw `ps` RSS median 150.1 MiB, p95 203.5 MiB, maximum 222.6 MiB |
-| UI peak improvement | lifetime physical peak 146.1 MB versus the prior measured 476.3 MB view peak, a 69.3% reduction |
-| derived Computer History storage | 4 compact JSON days, 3,431,360 logical bytes / 3,360 allocated KiB after the final installed-UI read, down from 33,536 allocated KiB before legacy-derived compaction |
-| direct-source Agent Activity index | 792 entries in 773,900 bytes (977.1 bytes per entry) after the final direct-source UI read: Codex 777, Claude Code 1, OpenCode 14; all available |
+| background CPU, 600 one-second kernel-delta samples | median 0.481%, p95 1.284%, mean 0.786%, maximum 16.569%; 5 samples exceeded 15%, each isolated to exactly 1 second |
+| closed-window memory | macOS physical footprint 44,942,344 bytes (42.9 MiB); lifetime physical peak 80,495,648 bytes (76.8 MiB); raw resident size median 127,344 KiB, p95 127,456 KiB, maximum 127,472 KiB |
+| peak improvement | lifetime physical peak 76.8 MiB versus the prior measured 453.8 MiB view peak, an 83.1% reduction |
+| ten-minute writes | Computer History 0 bytes; Agent Activity 0 bytes; events +67,510 bytes; seals +22,523 bytes; process disk-write counter +9,138,176 bytes including filesystem metadata |
+| derived Computer History storage | 5 compact JSON days, 3,404,131 logical bytes / 3,332 allocated KiB; the 5 optional Codex projections total 59,428 logical bytes / 60 allocated KiB, down 97.7% from the 2,604 allocated KiB legacy mirror |
+| direct-source Agent Activity index | 797 entries in 778,752 bytes (977.1 bytes per entry): Codex 782, Claude Code 1, OpenCode 14; all available |
 | transcript duplication check | zero files and zero bytes in `agent-activity/blobs`; durable Agent Activity files are the bounded index, configuration, one small wake-up signal, and an empty lock |
 | real French resume query | one current day reconstructed in 3.07 seconds; maximum RSS 83,361,792 bytes and physical footprint 74,842,712 bytes; 12 source-backed episode hits |
-| complete automated suite | 575 tests, 2 skipped, 0 failures; Agent Activity selection 93 tests, 1 skipped, 0 failures |
-| parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 18/18 metadata-probe tests passed; the validator now also runs the 2 token-density/context-pack scenarios; output directory was 52 allocated KiB and contained metadata/checklists only |
+| complete automated suite | 583 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
+| parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 18/18 metadata-probe tests passed; the validator also runs the 2 token-density/context-pack scenarios and the sleeping-versus-saturated kernel CPU sampler regression; output contains metadata/checklists only |
 
 An additional read-only development-source probe on 2026-08-26 reconstructed the real
 2026-08-25 day and rendered a 1,600-token pack without exposing its body: 1,553 approximate
@@ -795,10 +800,13 @@ validator also passed 9 causal-parity, 3 episode-quality, 2 context-density, 18 
 probe, privacy-boundary, checker-regression, release CLI build, and four real local query
 checks without emitting history bodies.
 
-Raw RSS includes reclaimable mappings and allocator pages and is therefore reported
+Raw resident size includes reclaimable mappings and allocator pages and is therefore reported
 separately from macOS `phys_footprint`, the memory-pressure measure used for the
-closed-window budget. The single one-second CPU maximum is not hidden; the sustained
-limit is satisfied because no run above 15% lasted more than five samples.
+closed-window budget. CPU comes from `proc_pid_rusage` deltas, not macOS `ps %cpu`'s
+one-minute decaying average. The sum of user and system time independently yields a
+0.789% ten-minute mean, within 0.004 percentage point of the sample mean. The isolated
+one-second CPU maxima are not hidden; the sustained limit is satisfied because no run
+above 15% lasted more than one sample.
 
 The current installed identity still reports Accessibility functional/preflight and
 Input Monitoring preflight as unavailable. Consequently these measurements prove the
