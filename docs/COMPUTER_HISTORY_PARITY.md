@@ -65,7 +65,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | distinguish completed, in-progress, blocked, waiting, planned, and unknown work | cautious evidence-derived status with latest visible state taking priority | deterministic status scenarios pass; status remains an interpretation |
 | suggest skills or automations from repeated work | bounded cross-day workflow clustering; suggestions never auto-run | repeatability scenarios pass; real multi-day usefulness remains data-dependent |
 | choose contributing apps and websites | exclusion lists plus fail-closed include-only app/domain scopes; exclusions, private browsing and protected apps always win | configuration and recorder-policy tests pass; old configs decode with allow-all include scopes |
-| pause, resume, exclude, and bulk-delete | menu-bar/UI controls, app/domain exclusions, private/secure suppression, and 10-minute/hour/day/all deletion | privacy audit and deletion tests pass; per-summary and recent-app-session deletion remain an explicit public-surface gap |
+| pause, resume, exclude, and delete at documented scopes | menu-bar/UI controls, app/domain exclusions, private/secure suppression, 10-minute/hour/day/all deletion, exact Computer History-item deletion, and most-recent/selected app-session deletion | targeted fixtures prove full provenance recovery, exact raw/semantic removal, other-day preservation, malformed-row refusal, and bounded streaming; installed UI exercise remains pending the stable-signature build |
 | avoid screenshots, audio, clipboard, keystroke reconstruction, and private browsing | Accessibility text and interaction metadata only, with credential redaction | privacy audit and suppression tests pass |
 | stay unobtrusive and recoverable | one process, no helper, health state, bounded queues/caches, AX storm debounce, polling fallback | resource measurements pass; final physical wake/input recovery is pending TCC refresh |
 
@@ -82,6 +82,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | The Computer History page eagerly built every retained episode card and rebuilt the same source dictionary for each card. | The timeline and page body are lazy, one source index is shared by all visible cards, transient dashboard caches are cleared on close, and free allocator pages are returned after the window graph drains. |
 | Missing or unsafe raw input could erase or replace the useful derived view. | The last known-good memory remains visible with an explicit `absent` or `inaccessible` source state. |
 | The optional Codex Markdown mirror could exceed 2 MB for one busy day and the ChatGPT recap could repeat the same causal text in its legacy minute digest. | The mirror now uses a deterministic 3,000-token ceiling, the on-demand agent pack accepts an 800–12,000-token budget, sources are aliased once, and a recap with causal history keeps only complementary duration aggregates from the legacy view. |
+| A compact episode retained only representative provenance, so deleting one visible summary would otherwise require an unsafe broad interval clear. | Explicit item deletion re-reads the original local journal on demand, rebuilds complete episode provenance, removes only the resolved event IDs and linked semantic snapshot IDs, invalidates only the affected day’s derived files, and records a continuity boundary while preserving seals, receipts, Screen Time and Agent Activity. |
 
 The raw Goalong event and semantic journals remain the authoritative evidence.
 Compaction changes only derived storage and search working sets; it does not
@@ -117,7 +118,10 @@ and website domains. Empty include-only lists preserve the existing allow-all be
 Once an include-only list is populated, missing application identity or browser host
 fails closed; exclusions and private/secure suppression retain priority. The menu bar
 offers the same documented bulk-clear windows: last 10 minutes, last hour, last day,
-or all detailed history.
+or all detailed history. An expanded Computer History card can delete that exact item,
+the activity timeline can delete a selected app session, and Privacy offers the most
+recent app session. Those targeted paths resolve exact source IDs before mutation; they
+never translate a visible card into a broad timestamp cutoff.
 
 ## Analysis pipeline
 
@@ -376,6 +380,18 @@ Legacy retention migration also keeps memories indefinitely and does not activat
 cleanup. Explicit deletion preflights exact owned filenames across all derived categories
 before unlinking. It does not target seals, receipts, Screen Time, Agent Activity, or
 unrelated files.
+
+For a single Computer History item, Goalong reconstructs the complete episode provenance
+from the original bounded day source because compact memory may retain only 16
+representative event references. A read-only preflight must find every selected event ID
+and classify every candidate row before any raw file is replaced. The raw JSONL pass uses
+64 KiB chunks with a 2 MiB maximum row and a 32,768-ID selection ceiling; timestamps only
+bound candidate day files and never broaden the match. Linked semantic payload IDs are
+then removed from their own captured-at day files, and only the source event day’s
+Activity Analysis, Activity Memory, Computer History JSON, and optional Codex projection
+are invalidated for rebuild.
+Malformed, oversized, linked, missing, changed, incomplete, or over-budget sources fail
+closed. Cryptographic seals and receipts remain as explicit private/gap evidence.
 
 Large accepted derived days are bounded after a complete analysis pass within the
 documented input and evidence limits. Coverage keeps exact source-event, action,
@@ -835,7 +851,7 @@ window list was verified, and more than 60 seconds elapsed.
 | transcript duplication check | zero files and zero bytes in `agent-activity/blobs`; durable Agent Activity files are the bounded index, configuration, one small wake-up signal, and an empty lock |
 | real English today-summary query | before: 35.26 seconds, 370,524,160-byte maximum RSS, 308,118,320-byte physical peak, repeated raw-source matches; after: one day reconstructed in 0.63 seconds, 20,709,376-byte maximum RSS, 11,977,256-byte physical peak, 12 hits over 5 unique resources, 240-character maximum snippet, and no raw-source pass |
 | real French resume query | one current day reconstructed in 3.07 seconds; maximum RSS 83,361,792 bytes and physical footprint 74,842,712 bytes; 12 source-backed episode hits |
-| complete automated suite | 595 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
+| complete automated suite | 607 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
 | parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 22/22 metadata-probe tests passed; the validator also runs the 2 token-density/context-pack scenarios, the sleeping-versus-saturated kernel CPU sampler regression, and the offline local-signing policy; output contains metadata/checklists only |
 
 An additional read-only development-source probe on 2026-08-26 reconstructed the real

@@ -37,5 +37,32 @@
             XCTAssertTrue(source.contains("All detailed history…"))
             XCTAssertTrue(source.contains("Date().addingTimeInterval(-24 * 60 * 60)"))
         }
+
+        func testUIOffersExactTimelineItemAndRecentAppSessionDeletion() throws {
+            let repositoryRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let computerHistory = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/ComputerHistoryPage.swift"),
+                encoding: .utf8
+            )
+            let timeline = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/ActivityPageExplorer.swift"),
+                encoding: .utf8
+            )
+            let privacy = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/PrivacyPage.swift"),
+                encoding: .utf8
+            )
+
+            XCTAssertTrue(computerHistory.contains("Delete this item…"))
+            XCTAssertTrue(computerHistory.contains("exact source events"))
+            XCTAssertTrue(timeline.contains("Delete session…"))
+            XCTAssertTrue(privacy.contains("Most recent app session"))
+        }
     }
 #endif

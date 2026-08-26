@@ -4,6 +4,45 @@ import XCTest
 @testable import LocalHistoryCore
 
 final class ComputerHistoryMemoryCompactionTests: XCTestCase {
+    func testExactEpisodeDeletionProvenanceCanBeRecoveredFromCompactedMemory() throws {
+        let actionCount = 1_100
+        let events = (0..<actionCount).map { index in
+            fixtureEvent(
+                id: "deletion-source-\(index)",
+                sequence: UInt64(index + 1),
+                offset: TimeInterval(index),
+                kind: .mouseClick,
+                windowTitle: "Shared deletion fixture",
+                host: "deletion.example"
+            )
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            day: fixtureStart,
+            calendar: calendar
+        )
+        let episode = try XCTUnwrap(memory.episodes.first)
+
+        XCTAssertEqual(memory.episodes.count, 1)
+        XCTAssertEqual(episode.eventCount, actionCount)
+        XCTAssertEqual(episode.provenance.sourceEventIDs.count, 16)
+
+        let recovered = try XCTUnwrap(
+            ComputerHistoryEngine.exactSourceEventIDs(
+                forEpisodeID: episode.id,
+                events: events,
+                semanticSnapshots: [:],
+                day: fixtureStart,
+                calendar: calendar
+            )
+        )
+
+        XCTAssertEqual(recovered.count, actionCount)
+        XCTAssertEqual(Set(recovered), Set(events.map(\.id)))
+    }
+
     func testResourceResolutionBoundsRepeatedProvenanceBeforeProjection() throws {
         let actionCount = 4_096
         var events: [HistoryEvent] = []

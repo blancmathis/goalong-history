@@ -2237,13 +2237,7 @@
                 let bundleIdentifier = event.app?.bundleIdentifier
                 let category = event.classification?.category
                 let suppression = event.suppressionReason
-                let key = [
-                    suppression?.rawValue ?? "captured",
-                    bundleIdentifier ?? appName,
-                    event.window?.title ?? "",
-                    event.url?.host ?? "",
-                    category ?? "",
-                ].joined(separator: "|")
+                let key = Self.sessionSourceKey(for: event)
 
                 let shouldMerge: Bool
                 if let current {
@@ -2496,13 +2490,34 @@
             }
         }
 
-        private static func isSessionEvent(_ event: HistoryEvent) -> Bool {
+        static func isSessionEvent(_ event: HistoryEvent) -> Bool {
             switch event.kind {
             case .heartbeat, .focusChanged:
                 return false
             default:
                 return true
             }
+        }
+
+        static func sessionSourceKey(for event: HistoryEvent) -> String {
+            let appName = event.app?.name ?? systemLabel(for: event)
+            return [
+                event.suppressionReason?.rawValue ?? "captured",
+                event.app?.bundleIdentifier ?? appName,
+                event.window?.title ?? "",
+                event.url?.host ?? "",
+                event.classification?.category ?? "",
+            ].joined(separator: "|")
+        }
+
+        static func sessionSourceKey(for session: ActivitySession) -> String {
+            [
+                session.suppressionReason?.rawValue ?? "captured",
+                session.bundleIdentifier ?? session.appName,
+                session.windowTitle ?? "",
+                session.host ?? "",
+                session.category ?? "",
+            ].joined(separator: "|")
         }
 
         private static func systemLabel(for event: HistoryEvent) -> String {

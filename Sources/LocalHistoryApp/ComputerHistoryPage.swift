@@ -152,6 +152,8 @@
         @ObservedObject var model: ComputerHistoryPageModel
         let day: Date
         let fullContextEnabled: Bool
+        let deleteEpisode: (ComputerHistoryEpisode) -> Void
+        @State private var episodePendingDeletion: ComputerHistoryEpisode?
 
         private let metricColumns = [
             GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
@@ -179,6 +181,18 @@
                     }
                 }
                 .padding(.bottom, 8)
+            }
+            .alert(item: $episodePendingDeletion) { episode in
+                Alert(
+                    title: Text("Delete this Computer History item?"),
+                    message: Text(
+                        "Goalong will resolve this item against its original local journal, delete only its exact source events and linked semantic snapshots, then rebuild the affected day. Minute seals, receipts, Screen Time and Agent Activity remain."
+                    ),
+                    primaryButton: .destructive(Text("Delete item")) {
+                        deleteEpisode(episode)
+                    },
+                    secondaryButton: .cancel()
+                )
             }
         }
 
@@ -530,7 +544,10 @@
                             ComputerHistoryEpisodeCard(
                                 episode: episode,
                                 resources: resourcesByID,
-                                openResource: model.open
+                                openResource: model.open,
+                                requestDeletion: {
+                                    episodePendingDeletion = episode
+                                }
                             )
                         }
                     }
@@ -749,6 +766,7 @@
         let episode: ComputerHistoryEpisode
         let resources: [String: ComputerHistoryResourceReference]
         let openResource: (ComputerHistoryResourceReference) -> Void
+        let requestDeletion: () -> Void
         @State private var expanded = false
 
         var body: some View {
@@ -858,6 +876,14 @@
                         )
                         .font(.system(size: 8))
                         .foregroundStyle(.tertiary)
+                        HStack {
+                            Spacer()
+                            Button(role: .destructive, action: requestDeletion) {
+                                Label("Delete this item…", systemImage: "trash")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
                     }
                 }
             }

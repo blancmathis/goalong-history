@@ -99,6 +99,10 @@
     final class DashboardViewModel: ObservableObject {
         typealias SaveConfiguration = (RecorderConfig) throws -> RecorderConfig
         typealias DeleteDetails = (Date?, @escaping (Result<Int, Error>) -> Void) -> Void
+        typealias DeleteTargetedDetails = (
+            TargetedHistoryDeletionRequest,
+            @escaping (Result<Int, Error>) -> Void
+        ) -> Void
 
         @Published var selectedSection: DashboardSection = .overview
         @Published private(set) var runtime: RuntimePresentation = .unavailable
@@ -117,6 +121,7 @@
         @Published var settingsDraft: DashboardSettingsDraft
         @Published var alert: DashboardAlert?
         @Published var showWelcome: Bool
+        @Published private(set) var historyDeletionGeneration = 0
 
         let deviceID: String
         let deviceTrustTier: String
@@ -140,6 +145,7 @@
         private let onRequestPermissions: () -> Void
         private let onSaveConfiguration: SaveConfiguration
         private let onDeleteDetails: DeleteDetails
+        private let onDeleteTargetedDetails: DeleteTargetedDetails
         private let refreshScheduler: DashboardRefreshScheduler
         private let dataReader: DashboardDataReader
         private let shareBuilder = SharePackageBuilder()
@@ -185,6 +191,7 @@
             onRequestPermissions: @escaping () -> Void,
             onSaveConfiguration: @escaping SaveConfiguration,
             onDeleteDetails: @escaping DeleteDetails,
+            onDeleteTargetedDetails: @escaping DeleteTargetedDetails,
             refreshScheduler: DashboardRefreshScheduler = DashboardRefreshScheduler(),
             dataReader: DashboardDataReader = DashboardDataReader()
         ) {
@@ -208,6 +215,7 @@
             self.onRequestPermissions = onRequestPermissions
             self.onSaveConfiguration = onSaveConfiguration
             self.onDeleteDetails = onDeleteDetails
+            self.onDeleteTargetedDetails = onDeleteTargetedDetails
             self.refreshScheduler = refreshScheduler
             self.dataReader = dataReader
 
@@ -674,6 +682,55 @@
                             message: cutoff == nil
                                 ? "Deleted \(count) local event file(s). Existing seals and receipts remain, so those periods can still be shown as private."
                                 : "Deleted \(count) detailed event(s). Existing seals and receipts remain."
+                        )
+                        self.refreshData(force: true)
+                        self.reloadShareSegments()
+                    case .failure(let error):
+                        self.alert = DashboardAlert(
+                            kind: .error,
+                            title: "Deletion failed",
+                            message: String(describing: error)
+                        )
+                    }
+                }
+            }
+        }
+
+        func deleteComputerHistoryEpisode(_ episode: ComputerHistoryEpisode, day: Date) {
+            deleteTargetedDetails(
+                .computerHistoryEpisode(id: episode.id, day: day),
+                successMessage:
+                    "Deleted the selected Computer History item and its exact local source details. Existing seals and receipts remain."
+            )
+        }
+
+        func deleteActivitySession(_ session: ActivitySession) {
+            deleteTargetedDetails(
+                .activitySession(session),
+                successMessage:
+                    "Deleted the selected app session and its exact local source details. Existing seals and receipts remain."
+            )
+        }
+
+        var mostRecentActivitySession: ActivitySession? {
+            snapshot.sessions.first
+        }
+
+        private func deleteTargetedDetails(
+            _ request: TargetedHistoryDeletionRequest,
+            successMessage: String
+        ) {
+            onDeleteTargetedDetails(request) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    switch result {
+                    case .success(let count):
+                        self.historyDeletionGeneration &+= 1
+                        self.selectedSessionID = nil
+                        self.alert = DashboardAlert(
+                            kind: .information,
+                            title: "Local item deleted",
+                            message: "\(successMessage) Removed \(count) local item(s)."
                         )
                         self.refreshData(force: true)
                         self.reloadShareSegments()

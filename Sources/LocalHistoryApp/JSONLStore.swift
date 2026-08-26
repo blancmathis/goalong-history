@@ -30,7 +30,31 @@
         var peakBufferedBytes = 0
     }
 
+    struct JSONLTargetedDeletionOutcome: Equatable {
+        let eventCount: Int
+        let semanticSnapshotIDs: Set<String>
+    }
+
     final class JSONLStore {
+        private enum DeletionRule {
+            case since(Date)
+            case exactEventIDs(Set<String>)
+
+            var requiresExactClassification: Bool {
+                if case .exactEventIDs = self { return true }
+                return false
+            }
+
+            func matches(_ event: HistoryEvent) -> Bool {
+                switch self {
+                case .since(let cutoff):
+                    return event.timestamp >= cutoff
+                case .exactEventIDs(let IDs):
+                    return IDs.contains(event.id)
+                }
+            }
+        }
+
         private struct DirectoryHandle {
             let descriptor: Int32
             let status: stat
@@ -223,6 +247,53 @@
                         directory: directory
                     )
                     DispatchQueue.main.async { completion(.success(deleted)) }
+                } catch {
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                }
+            }
+        }
+
+        /// Deletes only explicitly resolved source-event identifiers. The caller
+        /// provides the source interval solely to bound which day journals are
+        /// streamed; timestamps never broaden the deletion predicate.
+        func deleteEvents(
+            withIDs eventIDs: Set<String>,
+            from start: Date,
+            through end: Date,
+            completion: @escaping (Result<JSONLTargetedDeletionOutcome, Error>) -> Void
+        ) {
+            queue.async { [weak self] in
+                guard let self else { return }
+                do {
+                    guard !eventIDs.isEmpty else {
+                        DispatchQueue.main.async {
+                            completion(
+                                .success(
+                                    JSONLTargetedDeletionOutcome(
+                                        eventCount: 0,
+                                        semanticSnapshotIDs: []
+                                    )
+                                )
+                            )
+                        }
+                        return
+                    }
+                    guard start <= end else {
+                        throw JSONLStoreError.invalidTargetedDeletionInterval
+                    }
+                    guard eventIDs.count <= 32_768 else {
+                        throw JSONLStoreError.targetedDeletionExceedsLimit(eventIDs.count, 32_768)
+                    }
+                    try self.closeCurrentHandle()
+                    let directory = try Self.openVerifiedDirectory(at: self.eventsDirectory)
+                    defer { _ = Darwin.close(directory.descriptor) }
+                    let outcome = try self.rewriteFilesKeepingEvents(
+                        withIDs: eventIDs,
+                        from: start,
+                        through: end,
+                        directory: directory
+                    )
+                    DispatchQueue.main.async { completion(.success(outcome)) }
                 } catch {
                     DispatchQueue.main.async { completion(.failure(error)) }
                 }
@@ -447,6 +518,7 @@
             directory: DirectoryHandle
         ) throws -> Int {
             var metrics = JSONLDeletionMetrics()
+            var semanticSnapshotIDs = Set<String>()
             defer { latestDeletionMetrics = metrics }
             let earliestPotentialFileDay = AppPaths.localDayString(
                 for: cutoff.addingTimeInterval(-Self.maximumSourceTimeZoneDistance)
@@ -461,20 +533,133 @@
                 }
                 try rewriteFileKeepingEvents(
                     named: fileName,
-                    before: cutoff,
+                    rule: .since(cutoff),
                     directory: directory,
-                    metrics: &metrics
+                    metrics: &metrics,
+                    semanticSnapshotIDs: &semanticSnapshotIDs
                 )
             }
 
             return metrics.rowsDeleted
         }
 
+        private func rewriteFilesKeepingEvents(
+            withIDs eventIDs: Set<String>,
+            from start: Date,
+            through end: Date,
+            directory: DirectoryHandle
+        ) throws -> JSONLTargetedDeletionOutcome {
+            var metrics = JSONLDeletionMetrics()
+            defer { latestDeletionMetrics = metrics }
+            let earliestPotentialFileDay = AppPaths.localDayString(
+                for: start.addingTimeInterval(-Self.maximumSourceTimeZoneDistance)
+            )
+            let latestPotentialFileDay = AppPaths.localDayString(
+                for: end.addingTimeInterval(Self.maximumSourceTimeZoneDistance)
+            )
+            var semanticSnapshotIDs = Set<String>()
+            let fileNames = try Self.eventFileNames(in: directory.descriptor)
+            let candidateFileNames = fileNames.filter { fileName in
+                let fileDay = String(fileName.prefix(10))
+                return fileDay >= earliestPotentialFileDay
+                    && fileDay <= latestPotentialFileDay
+            }
+            metrics.filesConsidered = fileNames.count
+            let preflight = try preflightTargetedEventFiles(
+                candidateFileNames,
+                eventIDs: eventIDs,
+                directory: directory
+            )
+            metrics.sourceBytesRead += preflight.bytesRead
+            metrics.rowsVisited += preflight.rowsVisited
+            metrics.peakBufferedBytes = max(
+                metrics.peakBufferedBytes,
+                preflight.peakBufferedBytes
+            )
+
+            for fileName in preflight.matchingFileNames.sorted() {
+                try rewriteFileKeepingEvents(
+                    named: fileName,
+                    rule: .exactEventIDs(eventIDs),
+                    directory: directory,
+                    metrics: &metrics,
+                    semanticSnapshotIDs: &semanticSnapshotIDs
+                )
+            }
+
+            return JSONLTargetedDeletionOutcome(
+                eventCount: metrics.rowsDeleted,
+                semanticSnapshotIDs: semanticSnapshotIDs
+            )
+        }
+
+        private func preflightTargetedEventFiles(
+            _ fileNames: [String],
+            eventIDs: Set<String>,
+            directory: DirectoryHandle
+        ) throws -> (
+            matchingFileNames: Set<String>,
+            bytesRead: Int64,
+            rowsVisited: Int,
+            peakBufferedBytes: Int
+        ) {
+            let reader = HistoryJSONLinesStreamReader(
+                chunkSize: Self.deletionReadChunkBytes,
+                maximumLineBytes: Self.maximumEventLineBytes
+            )
+            var foundIDs = Set<String>()
+            var matchingFileNames = Set<String>()
+            var bytesRead: Int64 = 0
+            var rowsVisited = 0
+            var peakBufferedBytes = 0
+
+            for fileName in fileNames {
+                let fileURL = eventsDirectory.appendingPathComponent(fileName)
+                var classificationFailed = false
+                let readMetrics = try reader.read(
+                    file: fileURL,
+                    directoryDescriptor: directory.descriptor,
+                    relativeName: fileName,
+                    onLine: { raw, _ in
+                        guard let event = try? decoder.decode(HistoryEvent.self, from: raw) else {
+                            classificationFailed = true
+                            return
+                        }
+                        if eventIDs.contains(event.id) {
+                            foundIDs.insert(event.id)
+                            matchingFileNames.insert(fileName)
+                        }
+                    },
+                    onOversizedLine: { _, _ in
+                        classificationFailed = true
+                    }
+                )
+                guard !classificationFailed,
+                    !readMetrics.sourceChangedDuringRead
+                else {
+                    throw JSONLStoreError.unclassifiableTargetedDeletionRow(fileURL)
+                }
+                bytesRead += readMetrics.bytesRead
+                rowsVisited += readMetrics.rowsVisited
+                peakBufferedBytes = max(
+                    peakBufferedBytes,
+                    readMetrics.peakBufferedBytes
+                )
+            }
+            guard foundIDs == eventIDs else {
+                throw JSONLStoreError.targetedEventsUnavailable(
+                    eventIDs.count - foundIDs.count
+                )
+            }
+            return (matchingFileNames, bytesRead, rowsVisited, peakBufferedBytes)
+        }
+
         private func rewriteFileKeepingEvents(
             named fileName: String,
-            before cutoff: Date,
+            rule: DeletionRule,
             directory: DirectoryHandle,
-            metrics: inout JSONLDeletionMetrics
+            metrics: inout JSONLDeletionMetrics,
+            semanticSnapshotIDs: inout Set<String>
         ) throws {
             let sourceDescriptor = fileName.withCString {
                 Darwin.openat(
@@ -561,9 +746,14 @@
             func writeBufferedLine(hasNewline: Bool) throws {
                 metrics.rowsVisited += 1
                 if let event = try? decoder.decode(HistoryEvent.self, from: lineBuffer) {
-                    if event.timestamp >= cutoff {
+                    if rule.matches(event) {
                         metrics.rowsDeleted += 1
                         fileDeletedRows += 1
+                        if case .exactEventIDs = rule,
+                            let snapshotID = event.semanticContext?.snapshotID
+                        {
+                            semanticSnapshotIDs.insert(snapshotID)
+                        }
                     } else {
                         try Self.writeAll(
                             lineBuffer,
@@ -580,6 +770,11 @@
                         }
                     }
                 } else {
+                    guard !rule.requiresExactClassification else {
+                        throw JSONLStoreError.unclassifiableTargetedDeletionRow(
+                            eventsDirectory.appendingPathComponent(fileName)
+                        )
+                    }
                     // An explicit privacy deletion cannot safely classify an
                     // undecodable row by timestamp. Discard it instead of preserving
                     // details that may have been captured after the cutoff.
@@ -590,8 +785,13 @@
                 lineBuffer.removeAll(keepingCapacity: true)
             }
 
-            func finishDiscardingOversizedLine() {
+            func finishDiscardingOversizedLine() throws {
                 metrics.rowsVisited += 1
+                guard !rule.requiresExactClassification else {
+                    throw JSONLStoreError.unclassifiableTargetedDeletionRow(
+                        eventsDirectory.appendingPathComponent(fileName)
+                    )
+                }
                 metrics.rowsDeleted += 1
                 metrics.oversizedRows += 1
                 metrics.oversizedRowsDiscarded += 1
@@ -650,7 +850,7 @@
                     }
                     if let newlineIndex {
                         if discardingOversizedLine {
-                            finishDiscardingOversizedLine()
+                            try finishDiscardingOversizedLine()
                         } else {
                             try writeBufferedLine(hasNewline: true)
                         }
@@ -661,7 +861,7 @@
                 }
             }
             if discardingOversizedLine {
-                finishDiscardingOversizedLine()
+                try finishDiscardingOversizedLine()
             } else if !lineBuffer.isEmpty {
                 try writeBufferedLine(hasNewline: false)
             }
@@ -1379,6 +1579,10 @@
             case couldNotReadEventFile(URL)
             case couldNotWriteDeletionTemporaryFile(URL)
             case couldNotSynchronizeDeletion(URL)
+            case invalidTargetedDeletionInterval
+            case targetedDeletionExceedsLimit(Int, Int)
+            case unclassifiableTargetedDeletionRow(URL)
+            case targetedEventsUnavailable(Int)
             case writeOutcomeRequiresRestartRecovery
 
             var errorDescription: String? {
@@ -1421,6 +1625,17 @@
                     return "Could not write the bounded deletion temporary file at \(url.path)."
                 case .couldNotSynchronizeDeletion(let url):
                     return "Could not durably synchronize deletion at \(url.path)."
+                case .invalidTargetedDeletionInterval:
+                    return "The targeted deletion interval is invalid."
+                case .targetedDeletionExceedsLimit(let actual, let maximum):
+                    return
+                        "Refusing to retain \(actual) targeted event identifiers; the bounded maximum is \(maximum)."
+                case .unclassifiableTargetedDeletionRow(let url):
+                    return
+                        "The selected event journal contains an undecodable row at \(url.path); no exact targeted deletion was committed."
+                case .targetedEventsUnavailable(let missingCount):
+                    return
+                        "The current source is missing \(missingCount) selected event identifier(s); no exact targeted deletion was committed."
                 case .writeOutcomeRequiresRestartRecovery:
                     return
                         "A previous event write had an unknown partial outcome; restart is required before appending another sequence."

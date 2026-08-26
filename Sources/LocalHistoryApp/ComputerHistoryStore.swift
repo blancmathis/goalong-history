@@ -306,7 +306,18 @@
             since cutoff: Date? = nil,
             trustedAncestor: URL
         ) throws -> [OwnedFileDeletionPlan] {
-            let cutoffKey = cutoff.map(dayString)
+            try deletionPlans(
+                cutoffKey: cutoff.map(dayString),
+                matchingDayKeys: nil,
+                trustedAncestor: trustedAncestor
+            )
+        }
+
+        func deletionPlans(
+            cutoffKey: String?,
+            matchingDayKeys: Set<String>?,
+            trustedAncestor: URL
+        ) throws -> [OwnedFileDeletionPlan] {
             var plans: [OwnedFileDeletionPlan] = []
 
             for (directory, dayKey) in [
@@ -317,6 +328,7 @@
                     directory: directory,
                     trustedAncestor: trustedAncestor,
                     cutoffKey: cutoffKey,
+                    matchingDayKeys: matchingDayKeys,
                     dayKey: dayKey
                 ) {
                     plans.append(plan)

@@ -151,6 +151,9 @@
                     },
                     onDeleteDetails: { [weak self] cutoff, completion in
                         self?.deleteDetails(since: cutoff, completion: completion)
+                    },
+                    onDeleteTargetedDetails: { [weak self] request, completion in
+                        self?.deleteTargetedDetails(request, completion: completion)
                     }
                 )
                 dashboardWindowController = DashboardWindowController(viewModel: dashboardViewModel)
@@ -286,6 +289,135 @@
             barrier.notifyWhenDrained(suspension) { [self] in
                 deleteDetailsAfterDerivedWritersDrain(
                     since: cutoff,
+                    suspension: suspension,
+                    completion: completion
+                )
+            }
+        }
+
+        private func deleteTargetedDetails(
+            _ request: TargetedHistoryDeletionRequest,
+            completion: @escaping (Result<Int, Error>) -> Void
+        ) {
+            let barrier = DerivedHistoryWriteBarrier.shared
+            let suspension = barrier.suspend()
+            ActivityAnalysisRuntime.shared.prepareForHistoryClear()
+            ChatGPTRecapRuntime.shared.prepareForHistoryClear()
+            barrier.notifyWhenDrained(suspension) { [self] in
+                DispatchQueue.global(qos: .userInitiated).async { [self] in
+                    do {
+                        let selection = try TargetedHistoryDeletionResolver().resolve(request)
+                        try semanticContextStore.preflightSnapshotDeletion(
+                            withIDs: selection.semanticSnapshotIDs,
+                            on: selection.semanticDays
+                        )
+                        let derivedPlan = try DerivedHistoryCleaner().prepareDeletion(
+                            days: selection.affectedDays
+                        )
+                        deleteTargetedDetailsAfterPreflight(
+                            selection: selection,
+                            derivedPlan: derivedPlan,
+                            suspension: suspension,
+                            completion: completion
+                        )
+                    } catch {
+                        DispatchQueue.main.async { [self] in
+                            completeHistoryClear(
+                                .failure(error),
+                                suspension: suspension,
+                                completion: completion
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        private func deleteTargetedDetailsAfterPreflight(
+            selection: TargetedHistoryDeletionSelection,
+            derivedPlan: DerivedHistoryDeletionPlan,
+            suspension: DerivedHistoryWriteBarrier.Suspension,
+            completion: @escaping (Result<Int, Error>) -> Void
+        ) {
+            store.deleteEvents(
+                withIDs: selection.eventIDs,
+                from: selection.start,
+                through: selection.end
+            ) { [self] rawResult in
+                switch rawResult {
+                case .failure(let error):
+                    completeHistoryClear(
+                        .failure(error),
+                        suspension: suspension,
+                        completion: completion
+                    )
+                case .success(let raw):
+                    guard raw.eventCount >= selection.eventIDs.count else {
+                        completeHistoryClear(
+                            .failure(TargetedHistoryDeletionError.sourceChangedDuringCommit),
+                            suspension: suspension,
+                            completion: completion
+                        )
+                        return
+                    }
+                    let semanticIDs = selection.semanticSnapshotIDs.union(
+                        raw.semanticSnapshotIDs
+                    )
+                    semanticContextStore.deleteSnapshots(
+                        withIDs: semanticIDs,
+                        on: selection.semanticDays
+                    ) { [self] semanticResult in
+                        switch semanticResult {
+                        case .failure(let error):
+                            completeHistoryClear(
+                                .failure(error),
+                                suspension: suspension,
+                                completion: completion
+                            )
+                        case .success(let semanticCount):
+                            finishTargetedHistoryDeletion(
+                                rawCount: raw.eventCount,
+                                semanticCount: semanticCount,
+                                derivedPlan: derivedPlan,
+                                suspension: suspension,
+                                completion: completion
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        private func finishTargetedHistoryDeletion(
+            rawCount: Int,
+            semanticCount: Int,
+            derivedPlan: DerivedHistoryDeletionPlan,
+            suspension: DerivedHistoryWriteBarrier.Suspension,
+            completion: @escaping (Result<Int, Error>) -> Void
+        ) {
+            do {
+                let derived = try derivedPlan.execute()
+                recorder.record(
+                    kind: .historyCleared,
+                    message:
+                        "Selected local activity, semantic snapshots, and derived memories deleted",
+                    metadata: [
+                        "scope": "targeted_item",
+                        "deleted_events": String(rawCount),
+                        "deleted_semantic_snapshots": String(semanticCount),
+                        "deleted_activity_analysis_files": String(derived.activityAnalysisFiles),
+                        "deleted_activity_memory_files": String(derived.activityMemoryFiles),
+                        "deleted_computer_history_files": String(derived.computerHistoryFiles),
+                    ]
+                )
+                completeHistoryClear(
+                    .success(rawCount + semanticCount + derived.total),
+                    suspension: suspension,
+                    completion: completion
+                )
+            } catch {
+                completeHistoryClear(
+                    .failure(error),
                     suspension: suspension,
                     completion: completion
                 )

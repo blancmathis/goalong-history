@@ -544,13 +544,13 @@ private struct HistoryPinnedSourceFile {
 /// transient read buffer stays independent of the size of the file without
 /// exposing recorder contents or diagnostics in the public API.
 package struct HistoryJSONLinesReadMetrics: Equatable {
-    var bytesRead: Int64 = 0
-    var peakBufferedBytes = 0
-    var rowsVisited = 0
-    var oversizedRows = 0
-    var reachedByteLimit = false
-    var wasCancelled = false
-    var sourceChangedDuringRead = false
+    package var bytesRead: Int64 = 0
+    package var peakBufferedBytes = 0
+    package var rowsVisited = 0
+    package var oversizedRows = 0
+    package var reachedByteLimit = false
+    package var wasCancelled = false
+    package var sourceChangedDuringRead = false
     fileprivate var pinnedIdentity: HistoryPinnedRegularFileIdentity?
 }
 

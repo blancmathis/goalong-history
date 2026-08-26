@@ -151,6 +151,52 @@ public enum ComputerHistoryEngine {
         )
     }
 
+    /// Rebuilds one retained episode against the bounded raw evidence for its day
+    /// and returns every source event identifier, even when the persisted memory
+    /// keeps only representative provenance. This is intentionally on-demand so
+    /// normal display and search stay compact while an explicit local deletion can
+    /// target exact journal rows instead of erasing a broad time interval.
+    package static func exactSourceEventIDs(
+        forEpisodeID episodeID: String,
+        events: [HistoryEvent],
+        semanticSnapshots: [String: SemanticContextPayload] = [:],
+        day: Date,
+        calendar: Calendar = .current
+    ) -> [String]? {
+        let dayStart = calendar.startOfDay(for: day)
+        let dayEnd =
+            calendar.date(byAdding: .day, value: 1, to: dayStart)
+            ?? dayStart.addingTimeInterval(86_400)
+        let evidence = events
+            .filter {
+                $0.timestamp >= dayStart
+                    && $0.timestamp < dayEnd
+                    && $0.isComputerHistoryEvidence
+            }
+            .sorted(by: ComputerHistorySupport.eventOrder)
+        let captured = evidence.filter {
+            $0.suppressionReason == nil && !$0.isObservationContinuityBoundary
+        }
+        var resolution = ComputerHistoryResourceResolver.resolve(
+            events: captured,
+            semanticSnapshots: semanticSnapshots
+        )
+        let semanticTexts = resolution.takeInteractionSemanticTexts()
+        let interactions = ComputerHistoryInteractionBuilder.build(
+            events: captured,
+            semanticSnapshots: semanticSnapshots,
+            eventResourceIDs: resolution.eventResourceIDs,
+            precomputedSemanticTexts: semanticTexts
+        )
+        let episodes = ComputerHistoryEpisodeBuilder.build(
+            interactions: interactions,
+            events: evidence,
+            resources: resolution.resources,
+            provenanceReferenceLimit: nil
+        )
+        return episodes.first(where: { $0.id == episodeID })?.provenance.sourceEventIDs
+    }
+
     /// Applies the current bounded representative projection to a readable memory
     /// produced by an older build. Exact coverage totals stay unchanged and the raw
     /// journals remain authoritative; only the derived display/search payload is

@@ -66,6 +66,7 @@
             directory: URL,
             trustedAncestor: URL,
             cutoffKey: String?,
+            matchingDayKeys: Set<String>? = nil,
             dayKey: (URL) -> String?
         ) throws -> OwnedFileDeletionPlan? {
             let normalizedDirectory = directory.standardizedFileURL
@@ -79,7 +80,10 @@
             var targets: [Target] = []
             for name in try directoryEntries(descriptor: opened.descriptor).sorted() {
                 let URL = normalizedDirectory.appendingPathComponent(name, isDirectory: false)
-                guard let key = dayKey(URL), cutoffKey.map({ key >= $0 }) ?? true else {
+                guard let key = dayKey(URL),
+                    cutoffKey.map({ key >= $0 }) ?? true,
+                    matchingDayKeys.map({ $0.contains(key) }) ?? true
+                else {
                     continue
                 }
                 var status = stat()
@@ -518,6 +522,18 @@
         /// semantic history so an unsafe derived target cannot cause a partial clear.
         func prepareDeletion(since cutoff: Date?) throws -> DerivedHistoryDeletionPlan {
             let cutoffKey = cutoff.map(dayString)
+            return try prepareDeletion(cutoffKey: cutoffKey, matchingDayKeys: nil)
+        }
+
+        func prepareDeletion(days: Set<Date>) throws -> DerivedHistoryDeletionPlan {
+            let dayKeys = Set(days.map(dayString))
+            return try prepareDeletion(cutoffKey: nil, matchingDayKeys: dayKeys)
+        }
+
+        private func prepareDeletion(
+            cutoffKey: String?,
+            matchingDayKeys: Set<String>?
+        ) throws -> DerivedHistoryDeletionPlan {
             let analysisDirectory = rootDirectory.appendingPathComponent(
                 "analysis",
                 isDirectory: true
@@ -534,16 +550,19 @@
                 in: analysisDirectory,
                 trustedAncestor: trustedAncestor,
                 suffixes: [".analysis.json", ".agent.md"],
-                cutoffKey: cutoffKey
+                cutoffKey: cutoffKey,
+                matchingDayKeys: matchingDayKeys
             )
             let memoryPlan = try deletionPlan(
                 in: memoryDirectory,
                 trustedAncestor: trustedAncestor,
                 suffixes: [".memory.json", ".memory.md"],
-                cutoffKey: cutoffKey
+                cutoffKey: cutoffKey,
+                matchingDayKeys: matchingDayKeys
             )
             let computerHistoryPlans = try computerHistoryStore.deletionPlans(
-                since: cutoff,
+                cutoffKey: cutoffKey,
+                matchingDayKeys: matchingDayKeys,
                 trustedAncestor: trustedAncestor
             )
 
@@ -564,12 +583,14 @@
             in directory: URL,
             trustedAncestor: URL,
             suffixes: [String],
-            cutoffKey: String?
+            cutoffKey: String?,
+            matchingDayKeys: Set<String>?
         ) throws -> OwnedFileDeletionPlan? {
             try OwnedFileDeletionPlan.prepare(
                 directory: directory,
                 trustedAncestor: trustedAncestor,
                 cutoffKey: cutoffKey,
+                matchingDayKeys: matchingDayKeys,
                 dayKey: { [self] URL in dayKey(URL, suffixes: suffixes) }
             )
         }

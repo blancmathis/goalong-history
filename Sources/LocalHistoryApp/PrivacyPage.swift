@@ -4,6 +4,7 @@
     struct PrivacyPage: View {
         @ObservedObject var model: DashboardViewModel
         @State private var deletionScope: DeletionScope?
+        @State private var sessionPendingDeletion: ActivitySession?
 
         var body: some View {
             ScrollView {
@@ -379,6 +380,12 @@
                     }
                     Spacer(minLength: 20)
                     Menu {
+                        if let recent = model.mostRecentActivitySession {
+                            Button("Most recent app session", role: .destructive) {
+                                sessionPendingDeletion = recent
+                            }
+                            Divider()
+                        }
                         Button("Last 10 minutes", role: .destructive) {
                             deletionScope = .lastTenMinutes
                         }
@@ -395,6 +402,18 @@
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                 }
+            }
+            .alert(item: $sessionPendingDeletion) { session in
+                Alert(
+                    title: Text("Delete the most recent app session?"),
+                    message: Text(
+                        "Goalong will remove only the exact local events and linked semantic snapshots for \(session.appName) from \(DashboardFormatters.shortTime.string(from: session.start)) to \(DashboardFormatters.shortTime.string(from: session.end)). Seals, receipts, Screen Time and Agent Activity remain."
+                    ),
+                    primaryButton: .destructive(Text("Delete session")) {
+                        model.deleteActivitySession(session)
+                    },
+                    secondaryButton: .cancel()
+                )
             }
         }
 

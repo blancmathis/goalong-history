@@ -4,6 +4,7 @@
 
     struct ActivityTimelineExplorer: View {
         @ObservedObject var model: DashboardViewModel
+        @State private var sessionPendingDeletion: ActivitySession?
 
         var body: some View {
             VStack(alignment: .leading, spacing: 14) {
@@ -16,6 +17,18 @@
                         .frame(maxWidth: .infinity)
                 }
                 .frame(maxHeight: .infinity)
+            }
+            .alert(item: $sessionPendingDeletion) { session in
+                Alert(
+                    title: Text("Delete this app session?"),
+                    message: Text(
+                        "Only the exact local source events and linked semantic snapshots for this session will be removed. Derived views for the affected day are rebuilt; seals, receipts, Screen Time and Agent Activity remain."
+                    ),
+                    primaryButton: .destructive(Text("Delete session")) {
+                        model.deleteActivitySession(session)
+                    },
+                    secondaryButton: .cancel()
+                )
             }
         }
 
@@ -159,6 +172,13 @@
                     }
                 }
                 Spacer()
+                Button(role: .destructive) {
+                    sessionPendingDeletion = session
+                } label: {
+                    Label("Delete session…", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
         }
 

@@ -72,6 +72,204 @@
             XCTAssertEqual(data.last, 0x0A)
         }
 
+        func testJSONLTargetedDeletionRemovesOnlyExactEventsAndReturnsSemanticReferences() throws {
+            let root = try makeTemporaryDirectory()
+            let eventsDirectory = root.appendingPathComponent("events", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: eventsDirectory,
+                withIntermediateDirectories: true
+            )
+            let start = Self.date(year: 2026, month: 8, day: 23, hour: 12)
+            let semantic = SemanticContextPayload(
+                id: "semantic-target",
+                capturedAt: start.addingTimeInterval(60),
+                application: AppSnapshot(
+                    name: "TextEdit",
+                    bundleIdentifier: "com.apple.TextEdit",
+                    processIdentifier: 42
+                ),
+                window: nil,
+                url: nil,
+                focusedRole: nil,
+                source: .visibleText,
+                text: "targeted fixture",
+                contentSHA256: SHA256Digest.hashHex("targeted fixture"),
+                redacted: false,
+                truncated: false
+            )
+            let retainedBefore = HistoryEvent(
+                id: "retained-before",
+                sessionID: "targeted-delete",
+                timestamp: start,
+                kind: .mouseClick
+            )
+            let targeted = HistoryEvent(
+                id: "targeted-event",
+                sessionID: "targeted-delete",
+                timestamp: start.addingTimeInterval(60),
+                kind: .semanticSnapshot,
+                semanticContext: semantic.reference
+            )
+            let retainedAfter = HistoryEvent(
+                id: "retained-after",
+                sessionID: "targeted-delete",
+                timestamp: start.addingTimeInterval(120),
+                kind: .mouseClick
+            )
+            let file = eventsDirectory.appendingPathComponent("2026-08-23.jsonl")
+            var journal = Data()
+            for event in [retainedBefore, targeted, retainedAfter] {
+                journal.append(try JSONEncoder.iso8601.encode(event))
+                journal.append(0x0A)
+            }
+            try journal.write(to: file)
+
+            let store = try JSONLStore(
+                retentionDays: 0,
+                eventsDirectory: eventsDirectory,
+                prepareApplicationStorage: false
+            )
+            let completion = expectation(description: "targeted delete")
+            store.deleteEvents(
+                withIDs: [targeted.id],
+                from: targeted.timestamp,
+                through: targeted.timestamp
+            ) { result in
+                do {
+                    let outcome = try result.get()
+                    XCTAssertEqual(outcome.eventCount, 1)
+                    XCTAssertEqual(outcome.semanticSnapshotIDs, [semantic.id])
+                } catch {
+                    XCTFail("Targeted deletion failed: \(error)")
+                }
+                completion.fulfill()
+            }
+            wait(for: [completion], timeout: 2)
+
+            let remaining = try Data(contentsOf: file).split(separator: 0x0A).map {
+                try JSONDecoder.iso8601.decode(HistoryEvent.self, from: Data($0))
+            }
+            XCTAssertEqual(remaining.map(\.id), [retainedBefore.id, retainedAfter.id])
+            XCTAssertEqual(store.deletionMetrics.rowsDeleted, 1)
+            XCTAssertLessThanOrEqual(
+                store.deletionMetrics.peakBufferedBytes,
+                JSONLStore.deletionMemoryBoundBytes
+            )
+        }
+
+        func testJSONLTargetedDeletionPreflightPreservesFileWithMalformedRow() throws {
+            let root = try makeTemporaryDirectory()
+            let eventsDirectory = root.appendingPathComponent("events", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: eventsDirectory,
+                withIntermediateDirectories: true
+            )
+            let timestamp = Self.date(year: 2026, month: 8, day: 23, hour: 12)
+            let targeted = HistoryEvent(
+                id: "targeted-before-malformed",
+                sessionID: "targeted-delete",
+                timestamp: timestamp,
+                kind: .mouseClick
+            )
+            var journal = try JSONEncoder.iso8601.encode(targeted)
+            journal.append(0x0A)
+            journal.append(Data("malformed-private-event\n".utf8))
+            let file = eventsDirectory.appendingPathComponent("2026-08-23.jsonl")
+            try journal.write(to: file)
+
+            let store = try JSONLStore(
+                retentionDays: 0,
+                eventsDirectory: eventsDirectory,
+                prepareApplicationStorage: false
+            )
+            let completion = expectation(description: "targeted malformed refusal")
+            store.deleteEvents(
+                withIDs: [targeted.id],
+                from: timestamp,
+                through: timestamp
+            ) { result in
+                if case .success = result {
+                    XCTFail("Malformed targeted event deletion unexpectedly succeeded")
+                }
+                completion.fulfill()
+            }
+            wait(for: [completion], timeout: 2)
+
+            XCTAssertEqual(try Data(contentsOf: file), journal)
+            XCTAssertEqual(store.deletionMetrics.rowsDeleted, 0)
+        }
+
+        func testSemanticTargetedDeletionRemovesOnlyExactPayload() throws {
+            let root = try makeTemporaryDirectory()
+            let semanticDirectory = root.appendingPathComponent("semantic", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: semanticDirectory,
+                withIntermediateDirectories: true
+            )
+            let timestamp = Self.date(year: 2026, month: 8, day: 23, hour: 12)
+            let retained = semanticPayload(id: "semantic-retained", timestamp: timestamp)
+            let targeted = semanticPayload(
+                id: "semantic-targeted",
+                timestamp: timestamp.addingTimeInterval(60)
+            )
+            let file = semanticDirectory.appendingPathComponent("2026-08-23.semantic.jsonl")
+            var data = Data()
+            for payload in [retained, targeted] {
+                data.append(try JSONEncoder.iso8601.encode(payload))
+                data.append(0x0A)
+            }
+            try data.write(to: file)
+
+            let store = SemanticContextStore(semanticDirectory: semanticDirectory)
+            let completion = expectation(description: "semantic targeted delete")
+            store.deleteSnapshots(withIDs: [targeted.id]) { result in
+                XCTAssertEqual(try? result.get(), 1)
+                completion.fulfill()
+            }
+            wait(for: [completion], timeout: 2)
+
+            let remaining = try Data(contentsOf: file).split(separator: 0x0A).map {
+                try JSONDecoder.iso8601.decode(SemanticContextPayload.self, from: Data($0))
+            }
+            XCTAssertEqual(remaining.map(\.id), [retained.id])
+            XCTAssertNil(try Data(contentsOf: file).range(of: Data(targeted.text.utf8)))
+            XCTAssertGreaterThan(store.deletionMetrics.bytesRead, 0)
+            XCTAssertEqual(store.deletionMetrics.rowsVisited, 2)
+            XCTAssertLessThanOrEqual(
+                store.deletionMetrics.peakBufferedBytes,
+                SemanticContextStore.deletionReadChunkBytes
+                    + SemanticContextStore.maximumSemanticLineBytes
+            )
+        }
+
+        func testSemanticTargetedDeletionFailsClosedOnMalformedRow() throws {
+            let root = try makeTemporaryDirectory()
+            let semanticDirectory = root.appendingPathComponent("semantic", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: semanticDirectory,
+                withIntermediateDirectories: true
+            )
+            let timestamp = Self.date(year: 2026, month: 8, day: 23, hour: 12)
+            let targeted = semanticPayload(id: "semantic-targeted", timestamp: timestamp)
+            let file = semanticDirectory.appendingPathComponent("2026-08-23.semantic.jsonl")
+            var data = try JSONEncoder.iso8601.encode(targeted)
+            data.append(0x0A)
+            data.append(Data("malformed-private-row\n".utf8))
+            try data.write(to: file)
+
+            let store = SemanticContextStore(semanticDirectory: semanticDirectory)
+            let completion = expectation(description: "semantic malformed refusal")
+            store.deleteSnapshots(withIDs: [targeted.id]) { result in
+                if case .success = result {
+                    XCTFail("Malformed targeted deletion unexpectedly succeeded")
+                }
+                completion.fulfill()
+            }
+            wait(for: [completion], timeout: 2)
+
+            XCTAssertEqual(try Data(contentsOf: file), data)
+        }
+
         func testJSONLExplicitDeletionPreservesUnknownLinkedAndNonRegularEntries() throws {
             let root = try makeTemporaryDirectory()
             let events = root.appendingPathComponent("events", isDirectory: true)
@@ -877,6 +1075,27 @@
 
             XCTAssertTrue(FileManager.default.fileExists(atPath: oldEvent.path))
             XCTAssertThrowsError(try store.save(unsupported))
+        }
+
+        private func semanticPayload(id: String, timestamp: Date) -> SemanticContextPayload {
+            let text = "payload-\(id)"
+            return SemanticContextPayload(
+                id: id,
+                capturedAt: timestamp,
+                application: AppSnapshot(
+                    name: "TextEdit",
+                    bundleIdentifier: "com.apple.TextEdit",
+                    processIdentifier: 42
+                ),
+                window: nil,
+                url: nil,
+                focusedRole: nil,
+                source: .visibleText,
+                text: text,
+                contentSHA256: SHA256Digest.hashHex(text),
+                redacted: false,
+                truncated: false
+            )
         }
 
         private func makeFixture() throws -> Fixture {

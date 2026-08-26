@@ -38,7 +38,13 @@
                         ComputerHistoryPage(
                             model: computerHistoryModel,
                             day: model.selectedDay,
-                            fullContextEnabled: richContextEnabled
+                            fullContextEnabled: richContextEnabled,
+                            deleteEpisode: { episode in
+                                model.deleteComputerHistoryEpisode(
+                                    episode,
+                                    day: model.selectedDay
+                                )
+                            }
                         )
                     case .dayRecap:
                         recapBody
@@ -66,6 +72,9 @@
             .onChange(of: richContextEnabled) { _ in
                 ActivityAnalysisRuntime.shared.richContextPreferenceDidChange()
                 computerHistoryModel.refresh(day: model.selectedDay, forceRebuild: true)
+            }
+            .onChange(of: model.historyDeletionGeneration) { _ in
+                refreshAnalyses(day: model.selectedDay, forceRebuild: true)
             }
             .alert("Enable Rich Context?", isPresented: $showRichContextConfirmation) {
                 Button("Cancel", role: .cancel) {}

@@ -79,6 +79,65 @@
             XCTAssertFalse(FileManager.default.fileExists(atPath: codex.appendingPathComponent("2026-08-20-goalong-computer-history.md").path))
         }
 
+        func testExactDayDeletionPreservesEarlierAndLaterDerivedMemories() throws {
+            let container = FileManager.default.temporaryDirectory
+                .appendingPathComponent("goalong-derived-cleaner-\(UUID().uuidString)", isDirectory: true)
+            let root = container.appendingPathComponent("LocalHistory", isDirectory: true)
+            let analysis = root.appendingPathComponent("analysis", isDirectory: true)
+            let memories = root.appendingPathComponent("memories", isDirectory: true)
+            let computerHistory = root.appendingPathComponent("computer-history", isDirectory: true)
+            let codex = container.appendingPathComponent("codex-memory", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: container) }
+            for directory in [analysis, memories, computerHistory, codex] {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            for key in ["2026-08-19", "2026-08-20", "2026-08-21"] {
+                try writeFixture(to: analysis.appendingPathComponent(key + ".analysis.json"))
+                try writeFixture(to: memories.appendingPathComponent(key + ".memory.json"))
+                try writeFixture(
+                    to: computerHistory.appendingPathComponent(key + ".computer-history.json")
+                )
+                try writeFixture(
+                    to: codex.appendingPathComponent(key + "-goalong-computer-history.md")
+                )
+            }
+
+            let cleaner = DerivedHistoryCleaner(
+                rootDirectory: root,
+                codexMemoryDirectory: codex
+            )
+            let plan = try cleaner.prepareDeletion(
+                days: [makeDay(year: 2026, month: 8, day: 20)]
+            )
+            XCTAssertEqual(plan.expectedResult.total, 4)
+            _ = try plan.execute()
+
+            for key in ["2026-08-19", "2026-08-21"] {
+                XCTAssertTrue(
+                    FileManager.default.fileExists(
+                        atPath: analysis.appendingPathComponent(key + ".analysis.json").path
+                    )
+                )
+                XCTAssertTrue(
+                    FileManager.default.fileExists(
+                        atPath: computerHistory
+                            .appendingPathComponent(key + ".computer-history.json").path
+                    )
+                )
+            }
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: analysis.appendingPathComponent("2026-08-20.analysis.json").path
+                )
+            )
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: codex
+                        .appendingPathComponent("2026-08-20-goalong-computer-history.md").path
+                )
+            )
+        }
+
         func testMatchingSymlinkFailsClosedBeforeDeletingSiblingFiles() throws {
             let container = FileManager.default.temporaryDirectory
                 .appendingPathComponent("goalong-derived-cleaner-\(UUID().uuidString)", isDirectory: true)
