@@ -212,20 +212,31 @@
                 maximumDays: boundedDays,
                 renderMarkdown: false
             )
+            let retainedAnswer = ComputerHistorySearchService(
+                memories: recent.memories
+            ).ask(query)
             let sourceSearch: ComputerHistorySourceSearchResult?
-            if ComputerHistorySearchService.shouldSearchRawSources(for: query) {
+            if ComputerHistorySearchService.requiresRawSourceFallback(
+                for: query,
+                retainedHitCount: retainedAnswer.hits.count
+            ) {
                 let now = Date()
                 let today = Calendar.current.startOfDay(for: now)
-                let firstDay = Calendar.current.date(
-                    byAdding: .day,
-                    value: -(boundedDays - 1),
-                    to: today
-                ) ?? today
+                let requestedFirstDay =
+                    Calendar.current.date(
+                        byAdding: .day,
+                        value: -(boundedDays - 1),
+                        to: today
+                    ) ?? today
+                let explicitInterval =
+                    ComputerHistorySearchService
+                    .explicitTemporalInterval(for: query, now: now)
                 sourceSearch = HistoryLocalStoreReader(rootDirectory: rootDirectory)
                     .searchComputerHistorySource(
                         query: query,
-                        start: firstDay,
-                        endExclusive: now.addingTimeInterval(0.001)
+                        start: explicitInterval?.start ?? requestedFirstDay,
+                        endExclusive: explicitInterval?.end
+                            ?? now.addingTimeInterval(0.001)
                     )
                 for issue in sourceSearch?.issues ?? [] {
                     diagnosticSink(
@@ -236,10 +247,13 @@
             } else {
                 sourceSearch = nil
             }
-            let baseAnswer = ComputerHistorySearchService(
-                memories: recent.memories,
-                sourceSearch: sourceSearch
-            ).ask(query)
+            let baseAnswer =
+                sourceSearch.map {
+                    ComputerHistorySearchService(
+                        memories: recent.memories,
+                        sourceSearch: $0
+                    ).ask(query)
+                } ?? retainedAnswer
             guard !recent.isComplete else { return baseAnswer }
             return ComputerHistoryAnswer(
                 schemaVersion: baseAnswer.schemaVersion,

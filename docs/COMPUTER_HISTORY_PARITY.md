@@ -60,7 +60,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | clicks, grouped typing, shortcuts, scrolling, app/window/site context | one local input pipeline with event-time, near-event, after, and settled observations | deterministic capture tests pass; the installed signed identity still needs a fresh physical-input/TCC run |
 | searchable chronology and local memories | causal episodes plus exact coverage totals and a bounded representative projection | parity/evidence/storage tests and installed UI inspection pass |
 | compact evidence for a later agent | deterministic on-demand evidence pack with exact totals, distributed high-value episodes, causal changes, and deduplicated source locators | unit evals and a real read-only day probe enforce token bounds and measure evidence slots per approximate token; no LLM runs in the capture loop |
-| resume after a break and summarize recent work | intent-aware local search over causal episodes, including French resume phrasing | English/French query tests and a real local source query pass |
+| resume after a break and summarize recent work | intent-aware local search over causal episodes, including French resume phrasing and explicit today/yesterday/week scoping | English/French query tests and real local source-query measurements pass |
 | recover a file, page, document, conversation, issue, or terminal context | stable source references with direct-source fallback and provenance | resource-resolution and query tests pass; unavailable locators stay explicit |
 | distinguish completed, in-progress, blocked, waiting, planned, and unknown work | cautious evidence-derived status with latest visible state taking priority | deterministic status scenarios pass; status remains an interpretation |
 | suggest skills or automations from repeated work | bounded cross-day workflow clustering; suggestions never auto-run | repeatability scenarios pass; real multi-day usefulness remains data-dependent |
@@ -74,7 +74,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | Before this hardening | Current architecture |
 | --- | --- |
 | Derived days could retain the complete causal arrays and a second local Markdown copy. | An eligible day is analyzed completely only when it fits the documented source-integrity, row, byte, and working-set bounds; then one compact JSON keeps exact totals plus a bounded representative projection, and only one optional Codex Markdown projection remains. |
-| Search depended on retained derived detail. | Stored-memory search is complemented, for lexical questions, by a bounded read-only pass over the original journals. |
+| Search depended on retained derived detail, while generic questions could repeatedly scan wide raw-journal ranges and repeat the same source text. | Stored memory is searched first. A bounded read-only raw pass runs only when no retained evidence matches and the intent needs lexical recovery; explicit today/yesterday/week questions scope reconstruction to that interval, while result snippets are capped at 240 characters and repeated source locators merge their provenance. |
 | Repeated refreshes could independently decode the same day and retain large integrity arrays in memory. | Activity Analysis and Computer History share one day pass, drop regenerable per-field commitments from transient copies, and use a small revision cache plus append debounce. |
 | A live append during a full-day pass invalidated the whole refresh even when the recorder only extended the same journal. | The runtime pins the probed event and semantic byte ceilings, reads exactly those validated prefixes, accepts only same-inode append-only growth, and catches up on the following cycle. Replacement, truncation, same-size mutation, or an incomplete row boundary still fails closed. |
 | Every application build number changed the analysis revision, and timestamp jitter could invalidate an otherwise intact append cursor. | The revision is scoped to the analysis algorithm, physical journal order is verified by sequence/hash continuity independently of timestamp sorting, and a maintenance-only append reads just its pinned suffix even while newer bytes arrive. |
@@ -622,28 +622,37 @@ expansion tokens survive, with 128 tokens total and 128 UTF-8 bytes per token. T
 limits apply to both stored-memory ranking and the direct raw-source fallback.
 
 The app's `ask` path loads up to 30 stored memories and is subject to the 32 MiB per-file
-and 64 MiB cumulative encoded-memory budgets above. For lexical resource, task-status,
-and generic questions, it also makes a direct read-only pass over the original event and
-semantic journals. JSONL is streamed in 64 KiB chunks with an 8 MiB per-row ceiling; at
-most one row plus one chunk is buffered, and at most 100 semantic candidates plus 100
-matching hits survive in transient memory. Each source-directory listing visits at most
-8,192 entries and retains at most 4,096 candidate files. No search index, cache, or source
-copy is written. The app pass stops after 384 MiB of event journals or 128 MiB of semantic
-journals and uses a 45-second cooperative deadline checked during enumeration and
-streaming; one in-progress row decode is not forcibly preempted. A source root, directory,
-or file that is itself a symbolic-link node is refused. The pinned root, source
-directories, and every examined file are revalidated after the complete pass. Any
+and 64 MiB cumulative encoded-memory budgets above. It asks that compact projection
+first. Only when the retained answer has no hits and the intent is a lexical resource,
+task-status, or generic question does it make a direct read-only pass over the original
+event and semantic journals. Explicit today, yesterday, and this-week wording also
+narrows that fallback to the requested interval. JSONL is streamed in 64 KiB chunks with
+an 8 MiB per-row ceiling; at most one row plus one chunk is buffered, and at most 100
+semantic candidates plus 100 matching hits survive in transient memory. Results with
+the same stable local path or canonical URI are presented once, with representative
+combined provenance capped at 16 references per provenance field, and every presented
+snippet is bounded to 240 characters. Each source-directory listing
+visits at most 8,192 entries and retains at most 4,096 candidate files. No search index,
+cache, or source copy is written. The app pass stops after 384 MiB of event journals or
+128 MiB of semantic journals and uses a 45-second cooperative deadline checked during
+enumeration and streaming; one in-progress row decode is not forcibly preempted. A source
+root, directory, or file that is itself a symbolic-link node is refused. The pinned root,
+source directories, and every examined file are revalidated after the complete pass. Any
 refusal, unreadable or malformed row, identity change, or exhausted budget produces an
 explicit bounded coverage gap, so the answer does not present readable rows as an
 exhaustive absence.
 
 The CLI's `ask` path rereads raw journals one day at a time, analyzes each completed day
 and the elapsed portion of today, and passes each bounded projection to the same search
-service. Each reconstruction day uses the same 32,768-row/64 MiB estimated evidence
-working-set bound as the direct command. A day that exceeds it is rejected, and that day
-plus later requested days are reported unvisited rather than treated as absence. When a
-lexical pass is useful, the CLI then performs a separate direct-source pass with the same
-384 MiB event, 128 MiB semantic, symlink, line, and 100-hit bounds described above.
+service. It applies the same retained-answer-first rule as the app before deciding
+whether a separate lexical source pass is necessary. Explicit today, yesterday, and
+this-week questions override a wider `--days` request and reconstruct only that interval.
+Each reconstruction day uses the same
+32,768-row/64 MiB estimated evidence working-set bound as the direct command. A day that
+exceeds it is rejected, and that day plus later requested days are reported unvisited
+rather than treated as absence. When a lexical pass is useful, the CLI then performs a
+separate direct-source pass with the same 384 MiB event, 128 MiB semantic, symlink, line,
+and 100-hit bounds described above.
 Reconstruction and lexical search share a 45-second cooperative ask budget, so the second
 pass receives only the time left after reconstruction. The second pass adds I/O but avoids
 retaining several decoded days merely for keyword matching and gives app and CLI source
@@ -824,8 +833,9 @@ window list was verified, and more than 60 seconds elapsed.
 | derived Computer History storage | 5 compact JSON days, 3,404,131 logical bytes / 3,332 allocated KiB; the 5 optional Codex projections total 59,428 logical bytes / 60 allocated KiB, down 97.7% from the 2,604 allocated KiB legacy mirror |
 | direct-source Agent Activity index | 797 entries in 778,752 bytes (977.1 bytes per entry): Codex 782, Claude Code 1, OpenCode 14; all available |
 | transcript duplication check | zero files and zero bytes in `agent-activity/blobs`; durable Agent Activity files are the bounded index, configuration, one small wake-up signal, and an empty lock |
+| real English today-summary query | before: 35.26 seconds, 370,524,160-byte maximum RSS, 308,118,320-byte physical peak, repeated raw-source matches; after: one day reconstructed in 0.63 seconds, 20,709,376-byte maximum RSS, 11,977,256-byte physical peak, 12 hits over 5 unique resources, 240-character maximum snippet, and no raw-source pass |
 | real French resume query | one current day reconstructed in 3.07 seconds; maximum RSS 83,361,792 bytes and physical footprint 74,842,712 bytes; 12 source-backed episode hits |
-| complete automated suite | 591 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
+| complete automated suite | 595 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
 | parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 22/22 metadata-probe tests passed; the validator also runs the 2 token-density/context-pack scenarios, the sleeping-versus-saturated kernel CPU sampler regression, and the offline local-signing policy; output contains metadata/checklists only |
 
 An additional read-only development-source probe on 2026-08-26 reconstructed the real

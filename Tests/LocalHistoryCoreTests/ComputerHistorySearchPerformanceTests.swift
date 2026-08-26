@@ -142,6 +142,124 @@ final class ComputerHistorySearchPerformanceTests: XCTestCase {
         )
     }
 
+    func testWhatDidIWorkOnTodayUsesTheCompactSummaryPath() throws {
+        let query = "What did I work on today?"
+        let memory = makeMemory(day: 0, episodesPerDay: 3)
+        let calendar = Calendar.current
+        let now = calendar.startOfDay(for: baseDate).addingTimeInterval(3_600)
+
+        XCTAssertFalse(
+            ComputerHistorySearchService.shouldSearchRawSources(for: query),
+            "A day-summary question must not stream the raw journals"
+        )
+        let interval = try XCTUnwrap(
+            ComputerHistorySearchService.explicitTemporalInterval(
+                for: query,
+                now: now,
+                calendar: calendar
+            )
+        )
+        XCTAssertEqual(interval.start, calendar.startOfDay(for: now))
+        XCTAssertEqual(interval.end, now.addingTimeInterval(0.001))
+
+        let answer = ComputerHistorySearchService(memories: [memory]).ask(
+            query,
+            now: now,
+            maximumHits: 12
+        )
+
+        XCTAssertTrue(answer.answer.contains(memory.executiveSummary))
+        XCTAssertFalse(answer.answer.contains("Most relevant observed history"))
+    }
+
+    func testRawSourceFallbackRunsOnlyForAnUnansweredLexicalIntent() {
+        XCTAssertFalse(
+            ComputerHistorySearchService.requiresRawSourceFallback(
+                for: "Which ScreenMind page was open?",
+                retainedHitCount: 1
+            )
+        )
+        XCTAssertTrue(
+            ComputerHistorySearchService.requiresRawSourceFallback(
+                for: "Which ScreenMind page was open?",
+                retainedHitCount: 0
+            )
+        )
+        XCTAssertFalse(
+            ComputerHistorySearchService.requiresRawSourceFallback(
+                for: "What did I work on today?",
+                retainedHitCount: 0
+            )
+        )
+    }
+
+    func testGenericSearchDeduplicatesOneResourceAndBoundsPresentedSnippet() {
+        let query = "screenmind"
+        let timestamp = baseDate.addingTimeInterval(120)
+        let resource = ComputerHistoryResourceReference(
+            id: "screenmind-resource",
+            kind: .webPage,
+            title: "ScreenMind",
+            canonicalURI: "https://screenminds.app/",
+            localPath: nil,
+            host: "screenminds.app",
+            application: "Aside",
+            bundleIdentifier: "at.studio.AsideBrowser",
+            locatorConfidence: 1,
+            firstSeen: timestamp.addingTimeInterval(-60),
+            lastSeen: timestamp,
+            provenance: .none
+        )
+        let repeatedSnippet = String(repeating: "ScreenMind grounded local memory. ", count: 30)
+        let sourceHits = (0..<40).map { index in
+            ComputerHistorySearchHit(
+                id: "source-event-\(index)",
+                kind: .resource,
+                timestamp: timestamp.addingTimeInterval(TimeInterval(index)),
+                end: nil,
+                title: "ScreenMind",
+                snippet: repeatedSnippet,
+                score: 9 - Double(index) / 10,
+                status: nil,
+                resource: resource,
+                episodeID: nil,
+                provenance: ActivityProvenance(
+                    sourceEventIDs: ["event-\(index)"],
+                    sourceSequences: [UInt64(index + 1)],
+                    sourceEventHashes: ["hash-\(index)"]
+                )
+            )
+        }
+        let sourceSearch = ComputerHistorySourceSearchResult(
+            query: query,
+            hits: sourceHits,
+            sourceEventCount: sourceHits.count,
+            semanticSnapshotCount: sourceHits.count,
+            eventBytesRead: 8_192,
+            semanticBytesRead: 8_192,
+            peakStreamBufferBytes: 1_024,
+            issues: []
+        )
+
+        let answer = ComputerHistorySearchService(
+            memories: [],
+            sourceSearch: sourceSearch
+        ).ask(query, now: timestamp, maximumHits: 12)
+
+        XCTAssertEqual(answer.hits.count, 1)
+        XCTAssertLessThanOrEqual(answer.hits[0].snippet.count, 240)
+        XCTAssertEqual(answer.hits[0].provenance.sourceEventIDs.count, 16)
+        XCTAssertEqual(answer.hits[0].provenance.sourceSequences.count, 16)
+        XCTAssertEqual(answer.hits[0].provenance.sourceEventHashes.count, 16)
+        XCTAssertEqual(answer.hits[0].provenance.sourceEventIDs.first, "event-0")
+        XCTAssertEqual(answer.hits[0].provenance.sourceEventIDs.last, "event-39")
+        XCTAssertEqual(
+            answer.answer.components(separatedBy: "**ScreenMind**").count - 1,
+            1
+        )
+        XCTAssertLessThan(answer.answer.utf8.count, 512)
+    }
+
     func testMultiDaySearchMatchesSingleDayResultsWithoutFalsePositives() {
         let targetDay = 29
         let targetEpisode = 17

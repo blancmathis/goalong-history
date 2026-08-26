@@ -1474,6 +1474,109 @@
             )
         }
 
+        func testAnswerSkipsRawJournalPassWhenRetainedEvidenceAlreadyMatches() throws {
+            let fixtureRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let codexRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            defer {
+                try? FileManager.default.removeItem(at: fixtureRoot)
+                try? FileManager.default.removeItem(at: codexRoot)
+            }
+
+            let now = Date()
+            let day = Calendar.current.startOfDay(for: now)
+            let resource = ComputerHistoryResourceReference(
+                id: "screenmind-resource",
+                kind: .webPage,
+                title: "ScreenMind",
+                canonicalURI: "https://screenminds.app/",
+                localPath: nil,
+                host: "screenminds.app",
+                application: "Aside",
+                bundleIdentifier: "at.studio.AsideBrowser",
+                locatorConfidence: 1,
+                firstSeen: now.addingTimeInterval(-120),
+                lastSeen: now.addingTimeInterval(-60),
+                provenance: .none
+            )
+            let episode = ComputerHistoryEpisode(
+                id: "screenmind-episode",
+                start: now.addingTimeInterval(-120),
+                end: now.addingTimeInterval(-60),
+                title: "Reviewed ScreenMind",
+                summary: "Observed local research about ScreenMind.",
+                status: .inProgress,
+                statusConfidence: 0.7,
+                applications: ["Aside"],
+                sites: ["screenminds.app"],
+                resourceIDs: [resource.id],
+                requestsOrIntentions: [],
+                observableOutcomes: [],
+                interactions: [],
+                eventCount: 2,
+                semanticSnapshotCount: 1,
+                workflowFingerprint: "screenmind-workflow",
+                provenance: .none
+            )
+            let memory = ComputerHistoryDayMemory(
+                dayStart: day,
+                dayEnd: now,
+                generatedAt: now,
+                title: "ScreenMind research",
+                executiveSummary: "Reviewed ScreenMind locally.",
+                episodes: [episode],
+                resources: [resource],
+                workflowPatterns: [],
+                suggestions: [],
+                coverage: ComputerHistoryCoverage(
+                    sourceEventCount: 2,
+                    actionEventCount: 1,
+                    semanticSnapshotCount: 1,
+                    linkedInteractionCount: 0,
+                    interactionsWithBeforeAndAfterContext: 0,
+                    resourceCount: 1,
+                    episodeCount: 1,
+                    suppressedEventCount: 0,
+                    firstSourceSequence: nil,
+                    lastSourceSequence: nil,
+                    lastSourceEventHash: nil
+                ),
+                markdown: ""
+            )
+            let store = ComputerHistoryStore(
+                rootDirectory: fixtureRoot,
+                codexMemoryDirectory: codexRoot,
+                diagnosticSink: { _ in }
+            )
+            _ = try store.write(memory, for: day)
+            let eventsDirectory = fixtureRoot.appendingPathComponent(
+                "events",
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(
+                at: eventsDirectory,
+                withIntermediateDirectories: true
+            )
+            try Data("{malformed-json}\n".utf8).write(
+                to: eventsDirectory.appendingPathComponent("malformed.jsonl")
+            )
+
+            let answer = store.answer("screenmind")
+
+            XCTAssertFalse(answer.hits.isEmpty)
+            XCTAssertFalse(
+                answer.limitations.contains {
+                    $0.contains("raw-source keyword pass")
+                }
+            )
+            XCTAssertFalse(
+                answer.limitations.contains {
+                    $0.contains("source rows could not be searched completely")
+                }
+            )
+        }
+
         func testAnswerFindsRawOnlyEvidenceWithoutPersistingSearchState() throws {
             let fixtureRoot = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)

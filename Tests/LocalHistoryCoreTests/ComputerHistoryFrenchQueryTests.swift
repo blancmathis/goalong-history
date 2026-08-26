@@ -115,6 +115,42 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
         XCTAssertEqual(answer.hits.first?.status, .blocked)
     }
 
+    func testFrenchTodaySummaryAvoidsTheRawJournalPass() {
+        let query = "Sur quoi ai-je travaillé aujourd'hui ?"
+        let textEdit = fixtureApp("TextEdit")
+        let event = fixtureEvent(
+            id: "today-summary",
+            sequence: 1,
+            offset: 0,
+            kind: .typingBurst,
+            app: textEdit,
+            windowTitle: "Plan de lancement.md",
+            host: nil,
+            keyboard: KeyboardSnapshot(
+                category: "text_activity",
+                key: nil,
+                modifiers: [],
+                isRepeat: false
+            )
+        )
+        let memory = ComputerHistoryEngine.analyze(
+            events: [event],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        let answer = ComputerHistorySearchService(memories: [memory]).ask(
+            query,
+            now: fixtureStart.addingTimeInterval(60)
+        )
+
+        XCTAssertFalse(
+            ComputerHistorySearchService.shouldSearchRawSources(for: query)
+        )
+        XCTAssertTrue(answer.answer.contains(memory.executiveSummary))
+        XCTAssertFalse(answer.answer.contains("Most relevant observed history"))
+    }
+
     private var utcCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!

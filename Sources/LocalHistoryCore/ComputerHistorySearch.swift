@@ -575,6 +575,46 @@ public struct ComputerHistorySearchService {
         }
     }
 
+    package static func requiresRawSourceFallback(
+        for rawQuery: String,
+        retainedHitCount: Int
+    ) -> Bool {
+        retainedHitCount == 0 && shouldSearchRawSources(for: rawQuery)
+    }
+
+    package static func explicitTemporalInterval(
+        for rawQuery: String,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> DateInterval? {
+        let query = SearchText.PreparedQuery(rawQuery)
+        let today = calendar.startOfDay(for: now)
+        if SearchText.containsAny(
+            query.normalized,
+            ["today", "aujourd hui", "aujourd'hui"]
+        ) {
+            return DateInterval(
+                start: today,
+                end: max(today.addingTimeInterval(0.001), now.addingTimeInterval(0.001))
+            )
+        }
+        if SearchText.containsAny(query.normalized, ["yesterday", "hier"]),
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
+        {
+            return DateInterval(start: yesterday, end: today)
+        }
+        if SearchText.containsAny(
+            query.normalized,
+            ["this week", "cette semaine"]
+        ), let week = calendar.dateInterval(of: .weekOfYear, for: now) {
+            return DateInterval(
+                start: week.start,
+                end: max(week.start.addingTimeInterval(0.001), now.addingTimeInterval(0.001))
+            )
+        }
+        return nil
+    }
+
     public func ask(
         _ rawQuery: String,
         now: Date = Date(),
@@ -675,7 +715,9 @@ public struct ComputerHistorySearchService {
                 value,
                 [
                     "standup", "daily summary", "summarize", "summary of", "what did i do", "recap",
+                    "what did i work on",
                     "resume ma journee", "résume ma journée", "resume hier", "résume hier", "bilan", "recapitulatif",
+                    "sur quoi ai je travaille", "sur quoi ai-je travaillé", "sur quoi j ai travaille",
                 ])
             {
                 return .summary
@@ -757,10 +799,10 @@ public struct ComputerHistorySearchService {
         .map { scored in
             resourceHit(scored, corpus: corpus)
         }
-        let ranked = (structured + rawSourceHits(for: query))
-            .filter { $0.resource != nil }
-            .sorted(by: searchHitPrecedes)
-            .prefix(maximumHits)
+        let ranked = compactSearchHits(
+            (structured + rawSourceHits(for: query)).filter { $0.resource != nil },
+            maximumHits: maximumHits
+        )
         guard let first = ranked.first, let resource = first.resource else {
             return emptyAnswer(query.raw)
         }
@@ -775,7 +817,7 @@ public struct ComputerHistorySearchService {
 
             Last observed: \(dateTimeFormatter.string(from: resource.lastSeen)).
             """
-        return answer(query: query.raw, text: answerText, hits: Array(ranked))
+        return answer(query: query.raw, text: answerText, hits: ranked)
     }
 
     private func taskAnswer(
@@ -792,28 +834,27 @@ public struct ComputerHistorySearchService {
             corpus: corpus
         )
         let sourceHits = rawSourceHits(for: query)
-        guard !ranked.isEmpty || !sourceHits.isEmpty else {
+        let hits = compactSearchHits(
+            ranked.map {
+                episodeHit($0.episode, score: $0.score, corpus: corpus)
+            } + sourceHits,
+            maximumHits: maximumHits
+        )
+        guard !hits.isEmpty else {
             return emptyAnswer(query.raw)
         }
-        var lines = ranked.map { scored in
-            let episode = scored.episode
-            return "- **\(episode.title)** — `\(episode.status.rawValue)` — \(episode.summary)"
+        let lines = hits.map { hit in
+            if hit.kind == .episode, let status = hit.status {
+                return "- **\(hit.title)** — `\(status.rawValue)` — \(hit.snippet)"
+            }
+            return
+                "- **\(hit.title)** — direct source match — \(hit.snippet)"
         }
-        lines.append(
-            contentsOf: sourceHits.map {
-                "- **\($0.title)** — direct source match — \($0.snippet)"
-            })
-        let hits =
-            (ranked.map {
-                episodeHit($0.episode, score: $0.score, corpus: corpus)
-            } + sourceHits)
-            .sorted(by: searchHitPrecedes)
-            .prefix(maximumHits)
         return answer(
             query: query.raw,
             text: "Tasks reconstructed from observable work episodes:\n\n"
                 + lines.joined(separator: "\n"),
-            hits: Array(hits)
+            hits: hits
         )
     }
 
@@ -843,17 +884,17 @@ public struct ComputerHistorySearchService {
             }
         }
         let hits = selectedEpisodes.reversed().map {
-                episodeHit(
-                    $0,
-                    score: episodeScore(
-                        query: query,
-                        now: now,
-                        episode: $0,
-                        corpus: corpus
-                    ),
+            episodeHit(
+                $0,
+                score: episodeScore(
+                    query: query,
+                    now: now,
+                    episode: $0,
                     corpus: corpus
-                )
-            }
+                ),
+                corpus: corpus
+            )
+        }
         return answer(
             query: query.raw,
             text: lines.joined(separator: "\n"),
@@ -958,12 +999,13 @@ public struct ComputerHistorySearchService {
                 )
             }
         }
-        let lines = ranked.map { "- **\($0.title)** — \($0.snippet)" }
+        let compacted = compactSearchHits(ranked, maximumHits: maximumHits)
+        let lines = compacted.map { "- **\($0.title)** — \($0.snippet)" }
         return answer(
             query: query.raw,
             text: "Suggested reusable work based on repeated observed sequences:\n\n"
                 + lines.joined(separator: "\n"),
-            hits: ranked
+            hits: compacted
         )
     }
 
@@ -989,9 +1031,10 @@ public struct ComputerHistorySearchService {
         .map { scored in
             resourceHit(scored, corpus: corpus)
         }
-        let combined = (episodeHits + resourceHits + rawSourceHits(for: query))
-            .sorted(by: searchHitPrecedes)
-            .prefix(maximumHits)
+        let combined = compactSearchHits(
+            episodeHits + resourceHits + rawSourceHits(for: query),
+            maximumHits: maximumHits
+        )
         guard !combined.isEmpty else { return emptyAnswer(query.raw) }
         let lines = combined.map { hit in
             "- **\(hit.title)** — \(hit.snippet)"
@@ -1000,7 +1043,7 @@ public struct ComputerHistorySearchService {
             query: query.raw,
             text: "Most relevant observed history:\n\n"
                 + lines.joined(separator: "\n"),
-            hits: Array(combined)
+            hits: combined
         )
     }
 
@@ -1304,6 +1347,141 @@ public struct ComputerHistorySearchService {
         return left.id < right.id
     }
 
+    private func compactSearchHits(
+        _ hits: [ComputerHistorySearchHit],
+        maximumHits: Int
+    ) -> [ComputerHistorySearchHit] {
+        let limit = min(max(0, maximumHits), 100)
+        guard limit > 0 else { return [] }
+
+        let ranked =
+            hits
+            .map(presentedSearchHit)
+            .sorted(by: searchHitPrecedes)
+        var compacted: [ComputerHistorySearchHit] = []
+        var indexByKey: [String: Int] = [:]
+        compacted.reserveCapacity(min(limit, ranked.count))
+        indexByKey.reserveCapacity(min(limit, ranked.count))
+
+        for hit in ranked {
+            let key = searchHitDeduplicationKey(hit)
+            if let index = indexByKey[key] {
+                compacted[index] = mergeSearchHits(compacted[index], hit)
+            } else if compacted.count < limit {
+                indexByKey[key] = compacted.count
+                compacted.append(hit)
+            }
+        }
+        return compacted
+    }
+
+    private func searchHitDeduplicationKey(
+        _ hit: ComputerHistorySearchHit
+    ) -> String {
+        guard hit.kind == .resource, let resource = hit.resource else {
+            return "\(hit.kind.rawValue)|\(hit.id)"
+        }
+        if let locator = resource.localPath ?? resource.canonicalURI {
+            return "resource-locator|\(locator.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+        }
+        let application = resource.bundleIdentifier ?? resource.application ?? ""
+        if !application.isEmpty {
+            return "resource-application|\(application.lowercased())|\(resource.title.lowercased())"
+        }
+        return "resource-id|\(resource.id)"
+    }
+
+    private func presentedSearchHit(
+        _ hit: ComputerHistorySearchHit
+    ) -> ComputerHistorySearchHit {
+        ComputerHistorySearchHit(
+            id: hit.id,
+            kind: hit.kind,
+            timestamp: hit.timestamp,
+            end: hit.end,
+            title: hit.title,
+            snippet: ComputerHistorySupport.bounded(hit.snippet, maximum: 240),
+            score: hit.score,
+            status: hit.status,
+            resource: hit.resource.map(presentedSearchResource),
+            episodeID: hit.episodeID,
+            provenance: ComputerHistorySupport.compactProvenance(
+                hit.provenance
+            )
+        )
+    }
+
+    private func presentedSearchResource(
+        _ resource: ComputerHistoryResourceReference
+    ) -> ComputerHistoryResourceReference {
+        ComputerHistoryResourceReference(
+            id: resource.id,
+            kind: resource.kind,
+            title: resource.title,
+            canonicalURI: resource.canonicalURI,
+            localPath: resource.localPath,
+            host: resource.host,
+            application: resource.application,
+            bundleIdentifier: resource.bundleIdentifier,
+            locatorConfidence: resource.locatorConfidence,
+            firstSeen: resource.firstSeen,
+            lastSeen: resource.lastSeen,
+            provenance: ComputerHistorySupport.compactProvenance(
+                resource.provenance
+            )
+        )
+    }
+
+    private func mergeSearchHits(
+        _ preferred: ComputerHistorySearchHit,
+        _ duplicate: ComputerHistorySearchHit
+    ) -> ComputerHistorySearchHit {
+        ComputerHistorySearchHit(
+            id: preferred.id,
+            kind: preferred.kind,
+            timestamp: preferred.timestamp,
+            end: preferred.end,
+            title: preferred.title,
+            snippet: preferred.snippet,
+            score: preferred.score,
+            status: preferred.status,
+            resource: mergeSearchResources(preferred.resource, duplicate.resource),
+            episodeID: preferred.episodeID ?? duplicate.episodeID,
+            provenance: mergeSearchProvenance(
+                preferred.provenance,
+                duplicate.provenance
+            )
+        )
+    }
+
+    private func mergeSearchResources(
+        _ preferred: ComputerHistoryResourceReference?,
+        _ duplicate: ComputerHistoryResourceReference?
+    ) -> ComputerHistoryResourceReference? {
+        guard let preferred else { return duplicate }
+        guard let duplicate else { return preferred }
+        return ComputerHistoryResourceReference(
+            id: preferred.id,
+            kind: preferred.kind,
+            title: preferred.title,
+            canonicalURI: preferred.canonicalURI ?? duplicate.canonicalURI,
+            localPath: preferred.localPath ?? duplicate.localPath,
+            host: preferred.host ?? duplicate.host,
+            application: preferred.application ?? duplicate.application,
+            bundleIdentifier: preferred.bundleIdentifier ?? duplicate.bundleIdentifier,
+            locatorConfidence: max(
+                preferred.locatorConfidence,
+                duplicate.locatorConfidence
+            ),
+            firstSeen: min(preferred.firstSeen, duplicate.firstSeen),
+            lastSeen: max(preferred.lastSeen, duplicate.lastSeen),
+            provenance: mergeSearchProvenance(
+                preferred.provenance,
+                duplicate.provenance
+            )
+        )
+    }
+
     private func scoredEpisodePrecedes(
         _ left: ScoredEpisode,
         _ right: ScoredEpisode
@@ -1371,38 +1549,12 @@ public struct ComputerHistorySearchService {
         _ query: SearchText.PreparedQuery,
         now: Date
     ) -> [ComputerHistoryDayMemory] {
-        let normalized = query.normalized
         let calendar = Calendar.current
-        if SearchText.containsAny(normalized, ["yesterday", "hier"]) {
-            guard
-                let target = calendar.date(
-                    byAdding: .day,
-                    value: -1,
-                    to: now
-                )
-            else { return [] }
-            return memories.filter {
-                calendar.isDate($0.dayStart, inSameDayAs: target)
-            }
-        }
-        if SearchText.containsAny(
-            normalized,
-            ["today", "aujourd hui", "aujourd'hui"]
+        if let interval = Self.explicitTemporalInterval(
+            for: query.raw,
+            now: now,
+            calendar: calendar
         ) {
-            return memories.filter {
-                calendar.isDate($0.dayStart, inSameDayAs: now)
-            }
-        }
-        if SearchText.containsAny(
-            normalized,
-            ["this week", "cette semaine"]
-        ) {
-            guard
-                let interval = calendar.dateInterval(
-                    of: .weekOfYear,
-                    for: now
-                )
-            else { return memories }
             return memories.filter { interval.contains($0.dayStart) }
         }
         return Array(memories.suffix(1))
@@ -1438,7 +1590,7 @@ public struct ComputerHistorySearchService {
         guard let sourceSearch,
             SearchText.normalized(sourceSearch.query) == query.normalized
         else { return [] }
-        return sourceSearch.hits
+        return compactSearchHits(sourceSearch.hits, maximumHits: 100)
     }
 
     private func answer(
@@ -1510,7 +1662,7 @@ public struct ComputerHistorySearchService {
         return ComputerHistoryAnswer(
             query: query,
             answer: text,
-            hits: hits,
+            hits: hits.map(presentedSearchHit),
             limitations: limitations
         )
     }

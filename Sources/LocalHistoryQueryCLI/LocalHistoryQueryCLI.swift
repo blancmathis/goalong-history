@@ -251,16 +251,22 @@ private enum LocalHistoryQueryCLI {
             let maximumDays = min(max(1, days), 365)
             let now = Date()
             let today = Calendar.current.startOfDay(for: now)
-            let firstDay =
+            let requestedFirstDay =
                 Calendar.current.date(
                     byAdding: .day,
                     value: -(maximumDays - 1),
                     to: today
                 ) ?? today
+            let explicitInterval = ComputerHistorySearchService.explicitTemporalInterval(
+                for: question,
+                now: now
+            )
+            let firstDay = explicitInterval?.start ?? requestedFirstDay
+            let reconstructionEnd = explicitInterval?.end ?? now
             let reconstruction = reconstructComputerHistory(
                 reader: HistoryLocalStoreReader(rootDirectory: root),
                 firstDay: firstDay,
-                endExclusive: now,
+                endExclusive: reconstructionEnd,
                 maximumDays: maximumDays,
                 sourceSearchQuery: ComputerHistorySearchService.shouldSearchRawSources(
                     for: question
@@ -490,14 +496,28 @@ private enum LocalHistoryQueryCLI {
                 "The Computer History ask reached its shared 45-second budget; later source coverage may be partial and was not treated as evidence of absence."
             )
         }
-        let rawSourceSearch = sourceSearchQuery.map {
-            reader.searchComputerHistorySource(
-                query: $0,
+        let rawSourceSearch = sourceSearchQuery.flatMap {
+            (query: String) -> ComputerHistorySourceSearchResult? in
+            let retainedHitCount = ComputerHistorySearchService(
+                memories: memories
+            ).ask(query).hits.count
+            guard
+                ComputerHistorySearchService.requiresRawSourceFallback(
+                    for: query,
+                    retainedHitCount: retainedHitCount
+                )
+            else {
+                return nil
+            }
+            return reader.searchComputerHistorySource(
+                query: query,
                 start: firstDay,
                 endExclusive: boundedEnd,
                 limits: ComputerHistorySourceSearchLimits(
-                    maximumEventBytes: ComputerHistorySourceSearchLimits.production.maximumEventBytes,
-                    maximumSemanticBytes: ComputerHistorySourceSearchLimits.production.maximumSemanticBytes,
+                    maximumEventBytes:
+                        ComputerHistorySourceSearchLimits.production.maximumEventBytes,
+                    maximumSemanticBytes:
+                        ComputerHistorySourceSearchLimits.production.maximumSemanticBytes,
                     maximumElapsedSeconds: askBudget.remainingElapsedSeconds()
                 )
             ).addingCoverageIssues(askCoverageIssues)
