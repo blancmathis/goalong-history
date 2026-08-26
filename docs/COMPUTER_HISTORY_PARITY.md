@@ -65,7 +65,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | distinguish completed, in-progress, blocked, waiting, planned, and unknown work | cautious evidence-derived status with latest visible state taking priority | deterministic status scenarios pass; status remains an interpretation |
 | suggest skills or automations from repeated work | bounded cross-day workflow clustering; suggestions never auto-run | repeatability scenarios pass; real multi-day usefulness remains data-dependent |
 | choose contributing apps and websites | exclusion lists plus fail-closed include-only app/domain scopes; exclusions, private browsing and protected apps always win | configuration and recorder-policy tests pass; old configs decode with allow-all include scopes |
-| pause, resume, exclude, and delete at documented scopes | menu-bar/UI controls, app/domain exclusions, private/secure suppression, 10-minute/hour/day/all deletion, exact Computer History-item deletion, and most-recent/selected app-session deletion | targeted fixtures prove full provenance recovery, exact raw/semantic removal, other-day preservation, malformed-row refusal, and bounded streaming; installed UI exercise remains pending the stable-signature build |
+| pause, resume, exclude, and delete at documented scopes | menu-bar/UI controls, app/domain exclusions, private/secure suppression, 10-minute/hour/day/all deletion, exact Computer History-item deletion, and most-recent/selected app-session deletion | targeted fixtures prove full provenance recovery, exact raw/semantic removal, other-day preservation, malformed-row refusal, and bounded streaming; the installed stable-signature UI exposes item/session deletion, while a physical deletion exercise remains intentionally unperformed |
 | avoid screenshots, audio, clipboard, keystroke reconstruction, and private browsing | Accessibility text and interaction metadata only, with credential redaction | privacy audit and suppression tests pass |
 | stay unobtrusive and recoverable | one process, no helper, health state, bounded queues/caches, AX storm debounce, polling fallback | resource measurements pass; final physical wake/input recovery is pending TCC refresh |
 
@@ -83,6 +83,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | Missing or unsafe raw input could erase or replace the useful derived view. | The last known-good memory remains visible with an explicit `absent` or `inaccessible` source state. |
 | The optional Codex Markdown mirror could exceed 2 MB for one busy day and the ChatGPT recap could repeat the same causal text in its legacy minute digest. | The mirror now uses a deterministic 3,000-token ceiling, the on-demand agent pack accepts an 800–12,000-token budget, sources are aliased once, and a recap with causal history keeps only complementary duration aggregates from the legacy view. |
 | A compact episode retained only representative provenance, so deleting one visible summary would otherwise require an unsafe broad interval clear. | Explicit item deletion re-reads the original local journal on demand, rebuilds complete episode provenance, removes only the resolved event IDs and linked semantic snapshot IDs, invalidates only the affected day’s derived files, and records a continuity boundary while preserving seals, receipts, Screen Time and Agent Activity. |
+| An already indexed agent transcript that was still growing could be re-hashed in full on every 30-second metadata poll. | Background scans retain the prior complete fingerprint while the same inode grows, then perform one streaming re-hash after two minutes of quiescence. New files, truncation, replacement, forced reconciliation, explicit analysis, and direct reads bypass the delay. No body, version, or snapshot is persisted. |
 
 The raw Goalong event and semantic journals remain the authoritative evidence.
 Compaction changes only derived storage and search working sets; it does not
@@ -835,23 +836,27 @@ necessary for those claims.
 
 The following measurements were taken on 2026-08-26 on macOS 26.5.1 (25F80), an
 Apple M4 Pro with 24 GB RAM, using the installed source build
-`20260826.051316` (`CDHash 7b7a9d9ba75e444e0f11cbc34cf97b96a058debb`). The
+`20260826.111916` (`CDHash b57bd30ac80a9d9aa8eb0690bfbda0cc3a48df00`, Team
+`2L5SSLPX46`). The
 application was one process with no child/helper process. Before idle sampling, the
 dashboard was closed through its real close button, its absence from the on-screen
 window list was verified, and more than 60 seconds elapsed.
 
 | Surface | Measured result |
 | --- | --- |
-| background CPU, 600 one-second kernel-delta samples | median 0.481%, p95 1.284%, mean 0.786%, maximum 16.569%; 5 samples exceeded 15%, each isolated to exactly 1 second |
-| closed-window memory | macOS physical footprint 44,942,344 bytes (42.9 MiB); lifetime physical peak 80,495,648 bytes (76.8 MiB); raw resident size median 127,344 KiB, p95 127,456 KiB, maximum 127,472 KiB |
-| peak improvement | lifetime physical peak 76.8 MiB versus the prior measured 453.8 MiB view peak, an 83.1% reduction |
-| ten-minute writes | Computer History 0 bytes; Agent Activity 0 bytes; events +67,510 bytes; seals +22,523 bytes; process disk-write counter +9,138,176 bytes including filesystem metadata |
+| background CPU, 600 one-second kernel-delta samples | median 0.246%, p95 1.029%, maximum 103.449%; 2 samples exceeded 15% in one contiguous 2-second run, below the 5-second sustained limit |
+| closed-window memory | macOS physical footprint 97,027,104 bytes (92.5 MiB); lifetime physical peak 224,330,760 bytes (213.9 MiB); raw resident size median 109,200 KiB, p95/maximum 139,296 KiB |
+| peak improvement | lifetime physical peak 213.9 MiB versus the prior measured 453.8 MiB view peak, a 52.9% reduction |
+| ten-minute process I/O | 6,602,752 bytes read and 3,031,040 bytes written; reads fell 98.75% from the 529,399,808-byte pre-quiescence measurement of the same active Codex transcript workload |
+| ten-minute storage growth | Computer History +1,428 bytes; Agent Activity 0 bytes; events +975 bytes; memories +14,007 bytes; seals +11,068 bytes; semantic/analysis/Screen Time 0 bytes |
 | derived Computer History storage | 5 compact JSON days, 3,404,131 logical bytes / 3,332 allocated KiB; the 5 optional Codex projections total 59,428 logical bytes / 60 allocated KiB, down 97.7% from the 2,604 allocated KiB legacy mirror |
-| direct-source Agent Activity index | 797 entries in 778,752 bytes (977.1 bytes per entry): Codex 782, Claude Code 1, OpenCode 14; all available |
+| direct-source Agent Activity index | 797 entries in 778,752 bytes (977.1 bytes per entry): Codex 782, Claude Code 1, OpenCode 14; all available; the index is 0.0075% of the 9.65 GiB allocated by the three configured source roots |
 | transcript duplication check | zero files and zero bytes in `agent-activity/blobs`; durable Agent Activity files are the bounded index, configuration, one small wake-up signal, and an empty lock |
 | real English today-summary query | before: 35.26 seconds, 370,524,160-byte maximum RSS, 308,118,320-byte physical peak, repeated raw-source matches; after: one day reconstructed in 0.63 seconds, 20,709,376-byte maximum RSS, 11,977,256-byte physical peak, 12 hits over 5 unique resources, 240-character maximum snippet, and no raw-source pass |
 | real French resume query | one current day reconstructed in 3.07 seconds; maximum RSS 83,361,792 bytes and physical footprint 74,842,712 bytes; 12 source-backed episode hits |
-| complete automated suite | 607 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
+| complete automated suite | 609 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 116 tests, 2 skips, 0 failures |
+| installed UI | 12 observed sources, 180 causal episodes, 1,101 interactions, 12 retained source links, 17 observable completion signals, 10 unfinished/blocked/waiting episodes, 8 workflow suggestions, 617 explicit coverage gaps, and 757 raw sessions; selected-session deletion is visible |
+| real direct-source probe | the opt-in scanner read the canonical `~/.codex` source root in 5.55 seconds with bounded streaming, a metadata-only temporary index, no cached transcript records, no `blobs`, and 0 failures |
 | parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 22/22 metadata-probe tests passed; the validator also runs the 2 token-density/context-pack scenarios, the sleeping-versus-saturated kernel CPU sampler regression, and the offline local-signing policy; output contains metadata/checklists only |
 
 An additional read-only development-source probe on 2026-08-26 reconstructed the real
@@ -873,19 +878,21 @@ checks without emitting history bodies.
 Raw resident size includes reclaimable mappings and allocator pages and is therefore reported
 separately from macOS `phys_footprint`, the memory-pressure measure used for the
 closed-window budget. CPU comes from `proc_pid_rusage` deltas, not macOS `ps %cpu`'s
-one-minute decaying average. The sum of user and system time independently yields a
-0.789% ten-minute mean, within 0.004 percentage point of the sample mean. The isolated
-one-second CPU maxima are not hidden; the sustained limit is satisfied because no run
-above 15% lasted more than one sample.
+one-minute decaying average. One preceding run during live screen-lock/TCC transitions
+measured a 6.220% CPU p95 and therefore failed the 5% guard. A 90-second stack sample then
+found the process asleep in every main-thread sample, with one permission-watchdog and one
+Agent Activity sample; the stable unlocked rerun above passed. The one-second maximum is
+not hidden; the sustained limit is satisfied because the only run above 15% lasted two
+seconds.
 
-The current installed identity still reports Accessibility functional/preflight and
-Input Monitoring preflight as unavailable. Consequently these measurements prove the
-degraded-permission idle path, bounded analysis, storage, queries, build, launch, and UI
-behavior. They do **not** prove current-build physical input capture, live
+The current Apple Development-signed identity still reports Accessibility
+functional/preflight and Input Monitoring preflight as unavailable. Consequently these
+measurements prove the degraded-permission idle path, bounded analysis, storage, queries,
+build, launch, and UI behavior. They do **not** prove current-build physical input capture, live
 Codex-versus-Goalong coverage, permission recovery after a real TCC grant, or third-party
 application AX quality. That final claim remains gated on the controlled real-input
-checklist below and must be rerun after any reinstall that changes the app's ad-hoc
-`CDHash`.
+checklist below and must be rerun after a signed reinstall before claiming full live
+parity.
 
 ## Real-session proof boundary
 
