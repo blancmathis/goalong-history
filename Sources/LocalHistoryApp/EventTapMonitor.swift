@@ -552,7 +552,11 @@
         private var observationGapWorkItem: DispatchWorkItem?
         private var interactionBoundaryGeneration: UInt64 = 0
 
-        static let maximumIngressAge: TimeInterval = 0.75
+        // Input callbacks already carry their event-time public context and cross
+        // fresh secure/private/domain plus foreground-PID gates before admission.
+        // Two seconds tolerates a bounded app-activation AX stall without accepting
+        // arbitrarily old work; the 256-entry FIFO remains the independent memory cap.
+        static let maximumIngressAge: TimeInterval = 2.0
         static let stableRunDurationBeforeRestartReset: TimeInterval = 60
         static let minimumUnexpectedRestartDelay: TimeInterval = 1
         static let maximumUnexpectedRestartDelay: TimeInterval = 60
@@ -598,6 +602,7 @@
         private var scrollFlushWorkItem: DispatchWorkItem?
         private var typingSettledWorkItem: DispatchWorkItem?
         private var scrollSettledWorkItem: DispatchWorkItem?
+        private var navigationSettledWorkItem: DispatchWorkItem?
         private var deferredSemanticCaptures: [UUID: DispatchWorkItem] = [:]
         private var deferredSemanticCaptureOrder: [UUID] = []
 
@@ -1167,6 +1172,8 @@
             typingSettledWorkItem = nil
             scrollSettledWorkItem?.cancel()
             scrollSettledWorkItem = nil
+            navigationSettledWorkItem?.cancel()
+            navigationSettledWorkItem = nil
             for capture in deferredSemanticCaptures.values {
                 capture.cancel()
             }
@@ -1481,9 +1488,8 @@
                     ),
                     timestamp: input.observedAt
                 )
-                captureAfter(
+                rescheduleNavigationSettled(
                     interactionID: interactionID,
-                    trigger: "navigation_key",
                     observedAt: input.observedAt
                 )
                 return
@@ -1705,6 +1711,27 @@
                 boundaryGeneration: interactionBoundaryGeneration
             )
             scrollSettledWorkItem = workItem
+            let elapsed = max(0, Date().timeIntervalSince(observedAt))
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + max(0, 1.05 - elapsed),
+                execute: workItem
+            )
+        }
+
+        /// Navigation auto-repeat keeps every key action but needs only the final
+        /// post-quiet AX state. Cancelling the prior timer avoids a semantic-capture
+        /// storm on the main queue when a key is held down.
+        private func rescheduleNavigationSettled(
+            interactionID: String,
+            observedAt: Date
+        ) {
+            navigationSettledWorkItem?.cancel()
+            let workItem = settledWorkItem(
+                interactionID: interactionID,
+                trigger: "navigation_key",
+                boundaryGeneration: interactionBoundaryGeneration
+            )
+            navigationSettledWorkItem = workItem
             let elapsed = max(0, Date().timeIntervalSince(observedAt))
             DispatchQueue.main.asyncAfter(
                 deadline: .now() + max(0, 1.05 - elapsed),

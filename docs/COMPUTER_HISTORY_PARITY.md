@@ -57,7 +57,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 
 | Publicly observable capability | Goalong behavior | Current proof boundary |
 | --- | --- | --- |
-| clicks, grouped typing, shortcuts, scrolling, app/window/site context | one local input pipeline with event-time action metadata plus bounded asynchronous settled/observer context | deterministic capture tests pass; an exact-final-build 69-second physical run retained 42 causal interactions with 90.5% settled semantic coverage, matched every Codex-classified bucket and reported zero explicit gaps |
+| clicks, grouped typing, shortcuts, scrolling, app/window/site context | one local input pipeline with event-time action metadata plus bounded asynchronous settled/observer context | deterministic capture tests pass; an exact-final-build repeat-key interval retained 20 causal actions with 80.0% semantic coverage, matched every Codex-classified bucket and reported zero explicit gaps or read issues |
 | searchable chronology and local memories | causal episodes plus exact coverage totals and a bounded representative projection | parity/evidence/storage tests and installed UI inspection pass |
 | compact evidence for a later agent | deterministic on-demand evidence pack with exact totals, distributed high-value episodes, causal changes, and deduplicated source locators | unit evals and a real read-only day probe enforce token bounds and measure evidence slots per approximate token; no LLM runs in the capture loop |
 | resume after a break and summarize recent work | intent-aware local search over causal episodes, including French resume phrasing and explicit today/yesterday/week scoping | English/French query tests and real local source-query measurements pass |
@@ -858,9 +858,9 @@ necessary for those claims.
 ### Current installed verification
 
 The final source installation measured on 2026-08-26 is Goalong History `0.5.1`
-build `20260826.191824`, signed by `Apple Development: mathis-blanc@hotmail.fr
+build `20260826.195517`, signed by `Apple Development: mathis-blanc@hotmail.fr
 (M6Y4HJP9L3)` with Team `2L5SSLPX46` and CDHash
-`90da90fdc3bb5eff9cbfc5cfc6c564cece7c8c9c`. The exact installed identity reports
+`5d21d4fa119cf70f094998dae62e0d13fea06d9b`. The exact installed identity reports
 Accessibility preflight/functional probe and Input Monitoring preflight all true, with
 the event tap in `createdEnabled` state.
 
@@ -874,24 +874,24 @@ copying the journal or waiting for a quiet window.
 | Surface | Current measured result |
 | --- | --- |
 | complete source-installer suite | 619 tests, 3 expected environment-dependent skips, 0 failures; source, staged, and installed bundles each passed signature and privacy validation |
-| background CPU, 600 one-second kernel-delta samples | median 0.000%, p95 0.696%, maximum 10.839%; 0 samples exceeded 15% |
-| closed-window memory | macOS physical footprint 40,535,048 bytes (38.7 MiB); lifetime physical peak 81,232,832 bytes (77.5 MiB); raw resident size median 72,784 KiB, p95 74,128 KiB, maximum 74,176 KiB |
-| ten-minute process activity | one process, 0 child/helper; 1,376,256 bytes read, 155,648 bytes written; 21 idle and 104 interrupt wakeups |
-| ten-minute logical storage growth | seals +10,769 bytes; Computer History, events, semantic, analysis, memories, Agent Activity, and Screen Time each +0 bytes |
+| exact-final-build closed-window CPU, 60 one-second kernel-delta samples | median 0.007%, p95 3.974%, maximum 4.833%; 0 samples exceeded 15% and every enforced resource target passed |
+| exact-final-build closed-window memory | macOS physical footprint 30,180,312 bytes (28.8 MiB); lifetime physical peak 142,148,592 bytes (135.6 MiB); raw resident size median 53,152 KiB, p95/maximum 62,272 KiB |
+| exact-final-build one-minute process activity | one process, 0 child/helper; 204,800 bytes read, 122,880 bytes written; 2 idle and 60 interrupt wakeups |
+| exact-final-build one-minute logical storage growth | startup/foreground context produced events +43,125 bytes, semantic +4,832 and seals +1,828; Computer History, analysis, memories, Agent Activity and Screen Time each +0 bytes |
 | direct-source Agent Activity | 797 entries / 778,752 bytes: Codex 782, Claude Code 1, OpenCode 14; one bounded Codex slice and the Claude source matched their stored hashes when reread from the original files, and all 14 OpenCode opaque locators resolved from SQLite in read-only/query-only mode with 0 changes |
 | transcript duplication check | no persisted body-like keys in the live index, index bytes and modification time unchanged during direct reads, and zero `agent-activity/blobs` directories |
-| controlled physical interval on the exact final build | 69 seconds of physical input in a public browser surface produced 92 Goalong rows, 42 causal interactions, 38 settled semantic pairs (90.5%), 3 episodes and 4 reopenable resources; all causal invariants passed and neither provider reported an explicit gap or read issue |
-| provider-granularity probe | `goalong_at_least_codex`; Goalong matched all Codex-classified click, typing, shortcut and window buckets within tolerance, while additionally retaining scroll, URL, focus, application and settled-semantic evidence. Both bounded source reads were complete and metadata-only. |
+| exact-final-build repeat-key physical interval | 10 public seconds produced 32 Goalong rows, 20 causal actions, 16 semantic pairs (80.0%), 1 episode and 1 resource; the surrounding stress retained 20 navigation keys plus typing, scroll and click activity with zero `stale_ingress` or other explicit observation-gap rows |
+| provider-granularity probe | `goalong_at_least_codex`; all 5 Codex typing observations paired in time, Goalong retained additional settled-semantic evidence, and both bounded source reads were complete, metadata-only and issue-free |
 | active-source concurrency | a causal query and the metadata-only provider probe both completed while Goalong continued appending; tests prove the first pass returns one stable prefix, the next pass sees the append exactly once, and prefix mutation plus growth is rejected |
 | real installed runtime/UI boundary | one signed process, healthy real callbacks, and the full Computer History view were observed: 583 episodes, 3,274 interactions, 54 source links, 47% paired semantic states, 118 completion signals, 174 unfinished/blocked/waiting episodes, 8 workflow suggestions, and 1,217 explicit coverage gaps |
 | direct dashboard reader on the live root | fresh snapshot; 7,889 retained events, 298 active minutes, 17 applications, 96 timeline buckets, 0 partial sources and 0 budget failures; 4,407,226 cached estimated bytes plus 1,198,678 derived estimated bytes |
-| final ingress optimization | physical WhatsApp stress exposed stale AX backlog boundaries. The final build uses callback-time public context only while the PID remains frontmost, performs targeted fresh secure/private/domain checks, skips browser-chrome traversal for ordinary web wrappers, runs rich AX traversal on a bounded two-slot utility queue, and records one settled state per quiet interaction. The exact-build physical rerun observed typing, a shortcut, navigation input, clicks/drags and eight scroll bursts with 15 settled-semantic rows and zero explicit gap events. |
+| final ingress optimization | longer WhatsApp navigation-key stress after the first successful mini-interval exposed 17 stale callbacks on the preceding candidate build. The final build still keeps every navigation action, but cancels redundant per-key semantic timers and captures one settled state after the repeat burst; it also tolerates a bounded two-second activation stall while retaining event-time context, fresh foreground/secure/private/domain checks, and the independent 256-entry memory cap. The exact-build repeat-key stress and focused tests both pass without an explicit observation gap. |
 
-The 600-second closed-window CPU, memory, process, and storage rows above were collected
-on the earlier installed build `20260826.144939`. Later changes affect on-demand,
-read-only source readers plus the active-input burst path; they do not add a background
-process, polling loop, or durable store. That long sampler was not repeated after the final
-install. On the final reader source, the verified 17-second causal query plus invariant
+The exact-final-build resource rows use the 60-second enforced sampler. The longer
+600-second closed-window run on build `20260826.144939` separately measured 0.000% median
+CPU, 0.696% p95, a 38.7 MiB physical footprint, no child/helper and no growth in Computer
+History, events, semantic, analysis, memories, Agent Activity, or Screen Time; only seals
+grew by 10,769 bytes. On the final reader source, the verified 17-second causal query plus invariant
 checker completed in 3.92 seconds with a 33,488,896-byte maximum resident set and left the
 Agent Activity index size and modification time unchanged; this is foreground query
 evidence, not a replacement for the closed-window background sample.
@@ -900,8 +900,10 @@ The strict validator passed 9 causal-parity scenarios, 3 episode-quality scenari
 2 token-density scenarios, the privacy audit, causal invariant checker, 28 metadata-probe
 tests, runtime sampler tests, signing policy, Release CLI build, and all four real local
 questions. The earlier broad physical interval remains documented because it contains 29
-pre-fix gaps; the exact final build's 69-second physical rerun passed without an explicit
-gap, so the ingress optimization is now observed as well as deterministic.
+pre-fix gaps. A later 69-second interval on the preceding candidate was gap-free, but
+longer navigation-key stress exposed 17 stale callbacks and motivated the final
+coalescing/tolerance change. The exact-final-build repeat passed at the causal 80% threshold,
+returned `goalong_at_least_codex`, and contained no explicit gap or source-read issue.
 
 ### Earlier optimization baseline
 

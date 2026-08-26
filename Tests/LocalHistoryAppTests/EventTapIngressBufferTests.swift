@@ -350,13 +350,13 @@
             XCTAssertTrue(
                 EventTapMonitor.ingressAgeIsAcceptable(
                     observedAt: start,
-                    now: start.addingTimeInterval(0.7)
+                    now: start.addingTimeInterval(1.9)
                 )
             )
             XCTAssertFalse(
                 EventTapMonitor.ingressAgeIsAcceptable(
                     observedAt: start,
-                    now: start.addingTimeInterval(0.8)
+                    now: start.addingTimeInterval(2.1)
                 )
             )
         }
@@ -489,6 +489,7 @@
 
             XCTAssertTrue(scrollStart.contains("rescheduleScrollSettled("))
             XCTAssertTrue(typingStart.contains("rescheduleTypingSettled("))
+            XCTAssertTrue(source.contains("rescheduleNavigationSettled("))
             XCTAssertFalse(source.contains("scheduleTypingAfter("))
             XCTAssertFalse(source.contains("scheduleScrollAfter("))
             XCTAssertFalse(source.contains("private func captureNearEvent("))
@@ -605,6 +606,7 @@
                 "scrollFlushWorkItem?.cancel()",
                 "typingSettledWorkItem?.cancel()",
                 "scrollSettledWorkItem?.cancel()",
+                "navigationSettledWorkItem?.cancel()",
                 "deferredSemanticCaptures.removeAll",
                 "resetTypingBurst()",
                 "resetScrollBurst()",
