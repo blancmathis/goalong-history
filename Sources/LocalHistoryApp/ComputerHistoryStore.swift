@@ -13,7 +13,9 @@
     /// analysis. Markdown is regenerated from the structure on read and only one optional
     /// mirror is kept in Codex's local memory extension directory.
     final class ComputerHistoryStore {
-        private static let currentStorageFormatVersion = 2
+        // v3 keeps the v2 compact JSON schema and upgrades the optional Codex
+        // mirror to the deterministic token-bounded evidence renderer.
+        private static let currentStorageFormatVersion = 3
         private static let maximumStoredMemoryBytes = 32 * 1_024 * 1_024
         private static let defaultRecentEncodedByteBudget = 64 * 1_024 * 1_024
         private static let absoluteRecentEncodedByteBudget = 96 * 1_024 * 1_024
@@ -900,6 +902,23 @@
                         for: loaded.stored.dayStart,
                         expectedDirectoryIdentity: loaded.directoryIdentity
                     )
+                    // Legacy Goalong JSON and the local Markdown copy are not the only
+                    // possible source of storage bloat: an older Codex mirror may still
+                    // contain the former unbounded rendering. Regenerate that optional
+                    // mirror from the compact structured fields while the mutation lock
+                    // still excludes a newer analysis write. Mirror failure remains
+                    // non-fatal because Goalong's compact JSON is authoritative.
+                    do {
+                        try prepareDirectory(codexMemoryDirectory)
+                        try writeAtomicallyIfChanged(
+                            Data(ComputerHistoryMarkdownRenderer.render(compacted).utf8),
+                            to: CodexMarkdownFile(for: loaded.stored.dayStart)
+                        )
+                    } catch {
+                        Diagnostics.write(
+                            "Could not compact the Codex Computer History mirror: \(error)"
+                        )
+                    }
                 }
             } catch {
                 // A failed migration must never make an otherwise readable memory vanish.

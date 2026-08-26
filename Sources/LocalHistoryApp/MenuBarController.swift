@@ -172,6 +172,7 @@
             let clearMenu = NSMenu(title: "Clear history")
             clearMenu.addItem(makeItem("Last 10 minutes…", action: #selector(clearLastTenMinutes)))
             clearMenu.addItem(makeItem("Last hour…", action: #selector(clearLastHour)))
+            clearMenu.addItem(makeItem("Last day…", action: #selector(clearLastDay)))
             clearMenu.addItem(makeItem("All detailed history…", action: #selector(clearAllHistory)))
             let clearItem = NSMenuItem(title: "Clear detailed history", action: nil, keyEquivalent: "")
             clearItem.submenu = clearMenu
@@ -256,6 +257,10 @@
 
         @objc private func clearLastHour() {
             clearHistory(since: Date().addingTimeInterval(-60 * 60), label: "last hour")
+        }
+
+        @objc private func clearLastDay() {
+            clearHistory(since: Date().addingTimeInterval(-24 * 60 * 60), label: "last day")
         }
 
         @objc private func clearAllHistory() {

@@ -168,6 +168,19 @@
                         suppressionReason: .privateBrowserWindow
                     )
                 }
+
+                // An include-only website scope must never fall back to recording a
+                // browser without a host just because URL capture was disabled.
+                if config.includedDomains?.isEmpty == false, !config.captureURLs {
+                    clearCachedURL()
+                    return ContextSnapshot(
+                        app: app,
+                        window: nil,
+                        focusedElement: nil,
+                        url: nil,
+                        suppressionReason: .excludedDomain
+                    )
+                }
             }
 
             let window = AXReader.windowSnapshot(windowElement, config: config)
@@ -195,7 +208,7 @@
                 }
                 urlSnapshot = cachedURL
 
-                if URLRedactor.domain(urlSnapshot?.host, matches: config.excludedDomains) {
+                if !config.allowsWebsite(host: urlSnapshot?.host) {
                     return ContextSnapshot(
                         app: app,
                         window: nil,
@@ -255,11 +268,12 @@
             }
             guard isBrowser else { return nil }
 
-            if let sanitized = URLRedactor.sanitize(
+            let sanitized = URLRedactor.sanitize(
                 rawURL,
                 redactAllQueryValues: config.redactAllURLQueryValues,
                 maxLength: config.maxStringLength
-            ), URLRedactor.domain(sanitized.host, matches: config.excludedDomains) {
+            )
+            if !config.allowsWebsite(host: sanitized?.host) {
                 return .excludedDomain
             }
 
@@ -304,8 +318,7 @@
         }
 
         private func isExcluded(app: AppSnapshot, config: RecorderConfig) -> Bool {
-            guard let bundleIdentifier = app.bundleIdentifier else { return false }
-            return config.excludedBundleIdentifiers.contains(bundleIdentifier)
+            !config.allowsApplication(bundleIdentifier: app.bundleIdentifier)
         }
 
         private func rememberBrowser(_ app: AppSnapshot) {

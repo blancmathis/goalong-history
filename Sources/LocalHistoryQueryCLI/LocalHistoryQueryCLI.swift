@@ -42,6 +42,14 @@ private struct ComputerHistoryAnswerEnvelope: Encodable {
     let loadIssues: [HistoryLoadIssue]
 }
 
+private struct ComputerHistoryContextEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let projection: ComputerHistoryAgentContextProjection?
+    let error: String?
+    let loadIssues: [HistoryLoadIssue]
+}
+
 private struct ComputerHistoryReconstruction {
     let memories: [ComputerHistoryDayMemory]
     let loadIssues: [HistoryLoadIssue]
@@ -173,9 +181,13 @@ private enum LocalHistoryQueryCLI {
                 }
             }
 
-        case "computer-history":
+        case "computer-history", "computer-history-context":
+            let tokenBudget = try integer(
+                arguments.removeOption("--tokens")
+                    ?? String(ComputerHistoryAgentContextRenderer.defaultTokenBudget)
+            )
             guard let raw = arguments.popFirst() else {
-                throw CLIError.usage("computer-history requires YYYY-MM-DD")
+                throw CLIError.usage("\(command) requires YYYY-MM-DD")
             }
             let start = try day(raw)
             let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
@@ -207,14 +219,30 @@ private enum LocalHistoryQueryCLI {
                 } else {
                     nil
                 }
-            try printJSON(
-                ComputerHistoryEnvelope(
-                    rootDirectory: root.path,
-                    memory: memory,
-                    error: error,
-                    loadIssues: loaded.issues
+            if command == "computer-history-context" {
+                try printJSON(
+                    ComputerHistoryContextEnvelope(
+                        rootDirectory: root.path,
+                        projection: memory.map {
+                            ComputerHistoryAgentContextRenderer.render(
+                                $0,
+                                tokenBudget: tokenBudget
+                            )
+                        },
+                        error: error,
+                        loadIssues: loaded.issues
+                    )
                 )
-            )
+            } else {
+                try printJSON(
+                    ComputerHistoryEnvelope(
+                        rootDirectory: root.path,
+                        memory: memory,
+                        error: error,
+                        loadIssues: loaded.issues
+                    )
+                )
+            }
 
         case "ask":
             let days = try integer(arguments.removeOption("--days") ?? "30")
@@ -572,6 +600,7 @@ private enum LocalHistoryQueryCLI {
           day YYYY-MM-DD
           summary YYYY-MM-DD
           computer-history YYYY-MM-DD
+          computer-history-context YYYY-MM-DD [--tokens N]
           ask [--days N] NATURAL_LANGUAGE_QUESTION
           search TEXT
           app NAME_OR_BUNDLE_ID
@@ -585,5 +614,7 @@ private enum LocalHistoryQueryCLI {
         coverage totals plus a bounded representative projection. `ask` uses those
         projections and a bounded transient source-keyword pass when useful; it supports
         questions about recent work, resources, status, standups and repeatable workflows.
+        `computer-history-context` emits a deterministic, token-bounded evidence pack for
+        an agent without persisting another copy.
         """
 }

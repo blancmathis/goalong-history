@@ -39,7 +39,7 @@
                         captureCard
                         privacyCard
                         verificationCard
-                        exclusionsCard
+                        monitoringScopeCard
                         advancedCard
                     }
                     .padding(.horizontal, 24)
@@ -201,27 +201,48 @@
             }
         }
 
-        private var exclusionsCard: some View {
+        private var monitoringScopeCard: some View {
             settingsCard(
                 symbol: "eye.slash.fill",
-                title: "Exclusions",
+                title: "Apps and websites",
                 subtitle:
-                    "Excluded contexts remain visible only as coverage gaps; their detailed contents are not stored"
+                    "Choose exclusions or switch to an include-only scope for future activity"
             ) {
-                HStack(alignment: .top, spacing: 14) {
-                    exclusionEditor(
-                        title: "Excluded website domains",
-                        placeholder: "example.com\nprivate.company.com",
-                        text: $model.settingsDraft.excludedDomainsText,
-                        help:
-                            "One host per line. Subdomains of a listed domain are also excluded by the recorder policy."
-                    )
-                    exclusionEditor(
-                        title: "Excluded application bundle IDs",
-                        placeholder: "com.example.privateapp",
-                        text: $model.settingsDraft.excludedApplicationsText,
-                        help: "One bundle identifier per line. Password managers are excluded by default."
-                    )
+                VStack(spacing: 16) {
+                    HStack(alignment: .top, spacing: 14) {
+                        exclusionEditor(
+                            title: "Excluded website domains",
+                            placeholder: "example.com\nprivate.company.com",
+                            text: $model.settingsDraft.excludedDomainsText,
+                            help:
+                                "One host per line. Subdomains of a listed domain are also excluded by the recorder policy."
+                        )
+                        exclusionEditor(
+                            title: "Excluded application bundle IDs",
+                            placeholder: "com.example.privateapp",
+                            text: $model.settingsDraft.excludedApplicationsText,
+                            help: "One bundle identifier per line. Password managers are excluded by default."
+                        )
+                    }
+
+                    Divider()
+
+                    HStack(alignment: .top, spacing: 14) {
+                        exclusionEditor(
+                            title: "Include only website domains",
+                            placeholder: "work.example.com",
+                            text: $model.settingsDraft.includedDomainsText,
+                            help:
+                                "Leave empty to allow every non-excluded site. When populated, browser pages without a matching visible host fail closed."
+                        )
+                        exclusionEditor(
+                            title: "Include only application bundle IDs",
+                            placeholder: "com.apple.TextEdit",
+                            text: $model.settingsDraft.includedApplicationsText,
+                            help:
+                                "Leave empty to allow every non-excluded app. When populated, apps without a matching bundle ID fail closed."
+                        )
+                    }
                 }
             }
         }

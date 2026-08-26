@@ -158,7 +158,7 @@ run_logged() {
 cat "$OUTPUT/environment.txt"
 
 run_logged parity-unit-tests bash -lc \
-  "cd \"$REPO\" && swift test --filter ComputerHistoryParityTests && swift test --filter ComputerHistoryEpisodeQualityTests"
+  "cd \"$REPO\" && swift test --filter ComputerHistoryParityTests && swift test --filter ComputerHistoryEpisodeQualityTests && swift test --filter ComputerHistoryAgentContextTests"
 run_logged privacy-boundary-audit bash -lc \
   "cd \"$REPO\" && ./scripts/audit_privacy_boundaries.sh"
 run_logged checker-regression bash "$REPO/scripts/test_check_computer_history_memory.sh"

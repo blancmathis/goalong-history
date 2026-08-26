@@ -74,4 +74,41 @@ final class RedactionTests: XCTestCase {
         XCTAssertFalse(validated.privateWindowMarkers.isEmpty)
     }
 
+    func testIncludeOnlyScopesFailClosedAndExclusionsWin() {
+        var config = RecorderConfig.default
+        config.includedBundleIdentifiers = ["com.apple.TextEdit"]
+        config.includedDomains = ["work.example.com"]
+
+        XCTAssertTrue(config.allowsApplication(bundleIdentifier: "com.apple.textedit"))
+        XCTAssertFalse(config.allowsApplication(bundleIdentifier: "com.apple.finder"))
+        XCTAssertFalse(config.allowsApplication(bundleIdentifier: nil))
+        XCTAssertTrue(config.allowsWebsite(host: "docs.work.example.com"))
+        XCTAssertFalse(config.allowsWebsite(host: "example.org"))
+        XCTAssertFalse(config.allowsWebsite(host: nil))
+
+        config.excludedBundleIdentifiers.append("com.apple.TextEdit")
+        config.excludedDomains.append("docs.work.example.com")
+        XCTAssertFalse(config.allowsApplication(bundleIdentifier: "com.apple.TextEdit"))
+        XCTAssertFalse(config.allowsWebsite(host: "docs.work.example.com"))
+    }
+
+    func testEmptyIncludeOnlyScopesRemainBackwardsCompatible() throws {
+        var config = RecorderConfig.default
+        config.includedBundleIdentifiers = []
+        config.includedDomains = ["", "  "]
+
+        let validated = config.validated()
+        XCTAssertNil(validated.includedBundleIdentifiers)
+        XCTAssertNil(validated.includedDomains)
+        XCTAssertTrue(validated.allowsApplication(bundleIdentifier: nil))
+        XCTAssertTrue(validated.allowsWebsite(host: nil))
+
+        let decoded = try JSONDecoder().decode(
+            RecorderConfig.self,
+            from: JSONEncoder().encode(RecorderConfig.default)
+        )
+        XCTAssertNil(decoded.includedBundleIdentifiers)
+        XCTAssertNil(decoded.includedDomains)
+    }
+
 }

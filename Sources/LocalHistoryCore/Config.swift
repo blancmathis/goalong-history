@@ -23,6 +23,12 @@ public struct RecorderConfig: Codable, Equatable {
 
     public var excludedBundleIdentifiers: [String]
     public var excludedDomains: [String]
+    /// When non-empty, only these application bundle identifiers may contribute future events.
+    /// Exclusions still take priority. Optional for backwards-compatible config decoding.
+    public var includedBundleIdentifiers: [String]?
+    /// When non-empty, only these website domains may contribute future browser events.
+    /// Exclusions and private browsing still take priority. Optional for backwards-compatible decoding.
+    public var includedDomains: [String]?
     public var browserBundleIdentifiers: [String]
     public var privateWindowMarkers: [String]
     public var addressFieldMarkers: [String]
@@ -45,6 +51,8 @@ public struct RecorderConfig: Codable, Equatable {
         enableAppAttest: Bool? = true,
         excludedBundleIdentifiers: [String],
         excludedDomains: [String],
+        includedBundleIdentifiers: [String]? = nil,
+        includedDomains: [String]? = nil,
         browserBundleIdentifiers: [String],
         privateWindowMarkers: [String],
         addressFieldMarkers: [String]
@@ -66,6 +74,8 @@ public struct RecorderConfig: Codable, Equatable {
         self.enableAppAttest = enableAppAttest
         self.excludedBundleIdentifiers = excludedBundleIdentifiers
         self.excludedDomains = excludedDomains
+        self.includedBundleIdentifiers = includedBundleIdentifiers
+        self.includedDomains = includedDomains
         self.browserBundleIdentifiers = browserBundleIdentifiers
         self.privateWindowMarkers = privateWindowMarkers
         self.addressFieldMarkers = addressFieldMarkers
@@ -231,6 +241,16 @@ public struct RecorderConfig: Codable, Equatable {
             maxItems: 512,
             maxLength: 253
         )
+        output.includedBundleIdentifiers = Self.cleanedOptionalList(
+            output.includedBundleIdentifiers,
+            maxItems: 512,
+            maxLength: 256
+        )
+        output.includedDomains = Self.cleanedOptionalList(
+            output.includedDomains,
+            maxItems: 512,
+            maxLength: 253
+        )
         output.browserBundleIdentifiers = Self.cleanedList(
             output.browserBundleIdentifiers,
             maxItems: 512,
@@ -258,6 +278,26 @@ public struct RecorderConfig: Codable, Equatable {
         }
 
         return output
+    }
+
+    public func allowsApplication(bundleIdentifier: String?) -> Bool {
+        guard let bundleIdentifier else {
+            return includedBundleIdentifiers?.isEmpty != false
+        }
+        let excluded = excludedBundleIdentifiers.contains {
+            $0.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
+        }
+        guard !excluded else { return false }
+        guard let allowed = includedBundleIdentifiers, !allowed.isEmpty else { return true }
+        return allowed.contains {
+            $0.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
+        }
+    }
+
+    public func allowsWebsite(host: String?) -> Bool {
+        guard !URLRedactor.domain(host, matches: excludedDomains) else { return false }
+        guard let allowed = includedDomains, !allowed.isEmpty else { return true }
+        return URLRedactor.domain(host, matches: allowed)
     }
 
     public static func load(from url: URL) throws -> RecorderConfig {
@@ -291,5 +331,15 @@ public struct RecorderConfig: Codable, Equatable {
         }
 
         return output
+    }
+
+    private static func cleanedOptionalList(
+        _ values: [String]?,
+        maxItems: Int,
+        maxLength: Int
+    ) -> [String]? {
+        guard let values else { return nil }
+        let cleaned = cleanedList(values, maxItems: maxItems, maxLength: maxLength)
+        return cleaned.isEmpty ? nil : cleaned
     }
 }

@@ -244,6 +244,8 @@
         var enableAppAttest: Bool
         var excludedDomainsText: String
         var excludedApplicationsText: String
+        var includedDomainsText: String
+        var includedApplicationsText: String
 
         init(config: RecorderConfig) {
             captureClicks = config.captureClicks
@@ -260,6 +262,8 @@
             enableAppAttest = config.enableAppAttest != false
             excludedDomainsText = config.excludedDomains.joined(separator: "\n")
             excludedApplicationsText = config.excludedBundleIdentifiers.joined(separator: "\n")
+            includedDomainsText = (config.includedDomains ?? []).joined(separator: "\n")
+            includedApplicationsText = (config.includedBundleIdentifiers ?? []).joined(separator: "\n")
         }
 
         func applying(to base: RecorderConfig) -> RecorderConfig {
@@ -277,6 +281,10 @@
             output.verificationServerURL = verificationServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
             output.enableAppAttest = enableAppAttest
             output.excludedDomains = Self.lines(from: excludedDomainsText).map { $0.lowercased() }
+            let includedDomains = Self.lines(from: includedDomainsText).map { $0.lowercased() }
+            output.includedDomains = includedDomains.isEmpty ? nil : includedDomains
+            let includedApplications = Self.lines(from: includedApplicationsText)
+            output.includedBundleIdentifiers = includedApplications.isEmpty ? nil : includedApplications
 
             var excludedApps = Self.lines(from: excludedApplicationsText)
             if !excludedApps.contains("ai.goalong.localhistory") {

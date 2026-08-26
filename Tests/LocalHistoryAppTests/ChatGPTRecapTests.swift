@@ -1376,7 +1376,7 @@
 
             let orderedHeaders = [
                 "## Causal Computer History",
-                "## Legacy minute-level computer activity digest",
+                "## Computer activity aggregates",
                 "## Apple Screen Time",
                 "## Local agent and coding-chat history",
                 "## Imported ChatGPT conversation history",
@@ -1385,16 +1385,16 @@
             let positions = try orderedHeaders.map { try XCTUnwrap(rendered.range(of: $0)?.lowerBound) }
             XCTAssertEqual(positions, positions.sorted())
             XCTAssertFalse(rendered.contains("CH_TAIL_MUST_BE_OMITTED"))
+            XCTAssertFalse(rendered.contains("computer-history-detail"))
             XCTAssertTrue(rendered.contains("IMPORTED_CHAT_LATE"))
-            XCTAssertTrue(rendered.contains("- Source events: 101"))
-            XCTAssertTrue(rendered.contains("- Action events: 103"))
-            XCTAssertTrue(rendered.contains("- Reconstructed episodes: 131"))
-            XCTAssertTrue(rendered.contains("- Identified resources: 127"))
-            XCTAssertTrue(rendered.contains("- Before/after semantic pairs: 113"))
+            XCTAssertTrue(rendered.contains("events=101"))
+            XCTAssertTrue(rendered.contains("actions=103"))
+            XCTAssertTrue(rendered.contains("episodes=131"))
+            XCTAssertTrue(rendered.contains("resources=127"))
+            XCTAssertTrue(rendered.contains("paired_before_after=113"))
             XCTAssertTrue(rendered.contains("Screen Time applications: 11"))
             XCTAssertTrue(rendered.contains("Direct-read agent messages: 17"))
             XCTAssertFalse(rendered.contains(secret))
-            XCTAssertTrue(rendered.contains("REDACTED"))
             XCTAssertLessThanOrEqual(
                 rendered.count,
                 ChatGPTRecapContextBuilder.maximumRenderedDataCharacters

@@ -7,6 +7,12 @@ Goalong History keeps the append-only event journal as its source of truth. The 
 
 No language model is required to build the analysis.
 
+Computer History uses a separate deterministic causal projection for agent input. It is
+rendered on explicit demand with an 800–12,000-token bound, deduplicates source locators,
+and does not run a background agent. When causal Computer History is available, the
+optional Daily Recap context uses this evidence pack plus only complementary duration
+aggregates from the minute analysis, avoiding a second copy of the same visible context.
+
 ## Data flow
 
 ```text

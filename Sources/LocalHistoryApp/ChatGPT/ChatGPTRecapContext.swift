@@ -42,7 +42,7 @@
     enum ChatGPTRecapContextBuilder {
         static let maximumPromptCharacters = 180_000
         static let maximumRenderedDataCharacters = 175_000
-        static let maximumComputerHistoryCharacters = 90_000
+        static let maximumComputerHistoryTokens = 12_000
         static let maximumActivityCharacters = 40_000
         static let maximumScreenTimeCharacters = 8_000
         static let maximumAgentActivityCharacters = 8_000
@@ -88,7 +88,8 @@
                 agentActivity: agentActivity,
                 importedChats: importedChats,
                 localJournalSourceAbsent: localActivity.cycleResult.sourceAbsent,
-                sourceCounts: counts
+                sourceCounts: counts,
+                computerHistoryTokenBudget: ActivityAnalysisPreferences.agentTokenBudget
             )
             return ChatGPTRecapContext(
                 day: normalizedDay,
@@ -307,7 +308,8 @@
             agentActivity: AgentActivityOverview,
             importedChats: [ChatGPTImportedMessage],
             localJournalSourceAbsent: Bool,
-            sourceCounts: ChatGPTRecapSourceCounts
+            sourceCounts: ChatGPTRecapSourceCounts,
+            computerHistoryTokenBudget: Int
         ) throws -> String {
             let manifest = renderSourceManifest(
                 day: day,
@@ -324,10 +326,12 @@
             let sections = [
                 try renderComputerHistory(
                     computerHistory,
-                    maximum: maximumComputerHistoryCharacters
+                    tokenBudget: computerHistoryTokenBudget
                 ),
                 boundedRedactedSection(
-                    renderActivity(activity),
+                    computerHistory == nil
+                        ? renderActivity(activity)
+                        : renderActivityAggregates(activity),
                     maximum: maximumActivityCharacters
                 ),
                 boundedRedactedSection(
@@ -357,61 +361,25 @@
 
         private static func renderComputerHistory(
             _ memory: ComputerHistoryDayMemory?,
-            maximum: Int
+            tokenBudget: Int
         ) throws -> String {
             guard let memory else {
                 return "## Causal Computer History\nNo causal memory was available for this day."
             }
-            let header = """
+            let boundedTokenBudget = min(
+                maximumComputerHistoryTokens,
+                max(ComputerHistoryAgentContextRenderer.minimumTokenBudget, tokenBudget)
+            )
+            let projection = ComputerHistoryAgentContextRenderer.render(
+                memory,
+                tokenBudget: boundedTokenBudget
+            )
+            return """
                 ## Causal Computer History — primary computer-activity evidence
-                The following Markdown reports exact coverage totals plus a bounded representative projection of chronological episodes, source locators, statuses, action sequences, observable changes and workflow patterns. It supersedes the compressed minute-level brief for causal interpretation, but omitted representatives remain available only from the raw local journal.
-                """
-            let coverage = renderComputerHistoryCoverage(memory.coverage)
-            let fixedCharacters = header.count + coverage.count + 4
-            guard fixedCharacters < maximum else {
-                throw CodexAppServerError.protocolLimitExceeded(
-                    "the exact Computer History coverage exceeded its reserved budget"
-                )
-            }
-            let redactedMarkdown = ActivitySemanticTextSanitizer.redact(memory.markdown) ?? ""
-            let details =
-                redactedMarkdown.components(
-                    separatedBy: "\n## Coverage and uncertainty"
-                ).first ?? redactedMarkdown
-            return header + "\n\n"
-                + clip(details, maximum: maximum - fixedCharacters)
-                + "\n\n" + coverage
-        }
+                Deterministic local evidence pack: ~\(projection.approximateTokenCount) tokens, \(projection.informationFactCount)/\(projection.availableInformationFactCount) evidence slots, \(String(format: "%.1f", projection.informationFactsPerThousandTokens)) slots per 1,000 approximate tokens. It was rendered on demand from structured local evidence; omitted details remain available by direct read from the authoritative journals.
 
-        private static func renderComputerHistoryCoverage(
-            _ coverage: ComputerHistoryCoverage
-        ) -> String {
-            var lines = [
-                "### Exact Computer History coverage",
-                "- Source events: \(coverage.sourceEventCount)",
-                "- Action events: \(coverage.actionEventCount)",
-                "- Semantic snapshots: \(coverage.semanticSnapshotCount)",
-                "- Reconstructed episodes: \(coverage.episodeCount)",
-                "- Linked interactions: \(coverage.linkedInteractionCount)",
-                "- Identified resources: \(coverage.resourceCount)",
-                "- Before/after semantic pairs: \(coverage.interactionsWithBeforeAndAfterContext)",
-                "- Suppressed events: \(coverage.suppressedEventCount)",
-            ]
-            if let retained = coverage.retainedEpisodeCount {
-                lines.append("- Representative episodes retained: \(retained)")
-            }
-            if let retained = coverage.retainedInteractionCount {
-                lines.append("- Representative interactions retained: \(retained)")
-            }
-            if let retained = coverage.retainedResourceCount {
-                lines.append("- Representative resource links retained: \(retained)")
-            }
-            if let first = coverage.firstSourceSequence,
-                let last = coverage.lastSourceSequence
-            {
-                lines.append("- Source integrity sequence: \(first)–\(last)")
-            }
-            return lines.joined(separator: "\n")
+                \(projection.markdown)
+                """
         }
 
         private static func renderSourceManifest(
@@ -509,6 +477,36 @@
             return lines.joined(separator: "\n")
         }
 
+        /// Computer History already carries the causal sequence. When it is present,
+        /// keep only non-duplicative duration and aggregate facts from the legacy
+        /// minute analysis instead of paying for the same visible context twice.
+        private static func renderActivityAggregates(_ analysis: ActivityDayAnalysis) -> String {
+            var lines = [
+                "## Computer activity aggregates — complementary duration evidence",
+                "Active time represented by Goalong: \(duration(analysis.activeSeconds))",
+                "Work-classified time: \(duration(analysis.workSeconds))",
+                "Representative active minutes: \(analysis.coverage.representativeMinuteCount)",
+                "Private/suppressed coverage: \(analysis.coverage.privateMinuteCount) minute(s)",
+            ]
+            if !analysis.applications.isEmpty {
+                lines.append("### Top applications by represented active time")
+                for application in analysis.applications.prefix(12) {
+                    lines.append(
+                        "- \(clean(application.name, maximum: 120)): \(duration(application.activeSeconds))"
+                    )
+                }
+            }
+            if !analysis.sites.isEmpty {
+                lines.append("### Top sites by represented active time")
+                for site in analysis.sites.prefix(12) {
+                    lines.append(
+                        "- \(clean(site.host, maximum: 160)): \(duration(site.activeSeconds)); visits=\(site.visitCount)"
+                    )
+                }
+            }
+            return lines.joined(separator: "\n")
+        }
+
         private static func renderScreenTime(_ summary: AppleScreenTimeDaySummary?) -> String {
             guard let summary else {
                 return "## Apple Screen Time\nNo Apple Screen Time summary was available for this day."
@@ -570,11 +568,12 @@
             }
 
             static func renderComputerHistoryForTesting(
-                _ memory: ComputerHistoryDayMemory?
+                _ memory: ComputerHistoryDayMemory?,
+                tokenBudget: Int = ComputerHistoryAgentContextRenderer.defaultTokenBudget
             ) throws -> String {
                 try renderComputerHistory(
                     memory,
-                    maximum: maximumComputerHistoryCharacters
+                    tokenBudget: tokenBudget
                 )
             }
 
@@ -586,7 +585,9 @@
                 agentActivity: AgentActivityOverview,
                 importedChats: [ChatGPTImportedMessage],
                 localJournalSourceAbsent: Bool = false,
-                sourceCounts: ChatGPTRecapSourceCounts
+                sourceCounts: ChatGPTRecapSourceCounts,
+                computerHistoryTokenBudget: Int = ComputerHistoryAgentContextRenderer
+                    .defaultTokenBudget
             ) throws -> String {
                 try renderData(
                     day: day,
@@ -596,7 +597,8 @@
                     agentActivity: agentActivity,
                     importedChats: importedChats,
                     localJournalSourceAbsent: localJournalSourceAbsent,
-                    sourceCounts: sourceCounts
+                    sourceCounts: sourceCounts,
+                    computerHistoryTokenBudget: computerHistoryTokenBudget
                 )
             }
 

@@ -861,6 +861,41 @@
             XCTAssertEqual(try Data(contentsOf: eventURL), source)
         }
 
+        func testOptInRealDashboardRootLoadsExistingDayWithoutEmptyReplacement() throws {
+            let environment = ProcessInfo.processInfo.environment
+            guard let root = environment["GOALONG_TEST_REAL_DASHBOARD_ROOT"],
+                let rawDay = environment["GOALONG_TEST_REAL_DASHBOARD_DAY"]
+            else {
+                throw XCTSkip(
+                    "Set GOALONG_TEST_REAL_DASHBOARD_ROOT and GOALONG_TEST_REAL_DASHBOARD_DAY for the local read-only probe."
+                )
+            }
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .current
+            formatter.dateFormat = "yyyy-MM-dd"
+            let day = try XCTUnwrap(formatter.date(from: rawDay))
+            let reader = DashboardDataReader(rootDirectory: URL(fileURLWithPath: root))
+
+            let snapshot = reader.snapshot(for: day)
+            let diagnostics = reader.diagnostics
+            let transitions = diagnostics.transitions.values.map(\.rawValue).sorted()
+            let limits = diagnostics.budgetExceeded.values.map(\.rawValue).sorted()
+            print(
+                "Real dashboard probe events=\(snapshot.eventCount) active=\(snapshot.activeMinutes) "
+                    + "sessions=\(snapshot.sessions.count) state=\(diagnostics.snapshotState.rawValue) "
+                    + "transitions=\(transitions.joined(separator: ",")) "
+                    + "limits=\(limits.joined(separator: ",")) bytes=\(diagnostics.bytesRead) "
+                    + "cache=\(diagnostics.cachedEstimatedBytes) derived=\(diagnostics.cachedDerivedEstimatedBytes)"
+            )
+
+            XCTAssertGreaterThan(snapshot.eventCount, 0)
+            XCTAssertGreaterThan(snapshot.activeMinutes, 0)
+            XCTAssertEqual(diagnostics.snapshotState, .fresh)
+            XCTAssertTrue(diagnostics.budgetExceeded.isEmpty)
+        }
+
         private func makeFixture() throws -> (
             root: URL,
             events: URL,

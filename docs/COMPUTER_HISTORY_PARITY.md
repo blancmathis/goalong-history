@@ -1,15 +1,35 @@
 # Goalong History — Computer History analysis parity
 
 This document describes the Goalong implementation of the publicly documented
-Computer History analysis behavior: chronological interaction capture, local causal
-memories, source recovery, natural questions about recent work, task status, and
-repeatable-workflow suggestions.
+Computer History **capture and evidence** behavior: chronological interaction capture,
+local causal evidence, source recovery, and a compact representation that a later agent
+can inspect.
 
 It does **not** claim access to, or equivalence with, any undocumented private
 implementation. Parity claims must be limited to behavior that has been exercised on
 the tested macOS build and applications.
 
 Reference behavior: <https://learn.chatgpt.com/docs/customization/computer-history>
+
+## Scope: capture parity, not background-agent parity
+
+Computer History has two separable planes:
+
+1. the **capture/evidence plane** observes eligible local interactions and context, keeps
+   chronology and provenance, represents gaps, and makes the original evidence readable;
+2. the **interpretation plane** lets an AI answer questions or generate a human-facing
+   summary from that evidence.
+
+Goalong's parity target is the first plane. Goalong does not run a background language
+model to interpret every interval. Its recorder, reduction, indexing, search preparation,
+and agent-context projection are deterministic and local. When an explicitly invoked
+agent needs the day, Goalong renders a transient token-bounded evidence pack; the optional
+Daily Recap feature is a separate user-triggered integration and is not part of the
+Computer History capture loop.
+
+Accordingly, the primary quality measures are capture richness, chronological and source
+coverage, explicit uncertainty, reopenable provenance, and information per approximate
+token. A polished generated summary is not evidence that capture parity was achieved.
 
 ## Observable target and public-use signals
 
@@ -39,11 +59,13 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | --- | --- | --- |
 | clicks, grouped typing, shortcuts, scrolling, app/window/site context | one local input pipeline with event-time, near-event, after, and settled observations | deterministic capture tests pass; the installed signed identity still needs a fresh physical-input/TCC run |
 | searchable chronology and local memories | causal episodes plus exact coverage totals and a bounded representative projection | parity/evidence/storage tests and installed UI inspection pass |
+| compact evidence for a later agent | deterministic on-demand evidence pack with exact totals, distributed high-value episodes, causal changes, and deduplicated source locators | unit evals and a real read-only day probe enforce token bounds and measure evidence slots per approximate token; no LLM runs in the capture loop |
 | resume after a break and summarize recent work | intent-aware local search over causal episodes, including French resume phrasing | English/French query tests and a real local source query pass |
 | recover a file, page, document, conversation, issue, or terminal context | stable source references with direct-source fallback and provenance | resource-resolution and query tests pass; unavailable locators stay explicit |
 | distinguish completed, in-progress, blocked, waiting, planned, and unknown work | cautious evidence-derived status with latest visible state taking priority | deterministic status scenarios pass; status remains an interpretation |
 | suggest skills or automations from repeated work | bounded cross-day workflow clustering; suggestions never auto-run | repeatability scenarios pass; real multi-day usefulness remains data-dependent |
-| pause, resume, exclude, and delete | menu-bar/UI controls, app/domain exclusions, private/secure suppression, and 10-minute/hour/all deletion | privacy audit and deletion tests pass |
+| choose contributing apps and websites | exclusion lists plus fail-closed include-only app/domain scopes; exclusions, private browsing and protected apps always win | configuration and recorder-policy tests pass; old configs decode with allow-all include scopes |
+| pause, resume, exclude, and bulk-delete | menu-bar/UI controls, app/domain exclusions, private/secure suppression, and 10-minute/hour/day/all deletion | privacy audit and deletion tests pass; per-summary and recent-app-session deletion remain an explicit public-surface gap |
 | avoid screenshots, audio, clipboard, keystroke reconstruction, and private browsing | Accessibility text and interaction metadata only, with credential redaction | privacy audit and suppression tests pass |
 | stay unobtrusive and recoverable | one process, no helper, health state, bounded queues/caches, AX storm debounce, polling fallback | resource measurements pass; final physical wake/input recovery is pending TCC refresh |
 
@@ -59,6 +81,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | Whitespace cleanup created one Foundation regular-expression result per ordinary match and retained a complete pass of autoreleased temporaries. | Layout normalization is one linear Unicode-scalar pass; credential patterns remain compiled regexes, and their temporary Foundation objects drain once per bounded observation. |
 | The Computer History page eagerly built every retained episode card and rebuilt the same source dictionary for each card. | The timeline and page body are lazy, one source index is shared by all visible cards, transient dashboard caches are cleared on close, and free allocator pages are returned after the window graph drains. |
 | Missing or unsafe raw input could erase or replace the useful derived view. | The last known-good memory remains visible with an explicit `absent` or `inaccessible` source state. |
+| The optional Codex Markdown mirror could exceed 2 MB for one busy day and the ChatGPT recap could repeat the same causal text in its legacy minute digest. | The mirror now uses a deterministic 3,000-token ceiling, the on-demand agent pack accepts an 800–12,000-token budget, sources are aliased once, and a recap with causal history keeps only complementary duration aggregates from the legacy view. |
 
 The raw Goalong event and semantic journals remain the authoritative evidence.
 Compaction changes only derived storage and search working sets; it does not
@@ -89,6 +112,13 @@ With **Full Computer History context** enabled, Goalong History can reconstruct:
 The existing compact day recap remains available for fast reporting. It is no longer
 the primary causal representation.
 
+Settings expose both exclusion lists and optional include-only lists for applications
+and website domains. Empty include-only lists preserve the existing allow-all behavior.
+Once an include-only list is populated, missing application identity or browser host
+fails closed; exclusions and private/secure suppression retain priority. The menu bar
+offers the same documented bulk-clear windows: last 10 minutes, last hour, last day,
+or all detailed history.
+
 ## Analysis pipeline
 
 ```text
@@ -113,7 +143,33 @@ CGEventTap + NSWorkspace + AXObserver + foreground polling
              ComputerHistoryWorkflowDetector
                          │
                          ▼
- compact structured JSON + one Codex Markdown projection + local search
+ compact structured JSON + bounded Codex projection + local search
+                         │
+                         ▼ explicit request only
+       transient token-bounded agent evidence pack (no LLM, no write)
+```
+
+### Information per token
+
+`ComputerHistoryAgentContextRenderer` builds the agent-facing view from structured local
+evidence. It never reads or trusts a previously rendered Markdown body. Exact coverage and
+the source sequence/hash boundary are reserved first. Within the remaining budget it:
+
+- samples across the day so early, middle, and late work can remain represented;
+- prioritizes observable outcomes, intentions, before/after pairs, semantic changes, and
+  reopenable sources;
+- caps representative interactions per episode;
+- emits each selected source locator once and references it with a short alias;
+- labels status as inferred and omits workflow suggestions from the evidence plane;
+- redacts common credentials again at render time.
+
+The reported `informationFactsPerThousandTokens` is a deterministic regression proxy. A
+"fact" is one emitted evidence slot, such as a coverage value, episode field, interaction,
+semantic change, or source locator. It does not claim to measure an LLM's comprehension.
+The pack can be read without persistence:
+
+```bash
+goalong-history-query computer-history-context YYYY-MM-DD --tokens 1600
 ```
 
 ### Interaction capture
@@ -640,7 +696,10 @@ Dedicated deterministic scenarios verify:
 15. one source read feeding both recap views without deleting retained memory when raw
     events are absent;
 16. compact memory retention, corrupt-file fallback, and explicit owned-only deletion;
-17. a 10,000-action day retaining exact coverage with a bounded representative JSON.
+17. a 10,000-action day retaining exact coverage with a bounded representative JSON;
+18. a deterministic agent pack respecting 800- and 3,000-token budgets, retaining exact
+    coverage/provenance, spreading selected episodes chronologically, redacting secrets,
+    ignoring stale Markdown, and increasing represented facts monotonically with budget.
 
 Run the focused validator:
 
@@ -718,7 +777,23 @@ window list was verified, and more than 60 seconds elapsed.
 | transcript duplication check | zero files and zero bytes in `agent-activity/blobs`; durable Agent Activity files are the bounded index, configuration, one small wake-up signal, and an empty lock |
 | real French resume query | one current day reconstructed in 3.07 seconds; maximum RSS 83,361,792 bytes and physical footprint 74,842,712 bytes; 12 source-backed episode hits |
 | complete automated suite | 575 tests, 2 skipped, 0 failures; Agent Activity selection 93 tests, 1 skipped, 0 failures |
-| parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 18/18 metadata-probe tests passed; output directory was 52 allocated KiB and contained metadata/checklists only |
+| parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 18/18 metadata-probe tests passed; the validator now also runs the 2 token-density/context-pack scenarios; output directory was 52 allocated KiB and contained metadata/checklists only |
+
+An additional read-only development-source probe on 2026-08-26 reconstructed the real
+2026-08-25 day and rendered a 1,600-token pack without exposing its body: 1,553 approximate
+tokens / 6,071 characters, 138 emitted evidence slots, 88.9 slots per 1,000 approximate
+tokens, 6 episodes, 9 interactions, and 8 sources. The source/storage metadata fingerprint
+was identical before and after the command, and `/usr/bin/time -l` reported 83,886,080
+bytes maximum RSS and 74,678,872 bytes peak physical footprint for the complete on-demand
+source reconstruction plus rendering. This proves a bounded local projection and a
+no-write read path; it does not prove that 1,600 tokens retain every useful semantic fact
+or that an arbitrary downstream model will interpret them correctly.
+
+The same 2026-08-26 source revision passed the complete Swift suite: 583 tests executed,
+3 expected environment-dependent skips, and 0 failures in 101.7 seconds. The focused
+validator also passed 9 causal-parity, 3 episode-quality, 2 context-density, 18 metadata-
+probe, privacy-boundary, checker-regression, release CLI build, and four real local query
+checks without emitting history bodies.
 
 Raw RSS includes reclaimable mappings and allocator pages and is therefore reported
 separately from macOS `phys_footprint`, the memory-pressure measure used for the

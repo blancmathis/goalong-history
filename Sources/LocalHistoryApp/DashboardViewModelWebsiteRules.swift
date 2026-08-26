@@ -5,6 +5,8 @@
     extension DashboardViewModel {
         func isDomainExcludedFromCapture(_ host: String) -> Bool {
             URLRedactor.domain(host, matches: configuredExcludedDomains)
+                || (!configuredIncludedDomains.isEmpty
+                    && !URLRedactor.domain(host, matches: configuredIncludedDomains))
         }
 
         func isApplicationExcludedFromCapture(_ bundleIdentifier: String) -> Bool {
@@ -15,7 +17,10 @@
             }
             return configuredExcludedApplications.contains {
                 $0.caseInsensitiveCompare(normalized) == .orderedSame
-            }
+            } || (!configuredIncludedApplications.isEmpty
+                && !configuredIncludedApplications.contains {
+                    $0.caseInsensitiveCompare(normalized) == .orderedSame
+                })
         }
 
         /// Updates the recorder's persistent excluded-domain list from the Activity screen.
@@ -30,10 +35,26 @@
                 domains.removeAll {
                     SharingSubjectKey.normalizedHost($0) == normalized
                 }
+                if !configuredIncludedDomains.isEmpty {
+                    var included = configuredIncludedDomains
+                    if !included.contains(where: {
+                        SharingSubjectKey.normalizedHost($0) == normalized
+                    }) {
+                        included.append(normalized)
+                    }
+                    settingsDraft.includedDomainsText = included.sorted().joined(separator: "\n")
+                }
             } else if !domains.contains(where: {
                 SharingSubjectKey.normalizedHost($0) == normalized
             }) {
-                domains.append(normalized)
+                if !configuredIncludedDomains.isEmpty {
+                    let included = configuredIncludedDomains.filter {
+                        SharingSubjectKey.normalizedHost($0) != normalized
+                    }
+                    settingsDraft.includedDomainsText = included.sorted().joined(separator: "\n")
+                } else {
+                    domains.append(normalized)
+                }
             }
 
             settingsDraft.excludedDomainsText = domains.sorted().joined(separator: "\n")
@@ -56,10 +77,30 @@
                 applications.removeAll {
                     $0.caseInsensitiveCompare(normalized) == .orderedSame
                 }
+                if !configuredIncludedApplications.isEmpty {
+                    var included = configuredIncludedApplications
+                    if !included.contains(where: {
+                        $0.caseInsensitiveCompare(normalized) == .orderedSame
+                    }) {
+                        included.append(normalized)
+                    }
+                    settingsDraft.includedApplicationsText = included
+                        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+                        .joined(separator: "\n")
+                }
             } else if !applications.contains(where: {
                 $0.caseInsensitiveCompare(normalized) == .orderedSame
             }) {
-                applications.append(normalized)
+                if !configuredIncludedApplications.isEmpty {
+                    let included = configuredIncludedApplications.filter {
+                        $0.caseInsensitiveCompare(normalized) != .orderedSame
+                    }
+                    settingsDraft.includedApplicationsText = included
+                        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+                        .joined(separator: "\n")
+                } else {
+                    applications.append(normalized)
+                }
             }
 
             settingsDraft.excludedApplicationsText = applications
@@ -96,6 +137,20 @@
 
         private var configuredExcludedApplications: [String] {
             settingsDraft.excludedApplicationsText
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+
+        private var configuredIncludedDomains: [String] {
+            settingsDraft.includedDomainsText
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+
+        private var configuredIncludedApplications: [String] {
+            settingsDraft.includedApplicationsText
                 .components(separatedBy: .newlines)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }

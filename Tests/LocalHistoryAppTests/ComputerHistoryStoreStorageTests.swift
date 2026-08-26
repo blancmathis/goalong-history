@@ -31,7 +31,10 @@
                 repeating: "Observed activity remains fully represented by structured evidence. ",
                 count: 400
             )
-            let memory = makeMemory(day: day, title: "Storage fixture", summary: repeatedEvidence)
+            let memory = replacingMarkdown(
+                makeMemory(day: day, title: "Storage fixture", summary: repeatedEvidence),
+                with: "# Legacy unbounded projection\n\n" + repeatedEvidence
+            )
             let store = ComputerHistoryStore(
                 rootDirectory: fixtureRoot,
                 codexMemoryDirectory: codexRoot,
@@ -65,7 +68,8 @@
             )
 
             let loaded = try XCTUnwrap(store.loadStored(for: day))
-            XCTAssertEqual(loaded, legacyRoundTrip)
+            XCTAssertEqual(loaded.markdown, ComputerHistoryMarkdownRenderer.render(legacyRoundTrip))
+            XCTAssertNotEqual(loaded.markdown, legacyRoundTrip.markdown)
             XCTAssertFalse(FileManager.default.fileExists(atPath: localMarkdownURL.path))
 
             let compactJSON = try Data(contentsOf: JSONURL)
@@ -73,10 +77,11 @@
                 JSONSerialization.jsonObject(with: compactJSON) as? [String: Any]
             )
             XCTAssertNil(object["markdown"])
-            XCTAssertEqual(object["storageFormatVersion"] as? Int, 2)
-            XCTAssertEqual(try Data(contentsOf: codexMarkdownURL), markdown)
+            XCTAssertEqual(object["storageFormatVersion"] as? Int, 3)
+            let compactMarkdown = Data(loaded.markdown.utf8)
+            XCTAssertEqual(try Data(contentsOf: codexMarkdownURL), compactMarkdown)
 
-            let bytesAfter = compactJSON.count + markdown.count
+            let bytesAfter = compactJSON.count + compactMarkdown.count
             XCTAssertLessThan(bytesAfter, (bytesBefore * 65) / 100)
             print(
                 "ComputerHistoryStore fixture bytes before=\(bytesBefore) "
@@ -106,6 +111,72 @@
                     accuracy: 0.001
                 )
             }
+        }
+
+        func testVersionTwoCompactJSONUpgradesTheExistingUnboundedCodexMirror() throws {
+            let fixtureRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let codexRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            defer {
+                try? FileManager.default.removeItem(at: fixtureRoot)
+                try? FileManager.default.removeItem(at: codexRoot)
+            }
+
+            let day = makeDay(year: 2026, month: 8, day: 21)
+            let memory = makeMemory(
+                day: day,
+                title: "Version two fixture",
+                summary: "Structured evidence remains authoritative."
+            )
+            let memoryDirectory = fixtureRoot.appendingPathComponent(
+                "computer-history",
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(
+                at: memoryDirectory,
+                withIntermediateDirectories: true
+            )
+            try FileManager.default.createDirectory(at: codexRoot, withIntermediateDirectories: true)
+
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let encoded = try encoder.encode(memory)
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+            )
+            object.removeValue(forKey: "markdown")
+            object["storageFormatVersion"] = 2
+            let versionTwoJSON = try JSONSerialization.data(withJSONObject: object)
+            let JSONURL = memoryDirectory.appendingPathComponent(
+                "2026-08-21.computer-history.json"
+            )
+            try versionTwoJSON.write(to: JSONURL, options: [.atomic])
+
+            let oldMirror = Data(
+                String(repeating: "Old unbounded Codex evidence projection.\n", count: 20_000).utf8
+            )
+            let codexURL = codexRoot.appendingPathComponent(
+                "2026-08-21-goalong-computer-history.md"
+            )
+            try oldMirror.write(to: codexURL, options: [.atomic])
+
+            let store = ComputerHistoryStore(
+                rootDirectory: fixtureRoot,
+                codexMemoryDirectory: codexRoot,
+                diagnosticSink: { _ in }
+            )
+            let loaded = try XCTUnwrap(store.loadStored(for: day))
+            let compactMirror = try Data(contentsOf: codexURL)
+
+            XCTAssertEqual(compactMirror, Data(loaded.markdown.utf8))
+            XCTAssertLessThan(compactMirror.count, oldMirror.count / 20)
+            let upgraded = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(contentsOf: JSONURL))
+                    as? [String: Any]
+            )
+            XCTAssertEqual(upgraded["storageFormatVersion"] as? Int, 3)
+            XCTAssertNil(upgraded["markdown"])
         }
 
         func testLoadRecentCompactsLegacyUnboundedAnalysisAfterValidatedRead() throws {
@@ -164,7 +235,7 @@
             let persisted = try XCTUnwrap(
                 JSONSerialization.jsonObject(with: compactBytes) as? [String: Any]
             )
-            XCTAssertEqual(persisted["storageFormatVersion"] as? Int, 2)
+            XCTAssertEqual(persisted["storageFormatVersion"] as? Int, 3)
             XCTAssertLessThan(compactBytes.count, legacyBytes.count / 2)
             print(
                 "ComputerHistoryStore legacy-analysis bytes before=\(legacyBytes.count) "
@@ -229,7 +300,7 @@
             let upgraded = try XCTUnwrap(
                 JSONSerialization.jsonObject(with: Data(contentsOf: JSONURL)) as? [String: Any]
             )
-            XCTAssertEqual(upgraded["storageFormatVersion"] as? Int, 2)
+            XCTAssertEqual(upgraded["storageFormatVersion"] as? Int, 3)
         }
 
         func testLegacyMigrationRejectsSymlinkedMarkdownBeforeRewritingJSON() throws {
@@ -2381,6 +2452,27 @@
                 coverage: base.coverage,
                 markdown: ComputerHistoryMarkdownRenderer.render(base),
                 securityNotice: base.securityNotice
+            )
+        }
+
+        private func replacingMarkdown(
+            _ memory: ComputerHistoryDayMemory,
+            with markdown: String
+        ) -> ComputerHistoryDayMemory {
+            ComputerHistoryDayMemory(
+                schemaVersion: memory.schemaVersion,
+                dayStart: memory.dayStart,
+                dayEnd: memory.dayEnd,
+                generatedAt: memory.generatedAt,
+                title: memory.title,
+                executiveSummary: memory.executiveSummary,
+                episodes: memory.episodes,
+                resources: memory.resources,
+                workflowPatterns: memory.workflowPatterns,
+                suggestions: memory.suggestions,
+                coverage: memory.coverage,
+                markdown: markdown,
+                securityNotice: memory.securityNotice
             )
         }
 
