@@ -781,8 +781,8 @@ window list was verified, and more than 60 seconds elapsed.
 | direct-source Agent Activity index | 797 entries in 778,752 bytes (977.1 bytes per entry): Codex 782, Claude Code 1, OpenCode 14; all available |
 | transcript duplication check | zero files and zero bytes in `agent-activity/blobs`; durable Agent Activity files are the bounded index, configuration, one small wake-up signal, and an empty lock |
 | real French resume query | one current day reconstructed in 3.07 seconds; maximum RSS 83,361,792 bytes and physical footprint 74,842,712 bytes; 12 source-backed episode hits |
-| complete automated suite | 583 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
-| parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 18/18 metadata-probe tests passed; the validator also runs the 2 token-density/context-pack scenarios and the sleeping-versus-saturated kernel CPU sampler regression; output contains metadata/checklists only |
+| complete automated suite | 586 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
+| parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 18/18 metadata-probe tests passed; the validator also runs the 2 token-density/context-pack scenarios, the sleeping-versus-saturated kernel CPU sampler regression, and the offline local-signing policy; output contains metadata/checklists only |
 
 An additional read-only development-source probe on 2026-08-26 reconstructed the real
 2026-08-25 day and rendered a 1,600-token pack without exposing its body: 1,553 approximate

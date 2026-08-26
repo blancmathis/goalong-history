@@ -14,10 +14,12 @@ func fixtureBuild(
         buildNumber: "1",
         executablePath: "/Applications/Goalong History.app/Contents/MacOS/Goalong History",
         signatureKind: signature,
-        signingIdentifier: signature == .developerID ? "ai.goalong.localhistory" : nil,
+        signingIdentifier: [.appleDevelopment, .developerID, .appStore].contains(signature)
+            ? "ai.goalong.localhistory"
+            : nil,
         teamIdentifier: team,
         codeDirectoryHash: cdHash,
-        designatedRequirement: signature == .developerID
+        designatedRequirement: [.appleDevelopment, .developerID, .appStore].contains(signature)
             ? "anchor apple generic and identifier ai.goalong.localhistory"
             : "cdhash H\"\(cdHash)\""
     )

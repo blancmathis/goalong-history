@@ -73,6 +73,16 @@ The normal installer no longer silently falls back to a source build when a rele
 ./install.sh --source
 ```
 
+Source builds remain ad-hoc by default. A developer may explicitly supply an existing
+local certificate through `LOCALHISTORY_CODESIGN_IDENTITY`. An `Apple Development`
+identity produces a certificate-backed designated requirement without claiming Developer
+ID distribution or notarization. Local identities are signed with Hardened Runtime and
+`--timestamp=none`, so source installation does not contact Apple's timestamp service.
+Only an explicit `Developer ID Application:` identity requests a trusted distribution
+timestamp. The certificate's private key is never copied into the repository or
+installer. TCC persistence must still be proved by replacing one build with another
+signed by the same certificate and exercising real Accessibility and input callbacks.
+
 ## Permission readiness
 
 The app requires Accessibility for foreground UI context. On macOS, Accessibility also grants the event-listening capability used by the recorder. `CGPreflightListenEventAccess()` reports only the narrower direct Input Monitoring grant, so it must not be treated as a second independent hard requirement.

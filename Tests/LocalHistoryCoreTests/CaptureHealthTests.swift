@@ -83,6 +83,14 @@ final class CaptureHealthTests: XCTestCase {
         XCTAssertNotEqual(assessment.state, .permissionAppearsEnabledButStaleForBuild)
     }
 
+    func testAppleDevelopmentIdentityDoesNotUseCDHashAcrossLocalRebuilds() {
+        let oldBuild = fixtureBuild(signature: .appleDevelopment, cdHash: "old", team: "TEAM123")
+        let newBuild = fixtureBuild(signature: .appleDevelopment, cdHash: "new", team: "TEAM123")
+        XCTAssertTrue(oldBuild.isStableAcrossUpdates)
+        XCTAssertTrue(oldBuild.hasSamePermissionIdentity(as: newBuild))
+        XCTAssertNotEqual(oldBuild.permissionIdentityKey, fixtureBuild(cdHash: "new").permissionIdentityKey)
+    }
+
     func testPauseAndSuppressionAreExplicitStates() {
         XCTAssertEqual(
             CaptureHealthEvaluator.assess(fixtureHealth(paused: true), now: fixtureStart).state,

@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORE_BUILDER="$ROOT_DIR/scripts/build_app_core.sh"
+CODESIGN_POLICY="$ROOT_DIR/scripts/codesign_policy.sh"
 APP_NAME="Goalong History"
 BUNDLE_ID="ai.goalong.localhistory"
 DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Goalong History}"
@@ -13,6 +14,12 @@ if [[ ! -x "$CORE_BUILDER" ]]; then
   echo "Internal app builder is missing: $CORE_BUILDER" >&2
   exit 1
 fi
+if [[ ! -f "$CODESIGN_POLICY" ]]; then
+  echo "Code-signing policy is missing: $CODESIGN_POLICY" >&2
+  exit 1
+fi
+# shellcheck source=codesign_policy.sh
+source "$CODESIGN_POLICY"
 
 # Keep the Swift target and compatibility identifiers internal, while the physical bundle,
 # executable, base plist, localizations, Finder name, and Dock name all use the public identity.
@@ -45,7 +52,8 @@ done
 
 APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
 if [[ "$SIGN_IDENTITY" != "-" ]]; then
-  APP_SIGN_ARGS+=(--options runtime --timestamp)
+  SIGN_TIMESTAMP_ARGUMENT="$(localhistory_codesign_timestamp_argument "$SIGN_IDENTITY")"
+  APP_SIGN_ARGS+=(--options runtime "$SIGN_TIMESTAMP_ARGUMENT")
   if [[ -n "${LOCALHISTORY_APP_ENTITLEMENTS:-}" ]]; then
     if [[ ! -f "$LOCALHISTORY_APP_ENTITLEMENTS" ]]; then
       echo "LOCALHISTORY_APP_ENTITLEMENTS does not exist: $LOCALHISTORY_APP_ENTITLEMENTS" >&2

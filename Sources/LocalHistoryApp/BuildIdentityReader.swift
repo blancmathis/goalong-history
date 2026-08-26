@@ -49,6 +49,8 @@
             let teamIdentifier = information[kSecCodeInfoTeamIdentifier as String] as? String
             let unique = information[kSecCodeInfoUnique as String] as? Data
             let certificates = information[kSecCodeInfoCertificates as String] as? [SecCertificate]
+            let leafCertificateSummary = certificates?.first
+                .flatMap { SecCertificateCopySubjectSummary($0) as String? }
             var designatedRequirementReference: SecRequirement?
             let designatedRequirement: String?
             if SecCodeCopyDesignatedRequirement(
@@ -61,19 +63,15 @@
                 designatedRequirement = nil
             }
 
-            let signatureKind: BuildSignatureKind
-            if teamIdentifier != nil {
-                let receipt = bundle.appStoreReceiptURL
-                signatureKind = receipt.map { FileManager.default.fileExists(atPath: $0.path) } == true
-                    ? .appStore
-                    : .developerID
-            } else if unique != nil, certificates?.isEmpty != false {
-                signatureKind = .adHoc
-            } else if unique != nil {
-                signatureKind = .other
-            } else {
-                signatureKind = .unsigned
-            }
+            let receipt = bundle.appStoreReceiptURL
+            let signatureKind = signatureKind(
+                teamIdentifier: teamIdentifier,
+                hasAppStoreReceipt: receipt.map { FileManager.default.fileExists(atPath: $0.path) }
+                    == true,
+                leafCertificateSummary: leafCertificateSummary,
+                hasCodeDirectoryHash: unique != nil,
+                certificateCount: certificates?.count ?? 0
+            )
 
             return CaptureBuildIdentity(
                 bundleIdentifier: bundleIdentifier,
@@ -94,6 +92,28 @@
                 return nil
             }
             return text as String?
+        }
+
+        static func signatureKind(
+            teamIdentifier: String?,
+            hasAppStoreReceipt: Bool,
+            leafCertificateSummary: String?,
+            hasCodeDirectoryHash: Bool,
+            certificateCount: Int
+        ) -> BuildSignatureKind {
+            if teamIdentifier != nil {
+                if hasAppStoreReceipt { return .appStore }
+                if leafCertificateSummary?.hasPrefix("Developer ID Application:") == true {
+                    return .developerID
+                }
+                if leafCertificateSummary?.hasPrefix("Apple Development:") == true {
+                    return .appleDevelopment
+                }
+                return .other
+            }
+            if hasCodeDirectoryHash, certificateCount == 0 { return .adHoc }
+            if hasCodeDirectoryHash { return .other }
+            return .unsigned
         }
 
         private static func fallback(

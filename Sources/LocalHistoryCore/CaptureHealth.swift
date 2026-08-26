@@ -2,6 +2,7 @@ import Foundation
 
 public enum BuildSignatureKind: String, Codable, CaseIterable {
     case adHoc
+    case appleDevelopment
     case developerID
     case appStore
     case other
@@ -10,9 +11,10 @@ public enum BuildSignatureKind: String, Codable, CaseIterable {
 
 /// Identity facts for the exact executable that is currently running.
 ///
-/// For a Developer ID build, `teamIdentifier` + `signingIdentifier` are the stable
-/// identity inputs expected to survive an update. For an ad-hoc build, the CDHash
-/// identifies only that exact code version and must therefore be treated as unstable.
+/// For a certificate-backed Apple build, `teamIdentifier` + `signingIdentifier` are
+/// the stable identity inputs expected to survive a rebuild signed by the same team.
+/// For an ad-hoc build, the CDHash identifies only that exact code version and must
+/// therefore be treated as unstable.
 public struct CaptureBuildIdentity: Codable, Equatable {
     public let bundleIdentifier: String
     public let displayVersion: String?
@@ -47,14 +49,16 @@ public struct CaptureBuildIdentity: Codable, Equatable {
     }
 
     public var isStableAcrossUpdates: Bool {
-        signatureKind == .developerID || signatureKind == .appStore
+        signatureKind == .appleDevelopment
+            || signatureKind == .developerID
+            || signatureKind == .appStore
     }
 
     /// A conservative identity key used only for diagnostics. It is not a
     /// substitute for macOS code requirement evaluation.
     public var permissionIdentityKey: String {
         switch signatureKind {
-        case .developerID, .appStore:
+        case .appleDevelopment, .developerID, .appStore:
             return [
                 signatureKind.rawValue,
                 bundleIdentifier,

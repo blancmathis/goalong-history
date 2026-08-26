@@ -6,8 +6,15 @@ PRODUCT_NAME="LocalHistory"
 EXECUTABLE_NAME="Goalong History"
 BUNDLE_ID="ai.goalong.localhistory"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CODESIGN_POLICY="$ROOT_DIR/scripts/codesign_policy.sh"
 # shellcheck source=sparkle_release.env
 source "$ROOT_DIR/scripts/sparkle_release.env"
+if [[ ! -f "$CODESIGN_POLICY" ]]; then
+  echo "Code-signing policy is missing: $CODESIGN_POLICY" >&2
+  exit 1
+fi
+# shellcheck source=codesign_policy.sh
+source "$CODESIGN_POLICY"
 VERSION="${LOCALHISTORY_VERSION:-0.5.1}"
 BUILD_NUMBER="${LOCALHISTORY_BUILD_NUMBER:-1}"
 ARCHS="${LOCALHISTORY_ARCHS:-$(uname -m)}"
@@ -267,10 +274,11 @@ plutil -lint "$CONTENTS/Info.plist" >/dev/null
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
   # Hardened Runtime library validation rejects ad-hoc signed dynamic frameworks
   # because neither side has a Team ID. Development bundles stay ad-hoc without
-  # runtime; production Developer ID bundles keep Hardened Runtime and timestamps.
+  # runtime; certificate-backed bundles keep Hardened Runtime.
   SIGN_ARGS=(--force --sign "$SIGN_IDENTITY")
 else
-  SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY" --timestamp)
+  SIGN_TIMESTAMP_ARGUMENT="$(localhistory_codesign_timestamp_argument "$SIGN_IDENTITY")"
+  SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY" "$SIGN_TIMESTAMP_ARGUMENT")
 fi
 
 sign_sparkle_component() {
@@ -295,7 +303,7 @@ sign_sparkle_component "$CONTENTS/Frameworks/Sparkle.framework"
 
 APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
 if [[ "$SIGN_IDENTITY" != "-" ]]; then
-  APP_SIGN_ARGS+=(--options runtime --timestamp)
+  APP_SIGN_ARGS+=(--options runtime "$SIGN_TIMESTAMP_ARGUMENT")
   if [[ -n "${LOCALHISTORY_APP_ENTITLEMENTS:-}" ]]; then
     if [[ ! -f "$LOCALHISTORY_APP_ENTITLEMENTS" ]]; then
       echo "LOCALHISTORY_APP_ENTITLEMENTS does not exist: $LOCALHISTORY_APP_ENTITLEMENTS" >&2

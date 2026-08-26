@@ -428,6 +428,7 @@ main() {
   fi
 
   run_step "Checking source installer safety" "$ROOT_DIR/scripts/test_install_from_source_safety.sh"
+  run_step "Checking code-signing network policy" /bin/bash "$ROOT_DIR/scripts/test_codesign_policy.sh"
   run_step "Checking privacy boundaries" "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
 
   BUILD_OUTPUT="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/localhistory-source-install.XXXXXX")"
