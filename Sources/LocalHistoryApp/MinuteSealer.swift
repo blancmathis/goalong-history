@@ -567,34 +567,21 @@
                     )
                 }
 
-                let minuteFields: [LocalFieldCommitment] = [
-                    CommitmentBuilder.makeMinute(
-                        name: "time",
-                        fields: [
-                            "start": Self.iso8601(minuteStart),
-                            "end": Self.iso8601(minuteEnd),
-                            "local_day": AppPaths.localDayString(for: minuteStart),
-                            "timezone": TimeZone.current.identifier,
-                            "utc_offset_seconds": String(TimeZone.current.secondsFromGMT(for: minuteStart)),
-                        ],
-                        salt: Self.randomBytes(count: 32)
+                let minuteFields = MinuteIntegrityMaterial.makeFieldCommitments(
+                    minuteStart: minuteStart,
+                    minuteEnd: minuteEnd,
+                    localDay: AppPaths.localDayString(for: minuteStart),
+                    timeZone: TimeZone.current.identifier,
+                    utcOffsetSeconds: String(
+                        TimeZone.current.secondsFromGMT(for: minuteStart)
                     ),
-                    CommitmentBuilder.makeMinute(
-                        name: "events_root",
-                        fields: ["events_root": eventsRoot],
-                        salt: Self.randomBytes(count: 32)
-                    ),
-                    CommitmentBuilder.makeMinute(
-                        name: "event_count",
-                        fields: ["count": String(bucket.eventRoots.count)],
-                        salt: Self.randomBytes(count: 32)
-                    ),
-                    CommitmentBuilder.makeMinute(
-                        name: "coverage",
-                        fields: coverageFields,
-                        salt: Self.randomBytes(count: 32)
-                    ),
-                ]
+                    eventRoots: bucket.eventRoots,
+                    precomputedEventsRoot: eventsRoot,
+                    coverageFields: coverageFields,
+                    salts: IntegrityDomains.minuteFieldOrder.map { _ in
+                        Self.randomBytes(count: 32)
+                    }
+                )
 
                 let byName = Dictionary(
                     uniqueKeysWithValues: minuteFields.map { ($0.name, $0.commitmentHex) }
@@ -618,6 +605,7 @@
                 let signature = try identity.sign(signingMessage)
 
                 let seal = LocalMinuteSeal(
+                    schemaVersion: 2,
                     anchorSequence: position.sequence,
                     minuteStart: minuteStart,
                     minuteEnd: minuteEnd,
@@ -630,7 +618,8 @@
                     publicKeyBase64: identity.info.publicKeyBase64,
                     trustTier: identity.info.trustTier,
                     signatureBase64: signature.base64EncodedString(),
-                    signatureAlgorithm: identity.info.algorithm
+                    signatureAlgorithm: identity.info.algorithm,
+                    storageFormat: .compactSalts
                 )
 
                 try sealAppender(seal, sealFileURL(for: minuteStart))
@@ -1039,12 +1028,6 @@
             )
             if currentMinuteStart < latestEligibleMinute { return 0.01 }
             return secondsUntilNextMinute(now: now)
-        }
-
-        private static func iso8601(_ date: Date) -> String {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return formatter.string(from: date)
         }
 
         private static func randomBytes(count: Int) -> Data {

@@ -232,7 +232,43 @@
                     + "full_openings_bytes=\(fullData.count) "
                     + "saved=\(fullData.count - persistedData.count)"
             )
+
             try components.recorder.closeAndWait()
+        }
+
+        func testMinuteSealerPersistsCompactIntegrityAndRehydratesItFromDisk() throws {
+            let fixture = try makeFixture()
+            let timestamp = Date(timeIntervalSince1970: 1_787_480_000)
+            let state = makeState(fixture)
+            let sealer = MinuteSealer(
+                stateStore: state,
+                identity: FixtureIdentity(),
+                initialDate: timestamp,
+                sealDirectory: fixture.seals,
+                prepareStorage: {}
+            )
+            sealer.receive(fixtureEvent(timestamp: timestamp, root: "fixture-root"))
+            sealer.waitUntilIdleForTesting()
+
+            XCTAssertTrue(
+                sealer.sealElapsedMinutesForTesting(
+                    now: timestamp.addingTimeInterval(61.1)
+                )
+            )
+            let sealFile = fixture.seals.appendingPathComponent(
+                AppPaths.localDayString(for: timestamp) + ".seals.jsonl"
+            )
+            let sealData = try Data(contentsOf: sealFile)
+            let sealJSON = String(decoding: sealData, as: UTF8.self)
+            XCTAssertTrue(sealJSON.contains("\"schemaVersion\":2"))
+            XCTAssertTrue(sealJSON.contains("\"minuteIntegrity\""))
+            XCTAssertFalse(sealJSON.contains("\"minuteFields\""))
+            let sealRow = try XCTUnwrap(
+                sealData.split(separator: 0x0A, omittingEmptySubsequences: true).single
+            )
+            let seal = try sealDecoder().decode(LocalMinuteSeal.self, from: Data(sealRow))
+            XCTAssertEqual(seal.storageFormat, .compactSalts)
+            XCTAssertEqual(seal.minuteFields.map(\.name), IntegrityDomains.minuteFieldOrder)
         }
 
         func testMainThreadSaturationIsNonBlockingAndPersistsOneOrderedGap() throws {

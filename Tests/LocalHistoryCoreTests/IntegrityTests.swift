@@ -305,6 +305,126 @@ final class IntegrityTests: XCTestCase {
         XCTAssertEqual(legacyDecoded.integrity?.storageFormat, .fullCommitments)
     }
 
+    func testSchemaV2MinuteSealPersistsOnlySaltsAndRehydratesFullCommitments() throws {
+        let minuteStart = Date(timeIntervalSince1970: 1_787_480_000)
+        let minuteEnd = minuteStart.addingTimeInterval(60)
+        let eventRoots = [SHA256Digest.hashHex("event-1"), SHA256Digest.hashHex("event-2")]
+        let coverageFields = ["states": "captured"]
+        let order = IntegrityDomains.minuteFieldOrder
+        let commitments = MinuteIntegrityMaterial.makeFieldCommitments(
+            minuteStart: minuteStart,
+            minuteEnd: minuteEnd,
+            localDay: "2026-08-23",
+            timeZone: "Europe/Paris",
+            utcOffsetSeconds: "7200",
+            eventRoots: eventRoots,
+            coverageFields: coverageFields,
+            salts: order.indices.map { Data(repeating: UInt8($0 + 31), count: 32) }
+        )
+        let byName = Dictionary(
+            uniqueKeysWithValues: commitments.map { ($0.name, $0.commitmentHex) }
+        )
+        let minuteRoot = MerkleTree.root(
+            labeledHexValues: order.map { ($0, byName[$0]!) }
+        )
+        let previous = String(repeating: "0", count: 64)
+        let compactSeal = LocalMinuteSeal(
+            schemaVersion: 2,
+            anchorSequence: 1,
+            minuteStart: minuteStart,
+            minuteEnd: minuteEnd,
+            minuteFields: commitments,
+            eventRoots: eventRoots,
+            minuteRoot: minuteRoot,
+            previousAnchorHash: previous,
+            anchorHash: ChainHash.anchor(
+                sequence: 1,
+                previous: previous,
+                minuteRoot: minuteRoot
+            ),
+            deviceID: "fixture-device",
+            publicKeyBase64: Data("fixture-public-key".utf8).base64EncodedString(),
+            trustTier: "local",
+            signatureBase64: Data("fixture-signature".utf8).base64EncodedString(),
+            signatureAlgorithm: "fixture",
+            storageFormat: .compactSalts
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let compactData = try encoder.encode(compactSeal)
+        let compactJSON = String(decoding: compactData, as: UTF8.self)
+        XCTAssertTrue(compactJSON.contains("\"minuteIntegrity\""))
+        XCTAssertTrue(compactJSON.contains("\"format\":\"salts-v1\""))
+        XCTAssertFalse(compactJSON.contains("\"minuteFields\""))
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(LocalMinuteSeal.self, from: compactData)
+        XCTAssertEqual(decoded, compactSeal)
+        XCTAssertEqual(decoded.storageFormat, .compactSalts)
+        XCTAssertEqual(decoded.minuteFields.map(\.name), order)
+        XCTAssertTrue(
+            decoded.minuteFields.allSatisfy {
+                $0.opening.commitmentHex() == $0.commitmentHex
+            }
+        )
+        let decodedByName = Dictionary(
+            uniqueKeysWithValues: decoded.minuteFields.map {
+                ($0.name, $0.commitmentHex)
+            }
+        )
+        XCTAssertEqual(
+            MerkleTree.root(labeledHexValues: order.map { ($0, decodedByName[$0]!) }),
+            minuteRoot
+        )
+
+        let tamperedJSON = compactJSON.replacingOccurrences(
+            of: "captured",
+            with: "paused"
+        )
+        let tampered = try decoder.decode(
+            LocalMinuteSeal.self,
+            from: Data(tamperedJSON.utf8)
+        )
+        let tamperedByName = Dictionary(
+            uniqueKeysWithValues: tampered.minuteFields.map {
+                ($0.name, $0.commitmentHex)
+            }
+        )
+        XCTAssertNotEqual(
+            MerkleTree.root(labeledHexValues: order.map { ($0, tamperedByName[$0]!) }),
+            tampered.minuteRoot
+        )
+
+        let legacySeal = LocalMinuteSeal(
+            anchorSequence: compactSeal.anchorSequence,
+            minuteStart: compactSeal.minuteStart,
+            minuteEnd: compactSeal.minuteEnd,
+            minuteFields: commitments,
+            eventRoots: compactSeal.eventRoots,
+            minuteRoot: compactSeal.minuteRoot,
+            previousAnchorHash: compactSeal.previousAnchorHash,
+            anchorHash: compactSeal.anchorHash,
+            deviceID: compactSeal.deviceID,
+            publicKeyBase64: compactSeal.publicKeyBase64,
+            trustTier: compactSeal.trustTier,
+            signatureBase64: compactSeal.signatureBase64,
+            signatureAlgorithm: compactSeal.signatureAlgorithm
+        )
+        let legacyData = try encoder.encode(legacySeal)
+        XCTAssertLessThan(compactData.count, legacyData.count)
+        let legacyDecoded = try decoder.decode(LocalMinuteSeal.self, from: legacyData)
+        XCTAssertEqual(legacyDecoded, legacySeal)
+        XCTAssertEqual(legacyDecoded.storageFormat, .fullCommitments)
+        print(
+            "MinuteSeal schema-v2 row_bytes=\(compactData.count) "
+                + "full_openings_bytes=\(legacyData.count) "
+                + "saved=\(legacyData.count - compactData.count)"
+        )
+    }
+
     func testMixedMinuteCanKeepOneEventFullyOpaque() {
         func eventDisclosure(seed: UInt8, level: ShareLevel, revealCategory: Bool) -> EventDisclosure {
             let fields = IntegrityDomains.eventFieldOrder.enumerated().map { index, name in

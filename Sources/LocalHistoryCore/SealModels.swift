@@ -1,5 +1,10 @@
 import Foundation
 
+public enum MinuteSealStorageFormat: Equatable {
+    case fullCommitments
+    case compactSalts
+}
+
 public struct LocalMinuteSeal: Codable, Equatable {
     public let schemaVersion: Int
     public let anchorSequence: UInt64
@@ -15,6 +20,8 @@ public struct LocalMinuteSeal: Codable, Equatable {
     public let trustTier: String
     public let signatureBase64: String
     public let signatureAlgorithm: String
+    /// Controls only the next LocalMinuteSeal JSON encoding.
+    public let storageFormat: MinuteSealStorageFormat
 
     public init(
         schemaVersion: Int = 1,
@@ -30,7 +37,8 @@ public struct LocalMinuteSeal: Codable, Equatable {
         publicKeyBase64: String,
         trustTier: String,
         signatureBase64: String,
-        signatureAlgorithm: String
+        signatureAlgorithm: String,
+        storageFormat: MinuteSealStorageFormat = .fullCommitments
     ) {
         self.schemaVersion = schemaVersion
         self.anchorSequence = anchorSequence
@@ -46,6 +54,192 @@ public struct LocalMinuteSeal: Codable, Equatable {
         self.trustTier = trustTier
         self.signatureBase64 = signatureBase64
         self.signatureAlgorithm = signatureAlgorithm
+        self.storageFormat = storageFormat
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case anchorSequence
+        case minuteStart
+        case minuteEnd
+        case minuteFields
+        case minuteIntegrity
+        case eventRoots
+        case minuteRoot
+        case previousAnchorHash
+        case anchorHash
+        case deviceID
+        case publicKeyBase64
+        case trustTier
+        case signatureBase64
+        case signatureAlgorithm
+    }
+
+    private struct CompactMinuteIntegrity: Codable {
+        static let currentFormat = "salts-v1"
+
+        let format: String
+        let fieldSalts: [String]
+        let localDay: String
+        let timeZone: String
+        let utcOffsetSeconds: String
+        let coverageFields: [String: String]
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        let anchorSequence = try container.decode(UInt64.self, forKey: .anchorSequence)
+        let minuteStart = try container.decode(Date.self, forKey: .minuteStart)
+        let minuteEnd = try container.decode(Date.self, forKey: .minuteEnd)
+        let eventRoots = try container.decode([String].self, forKey: .eventRoots)
+        let minuteRoot = try container.decode(String.self, forKey: .minuteRoot)
+        let previousAnchorHash = try container.decode(String.self, forKey: .previousAnchorHash)
+        let anchorHash = try container.decode(String.self, forKey: .anchorHash)
+        let deviceID = try container.decode(String.self, forKey: .deviceID)
+        let publicKeyBase64 = try container.decode(String.self, forKey: .publicKeyBase64)
+        let trustTier = try container.decode(String.self, forKey: .trustTier)
+        let signatureBase64 = try container.decode(String.self, forKey: .signatureBase64)
+        let signatureAlgorithm = try container.decode(String.self, forKey: .signatureAlgorithm)
+
+        let minuteFields: [LocalFieldCommitment]
+        let storageFormat: MinuteSealStorageFormat
+        if schemaVersion >= 2,
+            let compact = try? container.decode(
+                CompactMinuteIntegrity.self,
+                forKey: .minuteIntegrity
+            ),
+            compact.format == CompactMinuteIntegrity.currentFormat
+        {
+            guard let rehydrated = MinuteIntegrityMaterial.rehydrateFieldCommitments(
+                minuteStart: minuteStart,
+                minuteEnd: minuteEnd,
+                localDay: compact.localDay,
+                timeZone: compact.timeZone,
+                utcOffsetSeconds: compact.utcOffsetSeconds,
+                eventRoots: eventRoots,
+                coverageFields: compact.coverageFields,
+                saltBase64Values: compact.fieldSalts
+            ) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .minuteIntegrity,
+                    in: container,
+                    debugDescription: "Compact minute integrity metadata or salts are invalid."
+                )
+            }
+            minuteFields = rehydrated
+            storageFormat = .compactSalts
+        } else {
+            minuteFields = try container.decode(
+                [LocalFieldCommitment].self,
+                forKey: .minuteFields
+            )
+            storageFormat = .fullCommitments
+        }
+
+        self.init(
+            schemaVersion: schemaVersion,
+            anchorSequence: anchorSequence,
+            minuteStart: minuteStart,
+            minuteEnd: minuteEnd,
+            minuteFields: minuteFields,
+            eventRoots: eventRoots,
+            minuteRoot: minuteRoot,
+            previousAnchorHash: previousAnchorHash,
+            anchorHash: anchorHash,
+            deviceID: deviceID,
+            publicKeyBase64: publicKeyBase64,
+            trustTier: trustTier,
+            signatureBase64: signatureBase64,
+            signatureAlgorithm: signatureAlgorithm,
+            storageFormat: storageFormat
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(anchorSequence, forKey: .anchorSequence)
+        try container.encode(minuteStart, forKey: .minuteStart)
+        try container.encode(minuteEnd, forKey: .minuteEnd)
+        try container.encode(eventRoots, forKey: .eventRoots)
+        try container.encode(minuteRoot, forKey: .minuteRoot)
+        try container.encode(previousAnchorHash, forKey: .previousAnchorHash)
+        try container.encode(anchorHash, forKey: .anchorHash)
+        try container.encode(deviceID, forKey: .deviceID)
+        try container.encode(publicKeyBase64, forKey: .publicKeyBase64)
+        try container.encode(trustTier, forKey: .trustTier)
+        try container.encode(signatureBase64, forKey: .signatureBase64)
+        try container.encode(signatureAlgorithm, forKey: .signatureAlgorithm)
+
+        guard schemaVersion >= 2, storageFormat == .compactSalts else {
+            try container.encode(minuteFields, forKey: .minuteFields)
+            return
+        }
+
+        var commitmentsByName: [String: LocalFieldCommitment] = [:]
+        commitmentsByName.reserveCapacity(minuteFields.count)
+        for commitment in minuteFields {
+            guard commitmentsByName.updateValue(commitment, forKey: commitment.name) == nil else {
+                throw EncodingError.invalidValue(
+                    self,
+                    EncodingError.Context(
+                        codingPath: container.codingPath + [CodingKeys.minuteIntegrity],
+                        debugDescription: "Minute integrity contains duplicate field commitments."
+                    )
+                )
+            }
+        }
+        let order = IntegrityDomains.minuteFieldOrder
+        guard commitmentsByName.count == order.count else {
+            throw EncodingError.invalidValue(
+                self,
+                EncodingError.Context(
+                    codingPath: container.codingPath + [CodingKeys.minuteIntegrity],
+                    debugDescription: "Compact minute integrity is missing a required field commitment."
+                )
+            )
+        }
+        let fieldSalts = try order.map { name -> String in
+            guard let value = commitmentsByName[name]?.opening.saltBase64,
+                let salt = Data(base64Encoded: value),
+                salt.count == 32
+            else {
+                throw EncodingError.invalidValue(
+                    self,
+                    EncodingError.Context(
+                        codingPath: container.codingPath + [CodingKeys.minuteIntegrity],
+                        debugDescription: "Compact minute integrity contains an invalid field salt."
+                    )
+                )
+            }
+            return value
+        }
+        guard let timeFields = commitmentsByName["time"]?.opening.fields,
+            let localDay = timeFields["local_day"],
+            let timeZone = timeFields["timezone"],
+            let utcOffsetSeconds = timeFields["utc_offset_seconds"],
+            let coverageFields = commitmentsByName["coverage"]?.opening.fields
+        else {
+            throw EncodingError.invalidValue(
+                self,
+                EncodingError.Context(
+                    codingPath: container.codingPath + [CodingKeys.minuteIntegrity],
+                    debugDescription: "Compact minute integrity metadata is incomplete."
+                )
+            )
+        }
+        try container.encode(
+            CompactMinuteIntegrity(
+                format: CompactMinuteIntegrity.currentFormat,
+                fieldSalts: fieldSalts,
+                localDay: localDay,
+                timeZone: timeZone,
+                utcOffsetSeconds: utcOffsetSeconds,
+                coverageFields: coverageFields
+            ),
+            forKey: .minuteIntegrity
+        )
     }
 }
 

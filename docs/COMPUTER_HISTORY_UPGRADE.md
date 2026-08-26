@@ -38,6 +38,12 @@ commitment openings are reconstructed on read for local verification and selecti
 sharing. Existing schema-v2–v4 JSONL remains readable and is never rewritten merely to
 adopt the smaller representation.
 
+Schema-v2 minute seals likewise store their four independent salts plus the local
+time-zone and coverage metadata needed to rebuild the full commitments in memory. Event
+roots, minute/anchor roots, signatures, device identity, and chain ordering remain
+unchanged. Existing schema-v1 seal rows stay directly readable and are not migrated or
+rewritten.
+
 ## Capture-health states
 
 The recorder distinguishes:

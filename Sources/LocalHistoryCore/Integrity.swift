@@ -420,6 +420,96 @@ public enum EventIntegrityMaterial {
     }
 }
 
+/// Canonical minute-field material for compact, reconstructible seal storage.
+public enum MinuteIntegrityMaterial {
+    public static func makeFieldCommitments(
+        minuteStart: Date,
+        minuteEnd: Date,
+        localDay: String,
+        timeZone: String,
+        utcOffsetSeconds: String,
+        eventRoots: [String],
+        precomputedEventsRoot: String? = nil,
+        coverageFields: [String: String],
+        salts: [Data]
+    ) -> [LocalFieldCommitment] {
+        precondition(
+            salts.count == IntegrityDomains.minuteFieldOrder.count,
+            "Every minute integrity field requires one independent salt."
+        )
+        let eventsRoot = precomputedEventsRoot ?? MerkleTree.root(
+            labeledHexValues: eventRoots.enumerated().map {
+                ("event:\($0.offset)", $0.element)
+            }
+        )
+        let fields: [(name: String, values: [String: String])] = [
+            (
+                "time",
+                [
+                    "start": iso8601(minuteStart),
+                    "end": iso8601(minuteEnd),
+                    "local_day": localDay,
+                    "timezone": timeZone,
+                    "utc_offset_seconds": utcOffsetSeconds,
+                ]
+            ),
+            ("events_root", ["events_root": eventsRoot]),
+            ("event_count", ["count": String(eventRoots.count)]),
+            ("coverage", coverageFields),
+        ]
+        return zip(fields, salts).map { field, salt in
+            CommitmentBuilder.makeMinute(
+                name: field.name,
+                fields: field.values,
+                salt: salt
+            )
+        }
+    }
+
+    public static func rehydrateFieldCommitments(
+        minuteStart: Date,
+        minuteEnd: Date,
+        localDay: String,
+        timeZone: String,
+        utcOffsetSeconds: String,
+        eventRoots: [String],
+        coverageFields: [String: String],
+        saltBase64Values: [String]
+    ) -> [LocalFieldCommitment]? {
+        guard saltBase64Values.count == IntegrityDomains.minuteFieldOrder.count,
+            localDay.utf8.count <= 32,
+            timeZone.utf8.count <= 256,
+            utcOffsetSeconds.utf8.count <= 16,
+            coverageFields.count <= 8,
+            coverageFields.allSatisfy({
+                $0.key.utf8.count <= 64 && $0.value.utf8.count <= 512
+            })
+        else { return nil }
+        var salts: [Data] = []
+        salts.reserveCapacity(saltBase64Values.count)
+        for value in saltBase64Values {
+            guard let salt = Data(base64Encoded: value), salt.count == 32 else { return nil }
+            salts.append(salt)
+        }
+        return makeFieldCommitments(
+            minuteStart: minuteStart,
+            minuteEnd: minuteEnd,
+            localDay: localDay,
+            timeZone: timeZone,
+            utcOffsetSeconds: utcOffsetSeconds,
+            eventRoots: eventRoots,
+            coverageFields: coverageFields,
+            salts: salts
+        )
+    }
+
+    private static func iso8601(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+}
+
 // MARK: - Merkle tree
 
 public struct MerkleStep: Codable, Equatable {
