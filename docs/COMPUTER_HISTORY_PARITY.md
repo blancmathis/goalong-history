@@ -343,6 +343,14 @@ persisted test seal measured 841 bytes versus 1,034 bytes with `salts-v1` and 1,
 with full duplicated openings (-54.1% versus full openings). These are format/test
 measurements from the source build, not yet an installed-build growth measurement.
 
+An isolated optimized Release micro-benchmark over 50,000 event-integrity envelopes
+measured `salts-v1` encoding at 8.750 microseconds per row and `material-v1` packing plus
+encoding at 9.925 microseconds; `salts-v1` decoding plus salt validation took 8.725
+microseconds and `material-v1` decoding plus unpacking took 5.352 microseconds. The
+write-then-read pair was therefore 12.6% faster in this narrow benchmark despite the
+1.175-microsecond write cost, before accounting for reduced filesystem I/O. This is not a
+substitute for the installed ten-minute whole-process measurement.
+
 One optional deterministic Markdown projection per day is maintained, when possible, at:
 
 ```text
