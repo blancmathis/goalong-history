@@ -32,6 +32,12 @@ Existing paths remain compatible under `~/Library/Application Support/LocalHisto
 
 Semantic plaintext is no longer written into schema-v4 event metadata. A `semanticSnapshot` event stores only a bounded reference and integrity hash; the plaintext has its own retention and deletion path.
 
+Schema-v5 keeps that semantic separation and compacts only the integrity envelope: new
+event rows store the original event once plus per-field salts and chain/root hashes. Full
+commitment openings are reconstructed on read for local verification and selective
+sharing. Existing schema-v2–v4 JSONL remains readable and is never rewritten merely to
+adopt the smaller representation.
+
 ## Capture-health states
 
 The recorder distinguishes:

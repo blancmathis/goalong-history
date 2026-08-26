@@ -130,6 +130,111 @@
             try components.recorder.closeAndWait()
         }
 
+        func testRecorderPersistsCompactIntegrityWithoutLosingSelectiveDisclosure() throws {
+            let fixture = try makeFixture()
+            let timestamp = Date(timeIntervalSince1970: 1_787_480_000)
+            let components = try makeRecorder(fixture: fixture, initialDate: timestamp)
+            let context = ContextSnapshot(
+                app: AppSnapshot(
+                    name: "Safari",
+                    bundleIdentifier: "com.apple.Safari",
+                    processIdentifier: 42
+                ),
+                window: WindowSnapshot(
+                    title: "Unique recorder compact window",
+                    role: "AXWindow",
+                    subrole: "AXStandardWindow"
+                ),
+                focusedElement: ElementSnapshot(
+                    role: "AXButton",
+                    subrole: nil,
+                    title: "Save",
+                    label: "Save document",
+                    identifier: "save-button",
+                    isSecure: false
+                ),
+                url: URLSnapshot(
+                    value: "https://example.com/document/42",
+                    host: "example.com",
+                    redactionApplied: false
+                ),
+                suppressionReason: nil
+            )
+            XCTAssertTrue(
+                components.recorder.record(
+                    kind: .mouseClick,
+                    context: context,
+                    pointer: PointerSnapshot(
+                        button: "left",
+                        x: 120,
+                        y: 80,
+                        clickCount: 1
+                    ),
+                    inputOrigin: InputOriginSnapshot(
+                        sourceProcessIdentifier: nil,
+                        sourceUserIdentifier: nil,
+                        sourceStateID: nil,
+                        sourceProcessName: nil,
+                        sourceBundleIdentifier: nil,
+                        assessment: .hidLike
+                    ),
+                    timestamp: timestamp
+                )
+            )
+            try components.recorder.flushAndWait()
+
+            let eventFile = fixture.events.appendingPathComponent(
+                AppPaths.localDayString(for: timestamp) + ".jsonl"
+            )
+            let persistedData = try Data(contentsOf: eventFile)
+            let persistedJSON = String(decoding: persistedData, as: UTF8.self)
+            XCTAssertTrue(persistedJSON.contains("\"schemaVersion\":5"))
+            XCTAssertTrue(persistedJSON.contains("\"format\":\"salts-v1\""))
+            XCTAssertTrue(persistedJSON.contains("\"fieldSalts\""))
+            XCTAssertFalse(persistedJSON.contains("\"fieldCommitments\""))
+
+            let event = try XCTUnwrap(decodeEvents(at: eventFile).single)
+            let integrity = try XCTUnwrap(event.integrity)
+            let order = IntegrityDomains.eventFieldOrder(for: event.schemaVersion)
+            XCTAssertEqual(integrity.storageFormat, .compactSalts)
+            XCTAssertEqual(integrity.fieldCommitments.map(\.name), order)
+            XCTAssertTrue(
+                integrity.fieldCommitments.allSatisfy {
+                    $0.opening.commitmentHex() == $0.commitmentHex
+                }
+            )
+            let byName = Dictionary(
+                uniqueKeysWithValues: integrity.fieldCommitments.map {
+                    ($0.name, $0.commitmentHex)
+                }
+            )
+            XCTAssertEqual(
+                MerkleTree.root(labeledHexValues: order.map { ($0, byName[$0]!) }),
+                integrity.eventRoot
+            )
+
+            let fullEvent = event.replacingIntegrity(
+                EventIntegrity(
+                    sequence: integrity.sequence,
+                    previousEventHash: integrity.previousEventHash,
+                    eventRoot: integrity.eventRoot,
+                    eventHash: integrity.eventHash,
+                    fieldCommitments: integrity.fieldCommitments
+                )
+            )
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            let fullData = try encoder.encode(fullEvent)
+            XCTAssertLessThan(persistedData.count * 2, fullData.count)
+            print(
+                "EventRecorder schema-v5 row_bytes=\(persistedData.count) "
+                    + "full_openings_bytes=\(fullData.count) "
+                    + "saved=\(fullData.count - persistedData.count)"
+            )
+            try components.recorder.closeAndWait()
+        }
+
         func testMainThreadSaturationIsNonBlockingAndPersistsOneOrderedGap() throws {
             let fixture = try makeFixture()
             let timestamp = Date(timeIntervalSince1970: 1_787_480_000)
@@ -321,14 +426,46 @@
                 prepareApplicationStorage: false
             )
             let firstState = makeState(fixture)
-            let firstJournal = IntegrityJournal(stateStore: firstState)
             let firstBase = HistoryEvent(
                 schemaVersion: 4,
                 sessionID: "crash-proxy",
                 timestamp: timestamp,
-                kind: .mouseClick
+                kind: .mouseClick,
+                classification: LocalClassifier.classify(
+                    app: nil,
+                    url: nil,
+                    suppressionReason: nil
+                )
             )
-            let durableButUncheckpointed = firstJournal.prepare(firstBase)
+            let legacyOrder = IntegrityDomains.eventFieldOrder(for: firstBase.schemaVersion)
+            let legacyCommitments = EventIntegrityMaterial.makeFieldCommitments(
+                for: firstBase,
+                salts: legacyOrder.indices.map {
+                    Data(repeating: UInt8($0 + 1), count: 32)
+                }
+            )
+            let legacyByName = Dictionary(
+                uniqueKeysWithValues: legacyCommitments.map {
+                    ($0.name, $0.commitmentHex)
+                }
+            )
+            let legacyRoot = MerkleTree.root(
+                labeledHexValues: legacyOrder.map { ($0, legacyByName[$0]!) }
+            )
+            let legacyPrevious = String(repeating: "0", count: 64)
+            let durableButUncheckpointed = firstBase.replacingIntegrity(
+                EventIntegrity(
+                    sequence: 1,
+                    previousEventHash: legacyPrevious,
+                    eventRoot: legacyRoot,
+                    eventHash: ChainHash.event(
+                        sequence: 1,
+                        previous: legacyPrevious,
+                        eventRoot: legacyRoot
+                    ),
+                    fieldCommitments: legacyCommitments
+                )
+            )
             _ = try firstStore.appendAndWait(durableButUncheckpointed)
             try firstStore.flushAndWait()
             try firstStore.closeAndWait()
@@ -361,6 +498,9 @@
             )
             let events = try decodeEvents(at: eventFile)
             XCTAssertEqual(events.compactMap { $0.integrity?.sequence }, [1, 2])
+            XCTAssertEqual(events.map(\.schemaVersion), [4, 5])
+            XCTAssertEqual(events[0].integrity?.storageFormat, .fullCommitments)
+            XCTAssertEqual(events[1].integrity?.storageFormat, .compactSalts)
             XCTAssertEqual(events[1].integrity?.previousEventHash, events[0].integrity?.eventHash)
             try recorder.closeAndWait()
         }

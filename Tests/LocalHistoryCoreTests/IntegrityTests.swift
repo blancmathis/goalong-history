@@ -161,6 +161,150 @@ final class IntegrityTests: XCTestCase {
         XCTAssertNil(disclosure.fieldCommitments.first(where: { $0.name == "application" })?.opening)
     }
 
+    func testSchemaV5EventPersistsOnlySaltsAndRehydratesFullCommitments() throws {
+        let timestamp = Date(timeIntervalSince1970: 1_787_480_000)
+        let uniqueWindowTitle = "Unique compact integrity window"
+        let base = HistoryEvent(
+            schemaVersion: 5,
+            id: "event-v5",
+            sessionID: "session-v5",
+            timestamp: timestamp,
+            kind: .mouseClick,
+            app: AppSnapshot(
+                name: "Safari",
+                bundleIdentifier: "com.apple.Safari",
+                processIdentifier: 42
+            ),
+            window: WindowSnapshot(
+                title: uniqueWindowTitle,
+                role: "AXWindow",
+                subrole: "AXStandardWindow"
+            ),
+            element: ElementSnapshot(
+                role: "AXButton",
+                subrole: nil,
+                title: "Save",
+                label: "Save document",
+                identifier: "save-button",
+                isSecure: false
+            ),
+            url: URLSnapshot(
+                value: "https://example.com/document/42",
+                host: "example.com",
+                redactionApplied: false
+            ),
+            pointer: PointerSnapshot(button: "left", x: 120, y: 80, clickCount: 1),
+            inputOrigin: InputOriginSnapshot(
+                sourceProcessIdentifier: nil,
+                sourceUserIdentifier: nil,
+                sourceStateID: nil,
+                sourceProcessName: nil,
+                sourceBundleIdentifier: nil,
+                assessment: .hidLike
+            ),
+            classification: LocalClassification(
+                category: "work",
+                isWork: true,
+                confidence: 0.95,
+                classifierVersion: "fixture"
+            )
+        )
+        let order = IntegrityDomains.eventFieldOrder(for: base.schemaVersion)
+        let commitments = EventIntegrityMaterial.makeFieldCommitments(
+            for: base,
+            salts: order.indices.map { Data(repeating: UInt8($0 + 1), count: 32) }
+        )
+        let byName = Dictionary(
+            uniqueKeysWithValues: commitments.map { ($0.name, $0.commitmentHex) }
+        )
+        let root = MerkleTree.root(
+            labeledHexValues: order.map { ($0, byName[$0]!) }
+        )
+        let previous = String(repeating: "0", count: 64)
+        let compactIntegrity = EventIntegrity(
+            sequence: 1,
+            previousEventHash: previous,
+            eventRoot: root,
+            eventHash: ChainHash.event(sequence: 1, previous: previous, eventRoot: root),
+            fieldCommitments: commitments,
+            storageFormat: .compactSalts
+        )
+        let compactEvent = base.replacingIntegrity(compactIntegrity)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let compactData = try encoder.encode(compactEvent)
+        let compactJSON = String(decoding: compactData, as: UTF8.self)
+        XCTAssertTrue(compactJSON.contains("\"format\":\"salts-v1\""))
+        XCTAssertTrue(compactJSON.contains("\"fieldSalts\""))
+        XCTAssertFalse(compactJSON.contains("\"fieldCommitments\""))
+        XCTAssertEqual(
+            compactJSON.components(separatedBy: uniqueWindowTitle).count - 1,
+            1,
+            "The event field must not be copied into its persisted integrity envelope."
+        )
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(HistoryEvent.self, from: compactData)
+        XCTAssertEqual(decoded, compactEvent)
+        let decodedIntegrity = try XCTUnwrap(decoded.integrity)
+        XCTAssertEqual(decodedIntegrity.storageFormat, .compactSalts)
+        XCTAssertEqual(decodedIntegrity.fieldCommitments.count, order.count)
+        XCTAssertTrue(
+            decodedIntegrity.fieldCommitments.allSatisfy {
+                $0.opening.commitmentHex() == $0.commitmentHex
+            }
+        )
+        XCTAssertEqual(
+            MerkleTree.root(
+                labeledHexValues: order.map { name in
+                    (name, decodedIntegrity.fieldCommitments.first { $0.name == name }!.commitmentHex)
+                }
+            ),
+            root
+        )
+
+        let tamperedJSON = compactJSON.replacingOccurrences(
+            of: uniqueWindowTitle,
+            with: "Tampered compact integrity window"
+        )
+        let tampered = try decoder.decode(
+            HistoryEvent.self,
+            from: Data(tamperedJSON.utf8)
+        )
+        let tamperedIntegrity = try XCTUnwrap(tampered.integrity)
+        let tamperedByName = Dictionary(
+            uniqueKeysWithValues: tamperedIntegrity.fieldCommitments.map {
+                ($0.name, $0.commitmentHex)
+            }
+        )
+        XCTAssertNotEqual(
+            MerkleTree.root(
+                labeledHexValues: order.map { ($0, tamperedByName[$0]!) }
+            ),
+            tamperedIntegrity.eventRoot,
+            "Changing a persisted event field must still break its stored integrity root."
+        )
+
+        let fullEvent = base.replacingIntegrity(
+            EventIntegrity(
+                sequence: compactIntegrity.sequence,
+                previousEventHash: compactIntegrity.previousEventHash,
+                eventRoot: compactIntegrity.eventRoot,
+                eventHash: compactIntegrity.eventHash,
+                fieldCommitments: commitments
+            )
+        )
+        let fullData = try encoder.encode(fullEvent)
+        XCTAssertLessThan(compactData.count * 2, fullData.count)
+
+        let legacyDecoded = try decoder.decode(HistoryEvent.self, from: fullData)
+        XCTAssertEqual(legacyDecoded, fullEvent)
+        XCTAssertEqual(legacyDecoded.integrity?.storageFormat, .fullCommitments)
+    }
+
     func testMixedMinuteCanKeepOneEventFullyOpaque() {
         func eventDisclosure(seed: UInt8, level: ShareLevel, revealCategory: Bool) -> EventDisclosure {
             let fields = IntegrityDomains.eventFieldOrder.enumerated().map { index, name in

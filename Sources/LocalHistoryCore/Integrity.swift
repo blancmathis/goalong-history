@@ -210,6 +210,216 @@ public enum CommitmentBuilder {
     }
 }
 
+/// Canonical event-field material shared by the recorder and the compact JSONL decoder.
+///
+/// A persisted event already contains the values opened by its local commitments. New
+/// schema-v5 rows therefore retain only the per-field random salts in addition to the
+/// chain/root hashes. Decoding deterministically rebuilds the full in-memory openings,
+/// so selective disclosure and integrity verification keep exactly the same behavior
+/// without writing a second copy of every field into every JSONL row.
+public enum EventIntegrityMaterial {
+    public static func makeFieldCommitments(
+        for event: HistoryEvent,
+        salts: [Data],
+        rawEventDigest: String? = nil
+    ) -> [LocalFieldCommitment] {
+        let groups = fieldGroups(for: event, rawEventDigest: rawEventDigest)
+        precondition(
+            salts.count == groups.count,
+            "Every event integrity field requires one independent salt."
+        )
+        return zip(groups, salts).map { group, salt in
+            CommitmentBuilder.make(name: group.name, fields: group.fields, salt: salt)
+        }
+    }
+
+    public static func rehydrateFieldCommitments(
+        for event: HistoryEvent,
+        saltBase64Values: [String],
+        rawEventDigest: String
+    ) -> [LocalFieldCommitment]? {
+        guard isLowercaseSHA256(rawEventDigest) else { return nil }
+        let groups = fieldGroups(for: event, rawEventDigest: rawEventDigest)
+        guard saltBase64Values.count == groups.count else { return nil }
+        var salts: [Data] = []
+        salts.reserveCapacity(saltBase64Values.count)
+        for value in saltBase64Values {
+            guard let salt = Data(base64Encoded: value), salt.count == 32 else { return nil }
+            salts.append(salt)
+        }
+        return makeFieldCommitments(
+            for: event,
+            salts: salts,
+            rawEventDigest: rawEventDigest
+        )
+    }
+
+    private static func fieldGroups(
+        for event: HistoryEvent,
+        rawEventDigest suppliedRawEventDigest: String?
+    ) -> [(name: String, fields: [String: String])] {
+        let time = [
+            "event_id": event.id,
+            "session_id": event.sessionID,
+            "timestamp": iso8601(event.timestamp),
+        ]
+
+        var application: [String: String] = [:]
+        if let app = event.app {
+            application = [
+                "name": app.name,
+                "bundle_id": app.bundleIdentifier ?? "",
+                "pid": String(app.processIdentifier),
+            ]
+        }
+
+        var context: [String: String] = [:]
+        if let window = event.window {
+            context["window_title"] = window.title ?? ""
+            context["window_role"] = window.role ?? ""
+            context["window_subrole"] = window.subrole ?? ""
+        }
+        if let element = event.element {
+            context["element_role"] = element.role ?? ""
+            context["element_subrole"] = element.subrole ?? ""
+            context["element_title"] = element.title ?? ""
+            context["element_label"] = element.label ?? ""
+            context["element_identifier"] = element.identifier ?? ""
+            context["element_secure"] = String(element.isSecure)
+        }
+        if let url = event.url {
+            context["url"] = url.value
+            context["url_host"] = url.host ?? ""
+            context["url_redacted"] = String(url.redactionApplied)
+        }
+
+        let website: [String: String] = {
+            guard let url = event.url else { return [:] }
+            return [
+                "host": url.host ?? "",
+                "redacted": String(url.redactionApplied),
+            ]
+        }()
+
+        let semanticContext: [String: String] = {
+            guard let reference = event.semanticContext else { return [:] }
+            return [
+                "snapshot_id": reference.snapshotID,
+                "content_sha256": reference.contentSHA256,
+                "character_count": String(reference.characterCount),
+                "source": reference.source.rawValue,
+                "redacted": String(reference.redacted),
+                "truncated": String(reference.truncated),
+            ]
+        }()
+
+        var activity: [String: String] = ["kind": event.kind.rawValue]
+        if let pointer = event.pointer {
+            activity["pointer_button"] = pointer.button
+            activity["pointer_x"] = stableDouble(pointer.x)
+            activity["pointer_y"] = stableDouble(pointer.y)
+            activity["pointer_click_count"] = String(pointer.clickCount)
+        }
+        if let keyboard = event.keyboard {
+            activity["keyboard_category"] = keyboard.category
+            activity["keyboard_key"] = keyboard.key ?? ""
+            activity["keyboard_modifiers"] = keyboard.modifiers.joined(separator: ",")
+            activity["keyboard_repeat"] = String(keyboard.isRepeat)
+        }
+        if let scroll = event.scroll {
+            activity["scroll_x"] = stableDouble(scroll.deltaX)
+            activity["scroll_y"] = stableDouble(scroll.deltaY)
+            activity["scroll_count"] = String(scroll.eventCount)
+        }
+        if let message = event.message { activity["message"] = message }
+        for (key, value) in event.metadata ?? [:] {
+            activity["meta:\(key)"] = value
+        }
+        if let origin = event.inputOrigin {
+            activity["origin_pid"] = origin.sourceProcessIdentifier.map(String.init) ?? ""
+            activity["origin_uid"] = origin.sourceUserIdentifier.map(String.init) ?? ""
+            activity["origin_state"] = origin.sourceStateID.map(String.init) ?? ""
+            activity["origin_process"] = origin.sourceProcessName ?? ""
+            activity["origin_bundle"] = origin.sourceBundleIdentifier ?? ""
+        }
+
+        let classification: [String: String]
+        if let value = event.classification {
+            classification = [
+                "category": value.category,
+                "is_work": value.isWork.map(String.init) ?? "unknown",
+                "confidence": stableDouble(value.confidence),
+                "classifier_version": value.classifierVersion,
+            ]
+        } else {
+            // Recorder-produced events always carry a classification. Keeping a
+            // deterministic fallback makes malformed/tampered rows reconstruct to a
+            // root that fails verification instead of making decoding ambiguous.
+            classification = [
+                "category": "unknown",
+                "is_work": "unknown",
+                "confidence": stableDouble(0),
+                "classifier_version": "missing",
+            ]
+        }
+
+        let coverage = [
+            "state": event.suppressionReason?.rawValue ?? "captured",
+        ]
+        let trust = [
+            "input_assessment": event.inputOrigin?.assessment.rawValue ?? "unknown",
+        ]
+
+        let rawDigest: String
+        if let suppliedRawEventDigest {
+            rawDigest = suppliedRawEventDigest
+        } else {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            rawDigest = (try? encoder.encode(event.replacingIntegrity(nil)))
+                .map(SHA256Digest.hashHex) ?? "encoding-error"
+        }
+
+        var groups: [(String, [String: String])] = [
+            ("time", time),
+            ("application", application),
+        ]
+        if event.schemaVersion >= 3 {
+            groups.append(("website", website))
+        }
+        groups.append(("context", context))
+        if event.schemaVersion >= 4 {
+            groups.append(("semantic_context", semanticContext))
+        }
+        groups.append(contentsOf: [
+            ("activity", activity),
+            ("classification", classification),
+            ("coverage", coverage),
+            ("trust", trust),
+            ("raw_digest", ["sha256": rawDigest]),
+        ])
+        return groups
+    }
+
+    private static func iso8601(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    private static func stableDouble(_ value: Double) -> String {
+        String(format: "%.6f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    static func isLowercaseSHA256(_ value: String) -> Bool {
+        value.utf8.count == 64
+            && value.utf8.allSatisfy {
+                ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+            }
+    }
+}
+
 // MARK: - Merkle tree
 
 public struct MerkleStep: Codable, Equatable {

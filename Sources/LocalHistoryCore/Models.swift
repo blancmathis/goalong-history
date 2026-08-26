@@ -189,25 +189,62 @@ public struct LocalClassification: Codable, Equatable {
     }
 }
 
+public enum EventIntegrityStorageFormat: Equatable {
+    case fullCommitments
+    case compactSalts
+}
+
 public struct EventIntegrity: Codable, Equatable {
     public let sequence: UInt64
     public let previousEventHash: String
     public let eventRoot: String
     public let eventHash: String
     public let fieldCommitments: [LocalFieldCommitment]
+    /// Controls only the next HistoryEvent JSON encoding. It is deliberately not
+    /// part of EventIntegrity's standalone Codable representation.
+    public let storageFormat: EventIntegrityStorageFormat
 
     public init(
         sequence: UInt64,
         previousEventHash: String,
         eventRoot: String,
         eventHash: String,
-        fieldCommitments: [LocalFieldCommitment]
+        fieldCommitments: [LocalFieldCommitment],
+        storageFormat: EventIntegrityStorageFormat = .fullCommitments
     ) {
         self.sequence = sequence
         self.previousEventHash = previousEventHash
         self.eventRoot = eventRoot
         self.eventHash = eventHash
         self.fieldCommitments = fieldCommitments
+        self.storageFormat = storageFormat
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sequence
+        case previousEventHash
+        case eventRoot
+        case eventHash
+        case fieldCommitments
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sequence = try container.decode(UInt64.self, forKey: .sequence)
+        previousEventHash = try container.decode(String.self, forKey: .previousEventHash)
+        eventRoot = try container.decode(String.self, forKey: .eventRoot)
+        eventHash = try container.decode(String.self, forKey: .eventHash)
+        fieldCommitments = try container.decode([LocalFieldCommitment].self, forKey: .fieldCommitments)
+        storageFormat = .fullCommitments
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sequence, forKey: .sequence)
+        try container.encode(previousEventHash, forKey: .previousEventHash)
+        try container.encode(eventRoot, forKey: .eventRoot)
+        try container.encode(eventHash, forKey: .eventHash)
+        try container.encode(fieldCommitments, forKey: .fieldCommitments)
     }
 }
 
@@ -330,6 +367,234 @@ public struct HistoryEvent: Codable, Equatable {
             message: message,
             metadata: metadata,
             integrity: integrity
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case id
+        case sessionID
+        case timestamp
+        case kind
+        case app
+        case window
+        case element
+        case url
+        case pointer
+        case keyboard
+        case scroll
+        case inputOrigin
+        case semanticContext
+        case classification
+        case suppressionReason
+        case message
+        case metadata
+        case integrity
+    }
+
+    private struct CompactEventIntegrity: Codable {
+        static let currentFormat = "salts-v1"
+
+        let format: String
+        let sequence: UInt64
+        let previousEventHash: String
+        let eventRoot: String
+        let eventHash: String
+        let fieldSalts: [String]
+        let rawEventDigest: String
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        let id = try container.decode(String.self, forKey: .id)
+        let sessionID = try container.decode(String.self, forKey: .sessionID)
+        let timestamp = try container.decode(Date.self, forKey: .timestamp)
+        let kind = try container.decode(EventKind.self, forKey: .kind)
+        let app = try container.decodeIfPresent(AppSnapshot.self, forKey: .app)
+        let window = try container.decodeIfPresent(WindowSnapshot.self, forKey: .window)
+        let element = try container.decodeIfPresent(ElementSnapshot.self, forKey: .element)
+        let url = try container.decodeIfPresent(URLSnapshot.self, forKey: .url)
+        let pointer = try container.decodeIfPresent(PointerSnapshot.self, forKey: .pointer)
+        let keyboard = try container.decodeIfPresent(KeyboardSnapshot.self, forKey: .keyboard)
+        let scroll = try container.decodeIfPresent(ScrollSnapshot.self, forKey: .scroll)
+        let inputOrigin = try container.decodeIfPresent(InputOriginSnapshot.self, forKey: .inputOrigin)
+        let semanticContext = try container.decodeIfPresent(
+            SemanticContextReference.self,
+            forKey: .semanticContext
+        )
+        let classification = try container.decodeIfPresent(
+            LocalClassification.self,
+            forKey: .classification
+        )
+        let suppressionReason = try container.decodeIfPresent(
+            SuppressionReason.self,
+            forKey: .suppressionReason
+        )
+        let message = try container.decodeIfPresent(String.self, forKey: .message)
+        let metadata = try container.decodeIfPresent([String: String].self, forKey: .metadata)
+
+        let base = HistoryEvent(
+            schemaVersion: schemaVersion,
+            id: id,
+            sessionID: sessionID,
+            timestamp: timestamp,
+            kind: kind,
+            app: app,
+            window: window,
+            element: element,
+            url: url,
+            pointer: pointer,
+            keyboard: keyboard,
+            scroll: scroll,
+            inputOrigin: inputOrigin,
+            semanticContext: semanticContext,
+            classification: classification,
+            suppressionReason: suppressionReason,
+            message: message,
+            metadata: metadata,
+            integrity: nil
+        )
+
+        let integrity: EventIntegrity?
+        if schemaVersion >= 5,
+            let compact = try? container.decode(CompactEventIntegrity.self, forKey: .integrity),
+            compact.format == CompactEventIntegrity.currentFormat
+        {
+            guard let commitments = EventIntegrityMaterial.rehydrateFieldCommitments(
+                for: base,
+                saltBase64Values: compact.fieldSalts,
+                rawEventDigest: compact.rawEventDigest
+            ) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .integrity,
+                    in: container,
+                    debugDescription: "Compact event integrity salts are incomplete or invalid."
+                )
+            }
+            integrity = EventIntegrity(
+                sequence: compact.sequence,
+                previousEventHash: compact.previousEventHash,
+                eventRoot: compact.eventRoot,
+                eventHash: compact.eventHash,
+                fieldCommitments: commitments,
+                storageFormat: .compactSalts
+            )
+        } else {
+            integrity = try container.decodeIfPresent(EventIntegrity.self, forKey: .integrity)
+        }
+
+        self.init(
+            schemaVersion: schemaVersion,
+            id: id,
+            sessionID: sessionID,
+            timestamp: timestamp,
+            kind: kind,
+            app: app,
+            window: window,
+            element: element,
+            url: url,
+            pointer: pointer,
+            keyboard: keyboard,
+            scroll: scroll,
+            inputOrigin: inputOrigin,
+            semanticContext: semanticContext,
+            classification: classification,
+            suppressionReason: suppressionReason,
+            message: message,
+            metadata: metadata,
+            integrity: integrity
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(id, forKey: .id)
+        try container.encode(sessionID, forKey: .sessionID)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(app, forKey: .app)
+        try container.encodeIfPresent(window, forKey: .window)
+        try container.encodeIfPresent(element, forKey: .element)
+        try container.encodeIfPresent(url, forKey: .url)
+        try container.encodeIfPresent(pointer, forKey: .pointer)
+        try container.encodeIfPresent(keyboard, forKey: .keyboard)
+        try container.encodeIfPresent(scroll, forKey: .scroll)
+        try container.encodeIfPresent(inputOrigin, forKey: .inputOrigin)
+        try container.encodeIfPresent(semanticContext, forKey: .semanticContext)
+        try container.encodeIfPresent(classification, forKey: .classification)
+        try container.encodeIfPresent(suppressionReason, forKey: .suppressionReason)
+        try container.encodeIfPresent(message, forKey: .message)
+        try container.encodeIfPresent(metadata, forKey: .metadata)
+
+        guard let integrity else { return }
+        guard schemaVersion >= 5, integrity.storageFormat == .compactSalts else {
+            try container.encode(integrity, forKey: .integrity)
+            return
+        }
+
+        let order = IntegrityDomains.eventFieldOrder(for: schemaVersion)
+        var commitmentsByName: [String: LocalFieldCommitment] = [:]
+        commitmentsByName.reserveCapacity(integrity.fieldCommitments.count)
+        for commitment in integrity.fieldCommitments {
+            guard commitmentsByName.updateValue(commitment, forKey: commitment.name) == nil else {
+                throw EncodingError.invalidValue(
+                    integrity,
+                    EncodingError.Context(
+                        codingPath: container.codingPath + [CodingKeys.integrity],
+                        debugDescription: "Event integrity contains duplicate field commitments."
+                    )
+                )
+            }
+        }
+        guard commitmentsByName.count == order.count else {
+            throw EncodingError.invalidValue(
+                integrity,
+                EncodingError.Context(
+                    codingPath: container.codingPath + [CodingKeys.integrity],
+                    debugDescription: "Compact event integrity is missing a required field commitment."
+                )
+            )
+        }
+        let fieldSalts = try order.map { name -> String in
+            guard let value = commitmentsByName[name]?.opening.saltBase64,
+                let salt = Data(base64Encoded: value),
+                salt.count == 32
+            else {
+                throw EncodingError.invalidValue(
+                    integrity,
+                    EncodingError.Context(
+                        codingPath: container.codingPath + [CodingKeys.integrity],
+                        debugDescription: "Compact event integrity contains an invalid field salt."
+                    )
+                )
+            }
+            return value
+        }
+        guard let rawEventDigest = commitmentsByName["raw_digest"]?
+            .opening.fields["sha256"],
+            EventIntegrityMaterial.isLowercaseSHA256(rawEventDigest)
+        else {
+            throw EncodingError.invalidValue(
+                integrity,
+                EncodingError.Context(
+                    codingPath: container.codingPath + [CodingKeys.integrity],
+                    debugDescription: "Compact event integrity contains no raw-event digest."
+                )
+            )
+        }
+        try container.encode(
+            CompactEventIntegrity(
+                format: CompactEventIntegrity.currentFormat,
+                sequence: integrity.sequence,
+                previousEventHash: integrity.previousEventHash,
+                eventRoot: integrity.eventRoot,
+                eventHash: integrity.eventHash,
+                fieldSalts: fieldSalts,
+                rawEventDigest: rawEventDigest
+            ),
+            forKey: .integrity
         )
     }
 }
