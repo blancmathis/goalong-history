@@ -130,7 +130,7 @@
             try components.recorder.closeAndWait()
         }
 
-        func testRecorderPersistsCompactIntegrityWithoutLosingSelectiveDisclosure() throws {
+        func testRecorderPersistsPackedIntegrityWithoutLosingSelectiveDisclosure() throws {
             let fixture = try makeFixture()
             let timestamp = Date(timeIntervalSince1970: 1_787_480_000)
             let components = try makeRecorder(fixture: fixture, initialDate: timestamp)
@@ -189,8 +189,9 @@
             let persistedData = try Data(contentsOf: eventFile)
             let persistedJSON = String(decoding: persistedData, as: UTF8.self)
             XCTAssertTrue(persistedJSON.contains("\"schemaVersion\":5"))
-            XCTAssertTrue(persistedJSON.contains("\"format\":\"salts-v1\""))
-            XCTAssertTrue(persistedJSON.contains("\"fieldSalts\""))
+            XCTAssertTrue(persistedJSON.contains("\"format\":\"material-v1\""))
+            XCTAssertTrue(persistedJSON.contains("\"materialBase64\""))
+            XCTAssertFalse(persistedJSON.contains("\"fieldSalts\""))
             XCTAssertFalse(persistedJSON.contains("\"fieldCommitments\""))
 
             let event = try XCTUnwrap(decodeEvents(at: eventFile).single)
@@ -247,7 +248,12 @@
                 sealDirectory: fixture.seals,
                 prepareStorage: {}
             )
-            sealer.receive(fixtureEvent(timestamp: timestamp, root: "fixture-root"))
+            sealer.receive(
+                fixtureEvent(
+                    timestamp: timestamp,
+                    root: SHA256Digest.hashHex("fixture-root")
+                )
+            )
             sealer.waitUntilIdleForTesting()
 
             XCTAssertTrue(
@@ -262,6 +268,9 @@
             let sealJSON = String(decoding: sealData, as: UTF8.self)
             XCTAssertTrue(sealJSON.contains("\"schemaVersion\":2"))
             XCTAssertTrue(sealJSON.contains("\"minuteIntegrity\""))
+            XCTAssertTrue(sealJSON.contains("\"format\":\"material-v1\""))
+            XCTAssertTrue(sealJSON.contains("\"materialBase64\""))
+            XCTAssertFalse(sealJSON.contains("\"eventRoots\""))
             XCTAssertFalse(sealJSON.contains("\"minuteFields\""))
             let sealRow = try XCTUnwrap(
                 sealData.split(separator: 0x0A, omittingEmptySubsequences: true).single
@@ -1030,7 +1039,7 @@
             XCTAssertEqual(snapshot.unbufferedRootCount, 25)
         }
 
-        func testMaximumRootSealFitsTheSharedWriterAndReplayLimit() throws {
+        func testMaximumRootPackedSealFitsBelowLegacyReplayLimit() throws {
             let fixture = try makeFixture()
             let receipts = fixture.root.appendingPathComponent("receipts", isDirectory: true)
             try FileManager.default.createDirectory(at: receipts, withIntermediateDirectories: true)
@@ -1067,10 +1076,15 @@
                 omittingEmptySubsequences: true
             )
             XCTAssertEqual(rows.count, 1)
-            XCTAssertGreaterThan(
+            XCTAssertLessThan(
                 rows[0].count,
                 1 * 1_024 * 1_024,
-                "the fixture must prove the former 1 MiB replay limit was too small"
+                "packed production seals should no longer exceed the former 1 MiB cap"
+            )
+            XCTAssertGreaterThan(
+                rows[0].count,
+                512 * 1_024,
+                "the fixture must still exercise a large streamed seal row"
             )
             XCTAssertLessThanOrEqual(
                 rows[0].count,

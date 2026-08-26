@@ -6,6 +6,8 @@ public enum MinuteSealStorageFormat: Equatable {
 }
 
 public struct LocalMinuteSeal: Codable, Equatable {
+    private static let maximumPackedEventRootCount = 16_384
+
     public let schemaVersion: Int
     public let anchorSequence: UInt64
     public let minuteStart: Date
@@ -75,11 +77,22 @@ public struct LocalMinuteSeal: Codable, Equatable {
         case signatureAlgorithm
     }
 
-    private struct CompactMinuteIntegrity: Codable {
-        static let currentFormat = "salts-v1"
+    private struct CompactMinuteIntegrityV1: Codable {
+        static let formatName = "salts-v1"
 
         let format: String
         let fieldSalts: [String]
+        let localDay: String
+        let timeZone: String
+        let utcOffsetSeconds: String
+        let coverageFields: [String: String]
+    }
+
+    private struct PackedMinuteIntegrity: Codable {
+        static let currentFormat = "material-v1"
+
+        let format: String
+        let materialBase64: String
         let localDay: String
         let timeZone: String
         let utcOffsetSeconds: String
@@ -92,25 +105,41 @@ public struct LocalMinuteSeal: Codable, Equatable {
         let anchorSequence = try container.decode(UInt64.self, forKey: .anchorSequence)
         let minuteStart = try container.decode(Date.self, forKey: .minuteStart)
         let minuteEnd = try container.decode(Date.self, forKey: .minuteEnd)
-        let eventRoots = try container.decode([String].self, forKey: .eventRoots)
-        let minuteRoot = try container.decode(String.self, forKey: .minuteRoot)
-        let previousAnchorHash = try container.decode(String.self, forKey: .previousAnchorHash)
-        let anchorHash = try container.decode(String.self, forKey: .anchorHash)
         let deviceID = try container.decode(String.self, forKey: .deviceID)
         let publicKeyBase64 = try container.decode(String.self, forKey: .publicKeyBase64)
         let trustTier = try container.decode(String.self, forKey: .trustTier)
         let signatureBase64 = try container.decode(String.self, forKey: .signatureBase64)
         let signatureAlgorithm = try container.decode(String.self, forKey: .signatureAlgorithm)
 
+        let eventRoots: [String]
+        let minuteRoot: String
+        let previousAnchorHash: String
+        let anchorHash: String
         let minuteFields: [LocalFieldCommitment]
         let storageFormat: MinuteSealStorageFormat
         if schemaVersion >= 2,
             let compact = try? container.decode(
-                CompactMinuteIntegrity.self,
+                PackedMinuteIntegrity.self,
                 forKey: .minuteIntegrity
             ),
-            compact.format == CompactMinuteIntegrity.currentFormat
+            compact.format == PackedMinuteIntegrity.currentFormat
         {
+            guard let material = IntegrityMaterialPacking.unpack(
+                compact.materialBase64,
+                minimumHashCount: 3,
+                maximumHashCount: 3 + Self.maximumPackedEventRootCount,
+                saltCount: IntegrityDomains.minuteFieldOrder.count
+            ) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .minuteIntegrity,
+                    in: container,
+                    debugDescription: "Packed minute integrity material is invalid."
+                )
+            }
+            minuteRoot = material.hashes[0]
+            previousAnchorHash = material.hashes[1]
+            anchorHash = material.hashes[2]
+            eventRoots = Array(material.hashes.dropFirst(3))
             guard let rehydrated = MinuteIntegrityMaterial.rehydrateFieldCommitments(
                 minuteStart: minuteStart,
                 minuteEnd: minuteEnd,
@@ -119,22 +148,56 @@ public struct LocalMinuteSeal: Codable, Equatable {
                 utcOffsetSeconds: compact.utcOffsetSeconds,
                 eventRoots: eventRoots,
                 coverageFields: compact.coverageFields,
-                saltBase64Values: compact.fieldSalts
+                saltBase64Values: material.saltBase64Values
             ) else {
                 throw DecodingError.dataCorruptedError(
                     forKey: .minuteIntegrity,
                     in: container,
-                    debugDescription: "Compact minute integrity metadata or salts are invalid."
+                    debugDescription: "Packed minute integrity metadata or salts are invalid."
                 )
             }
             minuteFields = rehydrated
             storageFormat = .compactSalts
         } else {
-            minuteFields = try container.decode(
-                [LocalFieldCommitment].self,
-                forKey: .minuteFields
+            eventRoots = try container.decode([String].self, forKey: .eventRoots)
+            minuteRoot = try container.decode(String.self, forKey: .minuteRoot)
+            previousAnchorHash = try container.decode(
+                String.self,
+                forKey: .previousAnchorHash
             )
-            storageFormat = .fullCommitments
+            anchorHash = try container.decode(String.self, forKey: .anchorHash)
+            if schemaVersion >= 2,
+                let compact = try? container.decode(
+                    CompactMinuteIntegrityV1.self,
+                    forKey: .minuteIntegrity
+                ),
+                compact.format == CompactMinuteIntegrityV1.formatName
+            {
+                guard let rehydrated = MinuteIntegrityMaterial.rehydrateFieldCommitments(
+                    minuteStart: minuteStart,
+                    minuteEnd: minuteEnd,
+                    localDay: compact.localDay,
+                    timeZone: compact.timeZone,
+                    utcOffsetSeconds: compact.utcOffsetSeconds,
+                    eventRoots: eventRoots,
+                    coverageFields: compact.coverageFields,
+                    saltBase64Values: compact.fieldSalts
+                ) else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .minuteIntegrity,
+                        in: container,
+                        debugDescription: "Compact minute integrity metadata or salts are invalid."
+                    )
+                }
+                minuteFields = rehydrated
+                storageFormat = .compactSalts
+            } else {
+                minuteFields = try container.decode(
+                    [LocalFieldCommitment].self,
+                    forKey: .minuteFields
+                )
+                storageFormat = .fullCommitments
+            }
         }
 
         self.init(
@@ -162,10 +225,6 @@ public struct LocalMinuteSeal: Codable, Equatable {
         try container.encode(anchorSequence, forKey: .anchorSequence)
         try container.encode(minuteStart, forKey: .minuteStart)
         try container.encode(minuteEnd, forKey: .minuteEnd)
-        try container.encode(eventRoots, forKey: .eventRoots)
-        try container.encode(minuteRoot, forKey: .minuteRoot)
-        try container.encode(previousAnchorHash, forKey: .previousAnchorHash)
-        try container.encode(anchorHash, forKey: .anchorHash)
         try container.encode(deviceID, forKey: .deviceID)
         try container.encode(publicKeyBase64, forKey: .publicKeyBase64)
         try container.encode(trustTier, forKey: .trustTier)
@@ -173,6 +232,10 @@ public struct LocalMinuteSeal: Codable, Equatable {
         try container.encode(signatureAlgorithm, forKey: .signatureAlgorithm)
 
         guard schemaVersion >= 2, storageFormat == .compactSalts else {
+            try container.encode(eventRoots, forKey: .eventRoots)
+            try container.encode(minuteRoot, forKey: .minuteRoot)
+            try container.encode(previousAnchorHash, forKey: .previousAnchorHash)
+            try container.encode(anchorHash, forKey: .anchorHash)
             try container.encode(minuteFields, forKey: .minuteFields)
             return
         }
@@ -229,9 +292,33 @@ public struct LocalMinuteSeal: Codable, Equatable {
                 )
             )
         }
+        if let materialBase64 = IntegrityMaterialPacking.pack(
+            hashes: [minuteRoot, previousAnchorHash, anchorHash] + eventRoots,
+            saltBase64Values: fieldSalts
+        ) {
+            try container.encode(
+                PackedMinuteIntegrity(
+                    format: PackedMinuteIntegrity.currentFormat,
+                    materialBase64: materialBase64,
+                    localDay: localDay,
+                    timeZone: timeZone,
+                    utcOffsetSeconds: utcOffsetSeconds,
+                    coverageFields: coverageFields
+                ),
+                forKey: .minuteIntegrity
+            )
+            return
+        }
+
+        // Preserve source compatibility for synthetic/custom seals whose roots are not
+        // SHA-256 values. Production seals always take the smaller packed branch.
+        try container.encode(eventRoots, forKey: .eventRoots)
+        try container.encode(minuteRoot, forKey: .minuteRoot)
+        try container.encode(previousAnchorHash, forKey: .previousAnchorHash)
+        try container.encode(anchorHash, forKey: .anchorHash)
         try container.encode(
-            CompactMinuteIntegrity(
-                format: CompactMinuteIntegrity.currentFormat,
+            CompactMinuteIntegrityV1(
+                format: CompactMinuteIntegrityV1.formatName,
                 fieldSalts: fieldSalts,
                 localDay: localDay,
                 timeZone: timeZone,

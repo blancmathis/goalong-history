@@ -316,26 +316,32 @@ Causal memories are stored separately from raw events and regenerable compact an
     └── YYYY-MM-DD.computer-history.json
 ```
 
-New schema-v5 event rows keep the complete observed event, per-field random salts, event
-root, and chain hashes, but do not repeat the same event values inside ten commitment
-openings. A read reconstructs those openings deterministically in memory before the
-existing Merkle/share verification runs. Historical schema-v2–v4 rows remain directly
-readable and are not migrated or rewritten. Projecting the real 2026-08-25 journal into
-the exact schema-v5 representation measured 11,994,962 bytes instead of 30,793,467 bytes
-(-61.0%) with the same 7,246 events; this is a format projection, not a destructive
-rewrite or a measurement from the not-yet-installed build. A newly recorded rich test
-event measured 1,614 bytes versus 4,277 bytes with full duplicated openings (-62.3%).
+New schema-v5 event rows keep the complete observed event and one reversible base64
+material block containing the chain/root hashes, raw-event digest, and ten independent
+salts. They do not repeat the same event values inside ten commitment openings or expand
+fixed 32-byte values as JSON arrays and hexadecimal strings. A read reconstructs those
+openings and hashes deterministically in memory before existing Merkle/share verification
+runs. Historical schema-v2–v4 rows and the earlier schema-v5 `salts-v1` envelope remain
+directly readable and are not migrated or rewritten. Projecting the real 2026-08-25
+journal into the exact `material-v1` representation measured 10,610,976 bytes instead of
+30,793,467 bytes (-65.5%) with the same 7,246 events, including a further 1,383,986-byte
+reduction from `salts-v1`. This is a format projection, not a destructive rewrite or a
+measurement from the not-yet-installed build. A newly recorded rich test event measured
+1,423 bytes versus 1,614 bytes with `salts-v1` and 4,277 bytes with full duplicated
+openings (-66.7% versus full openings).
 
 New schema-v2 minute seals apply the same reconstruct-on-read rule to their four
-commitment openings. They retain the event roots, chain/signature material, local
-day/time-zone coverage metadata, and four independent salts, then rebuild the exact
-openings before existing verification, sharing, dashboard, or upload code uses them.
-Historical schema-v1 seals remain readable and are never rewritten. Projecting the real
-2026-08-25 seal journal into the exact schema-v2 representation measured 1,753,123 bytes
-instead of 2,653,761 bytes (-33.9%) across the same 1,127 seals; a newly persisted test
-seal measured 1,034 bytes versus 1,833 bytes with full duplicated openings (-43.6%).
-These are format/test measurements from the source build, not yet an installed-build
-growth measurement.
+commitment openings and fixed-width hashes. One material block retains the event roots,
+minute/anchor hashes, and four independent salts; local day/time-zone coverage,
+signature, and device material remain separately readable. Existing verification,
+sharing, dashboard, and upload code receives the same reconstructed values. Historical
+schema-v1 seals and the earlier schema-v2 `salts-v1` envelope remain readable and are
+never rewritten. Projecting the real 2026-08-25 seal journal into the exact
+`material-v1` representation measured 1,416,715 bytes instead of 2,653,761 bytes (-46.6%)
+across the same 1,127 seals, a further 336,408-byte reduction from `salts-v1`. A newly
+persisted test seal measured 841 bytes versus 1,034 bytes with `salts-v1` and 1,833 bytes
+with full duplicated openings (-54.1% versus full openings). These are format/test
+measurements from the source build, not yet an installed-build growth measurement.
 
 One optional deterministic Markdown projection per day is maintained, when possible, at:
 
@@ -811,7 +817,7 @@ window list was verified, and more than 60 seconds elapsed.
 | direct-source Agent Activity index | 797 entries in 778,752 bytes (977.1 bytes per entry): Codex 782, Claude Code 1, OpenCode 14; all available |
 | transcript duplication check | zero files and zero bytes in `agent-activity/blobs`; durable Agent Activity files are the bounded index, configuration, one small wake-up signal, and an empty lock |
 | real French resume query | one current day reconstructed in 3.07 seconds; maximum RSS 83,361,792 bytes and physical footprint 74,842,712 bytes; 12 source-backed episode hits |
-| complete automated suite | 590 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
+| complete automated suite | 591 tests, 3 expected environment-dependent skips, 0 failures; Agent Activity selection 93 tests, 1 skip, 0 failures |
 | parity validator | 9/9 parity scenarios, 3/3 episode-quality scenarios, privacy audit, checker regressions, and 22/22 metadata-probe tests passed; the validator also runs the 2 token-density/context-pack scenarios, the sleeping-versus-saturated kernel CPU sampler regression, and the offline local-signing policy; output contains metadata/checklists only |
 
 An additional read-only development-source probe on 2026-08-26 reconstructed the real
@@ -824,8 +830,8 @@ source reconstruction plus rendering. This proves a bounded local projection and
 no-write read path; it does not prove that 1,600 tokens retain every useful semantic fact
 or that an arbitrary downstream model will interpret them correctly.
 
-The same 2026-08-26 source revision passed the complete Swift suite: 590 tests executed,
-3 expected environment-dependent skips, and 0 failures in 100.0 seconds. The focused
+The same 2026-08-26 source revision passed the complete Swift suite: 591 tests executed,
+3 expected environment-dependent skips, and 0 failures in 96.5 seconds. The focused
 validator also passed 9 causal-parity, 3 episode-quality, 2 context-density, 22 metadata-
 probe, privacy-boundary, checker-regression, release CLI build, and four real local query
 checks without emitting history bodies.

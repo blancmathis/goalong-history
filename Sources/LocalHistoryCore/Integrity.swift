@@ -127,6 +127,110 @@ public enum SHA256Digest {
     }
 }
 
+/// Reversible on-disk packing for fixed-width integrity hashes and random salts.
+///
+/// Hashes are already uniformly distributed 32-byte SHA-256 values and salts are
+/// independent 32-byte random values. Keeping their binary form in one base64 block
+/// avoids the JSON key, array, and hexadecimal expansion without compression, loss, or
+/// a second representation in storage. Callers retain the semantic ordering contract.
+enum IntegrityMaterialPacking {
+    struct Unpacked {
+        let hashes: [String]
+        let saltBase64Values: [String]
+    }
+
+    static func pack(
+        hashes: [String],
+        saltBase64Values: [String]
+    ) -> String? {
+        var material = Data()
+        material.reserveCapacity((hashes.count + saltBase64Values.count) * 32)
+        for hash in hashes {
+            guard let bytes = decodeLowercaseSHA256(hash) else { return nil }
+            material.append(bytes)
+        }
+        for value in saltBase64Values {
+            guard let salt = Data(base64Encoded: value), salt.count == 32 else { return nil }
+            material.append(salt)
+        }
+        return material.base64EncodedString()
+    }
+
+    static func unpack(
+        _ value: String,
+        hashCount: Int,
+        saltCount: Int
+    ) -> Unpacked? {
+        unpack(
+            value,
+            minimumHashCount: hashCount,
+            maximumHashCount: hashCount,
+            saltCount: saltCount
+        )
+    }
+
+    static func unpack(
+        _ value: String,
+        minimumHashCount: Int,
+        maximumHashCount: Int,
+        saltCount: Int
+    ) -> Unpacked? {
+        guard minimumHashCount >= 0,
+            maximumHashCount >= minimumHashCount,
+            saltCount >= 0,
+            let material = Data(base64Encoded: value),
+            material.base64EncodedString() == value,
+            material.count.isMultiple(of: 32)
+        else { return nil }
+
+        let wordCount = material.count / 32
+        guard wordCount >= minimumHashCount + saltCount,
+            wordCount <= maximumHashCount + saltCount
+        else { return nil }
+        let decodedHashCount = wordCount - saltCount
+
+        var hashes: [String] = []
+        hashes.reserveCapacity(decodedHashCount)
+        for index in 0..<decodedHashCount {
+            let lowerBound = index * 32
+            hashes.append(
+                SHA256Digest.hex(material.subdata(in: lowerBound..<(lowerBound + 32)))
+            )
+        }
+
+        var salts: [String] = []
+        salts.reserveCapacity(saltCount)
+        for index in decodedHashCount..<wordCount {
+            let lowerBound = index * 32
+            salts.append(
+                material.subdata(in: lowerBound..<(lowerBound + 32)).base64EncodedString()
+            )
+        }
+        return Unpacked(hashes: hashes, saltBase64Values: salts)
+    }
+
+    private static func decodeLowercaseSHA256(_ value: String) -> Data? {
+        let encoded = Array(value.utf8)
+        guard encoded.count == 64 else { return nil }
+        var bytes = Data(capacity: 32)
+        for index in stride(from: 0, to: encoded.count, by: 2) {
+            guard let high = nibble(encoded[index]),
+                let low = nibble(encoded[index + 1])
+            else { return nil }
+            bytes.append((high << 4) | low)
+        }
+        return bytes
+    }
+
+    private static func nibble(_ value: UInt8) -> UInt8? {
+        switch value {
+        case 48...57: value - 48
+        case 97...102: value - 87
+        default: nil
+        }
+    }
+}
+
 // MARK: - Canonical values
 
 /// A deliberately small canonical representation used for commitments.

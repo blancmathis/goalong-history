@@ -33,16 +33,17 @@ Existing paths remain compatible under `~/Library/Application Support/LocalHisto
 Semantic plaintext is no longer written into schema-v4 event metadata. A `semanticSnapshot` event stores only a bounded reference and integrity hash; the plaintext has its own retention and deletion path.
 
 Schema-v5 keeps that semantic separation and compacts only the integrity envelope: new
-event rows store the original event once plus per-field salts and chain/root hashes. Full
-commitment openings are reconstructed on read for local verification and selective
-sharing. Existing schema-v2–v4 JSONL remains readable and is never rewritten merely to
-adopt the smaller representation.
+event rows store the original event once plus one reversible base64 material block for
+the fixed-width salts and chain/root hashes. Full commitment openings and hexadecimal
+hashes are reconstructed on read for local verification and selective sharing. Existing
+schema-v2–v4 JSONL and the earlier schema-v5 `salts-v1` envelope remain readable and are
+never rewritten merely to adopt the smaller representation.
 
-Schema-v2 minute seals likewise store their four independent salts plus the local
-time-zone and coverage metadata needed to rebuild the full commitments in memory. Event
-roots, minute/anchor roots, signatures, device identity, and chain ordering remain
-unchanged. Existing schema-v1 seal rows stay directly readable and are not migrated or
-rewritten.
+Schema-v2 minute seals likewise pack their event/minute/anchor hashes and four independent
+salts while retaining the local time-zone and coverage metadata needed to rebuild the
+full commitments in memory. Signatures, device identity, roots, and chain ordering remain
+unchanged after decode. Existing schema-v1 rows and the earlier schema-v2 `salts-v1`
+envelope stay directly readable and are not migrated or rewritten.
 
 ## Capture-health states
 

@@ -11,6 +11,48 @@ final class IntegrityTests: XCTestCase {
         )
     }
 
+    func testPackedIntegrityMaterialIsExactBoundedAndRejectsMalformedInput() throws {
+        let hashes = (0..<4).map { SHA256Digest.hashHex("hash-\($0)") }
+        let salts = (0..<10).map {
+            Data(repeating: UInt8($0), count: 32).base64EncodedString()
+        }
+        let packed = try XCTUnwrap(
+            IntegrityMaterialPacking.pack(
+                hashes: hashes,
+                saltBase64Values: salts
+            )
+        )
+        let unpacked = try XCTUnwrap(
+            IntegrityMaterialPacking.unpack(
+                packed,
+                hashCount: hashes.count,
+                saltCount: salts.count
+            )
+        )
+        XCTAssertEqual(unpacked.hashes, hashes)
+        XCTAssertEqual(unpacked.saltBase64Values, salts)
+        XCTAssertNil(
+            IntegrityMaterialPacking.unpack(
+                packed,
+                hashCount: hashes.count + 1,
+                saltCount: salts.count
+            )
+        )
+        XCTAssertNil(
+            IntegrityMaterialPacking.unpack(
+                String(packed.dropLast(4)),
+                hashCount: hashes.count,
+                saltCount: salts.count
+            )
+        )
+        XCTAssertNil(
+            IntegrityMaterialPacking.pack(
+                hashes: [hashes[0].uppercased()],
+                saltBase64Values: salts
+            )
+        )
+    }
+
     func testHexEncodingPreservesLeadingZeroesAndLowercase() {
         XCTAssertEqual(
             SHA256Digest.hex(Data([0x00, 0x01, 0x0F, 0x10, 0x7F, 0x80, 0xFE, 0xFF])),
@@ -161,7 +203,7 @@ final class IntegrityTests: XCTestCase {
         XCTAssertNil(disclosure.fieldCommitments.first(where: { $0.name == "application" })?.opening)
     }
 
-    func testSchemaV5EventPersistsOnlySaltsAndRehydratesFullCommitments() throws {
+    func testSchemaV5EventPersistsPackedMaterialAndRehydratesFullCommitments() throws {
         let timestamp = Date(timeIntervalSince1970: 1_787_480_000)
         let uniqueWindowTitle = "Unique compact integrity window"
         let base = HistoryEvent(
@@ -236,8 +278,9 @@ final class IntegrityTests: XCTestCase {
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let compactData = try encoder.encode(compactEvent)
         let compactJSON = String(decoding: compactData, as: UTF8.self)
-        XCTAssertTrue(compactJSON.contains("\"format\":\"salts-v1\""))
-        XCTAssertTrue(compactJSON.contains("\"fieldSalts\""))
+        XCTAssertTrue(compactJSON.contains("\"format\":\"material-v1\""))
+        XCTAssertTrue(compactJSON.contains("\"materialBase64\""))
+        XCTAssertFalse(compactJSON.contains("\"fieldSalts\""))
         XCTAssertFalse(compactJSON.contains("\"fieldCommitments\""))
         XCTAssertEqual(
             compactJSON.components(separatedBy: uniqueWindowTitle).count - 1,
@@ -265,6 +308,29 @@ final class IntegrityTests: XCTestCase {
             ),
             root
         )
+
+        var saltsV1Object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: compactData) as? [String: Any]
+        )
+        saltsV1Object["integrity"] = [
+            "format": "salts-v1",
+            "sequence": compactIntegrity.sequence,
+            "previousEventHash": compactIntegrity.previousEventHash,
+            "eventRoot": compactIntegrity.eventRoot,
+            "eventHash": compactIntegrity.eventHash,
+            "fieldSalts": order.map { name in
+                commitments.first { $0.name == name }!.opening.saltBase64
+            },
+            "rawEventDigest": commitments.first { $0.name == "raw_digest" }!
+                .opening.fields["sha256"]!,
+        ]
+        let saltsV1Data = try JSONSerialization.data(
+            withJSONObject: saltsV1Object,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        let saltsV1Decoded = try decoder.decode(HistoryEvent.self, from: saltsV1Data)
+        XCTAssertEqual(saltsV1Decoded, compactEvent)
+        XCTAssertLessThan(compactData.count, saltsV1Data.count)
 
         let tamperedJSON = compactJSON.replacingOccurrences(
             of: uniqueWindowTitle,
@@ -303,9 +369,14 @@ final class IntegrityTests: XCTestCase {
         let legacyDecoded = try decoder.decode(HistoryEvent.self, from: fullData)
         XCTAssertEqual(legacyDecoded, fullEvent)
         XCTAssertEqual(legacyDecoded.integrity?.storageFormat, .fullCommitments)
+        print(
+            "HistoryEvent material-v1 row_bytes=\(compactData.count) "
+                + "salts-v1_bytes=\(saltsV1Data.count) "
+                + "full_openings_bytes=\(fullData.count)"
+        )
     }
 
-    func testSchemaV2MinuteSealPersistsOnlySaltsAndRehydratesFullCommitments() throws {
+    func testSchemaV2MinuteSealPersistsPackedMaterialAndRehydratesFullCommitments() throws {
         let minuteStart = Date(timeIntervalSince1970: 1_787_480_000)
         let minuteEnd = minuteStart.addingTimeInterval(60)
         let eventRoots = [SHA256Digest.hashHex("event-1"), SHA256Digest.hashHex("event-2")]
@@ -356,7 +427,11 @@ final class IntegrityTests: XCTestCase {
         let compactData = try encoder.encode(compactSeal)
         let compactJSON = String(decoding: compactData, as: UTF8.self)
         XCTAssertTrue(compactJSON.contains("\"minuteIntegrity\""))
-        XCTAssertTrue(compactJSON.contains("\"format\":\"salts-v1\""))
+        XCTAssertTrue(compactJSON.contains("\"format\":\"material-v1\""))
+        XCTAssertTrue(compactJSON.contains("\"materialBase64\""))
+        XCTAssertFalse(compactJSON.contains("\"fieldSalts\""))
+        XCTAssertFalse(compactJSON.contains("\"eventRoots\""))
+        XCTAssertFalse(compactJSON.contains("\"minuteRoot\""))
         XCTAssertFalse(compactJSON.contains("\"minuteFields\""))
 
         let decoder = JSONDecoder()
@@ -379,6 +454,32 @@ final class IntegrityTests: XCTestCase {
             MerkleTree.root(labeledHexValues: order.map { ($0, decodedByName[$0]!) }),
             minuteRoot
         )
+
+        let timeFields = commitments.first { $0.name == "time" }!.opening.fields
+        var saltsV1Object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: compactData) as? [String: Any]
+        )
+        saltsV1Object["eventRoots"] = eventRoots
+        saltsV1Object["minuteRoot"] = compactSeal.minuteRoot
+        saltsV1Object["previousAnchorHash"] = compactSeal.previousAnchorHash
+        saltsV1Object["anchorHash"] = compactSeal.anchorHash
+        saltsV1Object["minuteIntegrity"] = [
+            "format": "salts-v1",
+            "fieldSalts": order.map { name in
+                commitments.first { $0.name == name }!.opening.saltBase64
+            },
+            "localDay": timeFields["local_day"]!,
+            "timeZone": timeFields["timezone"]!,
+            "utcOffsetSeconds": timeFields["utc_offset_seconds"]!,
+            "coverageFields": coverageFields,
+        ]
+        let saltsV1Data = try JSONSerialization.data(
+            withJSONObject: saltsV1Object,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        let saltsV1Decoded = try decoder.decode(LocalMinuteSeal.self, from: saltsV1Data)
+        XCTAssertEqual(saltsV1Decoded, compactSeal)
+        XCTAssertLessThan(compactData.count, saltsV1Data.count)
 
         let tamperedJSON = compactJSON.replacingOccurrences(
             of: "captured",
@@ -420,6 +521,7 @@ final class IntegrityTests: XCTestCase {
         XCTAssertEqual(legacyDecoded.storageFormat, .fullCommitments)
         print(
             "MinuteSeal schema-v2 row_bytes=\(compactData.count) "
+                + "salts-v1_bytes=\(saltsV1Data.count) "
                 + "full_openings_bytes=\(legacyData.count) "
                 + "saved=\(legacyData.count - compactData.count)"
         )

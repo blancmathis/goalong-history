@@ -392,8 +392,8 @@ public struct HistoryEvent: Codable, Equatable {
         case integrity
     }
 
-    private struct CompactEventIntegrity: Codable {
-        static let currentFormat = "salts-v1"
+    private struct CompactEventIntegrityV1: Codable {
+        static let formatName = "salts-v1"
 
         let format: String
         let sequence: UInt64
@@ -402,6 +402,14 @@ public struct HistoryEvent: Codable, Equatable {
         let eventHash: String
         let fieldSalts: [String]
         let rawEventDigest: String
+    }
+
+    private struct PackedEventIntegrity: Codable {
+        static let currentFormat = "material-v1"
+
+        let format: String
+        let sequence: UInt64
+        let materialBase64: String
     }
 
     public init(from decoder: Decoder) throws {
@@ -458,8 +466,50 @@ public struct HistoryEvent: Codable, Equatable {
 
         let integrity: EventIntegrity?
         if schemaVersion >= 5,
-            let compact = try? container.decode(CompactEventIntegrity.self, forKey: .integrity),
-            compact.format == CompactEventIntegrity.currentFormat
+            let packed = try? container.decode(PackedEventIntegrity.self, forKey: .integrity),
+            packed.format == PackedEventIntegrity.currentFormat
+        {
+            let order = IntegrityDomains.eventFieldOrder(for: schemaVersion)
+            guard let material = IntegrityMaterialPacking.unpack(
+                packed.materialBase64,
+                hashCount: 4,
+                saltCount: order.count
+            ) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .integrity,
+                    in: container,
+                    debugDescription: "Packed event integrity material is invalid."
+                )
+            }
+            let previousEventHash = material.hashes[0]
+            let eventRoot = material.hashes[1]
+            let eventHash = material.hashes[2]
+            let rawEventDigest = material.hashes[3]
+            guard let commitments = EventIntegrityMaterial.rehydrateFieldCommitments(
+                for: base,
+                saltBase64Values: material.saltBase64Values,
+                rawEventDigest: rawEventDigest
+            ) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .integrity,
+                    in: container,
+                    debugDescription: "Packed event integrity salts are incomplete or invalid."
+                )
+            }
+            integrity = EventIntegrity(
+                sequence: packed.sequence,
+                previousEventHash: previousEventHash,
+                eventRoot: eventRoot,
+                eventHash: eventHash,
+                fieldCommitments: commitments,
+                storageFormat: .compactSalts
+            )
+        } else if schemaVersion >= 5,
+            let compact = try? container.decode(
+                CompactEventIntegrityV1.self,
+                forKey: .integrity
+            ),
+            compact.format == CompactEventIntegrityV1.formatName
         {
             guard let commitments = EventIntegrityMaterial.rehydrateFieldCommitments(
                 for: base,
@@ -584,15 +634,28 @@ public struct HistoryEvent: Codable, Equatable {
                 )
             )
         }
+        guard let materialBase64 = IntegrityMaterialPacking.pack(
+            hashes: [
+                integrity.previousEventHash,
+                integrity.eventRoot,
+                integrity.eventHash,
+                rawEventDigest,
+            ],
+            saltBase64Values: fieldSalts
+        ) else {
+            throw EncodingError.invalidValue(
+                integrity,
+                EncodingError.Context(
+                    codingPath: container.codingPath + [CodingKeys.integrity],
+                    debugDescription: "Compact event integrity contains invalid hashes or salts."
+                )
+            )
+        }
         try container.encode(
-            CompactEventIntegrity(
-                format: CompactEventIntegrity.currentFormat,
+            PackedEventIntegrity(
+                format: PackedEventIntegrity.currentFormat,
                 sequence: integrity.sequence,
-                previousEventHash: integrity.previousEventHash,
-                eventRoot: integrity.eventRoot,
-                eventHash: integrity.eventHash,
-                fieldSalts: fieldSalts,
-                rawEventDigest: rawEventDigest
+                materialBase64: materialBase64
             ),
             forKey: .integrity
         )
