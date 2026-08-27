@@ -35,7 +35,11 @@
             case .overview:
                 OverviewPage(model: model)
             case .activity:
-                ActivityPage(model: model)
+                ActivityPage(
+                    model: model,
+                    initialMode: .computerHistory,
+                    showsModePicker: false
+                )
             case .screenTime:
                 GoalongScreenTimePage(model: model)
             case .agentActivity:
@@ -56,8 +60,12 @@
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var updates = SoftwareUpdateManager.shared
 
-        private let primarySections: [DashboardSection] = [.overview, .activity, .share]
-        private let sourceSections: [DashboardSection] = [.screenTime, .agentActivity, .chatGPTRecap]
+        private let primarySections: [DashboardSection] = [.overview, .share]
+        private let analysisSourceSections: [DashboardSection] = [
+            .activity,
+            .screenTime,
+            .agentActivity,
+        ]
         private let utilitySections: [DashboardSection] = [.privacy, .settings]
 
         var body: some View {
@@ -74,7 +82,7 @@
 
                     navigationDivider
 
-                    ForEach(sourceSections) { section in
+                    ForEach(analysisSourceSections) { section in
                         navigationButton(section)
                     }
 
@@ -287,7 +295,7 @@
         var simpleTitle: String {
             switch self {
             case .overview: return "Overview"
-            case .activity: return "History"
+            case .activity: return "Computer History"
             case .screenTime: return "Screen Time"
             case .agentActivity: return "AI conversations"
             case .chatGPTRecap: return "AI recap settings"

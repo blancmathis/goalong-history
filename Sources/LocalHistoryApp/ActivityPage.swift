@@ -12,23 +12,37 @@
         var agentTokenBudget = 1_600
         @State var expandedBlockID: String?
         @State var showRichContextConfirmation = false
-        @State var mode: ActivityMode = .appsAndSites
+        @State var mode: ActivityMode
+
+        private let showsModePicker: Bool
 
         let metricColumns = [
             GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
         ]
 
+        init(
+            model: DashboardViewModel,
+            initialMode: ActivityMode = .appsAndSites,
+            showsModePicker: Bool = true
+        ) {
+            self.model = model
+            _mode = State(initialValue: initialMode)
+            self.showsModePicker = showsModePicker
+        }
+
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
                 header
 
-                Picker("Activity view", selection: $mode) {
-                    ForEach(ActivityMode.allCases) { item in
-                        Text(item.title).tag(item)
+                if showsModePicker {
+                    Picker("Activity view", selection: $mode) {
+                        ForEach(ActivityMode.allCases) { item in
+                            Text(item.title).tag(item)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .frame(width: 590)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 590)
 
                 Group {
                     switch mode {

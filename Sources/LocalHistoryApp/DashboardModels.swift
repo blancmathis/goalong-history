@@ -17,7 +17,7 @@
         var title: String {
             switch self {
             case .overview: return "Overview"
-            case .activity: return "Activity"
+            case .activity: return "Computer History"
             case .screenTime: return "Apple Screen Time"
             case .agentActivity: return "Agentic work"
             case .chatGPTRecap: return "AI recap"

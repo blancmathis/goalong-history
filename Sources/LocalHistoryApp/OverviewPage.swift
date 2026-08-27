@@ -168,7 +168,7 @@
 
                     Divider()
                     HStack {
-                        Button("Open full history") {
+                        Button("Open Computer History") {
                             model.selectSection(.activity)
                         }
                         .buttonStyle(.link)

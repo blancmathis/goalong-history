@@ -93,12 +93,16 @@
 
             XCTAssertTrue(
                 source.contains(
-                    "private let primarySections: [DashboardSection] = [.overview, .activity, .share]"
+                    "private let primarySections: [DashboardSection] = [.overview, .share]"
                 )
             )
             XCTAssertTrue(
                 source.contains(
-                    "private let sourceSections: [DashboardSection] = [.screenTime, .agentActivity, .chatGPTRecap]"
+                    "private let analysisSourceSections: [DashboardSection] = [\n"
+                        + "            .activity,\n"
+                        + "            .screenTime,\n"
+                        + "            .agentActivity,\n"
+                        + "        ]"
                 )
             )
             XCTAssertTrue(
@@ -106,7 +110,15 @@
                     "private let utilitySections: [DashboardSection] = [.privacy, .settings]"
                 )
             )
-            XCTAssertEqual(source.components(separatedBy: "ForEach(sourceSections)").count - 1, 1)
+            XCTAssertTrue(
+                source.contains(
+                    "ActivityPage(\n                    model: model,\n                    initialMode: .computerHistory,\n                    showsModePicker: false"
+                )
+            )
+            XCTAssertEqual(
+                source.components(separatedBy: "ForEach(analysisSourceSections)").count - 1,
+                1
+            )
             XCTAssertEqual(source.components(separatedBy: "ForEach(utilitySections)").count - 1, 1)
             XCTAssertFalse(source.contains("Menu {"))
             XCTAssertFalse(source.contains("\"More\""))
