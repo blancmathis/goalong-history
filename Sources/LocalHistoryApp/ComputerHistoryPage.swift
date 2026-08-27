@@ -405,10 +405,14 @@
 
         private let queue: DispatchQueue
         private let buildGroups: BuildGroups
-        private var currentRevision: UInt64?
-        private var currentDay: Date?
-        private var pendingRevision: UInt64?
-        private var pendingDay: Date?
+        private struct SourceRevision: Equatable {
+            let generation: UInt64
+            let day: Date
+            let sessionCount: Int
+        }
+
+        private var currentSourceRevision: SourceRevision?
+        private var pendingSourceRevision: SourceRevision?
         private var pendingToken: RequestToken?
         private var pendingWorkItem: DispatchWorkItem?
 
@@ -427,17 +431,21 @@
 
         func refresh(sessions: [ActivitySession], day: Date, revision: UInt64) {
             let normalizedDay = Calendar.current.startOfDay(for: day)
-            if currentRevision == revision, currentDay == normalizedDay { return }
-            if pendingRevision == revision, pendingDay == normalizedDay { return }
+            let sourceRevision = SourceRevision(
+                generation: revision,
+                day: normalizedDay,
+                sessionCount: sessions.count
+            )
+            if currentSourceRevision == sourceRevision { return }
+            if pendingSourceRevision == sourceRevision { return }
 
             pendingToken?.cancel()
             pendingWorkItem?.cancel()
             let token = RequestToken()
             pendingToken = token
-            pendingRevision = revision
-            pendingDay = normalizedDay
+            pendingSourceRevision = sourceRevision
             isLoading = true
-            if currentDay != nil, currentDay != normalizedDay {
+            if let currentSourceRevision, currentSourceRevision.day != normalizedDay {
                 groups = []
             }
 
@@ -453,10 +461,8 @@
                         !token.isCancelled
                     else { return }
                     self.groups = groups
-                    self.currentRevision = revision
-                    self.currentDay = normalizedDay
-                    self.pendingRevision = nil
-                    self.pendingDay = nil
+                    self.currentSourceRevision = sourceRevision
+                    self.pendingSourceRevision = nil
                     self.pendingToken = nil
                     self.pendingWorkItem = nil
                     self.isLoading = false
@@ -471,10 +477,8 @@
             pendingToken = nil
             pendingWorkItem?.cancel()
             pendingWorkItem = nil
-            currentRevision = nil
-            currentDay = nil
-            pendingRevision = nil
-            pendingDay = nil
+            currentSourceRevision = nil
+            pendingSourceRevision = nil
             isLoading = false
             groups = []
         }
@@ -503,6 +507,7 @@
         let day: Date
         let snapshot: DashboardDaySnapshot
         let snapshotGeneration: UInt64
+        let isSnapshotLoading: Bool
         let fullContextEnabled: Bool
         let openSourceJSON: () -> Void
         let deleteEpisode: (ComputerHistoryEpisode) -> Void
@@ -533,10 +538,28 @@
                     secondaryButton: .cancel()
                 )
             }
-            .onAppear(perform: refreshTimeline)
-            .onChange(of: snapshotGeneration) { _ in refreshTimeline() }
-            .onChange(of: day) { _ in refreshTimeline() }
+            .task(id: timelineRefreshID) {
+                refreshTimeline()
+            }
             .onDisappear(perform: timelineModel.clear)
+        }
+
+        private struct TimelineRefreshID: Hashable {
+            let selectedDay: Date
+            let snapshotDay: Date
+            let snapshotGeneration: UInt64
+            let sessionCount: Int
+            let isSnapshotLoading: Bool
+        }
+
+        private var timelineRefreshID: TimelineRefreshID {
+            TimelineRefreshID(
+                selectedDay: Calendar.current.startOfDay(for: day),
+                snapshotDay: Calendar.current.startOfDay(for: snapshot.day),
+                snapshotGeneration: snapshotGeneration,
+                sessionCount: snapshot.sessions.count,
+                isSnapshotLoading: isSnapshotLoading
+            )
         }
 
         private var tenMinuteGroups: [ComputerHistoryTenMinuteGroup] {
@@ -544,6 +567,10 @@
         }
 
         private func refreshTimeline() {
+            guard Calendar.current.isDate(snapshot.day, inSameDayAs: day) else {
+                timelineModel.clear()
+                return
+            }
             timelineModel.refresh(
                 sessions: snapshot.sessions,
                 day: day,
@@ -590,7 +617,7 @@
 
         private var recordingSummary: String {
             let events = snapshot.eventCount.formatted()
-            if timelineModel.isLoading, tenMinuteGroups.isEmpty {
+            if isPreparingTimeline {
                 return "Preparing factual 10-minute windows from \(events) source events."
             }
             let windows = tenMinuteGroups.count.formatted()
@@ -609,7 +636,7 @@
                             "Durations are observed foreground intervals. They do not prove attention, identity, authorship or productivity."
                         )
                     Spacer(minLength: 12)
-                    if timelineModel.isLoading, tenMinuteGroups.isEmpty {
+                    if isPreparingTimeline {
                         ProgressView()
                             .controlSize(.small)
                             .help("Grouping recorded activity")
@@ -650,7 +677,7 @@
 
                     Divider()
 
-                    if timelineModel.isLoading, tenMinuteGroups.isEmpty {
+                    if isPreparingTimeline {
                         VStack(spacing: 11) {
                             ProgressView()
                                 .controlSize(.regular)
@@ -686,6 +713,10 @@
                     }
                 }
             }
+        }
+
+        private var isPreparingTimeline: Bool {
+            tenMinuteGroups.isEmpty && (isSnapshotLoading || timelineModel.isLoading)
         }
 
         @ViewBuilder private var sourceStatusCard: some View {

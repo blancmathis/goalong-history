@@ -77,6 +77,9 @@
             XCTAssertTrue(privacy.contains("Most recent app session"))
             XCTAssertTrue(activity.contains("openSourceJSON: model.revealTodayJSON"))
             XCTAssertTrue(activity.contains("snapshotGeneration: model.snapshotGeneration"))
+            XCTAssertTrue(activity.contains("isSnapshotLoading: model.isRefreshing"))
+            XCTAssertTrue(computerHistory.contains(".task(id: timelineRefreshID)"))
+            XCTAssertTrue(computerHistory.contains("isSnapshotLoading || timelineModel.isLoading"))
             XCTAssertTrue(dashboardModel.contains("activateFileViewerSelecting([file])"))
         }
 
@@ -122,6 +125,14 @@
             XCTAssertEqual(source.components(separatedBy: "ForEach(utilitySections)").count - 1, 1)
             XCTAssertFalse(source.contains("Menu {"))
             XCTAssertFalse(source.contains("\"More\""))
+
+            let components = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/DashboardComponents.swift"),
+                encoding: .utf8
+            )
+            XCTAssertTrue(components.contains("Button(\"Today\")"))
+            XCTAssertTrue(components.contains(".help(\"Return to today\")"))
         }
 
         func testComputerHistoryTimelineBuildsOnlyOncePerSnapshotRevision() {
@@ -186,6 +197,50 @@
 
             lock.lock()
             XCTAssertEqual(buildCount, 1)
+            lock.unlock()
+            XCTAssertFalse(model.isLoading)
+        }
+
+        func testComputerHistoryTimelineRebuildsWhenSessionsArriveInSameSnapshotGeneration() {
+            let firstBuild = expectation(description: "empty timeline build")
+            let secondBuild = expectation(description: "populated timeline build")
+            let lock = NSLock()
+            var observedSessionCounts: [Int] = []
+            let model = ComputerHistoryTimelineModel(
+                queue: DispatchQueue(label: "computer-history-timeline-session-count-test")
+            ) { sessions, _ in
+                lock.lock()
+                observedSessionCounts.append(sessions.count)
+                let count = observedSessionCounts.count
+                lock.unlock()
+                if count == 1 { firstBuild.fulfill() }
+                if count == 2 { secondBuild.fulfill() }
+                return []
+            }
+            let day = Date(timeIntervalSince1970: 0)
+
+            model.refresh(sessions: [], day: day, revision: 1)
+            wait(for: [firstBuild], timeout: 1)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+            model.refresh(
+                sessions: [
+                    makeSession(
+                        id: "late-session",
+                        start: day,
+                        end: day.addingTimeInterval(60),
+                        appName: "TextEdit",
+                        bundleIdentifier: "com.apple.TextEdit"
+                    )
+                ],
+                day: day,
+                revision: 1
+            )
+            wait(for: [secondBuild], timeout: 1)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+            lock.lock()
+            XCTAssertEqual(observedSessionCounts, [0, 1])
             lock.unlock()
             XCTAssertFalse(model.isLoading)
         }

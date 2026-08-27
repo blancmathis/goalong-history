@@ -255,6 +255,15 @@
                 .labelsHidden()
                 .datePickerStyle(.field)
 
+                if !Calendar.current.isDateInToday(date) {
+                    Button("Today") {
+                        onChange(Date())
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("Return to today")
+                }
+
                 Button {
                     if let next = Calendar.current.date(byAdding: .day, value: 1, to: date), next <= Date() {
                         onChange(next)

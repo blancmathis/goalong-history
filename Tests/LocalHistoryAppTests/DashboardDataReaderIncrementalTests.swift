@@ -983,12 +983,17 @@
             let reader = DashboardDataReader(rootDirectory: URL(fileURLWithPath: root))
 
             let snapshot = reader.snapshot(for: day)
+            let timelineGroups = ComputerHistoryTenMinuteGroup.build(
+                sessions: snapshot.sessions,
+                day: day
+            )
             let diagnostics = reader.diagnostics
             let transitions = diagnostics.transitions.values.map(\.rawValue).sorted()
             let limits = diagnostics.budgetExceeded.values.map(\.rawValue).sorted()
             print(
                 "Real dashboard probe events=\(snapshot.eventCount) active=\(snapshot.activeMinutes) "
-                    + "sessions=\(snapshot.sessions.count) state=\(diagnostics.snapshotState.rawValue) "
+                    + "sessions=\(snapshot.sessions.count) windows=\(timelineGroups.count) "
+                    + "state=\(diagnostics.snapshotState.rawValue) "
                     + "transitions=\(transitions.joined(separator: ",")) "
                     + "limits=\(limits.joined(separator: ",")) bytes=\(diagnostics.bytesRead) "
                     + "cache=\(diagnostics.cachedEstimatedBytes) derived=\(diagnostics.cachedDerivedEstimatedBytes)"
@@ -996,6 +1001,7 @@
 
             XCTAssertGreaterThan(snapshot.eventCount, 0)
             XCTAssertGreaterThan(snapshot.activeMinutes, 0)
+            XCTAssertFalse(timelineGroups.isEmpty)
             XCTAssertEqual(diagnostics.snapshotState, .fresh)
             XCTAssertTrue(diagnostics.budgetExceeded.isEmpty)
         }

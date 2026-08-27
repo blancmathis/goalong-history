@@ -54,6 +54,7 @@
                             day: model.selectedDay,
                             snapshot: model.snapshot,
                             snapshotGeneration: model.snapshotGeneration,
+                            isSnapshotLoading: model.isRefreshing,
                             fullContextEnabled: richContextEnabled,
                             openSourceJSON: model.revealTodayJSON,
                             deleteEpisode: { episode in
