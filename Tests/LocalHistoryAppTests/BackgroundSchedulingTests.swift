@@ -396,7 +396,8 @@
                 windowIsVisible: true,
                 windowIsMiniaturized: false,
                 applicationIsHidden: false,
-                windowIsOccluded: false
+                windowIsOccluded: false,
+                windowIsKey: false
             )
 
             coordinator.update(state)
@@ -419,6 +420,25 @@
 
             XCTAssertEqual(changes, [true, false, true, false, true, false, true, false])
             XCTAssertFalse(coordinator.permitsRefresh)
+        }
+
+        func testDashboardVisibilityTreatsAKeyWindowAsVisibleDuringOcclusionStateLag() {
+            var changes: [Bool] = []
+            let coordinator = DashboardVisibilityCoordinator {
+                changes.append($0)
+            }
+            let state = DashboardVisibilityState(
+                windowIsVisible: true,
+                windowIsMiniaturized: false,
+                applicationIsHidden: false,
+                windowIsOccluded: true,
+                windowIsKey: true
+            )
+
+            coordinator.update(state)
+
+            XCTAssertTrue(coordinator.permitsRefresh)
+            XCTAssertEqual(changes, [true])
         }
 
         func testDashboardWindowLifecycleOwnsRefreshScheduler() throws {

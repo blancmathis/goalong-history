@@ -8,16 +8,19 @@
         var windowIsMiniaturized: Bool
         var applicationIsHidden: Bool
         var windowIsOccluded: Bool
+        var windowIsKey: Bool
 
         var permitsRefresh: Bool {
-            windowIsVisible && !windowIsMiniaturized && !applicationIsHidden && !windowIsOccluded
+            windowIsVisible && !windowIsMiniaturized && !applicationIsHidden
+                && (windowIsKey || !windowIsOccluded)
         }
 
         static let hidden = DashboardVisibilityState(
             windowIsVisible: false,
             windowIsMiniaturized: false,
             applicationIsHidden: false,
-            windowIsOccluded: true
+            windowIsOccluded: true,
+            windowIsKey: false
         )
     }
 
@@ -207,7 +210,8 @@
                     windowIsVisible: window.isVisible,
                     windowIsMiniaturized: window.isMiniaturized,
                     applicationIsHidden: NSApplication.shared.isHidden,
-                    windowIsOccluded: !window.occlusionState.contains(.visible)
+                    windowIsOccluded: !window.occlusionState.contains(.visible),
+                    windowIsKey: window.isKeyWindow
                 )
             )
         }

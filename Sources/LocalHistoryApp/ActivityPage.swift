@@ -38,7 +38,10 @@
                         ComputerHistoryPage(
                             model: computerHistoryModel,
                             day: model.selectedDay,
+                            snapshot: model.snapshot,
+                            snapshotGeneration: model.snapshotGeneration,
                             fullContextEnabled: richContextEnabled,
+                            openSourceJSON: model.revealTodayJSON,
                             deleteEpisode: { episode in
                                 model.deleteComputerHistoryEpisode(
                                     episode,
@@ -59,22 +62,29 @@
             .padding(.bottom, 22)
             .background(LHTheme.pageBackground)
             .onAppear {
-                refreshAnalyses(day: model.selectedDay)
+                refreshVisibleAnalysis(day: model.selectedDay)
             }
             .onChange(of: model.selectedDay) { day in
                 expandedBlockID = nil
                 computerHistoryModel.clearAnswer()
-                refreshAnalyses(day: day)
+                refreshVisibleAnalysis(day: day)
+            }
+            .onChange(of: mode) { _ in
+                refreshVisibleAnalysis(day: model.selectedDay)
             }
             .onChange(of: agentTokenBudget) { _ in
-                analysisModel.refresh(day: model.selectedDay, forceRebuild: true)
+                if mode == .dayRecap {
+                    analysisModel.refresh(day: model.selectedDay, forceRebuild: true)
+                }
             }
             .onChange(of: richContextEnabled) { _ in
                 ActivityAnalysisRuntime.shared.richContextPreferenceDidChange()
-                computerHistoryModel.refresh(day: model.selectedDay, forceRebuild: true)
+                if mode == .dayRecap {
+                    analysisModel.refresh(day: model.selectedDay, forceRebuild: true)
+                }
             }
             .onChange(of: model.historyDeletionGeneration) { _ in
-                refreshAnalyses(day: model.selectedDay, forceRebuild: true)
+                refreshVisibleAnalysis(day: model.selectedDay, forceRebuild: true)
             }
             .alert("Enable Rich Context?", isPresented: $showRichContextConfirmation) {
                 Button("Cancel", role: .cancel) {}
@@ -123,7 +133,7 @@
                 eyebrow: Calendar.current.isDateInToday(model.selectedDay)
                     ? "Today"
                     : "Daily history",
-                title: "Activity",
+                title: mode == .computerHistory ? "Computer History" : "Activity",
                 subtitle: headerSubtitle
             ) {
                 HStack(spacing: 10) {
@@ -133,7 +143,7 @@
                     )
                     Button {
                         model.refreshEverything()
-                        refreshAnalyses(day: model.selectedDay, forceRebuild: true)
+                        refreshVisibleAnalysis(day: model.selectedDay, forceRebuild: true)
                     } label: {
                         Image(
                             systemName: analysesLoading
@@ -144,13 +154,19 @@
                     }
                     .buttonStyle(.bordered)
                     .disabled(analysesLoading)
-                    .help("Refresh activity and rebuild both analysis layers")
+                    .help(refreshHelp)
                 }
             }
         }
 
         private var analysesLoading: Bool {
-            analysisModel.isLoading || computerHistoryModel.isLoading
+            model.isRefreshing || (mode == .dayRecap && analysisModel.isLoading)
+        }
+
+        private var refreshHelp: String {
+            mode == .dayRecap
+                ? "Refresh activity and rebuild the day recap"
+                : "Refresh recorded activity"
         }
 
         private var headerSubtitle: String {
@@ -158,7 +174,7 @@
             case .appsAndSites:
                 return "See every observed app and website, then choose what Goalong may monitor in future."
             case .computerHistory:
-                return "Reconstruct causal work episodes, recover source locators, resume tasks, and detect repeatable workflows."
+                return "Review recorded activity in factual 15-minute windows, without an AI-generated summary."
             case .dayRecap:
                 return "Review the compact daily digest used by recap agents alongside full causal history."
             case .timeline:
@@ -166,9 +182,9 @@
             }
         }
 
-        private func refreshAnalyses(day: Date, forceRebuild: Bool = false) {
+        private func refreshVisibleAnalysis(day: Date, forceRebuild: Bool = false) {
+            guard mode == .dayRecap else { return }
             analysisModel.refresh(day: day, forceRebuild: forceRebuild)
-            computerHistoryModel.refresh(day: day, forceRebuild: forceRebuild)
         }
 
         func headlineCard(_ analysis: ActivityDayAnalysis) -> some View {

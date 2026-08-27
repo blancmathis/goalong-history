@@ -736,6 +736,110 @@
             XCTAssertEqual(reader.diagnostics.transitions[eventURL.path], .initial)
         }
 
+        func testDashboardProjectionSkipsUnusedPayloadsWithoutChangingEvidenceSelection() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let day = makeDay(year: 2026, month: 8, day: 24)
+            let eventURL = fixture.events.appendingPathComponent("2026-08-24.jsonl")
+            let detailed = HistoryEvent(
+                schemaVersion: 2,
+                id: "projected-detail",
+                sessionID: "source-session-is-not-retained",
+                timestamp: day,
+                kind: .mouseClick,
+                app: AppSnapshot(
+                    name: "Projection App",
+                    bundleIdentifier: "test.projection",
+                    processIdentifier: 42
+                ),
+                window: WindowSnapshot(title: "Useful title", role: "AXWindow", subrole: nil),
+                element: ElementSnapshot(
+                    role: "AXButton",
+                    subrole: nil,
+                    title: "Unused element payload",
+                    label: nil,
+                    identifier: nil,
+                    isSecure: false
+                ),
+                url: URLSnapshot(
+                    value: "https://example.test/private/path",
+                    host: "example.test",
+                    redactionApplied: false
+                ),
+                pointer: PointerSnapshot(button: "left", x: 20, y: 40, clickCount: 1),
+                semanticContext: SemanticContextReference(
+                    snapshotID: "semantic-payload",
+                    capturedAt: day,
+                    source: .visibleText,
+                    contentSHA256: String(repeating: "a", count: 64),
+                    characterCount: 500,
+                    redacted: false,
+                    truncated: false
+                ),
+                classification: LocalClassification(
+                    category: "work",
+                    isWork: true,
+                    confidence: 0.9,
+                    classifierVersion: "fixture"
+                ),
+                message: "Useful message",
+                metadata: ["unused": String(repeating: "metadata", count: 64)],
+                integrity: EventIntegrity(
+                    sequence: 1,
+                    previousEventHash: String(repeating: "b", count: 64),
+                    eventRoot: String(repeating: "c", count: 64),
+                    eventHash: String(repeating: "d", count: 64),
+                    fieldCommitments: []
+                )
+            )
+            let permissionGap = HistoryEvent(
+                id: "permission-gap",
+                sessionID: "fixture",
+                timestamp: day.addingTimeInterval(1),
+                kind: .permissionStatus,
+                metadata: ["accessibility": "false"]
+            )
+            let healthyPermission = HistoryEvent(
+                id: "permission-healthy",
+                sessionID: "fixture",
+                timestamp: day.addingTimeInterval(2),
+                kind: .permissionStatus,
+                metadata: ["accessibility": "true", "input_monitoring": "true"]
+            )
+            let observationGap = HistoryEvent(
+                id: "observation-gap",
+                sessionID: "fixture",
+                timestamp: day.addingTimeInterval(3),
+                kind: .recorderHealth,
+                metadata: ["observation_gap": "true"]
+            )
+            let diagnostic = HistoryEvent(
+                id: "diagnostic",
+                sessionID: "fixture",
+                timestamp: day.addingTimeInterval(4),
+                kind: .diagnostic,
+                message: "Not user-facing evidence"
+            )
+            var journal = Data()
+            for event in [detailed, permissionGap, healthyPermission, observationGap, diagnostic] {
+                journal.append(try line(event))
+            }
+            try journal.write(to: eventURL)
+
+            let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
+
+            XCTAssertEqual(snapshot.eventCount, 3)
+            XCTAssertEqual(snapshot.activeMinutes, 1)
+            let projectedSession = try XCTUnwrap(
+                snapshot.sessions.first { $0.id == detailed.id }
+            )
+            XCTAssertEqual(projectedSession.appName, "Projection App")
+            XCTAssertEqual(projectedSession.windowTitle, "Useful title")
+            XCTAssertEqual(projectedSession.host, "example.test")
+            XCTAssertEqual(projectedSession.inputEventCount, 1)
+            XCTAssertEqual(projectedSession.latestMessage, "Useful message")
+        }
+
         func testRowBudgetStopsDuringStreamingAndWarmRevisionIsNotRescanned() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.root) }

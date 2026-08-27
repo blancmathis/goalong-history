@@ -103,6 +103,39 @@
             var lastAccess: UInt64
         }
 
+        /// Read only the fields consumed by dashboard aggregation. The authoritative
+        /// JSONL remains untouched, while expensive semantic and integrity payloads
+        /// are skipped instead of being decoded and immediately discarded.
+        private struct DashboardEventProjection: Decodable {
+            let schemaVersion: Int
+            let id: String
+            let timestamp: Date
+            let kind: EventKind
+            let app: AppSnapshot?
+            let window: WindowSnapshot?
+            let url: URLSnapshot?
+            let pointer: PointerSnapshot?
+            let keyboard: KeyboardSnapshot?
+            let scroll: ScrollSnapshot?
+            let inputOrigin: InputOriginSnapshot?
+            let classification: LocalClassification?
+            let suppressionReason: SuppressionReason?
+            let message: String?
+            let metadata: [String: String]?
+
+            var shouldRetain: Bool {
+                HistoryEvent(
+                    schemaVersion: schemaVersion,
+                    id: id,
+                    sessionID: "",
+                    timestamp: timestamp,
+                    kind: kind,
+                    suppressionReason: suppressionReason,
+                    metadata: metadata
+                ).isDerivedAnalysisEvidence
+            }
+        }
+
         private struct MetadataSnapshot {
             var storageBytes: Int64 = 0
             var availableDays: [Date] = []
@@ -804,7 +837,7 @@
             let url = eventsDirectory.appendingPathComponent(dayKey(for: day) + ".jsonl")
             let previous = eventCache[url.path]
             let events = loadJournal(
-                HistoryEvent.self,
+                DashboardEventProjection.self,
                 at: url,
                 cache: &eventCache,
                 maximumFiles: limits.maximumEventFiles,
@@ -2423,8 +2456,10 @@
         /// recorder-only context remain authoritative in the source JSONL journal;
         /// dropping them from this transient projection is what keeps a full day
         /// inside the 32 MiB reader envelope without changing dashboard results.
-        private static func compactEventForDashboard(_ event: HistoryEvent) -> HistoryEvent? {
-            guard event.isDerivedAnalysisEvidence else { return nil }
+        private static func compactEventForDashboard(
+            _ event: DashboardEventProjection
+        ) -> HistoryEvent? {
+            guard event.shouldRetain else { return nil }
             return HistoryEvent(
                 schemaVersion: event.schemaVersion,
                 id: event.id,

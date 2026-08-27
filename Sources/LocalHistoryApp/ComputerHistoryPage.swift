@@ -148,10 +148,363 @@
         }
     }
 
+    struct ComputerHistoryQuarterHourGroup: Identifiable {
+        struct AppSlice: Identifiable {
+            let id: String
+            let name: String
+            let bundleIdentifier: String?
+            let activeSeconds: TimeInterval
+        }
+
+        struct SessionSlice: Identifiable {
+            let id: String
+            let start: Date
+            let end: Date
+            let appName: String
+            let bundleIdentifier: String?
+            let context: String
+            let isSuppressed: Bool
+            let sourceSessionCount: Int
+
+            var duration: TimeInterval { end.timeIntervalSince(start) }
+        }
+
+        let id: Date
+        let start: Date
+        let end: Date
+        let activeSeconds: TimeInterval
+        let apps: [AppSlice]
+        let sessions: [SessionSlice]
+        let appChangeCount: Int
+        let recordedEventCount: Int
+        let inputEventCount: Int
+
+        static func build(
+            sessions: [ActivitySession],
+            day: Date,
+            calendar: Calendar = .current
+        ) -> [ComputerHistoryQuarterHourGroup] {
+            let dayStart = calendar.startOfDay(for: day)
+            guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+                return []
+            }
+
+            var segmentsByWindow: [Date: [Segment]] = [:]
+            for session in sessions {
+                let clippedStart = max(session.start, dayStart)
+                let clippedEnd = min(session.end.addingTimeInterval(30), dayEnd)
+                guard clippedEnd > clippedStart else { continue }
+
+                var windowStart = quarterHourStart(for: clippedStart, calendar: calendar)
+                while windowStart < clippedEnd {
+                    guard let windowEnd = calendar.date(
+                        byAdding: .minute,
+                        value: 15,
+                        to: windowStart
+                    ) else { break }
+                    let segmentStart = max(clippedStart, windowStart)
+                    let segmentEnd = min(clippedEnd, windowEnd)
+                    if segmentEnd > segmentStart {
+                        let normalizedAppName = session.appName
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .lowercased()
+                        let appKey = "name:\(normalizedAppName)"
+                        segmentsByWindow[windowStart, default: []].append(
+                            Segment(
+                                session: session,
+                                appKey: appKey,
+                                start: segmentStart,
+                                end: segmentEnd
+                            )
+                        )
+                    }
+                    windowStart = windowEnd
+                }
+            }
+
+            return segmentsByWindow.keys.sorted(by: >).compactMap { windowStart in
+                guard
+                    let windowEnd = calendar.date(
+                        byAdding: .minute,
+                        value: 15,
+                        to: windowStart
+                    ),
+                    let windowSegments = segmentsByWindow[windowStart]
+                else { return nil }
+
+                let ordered = windowSegments.sorted {
+                    if $0.start == $1.start { return $0.end < $1.end }
+                    return $0.start < $1.start
+                }
+                let groupedApps = Dictionary(grouping: ordered, by: \.appKey)
+                let exclusiveDurations = exclusiveDurationByApp(ordered)
+                let apps = groupedApps.compactMap { key, appSegments -> AppSlice? in
+                    guard let representative = appSegments.first else { return nil }
+                    return AppSlice(
+                        id: key,
+                        name: representative.session.appName,
+                        bundleIdentifier: representative.session.bundleIdentifier,
+                        activeSeconds: exclusiveDurations[key] ?? 0
+                    )
+                }
+                .sorted {
+                    if $0.activeSeconds == $1.activeSeconds {
+                        return $0.name.localizedCaseInsensitiveCompare($1.name)
+                            == .orderedAscending
+                    }
+                    return $0.activeSeconds > $1.activeSeconds
+                }
+
+                let startingSessions = ordered.filter {
+                    $0.session.start >= windowStart && $0.session.start < windowEnd
+                }
+                var sessionSlices: [SessionSlice] = []
+                var previousAppKey: String?
+                for segment in ordered {
+                    let suppressed = segment.session.suppressionReason != nil
+                    let context = suppressed
+                        ? "Private or suppressed activity"
+                        : segment.session.windowTitle
+                            ?? segment.session.host
+                            ?? segment.session.category.map(CategoryBadge.prettyCategory)
+                            ?? "No detailed context recorded"
+                    if
+                        previousAppKey == segment.appKey,
+                        let previous = sessionSlices.last,
+                        segment.start <= previous.end.addingTimeInterval(30)
+                    {
+                        sessionSlices[sessionSlices.count - 1] = SessionSlice(
+                            id: previous.id,
+                            start: previous.start,
+                            end: max(previous.end, segment.end),
+                            appName: previous.appName,
+                            bundleIdentifier: previous.bundleIdentifier
+                                ?? segment.session.bundleIdentifier,
+                            context: previous.isSuppressed || suppressed
+                                ? "Private or suppressed activity"
+                                : context,
+                            isSuppressed: previous.isSuppressed || suppressed,
+                            sourceSessionCount: previous.sourceSessionCount + 1
+                        )
+                    } else {
+                        sessionSlices.append(
+                            SessionSlice(
+                                id: "\(segment.session.id)-\(windowStart.timeIntervalSince1970)",
+                                start: segment.start,
+                                end: segment.end,
+                                appName: segment.session.appName,
+                                bundleIdentifier: segment.session.bundleIdentifier,
+                                context: context,
+                                isSuppressed: suppressed,
+                                sourceSessionCount: 1
+                            )
+                        )
+                    }
+                    previousAppKey = segment.appKey
+                }
+
+                var appChangeCount = 0
+                for index in sessionSlices.indices.dropFirst()
+                where sessionSlices[index - 1].appName.caseInsensitiveCompare(
+                    sessionSlices[index].appName
+                ) != .orderedSame {
+                    appChangeCount += 1
+                }
+
+                return ComputerHistoryQuarterHourGroup(
+                    id: windowStart,
+                    start: windowStart,
+                    end: windowEnd,
+                    activeSeconds: unionDuration(ordered),
+                    apps: apps,
+                    sessions: sessionSlices,
+                    appChangeCount: appChangeCount,
+                    recordedEventCount: startingSessions.reduce(0) {
+                        $0 + $1.session.eventCount
+                    },
+                    inputEventCount: startingSessions.reduce(0) {
+                        $0 + $1.session.inputEventCount
+                    }
+                )
+            }
+        }
+
+        private struct Segment {
+            let session: ActivitySession
+            let appKey: String
+            let start: Date
+            let end: Date
+        }
+
+        private static func quarterHourStart(for date: Date, calendar: Calendar) -> Date {
+            var components = calendar.dateComponents(
+                [.era, .year, .month, .day, .hour, .minute],
+                from: date
+            )
+            components.minute = ((components.minute ?? 0) / 15) * 15
+            components.second = 0
+            components.nanosecond = 0
+            return calendar.date(from: components) ?? date
+        }
+
+        private static func unionDuration(_ segments: [Segment]) -> TimeInterval {
+            guard let first = segments.sorted(by: { $0.start < $1.start }).first else {
+                return 0
+            }
+            let sorted = segments.sorted {
+                if $0.start == $1.start { return $0.end < $1.end }
+                return $0.start < $1.start
+            }
+            var total: TimeInterval = 0
+            var currentStart = first.start
+            var currentEnd = first.end
+            for segment in sorted.dropFirst() {
+                if segment.start <= currentEnd {
+                    currentEnd = max(currentEnd, segment.end)
+                } else {
+                    total += currentEnd.timeIntervalSince(currentStart)
+                    currentStart = segment.start
+                    currentEnd = segment.end
+                }
+            }
+            return total + currentEnd.timeIntervalSince(currentStart)
+        }
+
+        private static func exclusiveDurationByApp(
+            _ segments: [Segment]
+        ) -> [String: TimeInterval] {
+            let boundaries = Set(segments.flatMap { [$0.start, $0.end] }).sorted()
+            guard boundaries.count >= 2 else { return [:] }
+
+            var durations: [String: TimeInterval] = [:]
+            for index in 0 ..< boundaries.count - 1 {
+                let intervalStart = boundaries[index]
+                let intervalEnd = boundaries[index + 1]
+                guard intervalEnd > intervalStart else { continue }
+
+                let activeSegments = segments.filter {
+                    $0.start < intervalEnd && $0.end > intervalStart
+                }
+                guard let foreground = activeSegments.max(by: {
+                    if $0.start == $1.start { return $0.end < $1.end }
+                    return $0.start < $1.start
+                }) else { continue }
+                durations[foreground.appKey, default: 0] += intervalEnd.timeIntervalSince(
+                    intervalStart
+                )
+            }
+            return durations
+        }
+    }
+
+    final class ComputerHistoryTimelineModel: ObservableObject {
+        typealias BuildGroups = ([ActivitySession], Date) -> [ComputerHistoryQuarterHourGroup]
+
+        @Published private(set) var groups: [ComputerHistoryQuarterHourGroup] = []
+        @Published private(set) var isLoading = false
+
+        private let queue: DispatchQueue
+        private let buildGroups: BuildGroups
+        private var currentRevision: UInt64?
+        private var currentDay: Date?
+        private var pendingRevision: UInt64?
+        private var pendingDay: Date?
+        private var pendingToken: RequestToken?
+        private var pendingWorkItem: DispatchWorkItem?
+
+        init(
+            queue: DispatchQueue = DispatchQueue(
+                label: "ai.goalong.localhistory.computer-history-timeline",
+                qos: .utility
+            ),
+            buildGroups: @escaping BuildGroups = { sessions, day in
+                ComputerHistoryQuarterHourGroup.build(sessions: sessions, day: day)
+            }
+        ) {
+            self.queue = queue
+            self.buildGroups = buildGroups
+        }
+
+        func refresh(sessions: [ActivitySession], day: Date, revision: UInt64) {
+            let normalizedDay = Calendar.current.startOfDay(for: day)
+            if currentRevision == revision, currentDay == normalizedDay { return }
+            if pendingRevision == revision, pendingDay == normalizedDay { return }
+
+            pendingToken?.cancel()
+            pendingWorkItem?.cancel()
+            let token = RequestToken()
+            pendingToken = token
+            pendingRevision = revision
+            pendingDay = normalizedDay
+            isLoading = true
+            if currentDay != nil, currentDay != normalizedDay {
+                groups = []
+            }
+
+            let buildGroups = self.buildGroups
+            let workItem = DispatchWorkItem { [weak self] in
+                guard !token.isCancelled else { return }
+                let groups = buildGroups(sessions, normalizedDay)
+                guard !token.isCancelled else { return }
+                DispatchQueue.main.async { [weak self] in
+                    guard
+                        let self,
+                        self.pendingToken === token,
+                        !token.isCancelled
+                    else { return }
+                    self.groups = groups
+                    self.currentRevision = revision
+                    self.currentDay = normalizedDay
+                    self.pendingRevision = nil
+                    self.pendingDay = nil
+                    self.pendingToken = nil
+                    self.pendingWorkItem = nil
+                    self.isLoading = false
+                }
+            }
+            pendingWorkItem = workItem
+            queue.asyncAfter(deadline: .now() + .milliseconds(30), execute: workItem)
+        }
+
+        func clear() {
+            pendingToken?.cancel()
+            pendingToken = nil
+            pendingWorkItem?.cancel()
+            pendingWorkItem = nil
+            currentRevision = nil
+            currentDay = nil
+            pendingRevision = nil
+            pendingDay = nil
+            isLoading = false
+            groups = []
+        }
+
+        private final class RequestToken {
+            private let lock = NSLock()
+            private var cancelled = false
+
+            var isCancelled: Bool {
+                lock.lock()
+                defer { lock.unlock() }
+                return cancelled
+            }
+
+            func cancel() {
+                lock.lock()
+                cancelled = true
+                lock.unlock()
+            }
+        }
+    }
+
     struct ComputerHistoryPage: View {
         @ObservedObject var model: ComputerHistoryPageModel
+        @StateObject private var timelineModel = ComputerHistoryTimelineModel()
         let day: Date
+        let snapshot: DashboardDaySnapshot
+        let snapshotGeneration: UInt64
         let fullContextEnabled: Bool
+        let openSourceJSON: () -> Void
         let deleteEpisode: (ComputerHistoryEpisode) -> Void
         @State private var episodePendingDeletion: ComputerHistoryEpisode?
 
@@ -161,24 +514,10 @@
 
         var body: some View {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    contextStateCard
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    recordingStateCard
                     sourceStatusCard
-                    questionCard
-                    answerCard
-
-                    if let memory = model.memory {
-                        headline(memory)
-                        coverage(memory)
-                        episodes(memory)
-                        sources(memory)
-                        suggestions(memory)
-                        evidence(memory)
-                    } else if model.isLoading {
-                        loadingState
-                    } else {
-                        emptyState
-                    }
+                    historySection
                 }
                 .padding(.bottom, 8)
             }
@@ -193,6 +532,159 @@
                     },
                     secondaryButton: .cancel()
                 )
+            }
+            .onAppear(perform: refreshTimeline)
+            .onChange(of: snapshotGeneration) { _ in refreshTimeline() }
+            .onChange(of: day) { _ in refreshTimeline() }
+            .onDisappear(perform: timelineModel.clear)
+        }
+
+        private var quarterHourGroups: [ComputerHistoryQuarterHourGroup] {
+            timelineModel.groups
+        }
+
+        private func refreshTimeline() {
+            timelineModel.refresh(
+                sessions: snapshot.sessions,
+                day: day,
+                revision: snapshotGeneration
+            )
+        }
+
+        private var recordingStateCard: some View {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(LHTheme.success.opacity(0.14))
+                        .frame(width: 34, height: 34)
+                    Circle()
+                        .fill(LHTheme.success)
+                        .frame(width: 9, height: 9)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Recorded locally")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(recordingSummary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 16)
+                StatusPill(
+                    title: fullContextEnabled ? "Detailed context" : "Activity metadata",
+                    symbol: fullContextEnabled ? "text.viewfinder" : "rectangle.dashed",
+                    tint: fullContextEnabled ? LHTheme.success : LHTheme.teal
+                )
+            }
+            .padding(.horizontal, 17)
+            .padding(.vertical, 14)
+            .background(
+                LHTheme.cardBackground,
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+            )
+        }
+
+        private var recordingSummary: String {
+            let events = snapshot.eventCount.formatted()
+            if timelineModel.isLoading, quarterHourGroups.isEmpty {
+                return "Preparing factual 15-minute windows from \(events) source events."
+            }
+            let windows = quarterHourGroups.count.formatted()
+            return "\(events) source events shown as \(windows) factual 15-minute windows. No AI summary is generated."
+        }
+
+        private var historySection: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 9) {
+                    Text("History")
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .help(
+                            "Durations are observed foreground intervals. They do not prove attention, identity, authorship or productivity."
+                        )
+                    Spacer(minLength: 12)
+                    if timelineModel.isLoading, quarterHourGroups.isEmpty {
+                        ProgressView()
+                            .controlSize(.small)
+                            .help("Grouping recorded activity")
+                    } else {
+                        Text("\(quarterHourGroups.count) windows")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    Button(action: openSourceJSON) {
+                        Label("Reveal source JSONL", systemImage: "curlybraces")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .help("Reveal the original read-only event journal for this day in Finder")
+                }
+
+                timelineCard
+            }
+        }
+
+        private var timelineCard: some View {
+            LHCard(padding: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text(
+                            Calendar.current.isDateInToday(day)
+                                ? "Today"
+                                : DashboardFormatters.dayTitle.string(from: day)
+                        )
+                        .font(.system(size: 14, weight: .semibold))
+                        Spacer()
+                        Text(DashboardFormatters.duration(minutes: snapshot.activeMinutes))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 17)
+
+                    Divider()
+
+                    if timelineModel.isLoading, quarterHourGroups.isEmpty {
+                        VStack(spacing: 11) {
+                            ProgressView()
+                                .controlSize(.regular)
+                            Text("Grouping recorded activity…")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("This runs locally only when a new daily snapshot is available.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 240)
+                        .padding(24)
+                    } else if quarterHourGroups.isEmpty {
+                        VStack(spacing: 11) {
+                            Image(systemName: "clock.badge.questionmark")
+                                .font(.system(size: 28, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            Text("No recorded activity for this day")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("Keep Goalong History running, then refresh this page after using an app.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 240)
+                        .padding(24)
+                    } else {
+                        ForEach(Array(quarterHourGroups.enumerated()), id: \.element.id) {
+                            index, group in
+                            ComputerHistoryQuarterHourRow(
+                                group: group,
+                                isLast: index == quarterHourGroups.count - 1
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -759,6 +1251,172 @@
         ) -> String {
             let percentage = Int((resource.locatorConfidence * 100).rounded())
             return "\(resource.kind.rawValue) · \(percentage)% confidence"
+        }
+    }
+
+    private struct ComputerHistoryQuarterHourRow: View {
+        let group: ComputerHistoryQuarterHourGroup
+        let isLast: Bool
+        @State private var expanded = false
+
+        var body: some View {
+            HStack(alignment: .top, spacing: 0) {
+                Text(DashboardFormatters.shortTime.string(from: group.start))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 78, alignment: .trailing)
+                    .padding(.top, 22)
+                    .padding(.trailing, 13)
+
+                VStack(spacing: 0) {
+                    Circle()
+                        .fill(Color.secondary)
+                        .frame(width: 8, height: 8)
+                        .padding(.top, 26)
+                    if !isLast {
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.22))
+                            .frame(width: 1)
+                            .frame(maxHeight: .infinity)
+                    }
+                }
+                .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 11) {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            expanded.toggle()
+                        }
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(headline)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Text(factSummary)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 12)
+                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 3)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 13) {
+                            ForEach(group.apps) { app in
+                                HStack(spacing: 7) {
+                                    AppIconView(
+                                        bundleIdentifier: app.bundleIdentifier,
+                                        appName: app.name,
+                                        size: 23
+                                    )
+                                    Text(app.name)
+                                        .lineLimit(1)
+                                    Text(durationLabel(app.activeSeconds))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .font(.system(size: 10, weight: .medium))
+                                .accessibilityElement(children: .combine)
+                            }
+                        }
+                    }
+
+                    if expanded {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(group.sessions) { session in
+                                HStack(alignment: .top, spacing: 10) {
+                                    AppIconView(
+                                        bundleIdentifier: session.bundleIdentifier,
+                                        appName: session.appName,
+                                        size: 26
+                                    )
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack(spacing: 7) {
+                                            Text(session.appName)
+                                                .font(.system(size: 11, weight: .semibold))
+                                            if session.isSuppressed {
+                                                Image(systemName: "eye.slash.fill")
+                                                    .font(.system(size: 8))
+                                                    .foregroundStyle(LHTheme.privateTint)
+                                            }
+                                        }
+                                        Text(session.context)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                        Text(
+                                            sessionDetailSummary(session)
+                                        )
+                                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.tertiary)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                            }
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 20)
+                .padding(.vertical, 20)
+            }
+            .accessibilityElement(children: .contain)
+        }
+
+        private var headline: String {
+            let names = group.apps.map(\.name)
+            switch names.count {
+            case 0:
+                return "Recorded activity"
+            case 1:
+                return names[0]
+            case 2:
+                return "\(names[0]) and \(names[1])"
+            default:
+                return "\(names[0]), \(names[1]) and \(names.count - 2) more"
+            }
+        }
+
+        private var factSummary: String {
+            var facts = [
+                "\(durationLabel(group.activeSeconds)) observed",
+                "\(group.apps.count) \(group.apps.count == 1 ? "app" : "apps")",
+                "\(group.appChangeCount) app \(group.appChangeCount == 1 ? "change" : "changes")",
+            ]
+            if group.inputEventCount > 0 {
+                facts.append("\(group.inputEventCount.formatted()) inputs")
+            } else if group.recordedEventCount > 0 {
+                facts.append("\(group.recordedEventCount.formatted()) source events")
+            }
+            return facts.joined(separator: " · ")
+        }
+
+        private func durationLabel(_ seconds: TimeInterval) -> String {
+            guard seconds >= 60 else { return "<1m" }
+            let roundedMinutes = Int((seconds / 60).rounded())
+            return DashboardFormatters.duration(minutes: max(1, roundedMinutes))
+        }
+
+        private func sessionDetailSummary(
+            _ session: ComputerHistoryQuarterHourGroup.SessionSlice
+        ) -> String {
+            let interval =
+                "\(DashboardFormatters.shortTime.string(from: session.start))–"
+                + DashboardFormatters.shortTime.string(from: session.end)
+            let details = session.sourceSessionCount == 1
+                ? "1 source detail"
+                : "\(session.sourceSessionCount) source details"
+            return "\(interval) · \(durationLabel(session.duration)) · \(details)"
         }
     }
 

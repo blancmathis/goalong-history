@@ -107,6 +107,7 @@
         @Published var selectedSection: DashboardSection = .overview
         @Published private(set) var runtime: RuntimePresentation = .unavailable
         @Published private(set) var snapshot: DashboardDaySnapshot
+        @Published private(set) var snapshotGeneration: UInt64 = 0
         @Published private(set) var isRefreshing = false
         @Published private(set) var shareSegments: [ShareSegment] = []
         @Published private(set) var isLoadingShare = false
@@ -381,6 +382,7 @@
             dataRefreshPending = false
             isRefreshing = false
             snapshot = .empty(day: selectedDay)
+            snapshotGeneration &+= 1
             shareSegments = []
             selectedShareSegmentID = nil
             agentActivityRuntime.dashboardDidBecomeHidden()
@@ -432,6 +434,15 @@
             let file = AppPaths.eventFileURL(for: selectedDay)
             if FileManager.default.fileExists(atPath: file.path) {
                 NSWorkspace.shared.open(file)
+            } else {
+                NSWorkspace.shared.open(AppPaths.eventsDirectory)
+            }
+        }
+
+        func revealTodayJSON() {
+            let file = AppPaths.eventFileURL(for: selectedDay)
+            if FileManager.default.fileExists(atPath: file.path) {
+                NSWorkspace.shared.activateFileViewerSelecting([file])
             } else {
                 NSWorkspace.shared.open(AppPaths.eventsDirectory)
             }
@@ -831,6 +842,7 @@
                         return
                     }
                     self.snapshot = next
+                    self.snapshotGeneration &+= 1
                     if let selected = self.selectedSessionID,
                         !self.filteredSessions.contains(where: { $0.id == selected })
                     {
@@ -866,6 +878,7 @@
                     self.activeMetadataRequest = nil
                     guard self.dashboardIsVisible, !token.isCancelled, updated else { return }
                     self.snapshot = self.dataReader.applyingCachedMetadata(to: self.snapshot)
+                    self.snapshotGeneration &+= 1
                 }
             }
             activeMetadataRequest = (token, workItem)
