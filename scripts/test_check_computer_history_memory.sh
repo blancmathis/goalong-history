@@ -169,7 +169,7 @@ then
   echo "Checker accepted a resource without provenance." >&2
   exit 1
 fi
-if ! rg -F 'resources[0].provenance must be an object' \
+if ! grep -F 'resources[0].provenance must be an object' \
   "$NEGATIVE_OUTPUT" >/dev/null
 then
   echo "Missing targeted resource provenance failure." >&2
@@ -185,7 +185,7 @@ then
   echo "Checker accepted a null provenance element." >&2
   exit 1
 fi
-if ! rg -F \
+if ! grep -F \
   'resources[0].provenance.sourceEventHashes[0] must be a non-empty string' \
   "$NEGATIVE_OUTPUT" >/dev/null
 then
@@ -202,7 +202,7 @@ then
   echo "Checker accepted interactions that were globally out of order." >&2
   exit 1
 fi
-if ! rg -F 'interactions are not globally chronologically ordered' \
+if ! grep -F 'interactions are not globally chronologically ordered' \
   "$NEGATIVE_OUTPUT" >/dev/null
 then
   echo "Missing targeted global interaction order failure." >&2
@@ -226,7 +226,7 @@ then
   echo "Checker accepted a workflow reference outside retained episodes." >&2
   exit 1
 fi
-if ! rg -F 'workflowPatterns[0] references unknown episode' \
+if ! grep -F 'workflowPatterns[0] references unknown episode' \
   "$NEGATIVE_OUTPUT" >/dev/null
 then
   echo "Missing targeted workflow episode reference failure." >&2
@@ -242,7 +242,7 @@ then
   echo "Checker accepted a non-repeated workflow occurrence count." >&2
   exit 1
 fi
-if ! rg -F 'workflowPatterns[0].occurrenceCount must be an integer of at least 2' \
+if ! grep -F 'workflowPatterns[0].occurrenceCount must be an integer of at least 2' \
   "$NEGATIVE_OUTPUT" >/dev/null
 then
   echo "Missing targeted workflow occurrence count failure." >&2
@@ -258,7 +258,7 @@ if python3 "$CHECKER" - --quiet-errors <"$SENSITIVE_INVALID" >"$QUIET_OUTPUT" 2>
   echo "Quiet checker accepted an invalid fixture." >&2
   exit 1
 fi
-if rg -F "$SENTINEL" "$QUIET_OUTPUT" >/dev/null; then
+if grep -F "$SENTINEL" "$QUIET_OUTPUT" >/dev/null; then
   echo "Quiet checker leaked a source-derived sentinel." >&2
   exit 1
 fi
@@ -268,7 +268,7 @@ then
   echo "Quiet checker ignored its input byte bound." >&2
   exit 1
 fi
-if rg -F "$SENTINEL" "$QUIET_OUTPUT" >/dev/null; then
+if grep -F "$SENTINEL" "$QUIET_OUTPUT" >/dev/null; then
   echo "Bounded quiet checker leaked a source-derived sentinel." >&2
   exit 1
 fi
