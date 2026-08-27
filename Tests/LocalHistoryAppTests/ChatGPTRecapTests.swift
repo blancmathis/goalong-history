@@ -729,6 +729,41 @@
             XCTAssertLessThan(launchDescription.utf8.count, 4_300)
         }
 
+        func testCodexSessionReadsResponsesWithoutWaitingForStdoutClosure() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-codex-streaming-response")
+            defer { try? FileManager.default.removeItem(at: container) }
+            let codexHome = container.appendingPathComponent("codex-home", isDirectory: true)
+            let executable = container.appendingPathComponent("codex-fixture")
+            let script = """
+                #!/bin/sh
+                IFS= read -r initialize_request
+                printf '%s\\n' '{"id":1,"result":{"codexHome":"\(codexHome.path)"}}'
+                IFS= read -r initialized_notification
+                IFS= read -r account_request
+                printf '%s\\n' '{"id":2,"result":{"account":null}}'
+                sleep 3
+                """
+            try Data(script.utf8).write(to: executable)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: executable.path
+            )
+
+            let startedAt = Date()
+            let session = try CodexAppServerSession(
+                executableURL: executable,
+                codexHomeURL: codexHome
+            )
+            defer { session.close() }
+
+            XCTAssertNil(try session.readAccount())
+            XCTAssertLessThan(
+                Date().timeIntervalSince(startedAt),
+                2,
+                "A newline-delimited app-server response must be consumed before stdout closes."
+            )
+        }
+
         func testCodexWireEncoderBoundsUTF8RequestBytes() throws {
             var limits = CodexAppServerLimits.production
             limits.maximumProtocolLineBytes = 48

@@ -40,7 +40,7 @@
                         }
                     }
 
-                    accountCard
+                    ChatGPTAccountConnectionCard(runtime: recapRuntime)
                     sourceCard
                     historyImportCard
                     automaticCard
@@ -65,89 +65,6 @@
                     message: Text(item.message),
                     dismissButton: .default(Text("OK"))
                 )
-            }
-        }
-
-        private var accountCard: some View {
-            LHCard {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: connectionSymbol)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(connectionTint)
-                        .frame(width: 42, height: 42)
-                        .background(
-                            connectionTint.opacity(0.10),
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        )
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(connectionTitle)
-                            .font(.system(size: 14, weight: .semibold))
-                        Text(connectionMessage)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(
-                            "Goalong never reads or copies OAuth token values. Codex stores and refreshes them inside Goalong’s isolated private Codex directory. API-key credentials are deliberately rejected to avoid accidental usage-based billing."
-                        )
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 16)
-
-                    VStack(alignment: .trailing, spacing: 10) {
-                        StatusPill(
-                            title: connectionPill,
-                            symbol: connectionSymbol,
-                            tint: connectionTint
-                        )
-                        accountActions
-                    }
-                }
-            }
-        }
-
-        @ViewBuilder private var accountActions: some View {
-            switch recapRuntime.connectionState {
-            case .codexUnavailable:
-                Button("Install Codex") {
-                    recapRuntime.openCodexInstallGuide()
-                }
-                .buttonStyle(.borderedProminent)
-            case .connected:
-                HStack(spacing: 8) {
-                    Button {
-                        recapRuntime.refreshAccount()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(recapRuntime.isCheckingAccount)
-                    Button("Disconnect") {
-                        recapRuntime.disconnectChatGPT()
-                    }
-                    .buttonStyle(.bordered)
-                }
-            case .checking:
-                ProgressView()
-                    .controlSize(.small)
-            default:
-                HStack(spacing: 8) {
-                    Button {
-                        recapRuntime.refreshAccount()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(recapRuntime.isCheckingAccount)
-                    Button(recapRuntime.isConnecting ? "Connecting…" : "Connect ChatGPT") {
-                        recapRuntime.connectChatGPT()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(recapRuntime.isConnecting)
-                }
             }
         }
 
@@ -367,67 +284,5 @@
             return false
         }
 
-        private var connectionTitle: String {
-            switch recapRuntime.connectionState {
-            case .checking: return "Checking ChatGPT connection"
-            case .codexUnavailable: return "Codex is not installed"
-            case .signedOut: return "Connect your ChatGPT account"
-            case .connected(let email, let plan):
-                return [email, plan.map { "ChatGPT \($0)" }].compactMap { $0 }.joined(separator: " · ")
-            case .unsupportedCredentialMode: return "A non-ChatGPT Codex credential is active"
-            case .failed: return "ChatGPT connection needs attention"
-            }
-        }
-
-        private var connectionMessage: String {
-            switch recapRuntime.connectionState {
-            case .checking:
-                return "Goalong is asking the local Codex app-server for its account state."
-            case .codexUnavailable:
-                return
-                    "Install the official Codex CLI once. A future signed release can bundle the reviewed helper so normal users do not need a developer toolchain."
-            case .signedOut:
-                return "The browser flow uses your ChatGPT plan’s included Codex usage instead of an OpenAI API key."
-            case .connected:
-                return
-                    "Ready to launch ephemeral in-memory recap threads. They are not written to Codex conversation history."
-            case .unsupportedCredentialMode(let mode):
-                return
-                    "Codex currently reports “\(mode)”. Goalong refuses to run recaps with it so API-billed credentials are never used by surprise."
-            case .failed(let message):
-                return message
-            }
-        }
-
-        private var connectionPill: String {
-            switch recapRuntime.connectionState {
-            case .checking: return "Checking"
-            case .codexUnavailable: return "Codex required"
-            case .signedOut: return "Not connected"
-            case .connected(_, let plan): return plan.map { "ChatGPT \($0)" } ?? "Connected"
-            case .unsupportedCredentialMode: return "Blocked"
-            case .failed: return "Error"
-            }
-        }
-
-        private var connectionSymbol: String {
-            switch recapRuntime.connectionState {
-            case .connected: return "checkmark.seal.fill"
-            case .checking: return "arrow.triangle.2.circlepath"
-            case .codexUnavailable: return "terminal.fill"
-            case .signedOut: return "person.crop.circle.badge.plus"
-            case .unsupportedCredentialMode: return "exclamationmark.shield.fill"
-            case .failed: return "exclamationmark.triangle.fill"
-            }
-        }
-
-        private var connectionTint: Color {
-            switch recapRuntime.connectionState {
-            case .connected: return LHTheme.success
-            case .checking: return LHTheme.accent
-            case .signedOut, .codexUnavailable: return LHTheme.warning
-            case .unsupportedCredentialMode, .failed: return LHTheme.danger
-            }
-        }
     }
 #endif

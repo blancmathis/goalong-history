@@ -3,6 +3,12 @@
 
     struct SettingsPage: View {
         @ObservedObject var model: DashboardViewModel
+        @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
+
+        init(model: DashboardViewModel) {
+            self.model = model
+            _recapRuntime = ObservedObject(wrappedValue: ChatGPTRecapRuntime.shared)
+        }
 
         var body: some View {
             VStack(spacing: 0) {
@@ -36,6 +42,7 @@
                             }
                         }
 
+                        ChatGPTAccountConnectionCard(runtime: recapRuntime)
                         captureCard
                         privacyCard
                         verificationCard
@@ -50,6 +57,17 @@
                 saveBar
             }
             .background(LHTheme.pageBackground)
+            .onAppear {
+                recapRuntime.configure(deviceID: model.deviceID)
+                recapRuntime.activate()
+            }
+            .alert(item: $recapRuntime.alert) { item in
+                Alert(
+                    title: Text(item.title),
+                    message: Text(item.message),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
         }
 
         private var captureCard: some View {

@@ -325,7 +325,7 @@
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         Spacer(minLength: 16)
-                        Button(recapRuntime.recap == nil ? "Open setup" : "Open full recap") {
+                        Button(recapRuntime.recap == nil ? "ChatGPT setup" : "Open full recap") {
                             model.selectSection(.chatGPTRecap)
                         }
                         .buttonStyle(.link)
@@ -350,7 +350,7 @@
                 ProgressView()
                     .controlSize(.small)
             } else {
-                Button("Set up AI recap") {
+                Button("Connect ChatGPT") {
                     model.selectSection(.chatGPTRecap)
                 }
                 .buttonStyle(.borderedProminent)

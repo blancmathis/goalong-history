@@ -974,12 +974,19 @@
                     throw CodexAppServerError.processExited(stderrText())
                 }
 
-                let data: Data
-                do {
-                    data = try outputPipe.fileHandleForReading.read(upToCount: 65_536) ?? Data()
-                } catch {
+                var bytes = [UInt8](repeating: 0, count: 65_536)
+                let count = bytes.withUnsafeMutableBytes { buffer in
+                    Darwin.read(
+                        outputPipe.fileHandleForReading.fileDescriptor,
+                        buffer.baseAddress,
+                        buffer.count
+                    )
+                }
+                if count < 0 {
+                    if errno == EINTR || errno == EAGAIN { continue }
                     throw CodexAppServerError.processExited(stderrText())
                 }
+                let data = count > 0 ? Data(bytes.prefix(count)) : Data()
                 if data.isEmpty {
                     if let message = try stdoutDecoder.finish() {
                         return message

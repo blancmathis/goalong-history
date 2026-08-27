@@ -14,6 +14,11 @@ This feature has two different data contracts:
 - importing a ChatGPT data export is a separate, explicit opt-in operation that
   writes a normalized local copy of selected conversation content.
 
+In the app, open **Settings → AI analysis with ChatGPT → Connect ChatGPT**. Goalong
+opens OpenAI's browser sign-in and uses the Codex usage included with the selected
+ChatGPT plan. It does not ask for or accept an OpenAI API key. The same setup is
+also reachable from the **AI recap** card on Overview.
+
 ## Daily recap data flow
 
 1. Goalong runs the selected day's local Activity Analysis and Computer History
