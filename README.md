@@ -170,7 +170,7 @@ The build script creates a real `.app` bundle, generates the `.icns` asset, writ
 
 ## Release pipeline
 
-Every successful merge to `main` builds both architectures, creates the universal binary, verifies the Sparkle configuration, creates the branded DMG and ZIP, signs the update archive and feed with EdDSA, and replaces the `latest-main` prerelease. Developer ID signing and notarization are optional enhancements in this rolling workflow. The separate stable-tag workflow remains reserved for a future Apple-verified release.
+Every successful merge to `main` increments the last published visible patch version (`0.5.1` → `0.5.2` → `0.5.3`), builds both architectures, creates the universal binary, verifies the Sparkle configuration, creates the branded DMG and ZIP, signs the update archive and feed with EdDSA, and replaces the `latest-main` prerelease. The repository [`VERSION`](VERSION) file can request a larger next version such as `0.6.0`; automatic patch increments continue from there. Sparkle keeps a separate monotonic `5000.x.y` build number for update ordering. Developer ID signing and notarization are optional enhancements in this rolling workflow. The separate stable-tag workflow remains reserved for a future Apple-verified release.
 
 Release credentials and the exact process are documented in [`docs/RELEASING.md`](docs/RELEASING.md). Installation design principles are documented in [`docs/INSTALLATION_UX.md`](docs/INSTALLATION_UX.md).
 

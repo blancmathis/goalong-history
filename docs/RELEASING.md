@@ -11,6 +11,8 @@ Sparkle update signing:
 
 This pair is sufficient for `.github/workflows/continuous-release.yml`. The workflow ad-hoc code signs the app, signs the archive and feed with EdDSA, and publishes `latest-main` after every successful merge to `main`.
 
+Each rolling publication reads the last version from the live signed appcast and increments its patch component once: `0.5.1` becomes `0.5.2`, then `0.5.3`, and so on. The repository [`VERSION`](../VERSION) file is a version floor for intentional larger jumps. For example, setting it to `0.6.0` makes the next rolling publication use `0.6.0`; later publications continue automatically with `0.6.1`, `0.6.2`, etc. Sparkle keeps using the separate `5000.x.y` bundle build number for monotonic update ordering.
+
 ## Optional Apple verification
 
 Configure the complete set below to add Developer ID, Hardened Runtime, notarization, and stapling to the rolling workflow:
@@ -51,6 +53,7 @@ Existing installations that predate Sparkle cannot discover Sparkle by themselve
 
 1. Merge a green pull request into `main`.
 2. The **Continuous Sparkle macOS release** workflow:
+   - increments the last published visible version by one patch, unless `VERSION` requests a larger jump;
    - builds both architectures;
    - embeds the exact-pinned Sparkle framework;
    - explicitly signs Sparkle's nested helpers and the app without `--deep`;

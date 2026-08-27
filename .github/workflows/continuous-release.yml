@@ -32,16 +32,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Apple requires numeric bundle versions. Reserve the 5000.x.y range for
-          # rolling builds and encode the monotonic workflow run number in it.
-          RUN_SEQUENCE="$GITHUB_RUN_NUMBER"
-          BUILD_MAJOR=$((5000 + RUN_SEQUENCE / 10000))
-          BUILD_MINOR=$(((RUN_SEQUENCE / 100) % 100))
-          BUILD_PATCH=$((RUN_SEQUENCE % 100))
-          BUILD_NUMBER="${BUILD_MAJOR}.${BUILD_MINOR}.${BUILD_PATCH}"
-          VERSION="0.5.1"
-          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          ./scripts/resolve_rolling_version.sh "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
 
       - name: Resolve release trust mode
         id: release_mode
@@ -176,6 +167,8 @@ jobs:
 
       - name: Confirm architecture, identity, localized name, code signature, and updater policy
         env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.value }}
+          EXPECTED_BUILD: ${{ steps.version.outputs.build }}
           LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
           LOCALHISTORY_REQUIRE_LOCALIZED_NAME: 1
           LOCALHISTORY_DISPLAY_NAME: Goalong History
@@ -189,6 +182,8 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO")" = "$BUNDLE_ID"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")" = "$PRODUCT"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO")" = "$PRODUCT"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO")" = "$EXPECTED_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")" = "$EXPECTED_BUILD"
           for locale in en fr; do
             STRINGS="$APP/Contents/Resources/$locale.lproj/InfoPlist.strings"
             test "$(plutil -extract CFBundleDisplayName raw -o - "$STRINGS")" = "$DISPLAY_NAME"
@@ -254,6 +249,8 @@ jobs:
           test -s dist/appcast.xml
           grep -q 'sparkle:edSignature=' dist/appcast.xml
           grep -Fq "/releases/download/$ROLLING_TAG/Goalong-History-macOS-universal.zip" dist/appcast.xml
+          grep -Fq "<sparkle:shortVersionString>${{ steps.version.outputs.value }}</sparkle:shortVersionString>" dist/appcast.xml
+          grep -Fq "<sparkle:version>${{ steps.version.outputs.build }}</sparkle:version>" dist/appcast.xml
 
       - name: Move rolling tag to this merge
         env:
@@ -267,9 +264,9 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: latest-main
-          name: Goalong History — latest main
+          name: Goalong History ${{ steps.version.outputs.value }} — latest main
           body: |
-            Automatically built and published from `${{ github.sha }}` on `main`.
+            Goalong History `${{ steps.version.outputs.value }}` (build `${{ steps.version.outputs.build }}`), automatically built and published from `${{ github.sha }}` on `main`.
 
             ${{ steps.release_mode.outputs.release_note }}
 
