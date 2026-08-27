@@ -146,7 +146,7 @@ final class ComputerHistorySearchPerformanceTests: XCTestCase {
         let query = "What did I work on today?"
         let memory = makeMemory(day: 0, episodesPerDay: 3)
         let calendar = Calendar.current
-        let now = calendar.startOfDay(for: baseDate).addingTimeInterval(3_600)
+        let now = baseDate.addingTimeInterval(1)
 
         XCTAssertFalse(
             ComputerHistorySearchService.shouldSearchRawSources(for: query),
