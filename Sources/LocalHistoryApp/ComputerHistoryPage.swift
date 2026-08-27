@@ -148,7 +148,7 @@
         }
     }
 
-    struct ComputerHistoryQuarterHourGroup: Identifiable {
+    struct ComputerHistoryTenMinuteGroup: Identifiable {
         struct AppSlice: Identifiable {
             let id: String
             let name: String
@@ -183,7 +183,7 @@
             sessions: [ActivitySession],
             day: Date,
             calendar: Calendar = .current
-        ) -> [ComputerHistoryQuarterHourGroup] {
+        ) -> [ComputerHistoryTenMinuteGroup] {
             let dayStart = calendar.startOfDay(for: day)
             guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
                 return []
@@ -195,11 +195,11 @@
                 let clippedEnd = min(session.end.addingTimeInterval(30), dayEnd)
                 guard clippedEnd > clippedStart else { continue }
 
-                var windowStart = quarterHourStart(for: clippedStart, calendar: calendar)
+                var windowStart = tenMinuteStart(for: clippedStart, calendar: calendar)
                 while windowStart < clippedEnd {
                     guard let windowEnd = calendar.date(
                         byAdding: .minute,
-                        value: 15,
+                        value: 10,
                         to: windowStart
                     ) else { break }
                     let segmentStart = max(clippedStart, windowStart)
@@ -226,7 +226,7 @@
                 guard
                     let windowEnd = calendar.date(
                         byAdding: .minute,
-                        value: 15,
+                        value: 10,
                         to: windowStart
                     ),
                     let windowSegments = segmentsByWindow[windowStart]
@@ -311,7 +311,7 @@
                     appChangeCount += 1
                 }
 
-                return ComputerHistoryQuarterHourGroup(
+                return ComputerHistoryTenMinuteGroup(
                     id: windowStart,
                     start: windowStart,
                     end: windowEnd,
@@ -336,12 +336,12 @@
             let end: Date
         }
 
-        private static func quarterHourStart(for date: Date, calendar: Calendar) -> Date {
+        private static func tenMinuteStart(for date: Date, calendar: Calendar) -> Date {
             var components = calendar.dateComponents(
                 [.era, .year, .month, .day, .hour, .minute],
                 from: date
             )
-            components.minute = ((components.minute ?? 0) / 15) * 15
+            components.minute = ((components.minute ?? 0) / 10) * 10
             components.second = 0
             components.nanosecond = 0
             return calendar.date(from: components) ?? date
@@ -398,9 +398,9 @@
     }
 
     final class ComputerHistoryTimelineModel: ObservableObject {
-        typealias BuildGroups = ([ActivitySession], Date) -> [ComputerHistoryQuarterHourGroup]
+        typealias BuildGroups = ([ActivitySession], Date) -> [ComputerHistoryTenMinuteGroup]
 
-        @Published private(set) var groups: [ComputerHistoryQuarterHourGroup] = []
+        @Published private(set) var groups: [ComputerHistoryTenMinuteGroup] = []
         @Published private(set) var isLoading = false
 
         private let queue: DispatchQueue
@@ -418,7 +418,7 @@
                 qos: .utility
             ),
             buildGroups: @escaping BuildGroups = { sessions, day in
-                ComputerHistoryQuarterHourGroup.build(sessions: sessions, day: day)
+                ComputerHistoryTenMinuteGroup.build(sessions: sessions, day: day)
             }
         ) {
             self.queue = queue
@@ -539,7 +539,7 @@
             .onDisappear(perform: timelineModel.clear)
         }
 
-        private var quarterHourGroups: [ComputerHistoryQuarterHourGroup] {
+        private var tenMinuteGroups: [ComputerHistoryTenMinuteGroup] {
             timelineModel.groups
         }
 
@@ -590,11 +590,11 @@
 
         private var recordingSummary: String {
             let events = snapshot.eventCount.formatted()
-            if timelineModel.isLoading, quarterHourGroups.isEmpty {
-                return "Preparing factual 15-minute windows from \(events) source events."
+            if timelineModel.isLoading, tenMinuteGroups.isEmpty {
+                return "Preparing factual 10-minute windows from \(events) source events."
             }
-            let windows = quarterHourGroups.count.formatted()
-            return "\(events) source events shown as \(windows) factual 15-minute windows. No AI summary is generated."
+            let windows = tenMinuteGroups.count.formatted()
+            return "\(events) source events shown as \(windows) factual 10-minute windows. No AI summary is generated."
         }
 
         private var historySection: some View {
@@ -609,12 +609,12 @@
                             "Durations are observed foreground intervals. They do not prove attention, identity, authorship or productivity."
                         )
                     Spacer(minLength: 12)
-                    if timelineModel.isLoading, quarterHourGroups.isEmpty {
+                    if timelineModel.isLoading, tenMinuteGroups.isEmpty {
                         ProgressView()
                             .controlSize(.small)
                             .help("Grouping recorded activity")
                     } else {
-                        Text("\(quarterHourGroups.count) windows")
+                        Text("\(tenMinuteGroups.count) windows")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -650,7 +650,7 @@
 
                     Divider()
 
-                    if timelineModel.isLoading, quarterHourGroups.isEmpty {
+                    if timelineModel.isLoading, tenMinuteGroups.isEmpty {
                         VStack(spacing: 11) {
                             ProgressView()
                                 .controlSize(.regular)
@@ -662,7 +662,7 @@
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
-                    } else if quarterHourGroups.isEmpty {
+                    } else if tenMinuteGroups.isEmpty {
                         VStack(spacing: 11) {
                             Image(systemName: "clock.badge.questionmark")
                                 .font(.system(size: 28, weight: .medium))
@@ -676,11 +676,11 @@
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
                     } else {
-                        ForEach(Array(quarterHourGroups.enumerated()), id: \.element.id) {
+                        ForEach(Array(tenMinuteGroups.enumerated()), id: \.element.id) {
                             index, group in
-                            ComputerHistoryQuarterHourRow(
+                            ComputerHistoryTenMinuteRow(
                                 group: group,
-                                isLast: index == quarterHourGroups.count - 1
+                                isLast: index == tenMinuteGroups.count - 1
                             )
                         }
                     }
@@ -1254,8 +1254,8 @@
         }
     }
 
-    private struct ComputerHistoryQuarterHourRow: View {
-        let group: ComputerHistoryQuarterHourGroup
+    private struct ComputerHistoryTenMinuteRow: View {
+        let group: ComputerHistoryTenMinuteGroup
         let isLast: Bool
         @State private var expanded = false
 
@@ -1408,7 +1408,7 @@
         }
 
         private func sessionDetailSummary(
-            _ session: ComputerHistoryQuarterHourGroup.SessionSlice
+            _ session: ComputerHistoryTenMinuteGroup.SessionSlice
         ) -> String {
             let interval =
                 "\(DashboardFormatters.shortTime.string(from: session.start))–"

@@ -72,31 +72,17 @@
                         navigationButton(section)
                     }
 
-                    Menu {
-                        ForEach(sourceSections) { section in
-                            Button {
-                                model.selectSection(section)
-                            } label: {
-                                Label(section.simpleTitle, systemImage: section.symbol)
-                            }
-                        }
-                        Divider()
-                        ForEach(utilitySections) { section in
-                            Button {
-                                model.selectSection(section)
-                            } label: {
-                                Label(section.simpleTitle, systemImage: section.symbol)
-                            }
-                        }
-                    } label: {
-                        navigationLabel(
-                            title: secondaryTitle,
-                            symbol: secondarySymbol,
-                            selected: secondaryIsSelected,
-                            trailingSymbol: "chevron.down"
-                        )
+                    navigationDivider
+
+                    ForEach(sourceSections) { section in
+                        navigationButton(section)
                     }
-                    .menuStyle(.borderlessButton)
+
+                    navigationDivider
+
+                    ForEach(utilitySections) { section in
+                        navigationButton(section)
+                    }
                 }
                 .padding(.horizontal, 10)
 
@@ -169,8 +155,7 @@
         private func navigationLabel(
             title: String,
             symbol: String,
-            selected: Bool,
-            trailingSymbol: String? = nil
+            selected: Bool
         ) -> some View {
             HStack(spacing: 12) {
                 Image(systemName: symbol)
@@ -180,11 +165,7 @@
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                 Spacer()
-                if let trailingSymbol {
-                    Image(systemName: trailingSymbol)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                } else if title == DashboardSection.share.simpleTitle, model.snapshot.sealedMinutes > 0 {
+                if title == DashboardSection.share.simpleTitle, model.snapshot.sealedMinutes > 0 {
                     Text("\(model.snapshot.sealedMinutes)")
                         .font(.system(size: 9, weight: .semibold, design: .rounded))
                         .foregroundStyle(.secondary)
@@ -203,20 +184,10 @@
             .contentShape(Rectangle())
         }
 
-        private var secondarySections: [DashboardSection] {
-            sourceSections + utilitySections
-        }
-
-        private var secondaryIsSelected: Bool {
-            secondarySections.contains(model.selectedSection)
-        }
-
-        private var secondaryTitle: String {
-            secondaryIsSelected ? model.selectedSection.simpleTitle : "More"
-        }
-
-        private var secondarySymbol: String {
-            secondaryIsSelected ? model.selectedSection.symbol : "ellipsis.circle"
+        private var navigationDivider: some View {
+            Divider()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
         }
 
         private var statusRow: some View {

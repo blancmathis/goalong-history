@@ -80,6 +80,38 @@
             XCTAssertTrue(dashboardModel.contains("activateFileViewerSelecting([file])"))
         }
 
+        func testSidebarExposesEveryDestinationWithoutAMoreMenu() throws {
+            let repositoryRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let source = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/DashboardRootView.swift"),
+                encoding: .utf8
+            )
+
+            XCTAssertTrue(
+                source.contains(
+                    "private let primarySections: [DashboardSection] = [.overview, .activity, .share]"
+                )
+            )
+            XCTAssertTrue(
+                source.contains(
+                    "private let sourceSections: [DashboardSection] = [.screenTime, .agentActivity, .chatGPTRecap]"
+                )
+            )
+            XCTAssertTrue(
+                source.contains(
+                    "private let utilitySections: [DashboardSection] = [.privacy, .settings]"
+                )
+            )
+            XCTAssertEqual(source.components(separatedBy: "ForEach(sourceSections)").count - 1, 1)
+            XCTAssertEqual(source.components(separatedBy: "ForEach(utilitySections)").count - 1, 1)
+            XCTAssertFalse(source.contains("Menu {"))
+            XCTAssertFalse(source.contains("\"More\""))
+        }
+
         func testComputerHistoryTimelineBuildsOnlyOncePerSnapshotRevision() {
             let firstBuild = expectation(description: "first timeline build")
             let secondBuild = expectation(description: "second timeline build")
@@ -164,7 +196,7 @@
             XCTAssertFalse(model.isLoading)
         }
 
-        func testComputerHistoryGroupsSessionsIntoLatestFirstQuarterHours() throws {
+        func testComputerHistoryGroupsSessionsIntoLatestFirstTenMinuteWindows() throws {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
             let day = try XCTUnwrap(
@@ -172,8 +204,8 @@
             )
             let textEdit = makeSession(
                 id: "textedit",
-                start: date(hour: 10, minute: 7, day: day, calendar: calendar),
-                end: date(hour: 10, minute: 20, day: day, calendar: calendar),
+                start: date(hour: 10, minute: 2, day: day, calendar: calendar),
+                end: date(hour: 10, minute: 8, day: day, calendar: calendar),
                 appName: "TextEdit",
                 bundleIdentifier: "com.apple.TextEdit",
                 eventCount: 8,
@@ -181,8 +213,8 @@
             )
             let chrome = makeSession(
                 id: "chrome",
-                start: date(hour: 10, minute: 17, day: day, calendar: calendar),
-                end: date(hour: 10, minute: 26, day: day, calendar: calendar),
+                start: date(hour: 10, minute: 11, day: day, calendar: calendar),
+                end: date(hour: 10, minute: 15, day: day, calendar: calendar),
                 appName: "Chrome",
                 bundleIdentifier: "com.google.Chrome",
                 eventCount: 11,
@@ -190,15 +222,15 @@
             )
             let codex = makeSession(
                 id: "codex",
-                start: date(hour: 10, minute: 31, day: day, calendar: calendar),
-                end: date(hour: 10, minute: 35, day: day, calendar: calendar),
+                start: date(hour: 10, minute: 21, day: day, calendar: calendar),
+                end: date(hour: 10, minute: 25, day: day, calendar: calendar),
                 appName: "Codex",
                 bundleIdentifier: "com.openai.codex",
                 eventCount: 4,
                 inputEventCount: 2
             )
 
-            let groups = ComputerHistoryQuarterHourGroup.build(
+            let groups = ComputerHistoryTenMinuteGroup.build(
                 sessions: [textEdit, chrome, codex],
                 day: day,
                 calendar: calendar
@@ -207,13 +239,56 @@
             XCTAssertEqual(groups.count, 3)
             XCTAssertEqual(
                 groups.map { calendar.component(.minute, from: $0.start) },
-                [30, 15, 0]
+                [20, 10, 0]
             )
             XCTAssertEqual(groups[0].apps.map(\.name), ["Codex"])
-            XCTAssertEqual(Set(groups[1].apps.map(\.name)), ["Chrome", "TextEdit"])
-            XCTAssertEqual(groups[1].appChangeCount, 1)
+            XCTAssertEqual(groups[1].apps.map(\.name), ["Chrome"])
+            XCTAssertEqual(groups[1].appChangeCount, 0)
             XCTAssertEqual(groups[1].recordedEventCount, 11)
             XCTAssertEqual(groups[1].inputEventCount, 7)
+        }
+
+        func testComputerHistorySortsAppsByUsageThenName() throws {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+            let day = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 8, day: 27))
+            )
+            let sessions = [
+                makeSession(
+                    id: "alpha",
+                    start: date(hour: 10, minute: 0, day: day, calendar: calendar),
+                    end: date(hour: 10, minute: 1, day: day, calendar: calendar),
+                    appName: "Alpha",
+                    bundleIdentifier: "com.example.alpha"
+                ),
+                makeSession(
+                    id: "bravo",
+                    start: date(hour: 10, minute: 2, day: day, calendar: calendar),
+                    end: date(hour: 10, minute: 6, day: day, calendar: calendar),
+                    appName: "Bravo",
+                    bundleIdentifier: "com.example.bravo"
+                ),
+                makeSession(
+                    id: "charlie",
+                    start: date(hour: 10, minute: 7, day: day, calendar: calendar),
+                    end: date(hour: 10, minute: 8, day: day, calendar: calendar),
+                    appName: "Charlie",
+                    bundleIdentifier: "com.example.charlie"
+                ),
+            ]
+
+            let group = try XCTUnwrap(
+                ComputerHistoryTenMinuteGroup.build(
+                    sessions: sessions,
+                    day: day,
+                    calendar: calendar
+                ).first
+            )
+
+            XCTAssertEqual(group.apps.map(\.name), ["Bravo", "Alpha", "Charlie"])
+            XCTAssertGreaterThan(group.apps[0].activeSeconds, group.apps[1].activeSeconds)
+            XCTAssertEqual(group.apps[1].activeSeconds, group.apps[2].activeSeconds)
         }
 
         func testComputerHistoryUsesUnionDurationAndSplitsBoundarySessions() throws {
@@ -237,30 +312,34 @@
                 bundleIdentifier: "com.google.Chrome"
             )
 
-            let groups = ComputerHistoryQuarterHourGroup.build(
+            let groups = ComputerHistoryTenMinuteGroup.build(
                 sessions: [first, overlapping],
                 day: day,
                 calendar: calendar
             )
-            let tenFifteen = try XCTUnwrap(
-                groups.first { calendar.component(.minute, from: $0.start) == 15 }
+            let tenTwenty = try XCTUnwrap(
+                groups.first { calendar.component(.minute, from: $0.start) == 20 }
+            )
+            let tenTen = try XCTUnwrap(
+                groups.first { calendar.component(.minute, from: $0.start) == 10 }
             )
             let tenOClock = try XCTUnwrap(
                 groups.first { calendar.component(.minute, from: $0.start) == 0 }
             )
 
-            XCTAssertEqual(tenOClock.activeSeconds, 8 * 60, accuracy: 0.01)
-            XCTAssertEqual(tenFifteen.activeSeconds, 11.5 * 60, accuracy: 0.01)
-            XCTAssertEqual(tenFifteen.sessions.count, 2)
+            XCTAssertEqual(tenOClock.activeSeconds, 3 * 60, accuracy: 0.01)
+            XCTAssertEqual(tenTen.activeSeconds, 10 * 60, accuracy: 0.01)
+            XCTAssertEqual(tenTwenty.activeSeconds, 6.5 * 60, accuracy: 0.01)
+            XCTAssertEqual(tenTen.sessions.count, 2)
             XCTAssertEqual(
-                tenFifteen.apps.reduce(0) { $0 + $1.activeSeconds },
-                tenFifteen.activeSeconds,
+                tenTen.apps.reduce(0) { $0 + $1.activeSeconds },
+                tenTen.activeSeconds,
                 accuracy: 0.01
             )
-            XCTAssertLessThanOrEqual(tenFifteen.activeSeconds, 15 * 60)
+            XCTAssertLessThanOrEqual(tenTen.activeSeconds, 10 * 60)
         }
 
-        func testComputerHistoryQuarterHourIndexIsBoundedToOneDay() throws {
+        func testComputerHistoryTenMinuteIndexIsBoundedToOneDay() throws {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
             let day = try XCTUnwrap(
@@ -279,14 +358,14 @@
                 )
             }
 
-            let groups = ComputerHistoryQuarterHourGroup.build(
+            let groups = ComputerHistoryTenMinuteGroup.build(
                 sessions: sessions,
                 day: day,
                 calendar: calendar
             )
 
-            XCTAssertEqual(groups.count, 96)
-            XCTAssertTrue(groups.allSatisfy { $0.activeSeconds <= 15 * 60 })
+            XCTAssertEqual(groups.count, 144)
+            XCTAssertTrue(groups.allSatisfy { $0.activeSeconds <= 10 * 60 })
         }
 
         func testComputerHistoryCompressesConsecutiveDetailsIntoAppTransitions() throws {
@@ -307,13 +386,13 @@
             let textEdit = makeSession(
                 id: "textedit",
                 start: date(hour: 10, minute: 19, day: day, calendar: calendar),
-                end: date(hour: 10, minute: 20, day: day, calendar: calendar),
+                end: date(hour: 10, minute: 19, day: day, calendar: calendar),
                 appName: "TextEdit",
                 bundleIdentifier: "com.apple.TextEdit"
             )
 
             let group = try XCTUnwrap(
-                ComputerHistoryQuarterHourGroup.build(
+                ComputerHistoryTenMinuteGroup.build(
                     sessions: chromeSessions + [textEdit],
                     day: day,
                     calendar: calendar

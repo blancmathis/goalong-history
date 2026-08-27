@@ -174,7 +174,7 @@
             case .appsAndSites:
                 return "See every observed app and website, then choose what Goalong may monitor in future."
             case .computerHistory:
-                return "Review recorded activity in factual 15-minute windows, without an AI-generated summary."
+                return "Review recorded activity in factual 10-minute windows, without an AI-generated summary."
             case .dayRecap:
                 return "Review the compact daily digest used by recap agents alongside full causal history."
             case .timeline:
