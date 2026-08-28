@@ -1297,6 +1297,8 @@ final class AgentDirectSourceScanSession {
     private let sourceRoot: AgentSourceRootCapability
     private var openCodeConnections: [String: SQLiteReadConnection] = [:]
     private var openCodeConnectionErrors: [String: AgentSourceReadError] = [:]
+    private var codexThreadTitles: CodexThreadTitleConnection?
+    private var didOpenCodexThreadTitles = false
     private var boundsOpenCodeConnectionSetup = false
 
     fileprivate init(
@@ -1390,7 +1392,7 @@ final class AgentDirectSourceScanSession {
         analysisInterval: DateInterval? = nil,
         observedAt: Date = Date()
     ) throws -> AgentCaptureRecord {
-        let record = try AgentDirectSourceReader.read(
+        var record = try AgentDirectSourceReader.read(
             candidate: candidate,
             folder: folder,
             previous: previous,
@@ -1410,6 +1412,17 @@ final class AgentDirectSourceScanSession {
             },
             fileManager: fileManager
         )
+        if folder.provider == .codex {
+            let sourceConversationID =
+                AgentDirectSourceReader.stableIdentifierFromFileName(
+                    URL(fileURLWithPath: candidate.reference.path),
+                    provider: .codex
+                ) ?? record.summary.sessionID
+            record.summary.title = codexConversationTitle(
+                for: record,
+                sourceConversationID: sourceConversationID
+            )
+        }
         return record
     }
 
@@ -1453,6 +1466,68 @@ final class AgentDirectSourceScanSession {
         }
     }
 
+    /// Codex keeps the user-facing task name in its own lightweight thread catalog rather than
+    /// repeating it in every rollout JSONL. Read that catalog directly and transiently, then fall
+    /// back to the first visible user request when an older/automated task has no explicit name.
+    /// Neither value is added to Goalong's persisted source index.
+    private func codexConversationTitle(
+        for record: AgentCaptureRecord,
+        sourceConversationID: String?
+    ) -> String? {
+        if let sourceConversationID,
+            let title = codexThreadTitleConnection()?.title(threadID: sourceConversationID)
+        {
+            return AgentUTF8Bound.optional(
+                title,
+                maximumBytes: AgentDocumentSummary.maximumTitleBytes
+            )
+        }
+
+        let parsedTitle = record.summary.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let parsedTitle, !parsedTitle.isEmpty,
+            !Self.isTechnicalCodexRolloutTitle(parsedTitle)
+        {
+            return parsedTitle
+        }
+
+        let firstUserRequest =
+            record.summary.visibleMessages.first(where: {
+                $0.role == .user
+            })?.text ?? record.summary.excerpt
+        return Self.compactConversationTitle(firstUserRequest)
+    }
+
+    private func codexThreadTitleConnection() -> CodexThreadTitleConnection? {
+        guard folder.provider == .codex else { return nil }
+        if didOpenCodexThreadTitles { return codexThreadTitles }
+        didOpenCodexThreadTitles = true
+        codexThreadTitles = try? CodexThreadTitleConnection(
+            path: folder.url.appendingPathComponent("state_5.sqlite", isDirectory: false).path
+        )
+        return codexThreadTitles
+    }
+
+    private static func isTechnicalCodexRolloutTitle(_ title: String) -> Bool {
+        let lower = title.lowercased()
+        return lower.hasPrefix("rollout-") && lower.contains("-")
+    }
+
+    private static func compactConversationTitle(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let firstMeaningfulLine = raw.split(whereSeparator: \Character.isNewline).first(where: {
+            let line = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !line.isEmpty && !line.hasPrefix("#") && !line.hasPrefix("<")
+        })
+        guard let firstMeaningfulLine else { return nil }
+        let compact = firstMeaningfulLine.split(whereSeparator: \Character.isWhitespace)
+            .joined(separator: " ")
+        guard !compact.isEmpty else { return nil }
+        return AgentUTF8Bound.optional(
+            compact,
+            maximumBytes: AgentDocumentSummary.maximumTitleBytes
+        )
+    }
+
     private func openFileDescriptor(candidate: AgentSourceCandidate) throws -> Int32 {
         try openFileDescriptor(
             reference: candidate.reference,
@@ -1493,6 +1568,162 @@ final class AgentDirectSourceScanSession {
         return AgentDirectSourceReader.sameFileSnapshot(currentStatus, expectedStatus)
     }
 
+}
+
+/// Read-only view of Codex's own task-name catalog. This connection is process-local, performs
+/// one indexed lookup per visible conversation, and never materializes or persists a catalog.
+final class CodexThreadTitleConnection {
+    private var database: OpaquePointer?
+    private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+    init(path: String) throws {
+        var authorizedStatus = stat()
+        guard Darwin.lstat(path, &authorizedStatus) == 0,
+            authorizedStatus.st_mode & S_IFMT == S_IFREG
+        else {
+            if errno == ENOENT { throw AgentSourceReadError.missing(path) }
+            throw AgentSourceReadError.inaccessible(path)
+        }
+        guard let resolvedCString = Darwin.realpath(path, nil) else {
+            throw AgentSourceReadError.inaccessible(path)
+        }
+        let resolvedPath = String(cString: resolvedCString)
+        Darwin.free(resolvedCString)
+        var resolvedStatus = stat()
+        guard Darwin.lstat(resolvedPath, &resolvedStatus) == 0,
+            resolvedStatus.st_mode & S_IFMT == S_IFREG,
+            resolvedStatus.st_dev == authorizedStatus.st_dev,
+            resolvedStatus.st_ino == authorizedStatus.st_ino
+        else {
+            throw AgentSourceReadError.inaccessible(path)
+        }
+
+        let databaseURL = URL(fileURLWithPath: resolvedPath).absoluteString + "?mode=ro"
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW
+        guard sqlite3_open_v2(databaseURL, &database, flags, nil) == SQLITE_OK,
+            sqlite3_db_readonly(database, "main") == 1
+        else {
+            if database != nil { sqlite3_close(database) }
+            database = nil
+            throw AgentSourceReadError.inaccessible(path)
+        }
+        do {
+            try executeConnectionPragma("PRAGMA query_only=ON")
+            try executeConnectionPragma("PRAGMA temp_store=MEMORY")
+            guard try integerConnectionPragma("PRAGMA query_only") == 1,
+                try integerConnectionPragma("PRAGMA temp_store") == 2,
+                try integerConnectionPragma("PRAGMA mmap_size=0") == 0
+            else {
+                throw AgentSourceReadError.unsupported(
+                    "Codex's task catalog could not be locked to read-only operation."
+                )
+            }
+            sqlite3_busy_timeout(database, 100)
+        } catch {
+            sqlite3_close(database)
+            database = nil
+            throw error
+        }
+    }
+
+    deinit {
+        if database != nil { sqlite3_close(database) }
+    }
+
+    func title(threadID: String) -> String? {
+        guard !threadID.isEmpty, threadID.utf8.count <= AgentDocumentSummary.maximumSessionIDBytes else {
+            return nil
+        }
+        if let row = row(
+            sql: "SELECT NULLIF(name, ''), NULLIF(title, '') FROM threads WHERE id = ? LIMIT 1",
+            threadID: threadID
+        ) {
+            return Self.displayTitle(name: row.0, fallback: row.1)
+        }
+        // Older Codex catalogs predate the optional user-facing `name` column.
+        if let row = row(
+            sql: "SELECT NULL, NULLIF(title, '') FROM threads WHERE id = ? LIMIT 1",
+            threadID: threadID
+        ) {
+            return Self.displayTitle(name: row.0, fallback: row.1)
+        }
+        return nil
+    }
+
+    private func row(sql: String, threadID: String) -> (String?, String?)? {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            if statement != nil { sqlite3_finalize(statement) }
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_stmt_readonly(statement) == 1,
+            sqlite3_bind_text(statement, 1, threadID, -1, sqliteTransient) == SQLITE_OK,
+            sqlite3_step(statement) == SQLITE_ROW
+        else { return nil }
+        return (
+            string(statement, column: 0),
+            string(statement, column: 1)
+        )
+    }
+
+    private func string(_ statement: OpaquePointer?, column: Int32) -> String? {
+        guard sqlite3_column_type(statement, column) == SQLITE_TEXT,
+            sqlite3_column_bytes(statement, column) <= AgentDocumentSummary.maximumTitleBytes * 8,
+            let text = sqlite3_column_text(statement, column)
+        else { return nil }
+        return String(cString: text).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func executeConnectionPragma(_ sql: String) throws {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw AgentSourceReadError.unsupported(
+                "Codex's task catalog could not be locked to read-only operation."
+            )
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_stmt_readonly(statement) == 1,
+            sqlite3_step(statement) == SQLITE_DONE
+        else {
+            throw AgentSourceReadError.unsupported(
+                "Codex's task catalog could not be locked to read-only operation."
+            )
+        }
+    }
+
+    private func integerConnectionPragma(_ sql: String) throws -> Int32 {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw AgentSourceReadError.unsupported(
+                "Codex's task catalog read-only state could not be verified."
+            )
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_stmt_readonly(statement) == 1,
+            sqlite3_step(statement) == SQLITE_ROW
+        else {
+            throw AgentSourceReadError.unsupported(
+                "Codex's task catalog read-only state could not be verified."
+            )
+        }
+        return sqlite3_column_int(statement, 0)
+    }
+
+    private static func displayTitle(name: String?, fallback: String?) -> String? {
+        let raw = [name, fallback].compactMap { value -> String? in
+            let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        }.first
+        guard let raw else { return nil }
+        let firstLine = raw.split(whereSeparator: \Character.isNewline).first.map(String.init) ?? raw
+        let compact = firstLine.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
+        guard !compact.isEmpty else { return nil }
+        return AgentUTF8Bound.optional(
+            compact,
+            maximumBytes: AgentDocumentSummary.maximumTitleBytes
+        )
+    }
 }
 
 enum AgentDirectSourceReader {

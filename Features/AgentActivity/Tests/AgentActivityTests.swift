@@ -46,6 +46,108 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertEqual(try fixture.sourceFiles.map { try Data(contentsOf: $0) }, originalSourceBytes)
     }
 
+    func testCodexConversationUsesUserFacingNameWithoutPersistingIt() throws {
+        let codexRoot = try makeTemporaryDirectory("codex-title-source")
+        let sessions = codexRoot.appendingPathComponent("sessions/2026/08/28", isDirectory: true)
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        let sessionID = "10000000-0000-4000-8000-000000000123"
+        let source = sessions.appendingPathComponent(
+            "rollout-2026-08-28T20-00-00-\(sessionID).jsonl"
+        )
+        let fallbackPrompt = "FALLBACK-PROMPT-MUST-NOT-BE-PERSISTED"
+        try Data(codexTranscript(sessionID: sessionID, messages: [fallbackPrompt]).utf8)
+            .write(to: source)
+
+        let userFacingName = "Clarifier le vrai titre Codex"
+        let catalog = codexRoot.appendingPathComponent("state_5.sqlite")
+        try createCodexThreadCatalog(
+            at: catalog,
+            sessionID: sessionID,
+            title: fallbackPrompt,
+            name: userFacingName
+        )
+        let sourceBefore = try Data(contentsOf: source)
+        let catalogBefore = try Data(contentsOf: catalog)
+        XCTAssertEqual(
+            try CodexThreadTitleConnection(path: catalog.path).title(threadID: sessionID),
+            userFacingName
+        )
+
+        let store = try AgentActivityStore(
+            rootDirectory: try makeTemporaryDirectory("codex-title-store")
+        )
+        let folder = AgentWatchedFolder(
+            displayName: "Codex",
+            path: codexRoot.path,
+            provider: .codex
+        )
+        let result = AgentActivityScanner(store: store).scan(
+            configuration: AgentActivityConfiguration(watchedFolders: [folder]),
+            forceFullDiscovery: true
+        )
+
+        let capture = try XCTUnwrap(result.captures.first)
+        XCTAssertEqual(capture.summary.title, userFacingName)
+        store.discardTransientSummaries()
+        let rehydrated = try store.directRead(
+            entryID: capture.id,
+            maximumBytes: AgentActivityConfiguration().maximumFileBytes,
+            expectedReference: capture.index.reference
+        )
+        XCTAssertEqual(rehydrated.summary.title, userFacingName)
+        XCTAssertEqual(try Data(contentsOf: source), sourceBefore)
+        XCTAssertEqual(try Data(contentsOf: catalog), catalogBefore)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: catalog.path + "-wal"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: catalog.path + "-shm"))
+        let persistedIndex = try String(contentsOf: store.indexFile, encoding: .utf8)
+        XCTAssertFalse(persistedIndex.contains(userFacingName))
+        XCTAssertFalse(persistedIndex.contains(fallbackPrompt))
+    }
+
+    func testCodexConversationWithoutCatalogNeverShowsRolloutFilename() throws {
+        let codexRoot = try makeTemporaryDirectory("codex-title-fallback-source")
+        let sessions = codexRoot.appendingPathComponent("sessions/2026/08/28", isDirectory: true)
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        let sessionID = "10000000-0000-4000-8000-000000000124"
+        let source = sessions.appendingPathComponent(
+            "rollout-2026-08-28T20-01-00-\(sessionID).jsonl"
+        )
+        let prompt = "Résumer proprement cette conversation"
+        try Data(codexTranscript(sessionID: sessionID, messages: [prompt]).utf8).write(to: source)
+
+        let store = try AgentActivityStore(
+            rootDirectory: try makeTemporaryDirectory("codex-title-fallback-store")
+        )
+        let folder = AgentWatchedFolder(
+            displayName: "Codex",
+            path: codexRoot.path,
+            provider: .codex
+        )
+        let result = AgentActivityScanner(store: store).scan(
+            configuration: AgentActivityConfiguration(watchedFolders: [folder]),
+            forceFullDiscovery: true
+        )
+
+        let capture = try XCTUnwrap(result.captures.first)
+        XCTAssertEqual(capture.summary.title, prompt)
+        XCTAssertFalse(capture.summary.title?.hasPrefix("rollout-") == true)
+        XCTAssertFalse(try String(contentsOf: store.indexFile, encoding: .utf8).contains(prompt))
+    }
+
+    func testOptInRealCodexCatalogReadsCurrentOriginalTitle() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let catalogPath = environment["GOALONG_REAL_CODEX_CATALOG"],
+            let threadID = environment["GOALONG_REAL_CODEX_THREAD_ID"]
+        else {
+            throw XCTSkip("Set the real Codex catalog path and thread ID for a read-only integration check.")
+        }
+        let title = try XCTUnwrap(
+            try CodexThreadTitleConnection(path: catalogPath).title(threadID: threadID)
+        )
+        XCTAssertFalse(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        XCTAssertFalse(title.lowercased().hasPrefix("rollout-"))
+    }
+
     func testTranscriptAndHookContentsAreNeverCopiedIntoGoalongStorage() throws {
         let fixture = try makeProviderFixture()
         let applicationSupportRoot = try makeTemporaryDirectory("no-copy-application-support")
@@ -502,6 +604,33 @@ final class AgentActivityTests: XCTestCase {
             if let error { sqlite3_free(error) }
             XCTAssertEqual(result, SQLITE_OK, message ?? statement)
         }
+    }
+
+    private func createCodexThreadCatalog(
+        at url: URL,
+        sessionID: String,
+        title: String,
+        name: String?
+    ) throws {
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &database), SQLITE_OK)
+        defer { sqlite3_close(database) }
+        let create = "CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL, name TEXT)"
+        XCTAssertEqual(sqlite3_exec(database, create, nil, nil, nil), SQLITE_OK)
+
+        var statement: OpaquePointer?
+        let insert = "INSERT INTO threads (id, title, name) VALUES (?, ?, ?)"
+        XCTAssertEqual(sqlite3_prepare_v2(database, insert, -1, &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        XCTAssertEqual(sqlite3_bind_text(statement, 1, sessionID, -1, transient), SQLITE_OK)
+        XCTAssertEqual(sqlite3_bind_text(statement, 2, title, -1, transient), SQLITE_OK)
+        if let name {
+            XCTAssertEqual(sqlite3_bind_text(statement, 3, name, -1, transient), SQLITE_OK)
+        } else {
+            XCTAssertEqual(sqlite3_bind_null(statement, 3), SQLITE_OK)
+        }
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_DONE)
     }
 
     private func regularFiles(containing needle: Data, beneath root: URL) throws -> [URL] {
