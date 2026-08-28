@@ -14,7 +14,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-readiness:
+    runs-on: macos-15
+    outputs:
+      apple_enabled: ${{ steps.check.outputs.apple_enabled }}
+    steps:
+      - name: Check release credentials
+        id: check
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          for name in SPARKLE_PUBLIC_ED_KEY SPARKLE_PRIVATE_ED_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required Sparkle release value: $name" >&2
+              exit 1
+            fi
+          done
+
+          apple_values=(
+            MACOS_CERTIFICATE_P12
+            MACOS_CERTIFICATE_PASSWORD
+            APPLE_API_KEY_ID
+            APPLE_API_ISSUER_ID
+            APPLE_API_PRIVATE_KEY
+          )
+          apple_missing=()
+          for name in "${apple_values[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              apple_missing+=("$name")
+            fi
+          done
+          if (( ${#apple_missing[@]} > 0 )); then
+            echo "apple_enabled=false" >> "$GITHUB_OUTPUT"
+            printf 'Public release skipped; missing Apple value: %s\n' "${apple_missing[@]}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Goalong History will not publish an ad-hoc update because a changing CDHash can invalidate macOS privacy permissions." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "apple_enabled=true" >> "$GITHUB_OUTPUT"
+
   publish-latest-main:
+    needs: release-readiness
+    if: ${{ needs.release-readiness.outputs.apple_enabled == 'true' }}
     runs-on: macos-15
     timeout-minutes: 45
     env:

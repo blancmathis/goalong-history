@@ -1,6 +1,6 @@
 # Shipping macOS releases
 
-Goalong History's normal installation path must never ask users to install Xcode or compile source code. Rolling releases are universal, distributed as a drag-to-Applications DMG, authenticated for in-app updates with Sparkle EdDSA, Developer ID signed, and notarized by Apple. The workflow refuses to publish until every signing credential is configured.
+Goalong History's normal installation path must never ask users to install Xcode or compile source code. Rolling releases are universal, distributed as a drag-to-Applications DMG, authenticated for in-app updates with Sparkle EdDSA, Developer ID signed, and notarized by Apple. The publication job is skipped until every Apple signing credential is configured.
 
 ## Required rolling-release configuration
 
@@ -57,7 +57,7 @@ Existing installations that predate Sparkle cannot discover Sparkle by themselve
    - builds both architectures;
    - embeds the exact-pinned Sparkle framework;
    - explicitly signs Sparkle's nested helpers and the app without `--deep`;
-   - fails closed when any Apple credential is absent;
+   - skips publication when any Apple credential is absent, without building an ad-hoc artifact;
    - applies Developer ID signing and notarization;
    - creates the DMG and ZIP;
    - generates an EdDSA-signed Sparkle enclosure and signed appcast;

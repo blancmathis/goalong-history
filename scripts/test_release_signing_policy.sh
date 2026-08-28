@@ -8,8 +8,10 @@ INSTALLER="$ROOT_DIR/install.sh"
 /usr/bin/grep -Fq 'Missing required Apple release value:' "$WORKFLOW"
 /usr/bin/grep -Fq 'refuses to publish an ad-hoc signed update' "$WORKFLOW"
 /usr/bin/grep -Fq 'Developer ID signed and notarized by Apple' "$WORKFLOW"
+/usr/bin/grep -Fq 'Public release skipped; missing Apple value:' "$WORKFLOW"
+/usr/bin/grep -Fq "needs.release-readiness.outputs.apple_enabled == 'true'" "$WORKFLOW"
 
-if /usr/bin/grep -Eq 'apple_enabled=false|Sparkle EdDSA \(free mode\)|This build is ad-hoc code signed' "$WORKFLOW"; then
+if /usr/bin/grep -Eq 'Sparkle EdDSA \(free mode\)|This build is ad-hoc code signed' "$WORKFLOW"; then
   echo "The public release workflow still contains an ad-hoc publication path." >&2
   exit 1
 fi

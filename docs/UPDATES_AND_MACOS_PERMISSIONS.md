@@ -46,7 +46,7 @@ These authenticate the archive and feed, but are not sufficient by themselves to
 
 ### Required Apple verification
 
-Developer ID signing and notarization are mandatory for public releases. The workflow fails before building or publishing when any value is absent.
+Developer ID signing and notarization are mandatory for public releases. The publication job is skipped before building when any value is absent.
 
 Required private GitHub Actions secrets:
 
