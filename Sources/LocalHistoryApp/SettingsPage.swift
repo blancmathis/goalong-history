@@ -95,10 +95,10 @@
                     Divider().padding(.leading, 62)
                     settingsNavigationRow(
                         title: "Sources",
-                        detail: "Manage Computer History, Screen Time and AI conversations.",
+                        detail: "Manage local AI conversation folders and integrations.",
                         symbol: "externaldrive.connected.to.line.below"
                     ) {
-                        model.selectSection(.history)
+                        model.selectSection(.agentActivity)
                     }
                     Divider().padding(.leading, 62)
                     settingsNavigationRow(

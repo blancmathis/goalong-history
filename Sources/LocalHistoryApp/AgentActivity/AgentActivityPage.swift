@@ -3,27 +3,38 @@
     import AppKit
     import SwiftUI
 
+    enum AgentActivityPresentation {
+        case history
+        case management
+    }
+
     struct AgentActivityPage: View {
         @ObservedObject var agents: AgentActivityRuntime
         @State private var search = ""
         @State private var providerFilter: AgentProvider?
         @State private var editingFolder: AgentWatchedFolder?
-        private let showsHeader: Bool
+        private let presentation: AgentActivityPresentation
 
-        init(agents: AgentActivityRuntime, showsHeader: Bool = true) {
+        init(
+            agents: AgentActivityRuntime,
+            presentation: AgentActivityPresentation = .management
+        ) {
             self.agents = agents
-            self.showsHeader = showsHeader
+            self.presentation = presentation
         }
 
         var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if showsHeader {
+                    if presentation == .history {
+                        conversationHistorySummary
+                        conversationHistoryList
+                    } else {
                         PageHeader(
-                            eyebrow: "Local agent memory",
-                            title: "Agentic work",
+                            eyebrow: "Sources",
+                            title: "AI conversation sources",
                             subtitle:
-                                "Analyze local agent conversations directly from each provider’s original storage. Goalong keeps only a bounded source index, never a second transcript archive."
+                                "Choose the original local sources Goalong may read. Conversation bodies are never copied into Goalong storage."
                         ) {
                             HStack(spacing: 9) {
                                 DateSelectionControl(date: agents.selectedDay, onChange: agents.selectDay)
@@ -46,17 +57,16 @@
                                 .buttonStyle(.borderedProminent)
                             }
                         }
+                        localStatusBanner
+                        metrics
+                        integrationCard
+                        watchedFoldersCard
+                        captureHistoryCard
+                        storageAndPrivacyCard
                     }
-
-                    localStatusBanner
-                    metrics
-                    integrationCard
-                    watchedFoldersCard
-                    captureHistoryCard
-                    storageAndPrivacyCard
                 }
                 .padding(.horizontal, 24)
-                .padding(.top, showsHeader ? 28 : 18)
+                .padding(.top, presentation == .management ? 28 : 18)
                 .padding(.bottom, 50)
             }
             .background(LHTheme.pageBackground)
@@ -82,6 +92,161 @@
                 }
             }
         }
+
+        private var conversationHistorySummary: some View {
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(agents.overview.sessionCount) conversation\(agents.overview.sessionCount == 1 ? "" : "s")")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    Text(conversationSummaryDetail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if agents.isScanning {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Reading changed sources…")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Label("Read from original sources", systemImage: "internaldrive")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.bottom, 2)
+        }
+
+        private var conversationHistoryList: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Text("Conversations")
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    Spacer()
+                    Picker("Provider", selection: $providerFilter) {
+                        Text("All providers").tag(nil as AgentProvider?)
+                        ForEach(AgentProvider.allCases) { provider in
+                            Text(provider.displayName).tag(provider as AgentProvider?)
+                        }
+                    }
+                    .frame(width: 160)
+                    TextField("Search conversations", text: $search)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 230)
+                }
+
+                LHCard(padding: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        if filteredCaptures.isEmpty {
+                            EmptyStateView(
+                                symbol: agents.isScanning ? "arrow.triangle.2.circlepath" : "bubble.left.and.bubble.right",
+                                title: agents.isScanning ? "Reading conversations" : "No conversations for this day",
+                                message: agents.isScanning
+                                    ? "Goalong is checking changed original sources."
+                                    : "Try another day or review AI conversation sources in Settings."
+                            )
+                            .frame(minHeight: 230)
+                        } else {
+                            ForEach(Array(filteredCaptures.prefix(120).enumerated()), id: \.element.id) { index, record in
+                                conversationRow(record)
+                                if index < min(filteredCaptures.count, 120) - 1 {
+                                    Divider().padding(.leading, 88)
+                                }
+                            }
+                            if filteredCaptures.count > 120 {
+                                Text("Showing the 120 newest matching conversations")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private func conversationRow(_ record: AgentCaptureRecord) -> some View {
+            HStack(alignment: .center, spacing: 14) {
+                Text(Self.timeFormatter.string(from: conversationDate(record)))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .frame(width: 42, alignment: .trailing)
+
+                providerIcon(record.provider)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(conversationTitle(record))
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Text(conversationDetail(record))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 16)
+
+                if record.availability != .available {
+                    Label(record.availability.displayName, systemImage: statusSymbol(record.availability))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(LHTheme.warning)
+                }
+
+                Menu {
+                    Button("Reveal original source") { agents.openOriginal(record) }
+                    Button("Verify original SHA-256") { agents.verify(record) }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 24, height: 24)
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 30)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+        }
+
+        private var conversationSummaryDetail: String {
+            let providerCount = Set(agents.overview.captures.map { $0.provider.rawValue }).count
+            let messageCount = agents.overview.visibleMessageCount
+            return "\(messageCount) useful message\(messageCount == 1 ? "" : "s") · \(providerCount) provider\(providerCount == 1 ? "" : "s")"
+        }
+
+        private func conversationTitle(_ record: AgentCaptureRecord) -> String {
+            let title = record.summary.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return title.isEmpty ? "\(record.provider.displayName) conversation" : title
+        }
+
+        private func conversationDetail(_ record: AgentCaptureRecord) -> String {
+            guard record.availability == .available else {
+                return "\(record.provider.displayName) · Original source \(record.availability.displayName.lowercased())"
+            }
+            let prompts = record.summary.visibleMessages.filter { $0.role == .user }.count
+            let answers = record.summary.visibleMessages.filter { $0.role == .assistantFinal }.count
+            guard record.isAnalyzed, prompts + answers > 0 else {
+                return "\(record.provider.displayName) · Indexed from original source"
+            }
+            return "\(record.provider.displayName) · \(prompts) prompt\(prompts == 1 ? "" : "s") · \(answers) final answer\(answers == 1 ? "" : "s")"
+        }
+
+        private func conversationDate(_ record: AgentCaptureRecord) -> Date {
+            record.summary.startedAt
+                ?? record.index.conversationStartedAt
+                ?? record.sourceModifiedAt
+                ?? record.capturedAt
+        }
+
+        private static let timeFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.locale = .current
+            formatter.dateFormat = "HH:mm"
+            return formatter
+        }()
 
         private var localStatusBanner: some View {
             HStack(alignment: .top, spacing: 13) {

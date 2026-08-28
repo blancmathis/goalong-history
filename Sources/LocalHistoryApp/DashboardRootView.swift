@@ -280,9 +280,9 @@
             switch self {
             case .overview, .chatGPTRecap, .share:
                 return .overview
-            case .history, .activity, .screenTime, .agentActivity:
+            case .history, .activity, .screenTime:
                 return .history
-            case .privacy, .settings:
+            case .agentActivity, .privacy, .settings:
                 return .settings
             }
         }

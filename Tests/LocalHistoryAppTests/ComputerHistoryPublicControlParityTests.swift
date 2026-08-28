@@ -110,10 +110,12 @@
                     .appendingPathComponent("Sources/LocalHistoryApp/UnifiedHistoryPage.swift"),
                 encoding: .utf8
             )
-            XCTAssertTrue(history.contains("case all"))
+            XCTAssertFalse(history.contains("case all"))
             XCTAssertTrue(history.contains("case computer"))
             XCTAssertTrue(history.contains("case screenTime"))
             XCTAssertTrue(history.contains("case conversations"))
+            XCTAssertTrue(history.contains("@State private var source: HistorySource = .computer"))
+            XCTAssertTrue(history.contains("presentation: .history"))
             XCTAssertTrue(history.contains("Label(\"Share day\", systemImage: \"square.and.arrow.up\")"))
 
             let settings = try String(
@@ -124,8 +126,19 @@
             XCTAssertTrue(settings.contains("case .home:"))
             XCTAssertTrue(settings.contains("title: \"Recording\""))
             XCTAssertTrue(settings.contains("title: \"Sources\""))
+            XCTAssertTrue(settings.contains("model.selectSection(.agentActivity)"))
             XCTAssertTrue(settings.contains("title: \"Privacy & permissions\""))
             XCTAssertTrue(settings.contains("title: \"Advanced\""))
+
+            let agentActivity = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/AgentActivity/AgentActivityPage.swift"),
+                encoding: .utf8
+            )
+            XCTAssertTrue(agentActivity.contains("case history"))
+            XCTAssertTrue(agentActivity.contains("conversationHistoryList"))
+            XCTAssertTrue(agentActivity.contains("Read from original sources"))
+            XCTAssertTrue(agentActivity.contains("final answer"))
 
             let components = try String(
                 contentsOf: repositoryRoot
