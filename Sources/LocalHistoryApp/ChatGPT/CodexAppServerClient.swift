@@ -437,6 +437,124 @@
             }
             return redactedMarkdown
         }
+
+        func completedAssessment() throws -> ChatGPTDailyAssessment {
+            let raw = (finalText ?? streamed).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else {
+                throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
+            }
+            guard raw.utf8.count <= limits.maximumRecapMarkdownBytes else {
+                throw CodexAppServerError.protocolLimitExceeded(
+                    "daily assessment output exceeded \(limits.maximumRecapMarkdownBytes) bytes"
+                )
+            }
+            return try ChatGPTDailyAssessment.decode(raw)
+        }
+    }
+
+    struct ChatGPTDailyAssessment: Codable, Equatable {
+        static let requiredSummaryLineCount = 5
+        static let maximumSummaryLineBytes = 512
+
+        let productivityScore: Int
+        let confidenceScore: Int
+        let summaryLines: [String]
+
+        init(productivityScore: Int, confidenceScore: Int, summaryLines: [String]) throws {
+            guard (0...100).contains(productivityScore), (0...100).contains(confidenceScore) else {
+                throw CodexAppServerError.malformedResponse(
+                    "daily assessment scores must be between 0 and 100"
+                )
+            }
+            guard summaryLines.count == Self.requiredSummaryLineCount else {
+                throw CodexAppServerError.malformedResponse(
+                    "daily assessment must contain exactly five summary lines"
+                )
+            }
+            let sanitized = summaryLines.map { raw -> String in
+                let redacted = ActivitySemanticTextSanitizer.redact(raw) ?? ""
+                return CodexAppServerLimits.boundedUTF8(
+                    redacted.trimmingCharacters(in: .whitespacesAndNewlines),
+                    maximumBytes: Self.maximumSummaryLineBytes
+                )
+            }
+            guard sanitized.allSatisfy({ !$0.isEmpty }) else {
+                throw CodexAppServerError.malformedResponse(
+                    "daily assessment summary lines must not be empty"
+                )
+            }
+            self.productivityScore = productivityScore
+            self.confidenceScore = confidenceScore
+            self.summaryLines = sanitized
+        }
+
+        static func decode(_ raw: String) throws -> ChatGPTDailyAssessment {
+            guard let data = raw.data(using: .utf8) else {
+                throw CodexAppServerError.malformedResponse("daily assessment was not UTF-8")
+            }
+            do {
+                let decoded = try JSONDecoder().decode(Unvalidated.self, from: data)
+                return try ChatGPTDailyAssessment(
+                    productivityScore: decoded.productivityScore,
+                    confidenceScore: decoded.confidenceScore,
+                    summaryLines: decoded.summaryLines
+                )
+            } catch let error as CodexAppServerError {
+                throw error
+            } catch {
+                throw CodexAppServerError.malformedResponse(
+                    "daily assessment did not match the required JSON schema"
+                )
+            }
+        }
+
+        var markdown: String {
+            summaryLines.joined(separator: "\n")
+        }
+
+        private struct Unvalidated: Decodable {
+            let productivityScore: Int
+            let confidenceScore: Int
+            let summaryLines: [String]
+        }
+    }
+
+    enum CodexDailyAssessmentContract {
+        static let model = "gpt-5.6-luna"
+        static let reasoningEffort = "high"
+        static let threadStartTimeout: TimeInterval = 120
+        static let turnStartTimeout: TimeInterval = 120
+        static let generationTimeout: TimeInterval = 900
+
+        static var outputSchema: [String: Any] {
+            [
+                "type": "object",
+                "properties": [
+                    "productivityScore": [
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                    ],
+                    "confidenceScore": [
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                    ],
+                    "summaryLines": [
+                        "type": "array",
+                        "items": [
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": ChatGPTDailyAssessment.maximumSummaryLineBytes,
+                        ],
+                        "minItems": ChatGPTDailyAssessment.requiredSummaryLineCount,
+                        "maxItems": ChatGPTDailyAssessment.requiredSummaryLineCount,
+                    ],
+                ],
+                "required": ["productivityScore", "confidenceScore", "summaryLines"],
+                "additionalProperties": false,
+            ]
+        }
     }
 
     struct CodexAccount: Equatable {
@@ -574,6 +692,9 @@
                 inheriting: ProcessInfo.processInfo.environment,
                 codexHomeURL: codexHomeURL
             )
+            process.terminationHandler = { _ in
+                try? Self.pruneEphemeralCodexArtifacts(at: codexHomeURL)
+            }
 
             errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
                 let data = handle.availableData
@@ -712,13 +833,15 @@
             prompt: String,
             workingDirectory: URL,
             onDelta: ((String) -> Void)? = nil
-        ) throws -> String {
+        ) throws -> ChatGPTDailyAssessment {
             guard let account = try readAccount(refreshToken: true) else {
                 throw CodexAppServerError.accountNotChatGPT("signed-out")
             }
             guard account.isManagedChatGPT else {
                 throw CodexAppServerError.accountNotChatGPT(account.type)
             }
+
+            try requireDailyAssessmentModel()
 
             let started = try request(
                 method: "thread/start",
@@ -731,8 +854,12 @@
                     "environments": [] as [Any],
                     "personality": "pragmatic",
                     "serviceName": "goalong_history",
+                    "model": CodexDailyAssessmentContract.model,
+                    "config": [
+                        "model_reasoning_effort": CodexDailyAssessmentContract.reasoningEffort,
+                    ],
                 ],
-                timeout: 30,
+                timeout: CodexDailyAssessmentContract.threadStartTimeout,
                 operation: "starting the recap agent"
             )
             guard let thread = started["thread"] as? [String: Any],
@@ -752,6 +879,16 @@
                     "Codex did not create an ephemeral thread; update the Codex CLI"
                 )
             }
+            guard started["model"] as? String == CodexDailyAssessmentContract.model else {
+                throw CodexAppServerError.generationFailed(
+                    "Codex did not start GPT-5.6 Luna. Goalong will not silently use another model."
+                )
+            }
+            guard started["reasoningEffort"] as? String == CodexDailyAssessmentContract.reasoningEffort else {
+                throw CodexAppServerError.generationFailed(
+                    "Codex did not start GPT-5.6 Luna with High reasoning. Goalong will not silently use another effort."
+                )
+            }
             guard let activeProfile = started["activePermissionProfile"] as? [String: Any],
                 activeProfile["id"] as? String == Self.recapPermissionProfile
             else {
@@ -759,22 +896,21 @@
                     "Codex did not activate Goalong's restricted recap permission profile; update the Codex CLI"
                 )
             }
+            guard let startedWorkingDirectory = started["cwd"] as? String,
+                Self.pathsMatchExactly([startedWorkingDirectory], expected: [workingDirectory])
+            else {
+                throw CodexAppServerError.malformedResponse(
+                    "Codex did not start the recap inside Goalong's temporary workspace"
+                )
+            }
             guard let roots = started["runtimeWorkspaceRoots"] as? [String],
-                Self.pathsMatchExactly(roots, expected: [workingDirectory])
+                Self.workspaceRootsAreConfined(roots, to: workingDirectory)
             else {
                 throw CodexAppServerError.malformedResponse(
                     "Codex did not confine the recap to Goalong's temporary workspace"
                 )
             }
 
-            let schema: [String: Any] = [
-                "type": "object",
-                "properties": [
-                    "markdown": ["type": "string"]
-                ],
-                "required": ["markdown"],
-                "additionalProperties": false,
-            ]
             _ = try request(
                 method: "turn/start",
                 params: [
@@ -785,15 +921,14 @@
                     "approvalPolicy": "never",
                     "permissions": Self.recapPermissionProfile,
                     "environments": [] as [Any],
-                    "effort": "medium",
                     "summary": "concise",
-                    "outputSchema": schema,
+                    "outputSchema": CodexDailyAssessmentContract.outputSchema,
                 ],
-                timeout: 30,
+                timeout: CodexDailyAssessmentContract.turnStartTimeout,
                 operation: "starting the recap turn"
             )
 
-            let deadline = Date().addingTimeInterval(900)
+            let deadline = Date().addingTimeInterval(CodexDailyAssessmentContract.generationTimeout)
             var output = CodexRecapOutputCollector(limits: limits)
             var streamingRedactor = CodexStreamingRedactor()
             var failureMessage: String?
@@ -841,7 +976,7 @@
                     if status == "completed" {
                         let safeTail = streamingRedactor.finish()
                         if !safeTail.isEmpty { onDelta?(safeTail) }
-                        return try output.completedMarkdown()
+                        return try output.completedAssessment()
                     }
                     let error = turn["error"] as? [String: Any]
                     let message = CodexAppServerLimits.boundedUTF8(
@@ -854,6 +989,46 @@
                 }
             }
             throw CodexAppServerError.timeout("generating the recap")
+        }
+
+        private func requireDailyAssessmentModel() throws {
+            var cursor: String?
+            var pageCount = 0
+            repeat {
+                var params: [String: Any] = [
+                    "includeHidden": false,
+                    "limit": 100,
+                ]
+                if let cursor { params["cursor"] = cursor }
+                let result = try request(
+                    method: "model/list",
+                    params: params,
+                    timeout: 20,
+                    operation: "checking GPT-5.6 Luna availability"
+                )
+                guard let models = result["data"] as? [[String: Any]] else {
+                    throw CodexAppServerError.malformedResponse("model/list data is missing")
+                }
+                if let model = models.first(where: {
+                    ($0["model"] as? String) == CodexDailyAssessmentContract.model
+                }) {
+                    let efforts = (model["supportedReasoningEfforts"] as? [[String: Any]]) ?? []
+                    guard efforts.contains(where: {
+                        ($0["reasoningEffort"] as? String) == CodexDailyAssessmentContract.reasoningEffort
+                    }) else {
+                        throw CodexAppServerError.generationFailed(
+                            "GPT-5.6 Luna is available, but High reasoning is not enabled for this account."
+                        )
+                    }
+                    return
+                }
+                cursor = result["nextCursor"] as? String
+                pageCount += 1
+            } while cursor != nil && pageCount < 10
+
+            throw CodexAppServerError.generationFailed(
+                "GPT-5.6 Luna is not available for this ChatGPT account. Goalong did not fall back to another model."
+            )
         }
 
         func close() {
@@ -1029,6 +1204,7 @@
 
         static func prepareCodexHome(at directory: URL) throws {
             try ChatGPTSecureStorage.prepareDirectory(directory)
+            try pruneEphemeralCodexArtifacts(at: directory)
 
             // This file is app-managed and intentionally rewritten at every launch. Authentication
             // remains in Codex-owned files inside this isolated directory; stale or user-modified
@@ -1049,6 +1225,22 @@
                 include_collaboration_mode_instructions = false
                 cli_auth_credentials_store = "file"
 
+                [features]
+                apps = false
+                browser_use = false
+                computer_use = false
+                goals = false
+                hooks = false
+                image_generation = false
+                memories = false
+                plugins = false
+                recommended_plugins = false
+                remote_plugin = false
+                shell_tool = false
+                skill_search = false
+                view_image = false
+                workspace_dependencies = false
+
                 [orchestrator.skills]
                 enabled = false
 
@@ -1067,6 +1259,27 @@
                 """.utf8
             )
             try ChatGPTSecureStorage.writeFileAtomically(config, to: configURL)
+        }
+
+        static func pruneEphemeralCodexArtifacts(at directory: URL) throws {
+            try ChatGPTSecureStorage.prepareDirectory(directory)
+            let exactNames: Set<String> = [
+                ".tmp", "cache", "history.jsonl", "plugins", "rollouts", "sessions", "skills",
+                "tmp",
+            ]
+            let databasePrefixes = ["goals_", "logs_", "memories_", "queue_", "state_"]
+            let children = try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: []
+            )
+            for child in children {
+                let name = child.lastPathComponent
+                guard exactNames.contains(name)
+                    || databasePrefixes.contains(where: name.hasPrefix)
+                else { continue }
+                try FileManager.default.removeItem(at: child)
+            }
         }
 
         static func codexEnvironment(
@@ -1091,6 +1304,12 @@
             environment["SHELL"] = "/bin/zsh"
             environment["CODEX_HOME"] = codexHomeURL.path
             return environment
+        }
+
+        static func workspaceRootsAreConfined(_ rawPaths: [String], to workingDirectory: URL) -> Bool {
+            // Empty is stricter than the requested single read-only workspace root. Codex may
+            // return an empty effective root list when no filesystem tool needs materializing.
+            rawPaths.isEmpty || pathsMatchExactly(rawPaths, expected: [workingDirectory])
         }
 
         private static func pathsMatchExactly(_ rawPaths: [String], expected: [URL]) -> Bool {

@@ -65,6 +65,7 @@
             .activity,
             .screenTime,
             .agentActivity,
+            .chatGPTRecap,
         ]
         private let utilitySections: [DashboardSection] = [.privacy, .settings]
 
@@ -298,7 +299,7 @@
             case .activity: return "Computer History"
             case .screenTime: return "Screen Time"
             case .agentActivity: return "AI conversations"
-            case .chatGPTRecap: return "AI recap settings"
+            case .chatGPTRecap: return "Activity"
             case .share: return "Share"
             case .privacy: return "Privacy"
             case .settings: return "Settings"

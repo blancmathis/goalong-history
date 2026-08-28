@@ -296,7 +296,7 @@
                 VStack(spacing: 0) {
                     HStack(alignment: .center, spacing: 16) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("AI recap")
+                            Text("Daily Activity")
                                 .font(.system(size: 18, weight: .bold, design: .rounded))
                             Text(aiRecapSubtitle)
                                 .font(.system(size: 11))
@@ -319,13 +319,13 @@
                         Image(systemName: "sparkles")
                             .foregroundStyle(LHTheme.accent)
                         Text(
-                            "Uses Screen Time, Goalong History, AI conversations and imported ChatGPT history when available."
+                            "Uses Computer History, Apple Screen Time and AI conversations read from their original local sources."
                         )
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         Spacer(minLength: 16)
-                        Button(recapRuntime.recap == nil ? "ChatGPT setup" : "Open full recap") {
+                        Button(recapRuntime.recap == nil ? "Activity setup" : "Open Activity") {
                             model.selectSection(.chatGPTRecap)
                         }
                         .buttonStyle(.link)
@@ -342,7 +342,7 @@
                 ProgressView()
                     .controlSize(.small)
             } else if aiRecapIsConnected {
-                Button(recapRuntime.recap == nil ? "Generate recap" : "Refresh recap") {
+                Button(recapRuntime.recap == nil ? "Analyze day" : "Analyze again") {
                     recapRuntime.generateRecap()
                 }
                 .buttonStyle(.borderedProminent)
@@ -375,7 +375,7 @@
                 markdownPreview(recap.markdown)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(aiRecapIsConnected ? "No recap for this day yet." : "AI recap is optional and currently off.")
+                    Text(aiRecapIsConnected ? "No Activity report for this day yet." : "Daily AI analysis is optional and currently unavailable.")
                         .font(.system(size: 13, weight: .semibold))
                     Text(
                         aiRecapIsConnected

@@ -14,6 +14,7 @@ AGENT_ACTIVITY_DIRECT_ADAPTER="$AGENT_ACTIVITY_SOURCE_ROOT/SourceAdapters.swift"
 AGENT_ACTIVITY_MODELS="$AGENT_ACTIVITY_SOURCE_ROOT/Models.swift"
 AGENT_ACTIVITY_MIGRATION="$ROOT_DIR/Sources/LocalHistoryApp/AppPaths.swift"
 AGENT_ACTIVITY_RECAP_CONTEXT="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/ChatGPTRecapContext.swift"
+AGENT_ACTIVITY_RECAP_RUNTIME="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/ChatGPTRecapRuntime.swift"
 # shellcheck source=sparkle_release.env
 source "$ROOT_DIR/scripts/sparkle_release.env"
 
@@ -65,8 +66,8 @@ if [[ -f "$CODEX_BRIDGE" ]]; then
   fi
 
   # Recap agents must fail closed on old Codex versions: experimental permission APIs are
-  # enabled, the exact custom profile and workspace roots are requested and verified, and
-  # threads remain ephemeral with execution environments disabled.
+  # enabled, the exact custom profile, working directory and non-expanding workspace roots are
+  # requested and verified, and threads remain ephemeral with execution environments disabled.
   for required_fragment in \
     '"experimentalApi": true' \
     '"permissions": Self.recapPermissionProfile' \
@@ -74,13 +75,25 @@ if [[ -f "$CODEX_BRIDGE" ]]; then
     '"ephemeral": true' \
     '"environments": [] as [Any]' \
     'started["activePermissionProfile"]' \
-    'Self.pathsMatchExactly(roots, expected: [workingDirectory])' \
+    'started["cwd"]' \
+    'Self.workspaceRootsAreConfined(roots, to: workingDirectory)' \
+    'rawPaths.isEmpty || pathsMatchExactly(rawPaths, expected: [workingDirectory])' \
     'default_permissions = "\(Self.recapPermissionProfile)"' \
     '[permissions.goalong-recap.filesystem]' \
     '":minimal" = "read"' \
     '":workspace_roots" = "read"' \
     '[permissions.goalong-recap.network]' \
-    'web_search = "disabled"'; do
+    'web_search = "disabled"' \
+    '[features]' \
+    'plugins = false' \
+    'remote_plugin = false' \
+    'goals = false' \
+    'memories = false' \
+    'shell_tool = false' \
+    'Self.pruneEphemeralCodexArtifacts(at: codexHomeURL)' \
+    '"plugins", "rollouts", "sessions", "skills"' \
+    '"tmp"' \
+    'databasePrefixes = ["goals_", "logs_", "memories_", "queue_", "state_"]'; do
     if ! grep -Fq "$required_fragment" "$CODEX_BRIDGE"; then
       echo "Codex recap confinement invariant is missing: $required_fragment" >&2
       failed=true
@@ -242,14 +255,34 @@ if [[ -f "$AGENT_ACTIVITY_MODELS" ]]; then
   fi
 fi
 
-# Saved ChatGPT recaps are durable output, so their Agent Activity context must remain
-# content-free even though the in-app Agent Activity page may analyze richer transient
-# summaries directly from the provider source.
+# Daily Activity may read bounded conversation summaries transiently from each provider's
+# original storage. The durable recap schema must remain a small derived five-line assessment,
+# never the prompt, source excerpts, paths, transcript bodies or message collection.
 if [[ -f "$AGENT_ACTIVITY_RECAP_CONTEXT" ]]; then
-  if grep -nE 'summary\.(sessionID|title|excerpt|projectPath|models|tools|touchedFiles|commands)|capture\.(sourcePath|relativePath|sha256)' "$AGENT_ACTIVITY_RECAP_CONTEXT"; then
-    echo "Durable recap context includes verbatim or identifying Agent Activity transcript fields." >&2
+  for required_fragment in \
+    'Direct-source conversation analysis (transient; not persisted by Goalong)' \
+    'The final five-line report must paraphrase rather than quote them.'; do
+    if ! grep -Fq "$required_fragment" "$AGENT_ACTIVITY_RECAP_CONTEXT"; then
+      echo "Transient Agent Activity recap boundary is missing: $required_fragment" >&2
+      failed=true
+    fi
+  done
+fi
+if [[ -f "$AGENT_ACTIVITY_RECAP_RUNTIME" ]]; then
+  persisted_recap_schema="$(awk '/struct ChatGPTDailyRecap: Codable/{flag=1} /enum ChatGPTRecapPersistence/{flag=0} flag{print}' "$AGENT_ACTIVITY_RECAP_RUNTIME")"
+  if echo "$persisted_recap_schema" | grep -nEi 'let [[:alnum:]_]*(prompt|contextData|sourcePath|relativePath|transcript|body|messages?|excerpt|commands?|tools?|touchedFiles)[[:alnum:]_]*[[:space:]]*:'; then
+    echo "Daily Activity persistence schema contains source or transcript content fields." >&2
     failed=true
   fi
+  for required_fragment in \
+    'summaryLines.count == ChatGPTDailyAssessment.requiredSummaryLineCount' \
+    'static let maximumMarkdownBytes = 8 * 1_024' \
+    'static let maximumJSONBytes = 64 * 1_024'; do
+    if ! grep -Fq "$required_fragment" "$AGENT_ACTIVITY_RECAP_RUNTIME"; then
+      echo "Bounded Daily Activity persistence invariant is missing: $required_fragment" >&2
+      failed=true
+    fi
+  done
 fi
 
 # The one-time v2 migration may delete the retired vault only after normalizing recognized

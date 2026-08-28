@@ -1,3 +1,9 @@
+// THESIS: Activity turns three evidence streams into one inspectable day, without hiding coverage or becoming a second history vault.
+// OWN-WORLD: Goalong's restrained native macOS surfaces, green evidence accent, compact rounded controls, and horizontal data bars.
+// STORY: Choose a day, inspect the measured shape of it, then read or regenerate the five-line assessment.
+// FIRST VIEWPORT: Day controls lead into the score and five-line report; source-backed statistics follow immediately below.
+// FORM: A precisely specified operational dashboard extension inside Goalong's existing visual system; no new identity.
+
 #if os(macOS)
     import SwiftUI
 
@@ -13,38 +19,43 @@
         var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    PageHeader(
-                        eyebrow: "ChatGPT-powered local synthesis",
-                        title: "AI daily recap",
-                        subtitle:
-                            "Combine Goalong activity, document context, Apple Screen Time, content-free local agent metadata and an optional ChatGPT export into one evidence-aware recap."
-                    ) {
-                        HStack(spacing: 10) {
-                            DateSelectionControl(date: recapRuntime.selectedDay, onChange: recapRuntime.selectDay)
-                            Button {
-                                recapRuntime.revealRecapFiles()
-                            } label: {
-                                Label("Files", systemImage: "folder")
-                            }
-                            .buttonStyle(.bordered)
-                            Button {
-                                recapRuntime.generateRecap()
-                            } label: {
-                                Label(
-                                    recapRuntime.isGenerating ? "Generating…" : "Generate recap",
-                                    systemImage: "sparkles"
-                                )
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(!canGenerate || recapRuntime.isGenerating)
-                        }
+                    header
+
+                    if !isConnected {
+                        ChatGPTAccountConnectionCard(runtime: recapRuntime)
                     }
 
-                    ChatGPTAccountConnectionCard(runtime: recapRuntime)
-                    sourceCard
-                    historyImportCard
+                    reportCard
+
+                    if let overview = recapRuntime.dayOverview {
+                        metricsBand(overview)
+                        HStack(alignment: .top, spacing: 14) {
+                            usagePanel(
+                                title: "Computer applications",
+                                subtitle: "Represented foreground activity",
+                                symbol: "macbook",
+                                values: overview.computerApplications,
+                                emptyMessage: "No computer application activity is available."
+                            )
+                            usagePanel(
+                                title: "Apple devices",
+                                subtitle: "Screen Time totals can overlap across devices",
+                                symbol: "macbook.and.iphone",
+                                values: overview.screenTimeDevices,
+                                emptyMessage: "No Apple Screen Time device is available."
+                            )
+                        }
+                        .frame(maxWidth: .infinity, alignment: .top)
+
+                        agentCollaborationCard(overview)
+                        coverageCard(overview)
+                    } else if recapRuntime.isLoadingDayOverview {
+                        loadingDataCard
+                    } else {
+                        emptyDataCard
+                    }
+
                     automaticCard
-                    recapCard
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 28)
@@ -68,100 +79,307 @@
             }
         }
 
-        private var sourceCard: some View {
-            LHCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Context assembled for the recap agent")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(
-                                "Goalong sends a bounded, sanitized synthesis for the chosen day—not the raw event database or your whole disk."
-                            )
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "lock.shield.fill")
-                            .foregroundStyle(LHTheme.success)
+        private var header: some View {
+            PageHeader(
+                eyebrow: "Daily analysis",
+                title: "Activity",
+                subtitle:
+                    "Understand the shape and outcomes of a day from Computer History, Screen Time and AI conversations."
+            ) {
+                HStack(spacing: 10) {
+                    DateSelectionControl(date: recapRuntime.selectedDay, onChange: recapRuntime.selectDay)
+                    Button {
+                        recapRuntime.revealRecapFiles()
+                    } label: {
+                        Label("Report files", systemImage: "doc.text.magnifyingglass")
                     }
-
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 180), spacing: 10)],
-                        spacing: 10
-                    ) {
-                        sourceTile(
-                            symbol: "macbook",
-                            title: "Computer activity",
-                            value: sourceCounts.map { "\($0.activeMinutes) active min" } ?? "Built locally",
-                            detail: "Apps, focus blocks, pages and accessible document context"
-                        )
-                        sourceTile(
-                            symbol: "macbook.and.iphone",
-                            title: "Apple Screen Time",
-                            value: sourceCounts.map { "\($0.screenTimeDevices) device(s)" } ?? "Optional source",
-                            detail: "Per-device totals and top applications"
-                        )
-                        sourceTile(
-                            symbol: "cpu",
-                            title: "Agent activity",
-                            value: sourceCounts.map { "\($0.agentMessages) message(s)" } ?? "Metadata only",
-                            detail: "Direct-source counts only; message bodies are not retained"
-                        )
-                        sourceTile(
-                            symbol: "bubble.left.and.bubble.right",
-                            title: "ChatGPT history",
-                            value: sourceCounts.map { "\($0.importedChatMessages) message(s)" }
-                                ?? (recapRuntime.importSummary.map { "\($0.messageCount) imported" } ?? "Not imported"),
-                            detail: "Selected-day messages from conversations.json"
+                    .buttonStyle(.bordered)
+                    Button {
+                        recapRuntime.generateRecap()
+                    } label: {
+                        Label(
+                            recapRuntime.isGenerating ? "Analyzing…" : generationButtonTitle,
+                            systemImage: "sparkles"
                         )
                     }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canGenerate || recapRuntime.isGenerating)
                 }
             }
         }
 
-        private var historyImportCard: some View {
+        private var reportCard: some View {
             LHCard {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: "tray.and.arrow.down.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(LHTheme.accent)
-                        .frame(width: 40, height: 40)
-                        .background(
-                            LHTheme.accent.opacity(0.10),
-                            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        )
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Existing ChatGPT conversations")
-                            .font(.system(size: 12, weight: .semibold))
+                if recapRuntime.isGenerating {
+                    HStack(spacing: 16) {
+                        ProgressView()
+                            .controlSize(.regular)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("GPT-5.6 Luna is analyzing this day")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(
+                                "High reasoning · isolated temporary Codex thread · no transcript copy is stored"
+                            )
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 150, alignment: .center)
+                } else if let recap = recapRuntime.recap,
+                    let score = recap.productivityScore,
+                    let confidence = recap.confidenceScore,
+                    let lines = recap.summaryLines,
+                    lines.count == ChatGPTDailyAssessment.requiredSummaryLineCount
+                {
+                    HStack(alignment: .top, spacing: 28) {
+                        VStack(alignment: .leading, spacing: 9) {
+                            Text("PRODUCTIVITY")
+                                .font(.system(size: 9, weight: .bold))
+                                .tracking(0.8)
+                                .foregroundStyle(.secondary)
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Text("\(score)")
+                                    .font(.system(size: 46, weight: .bold, design: .rounded))
+                                    .foregroundStyle(scoreTint(score))
+                                Text("/ 100")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Label("\(confidence)% evidence confidence", systemImage: "checkmark.shield")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            Text(isToday ? "Today is still in progress" : "Completed-day assessment")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(isToday ? LHTheme.warning : LHTheme.success)
+                        }
+                        .frame(width: 168, alignment: .leading)
+
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 11) {
+                            HStack {
+                                Text("Five-line daily report")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Spacer()
+                                Text(recap.generatedAt.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                            }
+                            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                    Text("\(index + 1)")
+                                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                                        .foregroundStyle(LHTheme.accent)
+                                        .frame(width: 16)
+                                    Text(line)
+                                        .font(.system(size: 11))
+                                        .lineSpacing(2)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                        }
+                    }
+                } else if let recap = recapRuntime.recap {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Legacy daily recap")
+                            .font(.system(size: 13, weight: .semibold))
                         Text(
-                            "Connecting the account authorizes Codex usage; it does not expose your existing ChatGPT chats. Import conversations.json from a ChatGPT data export to include that history. Common credential patterns are redacted before the normalized local copy is stored."
+                            "This older report predates the five-line Activity format. Regenerate it to get a score, confidence and structured summary."
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        Text(.init(recap.markdown))
+                            .font(.system(size: 11))
+                            .lineSpacing(3)
+                            .textSelection(.enabled)
+                    }
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "chart.bar.xaxis")
+                            .font(.system(size: 30, weight: .medium))
+                            .foregroundStyle(LHTheme.accent.opacity(0.78))
+                        Text("No Activity report for this day")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(
+                            isConnected
+                                ? "Generate it now, or leave automatic daily analysis enabled for completed days."
+                                : "Connect ChatGPT in Settings to generate the five-line assessment."
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 170)
+                }
+            }
+        }
+
+        private func metricsBand(_ overview: ChatGPTRecapDayOverview) -> some View {
+            LHCard {
+                HStack(spacing: 0) {
+                    metric(
+                        title: "Computer activity",
+                        value: duration(overview.activeSeconds),
+                        detail: "\(overview.focusBlockCount) focus blocks"
+                    )
+                    bandDivider
+                    metric(
+                        title: "Work-classified",
+                        value: duration(overview.workSeconds),
+                        detail: "Observable classification"
+                    )
+                    bandDivider
+                    metric(
+                        title: "Screen Time",
+                        value: duration(overview.screenTimeSeconds),
+                        detail: "\(overview.screenTimeDevices.count) Apple devices"
+                    )
+                    bandDivider
+                    metric(
+                        title: "AI conversations",
+                        value: "\(overview.agentSessions)",
+                        detail: "\(overview.agentMessages) messages"
+                    )
+                }
+            }
+        }
+
+        private var bandDivider: some View {
+            Divider().frame(height: 48)
+        }
+
+        private func metric(title: String, value: String, detail: String) -> some View {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text(detail)
+                    .font(.system(size: 8))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+        }
+
+        private func usagePanel(
+            title: String,
+            subtitle: String,
+            symbol: String,
+            values: [ChatGPTRecapDayOverview.Usage],
+            emptyMessage: String
+        ) -> some View {
+            LHCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    Label(title, systemImage: symbol)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(subtitle)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                    if values.isEmpty {
+                        Text(emptyMessage)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 138, alignment: .center)
+                    } else {
+                        let maximum = max(values.map(\.seconds).max() ?? 1, 1)
+                        VStack(spacing: 11) {
+                            ForEach(values.prefix(8)) { item in
+                                usageBar(item, maximum: maximum)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+
+        private func usageBar(_ item: ChatGPTRecapDayOverview.Usage, maximum: Int) -> some View {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Text(item.name)
+                        .font(.system(size: 10, weight: .medium))
+                        .lineLimit(1)
+                    if let detail = item.detail, detail != item.name {
+                        Text(detail)
+                            .font(.system(size: 8))
+                            .foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                    Text(duration(item.seconds))
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.primary.opacity(0.06))
+                        Capsule()
+                            .fill(LHTheme.accent.opacity(0.72))
+                            .frame(
+                                width: max(
+                                    3,
+                                    proxy.size.width * CGFloat(item.seconds) / CGFloat(maximum)
+                                )
+                            )
+                    }
+                }
+                .frame(height: 6)
+                .accessibilityLabel("\(item.name), \(duration(item.seconds))")
+            }
+        }
+
+        private func agentCollaborationCard(_ overview: ChatGPTRecapDayOverview) -> some View {
+            LHCard {
+                HStack(alignment: .top, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label("AI collaboration", systemImage: "bubble.left.and.bubble.right")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(
+                            "Conversation bodies are read transiently from Codex, Claude, OpenCode and configured local sources. Only the five-line report is saved."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        if let summary = recapRuntime.importSummary {
-                            Text(
-                                "\(summary.conversationCount) conversations · \(summary.messageCount) messages · imported \(summary.importedAt.formatted(date: .abbreviated, time: .shortened))"
-                            )
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(LHTheme.success)
-                        }
                     }
-                    Spacer(minLength: 16)
-                    HStack(spacing: 8) {
-                        if recapRuntime.importSummary != nil {
-                            Button("Delete import") {
-                                recapRuntime.clearImportedChatGPTHistory()
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        Button(recapRuntime.isImporting ? "Importing…" : "Import conversations.json") {
-                            recapRuntime.importChatGPTHistory()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(recapRuntime.isImporting)
+                    Spacer(minLength: 18)
+                    collaborationMetric("Sessions", overview.agentSessions)
+                    collaborationMetric("Messages", overview.agentMessages)
+                    collaborationMetric("Tool calls", overview.agentToolCalls)
+                    collaborationMetric("Errors", overview.agentErrors)
+                }
+            }
+        }
+
+        private func collaborationMetric(_ title: String, _ value: Int) -> some View {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\(value)")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                Text(title)
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(minWidth: 54)
+        }
+
+        private func coverageCard(_ overview: ChatGPTRecapDayOverview) -> some View {
+            LHCard {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .foregroundStyle(LHTheme.success)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Evidence coverage")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(
+                            "\(overview.sourceEventCount.formatted()) Computer History events · \(overview.privateMinutes) private/suppressed min · \(overview.analyzedAgentSessions)/\(overview.agentSessions) AI sessions analyzed directly"
+                        )
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
                     }
+                    Spacer()
+                    Text("Missing evidence lowers confidence, not the score")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -170,10 +388,10 @@
             LHCard {
                 Toggle(isOn: $recapRuntime.automaticRecapsEnabled) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Automatic recap refresh")
+                        Text("Automatic completed-day analysis")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "When explicitly enabled, Goalong refreshes today’s recap at most once every four hours while the app is running and ChatGPT remains connected."
+                            "At 00:05, Goalong runs one temporary GPT-5.6 Luna High analysis for the day that just ended. On launch it catches up yesterday only, never an unbounded backlog."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
@@ -184,105 +402,66 @@
             }
         }
 
-        private var recapCard: some View {
+        private var loadingDataCard: some View {
             LHCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(recapRuntime.isGenerating ? "Recap agent is working" : "Generated recap")
-                                .font(.system(size: 13, weight: .semibold))
-                            if let recap = recapRuntime.recap {
-                                Text(
-                                    "Generated \(recap.generatedAt.formatted(date: .abbreviated, time: .shortened)) · context \(recap.contextDigest.prefix(10))…"
-                                )
-                                .font(.system(size: 9, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                            } else {
-                                Text("No recap has been generated for this day yet.")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        if recapRuntime.isGenerating {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
-
-                    Divider()
-
-                    if recapRuntime.isGenerating {
-                        if recapRuntime.streamedMarkdown.isEmpty {
-                            HStack(spacing: 10) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text(
-                                    "Assembling the local context and starting an isolated, network-disabled Codex thread…"
-                                )
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
-                        } else {
-                            markdownText(recapRuntime.streamedMarkdown)
-                        }
-                    } else if let recap = recapRuntime.recap {
-                        markdownText(recap.markdown)
-                    } else {
-                        VStack(spacing: 10) {
-                            Image(systemName: "sparkles.rectangle.stack")
-                                .font(.system(size: 30, weight: .medium))
-                                .foregroundStyle(LHTheme.accent.opacity(0.75))
-                            Text("Connect ChatGPT, then generate the first evidence-aware recap.")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 190)
-                    }
-                }
-            }
-        }
-
-        private func sourceTile(symbol: String, title: String, value: String, detail: String) -> some View {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack {
-                    Image(systemName: symbol)
-                        .foregroundStyle(LHTheme.accent)
-                    Spacer()
-                    Text(value)
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                HStack(spacing: 12) {
+                    ProgressView().controlSize(.small)
+                    Text("Reading the selected day from its local source stores…")
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                Text(detail)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: 100, alignment: .center)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
 
-        private func markdownText(_ markdown: String) -> some View {
-            Text(.init(markdown))
-                .font(.system(size: 11))
-                .lineSpacing(4)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-        }
-
-        private var sourceCounts: ChatGPTRecapSourceCounts? {
-            recapRuntime.recap?.sourceCounts
+        private var emptyDataCard: some View {
+            LHCard {
+                VStack(spacing: 9) {
+                    Image(systemName: "clock.badge.questionmark")
+                        .font(.system(size: 25))
+                        .foregroundStyle(.secondary)
+                    Text(recapRuntime.dayOverviewError ?? "No source activity is available for this day.")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Read sources again") {
+                        recapRuntime.refreshDayOverview()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .frame(maxWidth: .infinity, minHeight: 130)
+            }
         }
 
         private var canGenerate: Bool {
+            isConnected && recapRuntime.dayOverview?.hasMeaningfulData != false
+        }
+
+        private var isConnected: Bool {
             if case .connected = recapRuntime.connectionState { return true }
             return false
         }
 
+        private var generationButtonTitle: String {
+            recapRuntime.recap == nil ? "Analyze day" : "Analyze again"
+        }
+
+        private var isToday: Bool {
+            Calendar.current.isDateInToday(recapRuntime.selectedDay)
+        }
+
+        private func scoreTint(_ score: Int) -> Color {
+            if score >= 75 { return LHTheme.success }
+            if score >= 50 { return LHTheme.accent }
+            return LHTheme.warning
+        }
+
+        private func duration(_ seconds: Int) -> String {
+            let safe = max(0, seconds)
+            let hours = safe / 3_600
+            let minutes = (safe % 3_600) / 60
+            if hours > 0 { return "\(hours)h \(minutes)m" }
+            return "\(minutes)m"
+        }
     }
 #endif

@@ -105,6 +105,7 @@
                         + "            .activity,\n"
                         + "            .screenTime,\n"
                         + "            .agentActivity,\n"
+                        + "            .chatGPTRecap,\n"
                         + "        ]"
                 )
             )

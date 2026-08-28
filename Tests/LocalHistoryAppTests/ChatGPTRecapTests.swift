@@ -415,7 +415,7 @@
             XCTAssertLessThanOrEqual(cacheData.count, 64 * 1_024)
         }
 
-        func testSavedRecapContextDoesNotIncludeAgentTranscriptFields() {
+        func testTransientRecapContextReadsAgentSummaryButPersistedReportDoesNotCopyIt() throws {
             let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
             let secret = "AGENT-TRANSCRIPT-SENTINEL-DO-NOT-COPY"
             let reference = AgentSourceReference(
@@ -469,7 +469,55 @@
             XCTAssertTrue(rendered.contains("provider: Codex"))
             XCTAssertTrue(rendered.contains("source bytes: 12345"))
             XCTAssertTrue(rendered.contains("messages: 9"))
-            XCTAssertFalse(rendered.contains(secret))
+            XCTAssertTrue(rendered.contains(secret))
+
+            let directory = try makeTemporaryDirectory(prefix: "goalong-agent-summary-not-persisted")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let lines = [
+                "A concrete result was advanced.",
+                "Observed work time remained bounded by captured evidence.",
+                "The strongest focus period advanced the selected task.",
+                "A context-switching period reduced momentum.",
+                "Agent collaboration was useful and can be made more concise tomorrow.",
+            ]
+            let recap = ChatGPTDailyRecap(
+                day: timestamp,
+                planType: "plus",
+                contextDigest: String(repeating: "a", count: 64),
+                sourceCounts: ChatGPTRecapSourceCounts(
+                    localEvents: 1,
+                    activeMinutes: 1,
+                    semanticSnapshots: 1,
+                    screenTimeDevices: 0,
+                    screenTimeApplications: 0,
+                    agentCaptures: 1,
+                    agentMessages: 9,
+                    agentToolCalls: 4,
+                    agentErrors: 1,
+                    analyzedAgentCaptures: 1,
+                    importedChatMessages: 0,
+                    computerHistoryEpisodes: 1,
+                    computerHistoryResources: 0,
+                    workflowSuggestions: 0
+                ),
+                markdown: lines.joined(separator: "\n"),
+                model: CodexDailyAssessmentContract.model,
+                reasoningEffort: CodexDailyAssessmentContract.reasoningEffort,
+                productivityScore: 72,
+                confidenceScore: 64,
+                summaryLines: lines
+            )
+            try ChatGPTRecapPersistence.write(recap, to: directory)
+            let persisted = try String(
+                contentsOf: ChatGPTRecapPersistence.jsonURL(for: timestamp, in: directory),
+                encoding: .utf8
+            )
+            XCTAssertFalse(persisted.contains(secret))
+            let reloaded = try XCTUnwrap(ChatGPTRecapPersistence.load(for: timestamp, from: directory))
+            XCTAssertEqual(reloaded.sourceCounts.agentMessages, 9)
+            XCTAssertEqual(reloaded.sourceCounts.agentToolCalls, 4)
+            XCTAssertEqual(reloaded.sourceCounts.agentErrors, 1)
+            XCTAssertEqual(reloaded.sourceCounts.analyzedAgentCaptures, 1)
         }
 
         private static func failure(
@@ -729,6 +777,57 @@
             XCTAssertLessThan(launchDescription.utf8.count, 4_300)
         }
 
+        func testDailyAssessmentContractPinsLunaHighAndRequiresExactlyFiveLines() throws {
+            XCTAssertEqual(CodexDailyAssessmentContract.model, "gpt-5.6-luna")
+            XCTAssertEqual(CodexDailyAssessmentContract.reasoningEffort, "high")
+            XCTAssertEqual(CodexDailyAssessmentContract.threadStartTimeout, 120)
+            XCTAssertEqual(CodexDailyAssessmentContract.turnStartTimeout, 120)
+            XCTAssertEqual(CodexDailyAssessmentContract.generationTimeout, 900)
+            let schema = CodexDailyAssessmentContract.outputSchema
+            let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
+            let lineSchema = try XCTUnwrap(properties["summaryLines"] as? [String: Any])
+            XCTAssertEqual(lineSchema["minItems"] as? Int, 5)
+            XCTAssertEqual(lineSchema["maxItems"] as? Int, 5)
+
+            var collector = CodexRecapOutputCollector()
+            try collector.setFinalText(
+                """
+                {"productivityScore":78,"confidenceScore":67,"summaryLines":["one","two","three","four","five"]}
+                """
+            )
+            let result = try collector.completedAssessment()
+            XCTAssertEqual(result.productivityScore, 78)
+            XCTAssertEqual(result.confidenceScore, 67)
+            XCTAssertEqual(result.summaryLines.count, 5)
+            XCTAssertEqual(result.markdown.components(separatedBy: "\n").count, 5)
+
+            var invalid = CodexRecapOutputCollector()
+            try invalid.setFinalText(
+                """
+                {"productivityScore":78,"confidenceScore":67,"summaryLines":["one","two","three","four"]}
+                """
+            )
+            XCTAssertThrowsError(try invalid.completedAssessment())
+        }
+
+        func testAutomaticRecapScheduleTargetsOnlyThePreviousCompletedDay() throws {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+            let now = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 8, day: 27, hour: 18, minute: 30))
+            )
+            let completed = try XCTUnwrap(ChatGPTDailyRecapSchedule.completedDay(at: now, calendar: calendar))
+            let boundary = try XCTUnwrap(ChatGPTDailyRecapSchedule.nextBoundary(after: now, calendar: calendar))
+            XCTAssertEqual(
+                calendar.dateComponents([.year, .month, .day], from: completed),
+                DateComponents(year: 2026, month: 8, day: 26)
+            )
+            XCTAssertEqual(
+                calendar.dateComponents([.year, .month, .day, .hour, .minute], from: boundary),
+                DateComponents(year: 2026, month: 8, day: 28, hour: 0, minute: 5)
+            )
+        }
+
         func testCodexSessionReadsResponsesWithoutWaitingForStdoutClosure() throws {
             let container = try makeTemporaryDirectory(prefix: "goalong-codex-streaming-response")
             defer { try? FileManager.default.removeItem(at: container) }
@@ -761,6 +860,87 @@
                 Date().timeIntervalSince(startedAt),
                 2,
                 "A newline-delimited app-server response must be consumed before stdout closes."
+            )
+        }
+
+        func testCodexDailyAssessmentSessionPinsModelAndEffortBeforeStartingStructuredTurn() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-codex-assessment-contract")
+            defer { try? FileManager.default.removeItem(at: container) }
+            let codexHome = container.appendingPathComponent("codex-home", isDirectory: true)
+            let workspace = container.appendingPathComponent("workspace", isDirectory: true)
+            let executable = container.appendingPathComponent("codex-fixture")
+            let threadRequest = container.appendingPathComponent("thread-request.json")
+            let turnRequest = container.appendingPathComponent("turn-request.json")
+            try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: false)
+            let script = """
+                #!/bin/sh
+                IFS= read -r initialize_request
+                printf '%s\\n' '{"id":1,"result":{"codexHome":"\(codexHome.path)"}}'
+                IFS= read -r initialized_notification
+                IFS= read -r account_request
+                printf '%s\\n' '{"id":2,"result":{"account":{"type":"chatgpt","planType":"plus"}}}'
+                IFS= read -r model_request
+                printf '%s\\n' '{"id":3,"result":{"data":[{"id":"luna","model":"gpt-5.6-luna","displayName":"GPT-5.6 Luna","description":"fixture","hidden":false,"isDefault":false,"defaultReasoningEffort":"medium","supportedReasoningEfforts":[{"reasoningEffort":"high","description":"High"}]}],"nextCursor":null}}'
+                IFS= read -r thread_request
+                printf '%s' "$thread_request" > '\(threadRequest.path)'
+                printf '%s\\n' '{"id":4,"result":{"thread":{"id":"thread-1","ephemeral":true},"model":"gpt-5.6-luna","reasoningEffort":"high","activePermissionProfile":{"id":"goalong-recap"},"cwd":"\(workspace.path)","runtimeWorkspaceRoots":[]}}'
+                IFS= read -r turn_request
+                printf '%s' "$turn_request" > '\(turnRequest.path)'
+                printf '%s\\n' '{"id":5,"result":{"turn":{"id":"turn-1","items":[],"status":"inProgress"}}}'
+                printf '%s\\n' '{"method":"item/completed","params":{"item":{"type":"agentMessage","phase":"final_answer","text":"{\\"productivityScore\\":81,\\"confidenceScore\\":73,\\"summaryLines\\":[\\"one\\",\\"two\\",\\"three\\",\\"four\\",\\"five\\"]}"}}}'
+                printf '%s\\n' '{"method":"turn/completed","params":{"turn":{"id":"turn-1","items":[],"status":"completed"}}}'
+                """
+            try Data(script.utf8).write(to: executable)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: executable.path
+            )
+
+            let session = try CodexAppServerSession(
+                executableURL: executable,
+                codexHomeURL: codexHome
+            )
+            defer { session.close() }
+            let assessment = try session.generateRecap(prompt: "fixture", workingDirectory: workspace)
+            XCTAssertEqual(assessment.productivityScore, 81)
+            XCTAssertEqual(assessment.summaryLines.count, 5)
+
+            let thread = try XCTUnwrap(
+                try JSONSerialization.jsonObject(with: Data(contentsOf: threadRequest)) as? [String: Any]
+            )
+            let threadParams = try XCTUnwrap(thread["params"] as? [String: Any])
+            XCTAssertEqual(threadParams["model"] as? String, "gpt-5.6-luna")
+            let config = try XCTUnwrap(threadParams["config"] as? [String: Any])
+            XCTAssertEqual(config["model_reasoning_effort"] as? String, "high")
+
+            let turn = try XCTUnwrap(
+                try JSONSerialization.jsonObject(with: Data(contentsOf: turnRequest)) as? [String: Any]
+            )
+            let turnParams = try XCTUnwrap(turn["params"] as? [String: Any])
+            XCTAssertNil(turnParams["model"])
+            XCTAssertNil(turnParams["effort"])
+            let outputSchema = try XCTUnwrap(turnParams["outputSchema"] as? [String: Any])
+            XCTAssertEqual(outputSchema["additionalProperties"] as? Bool, false)
+        }
+
+        func testCodexDailyAssessmentWorkspaceRootsAcceptOnlyNoAccessOrExactTemporaryWorkspace() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-codex-root-confinement")
+            defer { try? FileManager.default.removeItem(at: container) }
+            let workspace = container.appendingPathComponent("workspace", isDirectory: true)
+            let outside = container.appendingPathComponent("outside", isDirectory: true)
+
+            XCTAssertTrue(CodexAppServerSession.workspaceRootsAreConfined([], to: workspace))
+            XCTAssertTrue(
+                CodexAppServerSession.workspaceRootsAreConfined([workspace.path], to: workspace)
+            )
+            XCTAssertFalse(
+                CodexAppServerSession.workspaceRootsAreConfined([outside.path], to: workspace)
+            )
+            XCTAssertFalse(
+                CodexAppServerSession.workspaceRootsAreConfined(
+                    [workspace.path, outside.path],
+                    to: workspace
+                )
             )
         }
 
@@ -1576,8 +1756,55 @@
             XCTAssertTrue(config.contains("\":workspace_roots\" = \"read\""))
             XCTAssertTrue(config.contains("[permissions.goalong-recap.network]"))
             XCTAssertTrue(config.contains("enabled = false"))
+            XCTAssertTrue(config.contains("[features]"))
+            XCTAssertTrue(config.contains("plugins = false"))
+            XCTAssertTrue(config.contains("remote_plugin = false"))
+            XCTAssertTrue(config.contains("goals = false"))
+            XCTAssertTrue(config.contains("memories = false"))
+            XCTAssertTrue(config.contains("shell_tool = false"))
             XCTAssertFalse(config.contains("workspaceWrite"))
             XCTAssertFalse(config.contains("readOnlyAccess"))
+        }
+
+        func testCodexHomePrunesOnlyEphemeralRuntimeArtifacts() throws {
+            let directory = try canonicalTemporaryDirectory()
+                .appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            try CodexAppServerSession.prepareCodexHome(at: directory)
+
+            let removableNames = [
+                ".tmp", "cache", "plugins", "skills", "sessions", "tmp", "history.jsonl",
+                "logs_2.sqlite", "logs_2.sqlite-wal", "state_5.sqlite",
+            ]
+            for name in removableNames {
+                let url = directory.appendingPathComponent(name)
+                if name.contains(".") && !name.hasPrefix(".") {
+                    try Data("ephemeral".utf8).write(to: url)
+                } else if name == "history.jsonl" {
+                    try Data("ephemeral".utf8).write(to: url)
+                } else {
+                    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+                }
+            }
+            let retainedNames = ["auth.json", "models_cache.json", "installation_id", "custom.json"]
+            for name in retainedNames {
+                try Data("retained".utf8).write(to: directory.appendingPathComponent(name))
+            }
+
+            try CodexAppServerSession.pruneEphemeralCodexArtifacts(at: directory)
+
+            for name in removableNames {
+                XCTAssertFalse(
+                    FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path),
+                    "Expected \(name) to be removed"
+                )
+            }
+            for name in retainedNames {
+                XCTAssertTrue(
+                    FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path),
+                    "Expected \(name) to be retained"
+                )
+            }
         }
 
         func testCodexEnvironmentDropsSecretsAndCredentialSources() {
@@ -1650,7 +1877,14 @@
         }
 
         private func recapFixture(day: Date, markdown: String) -> ChatGPTDailyRecap {
-            ChatGPTDailyRecap(
+            let lines = [
+                markdown,
+                "Observed start and end remain evidence-bounded.",
+                "The strongest focus period advanced concrete work.",
+                "The lowest-momentum period involved context switching.",
+                "Agent collaboration produced a useful next step.",
+            ]
+            return ChatGPTDailyRecap(
                 day: day,
                 generatedAt: day.addingTimeInterval(123),
                 planType: "plus",
@@ -1668,7 +1902,12 @@
                     computerHistoryResources: 29,
                     workflowSuggestions: 31
                 ),
-                markdown: markdown
+                markdown: lines.joined(separator: "\n"),
+                model: CodexDailyAssessmentContract.model,
+                reasoningEffort: CodexDailyAssessmentContract.reasoningEffort,
+                productivityScore: 74,
+                confidenceScore: 68,
+                summaryLines: lines
             )
         }
 

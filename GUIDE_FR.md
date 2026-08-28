@@ -120,12 +120,14 @@ L’icône de barre des menus permet de :
 - consulter les diagnostics ;
 - quitter l’application.
 
-Le tableau de bord contient : **Vue d’ensemble**, **Activité**, **Apple Screen
-Time**, **Travail agentique**, **Récap IA**, **Partager**, **Confidentialité et
-sécurité**, et **Réglages**. La vue **Activité** réunit les apps et sites,
-Computer History, le récapitulatif compact de la journée et la chronologie.
-**Travail agentique** lit les historiques locaux configurés directement à leur
+Le tableau de bord contient : **Vue d’ensemble**, **Computer History**, **Screen
+Time**, **Conversations IA**, **Activity**, **Partager**, **Confidentialité** et
+**Réglages**. La vue **Computer History** réunit les apps et sites,
+le récapitulatif factuel de la journée et la chronologie. **Conversations IA**
+lit les historiques locaux configurés directement à leur
 emplacement d’origine et ne conserve pas une seconde copie des transcriptions.
+**Activity** combine ces données avec Screen Time et peut produire un rapport
+quotidien de cinq lignes via le compte ChatGPT connecté.
 
 Dans **Activité → Apps & sites**, toutes les applications et tous les sites observés sont listés avec leur temps estimé au premier plan et leurs minutes d’entrée active. Le temps au premier plan est volontairement prudent : Goalong History n’invente jamais plus de 75 secondes entre deux observations.
 

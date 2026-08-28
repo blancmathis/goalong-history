@@ -113,14 +113,14 @@ Website rules take priority over the containing browser rule. The original JSONL
 The SwiftUI dashboard is split into eight areas:
 
 - **Overview** — runtime state, daily metrics, coverage, top apps, and recent sessions;
-- **Activity** — apps and sites, causal
+- **Computer History** — apps and sites, causal
   [Computer History](docs/COMPUTER_HISTORY_PARITY.md), the compact day recap,
   and the searchable timeline;
-- **Apple Screen Time** — isolated import and analysis of user-exported Apple device activity;
-- **[Agentic work](Features/AgentActivity/README.md)** — bounded direct-source
+- **Screen Time** — isolated import and analysis of user-exported Apple device activity;
+- **[AI conversations](Features/AgentActivity/README.md)** — bounded direct-source
   metadata and on-demand analysis without a stored transcript copy;
-- **[AI recap](docs/CHATGPT_RECAP.md)** — optional bounded synthesis through
-  the user's ChatGPT/Codex account;
+- **[Activity](docs/CHATGPT_RECAP.md)** — daily statistics and an optional
+  five-line GPT-5.6 Luna High assessment through the user's ChatGPT/Codex account;
 - **Share** — persistent per-app and per-site rules with verified event-level export;
 - **Privacy & Security** — permission state, data flow, storage, identity, and safe deletion;
 - **Settings** — capture signals, retention, URL redaction, verification, and exclusions.

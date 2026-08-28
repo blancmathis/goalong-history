@@ -23,16 +23,26 @@
         let contextDigest: String
         let sourceCounts: ChatGPTRecapSourceCounts
         let markdown: String
+        let model: String?
+        let reasoningEffort: String?
+        let productivityScore: Int?
+        let confidenceScore: Int?
+        let summaryLines: [String]?
 
         init(
-            schemaVersion: Int = 1,
+            schemaVersion: Int = 2,
             day: Date,
             generatedAt: Date = Date(),
             provider: String = "codex_app_server_chatgpt",
             planType: String?,
             contextDigest: String,
             sourceCounts: ChatGPTRecapSourceCounts,
-            markdown: String
+            markdown: String,
+            model: String? = nil,
+            reasoningEffort: String? = nil,
+            productivityScore: Int? = nil,
+            confidenceScore: Int? = nil,
+            summaryLines: [String]? = nil
         ) {
             self.schemaVersion = schemaVersion
             self.day = Calendar.current.startOfDay(for: day)
@@ -42,14 +52,39 @@
             self.contextDigest = contextDigest
             self.sourceCounts = sourceCounts
             self.markdown = markdown
+            self.model = model
+            self.reasoningEffort = reasoningEffort
+            self.productivityScore = productivityScore
+            self.confidenceScore = confidenceScore
+            self.summaryLines = summaryLines
+        }
+
+        var isValidCurrentAssessment: Bool {
+            guard schemaVersion == 2,
+                model == CodexDailyAssessmentContract.model,
+                reasoningEffort == CodexDailyAssessmentContract.reasoningEffort,
+                let productivityScore,
+                let confidenceScore,
+                let summaryLines,
+                (0...100).contains(productivityScore),
+                (0...100).contains(confidenceScore),
+                summaryLines.count == ChatGPTDailyAssessment.requiredSummaryLineCount
+            else { return false }
+            return markdown == summaryLines.joined(separator: "\n")
+                && summaryLines.allSatisfy {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && $0.utf8.count <= ChatGPTDailyAssessment.maximumSummaryLineBytes
+            }
         }
     }
 
     enum ChatGPTRecapPersistence {
         typealias Writer = (Data, URL) throws -> Void
 
-        static let maximumMarkdownBytes = CodexAppServerLimits.production.maximumRecapMarkdownBytes
-        static let maximumJSONBytes = 8 * 1_024 * 1_024
+        static let maximumMarkdownBytes = 8 * 1_024
+        static let maximumLegacyMarkdownBytes = CodexAppServerLimits.production.maximumRecapMarkdownBytes
+        static let maximumJSONBytes = 64 * 1_024
+        static let maximumLegacyJSONBytes = 8 * 1_024 * 1_024
 
         static func write(
             _ recap: ChatGPTDailyRecap,
@@ -70,12 +105,21 @@
                 planType: recap.planType,
                 contextDigest: recap.contextDigest,
                 sourceCounts: recap.sourceCounts,
-                markdown: redactedMarkdown
+                markdown: redactedMarkdown,
+                model: recap.model,
+                reasoningEffort: recap.reasoningEffort,
+                productivityScore: recap.productivityScore,
+                confidenceScore: recap.confidenceScore,
+                summaryLines: recap.summaryLines?.compactMap {
+                    ActivitySemanticTextSanitizer.redact($0)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
             )
             let markdownData = Data(redactedMarkdown.utf8)
-            guard markdownData.count <= maximumMarkdownBytes else {
+            guard persistedRecap.isValidCurrentAssessment,
+                markdownData.count <= maximumMarkdownBytes
+            else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "recap Markdown exceeded \(maximumMarkdownBytes) bytes before persistence"
+                    "daily assessment failed its bounded five-line persistence contract"
                 )
             }
 
@@ -127,15 +171,20 @@
             guard
                 let data = try? ChatGPTHistoryStore.readStableSource(
                     at: url,
-                    maximumBytes: Int64(maximumJSONBytes)
+                    maximumBytes: Int64(maximumLegacyJSONBytes)
                 )
             else { return nil }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            guard let recap = try? decoder.decode(ChatGPTDailyRecap.self, from: data),
-                recap.schemaVersion == 1,
-                recap.markdown.utf8.count <= maximumMarkdownBytes
-            else { return nil }
+            guard let recap = try? decoder.decode(ChatGPTDailyRecap.self, from: data) else { return nil }
+            if recap.schemaVersion == 1 {
+                guard recap.markdown.utf8.count <= maximumLegacyMarkdownBytes else { return nil }
+            } else {
+                guard recap.isValidCurrentAssessment,
+                    recap.markdown.utf8.count <= maximumMarkdownBytes,
+                    data.count <= maximumJSONBytes
+                else { return nil }
+            }
             return recap
         }
 
@@ -187,21 +236,40 @@
         let message: String
     }
 
+    enum ChatGPTDailyRecapSchedule {
+        static let boundaryMinute = 5
+
+        static func completedDay(at date: Date, calendar: Calendar = .current) -> Date? {
+            let today = calendar.startOfDay(for: date)
+            return calendar.date(byAdding: .day, value: -1, to: today)
+        }
+
+        static func nextBoundary(after date: Date, calendar: Calendar = .current) -> Date? {
+            let today = calendar.startOfDay(for: date)
+            guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else { return nil }
+            return calendar.date(byAdding: .minute, value: boundaryMinute, to: tomorrow)
+        }
+    }
+
     final class ChatGPTRecapRuntime: ObservableObject {
         static let shared = ChatGPTRecapRuntime()
 
         @Published private(set) var connectionState: ChatGPTConnectionState = .checking
         @Published private(set) var recap: ChatGPTDailyRecap?
         @Published private(set) var importSummary: ChatGPTImportSummary?
+        @Published private(set) var dayOverview: ChatGPTRecapDayOverview?
         @Published private(set) var isCheckingAccount = false
         @Published private(set) var isConnecting = false
         @Published private(set) var isGenerating = false
         @Published private(set) var isImporting = false
+        @Published private(set) var isLoadingDayOverview = false
+        @Published private(set) var dayOverviewError: String?
         @Published private(set) var streamedMarkdown = ""
         @Published var selectedDay: Date
         @Published var automaticRecapsEnabled: Bool {
             didSet {
                 UserDefaults.standard.set(automaticRecapsEnabled, forKey: Self.automaticRecapsKey)
+                scheduleNextAutomaticRecap()
                 if automaticRecapsEnabled { maybeGenerateAutomaticRecap() }
             }
         }
@@ -230,7 +298,6 @@
         private var started = false
 
         private static let automaticRecapsKey = "chatgptRecap.automaticEnabled"
-        private static let automaticRefreshInterval: TimeInterval = 4 * 60 * 60
 
         init(
             chatHistoryStore: ChatGPTHistoryStore = ChatGPTHistoryStore(
@@ -260,7 +327,10 @@
             self.delayedAutomaticScheduler = delayedAutomaticScheduler
             let today = Calendar.current.startOfDay(for: Date())
             selectedDay = today
-            automaticRecapsEnabled = UserDefaults.standard.bool(forKey: Self.automaticRecapsKey)
+            automaticRecapsEnabled =
+                UserDefaults.standard.object(forKey: Self.automaticRecapsKey) == nil
+                ? true
+                : UserDefaults.standard.bool(forKey: Self.automaticRecapsKey)
             recap = ChatGPTRecapPersistence.load(for: today, from: recapsDirectory)
             importSummary = chatHistoryStore.summary()
         }
@@ -283,16 +353,13 @@
         /// `configure`, and `start` retain cached state without launching Codex.
         func activate() {
             refreshAccount()
+            refreshDayOverview()
         }
 
         func start() {
             guard !started else { return }
             started = true
-            let timer = Timer(timeInterval: 15 * 60, repeats: true) { [weak self] _ in
-                self?.maybeGenerateAutomaticRecap()
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            self.timer = timer
+            scheduleNextAutomaticRecap()
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self, self.started else { return }
                 self.maybeGenerateAutomaticRecap()
@@ -323,6 +390,51 @@
             selectedDay = normalized
             streamedMarkdown = ""
             recap = ChatGPTRecapPersistence.load(for: normalized, from: recapsDirectory)
+            dayOverview = nil
+            dayOverviewError = nil
+            isLoadingDayOverview = false
+            refreshDayOverview()
+        }
+
+        func refreshDayOverview() {
+            guard !deviceID.isEmpty, !isLoadingDayOverview else { return }
+            let requestedDay = selectedDay
+            let storedSourceCounts = recap?.sourceCounts
+            isLoadingDayOverview = true
+            dayOverviewError = nil
+            workQueue.async { [weak self] in
+                guard let self else { return }
+                do {
+                    let context = try ChatGPTRecapContextBuilder.build(
+                        for: requestedDay,
+                        deviceID: self.deviceID,
+                        chatHistoryStore: self.chatHistoryStore,
+                        analyzeAgentContent: false
+                    )
+                    let measuredOverview = ChatGPTRecapContextBuilder.dayOverview(from: context)
+                    let overview = storedSourceCounts.map {
+                        measuredOverview.replacingAgentMetrics(with: $0)
+                    } ?? measuredOverview
+                    DispatchQueue.main.async {
+                        guard Calendar.current.isDate(self.selectedDay, inSameDayAs: requestedDay) else {
+                            return
+                        }
+                        self.dayOverview = overview
+                        self.isLoadingDayOverview = false
+                    }
+                } catch {
+                    let message = ActivitySemanticTextSanitizer.redact(error.localizedDescription)
+                        ?? "The selected day could not be loaded."
+                    DispatchQueue.main.async {
+                        guard Calendar.current.isDate(self.selectedDay, inSameDayAs: requestedDay) else {
+                            return
+                        }
+                        self.dayOverview = nil
+                        self.dayOverviewError = message
+                        self.isLoadingDayOverview = false
+                    }
+                }
+            }
         }
 
         func refreshAccount() {
@@ -557,6 +669,7 @@
                     guard context.hasMeaningfulData else {
                         throw CodexAppServerError.generationFailed("There is no captured context for this day yet.")
                     }
+                    let overview = ChatGPTRecapContextBuilder.dayOverview(from: context)
                     guard self.derivedWriteBarrier.isCurrent(permit), self.isRunActive(runID) else {
                         throw RecapGenerationInterruption.historyCleared
                     }
@@ -579,26 +692,21 @@
                         for: context,
                         outputLanguage: Self.outputLanguage
                     )
-                    let markdown = try session.generateRecap(
+                    let assessment = try session.generateRecap(
                         prompt: prompt,
-                        workingDirectory: directory,
-                        onDelta: { [weak self] delta in
-                            DispatchQueue.main.async {
-                                guard let self,
-                                    self.isRunActive(runID),
-                                    Calendar.current.isDate(self.selectedDay, inSameDayAs: normalizedDay),
-                                    self.derivedWriteBarrier.isCurrent(permit)
-                                else { return }
-                                self.streamedMarkdown.append(delta)
-                            }
-                        }
+                        workingDirectory: directory
                     )
                     let result = ChatGPTDailyRecap(
                         day: normalizedDay,
                         planType: account.planType,
                         contextDigest: context.digest,
                         sourceCounts: context.sourceCounts,
-                        markdown: markdown
+                        markdown: assessment.markdown,
+                        model: CodexDailyAssessmentContract.model,
+                        reasoningEffort: CodexDailyAssessmentContract.reasoningEffort,
+                        productivityScore: assessment.productivityScore,
+                        confidenceScore: assessment.confidenceScore,
+                        summaryLines: assessment.summaryLines
                     )
                     guard self.derivedWriteBarrier.isCurrent(permit), self.isRunActive(runID) else {
                         throw RecapGenerationInterruption.historyCleared
@@ -615,12 +723,15 @@
                         self.publishAccount(account)
                         if Calendar.current.isDate(self.selectedDay, inSameDayAs: normalizedDay) {
                             self.recap = result
+                            self.dayOverview = overview
+                            self.dayOverviewError = nil
+                            self.isLoadingDayOverview = false
                         }
                         if !automatic {
                             self.alert = ChatGPTRecapAlert(
-                                title: "Daily recap generated",
+                                title: "Daily activity report generated",
                                 message:
-                                    "The recap is stored locally. Only the bounded, sanitized context assembled for this run was sent through Codex."
+                                    "The five-line report is stored locally. The agent used GPT-5.6 Luna with High reasoning and only the bounded context assembled for this run."
                             )
                         }
                     }
@@ -741,14 +852,27 @@
 
         private func maybeGenerateAutomaticRecap() {
             guard started, automaticRecapsEnabled, !isGenerating else { return }
-            guard case .connected = connectionState else { return }
-            let today = Calendar.current.startOfDay(for: Date())
-            if let stored = ChatGPTRecapPersistence.load(for: today, from: recapsDirectory),
-                Date().timeIntervalSince(stored.generatedAt) < Self.automaticRefreshInterval
-            {
-                return
+            guard let completedDay = ChatGPTDailyRecapSchedule.completedDay(at: Date()) else { return }
+            if let stored = ChatGPTRecapPersistence.load(for: completedDay, from: recapsDirectory),
+                stored.isValidCurrentAssessment
+            { return }
+            generateRecap(for: completedDay, automatic: true)
+        }
+
+        private func scheduleNextAutomaticRecap() {
+            timer?.invalidate()
+            timer = nil
+            guard started, automaticRecapsEnabled,
+                let fireDate = ChatGPTDailyRecapSchedule.nextBoundary(after: Date())
+            else { return }
+            let timer = Timer(fire: fireDate, interval: 0, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                self.maybeGenerateAutomaticRecap()
+                self.scheduleNextAutomaticRecap()
             }
-            generateRecap(for: today, automatic: true)
+            timer.tolerance = 60
+            RunLoop.main.add(timer, forMode: .common)
+            self.timer = timer
         }
 
         private func publishAccount(_ account: CodexAccount?) {
