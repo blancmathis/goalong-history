@@ -38,6 +38,67 @@ bundle_identifier_from_signature() {
   /usr/bin/awk -F= '/^Identifier=/{print $2; exit}' <<<"$details"
 }
 
+bundle_signature_kind() {
+  local details
+  details="$(/usr/bin/codesign -dv --verbose=4 "$1" 2>&1)" || return 1
+  if /usr/bin/grep -Fxq 'Signature=adhoc' <<<"$details"; then
+    printf '%s\n' 'adHoc'
+  elif /usr/bin/grep -q '^Authority=Apple Development:' <<<"$details"; then
+    printf '%s\n' 'development'
+  elif /usr/bin/grep -q '^Authority=Developer ID Application:' <<<"$details"; then
+    printf '%s\n' 'developerID'
+  elif /usr/bin/grep -q '^Authority=' <<<"$details"; then
+    printf '%s\n' 'certificateBacked'
+  else
+    return 1
+  fi
+}
+
+bundle_designated_requirement() {
+  local requirement
+  requirement="$(/usr/bin/codesign -d -r- "$1" 2>&1)" || return 1
+  /usr/bin/sed -n 's/^designated => //p' <<<"$requirement"
+}
+
+privacy_identity_replacement_allowed() {
+  local installed_kind="$1"
+  local source_kind="$2"
+  local installed_requirement="$3"
+  local source_requirement="$4"
+
+  if [[ "$source_kind" == 'developerID' \
+       && ( "$installed_kind" == 'adHoc' || "$installed_kind" == 'development' ) ]]; then
+    return 0
+  fi
+  [[ -n "$installed_requirement" \
+     && "$installed_requirement" == "$source_requirement" ]]
+}
+
+verify_replacement_preserves_privacy_identity() {
+  local installed_app="$1"
+  local source_app="$2"
+  local installed_kind
+  local source_kind
+  local installed_requirement
+  local source_requirement
+
+  [[ ! -e "$installed_app" && ! -L "$installed_app" ]] && return 0
+  installed_kind="$(bundle_signature_kind "$installed_app")" || return 1
+  source_kind="$(bundle_signature_kind "$source_app")" || return 1
+  installed_requirement="$(bundle_designated_requirement "$installed_app")" || return 1
+  source_requirement="$(bundle_designated_requirement "$source_app")" || return 1
+
+  if privacy_identity_replacement_allowed \
+      "$installed_kind" "$source_kind" "$installed_requirement" "$source_requirement"; then
+    if [[ "$source_kind" == 'developerID' \
+         && ( "$installed_kind" == 'adHoc' || "$installed_kind" == 'development' ) ]]; then
+      warn "Migrating to the stable public Developer ID identity; macOS may require one final approval."
+    fi
+    return 0
+  fi
+  return 1
+}
+
 bundle_has_expected_identity() {
   local app_path="$1"
   local plist_identifier
@@ -520,6 +581,13 @@ recover_interrupted_replacement
 preflight_existing_target
 stage_release_bundle "$SOURCE_APP"
 status "Verified a target-filesystem staging copy"
+if ! verify_replacement_preserves_privacy_identity "$TARGET_APP" "$STAGED_APP"; then
+  echo "failed"
+  fail "The update would change Goalong History's macOS privacy identity."
+  note "Use a release signed for the same Team ID; changing identity resets Accessibility and Full Disk Access."
+  exit 1
+fi
+status "macOS privacy identity is stable or safely migrated"
 
 headline "Installing"
 /usr/bin/launchctl bootout "gui/$UID" "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist" >/dev/null 2>&1 || true

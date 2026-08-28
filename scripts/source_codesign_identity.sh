@@ -83,7 +83,7 @@ localhistory_verify_source_codesign_identity() {
   if ! /usr/bin/codesign --force --timestamp=none --sign "$identity" "$probe_binary" >/dev/null 2>&1; then
     /bin/rm -rf -- "$probe_directory"
     echo "The selected signing identity exists but its private key is unavailable to codesign: $identity" >&2
-    echo "Unlock its keychain and allow codesign to use the private key, or explicitly set LOCALHISTORY_CODESIGN_IDENTITY=- to accept ad-hoc permission resets." >&2
+    echo "Unlock its keychain and allow codesign to use the private key. Goalong will not fall back to a changing ad-hoc identity when that would reset macOS permissions." >&2
     return 1
   fi
   /bin/rm -rf -- "$probe_directory"

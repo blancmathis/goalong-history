@@ -95,8 +95,10 @@ Automatic completed-day analysis is enabled by default unless the user has
 explicitly turned it off.
 
 - One tolerant, non-repeating timer is scheduled for 00:05 local time.
+- One independent one-shot fallback wakes at 00:10 in case the main RunLoop timer did not fire; it adds no polling loop or background process.
 - The timer analyzes only the day that just ended.
 - On app launch, one delayed catch-up checks yesterday only.
+- Transient startup or session failures retry at most three times, after 15 minutes, 1 hour and 3 hours.
 - Existing valid reports suppress duplicate work.
 - There is no fifteen-minute polling loop and no unbounded historical backlog.
 - Codex runs only for account checks or report generation, then its process is

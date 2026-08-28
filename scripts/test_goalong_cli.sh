@@ -25,7 +25,8 @@ trap '/bin/rm -rf -- "$TEST_ROOT"' EXIT
 /usr/bin/printf '%s\n' '{}' > "$TEST_ROOT/events/2026-08-27.jsonl"
 
 before="$(find "$TEST_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
-"$CLI" --root "$TEST_ROOT" days | jq -e '.recaps == ["2026-08-27"]' >/dev/null
+"$CLI" --root "$TEST_ROOT" days \
+  | jq -e '.recaps == ["2026-08-27"] and .aiConversationCandidateDays == [] and .agentActivityIndexStatus == "notIndexed"' >/dev/null
 "$CLI" --root "$TEST_ROOT" recap 2026-08-27 \
   | jq -e '.status == "available" and .recap.productivityScore == 64' >/dev/null
 "$CLI" --root "$TEST_ROOT" recap 2026-08-28 \
@@ -39,7 +40,13 @@ fi
 "$CLI" --root "$TEST_ROOT" screen-time --mac-only \
   | jq -e '.scope == "macOnly" and (.reports | type == "array")' >/dev/null
 "$CLI" --root "$TEST_ROOT" ai-conversations 2026-08-27 \
-  | jq -e '.status == "notIndexed" and .conversations == [] and .returnedConversationCount == 0' >/dev/null
+  | jq -e '.status == "notIndexed" and .conversations == [] and .candidateOffset == 0 and .nextCandidateOffset == null and .visitedConversationCandidateCount == 0 and .returnedConversationCount == 0 and .noVisibleMessageCandidateCount == 0 and .outputDroppedConversationCount == 0' >/dev/null
+"$CLI" --root "$TEST_ROOT" ai-conversations 2026-08-27 --offset 24 \
+  | jq -e '.status == "notIndexed" and .candidateOffset == 24 and .nextCandidateOffset == null' >/dev/null
+if "$CLI" --root "$TEST_ROOT" ai-conversations 2026-08-27 --offset 50001 >/dev/null 2>&1; then
+  echo "Goalong CLI accepted an out-of-range AI conversation offset." >&2
+  exit 1
+fi
 after="$(find "$TEST_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
 [[ "$before" == "$after" ]]
 

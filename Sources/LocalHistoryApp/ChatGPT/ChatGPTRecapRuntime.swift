@@ -270,6 +270,7 @@
             didSet {
                 UserDefaults.standard.set(automaticRecapsEnabled, forKey: Self.automaticRecapsKey)
                 scheduleNextAutomaticRecap()
+                scheduleAutomaticBoundaryFallback()
                 if automaticRecapsEnabled { maybeGenerateAutomaticRecap() }
             }
         }
@@ -288,6 +289,7 @@
         private let fileRevealer: ([URL]) -> Void
         private let delayedAutomaticScheduler: (DispatchWorkItem) -> Void
         private let automaticRetryScheduler: (TimeInterval, DispatchWorkItem) -> Void
+        private let automaticBoundaryFallbackScheduler: (Date, DispatchWorkItem) -> Void
         private let derivedWriteBarrier = DerivedHistoryWriteBarrier.shared
         private let sessionLock = NSLock()
         private let runStateLock = NSLock()
@@ -297,12 +299,14 @@
         private var timer: Timer?
         private var delayedAutomaticWorkItem: DispatchWorkItem?
         private var automaticRetryWorkItem: DispatchWorkItem?
+        private var automaticBoundaryFallbackWorkItem: DispatchWorkItem?
         private var automaticRetryDay: Date?
         private var automaticRetryAttempt = 0
         private var started = false
 
         private static let automaticRecapsKey = "chatgptRecap.automaticEnabled"
         private static let automaticRetryDelays: [TimeInterval] = [15 * 60, 60 * 60, 3 * 60 * 60]
+        private static let automaticBoundaryFallbackDelay: TimeInterval = 5 * 60
 
         init(
             chatHistoryStore: ChatGPTHistoryStore = ChatGPTHistoryStore(
@@ -324,6 +328,13 @@
             automaticRetryScheduler: @escaping (TimeInterval, DispatchWorkItem) -> Void = {
                 delay, workItem in
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+            },
+            automaticBoundaryFallbackScheduler: @escaping (Date, DispatchWorkItem) -> Void = {
+                fireDate, workItem in
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + max(fireDate.timeIntervalSinceNow, 0),
+                    execute: workItem
+                )
             }
         ) {
             self.chatHistoryStore = chatHistoryStore
@@ -335,6 +346,7 @@
             self.fileRevealer = fileRevealer
             self.delayedAutomaticScheduler = delayedAutomaticScheduler
             self.automaticRetryScheduler = automaticRetryScheduler
+            self.automaticBoundaryFallbackScheduler = automaticBoundaryFallbackScheduler
             let today = Calendar.current.startOfDay(for: Date())
             selectedDay = today
             automaticRecapsEnabled =
@@ -349,6 +361,7 @@
             timer?.invalidate()
             delayedAutomaticWorkItem?.cancel()
             automaticRetryWorkItem?.cancel()
+            automaticBoundaryFallbackWorkItem?.cancel()
         }
 
         var codexExecutableURL: URL? { executableLocator() }
@@ -371,6 +384,7 @@
             guard !started else { return }
             started = true
             scheduleNextAutomaticRecap()
+            scheduleAutomaticBoundaryFallback()
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self, self.started else { return }
                 self.maybeGenerateAutomaticRecap()
@@ -385,6 +399,8 @@
             delayedAutomaticWorkItem?.cancel()
             delayedAutomaticWorkItem = nil
             clearAutomaticRetry()
+            automaticBoundaryFallbackWorkItem?.cancel()
+            automaticBoundaryFallbackWorkItem = nil
             started = false
             invalidateActiveRun(closeSession: true)
         }
@@ -869,6 +885,10 @@
             }
 
             var automaticRetryAttemptForTesting: Int { automaticRetryAttempt }
+
+            var hasAutomaticBoundaryFallbackForTesting: Bool {
+                automaticBoundaryFallbackWorkItem != nil
+            }
         #endif
 
         private func maybeGenerateAutomaticRecap() {
@@ -951,6 +971,23 @@
             timer.tolerance = 60
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
+        }
+
+        private func scheduleAutomaticBoundaryFallback() {
+            automaticBoundaryFallbackWorkItem?.cancel()
+            automaticBoundaryFallbackWorkItem = nil
+            guard started, automaticRecapsEnabled,
+                let boundary = ChatGPTDailyRecapSchedule.nextBoundary(after: Date())
+            else { return }
+            let fireDate = boundary.addingTimeInterval(Self.automaticBoundaryFallbackDelay)
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.started, self.automaticRecapsEnabled else { return }
+                self.automaticBoundaryFallbackWorkItem = nil
+                self.maybeGenerateAutomaticRecap()
+                self.scheduleAutomaticBoundaryFallback()
+            }
+            automaticBoundaryFallbackWorkItem = workItem
+            automaticBoundaryFallbackScheduler(fireDate, workItem)
         }
 
         private func publishAccount(_ account: CodexAccount?) {

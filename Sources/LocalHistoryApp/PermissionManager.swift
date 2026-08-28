@@ -66,6 +66,25 @@
             if inputMonitoringProvidedByAccessibility { return "via Accessibility" }
             return "off"
         }
+
+        static func resolved(
+            accessibilityPreflight: Bool,
+            accessibilityFunctionalProbe: Bool,
+            inputMonitoringDirectlyGranted: Bool
+        ) -> PermissionStatus {
+            let accessibility = accessibilityPreflight || accessibilityFunctionalProbe
+            let inputMonitoringProvidedByAccessibility =
+                accessibility && !inputMonitoringDirectlyGranted
+            return PermissionStatus(
+                accessibility: accessibility,
+                inputMonitoring:
+                    inputMonitoringDirectlyGranted || inputMonitoringProvidedByAccessibility,
+                accessibilityPreflight: accessibilityPreflight,
+                accessibilityFunctionalProbe: accessibilityFunctionalProbe,
+                inputMonitoringDirectlyGranted: inputMonitoringDirectlyGranted,
+                inputMonitoringProvidedByAccessibility: inputMonitoringProvidedByAccessibility
+            )
+        }
     }
 
     enum PermissionWatchdogPolicy {
@@ -151,16 +170,11 @@
         private static func liveStatus() -> PermissionStatus {
             let accessibilityPreflight = AXIsProcessTrusted()
             let accessibilityFunctionalProbe = Self.canReadFocusedApplication()
-            let accessibility = accessibilityPreflight || accessibilityFunctionalProbe
             let directInputMonitoring = CGPreflightListenEventAccess()
-
-            return PermissionStatus(
-                accessibility: accessibility,
-                inputMonitoring: directInputMonitoring,
+            return .resolved(
                 accessibilityPreflight: accessibilityPreflight,
                 accessibilityFunctionalProbe: accessibilityFunctionalProbe,
-                inputMonitoringDirectlyGranted: directInputMonitoring,
-                inputMonitoringProvidedByAccessibility: false
+                inputMonitoringDirectlyGranted: directInputMonitoring
             )
         }
 

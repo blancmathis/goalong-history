@@ -8,6 +8,23 @@ source "$SCRIPT_DIR/../install.sh"
 BASE_URL="https://example.invalid/releases/latest-main"
 AUDIT_FAIL_PATH=""
 
+privacy_identity_replacement_allowed \
+  'adHoc' 'developerID' 'cdhash H"old"' 'identifier "ai.goalong.localhistory" and anchor apple generic'
+privacy_identity_replacement_allowed \
+  'development' 'developerID' 'identifier "development"' 'identifier "public"'
+privacy_identity_replacement_allowed \
+  'developerID' 'developerID' 'identifier "stable"' 'identifier "stable"'
+if privacy_identity_replacement_allowed \
+    'adHoc' 'adHoc' 'cdhash H"old"' 'cdhash H"new"'; then
+  echo "A changed ad-hoc public identity was allowed to reset macOS permissions." >&2
+  exit 1
+fi
+if privacy_identity_replacement_allowed \
+    'developerID' 'developerID' 'identifier "team-one"' 'identifier "team-two"'; then
+  echo "A changed public signing identity was allowed to reset macOS permissions." >&2
+  exit 1
+fi
+
 # Exercise replacement mechanics without running the repository-wide binary audit. The
 # production path invokes the real audit before staging, after staging, and after rename.
 audit_bundle_privacy() {

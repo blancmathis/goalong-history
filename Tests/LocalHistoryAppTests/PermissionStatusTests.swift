@@ -3,19 +3,16 @@
     @testable import LocalHistoryApp
 
     final class PermissionStatusTests: XCTestCase {
-        func testAccessibilityDoesNotMasqueradeAsDirectInputMonitoring() {
-            let status = PermissionStatus(
-                accessibility: true,
-                inputMonitoring: false,
+        func testAccessibilityProvidesEffectiveInputMonitoringWithoutMasqueradingAsDirectGrant() {
+            let status = PermissionStatus.resolved(
                 accessibilityPreflight: true,
                 accessibilityFunctionalProbe: true,
-                inputMonitoringDirectlyGranted: false,
-                inputMonitoringProvidedByAccessibility: false
+                inputMonitoringDirectlyGranted: false
             )
 
-            XCTAssertFalse(status.allGranted)
+            XCTAssertTrue(status.allGranted)
             XCTAssertTrue(status.canAttemptInputTap)
-            XCTAssertEqual(status.inputMonitoringStatusLabel, "off")
+            XCTAssertEqual(status.inputMonitoringStatusLabel, "via Accessibility")
         }
 
         func testSetupRemainsIncompleteWithoutAccessibility() {

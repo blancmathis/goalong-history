@@ -35,6 +35,21 @@ make_fixture_bundle() {
   /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle" >/dev/null 2>&1
 }
 
+privacy_identity_replacement_allowed \
+  'adHoc' 'development' 'cdhash H"old"' 'identifier "ai.goalong.localhistory" and anchor apple generic'
+privacy_identity_replacement_allowed \
+  'development' 'development' 'identifier "stable"' 'identifier "stable"'
+if privacy_identity_replacement_allowed \
+    'adHoc' 'adHoc' 'cdhash H"old"' 'cdhash H"new"'; then
+  echo "A changed ad-hoc identity was allowed to reset macOS permissions." >&2
+  exit 1
+fi
+if privacy_identity_replacement_allowed \
+    'development' 'development' 'identifier "team-one"' 'identifier "team-two"'; then
+  echo "A changed certificate-backed identity was allowed to reset macOS permissions." >&2
+  exit 1
+fi
+
 USER_SELECTION_ROOT="$TEST_ROOT/select-user"
 /bin/mkdir -p "$USER_SELECTION_ROOT/system" "$USER_SELECTION_ROOT/user"
 make_fixture_bundle "$USER_SELECTION_ROOT/user/$APP_NAME.app" "$BUNDLE_ID" "user-existing"

@@ -37,6 +37,79 @@ bundle_identifier_from_signature() {
   /usr/bin/awk -F= '/^Identifier=/{print $2; exit}' <<<"$details"
 }
 
+bundle_signature_kind() {
+  local details
+  if ! details="$(/usr/bin/codesign -dv --verbose=4 "$1" 2>&1)"; then
+    return 1
+  fi
+  if /usr/bin/grep -Fxq 'Signature=adhoc' <<<"$details"; then
+    printf '%s\n' 'adHoc'
+  elif /usr/bin/grep -q '^Authority=Apple Development:' <<<"$details"; then
+    printf '%s\n' 'development'
+  elif /usr/bin/grep -q '^Authority=Developer ID Application:' <<<"$details"; then
+    printf '%s\n' 'developerID'
+  elif /usr/bin/grep -q '^Authority=' <<<"$details"; then
+    printf '%s\n' 'certificateBacked'
+  else
+    return 1
+  fi
+}
+
+bundle_designated_requirement() {
+  local requirement
+  requirement="$(/usr/bin/codesign -d -r- "$1" 2>&1)" || return 1
+  /usr/bin/sed -n 's/^designated => //p' <<<"$requirement"
+}
+
+privacy_identity_replacement_allowed() {
+  local installed_kind="$1"
+  local source_kind="$2"
+  local installed_requirement="$3"
+  local source_requirement="$4"
+
+  # One migration from a build-specific ad-hoc CDHash to a certificate-backed
+  # requirement is desirable: later updates signed by that certificate keep TCC.
+  if [[ "$installed_kind" == 'adHoc' && "$source_kind" != 'adHoc' ]]; then
+    return 0
+  fi
+
+  # Otherwise the designated requirement must remain byte-for-byte stable.
+  # This rejects repeated ad-hoc rebuilds and certificate/team changes before
+  # they can invalidate Accessibility, Input Monitoring, or Full Disk Access.
+  [[ -n "$installed_requirement" \
+     && "$installed_requirement" == "$source_requirement" ]]
+}
+
+verify_replacement_preserves_privacy_identity() {
+  local installed_app="$1"
+  local source_app="$2"
+  local installed_kind
+  local source_kind
+  local installed_requirement
+  local source_requirement
+
+  [[ ! -e "$installed_app" && ! -L "$installed_app" ]] && return 0
+  installed_kind="$(bundle_signature_kind "$installed_app")" || return 1
+  source_kind="$(bundle_signature_kind "$source_app")" || return 1
+  installed_requirement="$(bundle_designated_requirement "$installed_app")" || return 1
+  source_requirement="$(bundle_designated_requirement "$source_app")" || return 1
+
+  if privacy_identity_replacement_allowed \
+      "$installed_kind" "$source_kind" "$installed_requirement" "$source_requirement"; then
+    if [[ "$installed_kind" == 'adHoc' && "$source_kind" != 'adHoc' ]]; then
+      echo "  ! Migrating Goalong History from an ad-hoc identity to a stable certificate-backed identity." >&2
+      echo "    macOS may require one final approval; later same-identity updates will preserve it." >&2
+    fi
+    return 0
+  fi
+
+  echo "Refusing to replace Goalong History with a different macOS privacy identity." >&2
+  echo "Installed: $installed_kind · $installed_requirement" >&2
+  echo "Candidate: $source_kind · $source_requirement" >&2
+  echo "Use the same signing certificate as the installed app; repeated ad-hoc replacements reset permissions." >&2
+  return 1
+}
+
 bundle_has_expected_identity() {
   local app_path="$1"
   local plist_identifier
@@ -469,6 +542,8 @@ main() {
   selected_target_directory="$TARGET_DIR"
   recover_interrupted_replacement
   preflight_existing_target
+  run_step "Preserving macOS privacy identity" \
+    verify_replacement_preserves_privacy_identity "$TARGET_APP" "$source_app"
 
   INSTALL_STAGE_ROOT="$(/usr/bin/mktemp -d "$TARGET_DIR/.goalong-history-source-stage.XXXXXX")"
   /bin/chmod 700 "$INSTALL_STAGE_ROOT"
@@ -482,6 +557,8 @@ main() {
   fi
   recover_interrupted_replacement
   preflight_existing_target
+  run_step "Rechecking macOS privacy identity" \
+    verify_replacement_preserves_privacy_identity "$TARGET_APP" "$staged_app"
   unregister_login_item_if_possible "$TARGET_APP" "$EXECUTABLE_NAME"
   unregister_login_item_if_possible "/Applications/$PREVIOUS_APP_NAME.app" "$PREVIOUS_APP_NAME"
   unregister_login_item_if_possible "$HOME/Applications/$PREVIOUS_APP_NAME.app" "$PREVIOUS_APP_NAME"

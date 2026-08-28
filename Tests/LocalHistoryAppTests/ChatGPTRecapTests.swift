@@ -1615,6 +1615,51 @@
             XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 0)
         }
 
+        func testAutomaticRecapHasOneIndependentDailyBoundaryFallback() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-recap-boundary-fallback")
+            defer { try? FileManager.default.removeItem(at: container) }
+            var scheduledDates: [Date] = []
+            var scheduledItems: [DispatchWorkItem] = []
+            let beforeStart = Date()
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(
+                    rootDirectory: container.appendingPathComponent("history", isDirectory: true)
+                ),
+                recapsDirectory: container.appendingPathComponent("recaps", isDirectory: true),
+                executableLocator: { nil },
+                sessionFactory: { _ in
+                    throw NSError(domain: "ChatGPTRecapTests", code: 102)
+                },
+                directoryOpener: { _ in },
+                fileRevealer: { _ in },
+                delayedAutomaticScheduler: { _ in },
+                automaticRetryScheduler: { _, _ in },
+                automaticBoundaryFallbackScheduler: { fireDate, workItem in
+                    scheduledDates.append(fireDate)
+                    scheduledItems.append(workItem)
+                }
+            )
+
+            runtime.start()
+
+            XCTAssertEqual(scheduledDates.count, 1)
+            XCTAssertEqual(scheduledItems.count, 1)
+            XCTAssertTrue(runtime.hasAutomaticBoundaryFallbackForTesting)
+            let boundary = try XCTUnwrap(
+                ChatGPTDailyRecapSchedule.nextBoundary(after: beforeStart)
+            )
+            XCTAssertEqual(
+                scheduledDates[0].timeIntervalSince(boundary),
+                5 * 60,
+                accuracy: 1
+            )
+            XCTAssertFalse(scheduledItems[0].isCancelled)
+
+            runtime.stop()
+            XCTAssertTrue(scheduledItems[0].isCancelled)
+            XCTAssertFalse(runtime.hasAutomaticBoundaryFallbackForTesting)
+        }
+
         func testRuntimeRevealRepairsMarkdownFromCanonicalJSON() throws {
             let container = try makeTemporaryDirectory(prefix: "goalong-recap-reveal-runtime")
             defer { try? FileManager.default.removeItem(at: container) }

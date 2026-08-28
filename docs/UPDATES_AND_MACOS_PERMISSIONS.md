@@ -80,8 +80,7 @@ ID distribution or notarization. Local identities are signed with Hardened Runti
 `--timestamp=none`, so source installation does not contact Apple's timestamp service.
 Only an explicit `Developer ID Application:` identity requests a trusted distribution
 timestamp. The certificate's private key is never copied into the repository or
-installer. If no local identity is available, the build remains ad hoc and emits an explicit warning. TCC persistence must still be proved by replacing one build with another
-signed by the same certificate and exercising real Accessibility and input callbacks.
+installer. If no local identity is available, the build remains ad hoc and emits an explicit warning. The source installer refuses to replace an existing app when the candidate's designated requirement differs, because doing so would silently invalidate macOS privacy decisions. The only automatic exception is a one-time migration from an ad-hoc build to a certificate-backed build; macOS can require one final approval for that migration, after which builds signed by the same certificate retain a stable identity. TCC persistence must still be proved by replacing one build with another signed by the same certificate and exercising real Accessibility and input callbacks.
 
 ## Permission readiness
 
