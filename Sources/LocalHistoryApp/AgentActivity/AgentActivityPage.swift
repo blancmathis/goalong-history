@@ -8,6 +8,35 @@
         case management
     }
 
+    enum AgentConversationListPresentation {
+        static func date(for record: AgentCaptureRecord) -> Date {
+            if record.availability != .available {
+                return record.sourceModifiedAt ?? record.capturedAt
+            }
+            return record.summary.endedAt
+                ?? record.index.conversationEndedAt
+                ?? record.sourceModifiedAt
+                ?? record.summary.startedAt
+                ?? record.index.conversationStartedAt
+                ?? record.capturedAt
+        }
+
+        static func newestFirst(_ records: [AgentCaptureRecord]) -> [AgentCaptureRecord] {
+            records.sorted { left, right in
+                let leftDate = date(for: left)
+                let rightDate = date(for: right)
+                if leftDate != rightDate { return leftDate > rightDate }
+                return left.id < right.id
+            }
+        }
+
+        static func compactTitle(_ title: String, maximumCharacters: Int = 120) -> String {
+            guard title.count > maximumCharacters, maximumCharacters > 1 else { return title }
+            let end = title.index(title.startIndex, offsetBy: maximumCharacters - 1)
+            return title[..<end].trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+        }
+    }
+
     struct AgentActivityPage: View {
         @ObservedObject var agents: AgentActivityRuntime
         @State private var search = ""
@@ -27,7 +56,6 @@
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if presentation == .history {
-                        conversationHistorySummary
                         conversationHistoryList
                     } else {
                         PageHeader(
@@ -93,56 +121,51 @@
             }
         }
 
-        private var conversationHistorySummary: some View {
-            HStack(alignment: .center, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(agents.overview.sessionCount) conversation\(agents.overview.sessionCount == 1 ? "" : "s")")
-                        .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    Text(conversationSummaryDetail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if agents.isScanning {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Reading changed sources…")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Label("Read from original sources", systemImage: "internaldrive")
+        private var conversationHistoryList: some View {
+            let captures = filteredCaptures
+            return VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .bottom, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(
+                            "\(agents.overview.captures.count) conversation\(agents.overview.captures.count == 1 ? "" : "s")"
+                        )
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        HStack(spacing: 7) {
+                            Text(conversationSummaryDetail)
+                            Text("·")
+                            if agents.isScanning {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                Text("Updating changed sources…")
+                            } else {
+                                Label("Original sources", systemImage: "internaldrive")
+                            }
+                        }
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.bottom, 2)
-        }
-
-        private var conversationHistoryList: some View {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Text("Conversations")
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    Spacer()
-                    Picker("Provider", selection: $providerFilter) {
-                        Text("All providers").tag(nil as AgentProvider?)
-                        ForEach(AgentProvider.allCases) { provider in
-                            Text(provider.displayName).tag(provider as AgentProvider?)
-                        }
                     }
-                    .frame(width: 160)
+                    Spacer()
+                    if availableProviders.count > 1 {
+                        Picker("Provider", selection: $providerFilter) {
+                            Text("All providers").tag(nil as AgentProvider?)
+                            ForEach(availableProviders) { provider in
+                                Text(provider.displayName).tag(provider as AgentProvider?)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                    }
                     TextField("Search conversations", text: $search)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 230)
+                        .frame(width: 240)
                 }
 
                 LHCard(padding: 0) {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        if filteredCaptures.isEmpty {
+                        if captures.isEmpty {
                             EmptyStateView(
-                                symbol: agents.isScanning ? "arrow.triangle.2.circlepath" : "bubble.left.and.bubble.right",
+                                symbol: agents.isScanning
+                                    ? "arrow.triangle.2.circlepath" : "bubble.left.and.bubble.right",
                                 title: agents.isScanning ? "Reading conversations" : "No conversations for this day",
                                 message: agents.isScanning
                                     ? "Goalong is checking changed original sources."
@@ -150,13 +173,13 @@
                             )
                             .frame(minHeight: 230)
                         } else {
-                            ForEach(Array(filteredCaptures.prefix(120).enumerated()), id: \.element.id) { index, record in
+                            ForEach(Array(captures.prefix(120).enumerated()), id: \.element.id) { index, record in
                                 conversationRow(record)
-                                if index < min(filteredCaptures.count, 120) - 1 {
-                                    Divider().padding(.leading, 88)
+                                if index < min(captures.count, 120) - 1 {
+                                    Divider().padding(.leading, 66)
                                 }
                             }
-                            if filteredCaptures.count > 120 {
+                            if captures.count > 120 {
                                 Text("Showing the 120 newest matching conversations")
                                     .font(.system(size: 10))
                                     .foregroundStyle(.secondary)
@@ -170,23 +193,24 @@
         }
 
         private func conversationRow(_ record: AgentCaptureRecord) -> some View {
-            HStack(alignment: .center, spacing: 14) {
-                Text(Self.timeFormatter.string(from: conversationDate(record)))
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .frame(width: 42, alignment: .trailing)
-
+            let title = conversationTitle(record)
+            return HStack(alignment: .center, spacing: 14) {
                 providerIcon(record.provider)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(conversationTitle(record))
-                        .font(.system(size: 12, weight: .semibold))
+                    Text(AgentConversationListPresentation.compactTitle(title))
+                        .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
-                    Text(conversationDetail(record))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .help(title)
+                    HStack(spacing: 6) {
+                        Text(Self.timeFormatter.string(from: AgentConversationListPresentation.date(for: record)))
+                            .monospacedDigit()
+                        Text("·")
+                        Text(conversationDetail(record))
+                    }
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
 
                 Spacer(minLength: 16)
@@ -206,15 +230,25 @@
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 30)
+                .accessibilityLabel("Conversation actions")
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 12)
+            .padding(.vertical, 11)
         }
 
         private var conversationSummaryDetail: String {
-            let providerCount = Set(agents.overview.captures.map { $0.provider.rawValue }).count
-            let messageCount = agents.overview.visibleMessageCount
-            return "\(messageCount) useful message\(messageCount == 1 ? "" : "s") · \(providerCount) provider\(providerCount == 1 ? "" : "s")"
+            let prompts = agents.overview.captures.reduce(0) { count, record in
+                count + record.summary.visibleMessages.filter { $0.role == .user }.count
+            }
+            let replies = agents.overview.captures.reduce(0) { count, record in
+                count + record.summary.visibleMessages.filter { $0.role == .assistantFinal }.count
+            }
+            var parts = [
+                "\(prompts) prompt\(prompts == 1 ? "" : "s")",
+                "\(replies) final repl\(replies == 1 ? "y" : "ies")",
+            ]
+            parts.append(contentsOf: availableProviders.map(\.displayName))
+            return parts.joined(separator: " · ")
         }
 
         private func conversationTitle(_ record: AgentCaptureRecord) -> String {
@@ -224,21 +258,15 @@
 
         private func conversationDetail(_ record: AgentCaptureRecord) -> String {
             guard record.availability == .available else {
-                return "\(record.provider.displayName) · Original source \(record.availability.displayName.lowercased())"
+                return record.provider.displayName
             }
             let prompts = record.summary.visibleMessages.filter { $0.role == .user }.count
             let answers = record.summary.visibleMessages.filter { $0.role == .assistantFinal }.count
             guard record.isAnalyzed, prompts + answers > 0 else {
-                return "\(record.provider.displayName) · Indexed from original source"
+                return record.provider.displayName
             }
-            return "\(record.provider.displayName) · \(prompts) prompt\(prompts == 1 ? "" : "s") · \(answers) final answer\(answers == 1 ? "" : "s")"
-        }
-
-        private func conversationDate(_ record: AgentCaptureRecord) -> Date {
-            record.summary.startedAt
-                ?? record.index.conversationStartedAt
-                ?? record.sourceModifiedAt
-                ?? record.capturedAt
+            return
+                "\(record.provider.displayName) · \(prompts) prompt\(prompts == 1 ? "" : "s") · \(answers) repl\(answers == 1 ? "y" : "ies")"
         }
 
         private static let timeFormatter: DateFormatter = {
@@ -675,11 +703,21 @@
 
         private var filteredCaptures: [AgentCaptureRecord] {
             let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return agents.overview.captures.filter { record in
-                let providerMatches = providerFilter == nil || record.provider == providerFilter
-                let searchMatches = query.isEmpty || record.searchableText.contains(query)
-                return providerMatches && searchMatches
+            let effectiveProviderFilter = availableProviders.count > 1 ? providerFilter : nil
+            return AgentConversationListPresentation.newestFirst(
+                agents.overview.captures.filter { record in
+                    let providerMatches = effectiveProviderFilter == nil || record.provider == effectiveProviderFilter
+                    let searchMatches = query.isEmpty || record.searchableText.contains(query)
+                    return providerMatches && searchMatches
+                })
+        }
+
+        private var availableProviders: [AgentProvider] {
+            var seen = Set<String>()
+            return agents.overview.captures.compactMap { record in
+                seen.insert(record.provider.rawValue).inserted ? record.provider : nil
             }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
         }
 
         private func providerIcon(_ provider: AgentProvider) -> some View {

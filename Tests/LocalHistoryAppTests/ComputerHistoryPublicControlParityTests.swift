@@ -1,4 +1,5 @@
 #if os(macOS)
+    import AgentActivity
     import XCTest
 
     @testable import LocalHistoryApp
@@ -137,8 +138,10 @@
             )
             XCTAssertTrue(agentActivity.contains("case history"))
             XCTAssertTrue(agentActivity.contains("conversationHistoryList"))
-            XCTAssertTrue(agentActivity.contains("Read from original sources"))
-            XCTAssertTrue(agentActivity.contains("final answer"))
+            XCTAssertFalse(agentActivity.contains("Text(\"Conversations\")"))
+            XCTAssertTrue(agentActivity.contains("Original sources"))
+            XCTAssertTrue(agentActivity.contains("final repl"))
+            XCTAssertTrue(agentActivity.contains("availableProviders.count > 1"))
 
             let components = try String(
                 contentsOf: repositoryRoot
@@ -147,6 +150,63 @@
             )
             XCTAssertTrue(components.contains("Button(\"Today\")"))
             XCTAssertTrue(components.contains(".help(\"Return to today\")"))
+        }
+
+        func testAIConversationListOrdersNewestFirstAndCompactsLongFallbackTitles() {
+            let older = makeAgentConversation(
+                id: "older",
+                title: "Older conversation",
+                startedAt: Date(timeIntervalSince1970: 200),
+                activityAt: Date(timeIntervalSince1970: 100)
+            )
+            let newer = makeAgentConversation(
+                id: "newer",
+                title: "Newer conversation",
+                startedAt: Date(timeIntervalSince1970: 50),
+                activityAt: Date(timeIntervalSince1970: 300)
+            )
+
+            let ordered = AgentConversationListPresentation.newestFirst([older, newer])
+
+            XCTAssertEqual(ordered.map(\.summary.title), ["Newer conversation", "Older conversation"])
+            XCTAssertEqual(AgentConversationListPresentation.date(for: newer), Date(timeIntervalSince1970: 300))
+            XCTAssertEqual(
+                AgentConversationListPresentation.compactTitle(
+                    "A deliberately long fallback title that should remain understandable",
+                    maximumCharacters: 24
+                ),
+                "A deliberately long fal…"
+            )
+        }
+
+        private func makeAgentConversation(
+            id: String,
+            title: String,
+            startedAt: Date,
+            activityAt: Date
+        ) -> AgentCaptureRecord {
+            let reference = AgentSourceReference(kind: .file, path: "/tmp/\(id).jsonl")
+            let entry = AgentSourceIndexEntry(
+                id: id,
+                stableConversationID: id,
+                watchedFolderID: "folder-\(id)",
+                watchedFolderName: "Codex",
+                provider: .codex,
+                reference: reference,
+                relativePath: "\(id).jsonl",
+                sourceCreatedAt: startedAt,
+                sourceModifiedAt: activityAt,
+                conversationStartedAt: startedAt,
+                conversationEndedAt: activityAt,
+                firstIndexedAt: startedAt,
+                lastObservedAt: activityAt,
+                byteCount: 1,
+                sha256: String(repeating: "a", count: 64)
+            )
+            return AgentCaptureRecord(
+                index: entry,
+                summary: AgentDocumentSummary(title: title, startedAt: startedAt, endedAt: activityAt)
+            )
         }
 
         func testComputerHistoryTimelineBuildsOnlyOncePerSnapshotRevision() {
