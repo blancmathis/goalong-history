@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum AgentTranscriptParser {
@@ -43,23 +44,44 @@ public enum AgentTranscriptParser {
     /// Incremental JSONL parser shared by regular files and virtual OpenCode rows.
     /// It never retains more than `maximumBufferedLineBytes` of transcript content.
     struct IncrementalJSONLines {
+        private static let timestampKeyBytes = Array("\"timestamp\"".utf8)
         private var accumulator: Accumulator
+        private let analysisTimestampBounds: (lower: String, upper: String)?
+        private let usesCodexDailyProjection: Bool
         private var pendingLine = Data()
         private var discardingOversizedLine = false
         private var parsedAny = false
+        private var examinedFirstLine = false
+        private var reachedAnalysisEnd = false
         private(set) var peakBufferedBytes = 0
 
-        init(fileURL: URL, provider: AgentProvider) {
+        init(
+            fileURL: URL,
+            provider: AgentProvider,
+            analysisInterval: DateInterval? = nil
+        ) {
             accumulator = Accumulator(fileURL: fileURL, provider: provider, format: .jsonLines)
+            if [.codex, .claudeCode].contains(provider), let analysisInterval {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                analysisTimestampBounds = (
+                    formatter.string(from: analysisInterval.start),
+                    formatter.string(from: analysisInterval.end)
+                )
+            } else {
+                analysisTimestampBounds = nil
+            }
+            usesCodexDailyProjection = provider == .codex && analysisInterval != nil
         }
 
         mutating func consume(_ chunk: Data) {
-            guard !chunk.isEmpty else { return }
+            guard !chunk.isEmpty, !reachedAnalysisEnd else { return }
             var cursor = chunk.startIndex
             while cursor < chunk.endIndex {
                 if let newline = chunk[cursor...].firstIndex(of: 0x0A) {
                     append(chunk[cursor..<newline])
                     completeLine()
+                    if reachedAnalysisEnd { return }
                     cursor = chunk.index(after: newline)
                 } else {
                     append(chunk[cursor..<chunk.endIndex])
@@ -73,13 +95,36 @@ public enum AgentTranscriptParser {
         /// parser copies only the current bounded line into `pendingLine`.
         mutating func consume(bytes: UnsafeRawBufferPointer) {
             guard let baseAddress = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                !bytes.isEmpty
+                !bytes.isEmpty,
+                !reachedAnalysisEnd
             else { return }
             var fragmentStart = 0
-            for index in 0..<bytes.count where baseAddress[index] == 0x0A {
-                append(bytes: baseAddress.advanced(by: fragmentStart), count: index - fragmentStart)
-                completeLine()
+            var searchStart = 0
+            while searchStart < bytes.count,
+                let match = Darwin.memchr(
+                    baseAddress.advanced(by: searchStart),
+                    Int32(0x0A),
+                    bytes.count - searchStart
+                )
+            {
+                let index = baseAddress.distance(
+                    to: match.assumingMemoryBound(to: UInt8.self)
+                )
+                let lineCount = index - fragmentStart
+                if pendingLine.isEmpty, !discardingOversizedLine {
+                    consumeLine(
+                        bytes: UnsafeRawBufferPointer(
+                            start: baseAddress.advanced(by: fragmentStart),
+                            count: lineCount
+                        )
+                    )
+                } else {
+                    append(bytes: baseAddress.advanced(by: fragmentStart), count: lineCount)
+                    completeLine()
+                }
+                if reachedAnalysisEnd { return }
                 fragmentStart = index + 1
+                searchStart = fragmentStart
             }
             append(
                 bytes: baseAddress.advanced(by: fragmentStart),
@@ -90,6 +135,7 @@ public enum AgentTranscriptParser {
         mutating func consumeLine(_ line: Data) {
             guard line.count <= AgentTranscriptParser.maximumBufferedLineBytes else {
                 peakBufferedBytes = max(peakBufferedBytes, AgentTranscriptParser.maximumBufferedLineBytes)
+                examinedFirstLine = true
                 return
             }
             peakBufferedBytes = max(peakBufferedBytes, line.count)
@@ -99,9 +145,12 @@ public enum AgentTranscriptParser {
         mutating func consumeLine(bytes: UnsafeRawBufferPointer) {
             guard bytes.count <= AgentTranscriptParser.maximumBufferedLineBytes else {
                 peakBufferedBytes = max(peakBufferedBytes, AgentTranscriptParser.maximumBufferedLineBytes)
+                examinedFirstLine = true
                 return
             }
-            consumeLine(Data(bytes))
+            peakBufferedBytes = max(peakBufferedBytes, bytes.count)
+            guard shouldDecodeLine(bytes: bytes) else { return }
+            decodeLine(Data(bytes))
         }
 
         mutating func finish() -> AgentDocumentSummary {
@@ -153,7 +202,23 @@ public enum AgentTranscriptParser {
         }
 
         private mutating func parseLine(_ line: Data) {
+            let shouldDecode = line.withUnsafeBytes { shouldDecodeLine(bytes: $0) }
+            guard shouldDecode else { return }
+            decodeLine(line)
+        }
+
+        private mutating func decodeLine(_ line: Data) {
             autoreleasepool {
+                if usesCodexDailyProjection {
+                    parsedAny = true
+                    line.withUnsafeBytes { bytes in
+                        accumulator.inspectCodex(
+                            bytes,
+                            timestamp: Self.topLevelTimestamp(in: bytes)
+                        )
+                    }
+                    return
+                }
                 guard !line.isEmpty,
                     let object = try? JSONSerialization.jsonObject(with: line)
                 else { return }
@@ -161,6 +226,147 @@ public enum AgentTranscriptParser {
                 accumulator.walk(object, currentKey: nil)
             }
         }
+
+        /// Codex and Claude JSONL streams are chronological. During a selected-day analysis,
+        /// compare their small top-level ISO timestamp before allocating a `Data` line or asking
+        /// Foundation to materialize a potentially huge nested JSON object. The first line is
+        /// still decoded for stable session metadata, and unknown formats fall back to the full
+        /// parser instead of being silently dropped.
+        private mutating func shouldDecodeLine(bytes: UnsafeRawBufferPointer) -> Bool {
+            guard !reachedAnalysisEnd else { return false }
+            if !examinedFirstLine {
+                examinedFirstLine = true
+                return true
+            }
+            guard let analysisTimestampBounds,
+                let timestamp = Self.topLevelTimestamp(in: bytes)
+            else { return true }
+            if timestamp < analysisTimestampBounds.lower { return false }
+            if timestamp >= analysisTimestampBounds.upper {
+                reachedAnalysisEnd = true
+                return false
+            }
+            return true
+        }
+
+        private static func topLevelTimestamp(in bytes: UnsafeRawBufferPointer) -> String? {
+            guard let base = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                bytes.count >= 16
+            else { return nil }
+            let key = Self.timestampKeyBytes
+            var keyStart: Int?
+            var index = 0
+            while index <= bytes.count - key.count {
+                var matches = true
+                for offset in key.indices where base[index + offset] != key[offset] {
+                    matches = false
+                    break
+                }
+                if matches {
+                    keyStart = index
+                    break
+                }
+                index += 1
+            }
+            guard let keyStart else { return nil }
+            index = keyStart + key.count
+            while index < bytes.count, base[index] == 0x20 || base[index] == 0x09 { index += 1 }
+            guard index < bytes.count, base[index] == 0x3A else { return nil }
+            index += 1
+            while index < bytes.count, base[index] == 0x20 || base[index] == 0x09 { index += 1 }
+            guard index < bytes.count, base[index] == 0x22 else { return nil }
+            index += 1
+            let valueStart = index
+            while index < bytes.count, base[index] != 0x22, index - valueStart <= 64 {
+                index += 1
+            }
+            guard index < bytes.count, base[index] == 0x22, index > valueStart else { return nil }
+            return String(
+                decoding: UnsafeBufferPointer(start: base.advanced(by: valueStart), count: index - valueStart),
+                as: UTF8.self
+            )
+        }
+    }
+
+    private static let codexTypeKey = Array("\"type\"".utf8)
+    private static let codexRoleKey = Array("\"role\"".utf8)
+    private static let codexIDKey = Array("\"id\"".utf8)
+    private static let codexSessionIDKey = Array("\"session_id\"".utf8)
+    private static let codexModelKey = Array("\"model\"".utf8)
+    private static let codexCWDKey = Array("\"cwd\"".utf8)
+    private static let codexNameKey = Array("\"name\"".utf8)
+    private static let codexSourceKey = Array("\"source\"".utf8)
+    private static let codexStatusKey = Array("\"status\"".utf8)
+    private static let codexTextKey = Array("\"text\"".utf8)
+
+    /// Extracts only small JSON string fields. Codex writes compact JSONL with stable top-level
+    /// and payload keys; malformed or differently formatted lines simply yield no projected field.
+    private static func jsonStringValues(
+        forKey key: [UInt8],
+        in bytes: UnsafeRawBufferPointer,
+        maximumCount: Int = 1
+    ) -> [String] {
+        guard maximumCount > 0,
+            let base = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+            bytes.count >= key.count + 3
+        else { return [] }
+        var output: [String] = []
+        output.reserveCapacity(maximumCount)
+        var searchIndex = 0
+        while searchIndex <= bytes.count - key.count, output.count < maximumCount {
+            var matched = true
+            for offset in key.indices where base[searchIndex + offset] != key[offset] {
+                matched = false
+                break
+            }
+            guard matched else {
+                searchIndex += 1
+                continue
+            }
+            var index = searchIndex + key.count
+            while index < bytes.count, base[index] == 0x20 || base[index] == 0x09 { index += 1 }
+            guard index < bytes.count, base[index] == 0x3A else {
+                searchIndex += key.count
+                continue
+            }
+            index += 1
+            while index < bytes.count, base[index] == 0x20 || base[index] == 0x09 { index += 1 }
+            guard index < bytes.count, base[index] == 0x22 else {
+                searchIndex += key.count
+                continue
+            }
+            index += 1
+            let valueStart = index
+            var escaped = false
+            while index < bytes.count {
+                let byte = base[index]
+                if byte == 0x22, !escaped { break }
+                if byte == 0x5C {
+                    escaped.toggle()
+                } else {
+                    escaped = false
+                }
+                index += 1
+            }
+            guard index < bytes.count else { break }
+            output.append(
+                String(
+                    decoding: UnsafeBufferPointer(
+                        start: base.advanced(by: valueStart),
+                        count: index - valueStart
+                    ),
+                    as: UTF8.self
+                )
+            )
+            searchIndex = index + 1
+        }
+        return output
+    }
+
+    private static func decodedJSONString(_ raw: String) -> String {
+        guard raw.contains("\\") else { return raw }
+        let literal = Data(("\"" + raw + "\"").utf8)
+        return (try? JSONDecoder().decode(String.self, from: literal)) ?? raw
     }
 
     /// Text and Markdown use the same bounded line discipline as JSONL, avoiding a complete
@@ -203,10 +409,21 @@ public enum AgentTranscriptParser {
                 !bytes.isEmpty
             else { return }
             var fragmentStart = 0
-            for index in 0..<bytes.count where baseAddress[index] == 0x0A {
+            var searchStart = 0
+            while searchStart < bytes.count,
+                let match = Darwin.memchr(
+                    baseAddress.advanced(by: searchStart),
+                    Int32(0x0A),
+                    bytes.count - searchStart
+                )
+            {
+                let index = baseAddress.distance(
+                    to: match.assumingMemoryBound(to: UInt8.self)
+                )
                 append(bytes: baseAddress.advanced(by: fragmentStart), count: index - fragmentStart)
                 completeLine()
                 fragmentStart = index + 1
+                searchStart = fragmentStart
             }
             append(
                 bytes: baseAddress.advanced(by: fragmentStart),
@@ -329,6 +546,8 @@ public enum AgentTranscriptParser {
         var projectPath: String?
         var earliestDate: Date?
         var latestDate: Date?
+        var codexEarliestTimestamp: String?
+        var codexLatestTimestamp: String?
         var messageCount = 0
         var userMessageCount = 0
         var assistantMessageCount = 0
@@ -495,6 +714,100 @@ public enum AgentTranscriptParser {
             if timestampKeys.contains(key), let date = parseDate(string) { observe(date) }
         }
 
+        mutating func inspectCodex(
+            _ bytes: UnsafeRawBufferPointer,
+            timestamp: String?
+        ) {
+            if let timestamp {
+                if codexEarliestTimestamp.map({ timestamp < $0 }) ?? true {
+                    codexEarliestTimestamp = timestamp
+                }
+                if codexLatestTimestamp.map({ timestamp > $0 }) ?? true {
+                    codexLatestTimestamp = timestamp
+                }
+            }
+            let eventType = jsonStringValues(forKey: codexTypeKey, in: bytes)
+                .first?.lowercased() ?? ""
+            let payloadType: String
+            if eventType == "response_item" || eventType == "event_msg" {
+                payloadType = jsonStringValues(
+                    forKey: codexTypeKey,
+                    in: bytes,
+                    maximumCount: 2
+                ).dropFirst().first?.lowercased() ?? ""
+            } else {
+                payloadType = ""
+            }
+            if sessionID == nil, eventType == "session_meta" {
+                let value = jsonStringValues(forKey: codexSessionIDKey, in: bytes).first
+                    ?? jsonStringValues(forKey: codexIDKey, in: bytes).first
+                    ?? ""
+                sessionID = nonEmpty(value)
+            }
+            if projectPath == nil, eventType == "session_meta",
+                let cwd = jsonStringValues(forKey: codexCWDKey, in: bytes).first,
+                plausiblePath(cwd)
+            {
+                projectPath = bounded(cwd, maximum: 500)
+            }
+            if (eventType == "turn_context" || eventType == "session_meta"),
+                let model = jsonStringValues(forKey: codexModelKey, in: bytes).first,
+                plausibleIdentifier(model)
+            {
+                models.insert(bounded(model, maximum: 120))
+            }
+
+            let role = payloadType == "message"
+                ? jsonStringValues(forKey: codexRoleKey, in: bytes).first?.lowercased() ?? ""
+                : ""
+            if payloadType == "message",
+                ["user", "human", "assistant", "agent", "system", "developer"].contains(role)
+            {
+                messageCount += 1
+                switch role {
+                case "user", "human": userMessageCount += 1
+                case "assistant", "agent": assistantMessageCount += 1
+                case "system", "developer": systemMessageCount += 1
+                default: break
+                }
+            }
+            if excerpt == nil,
+                (role == "user" || role == "human"),
+                let rawText = jsonStringValues(forKey: codexTextKey, in: bytes).first
+            {
+                let userText = decodedJSONString(rawText)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if userText.count >= 12 {
+                    excerpt = bounded(userText, maximum: 360)
+                }
+            }
+
+            if payloadType == "function_call" || payloadType == "custom_tool_call" {
+                toolCallCount += 1
+                if let name = jsonStringValues(forKey: codexNameKey, in: bytes).first,
+                    plausibleIdentifier(name)
+                {
+                    tools.insert(bounded(name, maximum: 120))
+                }
+            }
+            let status = eventType == "event_msg"
+                ? jsonStringValues(forKey: codexStatusKey, in: bytes).first?.lowercased() ?? ""
+                : ""
+            if payloadType.contains("error") || eventType.contains("error")
+                || payloadType == "turn_aborted" || status == "failed" || status == "failure"
+            {
+                errorCount += 1
+            }
+            let source = eventType == "session_meta"
+                ? jsonStringValues(forKey: codexSourceKey, in: bytes).first?.lowercased() ?? ""
+                : ""
+            if payloadType.contains("subagent") || payloadType.contains("sub_agent")
+                || source.contains("subagent") || source.contains("sub_agent")
+            {
+                subagentCount += 1
+            }
+        }
+
         mutating func observe(_ date: Date) {
             if earliestDate.map({ date < $0 }) ?? true { earliestDate = date }
             if latestDate.map({ date > $0 }) ?? true { latestDate = date }
@@ -507,8 +820,8 @@ public enum AgentTranscriptParser {
                 title: title ?? fileURL.deletingPathExtension().lastPathComponent,
                 excerpt: excerpt,
                 projectPath: projectPath,
-                startedAt: earliestDate,
-                endedAt: latestDate,
+                startedAt: earliestDate ?? codexEarliestTimestamp.flatMap(parseDate),
+                endedAt: latestDate ?? codexLatestTimestamp.flatMap(parseDate),
                 messageCount: messageCount,
                 userMessageCount: userMessageCount,
                 assistantMessageCount: assistantMessageCount,

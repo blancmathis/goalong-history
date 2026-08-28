@@ -224,6 +224,15 @@ struct AgentSourceBodyReadLimits: Equatable, Sendable {
         maximumDurationNanoseconds: 10_000_000_000
     )
 
+    /// Explicit, user-requested selected-day analysis should finish a large original
+    /// transcript in one streaming pass when possible. A longer deadline avoids rereading
+    /// the same prefix across several bounded background-style cycles; the byte ceiling and
+    /// streaming parser memory bounds remain unchanged.
+    static let selectedDayAnalysis = AgentSourceBodyReadLimits(
+        maximumBytes: 512 * 1_024 * 1_024,
+        maximumDurationNanoseconds: 60_000_000_000
+    )
+
     var maximumBytes: Int64
     var maximumDurationNanoseconds: UInt64
 
@@ -1378,6 +1387,7 @@ final class AgentDirectSourceScanSession {
         previous: AgentSourceIndexEntry?,
         maximumBytes: Int64,
         analyzeContent: Bool = true,
+        analysisInterval: DateInterval? = nil,
         observedAt: Date = Date()
     ) throws -> AgentCaptureRecord {
         let record = try AgentDirectSourceReader.read(
@@ -1386,12 +1396,17 @@ final class AgentDirectSourceScanSession {
             previous: previous,
             maximumBytes: maximumBytes,
             analyzeContent: analyzeContent,
+            analysisInterval: analysisInterval,
             observedAt: observedAt,
             bodyReadBudget: bodyReadBudget,
             connection: openCodeConnection(at:),
             fileDescriptor: { [self] in try openFileDescriptor(candidate: $0) },
             verifyFileIdentity: { [self] candidate, expectedStatus in
-                try currentFileMatches(candidate: candidate, expectedStatus: expectedStatus)
+                try currentFileMatches(
+                    candidate: candidate,
+                    expectedStatus: expectedStatus,
+                    allowAppendOnlyGrowth: analysisInterval != nil && folder.provider == .codex
+                )
             },
             fileManager: fileManager
         )
@@ -1460,12 +1475,22 @@ final class AgentDirectSourceScanSession {
         return try sourceRoot.openRegularFile(relativePath: relative, displayPath: reference.path)
     }
 
-    private func currentFileMatches(candidate: AgentSourceCandidate, expectedStatus: stat) throws -> Bool {
+    private func currentFileMatches(
+        candidate: AgentSourceCandidate,
+        expectedStatus: stat,
+        allowAppendOnlyGrowth: Bool
+    ) throws -> Bool {
         let descriptor = try openFileDescriptor(candidate: candidate)
         defer { Darwin.close(descriptor) }
         var currentStatus = stat()
-        return Darwin.fstat(descriptor, &currentStatus) == 0
-            && AgentDirectSourceReader.sameFileSnapshot(currentStatus, expectedStatus)
+        guard Darwin.fstat(descriptor, &currentStatus) == 0 else { return false }
+        if allowAppendOnlyGrowth {
+            return AgentDirectSourceReader.isSameAppendOnlyFile(
+                currentStatus,
+                initialStatus: expectedStatus
+            )
+        }
+        return AgentDirectSourceReader.sameFileSnapshot(currentStatus, expectedStatus)
     }
 
 }
@@ -1529,6 +1554,7 @@ enum AgentDirectSourceReader {
         previous: AgentSourceIndexEntry?,
         maximumBytes: Int64,
         analyzeContent: Bool = true,
+        analysisInterval: DateInterval? = nil,
         observedAt: Date = Date(),
         fileManager: FileManager = .default
     ) throws -> AgentCaptureRecord {
@@ -1538,6 +1564,7 @@ enum AgentDirectSourceReader {
             previous: previous,
             maximumBytes: maximumBytes,
             analyzeContent: analyzeContent,
+            analysisInterval: analysisInterval,
             observedAt: observedAt
         )
         try session.verifyOpenCodeSourcesUnchanged()
@@ -1550,6 +1577,7 @@ enum AgentDirectSourceReader {
         previous: AgentSourceIndexEntry?,
         maximumBytes: Int64,
         analyzeContent: Bool,
+        analysisInterval: DateInterval?,
         observedAt: Date,
         bodyReadBudget: AgentSourceBodyReadBudget,
         connection: (String) throws -> SQLiteReadConnection,
@@ -1565,6 +1593,7 @@ enum AgentDirectSourceReader {
                 previous: previous,
                 maximumBytes: maximumBytes,
                 analyzeContent: analyzeContent,
+                analysisInterval: analysisInterval,
                 observedAt: observedAt,
                 bodyReadBudget: bodyReadBudget,
                 fileDescriptor: fileDescriptor,
@@ -1591,6 +1620,7 @@ enum AgentDirectSourceReader {
         previous: AgentSourceIndexEntry?,
         maximumBytes: Int64,
         analyzeContent: Bool,
+        analysisInterval: DateInterval?,
         observedAt: Date,
         bodyReadBudget: AgentSourceBodyReadBudget,
         fileDescriptor: (AgentSourceCandidate) throws -> Int32,
@@ -1606,6 +1636,8 @@ enum AgentDirectSourceReader {
             provider: folder.provider,
             maximumBytes: maximumBytes,
             analyzeContent: analyzeContent,
+            analysisInterval: analysisInterval,
+            allowAppendOnlyGrowth: analysisInterval != nil && folder.provider == .codex,
             bodyReadBudget: bodyReadBudget,
             verifyCurrentIdentity: { try verifyFileIdentity(candidate, $0) }
         )
@@ -2199,6 +2231,15 @@ enum AgentDirectSourceReader {
         FileSnapshot(left) == FileSnapshot(right)
     }
 
+    static func isSameAppendOnlyFile(_ current: stat, initialStatus: stat) -> Bool {
+        current.st_mode & S_IFMT == S_IFREG
+            && current.st_dev == initialStatus.st_dev
+            && current.st_ino == initialStatus.st_ino
+            && current.st_size >= initialStatus.st_size
+            && current.st_birthtimespec.tv_sec == initialStatus.st_birthtimespec.tv_sec
+            && current.st_birthtimespec.tv_nsec == initialStatus.st_birthtimespec.tv_nsec
+    }
+
     private struct FileSnapshot: Equatable {
         var device: UInt64
         var inode: UInt64
@@ -2229,6 +2270,8 @@ enum AgentDirectSourceReader {
         provider: AgentProvider,
         maximumBytes: Int64,
         analyzeContent: Bool,
+        analysisInterval: DateInterval?,
+        allowAppendOnlyGrowth: Bool,
         bodyReadBudget: AgentSourceBodyReadBudget,
         verifyCurrentIdentity: (stat) throws -> Bool
     ) throws -> FileReadResult {
@@ -2270,7 +2313,11 @@ enum AgentDirectSourceReader {
 
         var jsonLines =
             analyzeContent && ["jsonl", "ndjson", "trace"].contains(ext)
-            ? AgentTranscriptParser.IncrementalJSONLines(fileURL: url, provider: provider)
+            ? AgentTranscriptParser.IncrementalJSONLines(
+                fileURL: url,
+                provider: provider,
+                analysisInterval: analysisInterval
+            )
             : nil
         let streamingTextExtensions: Set<String> = [
             "md", "markdown", "txt", "log", "csv", "yaml", "yml", "toml", "session",
@@ -2343,7 +2390,10 @@ enum AgentDirectSourceReader {
             throw AgentSourceReadError.inaccessible(url.path)
         }
         let final = FileSnapshot(finalStatus)
-        guard initial == final,
+        let descriptorMatches = allowAppendOnlyGrowth
+            ? isSameAppendOnlyFile(finalStatus, initialStatus: initialStatus)
+            : initial == final
+        guard descriptorMatches,
             try verifyCurrentIdentity(initialStatus),
             bytesRead == initial.byteCount
         else {

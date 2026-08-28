@@ -184,11 +184,11 @@
                 semanticSnapshots: activity.coverage.semanticSnapshotCount,
                 screenTimeDevices: screenTime?.deviceSummaries.count ?? 0,
                 screenTimeApplications: screenTime?.topApplications.count ?? 0,
-                agentCaptures: agentActivity.captures.count,
+                agentCaptures: agentActivity.sessionCount,
                 agentMessages: agentActivity.messageCount,
                 agentToolCalls: agentActivity.toolCallCount,
                 agentErrors: agentActivity.errorCount,
-                analyzedAgentCaptures: agentActivity.captures.filter(\.isAnalyzed).count,
+                analyzedAgentCaptures: agentActivity.analyzedSessionCount,
                 importedChatMessages: importedChats.count,
                 computerHistoryEpisodes: computerHistory?.coverage.episodeCount,
                 computerHistoryResources: computerHistory?.coverage.resourceCount,
@@ -351,19 +351,48 @@
                 discovered: AgentDefaultSourceDiscovery.discover()
             )
             let scanner = AgentActivityScanner(store: store)
-            var result = scanner.scan(
+            return scanAgentActivity(
+                for: day,
+                analyzeContent: analyzeContent,
+                store: store,
                 configuration: configuration,
+                scanner: scanner
+            )
+        }
+
+        /// Completes an explicit selected-day pass using bounded scanner cycles derived from the
+        /// validated index and folder ceilings. This preserves the scanner's per-cycle CPU, RAM,
+        /// and I/O limits without silently truncating a large provider inventory after eight
+        /// cycles. The scanner never persists transcript bodies.
+        static func scanAgentActivity(
+            for day: Date,
+            analyzeContent: Bool,
+            store: AgentActivityStore,
+            configuration: AgentActivityConfiguration,
+            scanner: AgentActivityScanner
+        ) -> AgentActivityOverview {
+            let validated = configuration.validated()
+            var result = scanner.scan(
+                configuration: validated,
                 analysisDay: day,
                 analyzeContent: analyzeContent
             )
-            var followUpCount = 0
-            while analyzeContent, result.analysisIncomplete, followUpCount < 7 {
+            let sourceBatchCount =
+                (validated.maximumIndexEntries + 255) / 256
+            let enabledFolderCount = validated.watchedFolders.filter(\.isEnabled).count
+            let folderBatchCount = (enabledFolderCount + 31) / 32
+            let maximumCycleCount = min(
+                256,
+                max(8, sourceBatchCount + folderBatchCount + 16)
+            )
+            var cycleCount = 1
+            while analyzeContent, result.analysisIncomplete, cycleCount < maximumCycleCount {
                 result = scanner.scan(
-                    configuration: configuration,
+                    configuration: validated,
                     analysisDay: day,
                     analyzeContent: true
                 )
-                followUpCount += 1
+                cycleCount += 1
             }
             return store.overview(for: day)
         }

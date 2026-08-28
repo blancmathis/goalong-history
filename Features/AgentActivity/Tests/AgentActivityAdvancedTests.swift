@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import SQLite3
 import XCTest
@@ -192,6 +193,69 @@ final class AgentActivityAdvancedTests: XCTestCase {
         XCTAssertLessThanOrEqual(
             borrowedParser.peakBufferedBytes,
             AgentTranscriptParser.maximumBufferedLineBytes
+        )
+    }
+
+    func testSelectedDayJSONLAnalysisSkipsOutOfRangeCodexBodies() throws {
+        let sessionID = "20000000-0000-4000-8000-000000000002"
+        let lines = [
+            #"{"timestamp":"2026-08-23T08:00:00.000Z","type":"session_meta","payload":{"id":"20000000-0000-4000-8000-000000000002"}}"#,
+            #"{"timestamp":"2026-08-26T21:59:59.999Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"BEFORE-DAY-SENTINEL"}]}}"#,
+            #"{"timestamp":"2026-08-27T08:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"Selected-day request"}]}}"#,
+            #"{"timestamp":"2026-08-27T08:00:01.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"text":"Selected-day response"}]}}"#,
+            #"{"timestamp":"2026-08-27T22:00:00.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"text":"AFTER-DAY-SENTINEL"}]}}"#,
+        ]
+        let payload = Data((lines.joined(separator: "\n") + "\n").utf8)
+        let interval = DateInterval(
+            start: try XCTUnwrap(isoDate("2026-08-26T22:00:00Z")),
+            end: try XCTUnwrap(isoDate("2026-08-27T22:00:00Z"))
+        )
+        var parser = AgentTranscriptParser.IncrementalJSONLines(
+            fileURL: URL(fileURLWithPath: "/fixture/selected-day.jsonl"),
+            provider: .codex,
+            analysisInterval: interval
+        )
+
+        payload.withUnsafeBytes { parser.consume(bytes: $0) }
+        let summary = parser.finish()
+
+        XCTAssertEqual(summary.sessionID, sessionID)
+        XCTAssertEqual(summary.messageCount, 2)
+        XCTAssertEqual(summary.userMessageCount, 1)
+        XCTAssertEqual(summary.assistantMessageCount, 1)
+        XCTAssertTrue(summary.excerpt?.contains("Selected-day request") == true)
+        XCTAssertFalse(summary.excerpt?.contains("BEFORE-DAY-SENTINEL") == true)
+        XCTAssertFalse(summary.excerpt?.contains("AFTER-DAY-SENTINEL") == true)
+    }
+
+    func testSelectedDaySnapshotAcceptsOnlySameInodeAppendOnlyGrowth() throws {
+        let directory = try makeTemporaryDirectory("append-only-snapshot")
+        let source = directory.appendingPathComponent("session.jsonl")
+        try Data("first\n".utf8).write(to: source)
+        var initial = stat()
+        XCTAssertEqual(Darwin.lstat(source.path, &initial), 0)
+
+        let handle = try FileHandle(forWritingTo: source)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("second\n".utf8))
+        try handle.close()
+        var appended = stat()
+        XCTAssertEqual(Darwin.lstat(source.path, &appended), 0)
+        XCTAssertTrue(
+            AgentDirectSourceReader.isSameAppendOnlyFile(
+                appended,
+                initialStatus: initial
+            )
+        )
+
+        try Data("x".utf8).write(to: source, options: [.atomic])
+        var replaced = stat()
+        XCTAssertEqual(Darwin.lstat(source.path, &replaced), 0)
+        XCTAssertFalse(
+            AgentDirectSourceReader.isSameAppendOnlyFile(
+                replaced,
+                initialStatus: initial
+            )
         )
     }
 

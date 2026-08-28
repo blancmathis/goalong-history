@@ -76,6 +76,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
     private let sourceTraversalUptimeNanoseconds: AgentSourceTraversalBudget.UptimeNanoseconds
     private let sourceTraversalCancellationCheck: AgentSourceTraversalBudget.CancellationCheck
     private let sourceBodyReadLimits: AgentSourceBodyReadLimits
+    private let selectedDayAnalysisBodyReadLimits: AgentSourceBodyReadLimits
     private let sourceBodyReadUptimeNanoseconds: AgentSourceBodyReadBudget.UptimeNanoseconds
     private let sourceBodyReadCancellationCheck: AgentSourceBodyReadBudget.CancellationCheck
     private let scanLock = NSLock()
@@ -105,6 +106,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             withUnsafeCurrentTask { $0?.isCancelled ?? false }
         }
         sourceBodyReadLimits = .production
+        selectedDayAnalysisBodyReadLimits = .selectedDayAnalysis
         sourceBodyReadUptimeNanoseconds = { DispatchTime.now().uptimeNanoseconds }
         sourceBodyReadCancellationCheck = {
             withUnsafeCurrentTask { $0?.isCancelled ?? false }
@@ -122,6 +124,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             withUnsafeCurrentTask { $0?.isCancelled ?? false }
         },
         sourceBodyReadLimits: AgentSourceBodyReadLimits = .production,
+        selectedDayAnalysisBodyReadLimits: AgentSourceBodyReadLimits? = nil,
         sourceBodyReadUptimeNanoseconds: @escaping AgentSourceBodyReadBudget.UptimeNanoseconds = {
             DispatchTime.now().uptimeNanoseconds
         },
@@ -135,6 +138,8 @@ public final class AgentActivityScanner: @unchecked Sendable {
         self.sourceTraversalUptimeNanoseconds = sourceTraversalUptimeNanoseconds
         self.sourceTraversalCancellationCheck = sourceTraversalCancellationCheck
         self.sourceBodyReadLimits = sourceBodyReadLimits
+        self.selectedDayAnalysisBodyReadLimits =
+            selectedDayAnalysisBodyReadLimits ?? sourceBodyReadLimits
         self.sourceBodyReadUptimeNanoseconds = sourceBodyReadUptimeNanoseconds
         self.sourceBodyReadCancellationCheck = sourceBodyReadCancellationCheck
     }
@@ -210,7 +215,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
         var remainingSummaryRehydrations = Self.maximumVisibleSummaryRehydrations
         var remainingSummaryRehydrationBytes = Self.maximumVisibleSummaryRehydrationBytes
         let sourceBodyReadBudget = AgentSourceBodyReadBudget(
-            limits: sourceBodyReadLimits,
+            limits: analyzeContent ? selectedDayAnalysisBodyReadLimits : sourceBodyReadLimits,
             uptimeNanoseconds: sourceBodyReadUptimeNanoseconds,
             isCancelled: { [self] in
                 isScanCancellationRequested() || sourceBodyReadCancellationCheck()
@@ -1058,6 +1063,9 @@ public final class AgentActivityScanner: @unchecked Sendable {
                     maximumBytes: configuration.maximumFileBytes,
                     analyzeContent: shouldAnalyzeContent
                         && (workAnalysisDay == nil || isRelevantDay),
+                    analysisInterval: workAnalysisDay.flatMap {
+                        Calendar.current.dateInterval(of: .day, for: $0)
+                    },
                     observedAt: observedAt
                 )
                 unavailableRetryByEntryID.removeValue(forKey: record.id)

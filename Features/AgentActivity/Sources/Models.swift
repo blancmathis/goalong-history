@@ -1084,6 +1084,7 @@ public struct AgentActivityOverview: Equatable, Sendable {
     public var day: Date
     public var captures: [AgentCaptureRecord]
     public var sessionCount: Int
+    public var analyzedSessionCount: Int
     public var messageCount: Int
     public var toolCallCount: Int
     public var errorCount: Int
@@ -1095,6 +1096,7 @@ public struct AgentActivityOverview: Equatable, Sendable {
         day: Date,
         captures: [AgentCaptureRecord] = [],
         sessionCount: Int = 0,
+        analyzedSessionCount: Int = 0,
         messageCount: Int = 0,
         toolCallCount: Int = 0,
         errorCount: Int = 0,
@@ -1105,6 +1107,7 @@ public struct AgentActivityOverview: Equatable, Sendable {
         self.day = day
         self.captures = captures
         self.sessionCount = sessionCount
+        self.analyzedSessionCount = analyzedSessionCount
         self.messageCount = messageCount
         self.toolCallCount = toolCallCount
         self.errorCount = errorCount

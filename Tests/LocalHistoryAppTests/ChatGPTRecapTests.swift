@@ -520,6 +520,125 @@
             XCTAssertEqual(reloaded.sourceCounts.analyzedAgentCaptures, 1)
         }
 
+        func testDailyAgentAnalysisDrainsPastEightCyclesAndCountsEverySession() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-recap-agent-drain")
+            defer { try? FileManager.default.removeItem(at: container) }
+            let sourceRoot = container.appendingPathComponent("original-sources", isDirectory: true)
+            let storeRoot = container.appendingPathComponent("index", isDirectory: true)
+            try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+
+            let sourceCount = 2_049
+            let day = Calendar.current.startOfDay(for: Date())
+            let line = Data("{\"role\":\"user\",\"content\":\"bounded fixture\"}\n".utf8)
+            for index in 0..<sourceCount {
+                try line.write(
+                    to: sourceRoot.appendingPathComponent(
+                        String(format: "session-%04d.jsonl", index)
+                    )
+                )
+            }
+
+            let store = try AgentActivityStore(rootDirectory: storeRoot)
+            let folder = AgentWatchedFolder(
+                id: "recap-drain",
+                displayName: "Original fixture sources",
+                path: sourceRoot.path,
+                provider: .custom
+            )
+            let configuration = AgentActivityConfiguration(
+                watchedFolders: [folder],
+                maximumIndexEntries: sourceCount
+            )
+            let overview = ChatGPTRecapContextBuilder.scanAgentActivity(
+                for: day,
+                analyzeContent: true,
+                store: store,
+                configuration: configuration,
+                scanner: AgentActivityScanner(store: store)
+            )
+
+            XCTAssertEqual(overview.sessionCount, sourceCount)
+            XCTAssertEqual(overview.analyzedSessionCount, sourceCount)
+            XCTAssertEqual(overview.messageCount, sourceCount)
+            XCTAssertEqual(overview.captures.count, 256, "Detailed summaries remain RAM-bounded.")
+            XCTAssertEqual(store.indexEntryCount(), sourceCount)
+            let canonicalSourcePrefix = sourceRoot.resolvingSymlinksInPath().path + "/"
+            XCTAssertTrue(
+                store.entries().allSatisfy {
+                    URL(fileURLWithPath: $0.reference.path)
+                        .resolvingSymlinksInPath().path
+                        .hasPrefix(canonicalSourcePrefix)
+                }
+            )
+            XCTAssertEqual(try Data(contentsOf: sourceRoot.appendingPathComponent("session-2048.jsonl")), line)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: storeRoot.appendingPathComponent("blobs").path))
+            XCTAssertLessThan(store.storageBytes(), 4 * 1_024 * 1_024)
+        }
+
+        func testOptInRealDailyAgentAnalysisCompletesFromOriginalCodexSources() throws {
+            let environment = ProcessInfo.processInfo.environment
+            guard let sourcePath = environment["GOALONG_TEST_REAL_CODEX_SOURCE_ROOT"],
+                let dayText = environment["GOALONG_TEST_REAL_AGENT_DAY"]
+            else {
+                throw XCTSkip(
+                    "Set GOALONG_TEST_REAL_CODEX_SOURCE_ROOT and GOALONG_TEST_REAL_AGENT_DAY for the read-only daily coverage audit."
+                )
+            }
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .current
+            formatter.dateFormat = "yyyy-MM-dd"
+            let day = try XCTUnwrap(formatter.date(from: dayText))
+            let sourceRoot = URL(fileURLWithPath: sourcePath, isDirectory: true)
+                .resolvingSymlinksInPath()
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: sourceRoot.path, isDirectory: &isDirectory),
+                isDirectory.boolValue
+            else {
+                XCTFail("The opt-in Codex source root is not a readable directory.")
+                return
+            }
+
+            let storeRoot = try makeTemporaryDirectory(prefix: "goalong-real-daily-agent-index")
+            defer { try? FileManager.default.removeItem(at: storeRoot) }
+            let store = try AgentActivityStore(rootDirectory: storeRoot)
+            let folder = AgentWatchedFolder(
+                id: "real-daily-codex",
+                displayName: "Codex",
+                path: sourceRoot.path,
+                provider: .codex
+            )
+            let overview = ChatGPTRecapContextBuilder.scanAgentActivity(
+                for: day,
+                analyzeContent: true,
+                store: store,
+                configuration: AgentActivityConfiguration(
+                    watchedFolders: [folder],
+                    maximumIndexEntries: 50_000
+                ),
+                scanner: AgentActivityScanner(store: store)
+            )
+
+            XCTAssertGreaterThan(overview.sessionCount, 0)
+            XCTAssertEqual(overview.analyzedSessionCount, overview.sessionCount)
+            XCTAssertGreaterThan(overview.messageCount, 0)
+            XCTAssertTrue(
+                store.entries().allSatisfy {
+                    !$0.reference.path.hasPrefix(storeRoot.path + "/")
+                }
+            )
+            XCTAssertFalse(FileManager.default.fileExists(atPath: storeRoot.appendingPathComponent("blobs").path))
+            XCTAssertLessThanOrEqual(store.storageBytes(), 13 * 1_024 * 1_024)
+            print(
+                "REAL_AGENT_DAILY_COVERAGE sessions=\(overview.sessionCount) "
+                    + "analyzed=\(overview.analyzedSessionCount) messages=\(overview.messageCount) "
+                    + "tools=\(overview.toolCallCount) errors=\(overview.errorCount) "
+                    + "sourceBytes=\(overview.sourceBytes) indexBytes=\(overview.indexBytes) "
+                    + "storeBytes=\(store.storageBytes())"
+            )
+        }
+
         private static func failure(
             from result: Result<ActivityAnalysisCycleResult, Error>
         ) throws -> Error {

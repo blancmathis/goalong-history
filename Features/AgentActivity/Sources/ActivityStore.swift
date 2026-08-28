@@ -757,6 +757,7 @@ public final class AgentActivityStore: @unchecked Sendable {
         var newestRelevant: [AgentSourceIndexEntry] = []
         newestRelevant.reserveCapacity(Self.maximumTransientRecords)
         var sessionCount = 0
+        var analyzedSessionCount = 0
         var messageCount = 0
         var toolCallCount = 0
         var errorCount = 0
@@ -773,6 +774,7 @@ public final class AgentActivityStore: @unchecked Sendable {
             lastCaptureAt = max(lastCaptureAt ?? activityDate, activityDate)
             guard entry.availability == .available else { continue }
             sessionCount += 1
+            if metrics != nil { analyzedSessionCount += 1 }
             messageCount += metrics?.messageCount ?? 0
             toolCallCount += metrics?.toolCallCount ?? 0
             errorCount += metrics?.errorCount ?? 0
@@ -792,6 +794,7 @@ public final class AgentActivityStore: @unchecked Sendable {
             day: dayStart,
             captures: captures,
             sessionCount: sessionCount,
+            analyzedSessionCount: analyzedSessionCount,
             messageCount: messageCount,
             toolCallCount: toolCallCount,
             errorCount: errorCount,
