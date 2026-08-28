@@ -1,3 +1,5 @@
+import AppleScreenTime
+import AppleSystemScreenTime
 import Foundation
 import LocalHistoryCore
 
@@ -50,6 +52,69 @@ private struct ComputerHistoryContextEnvelope: Encodable {
     let loadIssues: [HistoryLoadIssue]
 }
 
+private struct DailyRecap: Codable {
+    let schemaVersion: Int
+    let day: Date
+    let generatedAt: Date
+    let provider: String
+    let planType: String?
+    let contextDigest: String
+    let sourceCounts: [String: Int]
+    let markdown: String
+    let model: String?
+    let reasoningEffort: String?
+    let productivityScore: Int?
+    let confidenceScore: Int?
+    let summaryLines: [String]?
+}
+
+private struct DailyRecapEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let requestedDay: String
+    let status: String
+    let recap: DailyRecap?
+    let sourcePath: String?
+    let error: String?
+}
+
+private struct AvailableDaysEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let computerHistory: [String]
+    let rawEvents: [String]
+    let recaps: [String]
+    let screenTime: String
+}
+
+private struct RecapListEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let recaps: [String]
+}
+
+private struct ScreenTimeStatusEnvelope: Encodable {
+    let kind: String
+    let title: String
+    let message: String
+}
+
+private struct ScreenTimeEnvelope: Encodable {
+    let schemaVersion = 1
+    let day: String
+    let generatedAt: Date
+    let scope: String
+    let status: ScreenTimeStatusEnvelope
+    let summary: AppleScreenTimeDaySummary?
+    let reports: [AppleScreenTimeDeviceReport]
+    let availableDevices: [AppleScreenTimeDevice]
+    let deviceSourceLabels: [String: String]
+    let latestAppleUpdate: Date?
+    let knowledgeIntervalCount: Int
+    let biomeIntervalCount: Int
+    let limitation: String
+}
+
 private struct ComputerHistoryReconstruction {
     let memories: [ComputerHistoryDayMemory]
     let loadIssues: [HistoryLoadIssue]
@@ -63,6 +128,7 @@ private enum CLIError: Error, CustomStringConvertible {
     case invalidDate(String)
     case invalidInteger(String)
     case missingHealth
+    case unsafeSource(String)
 
     var description: String {
         switch self {
@@ -70,6 +136,7 @@ private enum CLIError: Error, CustomStringConvertible {
         case .invalidDate(let value): return "Invalid date: \(value)"
         case .invalidInteger(let value): return "Invalid integer: \(value)"
         case .missingHealth: return "capture-health.json is not available"
+        case .unsafeSource(let value): return value
         }
     }
 }
@@ -102,7 +169,7 @@ private enum LocalHistoryQueryCLI {
         do {
             try run()
         } catch {
-            FileHandle.standardError.write(Data("goalong-history-query: \(String(describing: error))\n".utf8))
+            FileHandle.standardError.write(Data("goalong: \(String(describing: error))\n".utf8))
             FileHandle.standardError.write(Data((usage + "\n").utf8))
             Foundation.exit(EXIT_FAILURE)
         }
@@ -114,6 +181,15 @@ private enum LocalHistoryQueryCLI {
         guard let command = arguments.popFirst() else { throw CLIError.usage("Missing command") }
 
         switch command {
+        case "help", "--help", "-h":
+            FileHandle.standardOutput.write(Data((usage + "\n").utf8))
+
+        case "version", "--version":
+            try printJSON([
+                "name": "goalong",
+                "schemaVersion": "1",
+            ])
+
         case "status":
             let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
             let assessment = loaded.captureHealth.map { CaptureHealthEvaluator.assess($0) }
@@ -144,7 +220,7 @@ private enum LocalHistoryQueryCLI {
             try printQuery(result, loaded: loaded, root: root)
 
         case "day", "summary":
-            guard let raw = arguments.popFirst() else { throw CLIError.usage("\(command) requires YYYY-MM-DD") }
+            let raw = arguments.popFirst() ?? "today"
             let start = try day(raw)
             let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!.addingTimeInterval(-0.001)
             let loaded = HistoryLocalStoreReader(rootDirectory: root).load(start: start, end: end)
@@ -188,9 +264,7 @@ private enum LocalHistoryQueryCLI {
             )
             let requestedStart = arguments.removeOption("--start-utc")
             let requestedEnd = arguments.removeOption("--end-utc")
-            guard let raw = arguments.popFirst() else {
-                throw CLIError.usage("\(command) requires YYYY-MM-DD")
-            }
+            let raw = arguments.popFirst() ?? "today"
             let dayStart = try day(raw)
             let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)!
             let start: Date
@@ -265,6 +339,82 @@ private enum LocalHistoryQueryCLI {
                         loadIssues: loaded.issues
                     )
                 )
+            }
+
+        case "screen-time":
+            let macOnly = arguments.removeFlag("--mac-only")
+            let raw = arguments.popFirst() ?? "today"
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("screen-time accepts one date and the optional --mac-only flag")
+            }
+            try printScreenTime(day: try day(raw), macOnly: macOnly)
+
+        case "recap":
+            let raw = arguments.popFirst() ?? "yesterday"
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("recap accepts one date")
+            }
+            let requestedDay = try day(raw)
+            let dayString = localDayString(requestedDay)
+            let recapURL = root
+                .appendingPathComponent("chatgpt", isDirectory: true)
+                .appendingPathComponent("recaps", isDirectory: true)
+                .appendingPathComponent("\(dayString).chatgpt-recap.json", isDirectory: false)
+            if !FileManager.default.fileExists(atPath: recapURL.path) {
+                try printJSON(
+                    DailyRecapEnvelope(
+                        rootDirectory: root.path,
+                        requestedDay: dayString,
+                        status: "notGenerated",
+                        recap: nil,
+                        sourcePath: nil,
+                        error: "No daily recap has been generated for \(dayString)."
+                    )
+                )
+                return
+            }
+            do {
+                let data = try readStableRegularFile(recapURL, maximumBytes: 64 * 1_024)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let recap = try decoder.decode(DailyRecap.self, from: data)
+                try printJSON(
+                    DailyRecapEnvelope(
+                        rootDirectory: root.path,
+                        requestedDay: dayString,
+                        status: "available",
+                        recap: recap,
+                        sourcePath: recapURL.path,
+                        error: nil
+                    )
+                )
+            } catch {
+                try printJSON(
+                    DailyRecapEnvelope(
+                        rootDirectory: root.path,
+                        requestedDay: dayString,
+                        status: "inaccessibleOrInvalid",
+                        recap: nil,
+                        sourcePath: recapURL.path,
+                        error: String(describing: error)
+                    )
+                )
+            }
+
+        case "days", "recaps":
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("\(command) does not accept arguments")
+            }
+            let available = availableDays(root: root)
+            if command == "recaps" {
+                try printJSON(
+                    RecapListEnvelope(
+                        rootDirectory: root.path,
+                        recaps: available.recaps
+                    )
+                )
+            } else {
+                try printJSON(available)
             }
 
         case "ask":
@@ -568,6 +718,129 @@ private enum LocalHistoryQueryCLI {
         )
     }
 
+    private static func printScreenTime(day: Date, macOnly: Bool) throws {
+        guard let dayInterval = Calendar.current.dateInterval(of: .day, for: day) else {
+            throw CLIError.invalidDate(localDayString(day))
+        }
+        let source = AppleSystemScreenTimeSource(
+            deviceID: "goalong-cli-current-mac"
+        )
+        let collection = AppleScreenTimeDeviceNormalizer.normalize(
+            source.collect(for: day),
+            currentMac: source.currentMacDevice
+        )
+        let scope: AppleScreenTimeScope = macOnly ? .macOnly : .allDevices
+        let reports = collection.storedExport?.envelope.reports.filter {
+            scope.includes($0.device)
+        } ?? []
+        let stored = collection.storedExport.map {
+            AppleScreenTimeStoredExport(
+                importedAt: $0.importedAt,
+                verification: $0.verification,
+                envelope: AppleScreenTimeExportEnvelope(
+                    schemaVersion: $0.envelope.schemaVersion,
+                    createdAt: $0.envelope.createdAt,
+                    requestedStart: $0.envelope.requestedStart,
+                    requestedEnd: $0.envelope.requestedEnd,
+                    requestedScope: scope,
+                    provenance: $0.envelope.provenance,
+                    reports: reports
+                )
+            )
+        }
+        let summary = stored.flatMap {
+            AppleScreenTimeAnalyzer.summary(from: $0, interval: dayInterval, scope: scope)
+        }
+        try printJSON(
+            ScreenTimeEnvelope(
+                day: localDayString(day),
+                generatedAt: Date(),
+                scope: macOnly ? "macOnly" : "allDevices",
+                status: ScreenTimeStatusEnvelope(
+                    kind: collection.status.kind.rawValue,
+                    title: collection.status.title,
+                    message: collection.status.message
+                ),
+                summary: summary,
+                reports: reports,
+                availableDevices: collection.availableDevices,
+                deviceSourceLabels: collection.deviceSourceLabels,
+                latestAppleUpdate: collection.latestAppleUpdate,
+                knowledgeIntervalCount: collection.knowledgeIntervalCount,
+                biomeIntervalCount: collection.biomeIntervalCount,
+                limitation:
+                    "Read-only snapshot of Apple data available to this Goalong identity. Durations do not prove attention or productivity."
+            )
+        )
+    }
+
+    private static func readStableRegularFile(_ url: URL, maximumBytes: Int64) throws -> Data {
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey,
+        ]
+        let values = try url.resourceValues(forKeys: keys)
+        guard values.isRegularFile == true, values.isSymbolicLink != true else {
+            throw CLIError.unsafeSource("Refusing a non-regular or symbolic-link source at \(url.path)")
+        }
+        let size = Int64(values.fileSize ?? -1)
+        guard size >= 0, size <= maximumBytes else {
+            throw CLIError.unsafeSource("Source exceeds the \(maximumBytes)-byte read limit at \(url.path)")
+        }
+        let before = try FileManager.default.attributesOfItem(atPath: url.path)
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe, .uncached])
+        let after = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard data.count <= maximumBytes,
+            before[.systemFileNumber] as? NSNumber == after[.systemFileNumber] as? NSNumber,
+            before[.size] as? NSNumber == after[.size] as? NSNumber,
+            before[.modificationDate] as? Date == after[.modificationDate] as? Date
+        else {
+            throw CLIError.unsafeSource("Source changed during the read at \(url.path)")
+        }
+        return data
+    }
+
+    private static func availableDays(root: URL) -> AvailableDaysEnvelope {
+        AvailableDaysEnvelope(
+            rootDirectory: root.path,
+            computerHistory: filenames(
+                in: root.appendingPathComponent("computer-history", isDirectory: true),
+                suffix: ".computer-history.json"
+            ),
+            rawEvents: filenames(
+                in: root.appendingPathComponent("events", isDirectory: true),
+                suffix: ".jsonl"
+            ),
+            recaps: filenames(
+                in: root
+                    .appendingPathComponent("chatgpt", isDirectory: true)
+                    .appendingPathComponent("recaps", isDirectory: true),
+                suffix: ".chatgpt-recap.json"
+            ),
+            screenTime: "queried read-only on demand; Apple retention and permissions determine availability"
+        )
+    }
+
+    private static func filenames(in directory: URL, suffix: String) -> [String] {
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        return urls.compactMap { url -> String? in
+            guard url.lastPathComponent.hasSuffix(suffix),
+                let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+                values.isRegularFile == true,
+                values.isSymbolicLink != true
+            else { return nil }
+            let day = String(url.lastPathComponent.dropLast(suffix.count))
+            return isDayString(day) ? day : nil
+        }.sorted(by: >)
+    }
+
+    private static func isDayString(_ value: String) -> Bool {
+        value.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil
+    }
+
     private static func printQuery(
         _ result: HistoryQueryResult,
         loaded: HistoryLoadedData,
@@ -597,13 +870,32 @@ private enum LocalHistoryQueryCLI {
     }
 
     private static func day(_ raw: String) throws -> Date {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        switch raw.lowercased() {
+        case "today": return today
+        case "yesterday": return calendar.date(byAdding: .day, value: -1, to: today)!
+        default: break
+        }
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
-        guard let value = formatter.date(from: raw) else { throw CLIError.invalidDate(raw) }
+        formatter.isLenient = false
+        guard let value = formatter.date(from: raw), formatter.string(from: value) == raw else {
+            throw CLIError.invalidDate(raw)
+        }
         return Calendar.current.startOfDay(for: value)
+    }
+
+    private static func localDayString(_ value: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: value)
     }
 
     private static func parseTimestamp(_ raw: String) throws -> Date {
@@ -636,14 +928,20 @@ private enum LocalHistoryQueryCLI {
     }()
 
     private static let usage = """
-        Usage: goalong-history-query [--root PATH] COMMAND
+        Usage: goalong [--root PATH] COMMAND
 
+          help
+          version
           status
           recent [--minutes N] [--actions-only] [--gaps-only] [--semantic-only]
-          day YYYY-MM-DD
-          summary YYYY-MM-DD
-          computer-history YYYY-MM-DD [--start-utc ISO-8601Z --end-utc ISO-8601Z]
-          computer-history-context YYYY-MM-DD [--tokens N] [--start-utc ISO-8601Z --end-utc ISO-8601Z]
+          day [today|yesterday|YYYY-MM-DD]
+          summary [today|yesterday|YYYY-MM-DD]
+          computer-history [today|yesterday|YYYY-MM-DD] [--start-utc ISO-8601Z --end-utc ISO-8601Z]
+          computer-history-context [today|yesterday|YYYY-MM-DD] [--tokens N] [--start-utc ISO-8601Z --end-utc ISO-8601Z]
+          screen-time [today|yesterday|YYYY-MM-DD] [--mac-only]
+          recap [today|yesterday|YYYY-MM-DD]
+          recaps
+          days
           ask [--days N] NATURAL_LANGUAGE_QUESTION
           search TEXT
           app NAME_OR_BUNDLE_ID
@@ -652,7 +950,7 @@ private enum LocalHistoryQueryCLI {
           memories
           sources MEMORY_ID
 
-        All commands are read-only and return JSON with coverage, provenance and load issues.
+        All commands are read-only and return JSON with coverage, provenance and clear missing-data states.
         `computer-history` analyzes the complete causal action sequence and returns exact
         coverage totals plus a bounded representative projection. Its optional UTC
         interval reads and analyzes only that bounded portion of the original journals;
@@ -660,6 +958,10 @@ private enum LocalHistoryQueryCLI {
         projections and a bounded transient source-keyword pass when useful; it supports
         questions about recent work, resources, status, standups and repeatable workflows.
         `computer-history-context` emits a deterministic, token-bounded evidence pack for
-        an agent without persisting another copy.
+        an agent without persisting another copy. `screen-time` uses the bundled,
+        identically signed read-only adapter to inspect Apple's local stores once and returns complete
+        per-device segments and application durations. `recap` reads only the bounded
+        canonical daily recap JSON; `days` lists the dates currently queryable from
+        Goalong's existing stores.
         """
 }

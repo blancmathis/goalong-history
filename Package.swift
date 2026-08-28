@@ -9,8 +9,10 @@ let package = Package(
     ],
     products: [
         .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
+        .library(name: "AppleSystemScreenTime", targets: ["AppleSystemScreenTime"]),
         .library(name: "AgentActivity", targets: ["AgentActivity"]),
         .executable(name: "LocalHistory", targets: ["LocalHistoryApp"]),
+        .executable(name: "goalong", targets: ["LocalHistoryQueryCLI"]),
         .executable(name: "goalong-history-query", targets: ["LocalHistoryQueryCLI"]),
     ],
     dependencies: [
@@ -26,6 +28,15 @@ let package = Package(
             path: "Sources/LocalHistoryCore"
         ),
         .target(
+            name: "AppleSystemScreenTime",
+            dependencies: ["AppleScreenTime"],
+            path: "Features/AppleSystemScreenTime/Sources",
+            linkerSettings: [
+                .linkedFramework("AppKit", .when(platforms: [.macOS])),
+                .linkedLibrary("sqlite3", .when(platforms: [.macOS])),
+            ]
+        ),
+        .target(
             name: "AgentActivity",
             dependencies: ["LocalHistoryCore"],
             path: "Features/AgentActivity/Sources",
@@ -38,6 +49,7 @@ let package = Package(
             dependencies: [
                 "LocalHistoryCore",
                 "AppleScreenTime",
+                "AppleSystemScreenTime",
                 "AgentActivity",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
@@ -60,7 +72,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "LocalHistoryQueryCLI",
-            dependencies: ["LocalHistoryCore"],
+            dependencies: ["LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime"],
             path: "Sources/LocalHistoryQueryCLI"
         ),
         .testTarget(
@@ -80,7 +92,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LocalHistoryAppTests",
-            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime"],
+            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime"],
             path: "Tests/LocalHistoryAppTests"
         ),
     ],

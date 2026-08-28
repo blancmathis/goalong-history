@@ -3,6 +3,7 @@ set -euo pipefail
 
 APP_NAME="Goalong History"
 PRODUCT_NAME="LocalHistory"
+CLI_PRODUCT_NAME="goalong"
 EXECUTABLE_NAME="Goalong History"
 BUNDLE_ID="ai.goalong.localhistory"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -91,6 +92,7 @@ build_arch() {
   local arch="$1"
   local scratch="$WORK_DIR/build-$arch"
   local log="$WORK_DIR/build-$arch.log"
+  local cli_log="$WORK_DIR/build-$arch-cli.log"
   local command=(xcrun swift build -c release --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
   if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
     command+=( -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST )
@@ -122,6 +124,21 @@ build_arch() {
     return 1
   fi
   cp "$binary" "$WORK_DIR/$PRODUCT_NAME-$arch"
+
+  local cli_command=(xcrun swift build -c release --product "$CLI_PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
+  if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
+    cli_command+=( -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST )
+  fi
+  if ! (cd "$ROOT_DIR" && "${cli_command[@]}") >"$cli_log" 2>&1; then
+    cat "$cli_log" >&2
+    return 1
+  fi
+  local cli_binary="$bin_dir/$CLI_PRODUCT_NAME"
+  if [[ ! -x "$cli_binary" ]]; then
+    echo "Build completed but $cli_binary was not found." >&2
+    return 1
+  fi
+  cp "$cli_binary" "$WORK_DIR/$CLI_PRODUCT_NAME-$arch"
 }
 
 build_all_archs() {
@@ -139,6 +156,7 @@ if [[ $BUILD_STATUS -eq 42 ]]; then
   echo "The installed SDK does not support the optional App Attest bridge; rebuilding with it disabled."
   APP_ATTEST_DISABLED=1
   rm -f "$WORK_DIR/$PRODUCT_NAME-"*
+  rm -f "$WORK_DIR/$CLI_PRODUCT_NAME-"*
   rm -rf "$WORK_DIR"/build-*
   build_all_archs
 elif [[ $BUILD_STATUS -ne 0 ]]; then
@@ -156,15 +174,20 @@ done
 
 if [[ $BINARY_COUNT -gt 1 ]]; then
   BINARIES=()
+  CLI_BINARIES=()
   for arch in $ARCHS; do
     BINARIES+=("$WORK_DIR/$PRODUCT_NAME-$arch")
+    CLI_BINARIES+=("$WORK_DIR/$CLI_PRODUCT_NAME-$arch")
   done
   lipo -create "${BINARIES[@]}" -output "$CONTENTS/MacOS/$EXECUTABLE_NAME"
+  lipo -create "${CLI_BINARIES[@]}" -output "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 else
   first_arch="${ARCHS%% *}"
   cp "$WORK_DIR/$PRODUCT_NAME-$first_arch" "$CONTENTS/MacOS/$EXECUTABLE_NAME"
+  cp "$WORK_DIR/$CLI_PRODUCT_NAME-$first_arch" "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 fi
 chmod 755 "$CONTENTS/MacOS/$EXECUTABLE_NAME"
+chmod 755 "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
 # SwiftPM links Sparkle dynamically but does not create our hand-built .app bundle for us.
 # Copy the exact binary artifact resolved by Package.swift, preserving symlinks and metadata.
@@ -300,6 +323,7 @@ sign_sparkle_component "$SPARKLE_VERSION_DIR/XPCServices/Downloader.xpc" --prese
 sign_sparkle_component "$SPARKLE_VERSION_DIR/Autoupdate"
 sign_sparkle_component "$SPARKLE_VERSION_DIR/Updater.app"
 sign_sparkle_component "$CONTENTS/Frameworks/Sparkle.framework"
+codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID" "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
 APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
 if [[ "$SIGN_IDENTITY" != "-" ]]; then

@@ -24,12 +24,14 @@ make_fixture_bundle() {
 
   /bin/mkdir -p "$app_bundle/Contents/MacOS"
   /bin/cp /bin/echo "$app_bundle/Contents/MacOS/$EXECUTABLE_NAME"
+  /bin/cp /bin/echo "$app_bundle/Contents/MacOS/goalong"
   /usr/bin/plutil -create xml1 "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert CFBundleIdentifier -string "$identifier" "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert CFBundleExecutable -string "$EXECUTABLE_NAME" "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert CFBundlePackageType -string APPL "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert CFBundleVersion -string "$build_number" "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert LocalHistoryAgentActivityDirectSourceV2 -bool true "$app_bundle/Contents/Info.plist"
+  /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle/Contents/MacOS/goalong" >/dev/null 2>&1
   /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle" >/dev/null 2>&1
 }
 

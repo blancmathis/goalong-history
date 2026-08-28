@@ -9,6 +9,9 @@ DISPLAY_NAME="Goalong History"
 BUNDLE_ID="ai.goalong.localhistory"
 PRIVACY_MARKER_KEY="LocalHistoryAgentActivityDirectSourceV2"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLI_LINK_INSTALLER="$ROOT_DIR/scripts/install_cli_link.sh"
+# shellcheck source=scripts/install_cli_link.sh
+source "$CLI_LINK_INSTALLER"
 REPOSITORY="blancmathis/goalong-history"
 RELEASE_TAG="${GOALONG_RELEASE_TAG:-latest-main}"
 RELEASE_ASSET="Goalong-History-macOS-universal.zip"
@@ -52,6 +55,13 @@ bundle_has_direct_source_privacy_marker() {
 
 verify_bundle_signature() {
   /usr/bin/codesign --verify --deep --strict --verbose=2 "$1"
+}
+
+bundle_has_goalong_cli() {
+  local cli="$1/Contents/MacOS/goalong"
+  [[ -f "$cli" && ! -L "$cli" && -x "$cli" ]] || return 1
+  /usr/bin/codesign --verify --strict --verbose=2 "$cli" >/dev/null 2>&1 || return 1
+  [[ "$(bundle_identifier_from_signature "$cli")" == "$BUNDLE_ID" ]]
 }
 
 audit_bundle_privacy() {
@@ -101,6 +111,10 @@ validate_release_bundle() {
   fi
   if ! bundle_has_direct_source_privacy_marker "$app_path"; then
     echo "Refusing a bundle without the direct-source Agent Activity privacy marker: $app_path" >&2
+    return 1
+  fi
+  if ! bundle_has_goalong_cli "$app_path"; then
+    echo "Refusing a release without the signed goalong CLI." >&2
     return 1
   fi
   if ! verify_bundle_signature "$app_path"; then
@@ -462,14 +476,10 @@ if /usr/sbin/spctl --assess --type execute --verbose=2 "$SOURCE_APP" >/dev/null 
   APPLE_VERIFIED=true
   echo "verified by Apple and Sparkle"
 else
-  SIGNATURE="$(/usr/bin/codesign -dv --verbose=4 "$SOURCE_APP" 2>&1 | awk -F= '/^Signature=/{print $2; exit}')"
-  TEAM_ID="$(/usr/bin/codesign -dv --verbose=4 "$SOURCE_APP" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
-  if [[ "$SIGNATURE" != "adhoc" || "$TEAM_ID" != "not set" ]]; then
-    echo "failed"
-    fail "The release has an unexpected code-signing identity."
-    exit 1
-  fi
-  echo "verified by Sparkle (Apple verification pending)"
+  echo "failed"
+  fail "The release is not Developer ID signed and notarized by Apple."
+  note "Goalong History refuses ad-hoc public updates because their changing identity can invalidate macOS privacy permissions."
+  exit 1
 fi
 
 SYSTEM_INSTALL_PRESENT=false
@@ -520,6 +530,7 @@ headline "Installing"
 /bin/sleep 0.4
 replace_staged_bundle "$STAGED_APP"
 validate_release_bundle "$TARGET_APP"
+install_goalong_cli_link "$TARGET_APP"
 finalize_replacement
 for legacy_app in \
   "/Applications/$PREVIOUS_APP_NAME.app" \

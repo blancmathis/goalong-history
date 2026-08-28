@@ -1,5 +1,6 @@
 #if os(macOS)
     import AppleScreenTime
+    @testable import AppleSystemScreenTime
     import Foundation
     import XCTest
     @testable import LocalHistoryApp

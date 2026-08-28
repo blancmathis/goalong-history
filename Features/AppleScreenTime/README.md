@@ -16,8 +16,11 @@ Features/AppleScreenTime/
     ├── AppleScreenTimeTests.swift
     └── AppleBiomeFormatTests.swift
 
+Features/AppleSystemScreenTime/Sources/
+├── AppleSystemScreenTimeSource.swift    # shared read-only Apple knowledgeC + Biome collector
+├── AppleScreenTimeDeviceNormalizer.swift
+
 Sources/LocalHistoryApp/AppleScreenTime/
-├── AppleSystemScreenTimeSource.swift    # read-only Apple knowledgeC + Biome collector
 ├── AppleScreenTimeDashboardModel.swift
 └── ScreenTimePage.swift
 ```

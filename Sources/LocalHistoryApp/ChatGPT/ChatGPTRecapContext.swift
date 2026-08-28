@@ -1,6 +1,7 @@
 #if os(macOS)
     import AgentActivity
     import AppleScreenTime
+    import AppleSystemScreenTime
     import Foundation
     import LocalHistoryCore
 

@@ -2,8 +2,8 @@
     import AppleScreenTime
     import Foundation
 
-    enum AppleScreenTimeDeviceNormalizer {
-        static func normalize(
+    public enum AppleScreenTimeDeviceNormalizer {
+        public static func normalize(
             _ collection: AppleSystemScreenTimeCollection,
             currentMac: AppleScreenTimeDevice
         ) -> AppleSystemScreenTimeCollection {
@@ -257,8 +257,8 @@
         private static func brandedStatus(_ status: AppleSystemScreenTimeStatus) -> AppleSystemScreenTimeStatus {
             AppleSystemScreenTimeStatus(
                 kind: status.kind,
-                title: status.title.replacingOccurrences(of: "LocalHistory", with: ProductIdentity.displayName),
-                message: status.message.replacingOccurrences(of: "LocalHistory", with: ProductIdentity.displayName)
+                title: status.title.replacingOccurrences(of: "LocalHistory", with: "Goalong History"),
+                message: status.message.replacingOccurrences(of: "LocalHistory", with: "Goalong History")
             )
         }
     }

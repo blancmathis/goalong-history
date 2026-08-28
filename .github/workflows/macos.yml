@@ -34,6 +34,8 @@ jobs:
           bash scripts/test_probe_computer_history_parity.sh
           bash scripts/test_public_install_safety.sh
           bash scripts/test_install_from_source_safety.sh
+          bash scripts/test_install_cli_link.sh
+          bash scripts/test_release_signing_policy.sh
           bash scripts/test_validate_computer_history_upgrade_safety.sh
           bash scripts/validate_computer_history_parity.sh --help >/dev/null
 
@@ -75,6 +77,8 @@ jobs:
           codesign --verify --strict --verbose=2 "dist/Goalong History.app"
           test "$(defaults read "$PWD/dist/Goalong History.app/Contents/Info" CFBundleIdentifier)" = "ai.goalong.localhistory"
           ./scripts/verify_sparkle_bundle.sh
+          bash scripts/test_goalong_cli.sh \
+            "dist/Goalong History.app/Contents/MacOS/goalong"
 
       - name: Package smoke test
         run: |

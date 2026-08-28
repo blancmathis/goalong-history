@@ -65,29 +65,21 @@ jobs:
             APPLE_API_ISSUER_ID
             APPLE_API_PRIVATE_KEY
           )
-          apple_configured=0
           apple_missing=()
           for name in "${apple_values[@]}"; do
-            if [[ -n "${!name:-}" ]]; then
-              apple_configured=$((apple_configured + 1))
-            else
+            if [[ -z "${!name:-}" ]]; then
               apple_missing+=("$name")
             fi
           done
 
-          if (( apple_configured == 0 )); then
-            echo "apple_enabled=false" >> "$GITHUB_OUTPUT"
-            echo "release_note=This build is ad-hoc code signed. Its update archive and feed are authenticated with Sparkle EdDSA; macOS may require a one-time manual approval on first install." >> "$GITHUB_OUTPUT"
-            echo "### Release trust mode: Sparkle EdDSA (free mode)" >> "$GITHUB_STEP_SUMMARY"
-          elif (( apple_configured == ${#apple_values[@]} )); then
-            echo "apple_enabled=true" >> "$GITHUB_OUTPUT"
-            echo "release_note=This build is Developer ID signed and notarized by Apple. Its update archive and feed are also authenticated with Sparkle EdDSA." >> "$GITHUB_OUTPUT"
-            echo "### Release trust mode: Developer ID + notarization + Sparkle EdDSA" >> "$GITHUB_STEP_SUMMARY"
-          else
-            printf 'Incomplete optional Apple release configuration; missing: %s\n' "${apple_missing[@]}" >&2
-            echo "Configure every Apple value or remove all of them to use the free Sparkle-only mode." >&2
+          if (( ${#apple_missing[@]} > 0 )); then
+            printf 'Missing required Apple release value: %s\n' "${apple_missing[@]}" >&2
+            echo "Goalong History refuses to publish an ad-hoc signed update because a changing CDHash can invalidate macOS privacy permissions." >&2
             exit 1
           fi
+          echo "apple_enabled=true" >> "$GITHUB_OUTPUT"
+          echo "release_note=This build is Developer ID signed and notarized by Apple. Its update archive and feed are also authenticated with Sparkle EdDSA." >> "$GITHUB_OUTPUT"
+          echo "### Release trust mode: Developer ID + notarization + Sparkle EdDSA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Import Developer ID certificate
         if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}

@@ -8,6 +8,9 @@ LEGACY_APP_NAME="LocalHistory"
 BUNDLE_ID="ai.goalong.localhistory"
 PRIVACY_MARKER_KEY="LocalHistoryAgentActivityDirectSourceV2"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CLI_LINK_INSTALLER="$ROOT_DIR/scripts/install_cli_link.sh"
+# shellcheck source=install_cli_link.sh
+source "$CLI_LINK_INSTALLER"
 LOG_DIR="$HOME/Library/Logs/LocalHistory"
 LOG_FILE="$LOG_DIR/installer.log"
 LOG_MAX_BYTES=$((2 * 1024 * 1024))
@@ -53,6 +56,13 @@ verify_bundle_signature() {
   /usr/bin/codesign --verify --deep --strict --verbose=2 "$1"
 }
 
+bundle_has_goalong_cli() {
+  local cli="$1/Contents/MacOS/goalong"
+  [[ -f "$cli" && ! -L "$cli" && -x "$cli" ]] || return 1
+  /usr/bin/codesign --verify --strict --verbose=2 "$cli" >/dev/null 2>&1 || return 1
+  [[ "$(bundle_identifier_from_signature "$cli")" == "$BUNDLE_ID" ]]
+}
+
 audit_bundle_privacy() {
   local app_path="$1"
   local executable="$app_path/Contents/MacOS/$EXECUTABLE_NAME"
@@ -73,6 +83,10 @@ validate_app_bundle() {
   fi
   if ! bundle_has_direct_source_privacy_marker "$app_path"; then
     echo "Refusing a bundle without the direct-source Agent Activity privacy marker: $app_path" >&2
+    return 1
+  fi
+  if ! bundle_has_goalong_cli "$app_path"; then
+    echo "Refusing a bundle without the signed goalong CLI." >&2
     return 1
   fi
   verify_bundle_signature "$app_path" || return 1
@@ -483,6 +497,7 @@ main() {
 
   run_step "Installing with rollback protection" replace_staged_bundle "$staged_app"
   run_step "Validating the installed bundle" validate_app_bundle "$TARGET_APP"
+  run_step "Installing the goalong terminal command" install_goalong_cli_link "$TARGET_APP"
 
   remove_verified_legacy_bundle "/Applications/$PREVIOUS_APP_NAME.app"
   remove_verified_legacy_bundle "$HOME/Applications/$PREVIOUS_APP_NAME.app"

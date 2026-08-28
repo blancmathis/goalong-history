@@ -1,6 +1,6 @@
 # Shipping macOS releases
 
-Goalong History's normal installation path must never ask users to install Xcode or compile source code. Rolling releases are universal, distributed as a drag-to-Applications DMG, and authenticated for in-app updates with Sparkle EdDSA. Developer ID signing and notarization are optional until the Apple Developer membership is available.
+Goalong History's normal installation path must never ask users to install Xcode or compile source code. Rolling releases are universal, distributed as a drag-to-Applications DMG, authenticated for in-app updates with Sparkle EdDSA, Developer ID signed, and notarized by Apple. The workflow refuses to publish until every signing credential is configured.
 
 ## Required rolling-release configuration
 
@@ -9,13 +9,13 @@ Sparkle update signing:
 - Actions variable `SPARKLE_PUBLIC_ED_KEY` — base64 Ed25519 public key printed by Sparkle's `generate_keys`
 - Actions secret `SPARKLE_PRIVATE_ED_KEY` — exact contents of the private-key export produced by Sparkle's `generate_keys -x`
 
-This pair is sufficient for `.github/workflows/continuous-release.yml`. The workflow ad-hoc code signs the app, signs the archive and feed with EdDSA, and publishes `latest-main` after every successful merge to `main`.
+This pair authenticates the Sparkle archive and feed, but is not sufficient by itself to publish a public macOS update. The Apple values below are also required.
 
 Each rolling publication reads the last version from the live signed appcast and increments its patch component once: `0.5.1` becomes `0.5.2`, then `0.5.3`, and so on. The repository [`VERSION`](../VERSION) file is a version floor for intentional larger jumps. For example, setting it to `0.6.0` makes the next rolling publication use `0.6.0`; later publications continue automatically with `0.6.1`, `0.6.2`, etc. Sparkle keeps using the separate `5000.x.y` bundle build number for monotonic update ordering.
 
-## Optional Apple verification
+## Required Apple verification
 
-Configure the complete set below to add Developer ID, Hardened Runtime, notarization, and stapling to the rolling workflow:
+Configure the complete set below for Developer ID, Hardened Runtime, notarization, and stapling:
 
 - `MACOS_CERTIFICATE_P12` — base64-encoded Developer ID Application certificate (`.p12`)
 - `MACOS_CERTIFICATE_PASSWORD` — password for that certificate
@@ -57,8 +57,8 @@ Existing installations that predate Sparkle cannot discover Sparkle by themselve
    - builds both architectures;
    - embeds the exact-pinned Sparkle framework;
    - explicitly signs Sparkle's nested helpers and the app without `--deep`;
-   - uses ad-hoc code signing when Apple credentials are absent;
-   - adds Developer ID and notarization when the complete optional Apple set is present;
+   - fails closed when any Apple credential is absent;
+   - applies Developer ID signing and notarization;
    - creates the DMG and ZIP;
    - generates an EdDSA-signed Sparkle enclosure and signed appcast;
    - replaces `latest-main` and its release assets.
@@ -78,7 +78,7 @@ https://github.com/blancmathis/goalong-history/releases/download/latest-main/app
 - Automatic download/install is disabled. The user explicitly opens Sparkle's standard update UI to review and install.
 - System profiling and profile submission are disabled.
 - The update feed is HTTPS and requires Sparkle's signed-feed validation.
-- Update archives require the EdDSA key embedded as `SUPublicEDKey`. Apple Developer ID signing and notarization strengthen first-install trust but are not prerequisites for the Sparkle trust chain.
+- Update archives require the EdDSA key embedded as `SUPublicEDKey`. Developer ID signing and notarization are additionally required for publication so macOS can recognize updates as the same app for privacy permissions.
 
 ## Key rotation and recovery
 

@@ -1,6 +1,6 @@
 # Updates and macOS permissions
 
-This document describes the release behavior implemented for **Goalong History**. The public bundle, executable, Finder name, Dock name, app menus, permission labels, and release assets all use **Goalong History**. The bundle ID and existing data-folder names intentionally remain compatible with `LocalHistory` so existing history and settings are not split into a new installation identity. Until Developer ID is configured, macOS may require a one-time **Open Anyway** approval for the downloaded app. TCC may separately require a one-time permission approval when the running binary or its location changes.
+This document describes the release behavior implemented for **Goalong History**. The public bundle, executable, Finder name, Dock name, app menus, permission labels, and release assets all use **Goalong History**. The bundle ID and existing data-folder names intentionally remain compatible with `LocalHistory` so existing history and settings are not split into a new installation identity. Public updates are published only with Developer ID signing and Apple notarization so their macOS privacy identity remains stable across versions.
 
 ## Product name and compatibility identity
 
@@ -15,12 +15,12 @@ Every successful merge to `main` runs `.github/workflows/continuous-release.yml`
 The workflow:
 
 1. builds a universal `arm64` + `x86_64` app;
-2. ad-hoc code signs the app so Sparkle's nested helpers have a consistent local signature;
+2. signs the app and Sparkle helpers with the configured Developer ID identity;
 3. generates an EdDSA-signed update archive and Sparkle appcast;
 4. moves the `latest-main` tag to the merged commit;
 5. replaces the assets on the `latest-main` prerelease.
 
-When the complete optional Apple credential set is present, the same workflow instead applies Developer ID, Hardened Runtime, notarization, and stapling before publishing. App Store distribution is not involved in either mode.
+The workflow applies Hardened Runtime, notarization, and stapling before publishing. App Store distribution is not involved.
 
 Installed update-enabled builds read this fixed feed URL:
 
@@ -42,19 +42,19 @@ Non-secret GitHub Actions variable:
 
 - `SPARKLE_PUBLIC_ED_KEY`
 
-These are sufficient for the free release mode. The private key signs every archive and feed; the matching public key is embedded in the app so Sparkle can reject modified or untrusted updates.
+These authenticate the archive and feed, but are not sufficient by themselves to publish. The private key signs every archive and feed; the matching public key is embedded in the app so Sparkle can reject modified or untrusted updates.
 
-### Optional Apple verification
+### Required Apple verification
 
-Developer ID signing and notarization turn on automatically only when the complete Apple set is configured.
+Developer ID signing and notarization are mandatory for public releases. The workflow fails before building or publishing when any value is absent.
 
-Optional private GitHub Actions secrets:
+Required private GitHub Actions secrets:
 
 - `MACOS_CERTIFICATE_P12`
 - `MACOS_CERTIFICATE_PASSWORD`
 - `APPLE_API_PRIVATE_KEY`
 
-Optional non-secret GitHub Actions variables:
+Required non-secret GitHub Actions variables:
 
 - `APPLE_API_KEY_ID`
 - `APPLE_API_ISSUER_ID`
@@ -73,14 +73,14 @@ The normal installer no longer silently falls back to a source build when a rele
 ./install.sh --source
 ```
 
-Source builds remain ad-hoc by default. A developer may explicitly supply an existing
+Source builds automatically use the sole available `Apple Development` identity, or keep the installed app's matching identity when several are available. A developer may explicitly select an existing
 local certificate through `LOCALHISTORY_CODESIGN_IDENTITY`. An `Apple Development`
 identity produces a certificate-backed designated requirement without claiming Developer
 ID distribution or notarization. Local identities are signed with Hardened Runtime and
 `--timestamp=none`, so source installation does not contact Apple's timestamp service.
 Only an explicit `Developer ID Application:` identity requests a trusted distribution
 timestamp. The certificate's private key is never copied into the repository or
-installer. TCC persistence must still be proved by replacing one build with another
+installer. If no local identity is available, the build remains ad hoc and emits an explicit warning. TCC persistence must still be proved by replacing one build with another
 signed by the same certificate and exercising real Accessibility and input callbacks.
 
 ## Permission readiness

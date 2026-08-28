@@ -26,8 +26,8 @@ tests and privacy audit, builds the app for the current Mac architecture, valida
 then replaces an existing installation atomically with rollback on failure.
 
 After installation, open **Goalong History** and follow the native setup assistant. The app is
-compatible with macOS 13 Ventura or later. A source build is ad-hoc code signed unless a Developer
-ID identity is configured, so macOS may require renewed permission for a changed build.
+compatible with macOS 13 Ventura or later. A source build automatically uses an available Apple
+Development identity for stable local permissions; without one it warns and falls back to ad-hoc signing.
 
 The first launch guides the user through five focused screens:
 
@@ -36,6 +36,8 @@ The first launch guides the user through five focused screens:
 3. Accessibility, explained and requested in context;
 4. Input Monitoring, explained and requested separately;
 5. a final health check and an explicit “start at login” choice.
+
+The installed app also provides a read-only `goalong` terminal command for users and local agents. It exposes Computer History, detailed Apple Screen Time, available dates, daily recaps, and bounded agent context as JSON without creating a second history store or background process. See [`docs/CLI.md`](docs/CLI.md).
 
 Permission state updates live. Every step includes a direct System Settings route and a safe “set up later” path, so the user is never stranded.
 
@@ -165,11 +167,11 @@ make dmg
 make install-source
 ```
 
-The build script creates a real `.app` bundle, generates the `.icns` asset, writes the release Info.plist, code signs the bundle, and verifies it. Local and current rolling builds use ad-hoc code signing; release archives and feeds use a separate Sparkle EdDSA signature. When Apple credentials become available, rolling builds automatically add Developer ID, Hardened Runtime, and notarization.
+The build script creates a real `.app` bundle, generates the `.icns` asset, writes the release Info.plist, code signs the bundle, and verifies it. Local builds automatically use a stable Apple Development identity when available. Public rolling builds require Developer ID, Hardened Runtime, notarization, and a separate Sparkle EdDSA signature.
 
 ## Release pipeline
 
-Every successful merge to `main` increments the last published visible patch version (`0.5.1` → `0.5.2` → `0.5.3`), builds both architectures, creates the universal binary, verifies the Sparkle configuration, creates the branded DMG and ZIP, signs the update archive and feed with EdDSA, and replaces the `latest-main` prerelease. The repository [`VERSION`](VERSION) file can request a larger next version such as `0.6.0`; automatic patch increments continue from there. Sparkle keeps a separate monotonic `5000.x.y` build number for update ordering. Developer ID signing and notarization are optional enhancements in this rolling workflow. The separate stable-tag workflow remains reserved for a future Apple-verified release.
+Every successful merge to `main` attempts to increment the last published visible patch version (`0.5.1` → `0.5.2` → `0.5.3`), build both architectures, create the universal binary, verify the Sparkle configuration, create the branded DMG and ZIP, sign the update archive and feed with EdDSA, and replace the `latest-main` prerelease. Publication fails closed unless Developer ID signing and notarization credentials are complete. The repository [`VERSION`](VERSION) file can request a larger next version such as `0.6.0`; automatic patch increments continue from there. Sparkle keeps a separate monotonic `5000.x.y` build number for update ordering. The separate stable-tag workflow remains reserved for explicit stable releases.
 
 Release credentials and the exact process are documented in [`docs/RELEASING.md`](docs/RELEASING.md). Installation design principles are documented in [`docs/INSTALLATION_UX.md`](docs/INSTALLATION_UX.md).
 

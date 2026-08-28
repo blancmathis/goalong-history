@@ -5,7 +5,7 @@
     import Foundation
     import SQLite3
 
-    enum AppleSystemScreenTimeStatusKind: String, Equatable {
+    public enum AppleSystemScreenTimeStatusKind: String, Equatable, Sendable {
         case ready
         case localOnly
         case fullDiskAccessRequired
@@ -13,26 +13,50 @@
         case partial
     }
 
-    struct AppleSystemScreenTimeStatus: Equatable {
-        let kind: AppleSystemScreenTimeStatusKind
-        let title: String
-        let message: String
+    public struct AppleSystemScreenTimeStatus: Equatable, Sendable {
+        public let kind: AppleSystemScreenTimeStatusKind
+        public let title: String
+        public let message: String
 
-        static let loading = AppleSystemScreenTimeStatus(
+        public init(kind: AppleSystemScreenTimeStatusKind, title: String, message: String) {
+            self.kind = kind
+            self.title = title
+            self.message = message
+        }
+
+        public static let loading = AppleSystemScreenTimeStatus(
             kind: .noAppleData,
             title: "Reading Apple Screen Time",
             message: "Goalong History is checking Apple’s local Screen Time and iCloud-synced device stores."
         )
     }
 
-    struct AppleSystemScreenTimeCollection {
-        let storedExport: AppleScreenTimeStoredExport?
-        let availableDevices: [AppleScreenTimeDevice]
-        let status: AppleSystemScreenTimeStatus
-        let deviceSourceLabels: [String: String]
-        let latestAppleUpdate: Date?
-        let knowledgeIntervalCount: Int
-        let biomeIntervalCount: Int
+    public struct AppleSystemScreenTimeCollection: Sendable {
+        public let storedExport: AppleScreenTimeStoredExport?
+        public let availableDevices: [AppleScreenTimeDevice]
+        public let status: AppleSystemScreenTimeStatus
+        public let deviceSourceLabels: [String: String]
+        public let latestAppleUpdate: Date?
+        public let knowledgeIntervalCount: Int
+        public let biomeIntervalCount: Int
+
+        public init(
+            storedExport: AppleScreenTimeStoredExport?,
+            availableDevices: [AppleScreenTimeDevice],
+            status: AppleSystemScreenTimeStatus,
+            deviceSourceLabels: [String: String],
+            latestAppleUpdate: Date?,
+            knowledgeIntervalCount: Int,
+            biomeIntervalCount: Int
+        ) {
+            self.storedExport = storedExport
+            self.availableDevices = availableDevices
+            self.status = status
+            self.deviceSourceLabels = deviceSourceLabels
+            self.latestAppleUpdate = latestAppleUpdate
+            self.knowledgeIntervalCount = knowledgeIntervalCount
+            self.biomeIntervalCount = biomeIntervalCount
+        }
     }
 
     struct AppleSystemScreenTimePaths {
@@ -196,14 +220,18 @@
     ///
     /// These are private on-disk Apple formats, not Goalong History’s recorder. The source is
     /// deliberately isolated so an Apple schema change cannot affect normal activity capture.
-    final class AppleSystemScreenTimeSource {
-        let currentMacDevice: AppleScreenTimeDevice
+    public final class AppleSystemScreenTimeSource {
+        public let currentMacDevice: AppleScreenTimeDevice
 
         private let paths: AppleSystemScreenTimePaths
         private let fileManager: FileManager
         private let calendar: Calendar
         private let nowProvider: () -> Date
         private var biomeFileCache: AppleBiomeFileCache
+
+        public convenience init(deviceID: String) {
+            self.init(deviceID: deviceID, paths: .default)
+        }
 
         init(
             deviceID: String,
@@ -220,12 +248,12 @@
             biomeFileCache = AppleBiomeFileCache(limits: biomeCacheLimits)
             self.currentMacDevice = AppleScreenTimeDevice(
                 id: "apple-system-current-mac:\(deviceID)",
-                name: Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
+                name: Self.localHostName(),
                 kind: .mac
             )
         }
 
-        func collect(for day: Date) -> AppleSystemScreenTimeCollection {
+        public func collect(for day: Date) -> AppleSystemScreenTimeCollection {
             guard let dayInterval = calendar.dateInterval(of: .day, for: day) else {
                 return emptyCollection(
                     status: AppleSystemScreenTimeStatus(
@@ -330,6 +358,13 @@
                 knowledgeIntervalCount: knowledgeRead.values.count,
                 biomeIntervalCount: biomeRead.values.count
             )
+        }
+
+        private static func localHostName() -> String? {
+            var buffer = [CChar](repeating: 0, count: Int(MAXHOSTNAMELEN))
+            guard Darwin.gethostname(&buffer, buffer.count) == 0 else { return nil }
+            let value = String(cString: buffer).trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
         }
 
         private func emptyCollection(status: AppleSystemScreenTimeStatus) -> AppleSystemScreenTimeCollection {

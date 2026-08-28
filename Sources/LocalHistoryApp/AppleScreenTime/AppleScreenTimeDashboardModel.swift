@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppKit
     import AppleScreenTime
+    import AppleSystemScreenTime
     import Combine
     import Foundation
     import UniformTypeIdentifiers

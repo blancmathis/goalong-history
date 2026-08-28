@@ -4,11 +4,20 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORE_BUILDER="$ROOT_DIR/scripts/build_app_core.sh"
 CODESIGN_POLICY="$ROOT_DIR/scripts/codesign_policy.sh"
+SOURCE_CODESIGN_IDENTITY="$ROOT_DIR/scripts/source_codesign_identity.sh"
 APP_NAME="Goalong History"
 BUNDLE_ID="ai.goalong.localhistory"
 DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Goalong History}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
-SIGN_IDENTITY="${LOCALHISTORY_CODESIGN_IDENTITY:--}"
+if [[ ! -f "$SOURCE_CODESIGN_IDENTITY" ]]; then
+  echo "Source code-signing identity resolver is missing: $SOURCE_CODESIGN_IDENTITY" >&2
+  exit 1
+fi
+# shellcheck source=source_codesign_identity.sh
+source "$SOURCE_CODESIGN_IDENTITY"
+SIGN_IDENTITY="$(localhistory_resolve_source_codesign_identity)"
+export LOCALHISTORY_CODESIGN_IDENTITY="$SIGN_IDENTITY"
+localhistory_verify_source_codesign_identity "$SIGN_IDENTITY"
 
 if [[ ! -x "$CORE_BUILDER" ]]; then
   echo "Internal app builder is missing: $CORE_BUILDER" >&2
@@ -20,6 +29,12 @@ if [[ ! -f "$CODESIGN_POLICY" ]]; then
 fi
 # shellcheck source=codesign_policy.sh
 source "$CODESIGN_POLICY"
+
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+  echo "Warning: no Apple Development identity is available; this build is ad-hoc signed and macOS may request permissions again after replacement." >&2
+else
+  echo "Using stable local code-signing identity: $SIGN_IDENTITY"
+fi
 
 # Keep the Swift target and compatibility identifiers internal, while the physical bundle,
 # executable, base plist, localizations, Finder name, and Dock name all use the public identity.

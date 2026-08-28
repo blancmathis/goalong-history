@@ -18,8 +18,13 @@ if [[ ! -d "$APP_PATH" || ! -f "$INFO" ]]; then
 fi
 EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO")"
 BINARY="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
+CLI_BINARY="$APP_PATH/Contents/MacOS/goalong"
 if [[ ! -x "$BINARY" ]]; then
   echo "Goalong History executable is missing: $BINARY" >&2
+  exit 1
+fi
+if [[ ! -x "$CLI_BINARY" ]]; then
+  echo "Goalong CLI is missing from the app bundle: $CLI_BINARY" >&2
   exit 1
 fi
 if [[ ! -d "$FRAMEWORK" ]]; then
@@ -28,14 +33,17 @@ if [[ ! -d "$FRAMEWORK" ]]; then
 fi
 
 /usr/bin/codesign --verify --strict --verbose=2 "$FRAMEWORK"
+/usr/bin/codesign --verify --strict --verbose=2 "$CLI_BINARY"
 /usr/bin/codesign --verify --strict --verbose=2 "$APP_PATH"
 
 APP_SIGNATURE="$({ /usr/bin/codesign -dvv "$APP_PATH" 2>&1 || true; })"
 FRAMEWORK_SIGNATURE="$({ /usr/bin/codesign -dvv "$FRAMEWORK" 2>&1 || true; })"
+CLI_SIGNATURE="$({ /usr/bin/codesign -dvv "$CLI_BINARY" 2>&1 || true; })"
 APP_TEAM="$(printf '%s\n' "$APP_SIGNATURE" | /usr/bin/awk -F= '/^TeamIdentifier=/{print $2; exit}')"
 FRAMEWORK_TEAM="$(printf '%s\n' "$FRAMEWORK_SIGNATURE" | /usr/bin/awk -F= '/^TeamIdentifier=/{print $2; exit}')"
-if [[ "$APP_TEAM" != "$FRAMEWORK_TEAM" ]]; then
-  echo "The app and Sparkle.framework have different signing Team IDs." >&2
+CLI_TEAM="$(printf '%s\n' "$CLI_SIGNATURE" | /usr/bin/awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+if [[ "$APP_TEAM" != "$FRAMEWORK_TEAM" || "$APP_TEAM" != "$CLI_TEAM" ]]; then
+  echo "The app, Goalong CLI and Sparkle.framework have different signing Team IDs." >&2
   exit 1
 fi
 if [[ "$APP_TEAM" == "not set" ]] && printf '%s\n' "$APP_SIGNATURE" | /usr/bin/grep -q 'runtime'; then

@@ -32,6 +32,7 @@ make_fixture_bundle() {
 
   /bin/mkdir -p "$app_bundle/Contents/MacOS"
   /bin/cp /bin/echo "$app_bundle/Contents/MacOS/$EXECUTABLE_NAME"
+  /bin/cp /bin/echo "$app_bundle/Contents/MacOS/goalong"
   /usr/bin/plutil -create xml1 "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert CFBundleIdentifier -string "$identifier" "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert CFBundleExecutable -string "$EXECUTABLE_NAME" "$app_bundle/Contents/Info.plist"
@@ -46,6 +47,7 @@ make_fixture_bundle() {
     /usr/bin/plutil -insert SURequireSignedFeed -bool true "$app_bundle/Contents/Info.plist"
     /usr/bin/plutil -insert SUVerifyUpdateBeforeExtraction -bool true "$app_bundle/Contents/Info.plist"
   fi
+  /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle/Contents/MacOS/goalong" >/dev/null 2>&1
   /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle" >/dev/null 2>&1
 }
 

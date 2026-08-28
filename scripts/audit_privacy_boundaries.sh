@@ -128,7 +128,7 @@ if grep -nE 'AnchorUploadRequest' "$ANCHOR_MODEL" >/dev/null; then
 fi
 
 # Apple Screen Time private stores are permitted only through the isolated read-only adapter.
-APPLE_SYSTEM_SOURCE="$ROOT_DIR/Sources/LocalHistoryApp/AppleScreenTime/AppleSystemScreenTimeSource.swift"
+APPLE_SYSTEM_SOURCE="$ROOT_DIR/Features/AppleSystemScreenTime/Sources/AppleSystemScreenTimeSource.swift"
 if [[ -f "$APPLE_SYSTEM_SOURCE" ]]; then
   if ! grep -Fq 'SQLITE_OPEN_READONLY' "$APPLE_SYSTEM_SOURCE"; then
     echo "Apple system Screen Time SQLite access is not explicitly read-only." >&2
