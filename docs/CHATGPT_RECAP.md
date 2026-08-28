@@ -5,14 +5,14 @@ Goalong History can use the user's connected ChatGPT plan through the local
 credentials are rejected; Codex owns the ChatGPT browser login and managed
 credentials inside Goalong's isolated `CODEX_HOME`.
 
-The **Activity** page combines three evidence sources for a selected day:
+The daily Activity report shown from **Today** combines three evidence sources for a selected day:
 
 - factual Computer History and its bounded causal projection;
 - Apple Screen Time totals and application usage for included devices;
 - AI conversations discovered by Agent Activity and read transiently from each
   provider's original local storage.
 
-Connecting ChatGPT is available in **Settings → AI analysis with ChatGPT**.
+Connecting ChatGPT is available directly in **Settings**.
 
 ## Daily report contract
 

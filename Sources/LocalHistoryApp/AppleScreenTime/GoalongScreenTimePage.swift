@@ -7,9 +7,11 @@
         @StateObject private var screenTime: AppleScreenTimeDashboardModel
         @State private var mode: UsageMode = .applications
         @State private var search = ""
+        private let showsHeader: Bool
 
-        init(model: DashboardViewModel) {
+        init(model: DashboardViewModel, showsHeader: Bool = true) {
             _dashboard = ObservedObject(wrappedValue: model)
+            self.showsHeader = showsHeader
             _screenTime = StateObject(
                 wrappedValue: AppleScreenTimeDashboardModel(
                     rootDirectory: AppPaths.screenTimeDirectory,
@@ -22,23 +24,25 @@
         var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    PageHeader(
-                        eyebrow: "Apple system data",
-                        title: "Apple Screen Time",
-                        subtitle:
-                            "See what you used first. Apple application totals stay separate from Goalong's locally observed website history."
-                    ) {
-                        HStack(spacing: 10) {
-                            DateSelectionControl(date: screenTime.selectedDay, onChange: selectDay)
-                            Button {
-                                dashboard.refreshEverything()
-                                screenTime.refresh()
-                            } label: {
-                                Image(systemName: "arrow.clockwise")
-                                    .frame(width: 28, height: 28)
+                    if showsHeader {
+                        PageHeader(
+                            eyebrow: "Apple system data",
+                            title: "Apple Screen Time",
+                            subtitle:
+                                "See what you used first. Apple application totals stay separate from Goalong's locally observed website history."
+                        ) {
+                            HStack(spacing: 10) {
+                                DateSelectionControl(date: screenTime.selectedDay, onChange: selectDay)
+                                Button {
+                                    dashboard.refreshEverything()
+                                    screenTime.refresh()
+                                } label: {
+                                    Image(systemName: "arrow.clockwise")
+                                        .frame(width: 28, height: 28)
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(screenTime.isBusy)
                             }
-                            .buttonStyle(.bordered)
-                            .disabled(screenTime.isBusy)
                         }
                     }
 
@@ -55,7 +59,7 @@
                     sourceCard
                 }
                 .padding(.horizontal, 24)
-                .padding(.top, 28)
+                .padding(.top, showsHeader ? 28 : 18)
                 .padding(.bottom, 48)
             }
             .background(LHTheme.pageBackground)

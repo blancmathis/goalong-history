@@ -100,7 +100,7 @@ Once per minute, event roots are committed into a minute Merkle root. The minute
 
 Signing identities are scoped to the app's designated code-signing requirement. If that requirement changes, Goalong History records a visible identity rotation and keeps the existing chain data instead of repeatedly requesting access to an incompatible old key. A refused authentication attempt also suspends background signing for that launch, so it can never create a password dialog every minute.
 
-The **Share** screen stores one rule for every observed application and website:
+The contextual **Share day** action stores one rule for every observed application and website:
 
 - show the app or website name;
 - show only its category;
@@ -110,20 +110,19 @@ Website rules take priority over the containing browser rule. The original JSONL
 
 ## Native dashboard
 
-The SwiftUI dashboard is split into eight areas:
+The SwiftUI dashboard exposes only three primary destinations:
 
-- **Overview** — runtime state, daily metrics, coverage, top apps, and recent sessions;
-- **Computer History** — apps and sites, causal
-  [Computer History](docs/COMPUTER_HISTORY_PARITY.md), the compact day recap,
-  and the searchable timeline;
-- **Screen Time** — isolated import and analysis of user-exported Apple device activity;
-- **[AI conversations](Features/AgentActivity/README.md)** — bounded direct-source
-  metadata and on-demand analysis without a stored transcript copy;
-- **[Activity](docs/CHATGPT_RECAP.md)** — daily statistics and an optional
-  five-line GPT-5.6 Luna High assessment through the user's ChatGPT/Codex account;
-- **Share** — persistent per-app and per-site rules with verified event-level export;
-- **Privacy & Security** — permission state, data flow, storage, identity, and safe deletion;
-- **Settings** — capture signals, retention, URL redaction, verification, and exclusions.
+- **Today** — runtime state, daily metrics, top applications, coverage and the optional
+  five-line GPT-5.6 Luna High assessment;
+- **History** — one selected-day view with an all-sources timeline and filters for causal
+  [Computer History](docs/COMPUTER_HISTORY_PARITY.md), Apple Screen Time and
+  [AI conversations](Features/AgentActivity/README.md);
+- **Settings** — ChatGPT connection and a short progressive-disclosure list for recording,
+  sources, privacy, permissions and expert controls.
+
+Sharing is a contextual **Share day** action on Today and History. Privacy, source management,
+verification and detailed capture options remain available without occupying permanent sidebar
+destinations.
 
 A menu-bar control keeps pause/resume, status, dashboard access, and sharing immediately available.
 

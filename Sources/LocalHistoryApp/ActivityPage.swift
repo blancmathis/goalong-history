@@ -15,6 +15,7 @@
         @State var mode: ActivityMode
 
         private let showsModePicker: Bool
+        private let showsHeader: Bool
 
         let metricColumns = [
             GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
@@ -23,16 +24,20 @@
         init(
             model: DashboardViewModel,
             initialMode: ActivityMode = .appsAndSites,
-            showsModePicker: Bool = true
+            showsModePicker: Bool = true,
+            showsHeader: Bool = true
         ) {
             self.model = model
             _mode = State(initialValue: initialMode)
             self.showsModePicker = showsModePicker
+            self.showsHeader = showsHeader
         }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
-                header
+                if showsHeader {
+                    header
+                }
 
                 if showsModePicker {
                     Picker("Activity view", selection: $mode) {
@@ -73,7 +78,7 @@
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 28)
+            .padding(.top, showsHeader ? 28 : 18)
             .padding(.bottom, 22)
             .background(LHTheme.pageBackground)
             .onAppear {

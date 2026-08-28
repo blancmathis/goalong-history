@@ -4,6 +4,7 @@
     struct SettingsPage: View {
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
+        @State private var pane: SettingsPane = .home
 
         init(model: DashboardViewModel) {
             self.model = model
@@ -14,47 +15,17 @@
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        PageHeader(
-                            eyebrow: "Configuration",
-                            title: "Settings",
-                            subtitle:
-                                "Choose what Goalong History observes and how verification behaves. Safe defaults are already enabled."
-                        ) {
-                            HStack(spacing: 10) {
-                                if model.settingsHaveChanges {
-                                    StatusPill(
-                                        title: "Unsaved changes",
-                                        symbol: "circle.fill",
-                                        tint: LHTheme.warning
-                                    )
-                                }
-                                Button("Discard") {
-                                    model.discardSettingsChanges()
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(!model.settingsHaveChanges)
-                                Button("Save settings") {
-                                    model.saveSettings()
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(!model.settingsHaveChanges)
-                                .keyboardShortcut("s", modifiers: [.command])
-                            }
-                        }
-
-                        ChatGPTAccountConnectionCard(runtime: recapRuntime)
-                        captureCard
-                        privacyCard
-                        verificationCard
-                        monitoringScopeCard
-                        advancedCard
+                        settingsHeader
+                        paneContent
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 28)
                     .padding(.bottom, 90)
                 }
 
-                saveBar
+                if pane != .home {
+                    saveBar
+                }
             }
             .background(LHTheme.pageBackground)
             .onAppear {
@@ -68,6 +39,120 @@
                     dismissButton: .default(Text("OK"))
                 )
             }
+        }
+
+        private var settingsHeader: some View {
+            PageHeader(
+                eyebrow: pane == .home ? "Configuration" : "Settings",
+                title: pane.title,
+                subtitle: pane.subtitle
+            ) {
+                HStack(spacing: 10) {
+                    if pane != .home {
+                        Button {
+                            pane = .home
+                        } label: {
+                            Label("Back", systemImage: "chevron.left")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    if pane != .home, model.settingsHaveChanges {
+                        Button("Save settings") {
+                            model.saveSettings()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut("s", modifiers: [.command])
+                    }
+                }
+            }
+        }
+
+        @ViewBuilder private var paneContent: some View {
+            switch pane {
+            case .home:
+                ChatGPTAccountConnectionCard(runtime: recapRuntime)
+                settingsNavigation
+            case .recording:
+                captureCard
+                privacyCard
+            case .advanced:
+                verificationCard
+                monitoringScopeCard
+                advancedCard
+            }
+        }
+
+        private var settingsNavigation: some View {
+            LHCard(padding: 0) {
+                VStack(spacing: 0) {
+                    settingsNavigationRow(
+                        title: "Recording",
+                        detail: "Choose the local signals Goalong may record.",
+                        symbol: "dot.radiowaves.left.and.right"
+                    ) {
+                        pane = .recording
+                    }
+                    Divider().padding(.leading, 62)
+                    settingsNavigationRow(
+                        title: "Sources",
+                        detail: "Manage Computer History, Screen Time and AI conversations.",
+                        symbol: "externaldrive.connected.to.line.below"
+                    ) {
+                        model.selectSection(.history)
+                    }
+                    Divider().padding(.leading, 62)
+                    settingsNavigationRow(
+                        title: "Privacy & permissions",
+                        detail: "Review macOS access, local storage and deletion controls.",
+                        symbol: "hand.raised"
+                    ) {
+                        model.selectSection(.privacy)
+                    }
+                    Divider().padding(.leading, 62)
+                    settingsNavigationRow(
+                        title: "Advanced",
+                        detail: "Verification, inclusion rules and config.json.",
+                        symbol: "slider.horizontal.3"
+                    ) {
+                        pane = .advanced
+                    }
+                }
+            }
+        }
+
+        private func settingsNavigationRow(
+            title: String,
+            detail: String,
+            symbol: String,
+            action: @escaping () -> Void
+        ) -> some View {
+            Button(action: action) {
+                HStack(spacing: 14) {
+                    Image(systemName: symbol)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(LHTheme.accent)
+                        .frame(width: 32, height: 32)
+                        .background(
+                            LHTheme.accent.opacity(0.09),
+                            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        )
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(detail)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 16)
+                .frame(minHeight: 62)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
 
         private var captureCard: some View {
@@ -410,6 +495,31 @@
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private enum SettingsPane {
+        case home
+        case recording
+        case advanced
+
+        var title: String {
+            switch self {
+            case .home: return "Settings"
+            case .recording: return "Recording"
+            case .advanced: return "Advanced settings"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .home:
+                return "Your account and the few controls that usually matter."
+            case .recording:
+                return "Choose what Goalong observes locally. Safe defaults remain enabled."
+            case .advanced:
+                return "Verification and expert controls that rarely need changing."
+            }
         }
     }
 #endif

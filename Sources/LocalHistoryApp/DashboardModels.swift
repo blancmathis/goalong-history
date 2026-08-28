@@ -4,6 +4,7 @@
 
     enum DashboardSection: String, CaseIterable, Identifiable, Hashable {
         case overview
+        case history
         case activity
         case screenTime
         case agentActivity
@@ -16,7 +17,8 @@
 
         var title: String {
             switch self {
-            case .overview: return "Overview"
+            case .overview: return "Today"
+            case .history: return "History"
             case .activity: return "Computer History"
             case .screenTime: return "Apple Screen Time"
             case .agentActivity: return "Agentic work"
@@ -29,7 +31,8 @@
 
         var symbol: String {
             switch self {
-            case .overview: return "square.grid.2x2"
+            case .overview: return "sun.max"
+            case .history: return "clock.arrow.circlepath"
             case .activity: return "clock.arrow.circlepath"
             case .screenTime: return "macbook.and.iphone"
             case .agentActivity: return "cpu"

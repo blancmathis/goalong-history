@@ -2,7 +2,7 @@
 
 ## What the page now represents
 
-The **Apple Screen Time** page reads Apple's own local and iCloud-synchronized usage data. It does not calculate a replacement Screen Time number from Goalong History events.
+The **History → Screen Time** filter reads Apple's own local and iCloud-synchronized usage data. It does not calculate a replacement Screen Time number from Goalong History events.
 
 The runtime combines two Apple sources:
 

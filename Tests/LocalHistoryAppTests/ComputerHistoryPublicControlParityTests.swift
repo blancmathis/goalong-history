@@ -83,7 +83,7 @@
             XCTAssertTrue(dashboardModel.contains("activateFileViewerSelecting([file])"))
         }
 
-        func testSidebarExposesEveryDestinationWithoutAMoreMenu() throws {
+        func testSidebarKeepsOnlyThreePrimaryDestinationsWithProgressiveDisclosure() throws {
             let repositoryRoot = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -96,36 +96,36 @@
 
             XCTAssertTrue(
                 source.contains(
-                    "private let primarySections: [DashboardSection] = [.overview, .share]"
+                    "private let primarySections: [DashboardSection] = [.overview, .history, .settings]"
                 )
             )
-            XCTAssertTrue(
-                source.contains(
-                    "private let analysisSourceSections: [DashboardSection] = [\n"
-                        + "            .activity,\n"
-                        + "            .screenTime,\n"
-                        + "            .agentActivity,\n"
-                        + "            .chatGPTRecap,\n"
-                        + "        ]"
-                )
-            )
-            XCTAssertTrue(
-                source.contains(
-                    "private let utilitySections: [DashboardSection] = [.privacy, .settings]"
-                )
-            )
-            XCTAssertTrue(
-                source.contains(
-                    "ActivityPage(\n                    model: model,\n                    initialMode: .computerHistory,\n                    showsModePicker: false"
-                )
-            )
-            XCTAssertEqual(
-                source.components(separatedBy: "ForEach(analysisSourceSections)").count - 1,
-                1
-            )
-            XCTAssertEqual(source.components(separatedBy: "ForEach(utilitySections)").count - 1, 1)
+            XCTAssertTrue(source.contains("case .history:\n                UnifiedHistoryPage(model: model)"))
+            XCTAssertFalse(source.contains("analysisSourceSections"))
+            XCTAssertFalse(source.contains("utilitySections"))
             XCTAssertFalse(source.contains("Menu {"))
             XCTAssertFalse(source.contains("\"More\""))
+
+            let history = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/UnifiedHistoryPage.swift"),
+                encoding: .utf8
+            )
+            XCTAssertTrue(history.contains("case all"))
+            XCTAssertTrue(history.contains("case computer"))
+            XCTAssertTrue(history.contains("case screenTime"))
+            XCTAssertTrue(history.contains("case conversations"))
+            XCTAssertTrue(history.contains("Label(\"Share day\", systemImage: \"square.and.arrow.up\")"))
+
+            let settings = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/SettingsPage.swift"),
+                encoding: .utf8
+            )
+            XCTAssertTrue(settings.contains("case .home:"))
+            XCTAssertTrue(settings.contains("title: \"Recording\""))
+            XCTAssertTrue(settings.contains("title: \"Sources\""))
+            XCTAssertTrue(settings.contains("title: \"Privacy & permissions\""))
+            XCTAssertTrue(settings.contains("title: \"Advanced\""))
 
             let components = try String(
                 contentsOf: repositoryRoot

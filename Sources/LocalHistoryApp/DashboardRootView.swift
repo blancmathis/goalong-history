@@ -34,6 +34,8 @@
             switch model.selectedSection {
             case .overview:
                 OverviewPage(model: model)
+            case .history:
+                UnifiedHistoryPage(model: model)
             case .activity:
                 ActivityPage(
                     model: model,
@@ -60,14 +62,7 @@
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var updates = SoftwareUpdateManager.shared
 
-        private let primarySections: [DashboardSection] = [.overview, .share]
-        private let analysisSourceSections: [DashboardSection] = [
-            .activity,
-            .screenTime,
-            .agentActivity,
-            .chatGPTRecap,
-        ]
-        private let utilitySections: [DashboardSection] = [.privacy, .settings]
+        private let primarySections: [DashboardSection] = [.overview, .history, .settings]
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
@@ -78,18 +73,6 @@
 
                 VStack(spacing: 5) {
                     ForEach(primarySections) { section in
-                        navigationButton(section)
-                    }
-
-                    navigationDivider
-
-                    ForEach(analysisSourceSections) { section in
-                        navigationButton(section)
-                    }
-
-                    navigationDivider
-
-                    ForEach(utilitySections) { section in
                         navigationButton(section)
                     }
                 }
@@ -155,7 +138,7 @@
                 navigationLabel(
                     title: section.simpleTitle,
                     symbol: section.symbol,
-                    selected: model.selectedSection == section
+                    selected: model.selectedSection.sidebarParent == section
                 )
             }
             .buttonStyle(.plain)
@@ -174,14 +157,6 @@
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                 Spacer()
-                if title == DashboardSection.share.simpleTitle, model.snapshot.sealedMinutes > 0 {
-                    Text("\(model.snapshot.sealedMinutes)")
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color.primary.opacity(0.06), in: Capsule())
-                }
             }
             .foregroundStyle(selected ? LHTheme.accent : Color.primary.opacity(0.78))
             .padding(.horizontal, 12)
@@ -191,12 +166,6 @@
                     .fill(selected ? LHTheme.accent.opacity(0.12) : Color.clear)
             )
             .contentShape(Rectangle())
-        }
-
-        private var navigationDivider: some View {
-            Divider()
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
         }
 
         private var statusRow: some View {
@@ -295,7 +264,8 @@
     private extension DashboardSection {
         var simpleTitle: String {
             switch self {
-            case .overview: return "Overview"
+            case .overview: return "Today"
+            case .history: return "History"
             case .activity: return "Computer History"
             case .screenTime: return "Screen Time"
             case .agentActivity: return "AI conversations"
@@ -303,6 +273,17 @@
             case .share: return "Share"
             case .privacy: return "Privacy"
             case .settings: return "Settings"
+            }
+        }
+
+        var sidebarParent: DashboardSection {
+            switch self {
+            case .overview, .chatGPTRecap, .share:
+                return .overview
+            case .history, .activity, .screenTime, .agentActivity:
+                return .history
+            case .privacy, .settings:
+                return .settings
             }
         }
     }

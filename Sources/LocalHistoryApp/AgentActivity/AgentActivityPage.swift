@@ -8,35 +8,43 @@
         @State private var search = ""
         @State private var providerFilter: AgentProvider?
         @State private var editingFolder: AgentWatchedFolder?
+        private let showsHeader: Bool
+
+        init(agents: AgentActivityRuntime, showsHeader: Bool = true) {
+            self.agents = agents
+            self.showsHeader = showsHeader
+        }
 
         var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    PageHeader(
-                        eyebrow: "Local agent memory",
-                        title: "Agentic work",
-                        subtitle:
-                            "Analyze local agent conversations directly from each provider’s original storage. Goalong keeps only a bounded source index, never a second transcript archive."
-                    ) {
-                        HStack(spacing: 9) {
-                            DateSelectionControl(date: agents.selectedDay, onChange: agents.selectDay)
-                            Button {
-                                agents.scanNow(
-                                    forceFullDiscovery: true,
-                                    analyzeSelectedDay: true
-                                )
-                            } label: {
-                                Label(agents.isScanning ? "Scanning…" : "Scan now", systemImage: "arrow.clockwise")
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(agents.isScanning)
+                    if showsHeader {
+                        PageHeader(
+                            eyebrow: "Local agent memory",
+                            title: "Agentic work",
+                            subtitle:
+                                "Analyze local agent conversations directly from each provider’s original storage. Goalong keeps only a bounded source index, never a second transcript archive."
+                        ) {
+                            HStack(spacing: 9) {
+                                DateSelectionControl(date: agents.selectedDay, onChange: agents.selectDay)
+                                Button {
+                                    agents.scanNow(
+                                        forceFullDiscovery: true,
+                                        analyzeSelectedDay: true
+                                    )
+                                } label: {
+                                    Label(agents.isScanning ? "Scanning…" : "Scan now", systemImage: "arrow.clockwise")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(agents.isScanning)
 
-                            Button {
-                                agents.chooseFolder()
-                            } label: {
-                                Label("Add folder", systemImage: "folder.badge.plus")
+                                Button {
+                                    agents.chooseFolder()
+                                } label: {
+                                    Label("Add folder", systemImage: "folder.badge.plus")
+                                }
+                                .buttonStyle(.borderedProminent)
                             }
-                            .buttonStyle(.borderedProminent)
                         }
                     }
 
@@ -48,7 +56,7 @@
                     storageAndPrivacyCard
                 }
                 .padding(.horizontal, 24)
-                .padding(.top, 28)
+                .padding(.top, showsHeader ? 28 : 18)
                 .padding(.bottom, 50)
             }
             .background(LHTheme.pageBackground)

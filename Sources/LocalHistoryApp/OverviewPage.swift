@@ -32,6 +32,12 @@
                             DateSelectionControl(date: model.selectedDay, onChange: selectDay)
                             captureControl
                             Button {
+                                model.selectSection(.share)
+                            } label: {
+                                Label("Share day", systemImage: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.bordered)
+                            Button {
                                 refreshAll()
                             } label: {
                                 Image(systemName: "arrow.clockwise")
@@ -168,17 +174,14 @@
 
                     Divider()
                     HStack {
-                        Button("Open Computer History") {
-                            model.selectSection(.activity)
+                        Button("Open History") {
+                            model.selectSection(.history)
                         }
                         .buttonStyle(.link)
-
                         Spacer()
-
-                        Button("Screen Time details") {
-                            model.selectSection(.screenTime)
-                        }
-                        .buttonStyle(.link)
+                        Text("Computer activity, Screen Time and AI conversations")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
                     }
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 20)
