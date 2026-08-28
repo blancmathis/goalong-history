@@ -201,8 +201,12 @@ final class AgentActivityAdvancedTests: XCTestCase {
         let lines = [
             #"{"timestamp":"2026-08-23T08:00:00.000Z","type":"session_meta","payload":{"id":"20000000-0000-4000-8000-000000000002"}}"#,
             #"{"timestamp":"2026-08-26T21:59:59.999Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"BEFORE-DAY-SENTINEL"}]}}"#,
-            #"{"timestamp":"2026-08-27T08:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"Selected-day request"}]}}"#,
-            #"{"timestamp":"2026-08-27T08:00:01.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"text":"Selected-day response"}]}}"#,
+            #"{"timestamp":"2026-08-27T08:00:00.000Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"text":"SYSTEM-PROMPT-SENTINEL"}]}}"#,
+            #"{"timestamp":"2026-08-27T08:00:00.100Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"<in-app-browser-context source=\"ambient-ui-state\">AMBIENT-SENTINEL</in-app-browser-context>\n\n## My request:\nSelected-day request"}]}}"#,
+            #"{"timestamp":"2026-08-27T08:00:00.200Z","type":"response_item","payload":{"type":"reasoning","summary":[{"text":"REASONING-SENTINEL"}]}}"#,
+            #"{"timestamp":"2026-08-27T08:00:00.300Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"commentary","content":[{"text":"PROGRESS-SENTINEL"}]}}"#,
+            #"{"timestamp":"2026-08-27T08:00:00.400Z","type":"response_item","payload":{"type":"function_call","name":"PROCESS-TOOL-SENTINEL"}}"#,
+            #"{"timestamp":"2026-08-27T08:00:01.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"text":"Selected-day final response"}]}}"#,
             #"{"timestamp":"2026-08-27T22:00:00.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"text":"AFTER-DAY-SENTINEL"}]}}"#,
         ]
         let payload = Data((lines.joined(separator: "\n") + "\n").utf8)
@@ -220,12 +224,66 @@ final class AgentActivityAdvancedTests: XCTestCase {
         let summary = parser.finish()
 
         XCTAssertEqual(summary.sessionID, sessionID)
-        XCTAssertEqual(summary.messageCount, 2)
+        XCTAssertEqual(summary.messageCount, 4)
         XCTAssertEqual(summary.userMessageCount, 1)
-        XCTAssertEqual(summary.assistantMessageCount, 1)
+        XCTAssertEqual(summary.assistantMessageCount, 2)
+        XCTAssertEqual(summary.systemMessageCount, 1)
         XCTAssertTrue(summary.excerpt?.contains("Selected-day request") == true)
         XCTAssertFalse(summary.excerpt?.contains("BEFORE-DAY-SENTINEL") == true)
         XCTAssertFalse(summary.excerpt?.contains("AFTER-DAY-SENTINEL") == true)
+        XCTAssertEqual(
+            summary.visibleMessages,
+            [
+                AgentVisibleMessage(role: .user, text: "Selected-day request"),
+                AgentVisibleMessage(role: .assistantFinal, text: "Selected-day final response"),
+            ]
+        )
+        let visibleText = summary.visibleMessages.map(\.text).joined(separator: "\n")
+        for excluded in [
+            "AMBIENT-SENTINEL", "SYSTEM-PROMPT-SENTINEL", "REASONING-SENTINEL",
+            "PROGRESS-SENTINEL", "PROCESS-TOOL-SENTINEL",
+        ] {
+            XCTAssertFalse(visibleText.contains(excluded), "Leaked \(excluded)")
+        }
+    }
+
+    func testCodexVisibleDialogueRemovesInjectedContextCompactionsAndReceipts() throws {
+        let lines = [
+            ##"{"timestamp":"2026-08-27T10:00:00.000Z","type":"session_meta","payload":{"id":"visible-sanitization"}}"##,
+            ##"{"timestamp":"2026-08-27T10:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"<summary>COMPACTION-SENTINEL</summary>"}]}}"##,
+            ##"{"timestamp":"2026-08-27T10:00:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"# AGENTS.md instructions\nAGENT-INSTRUCTION-SENTINEL"}]}}"##,
+            ##"{"timestamp":"2026-08-27T10:00:03.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"<environment_context>ENVIRONMENT-SENTINEL</environment_context>"}]}}"##,
+            ##"{"timestamp":"2026-08-27T10:00:04.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"<codex_delegation><source_thread_id>opaque</source_thread_id><input>Delegated user request</input></codex_delegation>"}]}}"##,
+            ##"{"timestamp":"2026-08-27T10:00:05.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"text":"Visible final reply\n<oai-mem-citation>MEMORY-RECEIPT-SENTINEL</oai-mem-citation>"}]}}"##,
+        ]
+        let payload = Data((lines.joined(separator: "\n") + "\n").utf8)
+        let interval = DateInterval(
+            start: try XCTUnwrap(isoDate("2026-08-26T22:00:00Z")),
+            end: try XCTUnwrap(isoDate("2026-08-27T22:00:00Z"))
+        )
+        var parser = AgentTranscriptParser.IncrementalJSONLines(
+            fileURL: URL(fileURLWithPath: "/fixture/codex-visible-sanitization.jsonl"),
+            provider: .codex,
+            analysisInterval: interval
+        )
+
+        parser.consume(payload)
+        let summary = parser.finish()
+
+        XCTAssertEqual(
+            summary.visibleMessages,
+            [
+                AgentVisibleMessage(role: .user, text: "Delegated user request"),
+                AgentVisibleMessage(role: .assistantFinal, text: "Visible final reply"),
+            ]
+        )
+        let visibleText = summary.visibleMessages.map(\.text).joined(separator: "\n")
+        for excluded in [
+            "COMPACTION-SENTINEL", "AGENT-INSTRUCTION-SENTINEL",
+            "ENVIRONMENT-SENTINEL", "MEMORY-RECEIPT-SENTINEL",
+        ] {
+            XCTAssertFalse(visibleText.contains(excluded), "Leaked \(excluded)")
+        }
     }
 
     func testSelectedDaySnapshotAcceptsOnlySameInodeAppendOnlyGrowth() throws {
@@ -257,6 +315,42 @@ final class AgentActivityAdvancedTests: XCTestCase {
                 initialStatus: initial
             )
         )
+    }
+
+    func testClaudeVisibleDialogueKeepsUserTextAndLastAssistantTextOnly() {
+        let lines = [
+            #"{"timestamp":"2026-08-27T09:00:00.000Z","type":"system","message":{"role":"system","content":"CLAUDE-SYSTEM-SENTINEL"}}"#,
+            #"{"timestamp":"2026-08-27T09:01:00.000Z","type":"user","message":{"role":"user","content":[{"type":"text","text":"Claude user request"},{"type":"tool_result","content":"CLAUDE-TOOL-RESULT-SENTINEL"}]}}"#,
+            #"{"timestamp":"2026-08-27T09:02:00.000Z","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"CLAUDE-PROGRESS-SENTINEL"},{"type":"tool_use","name":"CLAUDE-TOOL-SENTINEL"}]}}"#,
+            #"{"timestamp":"2026-08-27T09:03:00.000Z","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Claude final response"}]}}"#,
+            #"{"timestamp":"2026-08-27T09:04:00.000Z","type":"user","message":{"role":"user","content":"Second Claude request"}}"#,
+            #"{"timestamp":"2026-08-27T09:05:00.000Z","type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"CLAUDE-THINKING-SENTINEL"},{"type":"text","text":"Second Claude final"}]}}"#,
+        ]
+        var parser = AgentTranscriptParser.IncrementalJSONLines(
+            fileURL: URL(fileURLWithPath: "/fixture/claude-visible.jsonl"),
+            provider: .claudeCode
+        )
+
+        parser.consume(Data((lines.joined(separator: "\n") + "\n").utf8))
+        let summary = parser.finish()
+
+        XCTAssertEqual(
+            summary.visibleMessages,
+            [
+                AgentVisibleMessage(role: .user, text: "Claude user request"),
+                AgentVisibleMessage(role: .assistantFinal, text: "Claude final response"),
+                AgentVisibleMessage(role: .user, text: "Second Claude request"),
+                AgentVisibleMessage(role: .assistantFinal, text: "Second Claude final"),
+            ]
+        )
+        let visibleText = summary.visibleMessages.map(\.text).joined(separator: "\n")
+        for excluded in [
+            "CLAUDE-SYSTEM-SENTINEL", "CLAUDE-TOOL-RESULT-SENTINEL",
+            "CLAUDE-PROGRESS-SENTINEL", "CLAUDE-TOOL-SENTINEL",
+            "CLAUDE-THINKING-SENTINEL",
+        ] {
+            XCTAssertFalse(visibleText.contains(excluded), "Leaked \(excluded)")
+        }
     }
 
     func testFirstCodexDiscoveryIndexes150MetadataOnlyThenUsesCursorWithoutReads() throws {

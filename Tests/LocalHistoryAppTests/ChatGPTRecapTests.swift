@@ -418,6 +418,8 @@
         func testTransientRecapContextReadsAgentSummaryButPersistedReportDoesNotCopyIt() throws {
             let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
             let secret = "AGENT-TRANSCRIPT-SENTINEL-DO-NOT-COPY"
+            let userPrompt = "USER-PROMPT-SENTINEL-VISIBLE-ONLY-IN-RUN"
+            let finalReply = "FINAL-REPLY-SENTINEL-VISIBLE-ONLY-IN-RUN"
             let reference = AgentSourceReference(
                 kind: .file,
                 path: "/tmp/\(secret).jsonl"
@@ -447,16 +449,22 @@
                 messageCount: 9,
                 toolCallCount: 4,
                 errorCount: 1,
-                models: [secret],
+                models: ["gpt-5.6-luna"],
                 tools: [secret],
                 touchedFiles: [secret],
-                commands: [secret]
+                commands: [secret],
+                visibleMessages: [
+                    AgentVisibleMessage(role: .user, text: userPrompt),
+                    AgentVisibleMessage(role: .assistantFinal, text: finalReply),
+                ]
             )
             let overview = AgentActivityOverview(
                 day: timestamp,
                 captures: [AgentCaptureRecord(index: entry, summary: summary)],
                 sessionCount: 1,
+                analyzedSessionCount: 1,
                 messageCount: 9,
+                visibleMessageCount: 2,
                 toolCallCount: 4,
                 errorCount: 1,
                 sourceBytes: 12_345,
@@ -469,7 +477,9 @@
             XCTAssertTrue(rendered.contains("provider: Codex"))
             XCTAssertTrue(rendered.contains("source bytes: 12345"))
             XCTAssertTrue(rendered.contains("messages: 9"))
-            XCTAssertTrue(rendered.contains(secret))
+            XCTAssertTrue(rendered.contains(userPrompt))
+            XCTAssertTrue(rendered.contains(finalReply))
+            XCTAssertFalse(rendered.contains(secret))
 
             let directory = try makeTemporaryDirectory(prefix: "goalong-agent-summary-not-persisted")
             defer { try? FileManager.default.removeItem(at: directory) }
@@ -492,6 +502,7 @@
                     screenTimeApplications: 0,
                     agentCaptures: 1,
                     agentMessages: 9,
+                    visibleAgentMessages: 2,
                     agentToolCalls: 4,
                     agentErrors: 1,
                     analyzedAgentCaptures: 1,
@@ -513,8 +524,11 @@
                 encoding: .utf8
             )
             XCTAssertFalse(persisted.contains(secret))
+            XCTAssertFalse(persisted.contains(userPrompt))
+            XCTAssertFalse(persisted.contains(finalReply))
             let reloaded = try XCTUnwrap(ChatGPTRecapPersistence.load(for: timestamp, from: directory))
             XCTAssertEqual(reloaded.sourceCounts.agentMessages, 9)
+            XCTAssertEqual(reloaded.sourceCounts.visibleAgentMessages, 2)
             XCTAssertEqual(reloaded.sourceCounts.agentToolCalls, 4)
             XCTAssertEqual(reloaded.sourceCounts.agentErrors, 1)
             XCTAssertEqual(reloaded.sourceCounts.analyzedAgentCaptures, 1)
@@ -575,6 +589,72 @@
             XCTAssertLessThan(store.storageBytes(), 4 * 1_024 * 1_024)
         }
 
+        func testAgentDialoguePromptProjectionStaysBoundedAndExcludesProcessFields() {
+            let timestamp = Date(timeIntervalSince1970: 1_787_472_000)
+            let processSentinel = "PROCESS-CONTENT-MUST-NOT-REACH-LUNA"
+            let captures = (0..<16).map { sessionIndex -> AgentCaptureRecord in
+                let reference = AgentSourceReference(
+                    kind: .file,
+                    path: "/tmp/session-\(sessionIndex).jsonl"
+                )
+                let entry = AgentSourceIndexEntry(
+                    id: "entry-\(sessionIndex)",
+                    stableConversationID: "session-\(sessionIndex)",
+                    watchedFolderID: "codex",
+                    watchedFolderName: "Codex",
+                    provider: .codex,
+                    reference: reference,
+                    relativePath: "session-\(sessionIndex).jsonl",
+                    sourceCreatedAt: timestamp,
+                    sourceModifiedAt: timestamp,
+                    firstIndexedAt: timestamp,
+                    lastObservedAt: timestamp,
+                    byteCount: 10_000,
+                    sha256: String(repeating: "a", count: 64)
+                )
+                let messages = (0..<80).map { messageIndex in
+                    AgentVisibleMessage(
+                        role: messageIndex.isMultiple(of: 2) ? .user : .assistantFinal,
+                        text: "session \(sessionIndex) visible \(messageIndex) "
+                            + String(repeating: "useful ", count: 100)
+                    )
+                }
+                return AgentCaptureRecord(
+                    index: entry,
+                    summary: AgentDocumentSummary(
+                        excerpt: processSentinel,
+                        messageCount: 240,
+                        toolCallCount: 80,
+                        tools: [processSentinel],
+                        commands: [processSentinel],
+                        visibleMessages: messages
+                    )
+                )
+            }
+            let overview = AgentActivityOverview(
+                day: timestamp,
+                captures: captures,
+                sessionCount: captures.count,
+                analyzedSessionCount: captures.count,
+                messageCount: 3_840,
+                visibleMessageCount: captures.reduce(0) {
+                    $0 + $1.summary.visibleMessages.count
+                },
+                toolCallCount: 1_280
+            )
+
+            let rendered = ChatGPTRecapContextBuilder.renderAgentActivityForTesting(overview)
+
+            XCTAssertLessThanOrEqual(
+                rendered.count,
+                ChatGPTRecapContextBuilder.maximumAgentActivityCharacters
+            )
+            XCTAssertTrue(rendered.contains("user request:"))
+            XCTAssertTrue(rendered.contains("final assistant reply:"))
+            XCTAssertTrue(rendered.contains("omitted by the daily prompt budget"))
+            XCTAssertFalse(rendered.contains(processSentinel))
+        }
+
         func testOptInRealDailyAgentAnalysisCompletesFromOriginalCodexSources() throws {
             let environment = ProcessInfo.processInfo.environment
             guard let sourcePath = environment["GOALONG_TEST_REAL_CODEX_SOURCE_ROOT"],
@@ -623,6 +703,16 @@
             XCTAssertGreaterThan(overview.sessionCount, 0)
             XCTAssertEqual(overview.analyzedSessionCount, overview.sessionCount)
             XCTAssertGreaterThan(overview.messageCount, 0)
+            XCTAssertGreaterThan(overview.visibleMessageCount, 0)
+            let rendered = ChatGPTRecapContextBuilder.renderAgentActivityForTesting(overview)
+            XCTAssertLessThanOrEqual(
+                rendered.count,
+                ChatGPTRecapContextBuilder.maximumAgentActivityCharacters
+            )
+            XCTAssertTrue(rendered.contains("user request:") || rendered.contains("final assistant reply:"))
+            XCTAssertFalse(rendered.contains("<in-app-browser-context"))
+            XCTAssertFalse(rendered.contains("<environment_context"))
+            XCTAssertFalse(rendered.contains("<oai-mem-citation>"))
             XCTAssertTrue(
                 store.entries().allSatisfy {
                     !$0.reference.path.hasPrefix(storeRoot.path + "/")
@@ -633,6 +723,7 @@
             print(
                 "REAL_AGENT_DAILY_COVERAGE sessions=\(overview.sessionCount) "
                     + "analyzed=\(overview.analyzedSessionCount) messages=\(overview.messageCount) "
+                    + "visibleMessages=\(overview.visibleMessageCount) promptChars=\(rendered.count) "
                     + "tools=\(overview.toolCallCount) errors=\(overview.errorCount) "
                     + "sourceBytes=\(overview.sourceBytes) indexBytes=\(overview.indexBytes) "
                     + "storeBytes=\(store.storageBytes())"

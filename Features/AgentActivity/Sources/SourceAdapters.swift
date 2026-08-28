@@ -3425,8 +3425,11 @@ private final class SQLiteReadConnection {
         var plans: [OpenCodeBodyTable: OpenCodeBodyAccessPlan] = [:]
         plans.reserveCapacity(OpenCodeBodyTable.allCases.count)
         for table in OpenCodeBodyTable.allCases {
+            let relatedMessageColumn = table == .part && tableHasColumn("message_id", in: table)
+                ? "message_id"
+                : "NULL"
             let sql =
-                "SELECT id, rowid, data IS NULL FROM \(table.rawValue) NOT INDEXED "
+                "SELECT id, rowid, data IS NULL, \(relatedMessageColumn) FROM \(table.rawValue) NOT INDEXED "
                 + "WHERE session_id = ? ORDER BY rowid"
             try requireNonMaterializingQueryPlan(
                 sql: sql,
@@ -3436,6 +3439,30 @@ private final class SQLiteReadConnection {
             plans[table] = OpenCodeBodyAccessPlan(orderedSQL: sql)
         }
         bodyAccessPlans = plans
+    }
+
+    /// OpenCode's current schema relates `part` rows to `message` rows through
+    /// `message_id`. Older test/export schemas can omit that optional projection column;
+    /// their metadata and fingerprints remain readable, while visible dialogue simply
+    /// has no relationship to reconstruct. SQLite answers this from schema metadata only.
+    private func tableHasColumn(_ column: String, in table: OpenCodeBodyTable) -> Bool {
+        "main".withCString { databaseName in
+            table.rawValue.withCString { tableName in
+                column.withCString { columnName in
+                    sqlite3_table_column_metadata(
+                        database,
+                        databaseName,
+                        tableName,
+                        columnName,
+                        nil,
+                        nil,
+                        nil,
+                        nil,
+                        nil
+                    ) == SQLITE_OK
+                }
+            }
+        }
     }
 
     private func orderedBodySQL(for table: OpenCodeBodyTable) throws -> String {
@@ -3697,10 +3724,15 @@ private final class SQLiteReadConnection {
             guard let identifier = try string(orderedStatement, column: 0, maximumBytes: 2_048) else {
                 throw AgentSourceReadError.unsupported("OpenCode returned a conversation row without an identifier.")
             }
+            let messageID = try string(orderedStatement, column: 3, maximumBytes: 2_048)
 
             hasher.update(data: Data(kind.utf8))
             hasher.update(data: Data([0]))
             hasher.update(data: Data(identifier.utf8))
+            hasher.update(data: Data([0]))
+            if let messageID {
+                hasher.update(data: Data(messageID.utf8))
+            }
             hasher.update(data: Data([0]))
             let rowID = sqlite3_column_int64(orderedStatement, 1)
             let rowBytes =
@@ -3709,6 +3741,8 @@ private final class SQLiteReadConnection {
                 : try streamOpenCodeBodyBlob(
                     table: table,
                     rowID: rowID,
+                    identifier: identifier,
+                    messageID: messageID,
                     opaqueLocator: opaqueLocator,
                     maximumBytes: maximumBytes,
                     analyzeContent: analyzeContent,
@@ -3730,6 +3764,8 @@ private final class SQLiteReadConnection {
     private func streamOpenCodeBodyBlob(
         table: OpenCodeBodyTable,
         rowID: Int64,
+        identifier: String,
+        messageID: String?,
         opaqueLocator: String,
         maximumBytes: Int64,
         analyzeContent: Bool,
@@ -3801,7 +3837,14 @@ private final class SQLiteReadConnection {
                 }
                 offset += chunkByteCount
             }
-            if let analysisRow { parser.consumeLine(analysisRow) }
+            if let analysisRow {
+                parser.consumeOpenCodeRow(
+                    kind: table.rawValue,
+                    identifier: identifier,
+                    messageID: messageID,
+                    data: analysisRow
+                )
+            }
             return rowBytes
         }
     }

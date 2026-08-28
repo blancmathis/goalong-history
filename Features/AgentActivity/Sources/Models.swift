@@ -281,6 +281,24 @@ enum AgentUTF8Bound {
     }
 }
 
+/// One user-visible conversation item retained only while Goalong is assembling an analysis.
+/// Provider prompts, reasoning, tool traffic, progress commentary, and compaction payloads are
+/// deliberately not representable by this type.
+public struct AgentVisibleMessage: Equatable, Sendable {
+    public enum Role: String, Equatable, Sendable {
+        case user
+        case assistantFinal
+    }
+
+    public var role: Role
+    public var text: String
+
+    public init(role: Role, text: String) {
+        self.role = role
+        self.text = text
+    }
+}
+
 /// A transient analysis assembled from the provider's original storage.
 /// It is deliberately never encoded into Goalong History's Agent Activity index.
 public struct AgentDocumentSummary: Equatable, Sendable {
@@ -295,6 +313,9 @@ public struct AgentDocumentSummary: Equatable, Sendable {
     static let maximumIdentifierBytes = 256
     static let maximumTouchedFileBytes = 1_024
     static let maximumCommandBytes = 2_048
+    static let maximumVisibleMessageCount = 256
+    static let maximumVisibleMessageBytes = 8 * 1_024
+    static let maximumVisibleConversationBytes = 64 * 1_024
 
     public var format: AgentDocumentFormat
     public var sessionID: String?
@@ -314,6 +335,7 @@ public struct AgentDocumentSummary: Equatable, Sendable {
     public var tools: [String]
     public var touchedFiles: [String]
     public var commands: [String]
+    public var visibleMessages: [AgentVisibleMessage]
 
     public init(
         format: AgentDocumentFormat = .unknown,
@@ -333,7 +355,8 @@ public struct AgentDocumentSummary: Equatable, Sendable {
         models: [String] = [],
         tools: [String] = [],
         touchedFiles: [String] = [],
-        commands: [String] = []
+        commands: [String] = [],
+        visibleMessages: [AgentVisibleMessage] = []
     ) {
         self.format = format
         self.sessionID = AgentUTF8Bound.optional(sessionID, maximumBytes: Self.maximumSessionIDBytes)
@@ -369,6 +392,7 @@ public struct AgentDocumentSummary: Equatable, Sendable {
             maximumCount: Self.maximumCommandCount,
             maximumElementBytes: Self.maximumCommandBytes
         )
+        self.visibleMessages = Self.boundedVisibleMessages(visibleMessages)
     }
 
     /// Reapplies all limits after public mutable properties may have been changed by a caller.
@@ -391,8 +415,33 @@ public struct AgentDocumentSummary: Equatable, Sendable {
             models: models,
             tools: tools,
             touchedFiles: touchedFiles,
-            commands: commands
+            commands: commands,
+            visibleMessages: visibleMessages
         )
+    }
+
+    private static func boundedVisibleMessages(
+        _ values: [AgentVisibleMessage]
+    ) -> [AgentVisibleMessage] {
+        var bounded: [AgentVisibleMessage] = []
+        bounded.reserveCapacity(min(values.count, maximumVisibleMessageCount))
+        var retainedBytes = 0
+        for value in values {
+            let trimmed = value.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let text = AgentUTF8Bound.string(trimmed, maximumBytes: maximumVisibleMessageBytes)
+            let byteCount = text.utf8.count
+            guard byteCount > 0 else { continue }
+            bounded.append(AgentVisibleMessage(role: value.role, text: text))
+            retainedBytes += byteCount
+            while bounded.count > maximumVisibleMessageCount
+                || retainedBytes > maximumVisibleConversationBytes
+            {
+                let removalIndex = bounded.count > 2 ? bounded.count / 2 : 0
+                retainedBytes -= bounded.remove(at: removalIndex).text.utf8.count
+            }
+        }
+        return bounded
     }
 }
 
@@ -1086,6 +1135,7 @@ public struct AgentActivityOverview: Equatable, Sendable {
     public var sessionCount: Int
     public var analyzedSessionCount: Int
     public var messageCount: Int
+    public var visibleMessageCount: Int
     public var toolCallCount: Int
     public var errorCount: Int
     public var sourceBytes: Int64
@@ -1098,6 +1148,7 @@ public struct AgentActivityOverview: Equatable, Sendable {
         sessionCount: Int = 0,
         analyzedSessionCount: Int = 0,
         messageCount: Int = 0,
+        visibleMessageCount: Int = 0,
         toolCallCount: Int = 0,
         errorCount: Int = 0,
         sourceBytes: Int64 = 0,
@@ -1109,6 +1160,7 @@ public struct AgentActivityOverview: Equatable, Sendable {
         self.sessionCount = sessionCount
         self.analyzedSessionCount = analyzedSessionCount
         self.messageCount = messageCount
+        self.visibleMessageCount = visibleMessageCount
         self.toolCallCount = toolCallCount
         self.errorCount = errorCount
         self.sourceBytes = sourceBytes

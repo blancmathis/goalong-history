@@ -99,6 +99,17 @@ remain in that process for up to 4,096 indexed revisions in a separate access-
 ordered LRU, but they do not have their own byte ceiling or TTL. Neither form is
 written to `index.json`.
 
+When a daily Activity report is generated, each provider adapter also derives a
+transient user-visible dialogue projection. It keeps user-authored requests and
+final assistant replies only. Codex system/developer messages, compactions,
+reasoning items, tool calls/results, and commentary are excluded; Claude and
+OpenCode retain text message parts while excluding thinking and tool parts, then
+keep the last assistant text before the next user request as the final-reply
+fallback when the provider does not expose Codex's `final_answer` phase. The
+projection is capped at 256 messages, 8 KiB per message, and 64 KiB per source,
+then the report builder applies a shared 60,000-character section budget. It is
+never encoded into Agent Activity storage or the saved daily report.
+
 Signal files are metadata-only, replaceable, and capped at 16 KiB. They contain
 the provider, a bounded event name, signal time, process identifier, and the
 number of hook-input bytes discarded. They never contain hook stdin or a source
@@ -263,13 +274,14 @@ semantic stores are outside this scanner's storage contract and remain
 unchanged by Agent Activity index maintenance.
 
 The optional [ChatGPT recap](../../docs/CHATGPT_RECAP.md) is a separate product
-flow. From Agent Activity it receives only bounded, content-free provider counts
-and source metadata, never provider transcript bodies or working summaries; the
-recap sends its wider bounded Goalong context to OpenAI and stores the generated
-result. Sanitization covers common credential patterns, not an exhaustive secret
-detector. Its explicit ChatGPT-export import is also a separate, opt-in normalized
-content copy. Neither changes what Agent Activity is allowed to persist in its
-index.
+flow. From Agent Activity it receives bounded provider counts and source metadata
+plus the transient user-visible dialogue projection described above, never a
+provider transcript body or working-process fields. The recap sends its wider
+bounded Goalong context to OpenAI and stores only the generated result and
+content-free counts. Sanitization covers common credential patterns, not an
+exhaustive secret detector. Its explicit ChatGPT-export import is also a separate,
+opt-in normalized content copy. Neither changes what Agent Activity is allowed to
+persist in its index.
 
 ## Installation guard
 

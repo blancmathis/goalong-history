@@ -153,6 +153,35 @@ public enum AgentTranscriptParser {
             decodeLine(Data(bytes))
         }
 
+        /// OpenCode stores message roles and text parts in separate read-only SQLite rows.
+        /// Preserve their opaque relationship only in memory so visible dialogue can be rebuilt
+        /// without joining or copying the provider database.
+        mutating func consumeOpenCodeRow(
+            kind: String,
+            identifier: String,
+            messageID: String?,
+            data: Data
+        ) {
+            guard data.count <= AgentTranscriptParser.maximumBufferedLineBytes else {
+                peakBufferedBytes = max(peakBufferedBytes, AgentTranscriptParser.maximumBufferedLineBytes)
+                return
+            }
+            peakBufferedBytes = max(peakBufferedBytes, data.count)
+            autoreleasepool {
+                guard !data.isEmpty,
+                    let object = try? JSONSerialization.jsonObject(with: data)
+                else { return }
+                parsedAny = true
+                accumulator.inspectOpenCodeRow(
+                    kind: kind,
+                    identifier: identifier,
+                    messageID: messageID,
+                    object: object
+                )
+                accumulator.walk(object, currentKey: nil)
+            }
+        }
+
         mutating func finish() -> AgentDocumentSummary {
             if !pendingLine.isEmpty || discardingOversizedLine {
                 completeLine()
@@ -297,6 +326,7 @@ public enum AgentTranscriptParser {
     private static let codexNameKey = Array("\"name\"".utf8)
     private static let codexSourceKey = Array("\"source\"".utf8)
     private static let codexStatusKey = Array("\"status\"".utf8)
+    private static let codexPhaseKey = Array("\"phase\"".utf8)
     private static let codexTextKey = Array("\"text\"".utf8)
 
     /// Extracts only small JSON string fields. Codex writes compact JSONL with stable top-level
@@ -559,6 +589,10 @@ public enum AgentTranscriptParser {
         var tools = OrderedSet(limit: 80)
         var touchedFiles = OrderedSet(limit: 160)
         var commands = OrderedSet(limit: 80)
+        var visibleMessages: [AgentVisibleMessage] = []
+        var pendingAssistantMessage: (sourceID: String?, text: String)?
+        var openCodeRoleByMessageID: [String: AgentVisibleMessage.Role] = [:]
+        var lastVisibleSourceID: String?
 
         mutating func walk(_ value: Any, currentKey: String?) {
             if let dictionary = value as? [String: Any] {
@@ -647,6 +681,25 @@ public enum AgentTranscriptParser {
                     excerpt = bounded(content, maximum: 360)
                 }
             }
+            if let role,
+                let content = visibleMessageContent(from: normalized)
+            {
+                let phase = firstString(normalized, keys: ["phase"])?.lowercased() ?? ""
+                switch role {
+                case "user", "human":
+                    appendVisibleUser(content, sourceID: nil)
+                case "assistant", "agent":
+                    if phase != "commentary" {
+                        appendVisibleAssistant(
+                            content,
+                            sourceID: nil,
+                            explicitlyFinal: phase == "final_answer"
+                        )
+                    }
+                default:
+                    break
+                }
+            }
 
             let type =
                 firstString(
@@ -714,6 +767,124 @@ public enum AgentTranscriptParser {
             if timestampKeys.contains(key), let date = parseDate(string) { observe(date) }
         }
 
+        mutating func inspectOpenCodeRow(
+            kind: String,
+            identifier: String,
+            messageID: String?,
+            object: Any
+        ) {
+            guard let dictionary = object as? [String: Any] else { return }
+            var normalized: [String: Any] = [:]
+            for key in stableDictionaryKeys(dictionary) {
+                let normalizedKey = normalizeKey(key)
+                guard !normalizedKey.isEmpty, normalized[normalizedKey] == nil else { continue }
+                normalized[normalizedKey] = dictionary[key]
+            }
+            if kind == "message",
+                openCodeRoleByMessageID.count < 4_096,
+                let role = normalizedRole(from: normalized)
+            {
+                switch role {
+                case "user", "human":
+                    openCodeRoleByMessageID[identifier] = .user
+                case "assistant", "agent":
+                    openCodeRoleByMessageID[identifier] = .assistantFinal
+                default:
+                    break
+                }
+                return
+            }
+            guard kind == "part",
+                let relatedMessageID = messageID
+                    ?? firstString(normalized, keys: ["messageid", "message"]),
+                let role = openCodeRoleByMessageID[relatedMessageID],
+                let partType = firstString(normalized, keys: ["type"])?.lowercased(),
+                ["text", "input_text", "output_text"].contains(partType),
+                let content = visibleMessageContent(from: normalized)
+            else { return }
+            switch role {
+            case .user:
+                appendVisibleUser(content, sourceID: relatedMessageID)
+            case .assistantFinal:
+                appendVisibleAssistant(
+                    content,
+                    sourceID: relatedMessageID,
+                    explicitlyFinal: false
+                )
+            }
+        }
+
+        mutating func appendVisibleUser(_ raw: String, sourceID: String?) {
+            guard let text = normalizedVisibleUserText(raw) else { return }
+            flushPendingAssistant()
+            appendVisible(.user, text: text, sourceID: sourceID)
+        }
+
+        mutating func appendVisibleAssistant(
+            _ raw: String,
+            sourceID: String?,
+            explicitlyFinal: Bool
+        ) {
+            let text = normalizedVisibleAssistantText(raw)
+            guard !text.isEmpty else { return }
+            if explicitlyFinal {
+                pendingAssistantMessage = nil
+                appendVisible(.assistantFinal, text: text, sourceID: sourceID)
+                return
+            }
+            if pendingAssistantMessage?.sourceID == sourceID, sourceID != nil {
+                let combined = (pendingAssistantMessage?.text ?? "") + "\n" + text
+                pendingAssistantMessage = (
+                    sourceID,
+                    AgentUTF8Bound.string(
+                        combined,
+                        maximumBytes: AgentDocumentSummary.maximumVisibleMessageBytes
+                    )
+                )
+            } else {
+                pendingAssistantMessage = (sourceID, text)
+            }
+        }
+
+        mutating func flushPendingAssistant() {
+            guard let pending = pendingAssistantMessage else { return }
+            pendingAssistantMessage = nil
+            appendVisible(.assistantFinal, text: pending.text, sourceID: pending.sourceID)
+        }
+
+        mutating func appendVisible(
+            _ role: AgentVisibleMessage.Role,
+            text raw: String,
+            sourceID: String?
+        ) {
+            let text = AgentUTF8Bound.string(
+                raw,
+                maximumBytes: AgentDocumentSummary.maximumVisibleMessageBytes
+            )
+            guard !text.isEmpty else { return }
+            if let sourceID,
+                lastVisibleSourceID == sourceID,
+                visibleMessages.last?.role == role
+            {
+                let combined = (visibleMessages.last?.text ?? "") + "\n" + text
+                visibleMessages[visibleMessages.count - 1].text = AgentUTF8Bound.string(
+                    combined,
+                    maximumBytes: AgentDocumentSummary.maximumVisibleMessageBytes
+                )
+                return
+            }
+            visibleMessages.append(AgentVisibleMessage(role: role, text: text))
+            lastVisibleSourceID = sourceID
+            while visibleMessages.count > AgentDocumentSummary.maximumVisibleMessageCount
+                || visibleMessages.reduce(0, { $0 + $1.text.utf8.count })
+                    > AgentDocumentSummary.maximumVisibleConversationBytes
+            {
+                let removalIndex = visibleMessages.count > 2 ? visibleMessages.count / 2 : 0
+                visibleMessages.remove(at: removalIndex)
+                if removalIndex == visibleMessages.count { lastVisibleSourceID = nil }
+            }
+        }
+
         mutating func inspectCodex(
             _ bytes: UnsafeRawBufferPointer,
             timestamp: String?
@@ -771,14 +942,40 @@ public enum AgentTranscriptParser {
                 default: break
                 }
             }
+            let visibleText = payloadType == "message"
+                ? jsonStringValues(
+                    forKey: codexTextKey,
+                    in: bytes,
+                    maximumCount: 8
+                )
+                .map(decodedJSONString)
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                : ""
             if excerpt == nil,
                 (role == "user" || role == "human"),
-                let rawText = jsonStringValues(forKey: codexTextKey, in: bytes).first
+                !visibleText.isEmpty
             {
-                let userText = decodedJSONString(rawText)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if userText.count >= 12 {
-                    excerpt = bounded(userText, maximum: 360)
+                if visibleText.count >= 12 {
+                    excerpt = bounded(visibleText, maximum: 360)
+                }
+            }
+            if !visibleText.isEmpty {
+                switch role {
+                case "user", "human":
+                    appendVisibleUser(visibleText, sourceID: nil)
+                case "assistant", "agent":
+                    let phase = jsonStringValues(forKey: codexPhaseKey, in: bytes)
+                        .first?.lowercased() ?? ""
+                    if phase != "commentary" {
+                        appendVisibleAssistant(
+                            visibleText,
+                            sourceID: nil,
+                            explicitlyFinal: phase == "final_answer"
+                        )
+                    }
+                default:
+                    break
                 }
             }
 
@@ -813,8 +1010,9 @@ public enum AgentTranscriptParser {
             if latestDate.map({ date > $0 }) ?? true { latestDate = date }
         }
 
-        func finish() -> AgentDocumentSummary {
-            AgentDocumentSummary(
+        mutating func finish() -> AgentDocumentSummary {
+            flushPendingAssistant()
+            return AgentDocumentSummary(
                 format: format,
                 sessionID: sessionID,
                 title: title ?? fileURL.deletingPathExtension().lastPathComponent,
@@ -832,7 +1030,8 @@ public enum AgentTranscriptParser {
                 models: models.values,
                 tools: tools.values,
                 touchedFiles: touchedFiles.values,
-                commands: commands.values
+                commands: commands.values,
+                visibleMessages: visibleMessages
             )
         }
     }
@@ -930,6 +1129,90 @@ public enum AgentTranscriptParser {
             if !clean.isEmpty { return clean }
         }
         return nil
+    }
+
+    /// Extracts only text that was visible as a user message or assistant reply. Structured
+    /// thinking, tool-use, tool-result, image, and other provider blocks are intentionally absent.
+    private static func visibleMessageContent(from dictionary: [String: Any]) -> String? {
+        for key in ["content", "text", "message", "prompt", "response", "output"] {
+            guard let value = dictionary[key] else { continue }
+            if let string = value as? String {
+                let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
+            guard let blocks = value as? [Any] else { continue }
+            var texts: [String] = []
+            for block in blocks {
+                guard let dictionary = block as? [String: Any] else { continue }
+                let type = (dictionary["type"] as? String)?.lowercased() ?? ""
+                guard ["text", "input_text", "output_text"].contains(type),
+                    let text = dictionary["text"] as? String
+                else { continue }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { texts.append(trimmed) }
+            }
+            if !texts.isEmpty { return texts.joined(separator: "\n") }
+        }
+        return nil
+    }
+
+    private static func normalizedVisibleUserText(_ raw: String) -> String? {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty,
+            !text.hasPrefix("<summary>"),
+            !text.hasPrefix("# AGENTS.md instructions")
+        else { return nil }
+        if text.hasPrefix("<codex_delegation>"),
+            let input = content(ofTag: "input", in: text)
+        {
+            text = input
+        }
+        for tag in ["in-app-browser-context", "environment_context", "app-context"] {
+            text = removingTaggedBlocks(tag, from: text)
+        }
+        if let marker = text.range(of: "## My request:", options: .backwards) {
+            text = String(text[marker.upperBound...])
+        }
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return AgentUTF8Bound.string(
+            text,
+            maximumBytes: AgentDocumentSummary.maximumVisibleMessageBytes
+        )
+    }
+
+    private static func normalizedVisibleAssistantText(_ raw: String) -> String {
+        let withoutMemoryReceipt = removingTaggedBlocks("oai-mem-citation", from: raw)
+        return AgentUTF8Bound.string(
+            withoutMemoryReceipt.trimmingCharacters(in: .whitespacesAndNewlines),
+            maximumBytes: AgentDocumentSummary.maximumVisibleMessageBytes
+        )
+    }
+
+    private static func content(ofTag tag: String, in text: String) -> String? {
+        guard let opening = text.range(of: "<\(tag)>", options: [.caseInsensitive]),
+            let closing = text.range(
+                of: "</\(tag)>",
+                options: [.caseInsensitive],
+                range: opening.upperBound..<text.endIndex
+            )
+        else { return nil }
+        return String(text[opening.upperBound..<closing.lowerBound])
+    }
+
+    private static func removingTaggedBlocks(_ tag: String, from raw: String) -> String {
+        var text = raw
+        while let openingStart = text.range(of: "<\(tag)", options: [.caseInsensitive])?.lowerBound,
+            let openingEnd = text[openingStart...].firstIndex(of: ">"),
+            let closing = text.range(
+                of: "</\(tag)>",
+                options: [.caseInsensitive],
+                range: text.index(after: openingEnd)..<text.endIndex
+            )
+        {
+            text.removeSubrange(openingStart..<closing.upperBound)
+        }
+        return text
     }
 
     private static func toolName(from dictionary: [String: Any]) -> String? {

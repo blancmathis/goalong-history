@@ -46,8 +46,9 @@ The turn has a strict structured-output schema:
 - exactly five non-empty summary lines.
 
 The persisted numeric metadata also keeps the bounded AI-collaboration totals
-(sessions, analyzed sessions, messages, tool calls and errors) so Activity remains
-informative after relaunch. It never stores conversation bodies, prompts or excerpts.
+(sessions, analyzed sessions, messages, user-visible messages, tool calls and
+errors) so Activity remains informative after relaunch. It never stores
+conversation bodies, prompts or excerpts.
 
 The five lines cover the day's concrete outcomes, observed work bounds, strongest
 focus interval, lowest-momentum or highest-friction interval, and agent
@@ -63,11 +64,18 @@ of inactivity or procrastination.
 3. It incrementally discovers configured Codex, Claude, OpenCode, and other local
    agent sources. During an explicit report run only, bounded conversation
    summaries are read directly from the original provider storage.
-4. Common credential patterns are redacted. Per-source quotas cap the assembled
-   context at 175,000 characters and the complete prompt at 180,000 characters.
-5. Goalong starts one ephemeral, restricted Codex thread in a temporary empty
+4. Provider adapters project only user requests and final assistant replies.
+   Codex system/developer prompts, compactions, reasoning, tool traffic and
+   commentary are excluded locally. Claude and OpenCode exclude thinking and
+   tool parts and use the last assistant text before the next user request when
+   no explicit final-answer phase exists.
+5. Common credential patterns are redacted. The dialogue projection is capped at
+   256 messages, 8 KiB per message and 64 KiB per source; the assembled agent
+   section is capped at 60,000 characters, the full context at 175,000 characters,
+   and the complete prompt at 180,000 characters.
+6. Goalong starts one ephemeral, restricted Codex thread in a temporary empty
    workspace and sends the bounded context inline.
-6. The app validates the strict five-line result, redacts it again, commits one
+7. The app validates the strict five-line result, redacts it again, commits one
    canonical JSON report plus a regenerable Markdown mirror, and removes the
    temporary run directory on a best-effort basis.
 

@@ -119,6 +119,7 @@ public final class AgentActivityStore: @unchecked Sendable {
         var startedAt: Date?
         var endedAt: Date?
         var messageCount: Int
+        var visibleMessageCount: Int
         var toolCallCount: Int
         var errorCount: Int
 
@@ -134,6 +135,7 @@ public final class AgentActivityStore: @unchecked Sendable {
             startedAt = record.summary.startedAt
             endedAt = record.summary.endedAt
             messageCount = max(record.summary.messageCount, 0)
+            visibleMessageCount = record.summary.visibleMessages.count
             toolCallCount = max(record.summary.toolCallCount, 0)
             errorCount = max(record.summary.errorCount, 0)
         }
@@ -759,6 +761,7 @@ public final class AgentActivityStore: @unchecked Sendable {
         var sessionCount = 0
         var analyzedSessionCount = 0
         var messageCount = 0
+        var visibleMessageCount = 0
         var toolCallCount = 0
         var errorCount = 0
         var sourceBytes: Int64 = 0
@@ -776,6 +779,7 @@ public final class AgentActivityStore: @unchecked Sendable {
             sessionCount += 1
             if metrics != nil { analyzedSessionCount += 1 }
             messageCount += metrics?.messageCount ?? 0
+            visibleMessageCount += metrics?.visibleMessageCount ?? 0
             toolCallCount += metrics?.toolCallCount ?? 0
             errorCount += metrics?.errorCount ?? 0
             sourceBytes += entry.byteCount
@@ -796,6 +800,7 @@ public final class AgentActivityStore: @unchecked Sendable {
             sessionCount: sessionCount,
             analyzedSessionCount: analyzedSessionCount,
             messageCount: messageCount,
+            visibleMessageCount: visibleMessageCount,
             toolCallCount: toolCallCount,
             errorCount: errorCount,
             sourceBytes: sourceBytes,
@@ -1793,6 +1798,7 @@ public final class AgentActivityStore: @unchecked Sendable {
         add(summary.tools)
         add(summary.touchedFiles)
         add(summary.commands)
+        for message in summary.visibleMessages { add(message.text) }
         return total
     }
 

@@ -91,7 +91,11 @@ final class AgentActivityMetadataPrivacyTests: XCTestCase {
                 models: [sentinel],
                 tools: [sentinel],
                 touchedFiles: [sentinel],
-                commands: [sentinel]
+                commands: [sentinel],
+                visibleMessages: [
+                    AgentVisibleMessage(role: .user, text: "visible prompt \(sentinel)"),
+                    AgentVisibleMessage(role: .assistantFinal, text: "visible final \(sentinel)"),
+                ]
             )
         )
         let store = try AgentActivityStore(rootDirectory: try makeTemporaryDirectory("metadata-no-copy"))
@@ -103,6 +107,7 @@ final class AgentActivityMetadataPrivacyTests: XCTestCase {
         XCTAssertFalse(indexText.contains(sentinel))
         XCTAssertFalse(indexText.contains("full transcript"))
         XCTAssertFalse(indexText.contains("excerpt"))
+        XCTAssertFalse(indexText.contains("visibleMessages"))
         XCTAssertFalse(indexText.contains("title"))
         XCTAssertEqual(store.entries().first?.watchedFolderName, AgentProvider.custom.displayName)
         XCTAssertEqual(store.entries().first?.statusDetail, AgentSourceStatusCode.sourceInaccessible.rawValue)
@@ -119,7 +124,11 @@ final class AgentActivityMetadataPrivacyTests: XCTestCase {
             models: Array(repeating: unicode, count: 100),
             tools: Array(repeating: unicode, count: 200),
             touchedFiles: Array(repeating: unicode, count: 300),
-            commands: Array(repeating: unicode, count: 200)
+            commands: Array(repeating: unicode, count: 200),
+            visibleMessages: Array(
+                repeating: AgentVisibleMessage(role: .user, text: unicode),
+                count: 400
+            )
         )
         let reference = AgentSourceReference(kind: .file, path: "/tmp/\(unicode)")
 
@@ -138,6 +147,19 @@ final class AgentActivityMetadataPrivacyTests: XCTestCase {
                 $0.utf8.count <= AgentDocumentSummary.maximumTouchedFileBytes
             })
         XCTAssertTrue(summary.commands.allSatisfy { $0.utf8.count <= AgentDocumentSummary.maximumCommandBytes })
+        XCTAssertLessThanOrEqual(
+            summary.visibleMessages.count,
+            AgentDocumentSummary.maximumVisibleMessageCount
+        )
+        XCTAssertTrue(
+            summary.visibleMessages.allSatisfy {
+                $0.text.utf8.count <= AgentDocumentSummary.maximumVisibleMessageBytes
+            }
+        )
+        XCTAssertLessThanOrEqual(
+            summary.visibleMessages.reduce(0) { $0 + $1.text.utf8.count },
+            AgentDocumentSummary.maximumVisibleConversationBytes
+        )
         XCTAssertLessThanOrEqual(reference.path.utf8.count, AgentSourceReference.maximumPathBytes)
         XCTAssertFalse(reference.path.contains(unicode))
     }

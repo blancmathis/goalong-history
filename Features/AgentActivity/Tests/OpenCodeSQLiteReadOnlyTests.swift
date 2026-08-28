@@ -134,6 +134,46 @@ final class OpenCodeSQLiteReadOnlyTests: XCTestCase {
         XCTAssertFalse(try String(contentsOf: store.indexFile).contains(rawSessionID))
     }
 
+    func testOpenCodeVisibleDialogueJoinsMessageRolesToTextPartsWithoutProcessContent() throws {
+        let sourceDirectory = try makeTemporaryDirectory("visible-dialogue-source")
+        let databaseURL = sourceDirectory.appendingPathComponent("opencode.db")
+        try createOpenCodeVisibleDialogueFixture(at: databaseURL, sessionID: "visible-dialogue")
+        let store = try AgentActivityStore(
+            rootDirectory: try makeTemporaryDirectory("visible-dialogue-index")
+        )
+        let folder = AgentWatchedFolder(
+            id: "opencode-visible-dialogue",
+            displayName: "OpenCode",
+            path: sourceDirectory.path,
+            provider: .openCode
+        )
+
+        let result = AgentActivityScanner(store: store).scan(
+            configuration: AgentActivityConfiguration(watchedFolders: [folder]),
+            forceFullDiscovery: true,
+            at: Date(timeIntervalSince1970: 1_787_472_700)
+        )
+
+        XCTAssertTrue(result.failures.isEmpty, result.failures.joined(separator: "\n"))
+        let summary = try XCTUnwrap(result.captures.first).summary
+        XCTAssertEqual(
+            summary.visibleMessages,
+            [
+                AgentVisibleMessage(role: .user, text: "OpenCode user request"),
+                AgentVisibleMessage(role: .assistantFinal, text: "OpenCode final response"),
+                AgentVisibleMessage(role: .user, text: "Second OpenCode request"),
+                AgentVisibleMessage(role: .assistantFinal, text: "Second OpenCode final"),
+            ]
+        )
+        let visibleText = summary.visibleMessages.map(\.text).joined(separator: "\n")
+        for excluded in [
+            "OPENCODE-SYSTEM-SENTINEL", "OPENCODE-PROGRESS-SENTINEL",
+            "OPENCODE-TOOL-SENTINEL",
+        ] {
+            XCTAssertFalse(visibleText.contains(excluded), "Leaked \(excluded)")
+        }
+    }
+
     func testOversizedConversationDoesNotConsumeCycleBudgetOrStarveSmallerConversation() throws {
         let sourceDirectory = try makeTemporaryDirectory("oversized-conversation-source")
         let databaseURL = sourceDirectory.appendingPathComponent("opencode.db", isDirectory: false)
@@ -648,6 +688,60 @@ final class OpenCodeSQLiteReadOnlyTests: XCTestCase {
         } catch {
             try? execute(database, "ROLLBACK")
             throw error
+        }
+    }
+
+    private func createOpenCodeVisibleDialogueFixture(at url: URL, sessionID: String) throws {
+        var database: OpaquePointer?
+        guard sqlite3_open(url.path, &database) == SQLITE_OK else {
+            throw sqliteError(database, context: "open visible dialogue fixture")
+        }
+        defer { sqlite3_close(database) }
+        try execute(database, "PRAGMA journal_mode=DELETE")
+        try execute(
+            database,
+            "CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT, parent_id TEXT, slug TEXT, directory TEXT, title TEXT, version TEXT, time_created INTEGER, time_updated INTEGER)"
+        )
+        try execute(
+            database,
+            "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)"
+        )
+        try execute(
+            database,
+            "CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)"
+        )
+        try execute(
+            database,
+            "INSERT INTO session VALUES ('\(sessionID)', 'project', NULL, 'visible', '/tmp/opencode-visible', 'Visible dialogue', '1', 1787472000000, 1787472600000)"
+        )
+        let messages: [(String, String)] = [
+            ("system-1", "system"), ("user-1", "user"), ("assistant-progress", "assistant"),
+            ("assistant-final", "assistant"), ("user-2", "user"), ("assistant-2", "assistant"),
+        ]
+        for (offset, message) in messages.enumerated() {
+            try execute(
+                database,
+                "INSERT INTO message VALUES ('\(message.0)', '\(sessionID)', "
+                    + "\(1787472000000 + offset), \(1787472000000 + offset), "
+                    + "'{\"role\":\"\(message.1)\"}')"
+            )
+        }
+        let parts: [(String, String, String, String)] = [
+            ("part-system", "system-1", "text", "OPENCODE-SYSTEM-SENTINEL"),
+            ("part-user-1", "user-1", "text", "OpenCode user request"),
+            ("part-progress", "assistant-progress", "text", "OPENCODE-PROGRESS-SENTINEL"),
+            ("part-tool", "assistant-final", "tool", "OPENCODE-TOOL-SENTINEL"),
+            ("part-final", "assistant-final", "text", "OpenCode final response"),
+            ("part-user-2", "user-2", "text", "Second OpenCode request"),
+            ("part-assistant-2", "assistant-2", "text", "Second OpenCode final"),
+        ]
+        for (offset, part) in parts.enumerated() {
+            try execute(
+                database,
+                "INSERT INTO part VALUES ('\(part.0)', '\(part.1)', '\(sessionID)', "
+                    + "\(1787472100000 + offset), \(1787472100000 + offset), "
+                    + "'{\"type\":\"\(part.2)\",\"text\":\"\(part.3)\"}')"
+            )
         }
     }
 

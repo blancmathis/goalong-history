@@ -255,13 +255,15 @@ if [[ -f "$AGENT_ACTIVITY_MODELS" ]]; then
   fi
 fi
 
-# Daily Activity may read bounded conversation summaries transiently from each provider's
-# original storage. The durable recap schema must remain a small derived five-line assessment,
-# never the prompt, source excerpts, paths, transcript bodies or message collection.
+# Daily Activity may project bounded user requests and final assistant replies transiently from
+# each provider's original storage. The durable recap schema must remain a small derived
+# five-line assessment, never the prompt, source excerpts, paths, transcript bodies or message
+# collection.
 if [[ -f "$AGENT_ACTIVITY_RECAP_CONTEXT" ]]; then
   for required_fragment in \
-    'Direct-source conversation analysis (transient; not persisted by Goalong)' \
-    'The final five-line report must paraphrase rather than quote them.'; do
+    'User-visible dialogue (transient; not persisted by Goalong)' \
+    'Only user-authored requests and final assistant replies are included below.' \
+    'The final five-line report must paraphrase rather than quote the dialogue.'; do
     if ! grep -Fq "$required_fragment" "$AGENT_ACTIVITY_RECAP_CONTEXT"; then
       echo "Transient Agent Activity recap boundary is missing: $required_fragment" >&2
       failed=true

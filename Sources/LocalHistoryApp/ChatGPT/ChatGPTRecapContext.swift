@@ -12,6 +12,7 @@
         let screenTimeApplications: Int
         let agentCaptures: Int
         let agentMessages: Int
+        let visibleAgentMessages: Int
         let agentToolCalls: Int
         let agentErrors: Int
         let analyzedAgentCaptures: Int
@@ -28,6 +29,7 @@
             screenTimeApplications: Int,
             agentCaptures: Int,
             agentMessages: Int,
+            visibleAgentMessages: Int = 0,
             agentToolCalls: Int = 0,
             agentErrors: Int = 0,
             analyzedAgentCaptures: Int = 0,
@@ -43,6 +45,7 @@
             self.screenTimeApplications = screenTimeApplications
             self.agentCaptures = agentCaptures
             self.agentMessages = agentMessages
+            self.visibleAgentMessages = visibleAgentMessages
             self.agentToolCalls = agentToolCalls
             self.agentErrors = agentErrors
             self.analyzedAgentCaptures = analyzedAgentCaptures
@@ -61,6 +64,8 @@
             screenTimeApplications = try values.decode(Int.self, forKey: .screenTimeApplications)
             agentCaptures = try values.decode(Int.self, forKey: .agentCaptures)
             agentMessages = try values.decode(Int.self, forKey: .agentMessages)
+            visibleAgentMessages =
+                try values.decodeIfPresent(Int.self, forKey: .visibleAgentMessages) ?? 0
             agentToolCalls = try values.decodeIfPresent(Int.self, forKey: .agentToolCalls) ?? 0
             agentErrors = try values.decodeIfPresent(Int.self, forKey: .agentErrors) ?? 0
             analyzedAgentCaptures =
@@ -148,7 +153,7 @@
         static let maximumComputerHistoryTokens = 12_000
         static let maximumActivityCharacters = 40_000
         static let maximumScreenTimeCharacters = 8_000
-        static let maximumAgentActivityCharacters = 8_000
+        static let maximumAgentActivityCharacters = 60_000
         static let maximumImportedChatCharacters = 20_000
         static let maximumSourceManifestCharacters = 8_000
         static let maximumStoredActivityBytes: Int64 = 32 * 1_024 * 1_024
@@ -186,6 +191,7 @@
                 screenTimeApplications: screenTime?.topApplications.count ?? 0,
                 agentCaptures: agentActivity.sessionCount,
                 agentMessages: agentActivity.messageCount,
+                visibleAgentMessages: agentActivity.visibleMessageCount,
                 agentToolCalls: agentActivity.toolCallCount,
                 agentErrors: agentActivity.errorCount,
                 analyzedAgentCaptures: agentActivity.analyzedSessionCount,
@@ -285,6 +291,7 @@
                 - Private/suppressed periods are gaps, not inactivity.
                 - Apple Screen Time can sum concurrent activity across several devices; do not treat it as unique elapsed time.
                 - Agent Activity summaries were read transiently from the providers' original storage. They can overlap with foreground-computer activity; do not double-count them.
+                - Agent dialogue contains only user-visible requests and final assistant replies. System/developer prompts, compactions, reasoning, tool calls/results, and progress commentary were excluded locally and must not be inferred.
                 - Never reproduce credentials, tokens, personal identifiers or long verbatim passages. Paraphrase sensitive content.
                 - Productivity is an evidence-based description of the observed day, never a judgment of the person's worth, intent, health, or morality.
                 - Missing, inaccessible, private, excluded, locked-screen, or incomplete periods reduce confidence. They do not reduce the productivity score by themselves and are never evidence of procrastination.
@@ -453,7 +460,7 @@
                 agentMessages: max(0, context.agentActivity.messageCount),
                 agentToolCalls: max(0, context.agentActivity.toolCallCount),
                 agentErrors: max(0, context.agentActivity.errorCount),
-                analyzedAgentSessions: context.agentActivity.captures.filter(\.isAnalyzed).count
+                analyzedAgentSessions: max(0, context.agentActivity.analyzedSessionCount)
             )
         }
 
@@ -619,6 +626,7 @@
             Screen Time applications: \(sourceCounts.screenTimeApplications)
             Direct-read agent sources: \(sourceCounts.agentCaptures)
             Direct-read agent messages: \(sourceCounts.agentMessages)
+            User prompts and final assistant replies supplied: \(sourceCounts.visibleAgentMessages)
             Imported ChatGPT messages: \(sourceCounts.importedChatMessages)
             Causal episodes: \(optionalCount(sourceCounts.computerHistoryEpisodes))
             Representative episodes retained: \(optionalCount(computerHistory.map { $0.episodes.count }))
@@ -755,6 +763,7 @@
                 "## Local agent and coding-chat history",
                 "Sessions represented: \(overview.sessionCount)",
                 "New messages represented: \(overview.messageCount)",
+                "User prompts and final assistant replies available: \(overview.visibleMessageCount)",
                 "Tool calls represented: \(overview.toolCallCount)",
                 "Errors represented: \(overview.errorCount)",
             ]
@@ -763,36 +772,101 @@
                 return lines.joined(separator: "\n")
             }
 
-            lines.append("### Direct-source conversation analysis (transient; not persisted by Goalong)")
+            lines.append("### User-visible dialogue (transient; not persisted by Goalong)")
             lines.append(
-                "The following bounded summaries exist only for this run and were read from each provider's original storage. The final five-line report must paraphrase rather than quote them."
+                "Only user-authored requests and final assistant replies are included below. System/developer prompts, compactions, reasoning, tool traffic, and progress commentary were removed locally before this context was assembled. The final five-line report must paraphrase rather than quote the dialogue."
             )
-            for capture in overview.captures.prefix(40) {
+            let detailedCaptures = Array(overview.captures.filter(\.isAnalyzed).prefix(64))
+            let totalVisibleMessages = detailedCaptures.reduce(0) {
+                $0 + $1.summary.visibleMessages.count
+            }
+            let maximumRenderedMessages = 320
+            var remainingMessageQuota = min(totalVisibleMessages, maximumRenderedMessages)
+            var remainingAvailableMessages = totalVisibleMessages
+            var selectedByCapture: [[AgentVisibleMessage]] = []
+            selectedByCapture.reserveCapacity(detailedCaptures.count)
+            for (index, capture) in detailedCaptures.enumerated() {
+                let available = capture.summary.visibleMessages
+                let quota: Int
+                if index == detailedCaptures.count - 1 {
+                    quota = remainingMessageQuota
+                } else if available.isEmpty || remainingMessageQuota == 0 {
+                    quota = 0
+                } else {
+                    quota = min(
+                        available.count,
+                        max(
+                            1,
+                            Int(
+                                (Double(available.count) / Double(max(remainingAvailableMessages, 1))
+                                    * Double(remainingMessageQuota)).rounded()
+                            )
+                        )
+                    )
+                }
+                let selected = evenlySampled(available, limit: quota)
+                selectedByCapture.append(selected)
+                remainingMessageQuota = max(0, remainingMessageQuota - selected.count)
+                remainingAvailableMessages = max(0, remainingAvailableMessages - available.count)
+            }
+            let selectedMessageCount = selectedByCapture.reduce(0) { $0 + $1.count }
+            let maximumMessageCharacters = min(
+                4_000,
+                max(120, 44_000 / max(selectedMessageCount, 1) - 48)
+            )
+            for (captureIndex, capture) in detailedCaptures.enumerated() {
                 let summary = capture.summary
                 lines.append(
                     "- \(timeFormatter.string(from: capture.capturedAt)); provider: \(capture.provider.displayName); "
                         + "source bytes: \(capture.byteCount); messages: \(summary.messageCount); "
                         + "tool calls: \(summary.toolCallCount); errors: \(summary.errorCount); "
-                        + "analysis: \(capture.isAnalyzed ? "read directly from the original source" : "metadata only")"
+                        + "analysis: read directly from the original source"
                 )
-                guard capture.isAnalyzed else { continue }
-                if let title = summary.title, !title.isEmpty {
-                    lines.append("  title: \(clean(title, maximum: 320))")
-                }
-                if let excerpt = summary.excerpt, !excerpt.isEmpty {
-                    lines.append("  bounded conversation excerpt: \(clean(excerpt, maximum: 1_200))")
-                }
                 if !summary.models.isEmpty {
                     lines.append("  models: \(summary.models.prefix(6).map { clean($0, maximum: 80) }.joined(separator: ", "))")
                 }
-                if !summary.tools.isEmpty {
-                    lines.append("  tools: \(summary.tools.prefix(12).map { clean($0, maximum: 80) }.joined(separator: ", "))")
+                let selected = selectedByCapture[captureIndex]
+                if selected.isEmpty {
+                    lines.append("  no user prompt/final reply pair was available for this day")
+                    continue
                 }
+                for message in selected {
+                    let label = message.role == .user
+                        ? "user request"
+                        : "final assistant reply"
+                    lines.append(
+                        "  - \(label): \(clean(message.text, maximum: maximumMessageCharacters))"
+                    )
+                }
+                let omitted = summary.visibleMessages.count - selected.count
+                if omitted > 0 {
+                    lines.append("  - \(omitted) additional visible message(s) omitted by the daily prompt budget")
+                }
+            }
+            if overview.captures.filter(\.isAnalyzed).count > detailedCaptures.count {
                 lines.append(
-                    "  roles: user=\(summary.userMessageCount), assistant=\(summary.assistantMessageCount), subagents=\(summary.subagentCount)"
+                    "- \(overview.captures.filter(\.isAnalyzed).count - detailedCaptures.count) additional analyzed session(s) omitted by the daily prompt budget"
                 )
             }
             return lines.joined(separator: "\n")
+        }
+
+        private static func evenlySampled<T>(_ values: [T], limit: Int) -> [T] {
+            guard limit > 0 else { return [] }
+            guard values.count > limit else { return values }
+            guard limit > 1 else { return [values[values.count - 1]] }
+            var output: [T] = []
+            output.reserveCapacity(limit)
+            var previousIndex = -1
+            for position in 0..<limit {
+                let index = Int(
+                    (Double(position) * Double(values.count - 1) / Double(limit - 1)).rounded()
+                )
+                guard index != previousIndex else { continue }
+                output.append(values[index])
+                previousIndex = index
+            }
+            return output
         }
 
         #if DEBUG
