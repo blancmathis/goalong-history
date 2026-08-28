@@ -72,7 +72,9 @@ let package = Package(
         ),
         .executableTarget(
             name: "LocalHistoryQueryCLI",
-            dependencies: ["LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime"],
+            dependencies: [
+                "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "AgentActivity",
+            ],
             path: "Sources/LocalHistoryQueryCLI"
         ),
         .testTarget(

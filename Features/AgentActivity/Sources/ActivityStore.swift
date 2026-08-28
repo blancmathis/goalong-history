@@ -236,13 +236,31 @@ public final class AgentActivityStore: @unchecked Sendable {
     private var lock: NSRecursiveLock { Self.processLock }
 
     public convenience init(rootDirectory: URL, fileManager: FileManager = .default) throws {
-        try self.init(rootDirectory: rootDirectory, fileManager: fileManager, currentDate: Date.init)
+        try self.init(
+            rootDirectory: rootDirectory,
+            fileManager: fileManager,
+            currentDate: Date.init,
+            readOnly: false
+        )
+    }
+
+    /// Opens the existing metadata index without creating directories, repairing modes, or
+    /// canonicalizing the persisted JSON. Direct reads still verify the original provider source
+    /// before returning a transient summary.
+    public convenience init(readOnlyRootDirectory: URL, fileManager: FileManager = .default) throws {
+        try self.init(
+            rootDirectory: readOnlyRootDirectory,
+            fileManager: fileManager,
+            currentDate: Date.init,
+            readOnly: true
+        )
     }
 
     init(
         rootDirectory: URL,
         fileManager: FileManager = .default,
-        currentDate: @escaping () -> Date
+        currentDate: @escaping () -> Date,
+        readOnly: Bool = false
     ) throws {
         self.rootDirectory = rootDirectory.standardizedFileURL
         self.fileManager = fileManager
@@ -258,9 +276,16 @@ public final class AgentActivityStore: @unchecked Sendable {
         decoder.dateDecodingStrategy = .iso8601
         index = AgentActivityIndex()
 
-        try createSecureDirectory(self.rootDirectory)
-        try createSecureDirectory(signalsDirectory)
-        try loadIndex()
+        if readOnly {
+            try validateExistingDirectoryForReadOnlyAccess(self.rootDirectory)
+            guard reloadIndexFromDisk(), !indexLoadFailed else {
+                throw AgentActivityStoreError.indexCorrupt
+            }
+        } else {
+            try createSecureDirectory(self.rootDirectory)
+            try createSecureDirectory(signalsDirectory)
+            try loadIndex()
+        }
     }
 
     public func loadConfiguration() -> AgentActivityConfiguration {
@@ -813,6 +838,7 @@ public final class AgentActivityStore: @unchecked Sendable {
         entryID: String,
         maximumBytes: Int64,
         expectedReference: AgentSourceReference? = nil,
+        analysisInterval: DateInterval? = nil,
         observedAt: Date = Date()
     ) throws -> AgentCaptureRecord {
         lock.lock()
@@ -845,6 +871,7 @@ public final class AgentActivityStore: @unchecked Sendable {
             candidate: candidate,
             previous: entry,
             maximumBytes: maximumBytes,
+            analysisInterval: analysisInterval,
             observedAt: observedAt
         )
         try session.verifyOpenCodeSourcesUnchanged()
@@ -2020,6 +2047,18 @@ public final class AgentActivityStore: @unchecked Sendable {
             Darwin.fchmod(descriptor, 0o700) == 0,
             Darwin.fstat(descriptor, &status) == 0,
             status.st_mode & 0o777 == 0o700
+        else { throw AgentActivityStoreError.indexCorrupt }
+    }
+
+    private func validateExistingDirectoryForReadOnlyAccess(_ url: URL) throws {
+        let descriptor = url.path.withCString {
+            Darwin.open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        }
+        guard descriptor >= 0 else { throw AgentActivityStoreError.indexCorrupt }
+        defer { Darwin.close(descriptor) }
+        var status = stat()
+        guard Darwin.fstat(descriptor, &status) == 0,
+            status.st_mode & S_IFMT == S_IFDIR
         else { throw AgentActivityStoreError.indexCorrupt }
     }
 

@@ -855,6 +855,30 @@ necessary for those claims.
 
 ## Measured local acceptance snapshot
 
+### Current development verification (2026-08-28)
+
+The current `main` source adds bounded automatic recap retries and a read-only
+`goalong ai-conversations` query. The CLI opens only the existing lightweight index,
+then reads matching provider sources in place for the selected local day. It emits only
+user prompts and final assistant replies; it neither discovers providers nor rewrites the
+index. OpenCode dialogue is filtered by row timestamp while its complete logical source
+size and fingerprint remain verified.
+
+| Surface | Current measured result |
+| --- | --- |
+| complete Swift suite | 653 tests, 5 expected environment-dependent skips, 0 failures |
+| release CLI against the real 2026-08-27 sources | 7 relevant Codex conversations; 6 available and 1 clearly inaccessible; 7 returned, 0 omitted, no rollout filename used as a title |
+| bounded output | 96,952 JSON bytes under the requested 160,000-byte/approximately 40,000-token ceiling |
+| release CLI resources | 0.60 seconds wall time and 23,887,872-byte maximum resident set; invocation exits with no persistent process |
+| direct-source working set | 399,171,152 logical source bytes verified across the selected conversations; output retains only bounded transient dialogue projections |
+| lightweight index | 809 entries in 791,663 bytes (about 979 bytes per entry); configuration 1,632 bytes and wake-up signal 146 bytes |
+| no-duplication proof | every file below `agent-activity-v2` had the same SHA-256 before and after the real CLI query; no `blobs` directory exists |
+| package validation | arm64 release bundle 29,420 allocated KiB; embedded CLI 7,382,128 bytes; bundle, CLI and Sparkle components passed strict signature and privacy validation |
+
+That package was built ad hoc only as an isolated validation artifact and was not installed,
+because replacing the installed app with an ad hoc identity would make macOS privacy grants
+unstable. It is therefore build/package proof, not current installed-capture or TCC proof.
+
 ### Current installed verification
 
 The final source installation measured on 2026-08-26 is Goalong History `0.5.1`

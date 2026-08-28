@@ -1838,6 +1838,7 @@ enum AgentDirectSourceReader {
                 previous: previous,
                 maximumBytes: maximumBytes,
                 analyzeContent: analyzeContent,
+                analysisInterval: analysisInterval,
                 observedAt: observedAt,
                 bodyReadBudget: bodyReadBudget,
                 connection: connection
@@ -1917,6 +1918,7 @@ enum AgentDirectSourceReader {
         previous: AgentSourceIndexEntry?,
         maximumBytes: Int64,
         analyzeContent: Bool,
+        analysisInterval: DateInterval?,
         observedAt: Date,
         bodyReadBudget: AgentSourceBodyReadBudget,
         connection connectionProvider: (String) throws -> SQLiteReadConnection
@@ -1942,6 +1944,7 @@ enum AgentDirectSourceReader {
             opaqueLocator: opaqueLocator,
             maximumBytes: maximumBytes,
             analyzeContent: analyzeContent,
+            analysisInterval: analysisInterval,
             bodyReadBudget: bodyReadBudget
         )
         var summary = content.summary
@@ -3418,6 +3421,7 @@ private final class SQLiteReadConnection {
         opaqueLocator: String,
         maximumBytes: Int64,
         analyzeContent: Bool,
+        analysisInterval: DateInterval? = nil,
         bodyReadBudget: AgentSourceBodyReadBudget
     ) throws -> OpenCodeReadResult {
         try ensureUsable()
@@ -3449,6 +3453,7 @@ private final class SQLiteReadConnection {
             opaqueLocator: opaqueLocator,
             maximumBytes: effectiveMaximumBytes,
             analyzeContent: analyzeContent,
+            analysisInterval: analysisInterval,
             bodyReadBudget: bodyReadBudget,
             byteCount: &byteCount,
             hasher: &hasher,
@@ -3462,6 +3467,7 @@ private final class SQLiteReadConnection {
             opaqueLocator: opaqueLocator,
             maximumBytes: effectiveMaximumBytes,
             analyzeContent: analyzeContent,
+            analysisInterval: analysisInterval,
             bodyReadBudget: bodyReadBudget,
             byteCount: &byteCount,
             hasher: &hasher,
@@ -3659,8 +3665,12 @@ private final class SQLiteReadConnection {
             let relatedMessageColumn = table == .part && tableHasColumn("message_id", in: table)
                 ? "message_id"
                 : "NULL"
+            let createdColumn = tableHasColumn("time_created", in: table)
+                ? "time_created"
+                : "NULL"
             let sql =
-                "SELECT id, rowid, data IS NULL, \(relatedMessageColumn) FROM \(table.rawValue) NOT INDEXED "
+                "SELECT id, rowid, data IS NULL, \(relatedMessageColumn), \(createdColumn) "
+                + "FROM \(table.rawValue) NOT INDEXED "
                 + "WHERE session_id = ? ORDER BY rowid"
             try requireNonMaterializingQueryPlan(
                 sql: sql,
@@ -3912,6 +3922,7 @@ private final class SQLiteReadConnection {
         opaqueLocator: String,
         maximumBytes: Int64,
         analyzeContent: Bool,
+        analysisInterval: DateInterval?,
         bodyReadBudget: AgentSourceBodyReadBudget,
         byteCount: inout Int64,
         hasher: inout CryptoKit.SHA256,
@@ -3956,6 +3967,26 @@ private final class SQLiteReadConnection {
                 throw AgentSourceReadError.unsupported("OpenCode returned a conversation row without an identifier.")
             }
             let messageID = try string(orderedStatement, column: 3, maximumBytes: 2_048)
+            let createdAtMilliseconds: Int64? =
+                sqlite3_column_type(orderedStatement, 4) == SQLITE_NULL
+                ? nil
+                : sqlite3_column_int64(orderedStatement, 4)
+            let analyzeRow: Bool
+            if table == .message {
+                // Message rows carry the role used to interpret their related parts. Keep that
+                // tiny mapping even when the message itself sits outside the selected day.
+                analyzeRow = analyzeContent
+            } else if let analysisInterval, let createdAtMilliseconds {
+                let createdAt = Date(
+                    timeIntervalSince1970: Double(createdAtMilliseconds) / 1_000
+                )
+                analyzeRow = analyzeContent
+                    && createdAt >= analysisInterval.start
+                    && createdAt < analysisInterval.end
+            } else {
+                // Unknown/legacy schemas cannot be filtered safely without guessing.
+                analyzeRow = analyzeContent
+            }
 
             hasher.update(data: Data(kind.utf8))
             hasher.update(data: Data([0]))
@@ -3976,7 +4007,7 @@ private final class SQLiteReadConnection {
                     messageID: messageID,
                     opaqueLocator: opaqueLocator,
                     maximumBytes: maximumBytes,
-                    analyzeContent: analyzeContent,
+                    analyzeContent: analyzeRow,
                     bodyReadBudget: bodyReadBudget,
                     byteCount: byteCount,
                     hasher: &hasher,

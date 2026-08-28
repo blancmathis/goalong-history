@@ -287,6 +287,7 @@
         private let directoryOpener: (URL) -> Void
         private let fileRevealer: ([URL]) -> Void
         private let delayedAutomaticScheduler: (DispatchWorkItem) -> Void
+        private let automaticRetryScheduler: (TimeInterval, DispatchWorkItem) -> Void
         private let derivedWriteBarrier = DerivedHistoryWriteBarrier.shared
         private let sessionLock = NSLock()
         private let runStateLock = NSLock()
@@ -295,9 +296,13 @@
         private var deviceID = ""
         private var timer: Timer?
         private var delayedAutomaticWorkItem: DispatchWorkItem?
+        private var automaticRetryWorkItem: DispatchWorkItem?
+        private var automaticRetryDay: Date?
+        private var automaticRetryAttempt = 0
         private var started = false
 
         private static let automaticRecapsKey = "chatgptRecap.automaticEnabled"
+        private static let automaticRetryDelays: [TimeInterval] = [15 * 60, 60 * 60, 3 * 60 * 60]
 
         init(
             chatHistoryStore: ChatGPTHistoryStore = ChatGPTHistoryStore(
@@ -315,6 +320,10 @@
             },
             delayedAutomaticScheduler: @escaping (DispatchWorkItem) -> Void = {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: $0)
+            },
+            automaticRetryScheduler: @escaping (TimeInterval, DispatchWorkItem) -> Void = {
+                delay, workItem in
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
             }
         ) {
             self.chatHistoryStore = chatHistoryStore
@@ -325,6 +334,7 @@
             self.directoryOpener = directoryOpener
             self.fileRevealer = fileRevealer
             self.delayedAutomaticScheduler = delayedAutomaticScheduler
+            self.automaticRetryScheduler = automaticRetryScheduler
             let today = Calendar.current.startOfDay(for: Date())
             selectedDay = today
             automaticRecapsEnabled =
@@ -338,6 +348,7 @@
         deinit {
             timer?.invalidate()
             delayedAutomaticWorkItem?.cancel()
+            automaticRetryWorkItem?.cancel()
         }
 
         var codexExecutableURL: URL? { executableLocator() }
@@ -373,6 +384,7 @@
             timer = nil
             delayedAutomaticWorkItem?.cancel()
             delayedAutomaticWorkItem = nil
+            clearAutomaticRetry()
             started = false
             invalidateActiveRun(closeSession: true)
         }
@@ -720,6 +732,7 @@
                         else { return }
                         self.isGenerating = false
                         self.streamedMarkdown = ""
+                        self.clearAutomaticRetry(for: normalizedDay)
                         self.publishAccount(account)
                         if Calendar.current.isDate(self.selectedDay, inSameDayAs: normalizedDay) {
                             self.recap = result
@@ -766,6 +779,8 @@
                                 title: "The recap could not be generated",
                                 message: error.localizedDescription
                             )
+                        } else {
+                            self.scheduleAutomaticRetry(for: normalizedDay, after: error)
                         }
                     }
                 }
@@ -848,6 +863,12 @@
             func setConnectionStateForTesting(_ state: ChatGPTConnectionState) {
                 connectionState = state
             }
+
+            func scheduleAutomaticRetryForTesting(for day: Date, after error: Error) {
+                scheduleAutomaticRetry(for: day, after: error)
+            }
+
+            var automaticRetryAttemptForTesting: Int { automaticRetryAttempt }
         #endif
 
         private func maybeGenerateAutomaticRecap() {
@@ -855,8 +876,65 @@
             guard let completedDay = ChatGPTDailyRecapSchedule.completedDay(at: Date()) else { return }
             if let stored = ChatGPTRecapPersistence.load(for: completedDay, from: recapsDirectory),
                 stored.isValidCurrentAssessment
-            { return }
+            {
+                clearAutomaticRetry(for: completedDay)
+                return
+            }
             generateRecap(for: completedDay, automatic: true)
+        }
+
+        private func scheduleAutomaticRetry(for day: Date, after error: Error) {
+            guard started, automaticRecapsEnabled, Self.isRetryableAutomaticError(error) else {
+                return
+            }
+            let normalizedDay = Calendar.current.startOfDay(for: day)
+            if automaticRetryDay != normalizedDay {
+                automaticRetryWorkItem?.cancel()
+                automaticRetryWorkItem = nil
+                automaticRetryDay = normalizedDay
+                automaticRetryAttempt = 0
+            }
+            guard automaticRetryAttempt < Self.automaticRetryDelays.count else { return }
+            let delay = Self.automaticRetryDelays[automaticRetryAttempt]
+            automaticRetryAttempt += 1
+            automaticRetryWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.started, self.automaticRecapsEnabled else { return }
+                self.automaticRetryWorkItem = nil
+                if let stored = ChatGPTRecapPersistence.load(
+                    for: normalizedDay,
+                    from: self.recapsDirectory
+                ), stored.isValidCurrentAssessment {
+                    self.clearAutomaticRetry(for: normalizedDay)
+                    return
+                }
+                self.generateRecap(for: normalizedDay, automatic: true)
+            }
+            automaticRetryWorkItem = workItem
+            automaticRetryScheduler(delay, workItem)
+        }
+
+        private func clearAutomaticRetry(for day: Date? = nil) {
+            if let day, automaticRetryDay != Calendar.current.startOfDay(for: day) { return }
+            automaticRetryWorkItem?.cancel()
+            automaticRetryWorkItem = nil
+            automaticRetryDay = nil
+            automaticRetryAttempt = 0
+        }
+
+        static func isRetryableAutomaticError(_ error: Error) -> Bool {
+            guard let codexError = error as? CodexAppServerError else { return false }
+            switch codexError {
+            case .launchFailed, .processExited, .timeout, .malformedResponse, .server,
+                .generationFailed:
+                return true
+            case .executableUnavailable, .protocolLimitExceeded, .loginFailed, .accountNotChatGPT:
+                return false
+            }
+        }
+
+        static var automaticRetryDelaysForTesting: [TimeInterval] {
+            automaticRetryDelays
         }
 
         private func scheduleNextAutomaticRecap() {

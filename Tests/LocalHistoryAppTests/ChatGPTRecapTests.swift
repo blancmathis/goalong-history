@@ -1539,6 +1539,82 @@
             XCTAssertEqual(sessionCalls, 0)
         }
 
+        func testAutomaticRecapRetryPolicyIsBoundedAndSkipsPermanentFailures() {
+            XCTAssertEqual(
+                ChatGPTRecapRuntime.automaticRetryDelaysForTesting,
+                [900, 3_600, 10_800] as [TimeInterval]
+            )
+            XCTAssertTrue(
+                ChatGPTRecapRuntime.isRetryableAutomaticError(
+                    CodexAppServerError.timeout("starting the recap agent")
+                )
+            )
+            XCTAssertTrue(
+                ChatGPTRecapRuntime.isRetryableAutomaticError(
+                    CodexAppServerError.malformedResponse("temporary invalid response")
+                )
+            )
+            XCTAssertFalse(
+                ChatGPTRecapRuntime.isRetryableAutomaticError(
+                    CodexAppServerError.accountNotChatGPT("api")
+                )
+            )
+            XCTAssertFalse(
+                ChatGPTRecapRuntime.isRetryableAutomaticError(
+                    CodexAppServerError.protocolLimitExceeded("bounded prompt")
+                )
+            )
+            XCTAssertFalse(
+                ChatGPTRecapRuntime.isRetryableAutomaticError(
+                    NSError(domain: "ChatGPTRecapTests", code: 1)
+                )
+            )
+        }
+
+        func testAutomaticRecapRetrySchedulingIsBoundedAndCancelledOnStop() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-recap-retry-runtime")
+            defer { try? FileManager.default.removeItem(at: container) }
+            var scheduledDelays: [TimeInterval] = []
+            var scheduledWork: [DispatchWorkItem] = []
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(
+                    rootDirectory: container.appendingPathComponent("history", isDirectory: true)
+                ),
+                recapsDirectory: container.appendingPathComponent("recaps", isDirectory: true),
+                executableLocator: { nil },
+                sessionFactory: { _ in
+                    throw NSError(domain: "ChatGPTRecapTests", code: 101)
+                },
+                directoryOpener: { _ in },
+                fileRevealer: { _ in },
+                delayedAutomaticScheduler: { _ in },
+                automaticRetryScheduler: { delay, workItem in
+                    scheduledDelays.append(delay)
+                    scheduledWork.append(workItem)
+                }
+            )
+            runtime.automaticRecapsEnabled = true
+            runtime.start()
+            let day = Calendar.current.startOfDay(for: Date()).addingTimeInterval(-86_400)
+            for _ in 0..<4 {
+                runtime.scheduleAutomaticRetryForTesting(
+                    for: day,
+                    after: CodexAppServerError.timeout("starting the recap agent")
+                )
+            }
+
+            XCTAssertEqual(scheduledDelays, [900, 3_600, 10_800] as [TimeInterval])
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 3)
+            XCTAssertEqual(scheduledWork.count, 3)
+            XCTAssertTrue(scheduledWork[0].isCancelled)
+            XCTAssertTrue(scheduledWork[1].isCancelled)
+            XCTAssertFalse(scheduledWork[2].isCancelled)
+
+            runtime.stop()
+            XCTAssertTrue(scheduledWork[2].isCancelled)
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 0)
+        }
+
         func testRuntimeRevealRepairsMarkdownFromCanonicalJSON() throws {
             let container = try makeTemporaryDirectory(prefix: "goalong-recap-reveal-runtime")
             defer { try? FileManager.default.removeItem(at: container) }

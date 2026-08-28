@@ -38,7 +38,9 @@ fi
   | jq -e '.schemaVersion == 1 and (.reports | type == "array") and (.status.kind | type == "string")' >/dev/null
 "$CLI" --root "$TEST_ROOT" screen-time --mac-only \
   | jq -e '.scope == "macOnly" and (.reports | type == "array")' >/dev/null
+"$CLI" --root "$TEST_ROOT" ai-conversations 2026-08-27 \
+  | jq -e '.status == "notIndexed" and .conversations == [] and .returnedConversationCount == 0' >/dev/null
 after="$(find "$TEST_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
 [[ "$before" == "$after" ]]
 
-echo "Goalong CLI tests passed: day discovery, recap present/missing states, direct Screen Time status, and zero source writes."
+echo "Goalong CLI tests passed: day discovery, recap present/missing states, direct Screen Time status, AI index-missing state, and zero source writes."

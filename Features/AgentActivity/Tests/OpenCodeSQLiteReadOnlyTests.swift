@@ -174,6 +174,63 @@ final class OpenCodeSQLiteReadOnlyTests: XCTestCase {
         }
     }
 
+    func testSelectedDayOpenCodeReadFiltersDialogueWithoutChangingFingerprintOrSource() throws {
+        let sourceDirectory = try makeTemporaryDirectory("selected-day-dialogue-source")
+        let databaseURL = sourceDirectory.appendingPathComponent("opencode.db")
+        try createOpenCodeDailyDialogueFixture(
+            at: databaseURL,
+            sessionID: "selected-day-dialogue"
+        )
+        let sourceBefore = try fileSnapshot(databaseURL)
+        let directoryBefore = try directorySnapshot(sourceDirectory)
+        let store = try AgentActivityStore(
+            rootDirectory: try makeTemporaryDirectory("selected-day-dialogue-index")
+        )
+        let folder = AgentWatchedFolder(
+            id: "opencode-selected-day-dialogue",
+            displayName: "OpenCode",
+            path: sourceDirectory.path,
+            provider: .openCode
+        )
+        let result = AgentActivityScanner(store: store).scan(
+            configuration: AgentActivityConfiguration(watchedFolders: [folder]),
+            forceFullDiscovery: true
+        )
+        XCTAssertTrue(result.failures.isEmpty, result.failures.joined(separator: "\n"))
+        let entry = try XCTUnwrap(store.entries().first)
+        let indexBefore = try Data(contentsOf: store.indexFile)
+        let full = try store.directRead(
+            entryID: entry.id,
+            maximumBytes: 4 * 1_024 * 1_024,
+            expectedReference: entry.reference
+        )
+        let selected = try store.directRead(
+            entryID: entry.id,
+            maximumBytes: 4 * 1_024 * 1_024,
+            expectedReference: entry.reference,
+            analysisInterval: DateInterval(
+                start: Date(timeIntervalSince1970: 1_787_472_000),
+                end: Date(timeIntervalSince1970: 1_787_558_400)
+            )
+        )
+
+        XCTAssertEqual(full.sha256, selected.sha256)
+        XCTAssertEqual(full.byteCount, selected.byteCount)
+        XCTAssertEqual(
+            selected.summary.visibleMessages,
+            [
+                AgentVisibleMessage(role: .user, text: "Selected-day OpenCode request"),
+                AgentVisibleMessage(role: .assistantFinal, text: "Selected-day OpenCode response"),
+            ]
+        )
+        let fullText = full.summary.visibleMessages.map(\.text).joined(separator: "\n")
+        XCTAssertTrue(fullText.contains("Before-day OpenCode request"))
+        XCTAssertTrue(fullText.contains("After-day OpenCode response"))
+        XCTAssertEqual(try Data(contentsOf: store.indexFile), indexBefore)
+        XCTAssertEqual(try fileSnapshot(databaseURL), sourceBefore)
+        XCTAssertEqual(try directorySnapshot(sourceDirectory), directoryBefore)
+    }
+
     func testOversizedConversationDoesNotConsumeCycleBudgetOrStarveSmallerConversation() throws {
         let sourceDirectory = try makeTemporaryDirectory("oversized-conversation-source")
         let databaseURL = sourceDirectory.appendingPathComponent("opencode.db", isDirectory: false)
@@ -741,6 +798,47 @@ final class OpenCodeSQLiteReadOnlyTests: XCTestCase {
                 "INSERT INTO part VALUES ('\(part.0)', '\(part.1)', '\(sessionID)', "
                     + "\(1787472100000 + offset), \(1787472100000 + offset), "
                     + "'{\"type\":\"\(part.2)\",\"text\":\"\(part.3)\"}')"
+            )
+        }
+    }
+
+    private func createOpenCodeDailyDialogueFixture(at url: URL, sessionID: String) throws {
+        var database: OpaquePointer?
+        guard sqlite3_open(url.path, &database) == SQLITE_OK else {
+            throw sqliteError(database, context: "open selected-day dialogue fixture")
+        }
+        defer { sqlite3_close(database) }
+        try execute(database, "PRAGMA journal_mode=DELETE")
+        try execute(
+            database,
+            "CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT, parent_id TEXT, slug TEXT, directory TEXT, title TEXT, version TEXT, time_created INTEGER, time_updated INTEGER)"
+        )
+        try execute(
+            database,
+            "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)"
+        )
+        try execute(
+            database,
+            "CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)"
+        )
+        try execute(
+            database,
+            "INSERT INTO session VALUES ('\(sessionID)', 'project', NULL, 'daily', '/tmp/opencode-daily', 'Daily dialogue', '1', 1787385600000, 1787654400000)"
+        )
+        let rows: [(String, String, Int64, String, String)] = [
+            ("before-user", "user", 1_787_471_999_000, "before-part", "Before-day OpenCode request"),
+            ("day-user", "user", 1_787_472_100_000, "day-user-part", "Selected-day OpenCode request"),
+            ("day-assistant", "assistant", 1_787_472_200_000, "day-assistant-part", "Selected-day OpenCode response"),
+            ("after-assistant", "assistant", 1_787_558_400_000, "after-part", "After-day OpenCode response"),
+        ]
+        for row in rows {
+            try execute(
+                database,
+                "INSERT INTO message VALUES ('\(row.0)', '\(sessionID)', \(row.2), \(row.2), '{\"role\":\"\(row.1)\"}')"
+            )
+            try execute(
+                database,
+                "INSERT INTO part VALUES ('\(row.3)', '\(row.0)', '\(sessionID)', \(row.2), \(row.2), '{\"type\":\"text\",\"text\":\"\(row.4)\"}')"
             )
         }
     }

@@ -243,6 +243,79 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertFalse(indexJSON.contains("messages"))
     }
 
+    func testReadOnlyStoreDirectReadsWithoutCreatingOrRewritingMetadata() throws {
+        let fixture = try makeProviderFixture()
+        let storeRoot = try makeTemporaryDirectory("read-only-store")
+        let writer = try AgentActivityStore(rootDirectory: storeRoot)
+        _ = AgentActivityScanner(store: writer).scan(
+            configuration: AgentActivityConfiguration(watchedFolders: fixture.folders),
+            forceFullDiscovery: true
+        )
+        let indexBefore = try Data(contentsOf: writer.indexFile)
+        let indexAttributesBefore = try FileManager.default.attributesOfItem(
+            atPath: writer.indexFile.path
+        )
+        let directoryNamesBefore = try FileManager.default.contentsOfDirectory(
+            atPath: storeRoot.path
+        ).sorted()
+
+        let reader = try AgentActivityStore(readOnlyRootDirectory: storeRoot)
+        let records = try reader.entries().map { entry in
+            try reader.directRead(
+                entryID: entry.id,
+                maximumBytes: AgentActivityConfiguration().maximumFileBytes,
+                expectedReference: entry.reference
+            )
+        }
+        XCTAssertEqual(records.count, 3)
+        XCTAssertTrue(records.allSatisfy { !$0.summary.visibleMessages.isEmpty })
+        XCTAssertEqual(try Data(contentsOf: writer.indexFile), indexBefore)
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: storeRoot.path).sorted(),
+            directoryNamesBefore
+        )
+        let indexAttributesAfter = try FileManager.default.attributesOfItem(
+            atPath: writer.indexFile.path
+        )
+        XCTAssertEqual(
+            indexAttributesAfter[.modificationDate] as? Date,
+            indexAttributesBefore[.modificationDate] as? Date
+        )
+
+        let codexEntry = try XCTUnwrap(reader.entries().first { $0.provider == .codex })
+        let codexFile = fixture.sourceFiles[0]
+        let updatedTranscript = try String(contentsOf: codexFile, encoding: .utf8)
+            + #"{"type":"response_item","timestamp":"2026-08-23T08:01:00Z","payload":{"role":"user","content":"READ-ONLY-FRESH-SOURCE-SENTINEL"}}"#
+            + "\n"
+        try Data(updatedTranscript.utf8).write(to: codexFile)
+        let updatedRecord = try reader.directRead(
+            entryID: codexEntry.id,
+            maximumBytes: AgentActivityConfiguration().maximumFileBytes,
+            expectedReference: codexEntry.reference
+        )
+        XCTAssertNotEqual(updatedRecord.sha256, codexEntry.sha256)
+        XCTAssertTrue(
+            updatedRecord.summary.visibleMessages.contains {
+                $0.text.contains("READ-ONLY-FRESH-SOURCE-SENTINEL")
+            }
+        )
+        XCTAssertEqual(try Data(contentsOf: writer.indexFile), indexBefore)
+
+        let missing = storeRoot.deletingLastPathComponent().appendingPathComponent(
+            "missing-read-only-store",
+            isDirectory: true
+        )
+        XCTAssertThrowsError(try AgentActivityStore(readOnlyRootDirectory: missing))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path))
+
+        let linked = storeRoot.deletingLastPathComponent().appendingPathComponent(
+            "linked-read-only-store-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: storeRoot)
+        XCTAssertThrowsError(try AgentActivityStore(readOnlyRootDirectory: linked))
+    }
+
     func testProviderConversationIdentifierIsPersistedOnlyAsAnOpaqueDigest() throws {
         let sourceRoot = try makeTemporaryDirectory("opaque-id-source")
         let transcript = sourceRoot.appendingPathComponent("conversation.jsonl")
