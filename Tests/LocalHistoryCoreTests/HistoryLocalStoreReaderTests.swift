@@ -2,6 +2,32 @@ import XCTest
 @testable import LocalHistoryCore
 
 final class HistoryLocalStoreReaderTests: XCTestCase {
+    func testCaptureHealthLoadDoesNotDecodeHistoryJournals() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("goalong-health-reader-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let events = root.appendingPathComponent("events", isDirectory: true)
+        let memories = root.appendingPathComponent("memories", isDirectory: true)
+        let semantic = root.appendingPathComponent("semantic", isDirectory: true)
+        try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: memories, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: semantic, withIntermediateDirectories: true)
+
+        try Data("not-an-event\n".utf8).write(to: events.appendingPathComponent("2027-01-15.jsonl"))
+        try Data("not-a-memory".utf8).write(to: memories.appendingPathComponent("2027-01-15.json"))
+        try Data("not-a-snapshot\n".utf8).write(to: semantic.appendingPathComponent("2027-01-15.jsonl"))
+
+        let health = fixtureHealth(callback: fixtureStart)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(health).write(to: root.appendingPathComponent("capture-health.json"))
+
+        let loaded = HistoryLocalStoreReader(rootDirectory: root).loadCaptureHealth()
+        XCTAssertEqual(loaded.snapshot, health)
+        XCTAssertTrue(loaded.issues.isEmpty)
+    }
+
     func testReaderLoadsSeparateDataAndSurfacesMalformedRows() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("goalong-reader-\(UUID().uuidString)", isDirectory: true)

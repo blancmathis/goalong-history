@@ -25,6 +25,8 @@ trap '/bin/rm -rf -- "$TEST_ROOT"' EXIT
 /usr/bin/printf '%s\n' '{}' > "$TEST_ROOT/events/2026-08-27.jsonl"
 
 before="$(find "$TEST_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
+"$CLI" --root "$TEST_ROOT" status \
+  | jq -e '.snapshot == null and .assessment == null and .loadIssues == []' >/dev/null
 "$CLI" --root "$TEST_ROOT" days \
   | jq -e '.recaps == ["2026-08-27"] and .aiConversationCandidateDays == [] and .agentActivityIndexStatus == "notIndexed"' >/dev/null
 "$CLI" --root "$TEST_ROOT" recap 2026-08-27 \
@@ -50,4 +52,4 @@ fi
 after="$(find "$TEST_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
 [[ "$before" == "$after" ]]
 
-echo "Goalong CLI tests passed: day discovery, recap present/missing states, direct Screen Time status, AI index-missing state, and zero source writes."
+echo "Goalong CLI tests passed: lightweight status, day discovery, recap present/missing states, direct Screen Time status, AI index-missing state, and zero source writes."

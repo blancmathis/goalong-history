@@ -249,12 +249,12 @@ private enum LocalHistoryQueryCLI {
             ])
 
         case "status":
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
-            let assessment = loaded.captureHealth.map { CaptureHealthEvaluator.assess($0) }
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).loadCaptureHealth()
+            let assessment = loaded.snapshot.map { CaptureHealthEvaluator.assess($0) }
             try printJSON(
                 HealthEnvelope(
                     rootDirectory: root.path,
-                    snapshot: loaded.captureHealth,
+                    snapshot: loaded.snapshot,
                     assessment: assessment,
                     loadIssues: loaded.issues,
                     limitation:

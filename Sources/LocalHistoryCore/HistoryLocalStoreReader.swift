@@ -37,6 +37,22 @@ public struct HistoryLoadedData {
     }
 }
 
+/// The minimal persisted state needed to assess recorder health. Keeping this
+/// separate from `HistoryLoadedData` prevents lightweight status checks from
+/// decoding the complete event, memory, and semantic retention horizon.
+public struct CaptureHealthLoadResult {
+    public let snapshot: CaptureHealthSnapshot?
+    public let issues: [HistoryLoadIssue]
+
+    public init(
+        snapshot: CaptureHealthSnapshot?,
+        issues: [HistoryLoadIssue]
+    ) {
+        self.snapshot = snapshot
+        self.issues = issues
+    }
+}
+
 /// Bounded diagnostics for the Computer History source pass. `retained*Bytes`
 /// counts the compact encoded values that survived the evidence filter; it is useful
 /// for proving that maintenance traffic does not inflate the analysis working
@@ -911,6 +927,7 @@ package struct HistoryJSONLinesStreamReader {
 /// Stable, read-only filesystem adapter for ChatGPT, Codex and a future MCP server.
 /// It never asks for Accessibility/Input Monitoring and never mutates recorder files.
 public struct HistoryLocalStoreReader {
+    private static let maximumCaptureHealthBytes = 1 * 1_024 * 1_024
     private static let maximumComputerHistoryIssues = 256
     private static let maximumSourceSearchDirectoryEntries = 8_192
     private static let maximumSourceSearchFiles = 4_096
@@ -939,6 +956,35 @@ public struct HistoryLocalStoreReader {
 
     public var captureHealthFile: URL {
         rootDirectory.appendingPathComponent("capture-health.json")
+    }
+
+    public func loadCaptureHealth() -> CaptureHealthLoadResult {
+        guard FileManager.default.fileExists(atPath: captureHealthFile.path) else {
+            return CaptureHealthLoadResult(snapshot: nil, issues: [])
+        }
+        do {
+            return CaptureHealthLoadResult(
+                snapshot: try decoder().decode(
+                    CaptureHealthSnapshot.self,
+                    from: readBoundedFile(
+                        captureHealthFile,
+                        maximumBytes: Self.maximumCaptureHealthBytes
+                    )
+                ),
+                issues: []
+            )
+        } catch {
+            return CaptureHealthLoadResult(
+                snapshot: nil,
+                issues: [
+                    HistoryLoadIssue(
+                        path: captureHealthFile.path,
+                        line: nil,
+                        message: "Could not decode capture health: \(error)"
+                    )
+                ]
+            )
+        }
     }
 
     public func load(
@@ -1034,27 +1080,14 @@ public struct HistoryLocalStoreReader {
             )
         }
 
-        let health: CaptureHealthSnapshot? = {
-            guard FileManager.default.fileExists(atPath: captureHealthFile.path) else { return nil }
-            do {
-                return try decoder().decode(CaptureHealthSnapshot.self, from: Data(contentsOf: captureHealthFile))
-            } catch {
-                issues.append(
-                    HistoryLoadIssue(
-                        path: captureHealthFile.path,
-                        line: nil,
-                        message: "Could not decode capture health: \(error)"
-                    )
-                )
-                return nil
-            }
-        }()
+        let health = loadCaptureHealth()
+        issues.append(contentsOf: health.issues)
 
         return HistoryLoadedData(
             events: events.sorted { $0.timestamp < $1.timestamp },
             memories: memories.sorted { $0.start < $1.start },
             semanticSnapshots: semantic,
-            captureHealth: health,
+            captureHealth: health.snapshot,
             issues: issues
         )
     }
