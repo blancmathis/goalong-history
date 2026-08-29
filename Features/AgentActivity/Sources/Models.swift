@@ -955,21 +955,42 @@ public struct AgentSourceIndexEntry: Codable, Identifiable, Equatable, Sendable 
 }
 
 /// An index entry paired with a non-persisted direct-read analysis.
+public enum AgentSourceDigestScope: String, Equatable, Sendable {
+    case fullSource
+    case selectedIntervalProjection
+}
+
 public struct AgentCaptureRecord: Identifiable, Equatable, Sendable {
     public var index: AgentSourceIndexEntry
     public var summary: AgentDocumentSummary
     /// Whether `summary` was assembled from the original source during this process.
     /// This flag is transient because `AgentCaptureRecord` is never persisted.
     public var isAnalyzed: Bool
+    /// Describes whether `index.sha256` covers the complete original source or only the
+    /// bounded byte projection used for a selected-day read. Projection digests are never
+    /// persisted in the lightweight source index.
+    public var digestScope: AgentSourceDigestScope
+    /// The requested interval for a bounded projection, when applicable.
+    public var analysisInterval: DateInterval?
+    /// False only when the configured direct-read byte ceiling could not reach the beginning
+    /// of the requested interval. Returned messages remain in-range, but earlier messages from
+    /// the same day may be absent and callers must surface that limitation.
+    public var projectionIsComplete: Bool
 
     public init(
         index: AgentSourceIndexEntry,
         summary: AgentDocumentSummary = AgentDocumentSummary(),
-        isAnalyzed: Bool = true
+        isAnalyzed: Bool = true,
+        digestScope: AgentSourceDigestScope = .fullSource,
+        analysisInterval: DateInterval? = nil,
+        projectionIsComplete: Bool = true
     ) {
         self.index = index
         self.summary = summary
         self.isAnalyzed = isAnalyzed
+        self.digestScope = digestScope
+        self.analysisInterval = analysisInterval
+        self.projectionIsComplete = projectionIsComplete
     }
 
     public var id: String { index.id }

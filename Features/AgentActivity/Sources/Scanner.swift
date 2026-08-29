@@ -929,6 +929,9 @@ public final class AgentActivityScanner: @unchecked Sendable {
         }
 
         let workAnalysisDay = pendingDiscovery?.analysisDay ?? analysisDay
+        let workAnalysisInterval = workAnalysisDay.flatMap {
+            Calendar.current.dateInterval(of: .day, for: $0)
+        }
         let shouldAnalyzeContent = pendingDiscovery?.analyzeContent ?? analyzeContent
         let rehashUnchanged = pendingDiscovery?.rehashUnchangedSources ?? false
         let analyzedEntryIDs =
@@ -942,6 +945,8 @@ public final class AgentActivityScanner: @unchecked Sendable {
         var seenStableIDs = pendingDiscovery?.seenStableIDs ?? []
         var preparedCaptures: [AgentPreparedCapture] = []
         preparedCaptures.reserveCapacity(min(candidates.count, Self.maximumReturnedCaptures))
+        var selectedIntervalProjections: [AgentCaptureRecord] = []
+        selectedIntervalProjections.reserveCapacity(min(candidates.count, Self.maximumReturnedCaptures))
         var retainedFullSummaryCount = 0
         var deferredCandidates: [AgentSourceCandidate] = []
         var deferredCandidatesWereTruncated = false
@@ -957,8 +962,26 @@ public final class AgentActivityScanner: @unchecked Sendable {
                 result.skippedSourceCount += 1
                 continue
             }
-            let isRelevantDay = isRelevant(candidate: candidate, previous: previous, to: workAnalysisDay)
-            let sameMetadata = previous.map { metadataMatches(previous: $0, candidate: candidate) } ?? false
+            let isRelevantDay = isRelevant(
+                candidate: candidate,
+                previous: previous,
+                to: workAnalysisDay
+            )
+            let sameMetadata =
+                previous.map {
+                    metadataMatches(previous: $0, candidate: candidate)
+                } ?? false
+            let hasCurrentSelectedIntervalProjection =
+                previous.flatMap { previous in
+                    guard shouldAnalyzeContent, isRelevantDay, let workAnalysisInterval else {
+                        return nil
+                    }
+                    return store.hasSelectedIntervalProjection(
+                        id: previous.id,
+                        candidate: candidate,
+                        interval: workAnalysisInterval
+                    )
+                } ?? false
             // Compact analysis metrics cover every indexed source, while full summaries are an
             // intentionally bounded LRU. Once that LRU is full, rereading an already-analyzed
             // source would only evict another summary and create perpetual body-read churn.
@@ -967,6 +990,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
                     shouldAnalyzeContent
                         && workAnalysisDay != nil
                         && isRelevantDay
+                        && !hasCurrentSelectedIntervalProjection
                         && (!analyzedEntryIDs.contains(previous.id)
                             || (!summarizedEntryIDs.contains(previous.id)
                                 && summarizedEntryIDs.count
@@ -978,7 +1002,9 @@ public final class AgentActivityScanner: @unchecked Sendable {
                         && needsExplicitAnalysis
                         && analyzedEntryIDs.contains(previous.id)
                 } ?? false
-            let needsBodyRead = !sameMetadata || rehashUnchanged || needsExplicitAnalysis
+            let needsBodyRead =
+                !hasCurrentSelectedIntervalProjection
+                && (!sameMetadata || rehashUnchanged || needsExplicitAnalysis)
             if needsBodyRead,
                 let previous,
                 shouldDeferGrowingSourceRead(
@@ -1063,9 +1089,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
                     maximumBytes: configuration.maximumFileBytes,
                     analyzeContent: shouldAnalyzeContent
                         && (workAnalysisDay == nil || isRelevantDay),
-                    analysisInterval: workAnalysisDay.flatMap {
-                        Calendar.current.dateInterval(of: .day, for: $0)
-                    },
+                    analysisInterval: workAnalysisInterval,
                     observedAt: observedAt
                 )
                 unavailableRetryByEntryID.removeValue(forKey: record.id)
@@ -1097,9 +1121,13 @@ public final class AgentActivityScanner: @unchecked Sendable {
                 if record.isAnalyzed, !retainFullSummary {
                     record.summary = compactAnalysisMetrics(record.summary)
                 }
-                preparedCaptures.append(
-                    AgentPreparedCapture(record: record, retainFullSummary: retainFullSummary)
-                )
+                if record.digestScope == .selectedIntervalProjection {
+                    selectedIntervalProjections.append(record)
+                } else {
+                    preparedCaptures.append(
+                        AgentPreparedCapture(record: record, retainFullSummary: retainFullSummary)
+                    )
+                }
             } catch let interruption as AgentSourceBodyReadInterrupted {
                 metrics.stoppedByBudget = true
                 metrics.sourceBodyReadStopReason = interruption.reason
@@ -1178,6 +1206,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             try session.verifyOpenCodeSourcesUnchanged()
         } catch let interruption as AgentSourceBodyReadInterrupted {
             preparedCaptures.removeAll(keepingCapacity: true)
+            selectedIntervalProjections.removeAll(keepingCapacity: true)
             availabilityUpdates.removeAll(keepingCapacity: true)
             seenStableIDs = seenStableIDsBeforeCurrentBatch
             if isDiscoveryWork { deferredCandidates = candidates }
@@ -1187,11 +1216,24 @@ public final class AgentActivityScanner: @unchecked Sendable {
             if interruption.reason == .deadlineExceeded { didExhaustBodyDeadline = true }
         } catch {
             preparedCaptures.removeAll(keepingCapacity: true)
+            selectedIntervalProjections.removeAll(keepingCapacity: true)
             availabilityUpdates.removeAll(keepingCapacity: true)
             seenStableIDs = seenStableIDsBeforeCurrentBatch
             if isDiscoveryWork { deferredCandidates = candidates }
             if analyzeContent, !isDiscoveryWork { analysisSliceWasInterrupted = true }
             appendFailure("\(folder.path): \(error.localizedDescription)", result: &result)
+        }
+
+        for projection in selectedIntervalProjections {
+            do {
+                try store.cacheSelectedIntervalProjection(projection)
+            } catch {
+                analysisSliceWasInterrupted = true
+                appendFailure(
+                    "\(projection.sourcePath): the selected-day projection could not be retained: \(error.localizedDescription)",
+                    result: &result
+                )
+            }
         }
 
         let discoveryTraversalFinished =

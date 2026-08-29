@@ -131,6 +131,10 @@ private struct AgentConversationSourceEnvelope: Encodable {
     let availability: String
     let byteCount: Int64
     let sha256: String
+    let sha256Scope: String
+    let startOffset: Int64
+    let endOffset: Int64
+    let projectionIsComplete: Bool
     let sourceCreatedAt: Date?
     let sourceModifiedAt: Date?
 }
@@ -927,11 +931,31 @@ private enum LocalHistoryQueryCLI {
         }
 
         let allEntries = store.entries()
+        let liveModifiedAtByID = Dictionary(
+            uniqueKeysWithValues: allEntries.map { entry in
+                (entry.id, agentEntryLiveModifiedAt(entry))
+            }
+        )
         let relevantEntries = allEntries.filter {
-            agentEntry($0, overlaps: dayStart, end: dayEnd)
+            agentEntry(
+                $0,
+                overlaps: dayStart,
+                end: dayEnd,
+                liveModifiedAt: liveModifiedAtByID[$0.id] ?? nil
+            )
         }.sorted {
-            let left = agentEntryPriority($0, dayStart: dayStart, dayEnd: dayEnd)
-            let right = agentEntryPriority($1, dayStart: dayStart, dayEnd: dayEnd)
+            let left = agentEntryPriority(
+                $0,
+                dayStart: dayStart,
+                dayEnd: dayEnd,
+                liveModifiedAt: liveModifiedAtByID[$0.id] ?? nil
+            )
+            let right = agentEntryPriority(
+                $1,
+                dayStart: dayStart,
+                dayEnd: dayEnd,
+                liveModifiedAt: liveModifiedAtByID[$1.id] ?? nil
+            )
             if left != right { return left > right }
             return $0.id < $1.id
         }
@@ -957,7 +981,8 @@ private enum LocalHistoryQueryCLI {
         var outputDroppedConversationCount = 0
         var firstDroppedCandidateOffset: Int?
 
-        for (relativeOffset, entry) in relevantEntries
+        for (relativeOffset, entry) in
+            relevantEntries
             .dropFirst(min(candidateOffset, relevantEntries.count)).enumerated()
         {
             guard conversations.count < conversationLimit else { break }
@@ -975,7 +1000,11 @@ private enum LocalHistoryQueryCLI {
             }
             visitedConversationCandidateCount += 1
             let indexedSource = agentSourceEnvelope(entry: entry)
-            guard entry.availability == .available else {
+            let liveModifiedAt = liveModifiedAtByID[entry.id] ?? nil
+            guard
+                entry.availability == .available
+                    || agentEntryCanRetryDirectRead(entry, liveModifiedAt: liveModifiedAt)
+            else {
                 conversations.append(
                     AgentConversationEnvelope(
                         id: entry.id,
@@ -996,18 +1025,23 @@ private enum LocalHistoryQueryCLI {
                 conversationCandidateOffsets.append(candidateOffset + relativeOffset)
                 continue
             }
-            guard entry.byteCount <= maximumSourceBytes - sourceBytesRead else {
+            let remainingSourceBytes = maximumSourceBytes - sourceBytesRead
+            guard remainingSourceBytes > 0 else {
                 issues.append("The 512 MiB shared source-read budget was reached; later conversations were not opened.")
                 break
             }
             do {
                 let record = try store.directRead(
                     entryID: entry.id,
-                    maximumBytes: maximumFileBytes,
+                    maximumBytes: min(maximumFileBytes, remainingSourceBytes),
                     expectedReference: entry.reference,
                     analysisInterval: interval
                 )
-                sourceBytesRead += record.byteCount
+                sourceBytesRead += max(
+                    0,
+                    (record.index.endOffset ?? record.byteCount)
+                        - (record.index.startOffset ?? 0)
+                )
                 guard !record.summary.visibleMessages.isEmpty else {
                     noVisibleMessageCandidateCount += 1
                     continue
@@ -1025,11 +1059,11 @@ private enum LocalHistoryQueryCLI {
                         startedAt: record.summary.startedAt ?? entry.conversationStartedAt,
                         endedAt: record.summary.endedAt ?? entry.conversationEndedAt,
                         readStatus: "available",
-                        source: agentSourceEnvelope(entry: record.index),
+                        source: agentSourceEnvelope(record: record),
                         userPromptCount: record.summary.visibleMessages.filter { $0.role == .user }.count,
                         finalAnswerCount: record.summary.visibleMessages.filter { $0.role == .assistantFinal }.count,
                         messages: bounded.messages,
-                        messagesTruncated: bounded.truncated,
+                        messagesTruncated: bounded.truncated || !record.projectionIsComplete,
                         error: nil
                     )
                 )
@@ -1132,23 +1166,47 @@ private enum LocalHistoryQueryCLI {
     private static func agentEntry(
         _ entry: AgentSourceIndexEntry,
         overlaps dayStart: Date,
-        end dayEnd: Date
+        end dayEnd: Date,
+        liveModifiedAt: Date?
     ) -> Bool {
-        let start = entry.conversationStartedAt
+        let start =
+            entry.conversationStartedAt
             ?? entry.sourceCreatedAt
             ?? entry.sourceModifiedAt
             ?? entry.lastObservedAt
-        let end = entry.conversationEndedAt
-            ?? entry.sourceModifiedAt
-            ?? entry.sourceCreatedAt
-            ?? entry.lastObservedAt
+        let end =
+            [
+                entry.conversationEndedAt,
+                entry.sourceModifiedAt,
+                entry.sourceCreatedAt,
+                liveModifiedAt,
+            ].compactMap { $0 }.max() ?? entry.lastObservedAt
         return end >= dayStart && start < dayEnd
+    }
+
+    private static func agentEntryLiveModifiedAt(_ entry: AgentSourceIndexEntry) -> Date? {
+        guard entry.reference.kind == .file else { return nil }
+        guard
+            let attributes = try? FileManager.default.attributesOfItem(
+                atPath: entry.reference.path
+            )
+        else { return nil }
+        return attributes[.modificationDate] as? Date
+    }
+
+    private static func agentEntryCanRetryDirectRead(
+        _ entry: AgentSourceIndexEntry,
+        liveModifiedAt: Date?
+    ) -> Bool {
+        guard entry.reference.kind == .file, liveModifiedAt != nil else { return false }
+        return FileManager.default.isReadableFile(atPath: entry.reference.path)
     }
 
     private static func agentEntryPriority(
         _ entry: AgentSourceIndexEntry,
         dayStart: Date,
-        dayEnd: Date
+        dayEnd: Date,
+        liveModifiedAt: Date?
     ) -> Int64 {
         let dayPath = localDayString(dayStart)
         let pathDay = dayPath.replacingOccurrences(of: "-", with: "/")
@@ -1160,15 +1218,16 @@ private enum LocalHistoryQueryCLI {
         }
         for date in [
             entry.conversationStartedAt, entry.conversationEndedAt,
-            entry.sourceCreatedAt, entry.sourceModifiedAt,
+            entry.sourceCreatedAt, entry.sourceModifiedAt, liveModifiedAt,
         ].compactMap({ $0 }) {
             if date >= dayStart, date < dayEnd { score += 100_000_000 }
         }
         let midpoint = dayStart.addingTimeInterval(dayEnd.timeIntervalSince(dayStart) / 2)
-        let nearest = [
-            entry.conversationStartedAt, entry.conversationEndedAt,
-            entry.sourceCreatedAt, entry.sourceModifiedAt,
-        ].compactMap({ $0 }).map { abs($0.timeIntervalSince(midpoint)) }.min()
+        let nearest =
+            [
+                entry.conversationStartedAt, entry.conversationEndedAt,
+                entry.sourceCreatedAt, entry.sourceModifiedAt, liveModifiedAt,
+            ].compactMap({ $0 }).map { abs($0.timeIntervalSince(midpoint)) }.min()
             ?? TimeInterval.greatestFiniteMagnitude
         let boundedDistance = min(Int64(nearest.rounded()), 99_999_999)
         score += 99_999_999 - boundedDistance
@@ -1185,8 +1244,31 @@ private enum LocalHistoryQueryCLI {
             availability: entry.availability.rawValue,
             byteCount: entry.byteCount,
             sha256: entry.sha256,
+            sha256Scope: AgentSourceDigestScope.fullSource.rawValue,
+            startOffset: entry.startOffset ?? 0,
+            endOffset: entry.endOffset ?? entry.byteCount,
+            projectionIsComplete: true,
             sourceCreatedAt: entry.sourceCreatedAt,
             sourceModifiedAt: entry.sourceModifiedAt
+        )
+    }
+
+    private static func agentSourceEnvelope(
+        record: AgentCaptureRecord
+    ) -> AgentConversationSourceEnvelope {
+        AgentConversationSourceEnvelope(
+            kind: record.index.reference.kind.rawValue,
+            path: record.index.reference.path,
+            locator: record.index.reference.locator,
+            availability: record.index.availability.rawValue,
+            byteCount: record.index.byteCount,
+            sha256: record.index.sha256,
+            sha256Scope: record.digestScope.rawValue,
+            startOffset: record.index.startOffset ?? 0,
+            endOffset: record.index.endOffset ?? record.byteCount,
+            projectionIsComplete: record.projectionIsComplete,
+            sourceCreatedAt: record.index.sourceCreatedAt,
+            sourceModifiedAt: record.index.sourceModifiedAt
         )
     }
 

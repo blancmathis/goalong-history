@@ -1242,6 +1242,130 @@ final class AgentActivityScannerLoadTests: XCTestCase {
         )
     }
 
+    func testOversizedContinuedCodexConversationUsesTransientProjectionWithoutIndexDuplication() throws {
+        let fileManager = FileManager.default
+        let fixtureRoot = fileManager.temporaryDirectory.appendingPathComponent(
+            "agent-scanner-oversized-selected-day-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        defer { try? fileManager.removeItem(at: fixtureRoot) }
+        let sourceRoot = fixtureRoot.appendingPathComponent("source", isDirectory: true)
+        let sessions = sourceRoot.appendingPathComponent(
+            "sessions/2026/08/23",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: sessions, withIntermediateDirectories: true)
+        let sessionID = "30000000-0000-4000-8000-000000000099"
+        let source = sessions.appendingPathComponent(
+            "rollout-2026-08-23T08-00-00-\(sessionID).jsonl"
+        )
+        let initial = Data(
+            """
+            {"timestamp":"2026-08-23T08:00:00.000Z","type":"session_meta","payload":{"id":"30000000-0000-4000-8000-000000000099"}}
+            {"timestamp":"2026-08-23T08:01:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"Initial old request"}]}}
+            """.utf8
+        )
+        try initial.write(to: source)
+        let oldDate = try XCTUnwrap(
+            ISO8601DateFormatter().date(from: "2026-08-23T08:05:00Z")
+        )
+        let selectedMoment = try XCTUnwrap(
+            ISO8601DateFormatter().date(from: "2026-08-29T10:00:00Z")
+        )
+        try fileManager.setAttributes([.modificationDate: oldDate], ofItemAtPath: source.path)
+
+        let store = try AgentActivityStore(
+            rootDirectory: fixtureRoot.appendingPathComponent("store", isDirectory: true)
+        )
+        let scanner = AgentActivityScanner(store: store)
+        let folder = AgentWatchedFolder(
+            id: "oversized-selected-day",
+            displayName: "Codex",
+            path: sourceRoot.path,
+            provider: .codex
+        )
+        let configuration = AgentActivityConfiguration(
+            watchedFolders: [folder],
+            maximumFileBytes: 64 * 1_024
+        )
+        let first = scanner.scan(
+            configuration: configuration,
+            forceFullDiscovery: true,
+            at: selectedMoment.addingTimeInterval(-600)
+        )
+        XCTAssertTrue(first.failures.isEmpty, first.failures.joined(separator: "\n"))
+        let persistedBefore = try Data(contentsOf: store.indexFile)
+        let indexedBefore = try XCTUnwrap(store.entries().first)
+        XCTAssertEqual(indexedBefore.sha256.count, 64)
+
+        let filler = String(repeating: "z", count: 900)
+        let handle = try FileHandle(forWritingTo: source)
+        try handle.seekToEnd()
+        for index in 0..<90 {
+            try handle.write(
+                contentsOf: Data(
+                    (#"{"timestamp":"2026-08-28T20:00:00.000Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"text":"OLD-"#
+                        + String(index)
+                        + "-"
+                        + filler
+                        + #""}]}}"#
+                        + "\n").utf8
+                )
+            )
+        }
+        try handle.write(
+            contentsOf: Data(
+                """
+                {"timestamp":"2026-08-29T08:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"Continued old conversation today"}]}}
+                {"timestamp":"2026-08-29T08:00:01.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"text":"Today final answer"}]}}
+                """.utf8
+            )
+        )
+        try handle.close()
+        try fileManager.setAttributes(
+            [.modificationDate: selectedMoment],
+            ofItemAtPath: source.path
+        )
+        XCTAssertGreaterThan(
+            (try fileManager.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.intValue
+                ?? 0,
+            64 * 1_024
+        )
+
+        let selectedDay = Calendar.current.startOfDay(for: selectedMoment)
+        let second = scanner.scan(
+            configuration: configuration,
+            analysisDay: selectedDay,
+            at: selectedMoment.addingTimeInterval(60)
+        )
+        XCTAssertTrue(second.failures.isEmpty, second.failures.joined(separator: "\n"))
+        XCTAssertEqual(scanner.cycleMetricsForTesting().sourceBodyReadCount, 1)
+        XCTAssertEqual(try Data(contentsOf: store.indexFile), persistedBefore)
+        XCTAssertEqual(store.entries().first?.sha256, indexedBefore.sha256)
+        XCTAssertFalse(fileManager.fileExists(atPath: store.rootDirectory.appendingPathComponent("blobs").path))
+
+        let projection = try XCTUnwrap(store.overview(for: selectedDay).captures.first)
+        XCTAssertEqual(projection.digestScope, .selectedIntervalProjection)
+        XCTAssertEqual(projection.index.availability, .available)
+        XCTAssertEqual(
+            projection.summary.visibleMessages,
+            [
+                AgentVisibleMessage(role: .user, text: "Continued old conversation today"),
+                AgentVisibleMessage(role: .assistantFinal, text: "Today final answer"),
+            ]
+        )
+        XCTAssertNotEqual(projection.sha256, indexedBefore.sha256)
+
+        let unchanged = scanner.scan(
+            configuration: configuration,
+            analysisDay: selectedDay,
+            at: selectedMoment.addingTimeInterval(120)
+        )
+        XCTAssertTrue(unchanged.failures.isEmpty, unchanged.failures.joined(separator: "\n"))
+        XCTAssertEqual(scanner.cycleMetricsForTesting().sourceBodyReadCount, 0)
+        XCTAssertEqual(try Data(contentsOf: store.indexFile), persistedBefore)
+    }
+
     func testOptInRealCodexRootUsesBoundedStreamingAndMetadataOnlyIndex() throws {
         guard
             let sourcePath = ProcessInfo.processInfo.environment[

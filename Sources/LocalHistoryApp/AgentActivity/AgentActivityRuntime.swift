@@ -429,25 +429,36 @@
                 guard let self else { return }
                 let valid: Bool
                 do {
-                    let current = try self.directRead(entryID: record.id)
+                    let current = try self.directRead(
+                        entryID: record.id,
+                        analysisInterval: record.analysisInterval
+                    )
                     valid =
                         current.index.reference == record.index.reference
                         && current.sha256 == record.sha256
+                        && current.digestScope == record.digestScope
                 } catch {
                     valid = false
                 }
                 DispatchQueue.main.async {
+                    let verifiedScope =
+                        record.digestScope == .fullSource
+                        ? "complete original source"
+                        : "selected-day source projection"
                     self.alert = AgentActivityAlert(
                         title: valid ? "Original source verified" : "Original source changed or unavailable",
                         message: valid
-                            ? "The provider’s current original storage matches SHA-256 \(record.sha256)."
+                            ? "The provider’s current \(verifiedScope) matches SHA-256 \(record.sha256)."
                             : "The provider’s original source no longer matches this index entry or cannot be read."
                     )
                 }
             }
         }
 
-        func directRead(entryID: String) throws -> AgentCaptureRecord {
+        func directRead(
+            entryID: String,
+            analysisInterval: DateInterval? = nil
+        ) throws -> AgentCaptureRecord {
             guard let entry = store.entry(id: entryID) else {
                 throw AgentActivityRuntimeAccessError.unauthorizedSource(entryID)
             }
@@ -458,7 +469,8 @@
             return try store.directRead(
                 entryID: entryID,
                 maximumBytes: snapshot.maximumFileBytes,
-                expectedReference: entry.reference
+                expectedReference: entry.reference,
+                analysisInterval: analysisInterval
             )
         }
 

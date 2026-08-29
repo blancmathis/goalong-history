@@ -55,12 +55,16 @@ public enum AgentTranscriptParser {
         private var reachedAnalysisEnd = false
         private(set) var peakBufferedBytes = 0
 
+        var hasReachedAnalysisEnd: Bool { reachedAnalysisEnd }
+
         init(
             fileURL: URL,
             provider: AgentProvider,
-            analysisInterval: DateInterval? = nil
+            analysisInterval: DateInterval? = nil,
+            startsAtSourceBeginning: Bool = true
         ) {
             accumulator = Accumulator(fileURL: fileURL, provider: provider, format: .jsonLines)
+            examinedFirstLine = !startsAtSourceBeginning
             if [.codex, .claudeCode].contains(provider), let analysisInterval {
                 let formatter = ISO8601DateFormatter()
                 formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -278,7 +282,7 @@ public enum AgentTranscriptParser {
             return true
         }
 
-        private static func topLevelTimestamp(in bytes: UnsafeRawBufferPointer) -> String? {
+        static func topLevelTimestamp(in bytes: UnsafeRawBufferPointer) -> String? {
             guard let base = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
                 bytes.count >= 16
             else { return nil }

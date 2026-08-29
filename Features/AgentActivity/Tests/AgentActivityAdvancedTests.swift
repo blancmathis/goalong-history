@@ -247,6 +247,90 @@ final class AgentActivityAdvancedTests: XCTestCase {
         }
     }
 
+    func testOversizedOldCodexConversationReadsOnlyCompleteSelectedDayProjection() throws {
+        let sourceRoot = try makeTemporaryDirectory("oversized-selected-day-source")
+        let sessionDirectory = sourceRoot.appendingPathComponent(
+            "sessions/2026/08/23",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: sessionDirectory,
+            withIntermediateDirectories: true
+        )
+        let sessionID = "20000000-0000-4000-8000-000000000099"
+        let source = sessionDirectory.appendingPathComponent(
+            "rollout-2026-08-23T08-00-00-\(sessionID).jsonl"
+        )
+        let sessionMetadata =
+            #"{"timestamp":"2026-08-23T08:00:00.000Z","type":"session_meta","payload":{"id":"20000000-0000-4000-8000-000000000099"}}"#
+        var payload = Data((sessionMetadata + "\n").utf8)
+        let filler = String(repeating: "x", count: 1_600)
+        for index in 0..<210 {
+            payload.append(
+                Data(
+                    (#"{"timestamp":"2026-08-28T20:00:00.000Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"text":"OLD-FILLER-"#
+                        + String(index)
+                        + "-"
+                        + filler
+                        + #""}]}}"#
+                        + "\n").utf8
+                )
+            )
+        }
+        payload.append(
+            Data(
+                """
+                {"timestamp":"2026-08-28T21:59:59.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"BEFORE-SELECTED-DAY"}]}}
+                {"timestamp":"2026-08-29T08:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"Old conversation reused today"}]}}
+                {"timestamp":"2026-08-29T08:00:01.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"text":"Selected-day answer"}]}}
+                {"timestamp":"2026-08-30T00:00:00.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"text":"AFTER-SELECTED-DAY"}]}}
+                """.utf8
+            )
+        )
+        try payload.write(to: source)
+        let original = try snapshot(of: source)
+        let folder = AgentWatchedFolder(
+            id: "oversized-selected-day",
+            displayName: "Codex",
+            path: sourceRoot.path,
+            provider: .codex
+        )
+        let candidate = try XCTUnwrap(
+            AgentDirectSourceReader.discover(folder: folder).first
+        )
+        let interval = DateInterval(
+            start: try XCTUnwrap(isoDate("2026-08-28T22:00:00Z")),
+            end: try XCTUnwrap(isoDate("2026-08-29T22:00:00Z"))
+        )
+
+        let record = try AgentDirectSourceReader.read(
+            candidate: candidate,
+            folder: folder,
+            previous: nil,
+            maximumBytes: 256 * 1_024,
+            analysisInterval: interval
+        )
+
+        XCTAssertGreaterThan(Int64(payload.count), 256 * 1_024)
+        XCTAssertEqual(record.digestScope, .selectedIntervalProjection)
+        XCTAssertEqual(record.analysisInterval, interval)
+        XCTAssertTrue(record.projectionIsComplete)
+        let startOffset = try XCTUnwrap(record.index.startOffset)
+        let endOffset = try XCTUnwrap(record.index.endOffset)
+        XCTAssertGreaterThan(startOffset, 0)
+        XCTAssertLessThan(endOffset - startOffset, Int64(payload.count))
+        XCTAssertEqual(record.byteCount, Int64(payload.count))
+        XCTAssertNotEqual(record.sha256, sha256Hex(payload))
+        XCTAssertEqual(
+            record.summary.visibleMessages,
+            [
+                AgentVisibleMessage(role: .user, text: "Old conversation reused today"),
+                AgentVisibleMessage(role: .assistantFinal, text: "Selected-day answer"),
+            ]
+        )
+        XCTAssertEqual(try snapshot(of: source), original)
+    }
+
     func testCodexVisibleDialogueRemovesInjectedContextCompactionsAndReceipts() throws {
         let lines = [
             ##"{"timestamp":"2026-08-27T10:00:00.000Z","type":"session_meta","payload":{"id":"visible-sanitization"}}"##,

@@ -116,6 +116,12 @@ public final class AgentActivityStore: @unchecked Sendable {
         var sha256High: UInt64
         var sha256Low: UInt64
         var byteCount: Int64
+        var digestScope: AgentSourceDigestScope
+        var analysisInterval: DateInterval?
+        var sourceDevice: UInt64?
+        var sourceInode: UInt64?
+        var sourceChangedSeconds: Int64?
+        var sourceChangedNanoseconds: Int64?
         var startedAt: Date?
         var endedAt: Date?
         var messageCount: Int
@@ -132,6 +138,12 @@ public final class AgentActivityStore: @unchecked Sendable {
             sha256High = UInt64(record.sha256.prefix(16), radix: 16) ?? 0
             sha256Low = UInt64(record.sha256.dropFirst(16).prefix(16), radix: 16) ?? 0
             byteCount = record.byteCount
+            digestScope = record.digestScope
+            analysisInterval = record.analysisInterval
+            sourceDevice = record.index.sourceDevice
+            sourceInode = record.index.sourceInode
+            sourceChangedSeconds = record.index.sourceChangedSeconds
+            sourceChangedNanoseconds = record.index.sourceChangedNanoseconds
             startedAt = record.summary.startedAt
             endedAt = record.summary.endedAt
             messageCount = max(record.summary.messageCount, 0)
@@ -149,10 +161,29 @@ public final class AgentActivityStore: @unchecked Sendable {
             referenceHasher.combine(reference.kind.rawValue)
             referenceHasher.combine(reference.path)
             referenceHasher.combine(reference.locator)
-            return referenceFingerprint == referenceHasher.finalize()
+            return digestScope == .fullSource
+                && referenceFingerprint == referenceHasher.finalize()
                 && sha256High == (UInt64(sha256.prefix(16), radix: 16) ?? 0)
                 && sha256Low == (UInt64(sha256.dropFirst(16).prefix(16), radix: 16) ?? 0)
                 && self.byteCount == byteCount
+        }
+
+        func matchesSelectedIntervalProjection(
+            candidate: AgentSourceCandidate,
+            interval: DateInterval
+        ) -> Bool {
+            var referenceHasher = Hasher()
+            referenceHasher.combine(candidate.reference.kind.rawValue)
+            referenceHasher.combine(candidate.reference.path)
+            referenceHasher.combine(candidate.reference.locator)
+            return digestScope == .selectedIntervalProjection
+                && analysisInterval == interval
+                && referenceFingerprint == referenceHasher.finalize()
+                && byteCount == candidate.byteCount
+                && sourceDevice == candidate.sourceDevice
+                && sourceInode == candidate.sourceInode
+                && sourceChangedSeconds == candidate.sourceChangedSeconds
+                && sourceChangedNanoseconds == candidate.sourceChangedNanoseconds
         }
     }
 
@@ -665,6 +696,48 @@ public final class AgentActivityStore: @unchecked Sendable {
         return true
     }
 
+    /// Whether the exact current source revision already has a process-local selected-day
+    /// projection with its bounded visible-message summary still resident. Projection digests
+    /// never match or replace the persisted full-source digest.
+    func hasSelectedIntervalProjection(
+        id: String,
+        candidate: AgentSourceCandidate,
+        interval: DateInterval
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        _ = reloadIndexFromDisk()
+        pruneExpiredTransientSummaries(at: currentDate())
+        guard let entryPosition = entryIndexByID[id], index.entries.indices.contains(entryPosition),
+            index.entries[entryPosition].reference == candidate.reference,
+            let metrics = transientMetricsByID[id],
+            metrics.matchesSelectedIntervalProjection(candidate: candidate, interval: interval),
+            let record = transientRecordsByID[id],
+            record.isAnalyzed,
+            record.digestScope == .selectedIntervalProjection,
+            record.analysisInterval == interval,
+            record.index.reference == candidate.reference
+        else { return false }
+        touchTransientMetric(id: id)
+        touchTransientRecord(id: id, at: currentDate())
+        return true
+    }
+
+    /// Retains a selected-day read only in the bounded process cache. This deliberately bypasses
+    /// every persistence path so a projection digest can never masquerade as a full-source hash.
+    func cacheSelectedIntervalProjection(_ record: AgentCaptureRecord) throws {
+        precondition(record.digestScope == .selectedIntervalProjection)
+        lock.lock()
+        defer { lock.unlock() }
+        guard reloadIndexFromDisk() else { throw AgentActivityStoreError.indexCorrupt }
+        guard let position = entryIndexByID[record.id], index.entries.indices.contains(position)
+        else { throw AgentActivityStoreError.sourceNotFound(record.id) }
+        guard index.entries[position].reference == record.index.reference else {
+            throw AgentActivityStoreError.sourceReferenceChanged(record.id)
+        }
+        cacheTransientRecord(record)
+    }
+
     func transientAnalysisCount() -> Int {
         lock.lock()
         defer { lock.unlock() }
@@ -718,14 +791,18 @@ public final class AgentActivityStore: @unchecked Sendable {
         let entry = index.entries[entryIndex]
         guard var record = transientRecordsByID[id],
             record.isAnalyzed,
-            record.index.reference == entry.reference,
-            record.sha256 == entry.sha256,
-            record.byteCount == entry.byteCount
+            record.index.reference == entry.reference
         else {
             removeTransientSummary(id: id)
             return nil
         }
-        record.index = entry
+        if record.digestScope == .fullSource {
+            guard record.sha256 == entry.sha256, record.byteCount == entry.byteCount else {
+                removeTransientSummary(id: id)
+                return nil
+            }
+            record.index = entry
+        }
         transientRecordsByID[id] = record
         touchTransientMetric(id: id)
         touchTransientRecord(id: id, at: now)
@@ -768,7 +845,12 @@ public final class AgentActivityStore: @unchecked Sendable {
             guard var record = transientRecordsByID[entry.id] else {
                 return AgentCaptureRecord(index: entry, isAnalyzed: false)
             }
-            record.index = entry
+            if record.digestScope == .fullSource {
+                record.index = entry
+            } else if !folderRootIsAvailable(for: entry) {
+                record.index.availability = entry.availability
+                record.index.statusDetail = entry.statusDetail
+            }
             return record
         }
     }
@@ -793,28 +875,49 @@ public final class AgentActivityStore: @unchecked Sendable {
         var lastCaptureAt: Date?
         for storedEntry in index.entries {
             let entry = effectiveEntry(storedEntry)
-            let metrics = transientMetricsByID[entry.id]
-            guard isRelevant(entry: entry, metrics: metrics, dayStart: dayStart, dayEnd: dayEnd) else {
+            let projection = transientRecordsByID[entry.id].flatMap { record -> AgentCaptureRecord? in
+                guard record.digestScope == .selectedIntervalProjection,
+                    record.analysisInterval == DateInterval(start: dayStart, end: dayEnd),
+                    folderRootIsAvailable(for: entry)
+                else { return nil }
+                return record
+            }
+            let presentedEntry = projection?.index ?? entry
+            let metrics =
+                projection.map(TransientAnalysisMetrics.init)
+                ?? transientMetricsByID[entry.id]
+            guard
+                isRelevant(
+                    entry: presentedEntry,
+                    metrics: metrics,
+                    dayStart: dayStart,
+                    dayEnd: dayEnd
+                )
+            else {
                 continue
             }
-            insertNewestBounded(entry, into: &newestRelevant, limit: Self.maximumTransientRecords)
-            let activityDate = recencyDate(for: entry, metrics: metrics)
+            insertNewestBounded(
+                presentedEntry,
+                into: &newestRelevant,
+                limit: Self.maximumTransientRecords
+            )
+            let activityDate = recencyDate(for: presentedEntry, metrics: metrics)
             lastCaptureAt = max(lastCaptureAt ?? activityDate, activityDate)
-            guard entry.availability == .available else { continue }
+            guard presentedEntry.availability == .available else { continue }
             sessionCount += 1
             if metrics != nil { analyzedSessionCount += 1 }
             messageCount += metrics?.messageCount ?? 0
             visibleMessageCount += metrics?.visibleMessageCount ?? 0
             toolCallCount += metrics?.toolCallCount ?? 0
             errorCount += metrics?.errorCount ?? 0
-            sourceBytes += entry.byteCount
+            sourceBytes += presentedEntry.byteCount
         }
         newestRelevant.sort { isNewer($0, than: $1) }
         let captures = newestRelevant.map { entry in
             guard var record = transientRecordsByID[entry.id] else {
                 return AgentCaptureRecord(index: entry, isAnalyzed: false)
             }
-            record.index = entry
+            if record.digestScope == .fullSource { record.index = entry }
             return record
         }
         lock.unlock()
@@ -1098,6 +1201,15 @@ public final class AgentActivityStore: @unchecked Sendable {
         var indexMutated = false
         for prepared in preparedCaptures {
             var record = prepared.record
+            if record.digestScope == .selectedIntervalProjection {
+                if let priorIndex = entryIndexByID[record.id],
+                    index.entries.indices.contains(priorIndex),
+                    index.entries[priorIndex].reference == record.index.reference
+                {
+                    cacheTransientRecord(record, retainFullSummary: prepared.retainFullSummary)
+                }
+                continue
+            }
             record.index = record.index.sanitizedForPersistence()
             persistedRecordIDs.insert(record.id)
             let referenceKey = ReferenceLookupKey(record.index.reference)
@@ -1234,8 +1346,14 @@ public final class AgentActivityStore: @unchecked Sendable {
             entry.lastObservedAt = max(entry.lastObservedAt, observation.observedAt)
             index.entries[entryPosition] = entry
             if var transient = transientRecordsByID[observation.entryID] {
-                transient.index = entry
-                transientRecordsByID[observation.entryID] = transient
+                if transient.digestScope == .selectedIntervalProjection,
+                    observation.availability != .available
+                {
+                    removeTransientAnalysis(id: observation.entryID)
+                } else if transient.digestScope == .fullSource {
+                    transient.index = entry
+                    transientRecordsByID[observation.entryID] = transient
+                }
             }
             if statusChanged { changedIDs.insert(observation.entryID) }
             latestObservedAt = max(latestObservedAt, observation.observedAt)
@@ -1312,6 +1430,11 @@ public final class AgentActivityStore: @unchecked Sendable {
         entry.availability = rootStatus.availability
         entry.statusDetail = AgentSourceStatusCode.persistedValue(for: rootStatus.availability)
         return entry
+    }
+
+    private func folderRootIsAvailable(for entry: AgentSourceIndexEntry) -> Bool {
+        index.rootStatusByFolder[entry.watchedFolderID]?.availability != .missing
+            && index.rootStatusByFolder[entry.watchedFolderID]?.availability != .inaccessible
     }
 
     @discardableResult
@@ -1767,13 +1890,24 @@ public final class AgentActivityStore: @unchecked Sendable {
                 continue
             }
             let current = index.entries[position]
-            guard let metrics = transientMetricsByID[id],
-                metrics.matches(
-                    reference: current.reference,
-                    sha256: current.sha256,
-                    byteCount: current.byteCount
-                )
-            else {
+            guard let metrics = transientMetricsByID[id] else {
+                removeTransientAnalysis(id: id)
+                continue
+            }
+            if metrics.digestScope == .selectedIntervalProjection {
+                var referenceHasher = Hasher()
+                referenceHasher.combine(current.reference.kind.rawValue)
+                referenceHasher.combine(current.reference.path)
+                referenceHasher.combine(current.reference.locator)
+                guard metrics.referenceFingerprint == referenceHasher.finalize() else {
+                    removeTransientAnalysis(id: id)
+                    continue
+                }
+            } else if !metrics.matches(
+                reference: current.reference,
+                sha256: current.sha256,
+                byteCount: current.byteCount
+            ) {
                 removeTransientAnalysis(id: id)
                 continue
             }
@@ -1787,15 +1921,19 @@ public final class AgentActivityStore: @unchecked Sendable {
             guard var record = transientRecordsByID[id],
                 record.isAnalyzed,
                 record.index.reference == current.reference,
-                record.sha256 == current.sha256,
-                record.byteCount == current.byteCount,
                 transientMetricsByID[id] != nil,
                 transientSummaryMetadataByID[id] != nil
             else {
                 removeTransientSummary(id: id)
                 continue
             }
-            record.index = current
+            if record.digestScope == .fullSource {
+                guard record.sha256 == current.sha256, record.byteCount == current.byteCount else {
+                    removeTransientSummary(id: id)
+                    continue
+                }
+                record.index = current
+            }
             transientRecordsByID[id] = record
         }
     }

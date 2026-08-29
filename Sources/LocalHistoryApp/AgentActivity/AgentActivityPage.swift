@@ -219,6 +219,11 @@
                     Label(record.availability.displayName, systemImage: statusSymbol(record.availability))
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)
+                } else if !record.projectionIsComplete {
+                    Label("Partial day", systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(LHTheme.warning)
+                        .help("The selected day exceeded the bounded direct-read limit; older messages from that day may be absent.")
                 }
 
                 Menu {

@@ -1901,14 +1901,17 @@ enum AgentDirectSourceReader {
             sourceInode: readResult.inode,
             sourceChangedSeconds: readResult.changedSeconds,
             sourceChangedNanoseconds: readResult.changedNanoseconds,
-            startOffset: 0,
-            endOffset: readResult.byteCount,
+            startOffset: readResult.startOffset,
+            endOffset: readResult.endOffset,
             availability: .available
         )
         return AgentCaptureRecord(
             index: entry,
             summary: readResult.summary,
-            isAnalyzed: readResult.isAnalyzed
+            isAnalyzed: readResult.isAnalyzed,
+            digestScope: readResult.digestScope,
+            analysisInterval: readResult.analysisInterval,
+            projectionIsComplete: readResult.projectionIsComplete
         )
     }
 
@@ -2459,6 +2462,11 @@ enum AgentDirectSourceReader {
         var sha256: String
         var summary: AgentDocumentSummary
         var isAnalyzed: Bool
+        var digestScope: AgentSourceDigestScope
+        var analysisInterval: DateInterval?
+        var startOffset: Int64
+        var endOffset: Int64
+        var projectionIsComplete: Bool
     }
 
     fileprivate static func sameFileSnapshot(_ left: stat, _ right: stat) -> Bool {
@@ -2522,6 +2530,26 @@ enum AgentDirectSourceReader {
             0,
             min(maximumBytes, bodyReadBudget.limits.maximumBytes)
         )
+        let ext = url.pathExtension.lowercased()
+        if initial.byteCount > effectiveMaximumBytes,
+            analyzeContent,
+            let analysisInterval,
+            [.codex, .claudeCode].contains(provider),
+            ["jsonl", "ndjson", "trace"].contains(ext)
+        {
+            return try streamChronologicalJSONLProjection(
+                at: url,
+                descriptor: descriptor,
+                provider: provider,
+                initialStatus: initialStatus,
+                initial: initial,
+                maximumBytes: effectiveMaximumBytes,
+                analysisInterval: analysisInterval,
+                allowAppendOnlyGrowth: allowAppendOnlyGrowth,
+                bodyReadBudget: bodyReadBudget,
+                verifyCurrentIdentity: verifyCurrentIdentity
+            )
+        }
         guard initial.byteCount <= effectiveMaximumBytes else {
             throw AgentSourceReadError.fileTooLarge(
                 path: url.path,
@@ -2529,7 +2557,6 @@ enum AgentDirectSourceReader {
                 maximum: effectiveMaximumBytes
             )
         }
-        let ext = url.pathExtension.lowercased()
         let maximumBufferedJSONBytes: Int64 = 8 * 1_024 * 1_024
         if analyzeContent,
             ["json", "agent-event"].contains(ext),
@@ -2660,8 +2687,223 @@ enum AgentDirectSourceReader {
             changedNanoseconds: initial.changedNanoseconds,
             sha256: digestHex(hasher.finalize()),
             summary: summary,
-            isAnalyzed: isAnalyzed
+            isAnalyzed: isAnalyzed,
+            digestScope: .fullSource,
+            analysisInterval: nil,
+            startOffset: 0,
+            endOffset: bytesRead,
+            projectionIsComplete: true
         )
+    }
+
+    /// Reads only the chronological tail needed for one selected day when a JSONL transcript
+    /// exceeds the configured full-source ceiling. The original file remains open read-only,
+    /// the projection is never persisted, and the byte budget bounds both timestamp probes and
+    /// the final streamed slice. Codex/Claude JSONL timestamps are chronological, so a small
+    /// exponentially widened tail usually covers a continued older conversation without
+    /// rereading hundreds of megabytes of prior turns.
+    private static func streamChronologicalJSONLProjection(
+        at url: URL,
+        descriptor: Int32,
+        provider: AgentProvider,
+        initialStatus: stat,
+        initial: FileSnapshot,
+        maximumBytes: Int64,
+        analysisInterval: DateInterval,
+        allowAppendOnlyGrowth: Bool,
+        bodyReadBudget: AgentSourceBodyReadBudget,
+        verifyCurrentIdentity: (stat) throws -> Bool
+    ) throws -> FileReadResult {
+        let minimumWindow: Int64 = 8 * 1_024 * 1_024
+        let maximumProbeBytes = AgentTranscriptParser.maximumBufferedLineBytes + 128 * 1_024
+        let availableBudget = min(maximumBytes, bodyReadBudget.remainingBytes)
+        guard availableBudget > 0 else {
+            throw AgentSourceBodyReadInterrupted(reason: .byteLimit)
+        }
+        let probeReserve = min(1 * 1_024 * 1_024, max(1, availableBudget / 4))
+        let projectionBudget = max(1, availableBudget - probeReserve)
+
+        var window = min(max(minimumWindow, 1), projectionBudget)
+        var startOffset = max(0, initial.byteCount - window)
+        var alignedStart = startOffset
+        var projectionIsComplete = startOffset == 0
+        while startOffset > 0 {
+            let probe = try firstCompleteLineTimestamp(
+                descriptor: descriptor,
+                offset: startOffset,
+                maximumBytes: maximumProbeBytes,
+                bodyReadBudget: bodyReadBudget
+            )
+            alignedStart = probe.alignedOffset
+            if let timestamp = probe.timestamp, timestamp < analysisInterval.start {
+                projectionIsComplete = true
+                break
+            }
+            guard window < projectionBudget else {
+                projectionIsComplete = false
+                break
+            }
+            window = min(projectionBudget, max(window + 1, window * 2))
+            startOffset = max(0, initial.byteCount - window)
+            alignedStart = startOffset
+            projectionIsComplete = startOffset == 0
+        }
+
+        guard lseek(descriptor, off_t(alignedStart), SEEK_SET) >= 0 else {
+            throw AgentSourceReadError.inaccessible(url.path)
+        }
+
+        var parser = AgentTranscriptParser.IncrementalJSONLines(
+            fileURL: url,
+            provider: provider,
+            analysisInterval: analysisInterval,
+            startsAtSourceBeginning: alignedStart == 0
+        )
+        var hasher = CryptoKit.SHA256()
+        var cursor = alignedStart
+        var readBuffer = [UInt8](repeating: 0, count: 128 * 1_024)
+        while cursor < initial.byteCount, !parser.hasReachedAnalysisEnd {
+            let remaining = initial.byteCount - cursor
+            let requested = Int(
+                min(
+                    min(Int64(readBuffer.count), remaining),
+                    bodyReadBudget.remainingBytes
+                )
+            )
+            guard requested > 0 else {
+                throw AgentSourceBodyReadInterrupted(reason: .byteLimit)
+            }
+            let count = readBuffer.withUnsafeMutableBytes { raw -> Int in
+                guard let base = raw.baseAddress else { return -1 }
+                while true {
+                    let result = Darwin.read(descriptor, base, requested)
+                    if result >= 0 { return result }
+                    if errno != EINTR { return -1 }
+                }
+            }
+            guard count >= 0 else { throw AgentSourceReadError.inaccessible(url.path) }
+            guard count > 0 else { break }
+            guard bodyReadBudget.consume(Int64(count)) else {
+                throw AgentSourceBodyReadInterrupted(
+                    reason: bodyReadBudget.stopReason ?? .byteLimit
+                )
+            }
+            cursor += Int64(count)
+            readBuffer.withUnsafeBytes { raw in
+                let chunk = UnsafeRawBufferPointer(rebasing: raw[..<count])
+                hasher.update(bufferPointer: chunk)
+                parser.consume(bytes: chunk)
+            }
+        }
+
+        var finalStatus = stat()
+        guard fstat(descriptor, &finalStatus) == 0 else {
+            throw AgentSourceReadError.inaccessible(url.path)
+        }
+        let descriptorMatches =
+            allowAppendOnlyGrowth
+            ? isSameAppendOnlyFile(finalStatus, initialStatus: initialStatus)
+            : sameFileSnapshot(finalStatus, initialStatus)
+        guard descriptorMatches, try verifyCurrentIdentity(initialStatus) else {
+            throw AgentSourceReadError.changedDuringRead(url.path)
+        }
+
+        return FileReadResult(
+            createdAt: initial.createdAt,
+            modifiedAt: initial.modifiedAt,
+            byteCount: initial.byteCount,
+            device: initial.device,
+            inode: initial.inode,
+            changedSeconds: initial.changedSeconds,
+            changedNanoseconds: initial.changedNanoseconds,
+            sha256: digestHex(hasher.finalize()),
+            summary: parser.finish(),
+            isAnalyzed: true,
+            digestScope: .selectedIntervalProjection,
+            analysisInterval: analysisInterval,
+            startOffset: alignedStart,
+            endOffset: cursor,
+            projectionIsComplete: projectionIsComplete
+        )
+    }
+
+    private static func firstCompleteLineTimestamp(
+        descriptor: Int32,
+        offset: Int64,
+        maximumBytes: Int,
+        bodyReadBudget: AgentSourceBodyReadBudget
+    ) throws -> (timestamp: Date?, alignedOffset: Int64) {
+        let chunkBytes = min(16 * 1_024, maximumBytes)
+        var buffer = [UInt8](repeating: 0, count: max(chunkBytes, 1))
+        var line = Data()
+        line.reserveCapacity(min(64 * 1_024, maximumBytes))
+        var cursor = offset
+        var remaining = maximumBytes
+        var skippingPartialLine = offset > 0
+        var alignedOffset = offset
+        while remaining > 0 {
+            let requested = min(
+                min(buffer.count, remaining),
+                Int(bodyReadBudget.remainingBytes)
+            )
+            guard requested > 0 else {
+                throw AgentSourceBodyReadInterrupted(reason: .byteLimit)
+            }
+            let count = buffer.withUnsafeMutableBytes { raw -> Int in
+                guard let base = raw.baseAddress else { return -1 }
+                while true {
+                    let result = Darwin.pread(descriptor, base, requested, off_t(cursor))
+                    if result >= 0 { return result }
+                    if errno != EINTR { return -1 }
+                }
+            }
+            guard count >= 0 else {
+                throw AgentSourceReadError.inaccessible("selected-day projection")
+            }
+            guard count > 0 else { break }
+            guard bodyReadBudget.consume(Int64(count)) else {
+                throw AgentSourceBodyReadInterrupted(
+                    reason: bodyReadBudget.stopReason ?? .byteLimit
+                )
+            }
+            for (index, byte) in buffer[..<count].enumerated() {
+                if skippingPartialLine {
+                    if byte == 0x0A {
+                        skippingPartialLine = false
+                        alignedOffset = cursor + Int64(index + 1)
+                    }
+                    continue
+                }
+                if byte == 0x0A {
+                    return (parsedTopLevelTimestamp(from: line), alignedOffset)
+                }
+                guard line.count < AgentTranscriptParser.maximumBufferedLineBytes else {
+                    return (nil, alignedOffset)
+                }
+                line.append(byte)
+            }
+            cursor += Int64(count)
+            remaining -= count
+        }
+        return (
+            line.isEmpty ? nil : parsedTopLevelTimestamp(from: line),
+            alignedOffset
+        )
+    }
+
+    private static func parsedTopLevelTimestamp(from line: Data) -> Date? {
+        line.withUnsafeBytes { raw -> Date? in
+            guard
+                let timestamp = AgentTranscriptParser.IncrementalJSONLines
+                    .topLevelTimestamp(in: raw)
+            else { return nil }
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = fractional.date(from: timestamp) { return date }
+            let standard = ISO8601DateFormatter()
+            standard.formatOptions = [.withInternetDateTime]
+            return standard.date(from: timestamp)
+        }
     }
 
     fileprivate static func isHexIdentifier(_ value: String, exactLength: Int) -> Bool {
