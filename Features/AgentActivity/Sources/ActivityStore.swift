@@ -428,16 +428,20 @@ public final class AgentActivityStore: @unchecked Sendable {
         }
     }
 
-    /// Returns one bounded rotating slice for a normal metadata poll. The scanner keeps the
-    /// cursor in memory; persisted entry metadata remains sufficient to skip body reads after a
-    /// restart when size/timestamps are unchanged.
+    /// Returns one bounded rotating slice for a normal metadata poll or explicit day analysis.
+    /// Explicit analysis may include unavailable entries so a user request can immediately retry
+    /// a source rejected by the preceding metadata-only launch scan. Background polling keeps the
+    /// durable and process-local backoff. The scanner keeps the cursor in memory; persisted entry
+    /// metadata remains sufficient to skip body reads after a restart when size/timestamps are
+    /// unchanged.
     func scanSlice(
         folderID: String,
         cursor: Int,
         maximumEntries: Int,
         maximumVisits: Int,
         observedAt: Date,
-        unavailableRetryInterval: TimeInterval
+        unavailableRetryInterval: TimeInterval,
+        includeUnavailableEntries: Bool
     ) -> AgentFolderScanSlice {
         lock.lock()
         defer { lock.unlock() }
@@ -459,7 +463,8 @@ public final class AgentActivityStore: @unchecked Sendable {
         while visited < visitLimit, selected.count < entryLimit {
             let position = positions[(normalizedCursor + visited) % positions.count]
             let entry = index.entries[position]
-            if entry.availability == .available
+            if includeUnavailableEntries
+                || entry.availability == .available
                 || observedAt.timeIntervalSince(entry.lastObservedAt) >= retryInterval
             {
                 selected.append(entry)

@@ -53,6 +53,9 @@
             }
             .onChange(of: model.dashboardIsVisible) { visible in
                 screenTime.setActive(visible && source == .screenTime)
+                if visible && source == .conversations {
+                    agents.scanNow(analyzeSelectedDay: true)
+                }
             }
             .onChange(of: model.selectedDay) { day in
                 synchronizeSources(with: day)

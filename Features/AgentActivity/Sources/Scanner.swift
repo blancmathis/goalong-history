@@ -567,7 +567,8 @@ public final class AgentActivityScanner: @unchecked Sendable {
                 maximumEntries: min(Self.maximumNormalMetadataChecks, analysisVisitLimit),
                 maximumVisits: analysisVisitLimit,
                 observedAt: observedAt,
-                unavailableRetryInterval: Self.unavailableSourceRetrySeconds
+                unavailableRetryInterval: Self.unavailableSourceRetrySeconds,
+                includeUnavailableEntries: analyzeContent
             )
             knownEntries = slice.entries
             rotatingCursorByFolderID[folder.id] = slice.nextCursor
@@ -849,7 +850,13 @@ public final class AgentActivityScanner: @unchecked Sendable {
                 candidates = continuingDiscovery.candidates
             }
         } else {
-            let entriesToResolve = knownEntries.filter { shouldRetry(entry: $0, at: observedAt) }
+            let entriesToResolve = knownEntries.filter {
+                shouldRetry(
+                    entry: $0,
+                    at: observedAt,
+                    ignoreUnavailableBackoff: analyzeContent
+                )
+            }
             result.skippedSourceCount += knownEntries.count - entriesToResolve.count
             metrics.metadataResolutionCount += entriesToResolve.count
             do {
@@ -1400,8 +1407,13 @@ public final class AgentActivityScanner: @unchecked Sendable {
         analysisRemainingVisitsByFolderID.removeAll(keepingCapacity: true)
     }
 
-    private func shouldRetry(entry: AgentSourceIndexEntry, at observedAt: Date) -> Bool {
+    private func shouldRetry(
+        entry: AgentSourceIndexEntry,
+        at observedAt: Date,
+        ignoreUnavailableBackoff: Bool
+    ) -> Bool {
         guard entry.availability != .available else { return true }
+        if ignoreUnavailableBackoff { return true }
         return observedAt.timeIntervalSince(entry.lastObservedAt) >= Self.unavailableSourceRetrySeconds
             && retryIsAllowed(unavailableRetryByEntryID[entry.id], at: observedAt)
     }

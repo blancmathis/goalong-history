@@ -1333,14 +1333,24 @@ final class AgentActivityScannerLoadTests: XCTestCase {
         )
 
         let selectedDay = Calendar.current.startOfDay(for: selectedMoment)
+        let metadataOnly = scanner.scan(
+            configuration: configuration,
+            analyzeContent: false,
+            at: selectedMoment.addingTimeInterval(180)
+        )
+        XCTAssertFalse(metadataOnly.failures.isEmpty)
+        XCTAssertEqual(store.entries().first?.availability, .inaccessible)
+        let persistedAfterMetadataOnlyFailure = try Data(contentsOf: store.indexFile)
+
         let second = scanner.scan(
             configuration: configuration,
             analysisDay: selectedDay,
-            at: selectedMoment.addingTimeInterval(60)
+            at: selectedMoment.addingTimeInterval(181)
         )
         XCTAssertTrue(second.failures.isEmpty, second.failures.joined(separator: "\n"))
         XCTAssertEqual(scanner.cycleMetricsForTesting().sourceBodyReadCount, 1)
-        XCTAssertEqual(try Data(contentsOf: store.indexFile), persistedBefore)
+        XCTAssertNotEqual(persistedAfterMetadataOnlyFailure, persistedBefore)
+        XCTAssertEqual(try Data(contentsOf: store.indexFile), persistedAfterMetadataOnlyFailure)
         XCTAssertEqual(store.entries().first?.sha256, indexedBefore.sha256)
         XCTAssertFalse(fileManager.fileExists(atPath: store.rootDirectory.appendingPathComponent("blobs").path))
 
@@ -1359,11 +1369,11 @@ final class AgentActivityScannerLoadTests: XCTestCase {
         let unchanged = scanner.scan(
             configuration: configuration,
             analysisDay: selectedDay,
-            at: selectedMoment.addingTimeInterval(120)
+            at: selectedMoment.addingTimeInterval(182)
         )
         XCTAssertTrue(unchanged.failures.isEmpty, unchanged.failures.joined(separator: "\n"))
         XCTAssertEqual(scanner.cycleMetricsForTesting().sourceBodyReadCount, 0)
-        XCTAssertEqual(try Data(contentsOf: store.indexFile), persistedBefore)
+        XCTAssertEqual(try Data(contentsOf: store.indexFile), persistedAfterMetadataOnlyFailure)
     }
 
     func testOptInRealCodexRootUsesBoundedStreamingAndMetadataOnlyIndex() throws {
