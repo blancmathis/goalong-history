@@ -189,8 +189,21 @@
                 screenTime.components(separatedBy: "LazyVStack(spacing: 0)").count - 1,
                 2
             )
+            XCTAssertTrue(
+                screenTime.contains(
+                    "All active-use applications for the selected device scope. Login, lock-screen, and screen-saver time is excluded."
+                )
+            )
             XCTAssertFalse(screenTime.contains("with input"))
             XCTAssertFalse(overview.contains("with input"))
+            XCTAssertTrue(overview.contains("Include login and lock-screen time"))
+            XCTAssertTrue(
+                overview.contains(
+                    "Apple may record these periods while the device is not actively being used."
+                )
+            )
+            XCTAssertFalse(overview.contains("Show all apps"))
+            XCTAssertFalse(overview.contains("combinedAppUsage.prefix"))
         }
 
         func testAIConversationListOrdersNewestFirstAndCompactsLongFallbackTitles() {

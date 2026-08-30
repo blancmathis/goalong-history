@@ -7,7 +7,7 @@
         @ObservedObject var model: DashboardViewModel
         @StateObject private var screenTime: AppleScreenTimeDashboardModel
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
-        @State private var showsAllApplications = false
+        @State private var includesInactiveSystemTime = false
         @State private var usageMode: OverviewUsageMode = .applications
 
         init(model: DashboardViewModel) {
@@ -211,9 +211,7 @@
         }
 
         private var topUsageSection: some View {
-            let applications = showsAllApplications
-                ? combinedAppUsage
-                : Array(combinedAppUsage.prefix(6))
+            let applications = combinedAppUsage
             let websites = Array(topWebsiteUsage.prefix(6))
 
             return VStack(alignment: .leading, spacing: 13) {
@@ -236,16 +234,27 @@
                         .pickerStyle(.segmented)
                         .frame(width: 230)
 
-                        if usageMode == .applications, canShowAllApplications {
-                            Toggle("Show all apps", isOn: $showsAllApplications)
+                        if usageMode == .applications, hasHiddenInactiveSystemTime {
+                            Toggle(
+                                "Include login and lock-screen time",
+                                isOn: $includesInactiveSystemTime
+                            )
                                 .toggleStyle(.switch)
                                 .controlSize(.small)
                                 .accessibilityHint(
-                                    "Shows the complete app list and includes Apple system rows in the Screen Time total."
+                                    "Adds login screen, lock screen, and screen saver time Apple may report while the device is not actively being used."
                                 )
                                 .help(
-                                    "Show the complete app list and include Apple system rows in the Screen Time total."
+                                    "Include Apple-reported login screen, lock screen, and screen saver time. This can increase Screen Time even when you were not actively using the device."
                                 )
+                            Text(
+                                "Apple may record these periods while the device is not actively being used."
+                            )
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 300, alignment: .trailing)
+                            .fixedSize(horizontal: false, vertical: true)
                         } else if usageMode == .websites, !topWebsiteUsage.isEmpty {
                             Text("Top \(websites.count) of \(topWebsiteUsage.count) websites")
                                 .font(.system(size: 9, weight: .medium, design: .rounded))
@@ -519,7 +528,9 @@
             guard screenTime.unfilteredSummary != nil else { return "Apple data not available" }
             guard let summary = displayedScreenTimeSummary else { return "No active Apple device" }
             let count = summary.deviceSummaries.count
-            let suffix = showsAllApplications && hasHiddenSystemApplications ? " · all reported apps" : ""
+            let suffix = includesInactiveSystemTime && hasHiddenInactiveSystemTime
+                ? " · login and lock-screen time included"
+                : ""
             return "\(count) Apple device\(count == 1 ? "" : "s")\(suffix)"
         }
 
@@ -527,28 +538,14 @@
             OverviewUsageProjection.summary(
                 filtered: screenTime.summary,
                 allReported: screenTime.unfilteredSummary,
-                showsAllApplications: showsAllApplications
+                includesInactiveSystemTime: includesInactiveSystemTime
             )
         }
 
-        private var hasHiddenSystemApplications: Bool {
-            OverviewUsageProjection.hasHiddenSystemApplications(
+        private var hasHiddenInactiveSystemTime: Bool {
+            OverviewUsageProjection.hasHiddenInactiveSystemTime(
                 filtered: screenTime.summary,
                 allReported: screenTime.unfilteredSummary
-            )
-        }
-
-        private var canShowAllApplications: Bool {
-            hasHiddenSystemApplications || defaultAppUsage.count > 6
-        }
-
-        private var defaultAppUsage: [DailyAppUsage] {
-            OverviewUsageProjection.applications(
-                filteredSummary: screenTime.summary,
-                allReportedSummary: screenTime.unfilteredSummary,
-                goalongUsage: model.snapshot.trackedUsage,
-                currentMacDeviceID: screenTime.currentMacDeviceID,
-                showsAllApplications: false
             )
         }
 
@@ -558,7 +555,7 @@
                 allReportedSummary: screenTime.unfilteredSummary,
                 goalongUsage: model.snapshot.trackedUsage,
                 currentMacDeviceID: screenTime.currentMacDeviceID,
-                showsAllApplications: showsAllApplications
+                includesInactiveSystemTime: includesInactiveSystemTime
             )
         }
 
@@ -643,7 +640,7 @@
         var detail: String {
             switch self {
             case .applications:
-                return "Apple totals and Goalong observations, reconciled without double counting."
+                return "All active-use apps, with Apple and Goalong reconciled without double counting. Login and lock-screen time is hidden by default."
             case .websites:
                 return "Goalong-observed browser time on this Mac. Already included in app totals; Apple does not expose per-site iPhone or iPad detail."
             }
@@ -654,12 +651,12 @@
         static func summary(
             filtered: AppleScreenTimeDaySummary?,
             allReported: AppleScreenTimeDaySummary?,
-            showsAllApplications: Bool
+            includesInactiveSystemTime: Bool
         ) -> AppleScreenTimeDaySummary? {
-            showsAllApplications ? (allReported ?? filtered) : filtered
+            includesInactiveSystemTime ? (allReported ?? filtered) : filtered
         }
 
-        static func hasHiddenSystemApplications(
+        static func hasHiddenInactiveSystemTime(
             filtered: AppleScreenTimeDaySummary?,
             allReported: AppleScreenTimeDaySummary?
         ) -> Bool {
@@ -680,12 +677,12 @@
             allReportedSummary: AppleScreenTimeDaySummary?,
             goalongUsage: [TrackedUsageItem],
             currentMacDeviceID: String,
-            showsAllApplications: Bool
+            includesInactiveSystemTime: Bool
         ) -> [DailyAppUsage] {
             let selectedSummary = summary(
                 filtered: filteredSummary,
                 allReported: allReportedSummary,
-                showsAllApplications: showsAllApplications
+                includesInactiveSystemTime: includesInactiveSystemTime
             )
             var merged: [String: DailyAppUsage] = [:]
 
@@ -717,7 +714,7 @@
             }
 
             for application in goalongUsage where application.kind == .application {
-                if !showsAllApplications,
+                if !includesInactiveSystemTime,
                    !AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
                        bundleIdentifier: application.bundleIdentifier,
                        deviceKind: .mac

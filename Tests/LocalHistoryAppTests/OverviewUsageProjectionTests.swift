@@ -5,7 +5,7 @@
     @testable import LocalHistoryApp
 
     final class OverviewUsageProjectionTests: XCTestCase {
-        func testDefaultHidesSystemRowsAndAllAppsRestoresRawTotalAndList() throws {
+        func testDefaultHidesInactiveSystemRowsAndOptInRestoresRawTotalAndList() throws {
             let start = Date(timeIntervalSince1970: 1_700_000_000)
             let end = start.addingTimeInterval(86_400)
             let mac = AppleScreenTimeDevice(id: "mac", name: "MacBook Pro", kind: .mac)
@@ -55,7 +55,7 @@
                 OverviewUsageProjection.summary(
                     filtered: filtered,
                     allReported: allReported,
-                    showsAllApplications: false
+                    includesInactiveSystemTime: false
                 )
             )
             XCTAssertEqual(visibleSummary.totalScreenOnDuration, 2 * 3_600, accuracy: 0.001)
@@ -65,7 +65,7 @@
                 allReportedSummary: allReported,
                 goalongUsage: goalong,
                 currentMacDeviceID: mac.id,
-                showsAllApplications: false
+                includesInactiveSystemTime: false
             )
             XCTAssertEqual(visible.map(\.name), ["Aside", "ChatGPT", "Safari"])
             XCTAssertFalse(visible.contains { $0.name == "loginwindow" })
@@ -79,7 +79,7 @@
                 OverviewUsageProjection.summary(
                     filtered: filtered,
                     allReported: allReported,
-                    showsAllApplications: true
+                    includesInactiveSystemTime: true
                 )
             )
             XCTAssertEqual(completeSummary.totalScreenOnDuration, 10 * 3_600, accuracy: 0.001)
@@ -89,17 +89,17 @@
                 allReportedSummary: allReported,
                 goalongUsage: goalong,
                 currentMacDeviceID: mac.id,
-                showsAllApplications: true
+                includesInactiveSystemTime: true
             )
             XCTAssertEqual(complete.first?.name, "loginwindow")
             XCTAssertEqual(complete.first?.displaySeconds ?? -1, 8 * 3_600, accuracy: 0.001)
-            XCTAssertTrue(OverviewUsageProjection.hasHiddenSystemApplications(
+            XCTAssertTrue(OverviewUsageProjection.hasHiddenInactiveSystemTime(
                 filtered: filtered,
                 allReported: allReported
             ))
         }
 
-        func testCompleteProjectionIsNotCappedAtSixApplications() throws {
+        func testActiveUseProjectionIsNotCappedAtSixApplications() throws {
             let start = Date(timeIntervalSince1970: 1_700_000_000)
             let end = start.addingTimeInterval(86_400)
             let mac = AppleScreenTimeDevice(id: "mac", name: "MacBook Pro", kind: .mac)
@@ -119,7 +119,7 @@
                 allReportedSummary: report,
                 goalongUsage: [],
                 currentMacDeviceID: mac.id,
-                showsAllApplications: true
+                includesInactiveSystemTime: false
             )
 
             XCTAssertEqual(complete.count, 8)
@@ -151,7 +151,7 @@
                 allReportedSummary: report,
                 goalongUsage: [local],
                 currentMacDeviceID: mac.id,
-                showsAllApplications: false
+                includesInactiveSystemTime: false
             )
             let browser = try XCTUnwrap(projected.first)
 

@@ -664,7 +664,7 @@
             var detail: String {
                 switch self {
                 case .applications:
-                    return "Apple application totals for the selected device scope."
+                    return "All active-use applications for the selected device scope. Login, lock-screen, and screen-saver time is excluded."
                 case .websites:
                     return "Goalong-observed browser time on this Mac only. It is already included in browser app totals; changing the Apple device scope does not change this list. Apple does not expose reliable per-site iPhone or iPad detail here."
                 }
