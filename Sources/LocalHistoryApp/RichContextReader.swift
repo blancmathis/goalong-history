@@ -21,6 +21,8 @@
         private static let value = "AXValue" as CFString
         private static let protectedContent = "AXProtectedContent" as CFString
         private static let children = "AXChildren" as CFString
+        private static let visibleChildren = "AXVisibleChildren" as CFString
+        private static let parent = "AXParent" as CFString
 
         static func capture(
             processIdentifier: pid_t,
@@ -40,7 +42,8 @@
             var truncated = false
             var addedVisibleText = false
 
-            if let focused = AXReader.focusedElement(for: application) {
+            let focusedElement = AXReader.focusedElement(for: application)
+            if let focused = focusedElement {
                 let focusedRole = AXReader.string(focused, attribute: role) ?? ""
                 if !isSecure(focused, role: focusedRole) {
                     if let selected = sanitized(
@@ -65,7 +68,30 @@
             }
 
             if nodeLimit > 0 {
-                var queue: [AXUIElement] = [window]
+                // Start where the user is acting, then widen through its ancestors and
+                // the window. For large browser/app trees, prefer visible children and
+                // fall back to all children only when the app exposes no visible subset.
+                // This raises useful text per AX call while keeping the same hard budgets.
+                var queue: [AXUIElement] = []
+                var enqueued = Set<CFHashCode>()
+                func enqueue(_ element: AXUIElement) {
+                    let identity = CFHash(element)
+                    guard enqueued.insert(identity).inserted,
+                        queue.count < nodeLimit * 2
+                    else { return }
+                    queue.append(element)
+                }
+                if let focusedElement {
+                    enqueue(focusedElement)
+                    var ancestor = AXReader.element(focusedElement, attribute: parent)
+                    var depth = 0
+                    while let current = ancestor, depth < 5 {
+                        enqueue(current)
+                        ancestor = AXReader.element(current, attribute: parent)
+                        depth += 1
+                    }
+                }
+                enqueue(window)
                 var index = 0
                 var visited = 0
                 while index < queue.count,
@@ -90,13 +116,18 @@
                         }
                     }
 
-                    if queue.count < nodeLimit * 2,
-                        shouldTraverseChildren(role: elementRole)
-                    {
-                        queue.append(contentsOf: AXReader.elements(element, attribute: children))
+                    if shouldTraverseChildren(role: elementRole) {
+                        let visible = AXReader.elements(
+                            element,
+                            attribute: visibleChildren
+                        )
+                        let descendants = visible.isEmpty
+                            ? AXReader.elements(element, attribute: children)
+                            : visible
+                        for child in descendants { enqueue(child) }
                     }
                 }
-                if visited >= nodeLimit || rawCharacterCount >= characterLimit * 2 {
+                if index < queue.count || rawCharacterCount >= characterLimit * 2 {
                     truncated = true
                 }
             }

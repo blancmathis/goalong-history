@@ -169,6 +169,24 @@ package struct ComputerHistoryEvidenceLoad {
     }
 }
 
+package enum CurrentComputerHistoryMemoryState: String, Codable, Equatable {
+    case current
+    case absent
+    case incompleteProjection
+    case stale
+    case inaccessible
+}
+
+/// Read-only fast path for a compact day projection that is proven to describe
+/// the current append-only source tail. A miss is safe: callers fall back to the
+/// authoritative journals without mutating either source.
+package struct CurrentComputerHistoryMemoryLoad {
+    package let memory: ComputerHistoryDayMemory?
+    package let state: CurrentComputerHistoryMemoryState
+    package let bytesRead: Int64
+    package let issues: [HistoryLoadIssue]
+}
+
 private enum HistoryBoundedFileReadError: LocalizedError {
     case exceedsLimit(Int)
     case changedDuringRead
@@ -1111,6 +1129,153 @@ public struct HistoryLocalStoreReader {
         )
     }
 
+    /// Loads a persisted bounded day memory only when it contains every episode
+    /// shell and its recorded tail hash, sequence and modification time still
+    /// match the authoritative event journal. This avoids repeated whole-day
+    /// decoding for lightweight indexes while never accepting stale evidence.
+    package func loadCurrentComputerHistoryMemory(
+        day: Date,
+        calendar: Calendar = .current
+    ) -> CurrentComputerHistoryMemoryLoad {
+        let dayStart = calendar.startOfDay(for: day)
+        let components = calendar.dateComponents([.year, .month, .day], from: dayStart)
+        guard let year = components.year, let month = components.month, let day = components.day else {
+            return CurrentComputerHistoryMemoryLoad(
+                memory: nil,
+                state: .inaccessible,
+                bytesRead: 0,
+                issues: [
+                    HistoryLoadIssue(
+                        path: rootDirectory.path,
+                        line: nil,
+                        message: "Could not derive the requested local Computer History day."
+                    )
+                ]
+            )
+        }
+        let dayKey = String(format: "%04d-%02d-%02d", year, month, day)
+        let memoryName = "\(dayKey).computer-history.json"
+        let eventName = "\(dayKey).jsonl"
+        var bytesRead: Int64 = 0
+        var memoryIdentity: HistoryPinnedRegularFileIdentity?
+        var eventIdentity: HistoryPinnedRegularFileIdentity?
+
+        do {
+            let sourceRoot = try HistoryPinnedSourceDirectory(rootURL: rootDirectory)
+            let memoryDirectory = try HistoryPinnedSourceDirectory(
+                parent: sourceRoot,
+                name: "computer-history"
+            )
+            let eventDirectory = try HistoryPinnedSourceDirectory(
+                parent: sourceRoot,
+                name: "events"
+            )
+            guard let memoryFile = try memoryDirectory.matchingFiles(
+                extensions: ["json"]
+            ).first(where: { $0.name == memoryName }),
+                let eventFile = try eventDirectory.matchingFiles(
+                    extensions: ["jsonl"]
+                ).first(where: { $0.name == eventName })
+            else {
+                return CurrentComputerHistoryMemoryLoad(
+                    memory: nil,
+                    state: .absent,
+                    bytesRead: 0,
+                    issues: []
+                )
+            }
+
+            let rawMemory = try readBoundedFile(
+                memoryFile.url,
+                directoryDescriptor: memoryDirectory.descriptor,
+                relativeName: memoryFile.name,
+                maximumBytes: 16 * 1_024 * 1_024,
+                onPinnedIdentity: { memoryIdentity = $0 }
+            )
+            bytesRead += Int64(rawMemory.count)
+            let memory = try decoder().decode(
+                ComputerHistoryDayMemory.self,
+                from: rawMemory
+            )
+            guard memory.analysisRevision == ComputerHistoryAnalysisContract.currentRevision else {
+                return CurrentComputerHistoryMemoryLoad(
+                    memory: nil,
+                    state: .stale,
+                    bytesRead: bytesRead,
+                    issues: []
+                )
+            }
+            guard memory.coverage.episodeCount == memory.episodes.count,
+                memory.coverage.retainedEpisodeCount == nil
+                    || memory.coverage.retainedEpisodeCount == memory.coverage.episodeCount
+            else {
+                return CurrentComputerHistoryMemoryLoad(
+                    memory: nil,
+                    state: .incompleteProjection,
+                    bytesRead: bytesRead,
+                    issues: []
+                )
+            }
+
+            let tail = try readLastCompleteJSONLine(
+                eventFile,
+                maximumBytes: 512 * 1_024
+            )
+            bytesRead += Int64(tail.line.count)
+            eventIdentity = tail.identity
+            let lastEvent = try decoder(compactEventIntegrity: true).decode(
+                HistoryEvent.self,
+                from: tail.line
+            )
+            guard let integrity = lastEvent.integrity,
+                memory.coverage.lastSourceSequence == integrity.sequence,
+                memory.coverage.lastSourceEventHash == integrity.eventHash,
+                eventModificationDate(tail.identity) <= memory.generatedAt
+            else {
+                return CurrentComputerHistoryMemoryLoad(
+                    memory: nil,
+                    state: .stale,
+                    bytesRead: bytesRead,
+                    issues: []
+                )
+            }
+            guard let memoryIdentity, let eventIdentity,
+                memoryFile.isStable(relativeTo: memoryIdentity),
+                eventFile.isStable(relativeTo: eventIdentity),
+                memoryDirectory.isStable(),
+                eventDirectory.isStable(),
+                sourceRoot.isPathStable()
+            else {
+                return CurrentComputerHistoryMemoryLoad(
+                    memory: nil,
+                    state: .stale,
+                    bytesRead: bytesRead,
+                    issues: []
+                )
+            }
+            return CurrentComputerHistoryMemoryLoad(
+                memory: memory,
+                state: .current,
+                bytesRead: bytesRead,
+                issues: []
+            )
+        } catch {
+            return CurrentComputerHistoryMemoryLoad(
+                memory: nil,
+                state: .inaccessible,
+                bytesRead: bytesRead,
+                issues: [
+                    HistoryLoadIssue(
+                        path: rootDirectory.path,
+                        line: nil,
+                        message:
+                            "Could not validate the bounded Computer History index; the authoritative journal must be read instead: \(error.localizedDescription)"
+                    )
+                ]
+            )
+        }
+    }
+
     /// Uses the same bounded, stable direct-source read as Computer History but
     /// retains the additional classification, input-origin and metadata fields
     /// consumed by the compact activity-memory summarizer.
@@ -1215,7 +1380,7 @@ public struct HistoryLocalStoreReader {
         var retainedEvidenceRowCount = 0
         var retainedEvidenceBytes: Int64 = 0
         let limits = rawLimits.validated
-        let rowDecoder = decoder()
+        let rowDecoder = decoder(compactEventIntegrity: true)
         let evidenceEncoder = JSONEncoder()
         evidenceEncoder.dateEncodingStrategy = .iso8601
         evidenceEncoder.outputFormatting = [.sortedKeys]
@@ -1807,7 +1972,7 @@ public struct HistoryLocalStoreReader {
         let deadlineUptime =
             ProcessInfo.processInfo.systemUptime
             + limits.maximumElapsedSeconds
-        let rowDecoder = decoder()
+        let rowDecoder = decoder(compactEventIntegrity: true)
         let streamReader = HistoryJSONLinesStreamReader()
         var semanticBytesRemaining = limits.maximumSemanticBytes
         var eventBytesRemaining = limits.maximumEventBytes
@@ -2379,6 +2544,89 @@ public struct HistoryLocalStoreReader {
         return raw
     }
 
+    private func readLastCompleteJSONLine(
+        _ sourceFile: HistoryPinnedSourceFile,
+        maximumBytes: Int
+    ) throws -> (line: Data, identity: HistoryPinnedRegularFileIdentity) {
+        let descriptor = sourceFile.name.withCString {
+            openat(
+                sourceFile.directory.descriptor,
+                $0,
+                O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK
+            )
+        }
+        guard descriptor >= 0 else {
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(errno),
+                userInfo: [NSFilePathErrorKey: sourceFile.url.path]
+            )
+        }
+        defer { close(descriptor) }
+        var sourceStat = stat()
+        guard fstat(descriptor, &sourceStat) == 0,
+            (sourceStat.st_mode & S_IFMT) == S_IFREG,
+            sourceStat.st_size > 0
+        else {
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(EINVAL),
+                userInfo: [NSFilePathErrorKey: sourceFile.url.path]
+            )
+        }
+        let identity = HistoryPinnedRegularFileIdentity(sourceStat)
+        let count = min(max(1, maximumBytes), Int(sourceStat.st_size))
+        let offset = Int(sourceStat.st_size) - count
+        var bytes = [UInt8](repeating: 0, count: count)
+        let readCount = pread(descriptor, &bytes, count, off_t(offset))
+        guard readCount == count else {
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(readCount < 0 ? errno : EIO),
+                userInfo: [NSFilePathErrorKey: sourceFile.url.path]
+            )
+        }
+        var finalStat = stat()
+        guard fstat(descriptor, &finalStat) == 0,
+            identity.matches(finalStat),
+            sourceFile.isStable(relativeTo: identity)
+        else { throw HistoryBoundedFileReadError.changedDuringRead }
+
+        var end = bytes.count
+        guard end > 0, bytes[end - 1] == 0x0A else {
+            throw HistoryBoundedFileReadError.changedDuringRead
+        }
+        end -= 1
+        if end > 0, bytes[end - 1] == 0x0D { end -= 1 }
+        let previousNewline = bytes[..<end].lastIndex(of: 0x0A)
+        let start: Int
+        if let previousNewline {
+            start = previousNewline + 1
+        } else if offset == 0 {
+            start = 0
+        } else {
+            throw HistoryBoundedFileReadError.exceedsLimit(maximumBytes)
+        }
+        guard start < end else {
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(EINVAL),
+                userInfo: [NSFilePathErrorKey: sourceFile.url.path]
+            )
+        }
+        return (Data(bytes[start..<end]), identity)
+    }
+
+    private func eventModificationDate(
+        _ identity: HistoryPinnedRegularFileIdentity
+    ) -> Date {
+        Date(
+            timeIntervalSince1970:
+                TimeInterval(identity.modificationSeconds)
+                + TimeInterval(identity.modificationNanoseconds) / 1_000_000_000
+        )
+    }
+
     private func files(
         in directory: URL,
         extensions: Set<String>,
@@ -2525,17 +2773,34 @@ public struct HistoryLocalStoreReader {
         }
     }
 
-    private func decoder() -> JSONDecoder {
+    private func decoder(compactEventIntegrity: Bool = false) -> JSONDecoder {
         let decoder = JSONDecoder()
+        if compactEventIntegrity {
+            decoder.userInfo[.compactHistoryEventIntegrity] = true
+        }
         decoder.dateDecodingStrategy = .custom { value in
             let container = try value.singleValueContainer()
-            let raw = try container.decode(String.self)
-            if let date = Self.fractionalISO.date(from: raw) ?? Self.basicISO.date(from: raw) {
-                return date
+            if let raw = try? container.decode(String.self) {
+                if raw.hasPrefix("b:"),
+                    let bits = UInt64(raw.dropFirst(2), radix: 16)
+                {
+                    return Date(
+                        timeIntervalSinceReferenceDate: Double(bitPattern: bits)
+                    )
+                }
+                if let date = FastISO8601DateParser.parseCanonicalUTC(raw)
+                    ?? Self.fractionalISO.date(from: raw)
+                    ?? Self.basicISO.date(from: raw)
+                {
+                    return date
+                }
+            }
+            if let seconds = try? container.decode(Double.self) {
+                return Date(timeIntervalSince1970: seconds)
             }
             throw DecodingError.dataCorruptedError(
                 in: container,
-                debugDescription: "Invalid ISO-8601 timestamp: \(raw)"
+                debugDescription: "Unsupported Computer History timestamp"
             )
         }
         return decoder

@@ -34,6 +34,9 @@ final class ComputerHistoryEpisodeQualityTests: XCTestCase {
 
         XCTAssertEqual(memory.episodes.count, 2)
         XCTAssertEqual(memory.episodes.map(\.sites), [["github.com"], ["news.example.com"]])
+        XCTAssertTrue(memory.title.hasPrefix("Computer history — "))
+        XCTAssertFalse(memory.title.contains("other work episode"))
+        XCTAssertFalse(memory.title.contains("Fix onboarding"))
     }
 
     func testImmediateCrossSiteNavigationRemainsOneTaskEpisode() {
@@ -128,6 +131,315 @@ final class ComputerHistoryEpisodeQualityTests: XCTestCase {
                 $0.contains("completed successfully")
             } == true
         )
+    }
+
+    func testOldFailureDoesNotLabelLaterContinuedWorkAsBlocked() {
+        let failedBefore = payload(id: "old-failure-before", text: "Run export", offset: 0)
+        let failedAfter = payload(
+            id: "old-failure-after",
+            text: "Export failed with a temporary error",
+            offset: 2
+        )
+        var events = interactionEvents(
+            interactionID: "old-failure",
+            baseSequence: 1,
+            offset: 0,
+            before: failedBefore,
+            after: failedAfter
+        )
+        for index in 0..<16 {
+            events.append(
+                fixtureEvent(
+                    id: "continued-work-\(index)",
+                    sequence: UInt64(10 + index),
+                    offset: TimeInterval(30 + index * 5),
+                    kind: .mouseClick,
+                    app: fixtureApp("Safari"),
+                    windowTitle: "Production deployment",
+                    host: "dashboard.example.com",
+                    metadata: [
+                        ComputerHistoryMetadata.interactionID: "continued-work-\(index)"
+                    ],
+                    pointer: PointerSnapshot(
+                        button: "left",
+                        x: 100,
+                        y: 100,
+                        clickCount: 1
+                    )
+                )
+            )
+        }
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            semanticSnapshots: [
+                failedBefore.id: failedBefore,
+                failedAfter.id: failedAfter,
+            ],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        XCTAssertEqual(memory.episodes.count, 1)
+        XCTAssertEqual(memory.episodes.first?.status, .inProgress)
+    }
+
+    func testViewingAnOlderCompletedConversationDoesNotCompleteTheCurrentEpisode() {
+        let before = payload(
+            id: "conversation-before",
+            text: "ChatGPT home",
+            offset: 0
+        )
+        let after = payload(
+            id: "conversation-after",
+            text: "Previous conversation\nDeployment completed successfully\nOpen profile menu",
+            offset: 2
+        )
+        let interactionID = "open-chatgpt"
+        let events = [
+            fixtureEvent(
+                id: "open-chatgpt-before",
+                sequence: 1,
+                offset: 0,
+                kind: .semanticSnapshot,
+                app: fixtureApp("ChatGPT"),
+                windowTitle: "ChatGPT",
+                metadata: [
+                    ComputerHistoryMetadata.interactionID: interactionID,
+                    ComputerHistoryMetadata.interactionPhase: ComputerHistoryMetadata.Phase.before,
+                ],
+                semanticContext: before.reference
+            ),
+            fixtureEvent(
+                id: "open-chatgpt-action",
+                sequence: 2,
+                offset: 1,
+                kind: .applicationActivated,
+                app: fixtureApp("ChatGPT"),
+                windowTitle: "ChatGPT",
+                metadata: [ComputerHistoryMetadata.interactionID: interactionID]
+            ),
+            fixtureEvent(
+                id: "open-chatgpt-after",
+                sequence: 3,
+                offset: 2,
+                kind: .semanticSnapshot,
+                app: fixtureApp("ChatGPT"),
+                windowTitle: "ChatGPT",
+                metadata: [
+                    ComputerHistoryMetadata.interactionID: interactionID,
+                    ComputerHistoryMetadata.interactionPhase: ComputerHistoryMetadata.Phase.settled,
+                ],
+                semanticContext: after.reference
+            ),
+        ]
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            semanticSnapshots: [before.id: before, after.id: after],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        XCTAssertEqual(memory.episodes.count, 1)
+        XCTAssertNotEqual(memory.episodes.first?.status, .completed)
+        XCTAssertFalse(
+            memory.episodes.first?.observableOutcomes.contains {
+                $0.localizedCaseInsensitiveContains("completed successfully")
+            } == true
+        )
+    }
+
+    func testTypedCompletionWordsAndWindowTitleDoNotCreateAnOutcome() {
+        let before = payload(
+            id: "typed-completion-before",
+            text: "Write deployment notes",
+            offset: 0
+        )
+        let after = payload(
+            id: "typed-completion-after",
+            text: "Write deployment notes\nDeployment completed successfully",
+            offset: 2
+        )
+        let interactionID = "typed-completion-claim"
+        let events = [
+            fixtureEvent(
+                id: "typed-completion-before-event",
+                sequence: 1,
+                offset: 0,
+                kind: .semanticSnapshot,
+                app: fixtureApp("TextEdit"),
+                windowTitle: "Deployment completed successfully",
+                host: nil,
+                metadata: [
+                    ComputerHistoryMetadata.interactionID: interactionID,
+                    ComputerHistoryMetadata.interactionPhase: ComputerHistoryMetadata.Phase.before,
+                ],
+                semanticContext: before.reference
+            ),
+            fixtureEvent(
+                id: "typed-completion-action",
+                sequence: 2,
+                offset: 1,
+                kind: .typingBurst,
+                app: fixtureApp("TextEdit"),
+                windowTitle: "Deployment completed successfully",
+                host: nil,
+                metadata: [ComputerHistoryMetadata.interactionID: interactionID],
+                keyboard: KeyboardSnapshot(
+                    category: "text_activity",
+                    key: nil,
+                    modifiers: [],
+                    isRepeat: false
+                )
+            ),
+            fixtureEvent(
+                id: "typed-completion-after-event",
+                sequence: 3,
+                offset: 2,
+                kind: .semanticSnapshot,
+                app: fixtureApp("TextEdit"),
+                windowTitle: "Deployment completed successfully",
+                host: nil,
+                metadata: [
+                    ComputerHistoryMetadata.interactionID: interactionID,
+                    ComputerHistoryMetadata.interactionPhase: ComputerHistoryMetadata.Phase.settled,
+                ],
+                semanticContext: after.reference
+            ),
+        ]
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            semanticSnapshots: [before.id: before, after.id: after],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        XCTAssertEqual(memory.episodes.first?.status, .inProgress)
+        XCTAssertEqual(memory.episodes.first?.observableOutcomes, [])
+    }
+
+    func testInternalApplicationURLFallsBackToApplicationResource() {
+        let event = fixtureEvent(
+            id: "internal-app-url",
+            sequence: 1,
+            offset: 0,
+            kind: .applicationActivated,
+            app: fixtureApp("ChatGPT"),
+            windowTitle: "ChatGPT",
+            host: "-"
+        )
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: [event],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        XCTAssertEqual(memory.resources.map(\.kind), [.application])
+        XCTAssertEqual(memory.resources.map(\.title), ["ChatGPT"])
+        XCTAssertEqual(memory.episodes.first?.sites, [])
+        XCTAssertEqual(memory.episodes.first?.title, "Worked in ChatGPT")
+    }
+
+    func testLocatorStringsAreNotInterpretedAsUserIntentions() {
+        XCTAssertFalse(
+            ComputerHistorySupport.looksLikeRequestOrIntention(
+                "google.com/search?q=test&oq=test&sourceid=chrome"
+            )
+        )
+        XCTAssertFalse(
+            ComputerHistorySupport.looksLikeRequestOrIntention(
+                "https://photos.google.com/search/example?photo=123"
+            )
+        )
+        XCTAssertTrue(
+            ComputerHistorySupport.looksLikeRequestOrIntention(
+                "How should the complete local history be summarized?"
+            )
+        )
+    }
+
+    func testBrowserDecorationsAreRemovedFromResourceAndActionTitles() {
+        let event = fixtureEvent(
+            id: "decorated-browser-title",
+            sequence: 1,
+            offset: 0,
+            kind: .urlChanged,
+            app: fixtureApp("Google Chrome"),
+            windowTitle: "Paris - Google Photos – Part of group Backup - High memory usage - 976 MB - Google Chrome – Mathis",
+            host: "photos.google.com"
+        )
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: [event],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        XCTAssertEqual(memory.resources.first?.title, "Paris - Google Photos")
+        XCTAssertEqual(
+            memory.episodes.first?.interactions.first?.label,
+            "Opened page Paris - Google Photos [High memory usage - 976 MB]"
+        )
+    }
+
+    func testFileResourceStopsAtItsExtensionInsteadOfAbsorbingFollowingProse() {
+        let context = payload(
+            id: "path-with-following-prose",
+            text: "Read /Users/mathisblanc/Documents/work/UPLOAD_STATE.md et considère ce fichier comme la vérité courante.",
+            offset: 0
+        )
+        let event = fixtureEvent(
+            id: "path-event",
+            sequence: 1,
+            offset: 0,
+            kind: .mouseClick,
+            app: fixtureApp("ChatGPT"),
+            windowTitle: "ChatGPT",
+            metadata: [ComputerHistoryMetadata.interactionID: "path-interaction"],
+            semanticContext: context.reference,
+            pointer: PointerSnapshot(
+                button: "left",
+                x: 100,
+                y: 100,
+                clickCount: 1
+            )
+        )
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: [event],
+            semanticSnapshots: [context.id: context],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        let file = memory.resources.first { $0.kind == .file }
+        XCTAssertEqual(file?.title, "UPLOAD_STATE.md")
+        XCTAssertEqual(file?.localPath, "/Users/mathisblanc/Documents/work/UPLOAD_STATE.md")
+    }
+
+    func testLocalIntranetHostRemainsAReopenableWebResource() {
+        let event = fixtureEvent(
+            id: "intranet-url",
+            sequence: 1,
+            offset: 0,
+            kind: .urlChanged,
+            app: fixtureApp("Safari"),
+            windowTitle: "Build dashboard",
+            host: "intranet"
+        )
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: [event],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        XCTAssertEqual(memory.resources.map(\.kind), [.webPage])
+        XCTAssertEqual(memory.resources.map(\.host), ["intranet"])
+        XCTAssertEqual(memory.episodes.first?.sites, ["intranet"])
     }
 
     private func interactionEvents(

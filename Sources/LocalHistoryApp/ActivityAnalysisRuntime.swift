@@ -296,6 +296,7 @@
             lastRichContextFingerprints.removeAll(keepingCapacity: false)
             lastSemanticCaptureDates.removeAll(keepingCapacity: false)
             lastRichContextCapture = .distantPast
+            semanticContextStore?.resetDeduplicationCache()
         }
 
         static func shouldAttemptObservedContextCapture(
@@ -504,7 +505,10 @@
             do {
                 let reference = try semanticContextStore.append(
                     capture: capture,
-                    context: snapshot
+                    context: snapshot,
+                    deduplicationScope: additionalMetadata[
+                        ComputerHistoryMetadata.interactionID
+                    ]
                 )
                 var metadata: [String: String] = [
                     ActivitySemanticMetadata.version: "4",
@@ -616,6 +620,14 @@
                     forceVerification: force,
                     includeActivityMemory: memoryStore != nil
                 )
+            }
+            // A cold rebuild can temporarily materialize an entire source day plus
+            // its derived graphs. Swift releases those objects at the autoreleasepool
+            // boundary, but malloc may otherwise retain the empty pages in the
+            // always-on recorder. Pay the pressure-relief cost only after a genuinely
+            // large read; append-only refreshes stay on the cheap path.
+            if result.sourceBytesRead >= 8 * 1_024 * 1_024 {
+                _ = malloc_zone_pressure_relief(nil, 0)
             }
             if result.sourceAbsent {
                 // Match the prior retention contract: the regenerable compact analysis
@@ -2075,10 +2087,14 @@
 
         private static func makeDecoder() -> JSONDecoder {
             let decoder = JSONDecoder()
+            decoder.userInfo[.compactHistoryEventIntegrity] = true
             decoder.dateDecodingStrategy = .custom { value in
                 let container = try value.singleValueContainer()
                 let raw = try container.decode(String.self)
-                if let date = fractionalISO.date(from: raw) ?? basicISO.date(from: raw) {
+                if let date = FastISO8601DateParser.parseCanonicalUTC(raw)
+                    ?? fractionalISO.date(from: raw)
+                    ?? basicISO.date(from: raw)
+                {
                     return date
                 }
                 throw DecodingError.dataCorruptedError(
@@ -2289,7 +2305,7 @@
         /// Bump only when a derived-analysis algorithm or persisted contract changes.
         /// Tying this key to CFBundleVersion made every UI-only application update
         /// rebuild the complete raw day on first launch.
-        static let currentEngineRevision = "shared-day-analysis-v2"
+        static let currentEngineRevision = ComputerHistoryAnalysisContract.currentRevision
         /// Codex produces ten-minute activity memories. Matching that cadence keeps
         /// the active journal fresh without rereading an ever-growing day once per
         /// minute. Explicit user refreshes bypass this background debounce.
@@ -2702,6 +2718,7 @@
                 )
                 let base = ComputerHistoryDayMemory(
                     schemaVersion: existing.schemaVersion,
+                    analysisRevision: existing.analysisRevision,
                     dayStart: existing.dayStart,
                     dayEnd: existing.dayEnd,
                     generatedAt: generatedAt,
@@ -2717,6 +2734,7 @@
                 )
                 let updated = ComputerHistoryDayMemory(
                     schemaVersion: base.schemaVersion,
+                    analysisRevision: base.analysisRevision,
                     dayStart: base.dayStart,
                     dayEnd: base.dayEnd,
                     generatedAt: base.generatedAt,

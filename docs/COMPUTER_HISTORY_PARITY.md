@@ -77,7 +77,7 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | Search depended on retained derived detail, while generic questions could repeatedly scan wide raw-journal ranges and repeat the same source text. | Stored memory is searched first. A bounded read-only raw pass runs only when no retained evidence matches and the intent needs lexical recovery; explicit today/yesterday/week questions scope reconstruction to that interval, while result snippets are capped at 240 characters and repeated source locators merge their provenance. |
 | Repeated refreshes could independently decode the same day and retain large integrity arrays in memory. | Activity Analysis and Computer History share one day pass, drop regenerable per-field commitments from transient copies, and use a small revision cache plus append debounce. |
 | A live append during a full-day pass invalidated the whole refresh even when the recorder only extended the same journal. | The runtime pins the probed event and semantic byte ceilings, reads exactly those validated prefixes, accepts only same-inode append-only growth, and catches up on the following cycle. Replacement, truncation, same-size mutation, or an incomplete row boundary still fails closed. |
-| Every application build number changed the analysis revision, and timestamp jitter could invalidate an otherwise intact append cursor. | The revision is scoped to the analysis algorithm, physical journal order is verified by sequence/hash continuity independently of timestamp sorting, and a maintenance-only append reads just its pinned suffix even while newer bytes arrive. |
+| Every application build number changed the analysis revision, and timestamp jitter could invalidate an otherwise intact append cursor. | The revision is scoped to the analysis algorithm and embedded in every compact day projection. App, search, and CLI readers refuse an older projection and fall back to the original journal or regeneration instead of serving stale conclusions. Physical journal order is verified by sequence/hash continuity independently of timestamp sorting, and a maintenance-only append reads just its pinned suffix even while newer bytes arrive. |
 | Whitespace cleanup created one Foundation regular-expression result per ordinary match and retained a complete pass of autoreleased temporaries. | Layout normalization is one linear Unicode-scalar pass; credential patterns remain compiled regexes, and their temporary Foundation objects drain once per bounded observation. |
 | The Computer History page eagerly built every retained episode card and rebuilt the same source dictionary for each card. | The timeline and page body are lazy, one source index is shared by all visible cards, transient dashboard caches are cleared on close, and free allocator pages are returned after the window graph drains. |
 | Missing or unsafe raw input could erase or replace the useful derived view. | The last known-good memory remains visible with an explicit `absent` or `inaccessible` source state. |
@@ -89,6 +89,9 @@ used to strengthen the local acceptance criteria, not to infer undocumented beha
 | The first callback of an interaction synchronously traversed Accessibility up to three times (`near_event`, `after`, and `settled`) on the main queue, so a slow application could age later callbacks out of the bounded ingress window. | Event-time action metadata remains immediate; rich AX traversal runs on one in-process utility queue with at most two admitted captures, is invalidated across stop/clear generations, and crosses a fresh public-boundary check before commit. Physical interactions request one full `settled` state after inactivity, while debounced AXObserver and periodic observations retain intervening semantic evidence. No helper process or durable queue is added. |
 | Every drained input also forced a complete foreground context sample; Electron web wrappers such as WhatsApp could be mistaken for full browsers and repeatedly walk browser chrome before the next callback was admitted. | The immutable callback-time public context is accepted only while its PID remains frontmost. Admission separately rechecks global Secure Input, the focused protected-control state, app exclusions, and private-window/domain policy. Ordinary web wrappers skip browser-chrome traversal; configured or recognizable browsers retain the browser privacy probe. |
 | The periodic semantic fallback walked a complex but unchanged foreground AX tree every 15 seconds, creating regular CPU spikes even while the user was idle. | Actions and AXObserver notifications remain immediate. Only the fallback adapts to whole-session idle time: configured cadence while active, then 30, 60, and at most 120 seconds. This changes no durable schema and wakes less when no new user evidence can exist. |
+| Fine-grained observations could be projected as many one-interaction episodes, so a later agent spent most of its budget on repeated app/window scaffolding instead of the user's work. | Episode boundaries now combine temporal continuity, app/resource continuity, interaction causality, public UI state, and explicit stop/switch signals. Every reconstructed activity remains pageable, while the bounded agent pack keeps a complete lightweight episode skeleton and progressively adds the highest-value evidence. |
+| Each progressive rendering level repeatedly rescored and resorted every interaction, and read-only history analysis rebuilt every per-field disclosure commitment plus an ICU timestamp formatter for each row. | One immutable interaction ranking is computed per episode and reused at every detail level. The specialized read-only analysis path validates packed integrity without retaining regenerable commitment arrays, uses an allocation-light canonical UTC parser, and falls back to Foundation for legacy timestamp variants. Full export/default decoding still reconstructs the complete integrity material. |
+| Repeated AX captures could persist semantically identical focused/viewport text even when identifiers differed. | A bounded semantic fingerprint removes exact intra-interaction duplicates while preserving chronology, source provenance, and distinct visible states. Focused-control/viewport overlays add future high-value context without copying a transcript or widening protected/private capture. |
 
 The raw Goalong event and semantic journals remain the authoritative evidence.
 Compaction changes only derived storage and search working sets; it does not
@@ -168,6 +171,8 @@ the source sequence/hash boundary are reserved first. Within the remaining budge
 - samples across the day so early, middle, and late work can remain represented;
 - prioritizes observable outcomes, intentions, before/after pairs, semantic changes, and
   reopenable sources;
+- treats completion as an outcome only after a causally linked visible action state;
+  words the user typed and ambient window text can never prove that work completed;
 - caps representative interactions per episode;
 - emits each selected source locator once and references it with a short alias;
 - labels status as inferred and omits workflow suggestions from the evidence plane;
@@ -854,6 +859,49 @@ omitted from a representative projection. The controlled real-input validation r
 necessary for those claims.
 
 ## Measured local acceptance snapshot
+
+### Latest information-density and performance iteration (2026-08-30)
+
+This iteration addresses the 2026-08-29 failure mode where Goalong retained more raw
+observations than Codex but returned a fragmented, repetitive story under the same token
+budget. The authoritative journals remain unchanged. Only segmentation, compact derived
+memory, read-only decoding, search, progressive rendering, CLI projection, and the factual
+10-minute UI were changed.
+
+| Surface | Current measured result |
+| --- | --- |
+| complete Swift suite | 677 tests, 6 expected environment-dependent skips, 0 failures in 108.965 seconds; the previous complete run on the same source path took 189.400 seconds, a 42.5% reduction |
+| strict parity validator | 9 causal-parity, 11 episode-quality, and 3 agent-context scenarios passed, followed by the privacy audit, causal checker regressions, 28 metadata-probe tests, runtime-measurement tests, signing/network policy, Release CLI build, causal invariants, and four natural-query metadata checks; the final real-context run required a 0.80 semantic-pair ratio and passed at 95.8% on the attested physical window |
+| dense compact-reader regression | the 10,000-event fixture fell from 76.619 seconds to 8.787 seconds; the 640-interaction progressive-render fixture completed in 0.081 seconds under its 2-second guard |
+| episode coherence | on the shared regression interval, the prior reconstruction produced 100 episodes including 75 single-interaction episodes; the current rules produce 4 coherent episodes and 0 single-interaction episodes while retaining the exact interaction/provenance totals |
+| installed identity | Goalong History `0.5.1` build `20260830.041918`, Apple Development signed, Team `2L5SSLPX46`, CDHash `6992839f931bd8efcf310935bc70ba6795851d05`; Accessibility preflight, functional probe, and Input Monitoring preflight are true and the event tap is `createdEnabled` |
+| installed idle process | one process, no child, 4 threads, 0.0% sampled CPU, 20.3 MiB physical footprint and 54.9 MiB lifetime physical peak after the final installed build settled |
+| installed stale-day fallback | because the pre-v7 2026-08-29 projection is deliberately refused, the complete `computer-history-context` first-read path used the authoritative journals in 6.53 seconds with 98,516,992-byte maximum RSS and 86,606,520-byte peak physical footprint; this is the bounded one-day rebuild path, not the fast path for a current projection |
+| installed exact 10-minute CLI | the authoritative-journal interval completed in 1.13 seconds with 46,415,872-byte maximum RSS and 34,423,384-byte peak physical footprint, down from about 28.4 seconds before the ranking/integrity/parser work |
+| 10-minute information density | 1,391 approximate tokens expose 139 selected facts from 312 available facts across 12 interactions and 10 resources (99.9 selected facts per thousand approximate tokens); the removal of an unproved fallback outcome reduced both available and emitted noise |
+| shared-window provider probe | four physical 10-minute windows all report `goalong_at_least_codex`: Codex/Goalong rows were 162/557, 139/969, 113/518, and 66/461; every source read was complete and issue-free, and the metadata-only probe performed no writes or snapshot/index creation |
+| persisted complete day | the retained pre-v7 2026-08-29 file is 1,052,821 bytes, has no `analysisRevision`, and is therefore reported stale instead of being served; the CLI reads the original journals and the app will regenerate that disposable projection when the day is next opened while unlocked |
+| real full-day invariants | 6,119 actions equal 6,119 interactions across 102 activities and 169 resources; 4,920 interactions have paired semantic state (80.4%), and the compact projection retains all 102 activity shells plus 640 representative interactions |
+| direct-source AI conversations | the final 2026-08-29 query visited the 5 indexed candidates that had activity that day, returned all 5 with 0 omitted and 0 issues, and verified 245,697,468 current source bytes; three conversations began before that local day and every displayed title was user-facing rather than a rollout filename, proving selection by day activity rather than creation date |
+| lightweight Agent Activity index | 811 entries in 793,694 bytes (about 979 bytes per entry): Codex 796, Claude Code 1, OpenCode 14; durable companion files are a 1,632-byte configuration, a 146-byte signal, and an empty writer lock |
+| no transcript duplication | after the real AI-conversation read, the 10-minute Computer History render, and a 30-second installed-runtime observation, every Agent Activity file hash and the index size/mtime were unchanged; no `blobs` directory exists anywhere under the Goalong root |
+| 30-second logical storage growth | after a real AI-conversation read and a real 10-minute Computer History render, events (399,032 KiB), semantic evidence (35,448 KiB), seals (23,072 KiB), Computer History (8,204 KiB), analysis (5,772 KiB), memories (34,156 KiB), Agent Activity (784 KiB), and Screen Time (4 KiB) were all unchanged while the locked/secure-input state was idle |
+
+The shared-window probe proves one-way classified raw-evidence coverage on those physical
+intervals, not private implementation identity or the usefulness of every additional row.
+The bounded pack was also compared with the corresponding Codex 10-minute memory: it
+retained the applications, source files/pages, chronological switches, and recoverable
+resources needed to resume the observed work. A historical Control Center value that was
+not present in Goalong's original journal cannot be reconstructed retroactively; the new
+focused-control/viewport overlay improves that class of future evidence only.
+
+The final app launch occurred while macOS was locked and Secure Input was active. The
+installed identity and permissions are verified, but a fresh physical callback and a new
+unlocked screenshot of this exact build remain outside this snapshot. The earlier attested
+physical window remains valid source evidence and passed the final metadata validator, but
+it predates this exact signed build. Apple Screen Time is
+preserved but currently reports that Full Disk Access is required; this is a separate Apple
+data-source limitation, not a Computer History journal or Agent Activity regression.
 
 ### Current development verification (2026-08-28)
 

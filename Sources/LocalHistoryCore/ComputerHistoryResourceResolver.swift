@@ -30,6 +30,11 @@ enum ComputerHistoryResourceResolver {
         ),
         try! NSRegularExpression(pattern: #"~/[^\n\r\t\"'<>]{2,500}"#),
     ]
+    private static let recognizedFileExtension = try! NSRegularExpression(
+        pattern:
+            #"\.(?:md|txt|pdf|docx?|pages|key|pptx?|xlsx?|csv|swift|py|tsx?|jsx?|json|ya?ml|toml|heic|mov|mp4|png|jpe?g)\b"#,
+        options: [.caseInsensitive]
+    )
 
     private struct Candidate {
         let key: String
@@ -361,7 +366,15 @@ enum ComputerHistoryResourceResolver {
         }
 
         let parsed = Foundation.URL(string: value)
+        // Internal application and browser URLs (`app://-/…`, `chrome://…`,
+        // extension pages, and similar pseudo-locators) cannot reopen a useful web
+        // resource. Retain the foreground app/window evidence, but do not surface
+        // these implementation details as sites such as “-” or “newtab”.
+        guard let scheme = parsed?.scheme?.lowercased(),
+            scheme == "http" || scheme == "https"
+        else { return nil }
         let host = ComputerHistorySupport.normalizedHost(rawHost ?? parsed?.host)
+        guard host != nil else { return nil }
         let kind = resourceKind(host: host, URL: value)
         let title =
             rawTitle.flatMap {
@@ -466,6 +479,19 @@ enum ComputerHistoryResourceResolver {
                 guard let swiftRange = Range(match.range, in: text) else { continue }
                 var value = String(text[swiftRange])
                     .trimmingCharacters(in: CharacterSet(charactersIn: " .,:;()[]{}"))
+                let valueRange = NSRange(value.startIndex..., in: value)
+                if let extensionMatch = recognizedFileExtension.firstMatch(
+                    in: value,
+                    range: valueRange
+                ), extensionMatch.range.location != NSNotFound,
+                    extensionMatch.range.upperBound < valueRange.upperBound,
+                    let extensionRange = Range(extensionMatch.range, in: value)
+                {
+                    let suffix = value[extensionRange.upperBound...]
+                    if suffix.first?.isWhitespace == true {
+                        value = String(value[..<extensionRange.upperBound])
+                    }
+                }
                 if value.hasPrefix("file://"),
                     let parsed = Foundation.URL(string: value)
                 {

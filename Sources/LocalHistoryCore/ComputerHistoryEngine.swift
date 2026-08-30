@@ -121,7 +121,7 @@ public enum ComputerHistoryEngine {
             dayStart: dayStart,
             dayEnd: dayEnd.addingTimeInterval(-0.001),
             generatedAt: generatedAt,
-            title: dayTitle(episodes: episodes, dayStart: dayStart),
+            title: dayTitle(dayStart: dayStart),
             executiveSummary: executiveSummary(
                 episodes: episodes,
                 resources: resolution.resources,
@@ -137,6 +137,7 @@ public enum ComputerHistoryEngine {
         )
         return ComputerHistoryDayMemory(
             schemaVersion: base.schemaVersion,
+            analysisRevision: base.analysisRevision,
             dayStart: base.dayStart,
             dayEnd: base.dayEnd,
             generatedAt: base.generatedAt,
@@ -164,17 +165,118 @@ public enum ComputerHistoryEngine {
         day: Date,
         calendar: Calendar = .current
     ) -> [String]? {
+        completeEpisodeReconstruction(
+            events: events,
+            semanticSnapshots: semanticSnapshots,
+            day: day,
+            calendar: calendar,
+            provenanceReferenceLimit: nil
+        ).episodes.first(where: { $0.id == episodeID })?.provenance.sourceEventIDs
+    }
+
+    /// Enumerates every reconstructed episode as a bounded metadata-only entry.
+    /// This transient index is intentionally separate from the persisted
+    /// representative memory, whose episode array may omit detail to stay small.
+    package static func completeActivityIndex(
+        events: [HistoryEvent],
+        semanticSnapshots: [String: SemanticContextPayload] = [:],
+        day: Date,
+        calendar: Calendar = .current,
+        sourceJournalSummary: ComputerHistorySourceJournalSummary? = nil,
+        generatedAt: Date = Date()
+    ) -> ComputerHistoryActivityIndex {
+        let reconstruction = completeEpisodeReconstruction(
+            events: events,
+            semanticSnapshots: semanticSnapshots,
+            day: day,
+            calendar: calendar,
+            provenanceReferenceLimit: events.count > 1_024 ? 16 : nil
+        )
+        let journalSummary = sourceJournalSummary ?? reconstruction.journalSummary
+        let coverage = completeCoverage(
+            reconstruction: reconstruction,
+            journalSummary: journalSummary
+        )
+        return ComputerHistoryActivityIndex(
+            dayStart: reconstruction.dayStart,
+            dayEnd: reconstruction.dayEnd.addingTimeInterval(-0.001),
+            generatedAt: generatedAt,
+            activities: reconstruction.episodes.map(
+                ComputerHistoryActivityIndexEntry.init
+            ),
+            coverage: coverage
+        )
+    }
+
+    /// Resolves one activity against the complete bounded source day. The result
+    /// is transient and preserves the exact interaction order and source links;
+    /// callers should paginate presentation rather than storing a second copy.
+    package static func exactActivity(
+        id: String,
+        events: [HistoryEvent],
+        semanticSnapshots: [String: SemanticContextPayload] = [:],
+        day: Date,
+        calendar: Calendar = .current
+    ) -> ComputerHistoryActivityDetail? {
+        let reconstruction = completeEpisodeReconstruction(
+            events: events,
+            semanticSnapshots: semanticSnapshots,
+            day: day,
+            calendar: calendar,
+            provenanceReferenceLimit: nil
+        )
+        guard let episode = reconstruction.episodes.first(where: { $0.id == id }) else {
+            return nil
+        }
+        let resourceIDs = Set(episode.resourceIDs)
+        return ComputerHistoryActivityDetail(
+            episode: episode,
+            resources: reconstruction.resources.filter {
+                resourceIDs.contains($0.id)
+            }
+        )
+    }
+
+    private struct CompleteEpisodeReconstruction {
+        let dayStart: Date
+        let dayEnd: Date
+        let dayEvents: [HistoryEvent]
+        let evidence: [HistoryEvent]
+        let captured: [HistoryEvent]
+        let semanticSnapshotCount: Int
+        let resources: [ComputerHistoryResourceReference]
+        let interactions: [ComputerHistoryInteraction]
+        let episodes: [ComputerHistoryEpisode]
+
+        var journalSummary: ComputerHistorySourceJournalSummary {
+            let integrity = dayEvents.compactMap(\.integrity)
+            return ComputerHistorySourceJournalSummary(
+                eventCount: dayEvents.count,
+                continuityBoundaryCount: evidence.filter(
+                    \.isObservationContinuityBoundary
+                ).count,
+                firstSourceSequence: integrity.first?.sequence,
+                lastSourceSequence: integrity.last?.sequence,
+                lastSourceEventHash: integrity.last?.eventHash
+            )
+        }
+    }
+
+    private static func completeEpisodeReconstruction(
+        events: [HistoryEvent],
+        semanticSnapshots: [String: SemanticContextPayload],
+        day: Date,
+        calendar: Calendar,
+        provenanceReferenceLimit: Int?
+    ) -> CompleteEpisodeReconstruction {
         let dayStart = calendar.startOfDay(for: day)
         let dayEnd =
             calendar.date(byAdding: .day, value: 1, to: dayStart)
             ?? dayStart.addingTimeInterval(86_400)
-        let evidence = events
-            .filter {
-                $0.timestamp >= dayStart
-                    && $0.timestamp < dayEnd
-                    && $0.isComputerHistoryEvidence
-            }
+        let dayEvents = events
+            .filter { $0.timestamp >= dayStart && $0.timestamp < dayEnd }
             .sorted(by: ComputerHistorySupport.eventOrder)
+        let evidence = dayEvents.filter(\.isComputerHistoryEvidence)
         let captured = evidence.filter {
             $0.suppressionReason == nil && !$0.isObservationContinuityBoundary
         }
@@ -182,21 +284,57 @@ public enum ComputerHistoryEngine {
             events: captured,
             semanticSnapshots: semanticSnapshots
         )
+        let semanticSnapshotCount = resolution.semanticSnapshotCount
+        let resourceIDs = resolution.eventResourceIDs
         let semanticTexts = resolution.takeInteractionSemanticTexts()
         let interactions = ComputerHistoryInteractionBuilder.build(
             events: captured,
             semanticSnapshots: semanticSnapshots,
-            eventResourceIDs: resolution.eventResourceIDs,
+            eventResourceIDs: resourceIDs,
             precomputedSemanticTexts: semanticTexts,
             continuityBoundaries: evidence.filter(\.isObservationContinuityBoundary)
         )
+        let resources = resolution.resources
         let episodes = ComputerHistoryEpisodeBuilder.build(
             interactions: interactions,
             events: evidence,
-            resources: resolution.resources,
-            provenanceReferenceLimit: nil
+            resources: resources,
+            provenanceReferenceLimit: provenanceReferenceLimit
         )
-        return episodes.first(where: { $0.id == episodeID })?.provenance.sourceEventIDs
+        return CompleteEpisodeReconstruction(
+            dayStart: dayStart,
+            dayEnd: dayEnd,
+            dayEvents: dayEvents,
+            evidence: evidence,
+            captured: captured,
+            semanticSnapshotCount: semanticSnapshotCount,
+            resources: resources,
+            interactions: interactions,
+            episodes: episodes
+        )
+    }
+
+    private static func completeCoverage(
+        reconstruction: CompleteEpisodeReconstruction,
+        journalSummary: ComputerHistorySourceJournalSummary
+    ) -> ComputerHistoryCoverage {
+        ComputerHistoryCoverage(
+            sourceEventCount: journalSummary.eventCount,
+            actionEventCount: reconstruction.captured.filter(
+                ComputerHistorySupport.isActionEvent
+            ).count,
+            semanticSnapshotCount: reconstruction.semanticSnapshotCount,
+            linkedInteractionCount: reconstruction.interactions.count,
+            interactionsWithBeforeAndAfterContext: reconstruction.interactions.filter {
+                $0.beforeContext != nil && $0.afterContext != nil
+            }.count,
+            resourceCount: reconstruction.resources.count,
+            episodeCount: reconstruction.episodes.count,
+            suppressedEventCount: journalSummary.continuityBoundaryCount,
+            firstSourceSequence: journalSummary.firstSourceSequence,
+            lastSourceSequence: journalSummary.lastSourceSequence,
+            lastSourceEventHash: journalSummary.lastSourceEventHash
+        )
     }
 
     /// Applies the current bounded representative projection to a readable memory
@@ -238,6 +376,7 @@ public enum ComputerHistoryEngine {
         )
         let base = ComputerHistoryDayMemory(
             schemaVersion: memory.schemaVersion,
+            analysisRevision: memory.analysisRevision,
             dayStart: memory.dayStart,
             dayEnd: memory.dayEnd,
             generatedAt: memory.generatedAt,
@@ -254,6 +393,7 @@ public enum ComputerHistoryEngine {
         guard renderMarkdown else { return base }
         return ComputerHistoryDayMemory(
             schemaVersion: base.schemaVersion,
+            analysisRevision: base.analysisRevision,
             dayStart: base.dayStart,
             dayEnd: base.dayEnd,
             generatedAt: base.generatedAt,
@@ -423,10 +563,28 @@ public enum ComputerHistoryEngine {
         }
 
         let maximumInteractions = 640
+        // A daily memory must remain useful as a complete chronological index even
+        // when only representative interaction detail fits. Four thousand episode
+        // shells is over one every 21 seconds for a full day, while still bounding
+        // the derived file independently of the raw journal.
+        let maximumEpisodeShells = 4_096
         let priorityBudget = min(480, maximumInteractions)
         var selected = Set<InteractionLocation>()
         selected.reserveCapacity(min(maximumInteractions, flattened.count))
-        for candidate in ranked.prefix(priorityBudget) {
+        // Spend the first detail budget across the complete chronology. Episodes
+        // without a retained interaction remain as metadata-only shells below and
+        // can be reopened from the authoritative journal on demand.
+        for episodeIndex in ComputerHistorySupport.representativeElements(
+            Array(episodes.indices),
+            maximum: min(maximumInteractions, episodes.count)
+        ) where selected.count < maximumInteractions {
+            if !episodes[episodeIndex].interactions.isEmpty {
+                selected.insert(
+                    InteractionLocation(episode: episodeIndex, interaction: 0)
+                )
+            }
+        }
+        for candidate in ranked where selected.count < priorityBudget {
             selected.insert(candidate.location)
         }
         for location in ComputerHistorySupport.representativeElements(
@@ -442,30 +600,28 @@ public enum ComputerHistoryEngine {
         }
 
         // An adversarially fragmented day can contain one short interaction per
-        // episode. Bound the episode projection independently so the derived JSON
-        // cannot grow without limit even when interaction/resource caps hold.
-        let maximumEpisodes = 256
+        // episode. Preserve the complete shell index for every plausible human day,
+        // but retain a hard upper bound independent of interaction/resource caps.
         let priorityEpisodeBudget = 192
-        let selectedEpisodeCandidates = Set(selected.map(\.episode)).sorted()
         var selectedEpisodeIndices = Set<Int>()
         selectedEpisodeIndices.reserveCapacity(
-            min(maximumEpisodes, selectedEpisodeCandidates.count)
+            min(maximumEpisodeShells, episodes.count)
         )
         for candidate in ranked where selected.contains(candidate.location) {
             selectedEpisodeIndices.insert(candidate.location.episode)
             if selectedEpisodeIndices.count == priorityEpisodeBudget { break }
         }
         for episodeIndex in ComputerHistorySupport.representativeElements(
-            selectedEpisodeCandidates,
-            maximum: maximumEpisodes
-        ) where selectedEpisodeIndices.count < maximumEpisodes {
+            Array(episodes.indices),
+            maximum: maximumEpisodeShells
+        ) where selectedEpisodeIndices.count < maximumEpisodeShells {
             selectedEpisodeIndices.insert(episodeIndex)
         }
         if selectedEpisodeIndices.count
-            < min(maximumEpisodes, selectedEpisodeCandidates.count)
+            < min(maximumEpisodeShells, episodes.count)
         {
-            for episodeIndex in selectedEpisodeCandidates
-            where selectedEpisodeIndices.count < maximumEpisodes {
+            for episodeIndex in episodes.indices
+            where selectedEpisodeIndices.count < maximumEpisodeShells {
                 selectedEpisodeIndices.insert(episodeIndex)
             }
         }
@@ -753,20 +909,12 @@ public enum ComputerHistoryEngine {
         )
     }
 
-    private static func dayTitle(
-        episodes: [ComputerHistoryEpisode],
-        dayStart: Date
-    ) -> String {
-        guard
-            let primary = episodes.max(by: {
-                $0.end.timeIntervalSince($0.start) < $1.end.timeIntervalSince($1.start)
-            })
-        else {
-            return "Computer history — \(dayFormatter.string(from: dayStart))"
-        }
-        guard episodes.count > 1 else { return primary.title }
-        let remainder = episodes.count - 1
-        return "\(primary.title) and \(remainder) other work episode\(remainder == 1 ? "" : "s")"
+    private static func dayTitle(dayStart: Date) -> String {
+        // A day title is navigation metadata, not a generated summary. Deriving it
+        // from one long episode made raw URLs or prompts look like the name of the
+        // entire day. Keep it stable, factual and scannable; episode titles retain
+        // the detailed work evidence below.
+        "Computer history — \(dayFormatter.string(from: dayStart))"
     }
 
     private static func executiveSummary(

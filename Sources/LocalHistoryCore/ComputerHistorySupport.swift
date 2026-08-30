@@ -2,6 +2,11 @@ import Foundation
 
 /// Shared deterministic helpers for the causal Computer History pipeline.
 enum ComputerHistorySupport {
+    private static let highMemoryWindowStatus = try! NSRegularExpression(
+        pattern:
+            #"high memory usage\s*[-–—]\s*\d+(?:[.,]\d+)?\s*(?:kb|mb|gb)"#,
+        options: [.caseInsensitive]
+    )
     static func semanticText(
         for event: HistoryEvent,
         semanticSnapshots: [String: SemanticContextPayload]
@@ -101,17 +106,19 @@ enum ComputerHistorySupport {
             return "Switched to \(event.app?.name ?? "an application")"
 
         case .windowChanged:
-            if let title = event.window?.title {
+            if let title = cleanTitle(event.window?.title, application: event.app?.name) {
                 return "Opened or focused window \(bounded(title, maximum: 220))"
+                    + windowStatusSuffix(event.window?.title)
             }
             return "Changed window"
 
         case .urlChanged:
-            if let title = event.window?.title {
+            if let title = cleanTitle(event.window?.title, application: event.app?.name) {
                 return "Opened page \(bounded(title, maximum: 220))"
+                    + windowStatusSuffix(event.window?.title)
             }
-            if let value = event.url?.value {
-                return "Opened \(bounded(value, maximum: 220))"
+            if let host = normalizedHost(event.url?.host ?? event.url?.value) {
+                return "Opened \(bounded(host, maximum: 220))"
             }
             return "Changed page"
 
@@ -242,15 +249,75 @@ enum ComputerHistorySupport {
             return nil
         }
         if let application {
-            for suffix in [
+            for marker in [
                 " — \(application)", " - \(application)",
                 " | \(application)", " – \(application)",
-            ] where value.hasSuffix(suffix) {
-                value.removeLast(suffix.count)
+            ] {
+                guard let range = value.range(of: marker, options: .backwards) else {
+                    continue
+                }
+                let trailing = value[range.upperBound...]
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if trailing.isEmpty
+                    || trailing.hasPrefix("—")
+                    || trailing.hasPrefix("–")
+                    || trailing.hasPrefix("-")
+                    || trailing.hasPrefix("|")
+                {
+                    value.removeSubrange(range.lowerBound...)
+                    value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    break
+                }
+            }
+        }
+        // Browser tab-group/profile/status decorations change frequently and make
+        // one logical page look like several resources. They remain observable in
+        // raw evidence; the human/agent-facing title keeps the stable page name.
+        for marker in [
+            " — Part of group ", " – Part of group ", " - Part of group ",
+            " | Part of group ",
+        ] {
+            if let range = value.range(of: marker, options: [.caseInsensitive]) {
+                value.removeSubrange(range.lowerBound...)
                 value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                break
             }
         }
         return value.isEmpty ? nil : value
+    }
+
+    private static func windowStatusSuffix(_ raw: String?) -> String {
+        guard let raw else { return "" }
+        var details: [String] = []
+        let range = NSRange(raw.startIndex..., in: raw)
+        if let match = highMemoryWindowStatus.firstMatch(in: raw, range: range),
+            let swiftRange = Range(match.range, in: raw)
+        {
+            details.append(String(raw[swiftRange]))
+        }
+        if raw.range(of: "audio playing", options: .caseInsensitive) != nil {
+            details.append("audio playing")
+        }
+        guard !details.isEmpty else { return "" }
+        return " [" + details.joined(separator: "; ") + "]"
+    }
+
+    static func looksLikeLocator(_ value: String) -> Bool {
+        let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return false }
+        let lower = clean.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://")
+            || lower.hasPrefix("file://") || lower.hasPrefix("/users/")
+        {
+            return true
+        }
+        guard clean.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
+            return false
+        }
+        return clean.range(
+            of: #"^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/?#].*)?$"#,
+            options: .regularExpression
+        ) != nil
     }
 
     static func isGenericTitle(_ value: String) -> Bool {
@@ -265,6 +332,9 @@ enum ComputerHistorySupport {
             !value.isEmpty
         else { return nil }
         if value.hasPrefix("www.") { value.removeFirst(4) }
+        guard value != "-", value != "localhost", value != "newtab",
+            value.range(of: #"^[a-z0-9][a-z0-9.-]*$"#, options: .regularExpression) != nil
+        else { return nil }
         return value
     }
 
@@ -315,6 +385,7 @@ enum ComputerHistorySupport {
     static func looksLikeRequestOrIntention(_ value: String) -> Bool {
         let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard clean.count >= 10, clean.count <= 500 else { return false }
+        guard !looksLikeLocator(clean) else { return false }
         let lower = normalized(clean)
         let prefixes = [
             "add ", "analyze ", "analyse ", "build ", "check ", "cherche ", "compare ",

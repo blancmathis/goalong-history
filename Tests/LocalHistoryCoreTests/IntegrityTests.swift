@@ -309,6 +309,17 @@ final class IntegrityTests: XCTestCase {
             root
         )
 
+        let analysisDecoder = JSONDecoder()
+        analysisDecoder.dateDecodingStrategy = .iso8601
+        analysisDecoder.userInfo[.compactHistoryEventIntegrity] = true
+        let analysisEvent = try analysisDecoder.decode(HistoryEvent.self, from: compactData)
+        let analysisIntegrity = try XCTUnwrap(analysisEvent.integrity)
+        XCTAssertEqual(analysisIntegrity.sequence, compactIntegrity.sequence)
+        XCTAssertEqual(analysisIntegrity.previousEventHash, compactIntegrity.previousEventHash)
+        XCTAssertEqual(analysisIntegrity.eventRoot, compactIntegrity.eventRoot)
+        XCTAssertEqual(analysisIntegrity.eventHash, compactIntegrity.eventHash)
+        XCTAssertEqual(analysisIntegrity.fieldCommitments, [])
+
         var saltsV1Object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: compactData) as? [String: Any]
         )

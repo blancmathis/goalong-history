@@ -9,7 +9,7 @@
         func testEngineRevisionIsAlgorithmScopedInsteadOfBuildScoped() {
             XCTAssertEqual(
                 ActivityAnalysisCycleCoordinator.currentEngineRevision,
-                "shared-day-analysis-v2"
+                ComputerHistoryAnalysisContract.currentRevision
             )
         }
 

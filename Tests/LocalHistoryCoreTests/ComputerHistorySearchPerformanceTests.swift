@@ -172,6 +172,83 @@ final class ComputerHistorySearchPerformanceTests: XCTestCase {
         XCTAssertFalse(answer.answer.contains("Most relevant observed history"))
     }
 
+    func testFrenchHourRangeProducesAnExactYesterdayInterval() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = try XCTUnwrap(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 8,
+                    day: 30,
+                    hour: 18
+                )
+            )
+        )
+        let interval = try XCTUnwrap(
+            ComputerHistorySearchService.explicitTemporalInterval(
+                for: "Qu'est-ce que j'ai fait hier de 14h30 à 16h ?",
+                now: now,
+                calendar: calendar
+            )
+        )
+
+        XCTAssertEqual(
+            interval.start,
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 8,
+                    day: 29,
+                    hour: 14,
+                    minute: 30
+                )
+            )
+        )
+        XCTAssertEqual(
+            interval.end,
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 8,
+                    day: 29,
+                    hour: 16,
+                    minute: 0
+                )
+            )
+        )
+    }
+
+    func testEnglishMeridiemRangeUsesTodayWhenDayIsImplicit() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = try XCTUnwrap(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 8,
+                    day: 30,
+                    hour: 18
+                )
+            )
+        )
+        let interval = try XCTUnwrap(
+            ComputerHistorySearchService.explicitTemporalInterval(
+                for: "What happened between 2:15pm and 4pm?",
+                now: now,
+                calendar: calendar
+            )
+        )
+
+        XCTAssertEqual(
+            calendar.component(.hour, from: interval.start),
+            14
+        )
+        XCTAssertEqual(calendar.component(.minute, from: interval.start), 15)
+        XCTAssertEqual(calendar.component(.hour, from: interval.end), 16)
+        XCTAssertEqual(calendar.component(.minute, from: interval.end), 0)
+    }
+
     func testRawSourceFallbackRunsOnlyForAnUnansweredLexicalIntent() {
         XCTAssertFalse(
             ComputerHistorySearchService.requiresRawSourceFallback(

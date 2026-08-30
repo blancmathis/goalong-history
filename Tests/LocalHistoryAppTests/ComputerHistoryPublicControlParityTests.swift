@@ -72,7 +72,12 @@
 
             XCTAssertTrue(computerHistory.contains("Delete this item…"))
             XCTAssertTrue(computerHistory.contains("exact source events"))
-            XCTAssertTrue(computerHistory.contains("Reveal source JSONL"))
+            XCTAssertTrue(computerHistory.contains("Source data"))
+            XCTAssertTrue(computerHistory.contains("Stored on this Mac"))
+            XCTAssertTrue(computerHistory.contains("Retained Computer History"))
+            XCTAssertTrue(computerHistory.contains("Detailed timeline no longer available"))
+            XCTAssertTrue(computerHistory.contains("Other days are unchanged"))
+            XCTAssertTrue(computerHistory.contains(".disabled(!canRevealSourceData)"))
             XCTAssertTrue(computerHistory.contains("@StateObject private var timelineModel"))
             XCTAssertTrue(timeline.contains("Delete session…"))
             XCTAssertTrue(privacy.contains("Most recent app session"))
@@ -547,6 +552,44 @@
             XCTAssertEqual(group.appChangeCount, 1)
         }
 
+        func testComputerHistoryPreservesDistinctContextsInsideOneAppTransition() throws {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+            let day = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 8, day: 27))
+            )
+            let sessions = [
+                makeSession(
+                    id: "first-document",
+                    start: date(hour: 10, minute: 1, day: day, calendar: calendar),
+                    end: date(hour: 10, minute: 2, day: day, calendar: calendar),
+                    appName: "TextEdit",
+                    bundleIdentifier: "com.apple.TextEdit",
+                    windowTitle: "Plan.md"
+                ),
+                makeSession(
+                    id: "second-document",
+                    start: date(hour: 10, minute: 2, day: day, calendar: calendar),
+                    end: date(hour: 10, minute: 3, day: day, calendar: calendar),
+                    appName: "TextEdit",
+                    bundleIdentifier: "com.apple.TextEdit",
+                    windowTitle: "Notes.txt"
+                ),
+            ]
+
+            let group = try XCTUnwrap(
+                ComputerHistoryTenMinuteGroup.build(
+                    sessions: sessions,
+                    day: day,
+                    calendar: calendar
+                ).first
+            )
+
+            XCTAssertEqual(group.sessions.count, 1)
+            XCTAssertEqual(group.sessions[0].contexts, ["Plan.md", "Notes.txt"])
+            XCTAssertEqual(group.sessions[0].context, "Plan.md → Notes.txt")
+        }
+
         private func makeSession(
             id: String,
             start: Date,
@@ -554,7 +597,8 @@
             appName: String,
             bundleIdentifier: String?,
             eventCount: Int = 1,
-            inputEventCount: Int = 0
+            inputEventCount: Int = 0,
+            windowTitle: String = "Document"
         ) -> ActivitySession {
             ActivitySession(
                 id: id,
@@ -562,7 +606,7 @@
                 end: end,
                 appName: appName,
                 bundleIdentifier: bundleIdentifier,
-                windowTitle: "Document",
+                windowTitle: windowTitle,
                 host: nil,
                 category: "productivity",
                 isWork: true,

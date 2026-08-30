@@ -6,6 +6,7 @@
     struct ComputerHistoryRecentLoadResult: Equatable {
         let memories: [ComputerHistoryDayMemory]
         let isComplete: Bool
+        let requiresSourceFallback: Bool
         let issues: [String]
     }
 
@@ -194,7 +195,9 @@
 
         func loadStored(for day: Date) -> ComputerHistoryDayMemory? {
             guard let loaded = loadPersistedMemory(at: JSONFile(for: day)),
-                dayString(loaded.stored.dayStart) == dayString(day)
+                dayString(loaded.stored.dayStart) == dayString(day),
+                loaded.stored.analysisRevision
+                    == ComputerHistoryAnalysisContract.currentRevision
             else { return nil }
             let memory = loaded.stored.rehydrated()
             migrateLegacyStorageIfNeeded(loaded)
@@ -216,10 +219,12 @@
                 memories: recent.memories
             ).ask(query)
             let sourceSearch: ComputerHistorySourceSearchResult?
-            if ComputerHistorySearchService.requiresRawSourceFallback(
+            if recent.requiresSourceFallback
+                || ComputerHistorySearchService.requiresRawSourceFallback(
                 for: query,
                 retainedHitCount: retainedAnswer.hits.count
-            ) {
+                )
+            {
                 let now = Date()
                 let today = Calendar.current.startOfDay(for: now)
                 let requestedFirstDay =
@@ -360,6 +365,7 @@
                     diagnosticSink(message)
                 }
             )
+            var requiresSourceFallback = false
 
             func result(
                 _ memories: [ComputerHistoryDayMemory],
@@ -369,6 +375,7 @@
                 return ComputerHistoryRecentLoadResult(
                     memories: memories,
                     isComplete: isComplete,
+                    requiresSourceFallback: requiresSourceFallback,
                     issues: collectedIssues
                 )
             }
@@ -572,7 +579,8 @@
                 // forcing an unbounded sequence of transient allocations.
                 consumedEncodedBytes += candidate.byteCount
                 let decoded: (
-                    memory: ComputerHistoryDayMemory,
+                    memory: ComputerHistoryDayMemory?,
+                    isOutdated: Bool,
                     migration: LoadedPersistedMemory?
                 )? = autoreleasepool {
                     guard let loaded = try? loadPersistedMemory(
@@ -586,6 +594,11 @@
                         loaded.stored.dayStart < date,
                         dayString(loaded.stored.dayStart) == dayString(candidate.day)
                     else { return nil }
+                    guard loaded.stored.analysisRevision
+                        == ComputerHistoryAnalysisContract.currentRevision
+                    else {
+                        return (nil, true, nil)
+                    }
                     // `loadRecent` must stay read-only until its complete listing and all
                     // selected path identities have been revalidated. Direct `loadStored`
                     // reads still perform the best-effort CAS migration.
@@ -611,6 +624,7 @@
                     }
                     return (
                         memory,
+                        false,
                         migration
                     )
                 }
@@ -622,7 +636,17 @@
                     )
                     continue
                 }
-                memories.append(decoded.memory)
+                if decoded.isOutdated {
+                    requiresSourceFallback = true
+                    diagnostics.report(
+                        "Computer History ignored (candidate.key): its disposable projection "
+                            + "uses an older analysis contract; the original journal remains "
+                            + "available for direct source search or regeneration."
+                    )
+                    continue
+                }
+                guard let decodedMemory = decoded.memory else { continue }
+                memories.append(decodedMemory)
                 if preparedLegacyMigration == nil, let migration = decoded.migration {
                     preparedLegacyMigration = migration
                 }
@@ -1945,6 +1969,7 @@
         private struct PersistedMemory: Codable, Equatable {
             var storageFormatVersion: Int?
             let schemaVersion: Int
+            let analysisRevision: String?
             let dayStart: Date
             let dayEnd: Date
             let generatedAt: Date
@@ -1960,6 +1985,7 @@
             init(_ memory: ComputerHistoryDayMemory) {
                 storageFormatVersion = ComputerHistoryStore.currentStorageFormatVersion
                 schemaVersion = memory.schemaVersion
+                analysisRevision = memory.analysisRevision
                 dayStart = memory.dayStart
                 dayEnd = memory.dayEnd
                 generatedAt = memory.generatedAt
@@ -1975,6 +2001,7 @@
 
             func hasSameAnalysis(as memory: ComputerHistoryDayMemory) -> Bool {
                 schemaVersion == memory.schemaVersion
+                    && analysisRevision == memory.analysisRevision
                     && dayStart == memory.dayStart
                     && dayEnd == memory.dayEnd
                     && title == memory.title
@@ -1990,6 +2017,7 @@
             func rehydrated(renderMarkdown: Bool = true) -> ComputerHistoryDayMemory {
                 let base = ComputerHistoryDayMemory(
                     schemaVersion: schemaVersion,
+                    analysisRevision: analysisRevision,
                     dayStart: dayStart,
                     dayEnd: dayEnd,
                     generatedAt: generatedAt,
@@ -2010,6 +2038,7 @@
                 guard renderMarkdown else { return compacted }
                 return ComputerHistoryDayMemory(
                     schemaVersion: compacted.schemaVersion,
+                    analysisRevision: compacted.analysisRevision,
                     dayStart: compacted.dayStart,
                     dayEnd: compacted.dayEnd,
                     generatedAt: compacted.generatedAt,

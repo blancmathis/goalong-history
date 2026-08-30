@@ -16,6 +16,62 @@
             XCTAssertEqual(limits.maximumDirectoryEnumerationSeconds, 2)
         }
 
+        func testOutdatedProjectionIsNotServedAndRequiresRawSourceFallback() throws {
+            let fixtureRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let codexRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            defer {
+                try? FileManager.default.removeItem(at: fixtureRoot)
+                try? FileManager.default.removeItem(at: codexRoot)
+            }
+
+            let day = makeDay(year: 2026, month: 8, day: 20)
+            let directory = fixtureRoot.appendingPathComponent(
+                "computer-history",
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            let URL = directory.appendingPathComponent(
+                "2026-08-20.computer-history.json"
+            )
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(
+                    with: encoder.encode(
+                        makeMemory(
+                            day: day,
+                            title: "Outdated projection",
+                            summary: "The raw journal remains authoritative."
+                        )
+                    )
+                ) as? [String: Any]
+            )
+            object.removeValue(forKey: "analysisRevision")
+            let outdatedData = try JSONSerialization.data(
+                withJSONObject: object,
+                options: [.sortedKeys]
+            )
+            try outdatedData.write(to: URL)
+
+            let store = ComputerHistoryStore(
+                rootDirectory: fixtureRoot,
+                codexMemoryDirectory: codexRoot,
+                diagnosticSink: { _ in }
+            )
+            XCTAssertNil(store.loadStored(for: day))
+            let recent = store.loadRecent(maximumDays: 1)
+            XCTAssertTrue(recent.memories.isEmpty)
+            XCTAssertTrue(recent.isComplete)
+            XCTAssertTrue(recent.requiresSourceFallback)
+            XCTAssertTrue(recent.issues.contains { $0.contains("older analysis contract") })
+            XCTAssertEqual(try Data(contentsOf: URL), outdatedData)
+        }
+
         func testLegacyTripleMarkdownIsCompactedWithoutLosingReadableMemory() throws {
             let fixtureRoot = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -228,7 +284,7 @@
                 loaded.coverage.retainedInteractionCount,
                 loaded.episodes.reduce(0) { $0 + $1.interactions.count }
             )
-            XCTAssertLessThanOrEqual(loaded.episodes.count, 256)
+            XCTAssertEqual(loaded.episodes.count, 700)
             XCTAssertFalse(FileManager.default.fileExists(atPath: localMarkdownURL.path))
 
             let compactBytes = try Data(contentsOf: jsonURL)
@@ -236,7 +292,12 @@
                 JSONSerialization.jsonObject(with: compactBytes) as? [String: Any]
             )
             XCTAssertEqual(persisted["storageFormatVersion"] as? Int, 3)
-            XCTAssertLessThan(compactBytes.count, legacyBytes.count / 2)
+            XCTAssertLessThan(compactBytes.count, legacyBytes.count)
+            XCTAssertLessThanOrEqual(
+                compactBytes.count,
+                1_048_576,
+                "A complete 700-activity skeleton should remain below one MiB."
+            )
             print(
                 "ComputerHistoryStore legacy-analysis bytes before=\(legacyBytes.count) "
                     + "after=\(compactBytes.count) saved=\(legacyBytes.count - compactBytes.count)"

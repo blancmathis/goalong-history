@@ -19,10 +19,18 @@
             qos: .utility
         )
         private let semanticDirectory: URL
+        private let secureInputEnabled: () -> Bool
         private var latestDeletionMetrics = SemanticContextDeletionMetrics()
+        private var recentReferencesByIdentity: [String: SemanticContextReference] = [:]
+        private var recentIdentityOrder: [String] = []
+        private static let maximumRecentIdentities = 256
 
-        init(semanticDirectory: URL = AppPaths.semanticDirectory) {
+        init(
+            semanticDirectory: URL = AppPaths.semanticDirectory,
+            secureInputEnabled: @escaping () -> Bool = { IsSecureEventInputEnabled() }
+        ) {
             self.semanticDirectory = semanticDirectory.standardizedFileURL
+            self.secureInputEnabled = secureInputEnabled
         }
 
         var deletionMetrics: SemanticContextDeletionMetrics {
@@ -32,41 +40,72 @@
         func append(
             capture: AXRichContextCapture,
             context: ContextSnapshot,
-            timestamp: Date = Date()
+            timestamp: Date = Date(),
+            deduplicationScope: String? = nil
         ) throws -> SemanticContextReference {
             let text = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty,
-                !IsSecureEventInputEnabled(),
+                !secureInputEnabled(),
                 context.suppressionReason == nil,
                 context.focusedElement?.isSecure != true
             else {
                 throw SemanticContextStoreError.suppressedOrEmpty
             }
 
-            let payload = SemanticContextPayload(
-                id: UUID().uuidString,
-                capturedAt: timestamp,
-                application: context.app,
-                window: context.window,
-                url: context.url,
-                focusedRole: context.focusedElement?.role,
-                source: source(from: capture.source),
-                text: text,
-                contentSHA256: SHA256Digest.hashHex(text),
-                redacted: capture.redacted,
-                truncated: capture.truncated
-            )
-            let reference = payload.reference
+            let resolvedSource = source(from: capture.source)
+            let contentHash = SHA256Digest.hashHex(text)
+            let identity = deduplicationScope.map {
+                SHA256Digest.hashHex(
+                    [
+                        AppPaths.localDayString(for: timestamp),
+                        $0,
+                        context.fingerprint,
+                        resolvedSource.rawValue,
+                        contentHash,
+                        String(capture.redacted),
+                        String(capture.truncated),
+                    ].joined(separator: "\u{0}")
+                )
+            }
             let file = semanticDirectory.appendingPathComponent(
                 AppPaths.localDayString(for: timestamp) + ".semantic.jsonl"
             )
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            var data = try encoder.encode(payload)
-            data.append(0x0A)
 
-            try queue.sync {
+            return try queue.sync {
+                if let identity,
+                    let existing = recentReferencesByIdentity[identity]
+                {
+                    // The event still receives its own observation timestamp and is
+                    // recorded normally; only the identical plaintext payload is
+                    // interned within this concrete interaction.
+                    return SemanticContextReference(
+                        snapshotID: existing.snapshotID,
+                        capturedAt: timestamp,
+                        source: existing.source,
+                        contentSHA256: existing.contentSHA256,
+                        characterCount: existing.characterCount,
+                        redacted: existing.redacted,
+                        truncated: existing.truncated
+                    )
+                }
+                let payload = SemanticContextPayload(
+                    id: UUID().uuidString,
+                    capturedAt: timestamp,
+                    application: context.app,
+                    window: context.window,
+                    url: context.url,
+                    focusedRole: context.focusedElement?.role,
+                    source: resolvedSource,
+                    text: text,
+                    contentSHA256: contentHash,
+                    redacted: capture.redacted,
+                    truncated: capture.truncated
+                )
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+                var data = try encoder.encode(payload)
+                data.append(0x0A)
                 try AppPaths.prepare()
                 if !FileManager.default.fileExists(atPath: file.path) {
                     FileManager.default.createFile(
@@ -83,8 +122,18 @@
                 defer { try? handle.close() }
                 try handle.seekToEnd()
                 try handle.write(contentsOf: data)
+                if let identity {
+                    remember(payload.reference, identity: identity)
+                }
+                return payload.reference
             }
-            return reference
+        }
+
+        func resetDeduplicationCache() {
+            queue.sync {
+                recentReferencesByIdentity.removeAll(keepingCapacity: false)
+                recentIdentityOrder.removeAll(keepingCapacity: false)
+            }
         }
 
         func deleteEvents(
@@ -120,6 +169,8 @@
                             )
                         }
                     }
+                    self.recentReferencesByIdentity.removeAll(keepingCapacity: false)
+                    self.recentIdentityOrder.removeAll(keepingCapacity: false)
                     DispatchQueue.main.async { completion(.success(deleted)) }
                 } catch {
                     DispatchQueue.main.async { completion(.failure(error)) }
@@ -132,6 +183,8 @@
                 do {
                     let files = try self.semanticFiles()
                     for file in files { try FileManager.default.removeItem(at: file) }
+                    self.recentReferencesByIdentity.removeAll(keepingCapacity: false)
+                    self.recentIdentityOrder.removeAll(keepingCapacity: false)
                     DispatchQueue.main.async { completion(.success(files.count)) }
                 } catch {
                     DispatchQueue.main.async { completion(.failure(error)) }
@@ -169,6 +222,7 @@
                             metrics: &metrics
                         )
                     }
+                    self.removeRecentReferences(withSnapshotIDs: snapshotIDs)
                     self.latestDeletionMetrics = metrics
                     DispatchQueue.main.async { completion(.success(deleted)) }
                 } catch {
@@ -369,6 +423,28 @@
                 && (rhs.st_mode & S_IFMT) == S_IFREG
                 && lhs.st_nlink == 1
                 && rhs.st_nlink == 1
+        }
+
+        private func remember(
+            _ reference: SemanticContextReference,
+            identity: String
+        ) {
+            recentReferencesByIdentity[identity] = reference
+            recentIdentityOrder.removeAll { $0 == identity }
+            recentIdentityOrder.append(identity)
+            while recentIdentityOrder.count > Self.maximumRecentIdentities {
+                let evicted = recentIdentityOrder.removeFirst()
+                recentReferencesByIdentity.removeValue(forKey: evicted)
+            }
+        }
+
+        private func removeRecentReferences(withSnapshotIDs snapshotIDs: Set<String>) {
+            guard !snapshotIDs.isEmpty else { return }
+            recentReferencesByIdentity = recentReferencesByIdentity.filter {
+                !snapshotIDs.contains($0.value.snapshotID)
+            }
+            let retained = Set(recentReferencesByIdentity.keys)
+            recentIdentityOrder.removeAll { !retained.contains($0) }
         }
 
         private func source(from raw: String) -> SemanticContextSource {

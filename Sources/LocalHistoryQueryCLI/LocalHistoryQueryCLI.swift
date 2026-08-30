@@ -32,6 +32,8 @@ private struct SummaryEnvelope: Encodable {
 private struct ComputerHistoryEnvelope: Encodable {
     let schemaVersion = 1
     let rootDirectory: String
+    let sourceMode: String
+    let sourceBytesRead: Int64
     let memory: ComputerHistoryDayMemory?
     let error: String?
     let loadIssues: [HistoryLoadIssue]
@@ -49,7 +51,58 @@ private struct ComputerHistoryAnswerEnvelope: Encodable {
 private struct ComputerHistoryContextEnvelope: Encodable {
     let schemaVersion = 1
     let rootDirectory: String
+    let sourceMode: String
+    let sourceBytesRead: Int64
     let projection: ComputerHistoryAgentContextProjection?
+    let error: String?
+    let loadIssues: [HistoryLoadIssue]
+}
+
+private struct ComputerHistoryActivitiesEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let day: String
+    let sourceMode: String
+    let sourceBytesRead: Int64
+    let coverage: ComputerHistoryCoverage?
+    let totalActivityCount: Int
+    let activityOffset: Int
+    let returnedActivityCount: Int
+    let nextActivityOffset: Int?
+    let activities: [ComputerHistoryActivityIndexEntry]
+    let error: String?
+    let loadIssues: [HistoryLoadIssue]
+    let nextStep: String
+}
+
+private struct ComputerHistoryActivityEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let day: String
+    let sourceMode: String
+    let sourceBytesRead: Int64
+    let activity: ComputerHistoryEpisode?
+    let totalInteractionCount: Int
+    let interactionOffset: Int
+    let returnedInteractionCount: Int
+    let nextInteractionOffset: Int?
+    let resources: [ComputerHistoryResourceReference]
+    let error: String?
+    let loadIssues: [HistoryLoadIssue]
+}
+
+private struct CompleteComputerHistoryIndexLoad {
+    let index: ComputerHistoryActivityIndex?
+    let sourceMode: String
+    let sourceBytesRead: Int64
+    let error: String?
+    let loadIssues: [HistoryLoadIssue]
+}
+
+private struct CompleteComputerHistoryMemoryLoad {
+    let memory: ComputerHistoryDayMemory?
+    let sourceMode: String
+    let sourceBytesRead: Int64
     let error: String?
     let loadIssues: [HistoryLoadIssue]
 }
@@ -350,58 +403,148 @@ private enum LocalHistoryQueryCLI {
             guard arguments.values.isEmpty else {
                 throw CLIError.usage("unexpected arguments for \(command)")
             }
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).loadComputerHistoryEvidence(
+            let loaded = loadCompleteComputerHistoryMemory(
+                reader: HistoryLocalStoreReader(rootDirectory: root),
+                dayStart: dayStart,
                 start: start,
-                endExclusive: end
+                end: end,
+                allowsValidatedDayIndex: requestedStart == nil
             )
-            let memory =
-                loaded.sourceJournalSummary.eventCount == 0
-                    || loaded.metrics.sourceChangedDuringRead
-                    || loaded.metrics.sourceAccessWasIncomplete
-                    || loaded.metrics.evidenceBudgetExceeded
-                ? nil
-                : ComputerHistoryEngine.analyze(
-                    events: loaded.events,
-                    semanticSnapshots: loaded.semanticSnapshots,
-                    day: dayStart,
-                    sourceJournalSummary: loaded.sourceJournalSummary
-                )
-            let error: String? =
-                if loaded.metrics.sourceChangedDuringRead {
-                    "The original Computer History source changed during read; no partial day was analyzed."
-                } else if loaded.metrics.sourceAccessWasIncomplete {
-                    "An original Computer History source was absent, inaccessible or unsafe; no partial day was analyzed."
-                } else if loaded.metrics.evidenceBudgetExceeded {
-                    "The Computer History evidence working-set budget was exceeded; no partial day was analyzed."
-                } else if memory == nil {
-                    "No events were loaded for that day."
-                } else {
-                    nil
-                }
             if command == "computer-history-context" {
                 try printJSON(
                     ComputerHistoryContextEnvelope(
                         rootDirectory: root.path,
-                        projection: memory.map {
+                        sourceMode: loaded.sourceMode,
+                        sourceBytesRead: loaded.sourceBytesRead,
+                        projection: loaded.memory.map {
                             ComputerHistoryAgentContextRenderer.render(
                                 $0,
                                 tokenBudget: tokenBudget
                             )
                         },
-                        error: error,
-                        loadIssues: loaded.issues
+                        error: loaded.error,
+                        loadIssues: loaded.loadIssues
                     )
                 )
             } else {
                 try printJSON(
                     ComputerHistoryEnvelope(
                         rootDirectory: root.path,
-                        memory: memory,
-                        error: error,
-                        loadIssues: loaded.issues
+                        sourceMode: loaded.sourceMode,
+                        sourceBytesRead: loaded.sourceBytesRead,
+                        memory: loaded.memory,
+                        error: loaded.error,
+                        loadIssues: loaded.loadIssues
                     )
                 )
             }
+
+        case "activities":
+            let limit = try integer(arguments.removeOption("--limit") ?? "256")
+            let offset = try integer(arguments.removeOption("--offset") ?? "0")
+            guard (1...1_000).contains(limit), offset >= 0 else {
+                throw CLIError.usage("activities requires --limit 1...1000 and --offset >= 0")
+            }
+            let raw = arguments.popFirst() ?? "today"
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("activities accepts one date plus --limit and --offset")
+            }
+            let dayStart = try day(raw)
+            let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)!
+            let loaded = loadCompleteComputerHistoryIndex(
+                reader: HistoryLocalStoreReader(rootDirectory: root),
+                dayStart: dayStart,
+                dayEnd: dayEnd
+            )
+            let allActivities = loaded.index?.activities ?? []
+            let activities = Array(allActivities.dropFirst(offset).prefix(limit))
+            let nextOffset =
+                offset + activities.count < allActivities.count
+                ? offset + activities.count
+                : nil
+            let dayKey = localDayString(dayStart)
+            try printJSON(
+                ComputerHistoryActivitiesEnvelope(
+                    rootDirectory: root.path,
+                    day: dayKey,
+                    sourceMode: loaded.sourceMode,
+                    sourceBytesRead: loaded.sourceBytesRead,
+                    coverage: loaded.index?.coverage,
+                    totalActivityCount: allActivities.count,
+                    activityOffset: offset,
+                    returnedActivityCount: activities.count,
+                    nextActivityOffset: nextOffset,
+                    activities: activities,
+                    error: loaded.error,
+                    loadIssues: loaded.loadIssues,
+                    nextStep:
+                        nextOffset.map {
+                            "Run goalong activities \(dayKey) --offset \($0) --limit \(limit) for the next page."
+                        } ?? "Run goalong activity ACTIVITY_ID \(dayKey) for its ordered interactions and source references."
+                )
+            )
+
+        case "activity":
+            let limit = try integer(arguments.removeOption("--limit") ?? "100")
+            let offset = try integer(arguments.removeOption("--offset") ?? "0")
+            guard (1...500).contains(limit), offset >= 0 else {
+                throw CLIError.usage("activity requires --limit 1...500 and --offset >= 0")
+            }
+            guard let identifier = arguments.popFirst() else {
+                throw CLIError.usage("activity requires an activity ID")
+            }
+            let raw = arguments.popFirst() ?? "today"
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("activity accepts an activity ID, one date, --limit and --offset")
+            }
+            let dayStart = try day(raw)
+            let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)!
+            let loaded = HistoryLocalStoreReader(rootDirectory: root)
+                .loadComputerHistoryEvidence(start: dayStart, endExclusive: dayEnd)
+            let detail = validComputerHistoryLoad(loaded)
+                ? ComputerHistoryEngine.exactActivity(
+                    id: identifier,
+                    events: loaded.events,
+                    semanticSnapshots: loaded.semanticSnapshots,
+                    day: dayStart
+                )
+                : nil
+            let totalInteractionCount = detail?.episode.totalInteractionCount ?? 0
+            let pageInteractions = Array(
+                (detail?.episode.interactions ?? []).dropFirst(offset).prefix(limit)
+            )
+            let activity = detail.map {
+                pagedActivity($0.episode, interactions: pageInteractions)
+            }
+            let nextOffset =
+                offset + pageInteractions.count < totalInteractionCount
+                ? offset + pageInteractions.count
+                : nil
+            let loadError = computerHistoryLoadError(
+                loaded: loaded,
+                hasResult: validComputerHistoryLoad(loaded)
+            )
+            let dayKey = localDayString(dayStart)
+            try printJSON(
+                ComputerHistoryActivityEnvelope(
+                    rootDirectory: root.path,
+                    day: dayKey,
+                    sourceMode: "authoritativeJournals",
+                    sourceBytesRead:
+                        loaded.metrics.eventBytesRead + loaded.metrics.semanticBytesRead,
+                    activity: activity,
+                    totalInteractionCount: totalInteractionCount,
+                    interactionOffset: offset,
+                    returnedInteractionCount: pageInteractions.count,
+                    nextInteractionOffset: nextOffset,
+                    resources: detail?.resources ?? [],
+                    error: loadError
+                        ?? (detail == nil
+                            ? "No activity with ID \(identifier) exists in the authoritative source for \(dayKey)."
+                            : nil),
+                    loadIssues: loaded.issues
+                )
+            )
 
         case "screen-time":
             let macOnly = arguments.removeFlag("--mac-only")
@@ -796,6 +939,168 @@ private enum LocalHistoryQueryCLI {
             sourceSearch: rawSourceSearch,
             retainedProjectionBytes: askBudget.retainedProjectionBytes,
             limitations: limitations
+        )
+    }
+
+    private static func completeComputerHistoryIndex(
+        loaded: ComputerHistoryEvidenceLoad,
+        dayStart: Date
+    ) -> ComputerHistoryActivityIndex? {
+        guard validComputerHistoryLoad(loaded) else { return nil }
+        return ComputerHistoryEngine.completeActivityIndex(
+            events: loaded.events,
+            semanticSnapshots: loaded.semanticSnapshots,
+            day: dayStart,
+            sourceJournalSummary: loaded.sourceJournalSummary
+        )
+    }
+
+    private static func loadCompleteComputerHistoryIndex(
+        reader: HistoryLocalStoreReader,
+        dayStart: Date,
+        dayEnd: Date
+    ) -> CompleteComputerHistoryIndexLoad {
+        let stored = reader.loadCurrentComputerHistoryMemory(day: dayStart)
+        if let memory = stored.memory {
+            return CompleteComputerHistoryIndexLoad(
+                index: ComputerHistoryActivityIndex(
+                    dayStart: memory.dayStart,
+                    dayEnd: memory.dayEnd,
+                    generatedAt: memory.generatedAt,
+                    activities: memory.episodes.map(
+                        ComputerHistoryActivityIndexEntry.init
+                    ),
+                    coverage: memory.coverage
+                ),
+                sourceMode: "validatedBoundedIndex",
+                sourceBytesRead: stored.bytesRead,
+                error: nil,
+                loadIssues: []
+            )
+        }
+
+        let loaded = reader.loadComputerHistoryEvidence(
+            start: dayStart,
+            endExclusive: dayEnd
+        )
+        let index = completeComputerHistoryIndex(
+            loaded: loaded,
+            dayStart: dayStart
+        )
+        let error = computerHistoryLoadError(
+            loaded: loaded,
+            hasResult: index != nil
+        )
+        return CompleteComputerHistoryIndexLoad(
+            index: index,
+            sourceMode: "authoritativeJournals",
+            sourceBytesRead:
+                stored.bytesRead
+                + loaded.metrics.eventBytesRead
+                + loaded.metrics.semanticBytesRead,
+            error: error,
+            loadIssues: error == nil ? loaded.issues : stored.issues + loaded.issues
+        )
+    }
+
+    private static func loadCompleteComputerHistoryMemory(
+        reader: HistoryLocalStoreReader,
+        dayStart: Date,
+        start: Date,
+        end: Date,
+        allowsValidatedDayIndex: Bool
+    ) -> CompleteComputerHistoryMemoryLoad {
+        var validationBytesRead: Int64 = 0
+        var validationIssues: [HistoryLoadIssue] = []
+        if allowsValidatedDayIndex {
+            let stored = reader.loadCurrentComputerHistoryMemory(day: dayStart)
+            validationBytesRead = stored.bytesRead
+            validationIssues = stored.issues
+            if let memory = stored.memory {
+                return CompleteComputerHistoryMemoryLoad(
+                    memory: memory,
+                    sourceMode: "validatedBoundedIndex",
+                    sourceBytesRead: stored.bytesRead,
+                    error: nil,
+                    loadIssues: []
+                )
+            }
+        }
+
+        let loaded = reader.loadComputerHistoryEvidence(
+            start: start,
+            endExclusive: end
+        )
+        let isValid = validComputerHistoryLoad(loaded)
+        let memory = isValid
+            ? ComputerHistoryEngine.analyze(
+                events: loaded.events,
+                semanticSnapshots: loaded.semanticSnapshots,
+                day: dayStart,
+                sourceJournalSummary: loaded.sourceJournalSummary
+            )
+            : nil
+        return CompleteComputerHistoryMemoryLoad(
+            memory: memory,
+            sourceMode: "authoritativeJournals",
+            sourceBytesRead:
+                validationBytesRead
+                + loaded.metrics.eventBytesRead
+                + loaded.metrics.semanticBytesRead,
+            error: computerHistoryLoadError(loaded: loaded, hasResult: memory != nil),
+            loadIssues: validationIssues + loaded.issues
+        )
+    }
+
+    private static func validComputerHistoryLoad(
+        _ loaded: ComputerHistoryEvidenceLoad
+    ) -> Bool {
+        loaded.sourceJournalSummary.eventCount > 0
+            && !loaded.metrics.sourceChangedDuringRead
+            && !loaded.metrics.sourceAccessWasIncomplete
+            && !loaded.metrics.evidenceBudgetExceeded
+    }
+
+    private static func computerHistoryLoadError(
+        loaded: ComputerHistoryEvidenceLoad,
+        hasResult: Bool
+    ) -> String? {
+        if loaded.metrics.sourceChangedDuringRead {
+            return "The original Computer History source changed during read; no partial result was returned."
+        }
+        if loaded.metrics.sourceAccessWasIncomplete {
+            return "An original Computer History source was absent, inaccessible or unsafe; no partial result was returned."
+        }
+        if loaded.metrics.evidenceBudgetExceeded {
+            return "The Computer History evidence working-set budget was exceeded; no partial result was returned."
+        }
+        if !hasResult { return "No events were loaded for that day." }
+        return nil
+    }
+
+    private static func pagedActivity(
+        _ episode: ComputerHistoryEpisode,
+        interactions: [ComputerHistoryInteraction]
+    ) -> ComputerHistoryEpisode {
+        ComputerHistoryEpisode(
+            id: episode.id,
+            start: episode.start,
+            end: episode.end,
+            title: episode.title,
+            summary: episode.summary,
+            status: episode.status,
+            statusConfidence: episode.statusConfidence,
+            applications: episode.applications,
+            sites: episode.sites,
+            resourceIDs: episode.resourceIDs,
+            requestsOrIntentions: episode.requestsOrIntentions,
+            observableOutcomes: episode.observableOutcomes,
+            interactions: interactions,
+            sourceInteractionCount: episode.totalInteractionCount,
+            eventCount: episode.eventCount,
+            semanticSnapshotCount: episode.semanticSnapshotCount,
+            workflowFingerprint: episode.workflowFingerprint,
+            provenance: episode.provenance
         )
     }
 
@@ -1565,6 +1870,8 @@ private enum LocalHistoryQueryCLI {
           summary [today|yesterday|YYYY-MM-DD]
           computer-history [today|yesterday|YYYY-MM-DD] [--start-utc ISO-8601Z --end-utc ISO-8601Z]
           computer-history-context [today|yesterday|YYYY-MM-DD] [--tokens N] [--start-utc ISO-8601Z --end-utc ISO-8601Z]
+          activities [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
+          activity ACTIVITY_ID [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
           screen-time [today|yesterday|YYYY-MM-DD] [--mac-only]
           ai-conversations [today|yesterday|YYYY-MM-DD] [--tokens N] [--limit N] [--offset N]
           recap [today|yesterday|YYYY-MM-DD]
@@ -1586,7 +1893,9 @@ private enum LocalHistoryQueryCLI {
         projections and a bounded transient source-keyword pass when useful; it supports
         questions about recent work, resources, status, standups and repeatable workflows.
         `computer-history-context` emits a deterministic, token-bounded evidence pack for
-        an agent without persisting another copy. `ai-conversations` directly reads only
+        an agent without persisting another copy. `activities` enumerates every reconstructed
+        activity as a lightweight pageable index; `activity` reopens one exact source activity
+        and pages its ordered interactions without storing them. `ai-conversations` directly reads only
         user prompts and final assistant answers from the existing lightweight source index;
         it never scans providers, updates the index or copies a transcript. `screen-time` uses the bundled,
         identically signed read-only adapter to inspect Apple's local stores once and returns complete

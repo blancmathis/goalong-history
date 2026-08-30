@@ -2,6 +2,28 @@ import XCTest
 @testable import LocalHistoryCore
 
 final class HistoryLocalStoreReaderTests: XCTestCase {
+    func testFastCanonicalUTCParserMatchesFoundationAndRejectsInvalidDates() throws {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        for raw in [
+            "1970-01-01T00:00:00.000Z",
+            "2000-02-29T23:59:59.123Z",
+            "2026-08-29T21:30:00.625Z",
+            "2099-12-31T00:00:00.001Z",
+        ] {
+            let expected = try XCTUnwrap(formatter.date(from: raw))
+            let parsed = try XCTUnwrap(FastISO8601DateParser.parseCanonicalUTC(raw))
+            XCTAssertEqual(parsed.timeIntervalSince1970, expected.timeIntervalSince1970, accuracy: 0.000_001)
+        }
+        let precise = try XCTUnwrap(
+            FastISO8601DateParser.parseCanonicalUTC("1970-01-01T00:00:00.123456789Z")
+        )
+        XCTAssertEqual(precise.timeIntervalSince1970, 0.123456789, accuracy: 0.000_001)
+        XCTAssertNil(FastISO8601DateParser.parseCanonicalUTC("2026-02-29T00:00:00Z"))
+        XCTAssertNil(FastISO8601DateParser.parseCanonicalUTC("2026-08-29T24:00:00Z"))
+        XCTAssertNil(FastISO8601DateParser.parseCanonicalUTC("2026-08-29T21:30:00+02:00"))
+    }
+
     func testCaptureHealthLoadDoesNotDecodeHistoryJournals() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("goalong-health-reader-\(UUID().uuidString)", isDirectory: true)

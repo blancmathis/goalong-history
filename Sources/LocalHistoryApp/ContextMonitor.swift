@@ -5,6 +5,11 @@
     import LocalHistoryCore
 
     final class ContextMonitor {
+        struct ContextTransition {
+            let kind: LocalHistoryCore.EventKind
+            let changedFields: [String]
+        }
+
         private let provider: ContextProvider
         private let recorder: EventRecorder
         private let state: CaptureState
@@ -219,20 +224,14 @@
                 )
             }
 
-            if previous?.app != current.app {
-                recorder.record(kind: .applicationActivated, context: current)
-            }
-
-            if previous?.window != current.window {
-                recorder.record(kind: .windowChanged, context: current)
-            }
-
-            if previous?.url != current.url, current.url != nil {
-                recorder.record(kind: .urlChanged, context: current)
-            }
-
-            if previous?.focusedElement != current.focusedElement {
-                recorder.record(kind: .focusChanged, context: current)
+            if let transition = Self.contextTransition(from: previous, to: current) {
+                recorder.record(
+                    kind: transition.kind,
+                    context: current,
+                    metadata: [
+                        "computer_history.context_changes": transition.changedFields.joined(separator: ","),
+                    ]
+                )
             }
 
             let heartbeatInterval = TimeInterval(
@@ -251,6 +250,45 @@
 
             previous = current
             return current
+        }
+
+        /// One context sample can change application, window, URL and focused element
+        /// simultaneously. The selected event already carries the complete resulting
+        /// context, so persisting four near-identical rows adds write volume without
+        /// adding evidence. Keep the most informative transition kind and record every
+        /// changed dimension as compact metadata.
+        static func contextTransition(
+            from previous: ContextSnapshot?,
+            to current: ContextSnapshot
+        ) -> ContextTransition? {
+            var changedFields: [String] = []
+            if previous?.app != current.app {
+                changedFields.append("application")
+            }
+            if previous?.window != current.window {
+                changedFields.append("window")
+            }
+            if previous?.url != current.url, current.url != nil {
+                changedFields.append("url")
+            }
+            if previous?.focusedElement != current.focusedElement {
+                changedFields.append("focus")
+            }
+
+            let kind: LocalHistoryCore.EventKind?
+            if changedFields.contains("application") {
+                kind = .applicationActivated
+            } else if changedFields.contains("window") {
+                kind = .windowChanged
+            } else if changedFields.contains("url") {
+                kind = .urlChanged
+            } else if changedFields.contains("focus") {
+                kind = .focusChanged
+            } else {
+                kind = nil
+            }
+
+            return kind.map { ContextTransition(kind: $0, changedFields: changedFields) }
         }
 
         private func setLatest(_ snapshot: ContextSnapshot?) {

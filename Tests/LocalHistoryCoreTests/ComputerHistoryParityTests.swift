@@ -83,7 +83,7 @@ final class ComputerHistoryParityTests: XCTestCase {
         XCTAssertTrue(interaction.beforeContext?.contains("version one") == true)
         XCTAssertTrue(interaction.afterContext?.contains("Saved successfully") == true)
         XCTAssertTrue(interaction.semanticDelta.contains { $0.contains("version two") })
-        XCTAssertEqual(memory.episodes.first?.status, .completed)
+        XCTAssertEqual(memory.episodes.first?.status, .inProgress)
         XCTAssertTrue(memory.markdown.contains("Action sequence"))
     }
 

@@ -560,6 +560,8 @@
         static let stableRunDurationBeforeRestartReset: TimeInterval = 60
         static let minimumUnexpectedRestartDelay: TimeInterval = 1
         static let maximumUnexpectedRestartDelay: TimeInterval = 60
+        static let scrollBurstQuietInterval: TimeInterval = 1.10
+        static let scrollSettledCaptureInterval: TimeInterval = 1.20
 
         static func ingressAgeIsAcceptable(observedAt: Date, now: Date = Date()) -> Bool {
             let age = now.timeIntervalSince(observedAt)
@@ -1420,7 +1422,10 @@
                 self?.flushScrollBurst()
             }
             scrollFlushWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.scrollBurstQuietInterval,
+                execute: workItem
+            )
         }
 
         private func handleKeyDown(
@@ -1713,7 +1718,7 @@
             scrollSettledWorkItem = workItem
             let elapsed = max(0, Date().timeIntervalSince(observedAt))
             DispatchQueue.main.asyncAfter(
-                deadline: .now() + max(0, 1.05 - elapsed),
+                deadline: .now() + max(0, Self.scrollSettledCaptureInterval - elapsed),
                 execute: workItem
             )
         }

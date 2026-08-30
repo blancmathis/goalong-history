@@ -16,6 +16,154 @@ final class HistoryLocalStoreReaderStreamingTests: XCTestCase {
         )
     }
 
+    func testCurrentComputerHistoryMemoryFastPathRejectsStaleAnalysisAndAppendedSource() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "goalong-current-computer-history-memory-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let eventsDirectory = root.appendingPathComponent("events", isDirectory: true)
+        let memoryDirectory = root.appendingPathComponent(
+            "computer-history",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: eventsDirectory,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: memoryDirectory,
+            withIntermediateDirectories: true
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let initialEvents = [
+            fixtureEvent(
+                id: "fast-index-app",
+                sequence: 1,
+                offset: 1,
+                kind: .applicationActivated
+            ),
+            fixtureEvent(
+                id: "fast-index-click",
+                sequence: 2,
+                offset: 2,
+                kind: .mouseClick,
+                pointer: PointerSnapshot(
+                    button: "left",
+                    x: 10,
+                    y: 20,
+                    clickCount: 1
+                )
+            ),
+        ]
+        let eventURL = eventsDirectory.appendingPathComponent("2027-01-15.jsonl")
+        try writeJSONLines(initialEvents, encoder: encoder, to: eventURL)
+
+        let generatedAt = Date().addingTimeInterval(60)
+        let memory = ComputerHistoryEngine.analyze(
+            events: initialEvents,
+            day: fixtureStart,
+            generatedAt: generatedAt
+        )
+        let memoryURL = memoryDirectory.appendingPathComponent(
+            "2027-01-15.computer-history.json"
+        )
+        let compactMemoryEncoder = JSONEncoder()
+        compactMemoryEncoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(
+                "b:" + String(date.timeIntervalSinceReferenceDate.bitPattern, radix: 16)
+            )
+        }
+        compactMemoryEncoder.outputFormatting = [.sortedKeys]
+        var compactObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: compactMemoryEncoder.encode(memory)
+            ) as? [String: Any]
+        )
+        compactObject.removeValue(forKey: "markdown")
+        compactObject["storageFormatVersion"] = 3
+        let compactMemoryData = try JSONSerialization.data(
+            withJSONObject: compactObject,
+            options: [.sortedKeys]
+        )
+        try compactMemoryData.write(to: memoryURL)
+
+        let reader = HistoryLocalStoreReader(rootDirectory: root)
+        let current = reader.loadCurrentComputerHistoryMemory(day: fixtureStart)
+        XCTAssertEqual(current.state, .current)
+        XCTAssertEqual(current.memory?.episodes, memory.episodes)
+        XCTAssertEqual(current.memory?.coverage, memory.coverage)
+        XCTAssertEqual(current.memory?.markdown, "")
+        XCTAssertGreaterThan(current.bytesRead, 0)
+        XCTAssertTrue(current.issues.isEmpty)
+
+        var staleAnalysisObject = compactObject
+        staleAnalysisObject.removeValue(forKey: "analysisRevision")
+        try JSONSerialization.data(
+            withJSONObject: staleAnalysisObject,
+            options: [.sortedKeys]
+        ).write(to: memoryURL)
+        let staleAnalysis = reader.loadCurrentComputerHistoryMemory(day: fixtureStart)
+        XCTAssertEqual(staleAnalysis.state, .stale)
+        XCTAssertNil(staleAnalysis.memory)
+        try compactMemoryData.write(to: memoryURL)
+
+        let appended = fixtureEvent(
+            id: "fast-index-appended",
+            sequence: 3,
+            offset: 3,
+            kind: .windowChanged
+        )
+        let handle = try FileHandle(forWritingTo: eventURL)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: encoder.encode(appended))
+        try handle.write(contentsOf: Data("\n".utf8))
+        try handle.close()
+
+        let stale = reader.loadCurrentComputerHistoryMemory(day: fixtureStart)
+        XCTAssertEqual(stale.state, .stale)
+        XCTAssertNil(stale.memory)
+    }
+
+    func testOptInRealComputerHistoryMemoryFastPathIsCurrent() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let rootPath = environment["GOALONG_TEST_REAL_HISTORY_ROOT"],
+            let dayValue = environment["GOALONG_TEST_REAL_HISTORY_DAY"]
+        else {
+            throw XCTSkip(
+                "Set GOALONG_TEST_REAL_HISTORY_ROOT and GOALONG_TEST_REAL_HISTORY_DAY "
+                    + "for the local read-only bounded-index probe."
+            )
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        let day = try XCTUnwrap(formatter.date(from: dayValue))
+
+        let loaded = HistoryLocalStoreReader(
+            rootDirectory: URL(fileURLWithPath: rootPath, isDirectory: true)
+        ).loadCurrentComputerHistoryMemory(day: day)
+
+        print(
+            "Real Computer History bounded index: state=\(loaded.state.rawValue) "
+                + "bytes=\(loaded.bytesRead) issues=\(loaded.issues.map(\.message))"
+        )
+        XCTAssertEqual(loaded.state, .current)
+        let memory = try XCTUnwrap(loaded.memory)
+        XCTAssertEqual(memory.coverage.episodeCount, memory.episodes.count)
+        XCTAssertEqual(
+            memory.coverage.retainedEpisodeCount,
+            memory.coverage.episodeCount
+        )
+    }
+
     func testTransientComputerHistoryProjectionPreservesExactComputerHistory() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(

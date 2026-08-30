@@ -4,6 +4,25 @@ import Foundation
     import CryptoKit
 #endif
 
+/// ISO8601DateFormatter is expensive to construct because it builds ICU date
+/// formatting state. Integrity material uses one immutable format everywhere;
+/// serialize access to a single configured instance instead of rebuilding that
+/// state for every event field while streaming a day journal.
+private enum IntegrityISO8601Formatting {
+    private static let lock = NSLock()
+    private static let formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    static func string(from date: Date) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return formatter.string(from: date)
+    }
+}
+
 // MARK: - SHA-256 (dependency-free so the verification primitives also build on Linux)
 
 public enum SHA256Digest {
@@ -342,20 +361,35 @@ public enum EventIntegrityMaterial {
         saltBase64Values: [String],
         rawEventDigest: String
     ) -> [LocalFieldCommitment]? {
-        guard isLowercaseSHA256(rawEventDigest) else { return nil }
-        let groups = fieldGroups(for: event, rawEventDigest: rawEventDigest)
-        guard saltBase64Values.count == groups.count else { return nil }
+        guard compactFieldMaterialIsValid(
+            schemaVersion: event.schemaVersion,
+            saltBase64Values: saltBase64Values,
+            rawEventDigest: rawEventDigest
+        ) else { return nil }
         var salts: [Data] = []
         salts.reserveCapacity(saltBase64Values.count)
         for value in saltBase64Values {
-            guard let salt = Data(base64Encoded: value), salt.count == 32 else { return nil }
-            salts.append(salt)
+            salts.append(Data(base64Encoded: value)!)
         }
         return makeFieldCommitments(
             for: event,
             salts: salts,
             rawEventDigest: rawEventDigest
         )
+    }
+
+    static func compactFieldMaterialIsValid(
+        schemaVersion: Int,
+        saltBase64Values: [String],
+        rawEventDigest: String
+    ) -> Bool {
+        let expectedCount = IntegrityDomains.eventFieldOrder(for: schemaVersion).count
+        return isLowercaseSHA256(rawEventDigest)
+            && saltBase64Values.count == expectedCount
+            && saltBase64Values.allSatisfy { value in
+                guard let salt = Data(base64Encoded: value) else { return false }
+                return salt.count == 32 && salt.base64EncodedString() == value
+            }
     }
 
     private static func fieldGroups(
@@ -507,9 +541,7 @@ public enum EventIntegrityMaterial {
     }
 
     private static func iso8601(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        IntegrityISO8601Formatting.string(from: date)
     }
 
     private static func stableDouble(_ value: Double) -> String {
@@ -608,9 +640,7 @@ public enum MinuteIntegrityMaterial {
     }
 
     private static func iso8601(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        IntegrityISO8601Formatting.string(from: date)
     }
 }
 

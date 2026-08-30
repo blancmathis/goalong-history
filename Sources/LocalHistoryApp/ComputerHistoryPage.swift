@@ -162,11 +162,12 @@
             let end: Date
             let appName: String
             let bundleIdentifier: String?
-            let context: String
+            let contexts: [String]
             let isSuppressed: Bool
             let sourceSessionCount: Int
 
             var duration: TimeInterval { end.timeIntervalSince(start) }
+            var context: String { contexts.joined(separator: " → ") }
         }
 
         let id: Date
@@ -208,7 +209,9 @@
                         let normalizedAppName = session.appName
                             .trimmingCharacters(in: .whitespacesAndNewlines)
                             .lowercased()
-                        let appKey = "name:\(normalizedAppName)"
+                        let appKey = session.bundleIdentifier.map {
+                            "bundle:\($0.lowercased())"
+                        } ?? "name:\(normalizedAppName)"
                         segmentsByWindow[windowStart, default: []].append(
                             Segment(
                                 session: session,
@@ -280,9 +283,11 @@
                             appName: previous.appName,
                             bundleIdentifier: previous.bundleIdentifier
                                 ?? segment.session.bundleIdentifier,
-                            context: previous.isSuppressed || suppressed
-                                ? "Private or suppressed activity"
-                                : context,
+                            contexts: mergedContexts(
+                                previous.contexts,
+                                adding: context,
+                                isSuppressed: previous.isSuppressed || suppressed
+                            ),
                             isSuppressed: previous.isSuppressed || suppressed,
                             sourceSessionCount: previous.sourceSessionCount + 1
                         )
@@ -294,7 +299,7 @@
                                 end: segment.end,
                                 appName: segment.session.appName,
                                 bundleIdentifier: segment.session.bundleIdentifier,
-                                context: context,
+                                contexts: [context],
                                 isSuppressed: suppressed,
                                 sourceSessionCount: 1
                             )
@@ -327,6 +332,22 @@
                     }
                 )
             }
+        }
+
+        private static func mergedContexts(
+            _ existing: [String],
+            adding value: String,
+            isSuppressed: Bool
+        ) -> [String] {
+            if isSuppressed { return ["Private or suppressed activity"] }
+            var values = existing
+            if !values.contains(where: {
+                $0.localizedCaseInsensitiveCompare(value) == .orderedSame
+            }) {
+                values.append(value)
+            }
+            guard values.count > 4 else { return values }
+            return Array(values.prefix(3)) + [values[values.count - 1]]
         }
 
         private struct Segment {
@@ -582,14 +603,14 @@
             HStack(alignment: .center, spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(LHTheme.success.opacity(0.14))
+                        .fill(recordingStateTint.opacity(0.14))
                         .frame(width: 34, height: 34)
-                    Circle()
-                        .fill(LHTheme.success)
-                        .frame(width: 9, height: 9)
+                    Image(systemName: recordingStateSymbol)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(recordingStateTint)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Recorded locally")
+                    Text(recordingStateTitle)
                         .font(.system(size: 13, weight: .semibold))
                     Text(recordingSummary)
                         .font(.system(size: 11))
@@ -615,10 +636,78 @@
             )
         }
 
+        private var recordingStateTitle: String {
+            if isPreparingTimeline { return "Preparing this day" }
+            switch model.sourceStatus {
+            case .checking:
+                return "Checking this day"
+            case .available:
+                return snapshot.eventCount > 0 || !tenMinuteGroups.isEmpty
+                    ? "Stored on this Mac"
+                    : "No activity loaded"
+            case .absent:
+                return model.memory == nil
+                    ? "No local source for this day"
+                    : "Retained Computer History"
+            case .inaccessible:
+                return "Source unavailable"
+            case .unverified:
+                return "Local source not verified"
+            }
+        }
+
+        private var recordingStateSymbol: String {
+            if isPreparingTimeline { return "clock.arrow.circlepath" }
+            switch model.sourceStatus {
+            case .checking:
+                return "arrow.triangle.2.circlepath"
+            case .available:
+                return snapshot.eventCount > 0 || !tenMinuteGroups.isEmpty
+                    ? "checkmark"
+                    : "minus"
+            case .absent:
+                return model.memory == nil ? "doc.badge.ellipsis" : "archivebox.fill"
+            case .inaccessible:
+                return "exclamationmark.lock.fill"
+            case .unverified:
+                return "questionmark"
+            }
+        }
+
+        private var recordingStateTint: Color {
+            if isPreparingTimeline { return LHTheme.accent }
+            switch model.sourceStatus {
+            case .available:
+                return snapshot.eventCount > 0 || !tenMinuteGroups.isEmpty
+                    ? LHTheme.success
+                    : LHTheme.teal
+            case .checking:
+                return LHTheme.accent
+            case .absent, .inaccessible, .unverified:
+                return LHTheme.warning
+            }
+        }
+
         private var recordingSummary: String {
             let events = snapshot.eventCount.formatted()
             if isPreparingTimeline {
                 return "Preparing factual 10-minute windows from \(events) source events."
+            }
+            switch model.sourceStatus {
+            case .checking:
+                return "Verifying the original local journal before showing this day."
+            case .absent:
+                return model.memory == nil
+                    ? "No original journal or retained Computer History exists for this day."
+                    : "The original journal is absent; the last known-good Computer History was kept."
+            case .inaccessible:
+                return model.memory == nil
+                    ? "The original journal could not be read safely."
+                    : "Showing retained Computer History while the original journal is unavailable."
+            case .unverified:
+                return "Goalong has not verified the original local journal for this day."
+            case .available:
+                break
             }
             let windows = tenMinuteGroups.count.formatted()
             return "\(events) source events shown as \(windows) factual 10-minute windows. No AI summary is generated."
@@ -627,7 +716,7 @@
         private var historySection: some View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 9) {
-                    Text("History")
+                    Text("Timeline")
                         .font(.system(size: 20, weight: .semibold, design: .rounded))
                     Image(systemName: "info.circle")
                         .font(.system(size: 12))
@@ -646,11 +735,12 @@
                             .foregroundStyle(.secondary)
                     }
                     Button(action: openSourceJSON) {
-                        Label("Reveal source JSONL", systemImage: "curlybraces")
+                        Label("Source data", systemImage: "curlybraces")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
-                    .help("Reveal the original read-only event journal for this day in Finder")
+                    .disabled(!canRevealSourceData)
+                    .help(sourceDataHelp)
                 }
 
                 timelineCard
@@ -694,11 +784,13 @@
                             Image(systemName: "clock.badge.questionmark")
                                 .font(.system(size: 28, weight: .medium))
                                 .foregroundStyle(.secondary)
-                            Text("No recorded activity for this day")
+                            Text(emptyTimelineTitle)
                                 .font(.system(size: 14, weight: .semibold))
-                            Text("Keep Goalong History running, then refresh this page after using an app.")
+                            Text(emptyTimelineMessage)
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
@@ -717,6 +809,61 @@
 
         private var isPreparingTimeline: Bool {
             tenMinuteGroups.isEmpty && (isSnapshotLoading || timelineModel.isLoading)
+        }
+
+        private var canRevealSourceData: Bool {
+            switch model.sourceStatus {
+            case .absent, .inaccessible:
+                return false
+            case .unverified, .checking, .available:
+                return true
+            }
+        }
+
+        private var sourceDataHelp: String {
+            canRevealSourceData
+                ? "Reveal the original read-only event journal for this day in Finder"
+                : "The original event journal for this day is not currently available"
+        }
+
+        private var emptyTimelineTitle: String {
+            switch model.sourceStatus {
+            case .inaccessible:
+                return "Activity could not be loaded"
+            case .absent:
+                return model.memory == nil
+                    ? "No source journal for this day"
+                    : "Detailed timeline no longer available"
+            case .available where Calendar.current.isDateInToday(day):
+                return "No activity recorded yet today"
+            case .available:
+                return "No recorded activity found"
+            case .checking:
+                return "Checking recorded activity"
+            case .unverified:
+                return "Activity source not verified"
+            }
+        }
+
+        private var emptyTimelineMessage: String {
+            switch model.sourceStatus {
+            case .inaccessible:
+                return model.memory == nil
+                    ? "Goalong could not safely read the original journal. Try this day again later or choose another day."
+                    : "The last known-good Computer History was kept. The original journal could not be read safely."
+            case .absent:
+                return model.memory == nil
+                    ? "No retained Computer History exists for this day. Other days are unchanged."
+                    : "The original journal is absent, but the retained Computer History was not deleted."
+            case .available where Calendar.current.isDateInToday(day):
+                return "Activity appears here after Goalong records an eligible app."
+            case .available:
+                return "Choose another day. An empty timeline is not treated as proof of inactivity when capture coverage is incomplete."
+            case .checking:
+                return "Goalong is verifying the original local journal before showing this day."
+            case .unverified:
+                return "Goalong could not verify the original local journal. Choose another day or try again later."
+            }
         }
 
         @ViewBuilder private var sourceStatusCard: some View {
@@ -1292,11 +1439,12 @@
 
         var body: some View {
             HStack(alignment: .top, spacing: 0) {
-                Text(DashboardFormatters.shortTime.string(from: group.start))
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                Text(windowTimeLabel)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .frame(width: 78, alignment: .trailing)
-                    .padding(.top, 22)
+                    .multilineTextAlignment(.trailing)
+                    .padding(.top, 20)
                     .padding(.trailing, 13)
 
                 VStack(spacing: 0) {
@@ -1331,6 +1479,9 @@
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 12)
+                            Text(expanded ? "Hide details" : "Details")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
                             Image(systemName: expanded ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(.secondary)
@@ -1339,24 +1490,39 @@
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        expanded
+                            ? "Hide details for \(windowTimeLabel)"
+                            : "Show details for \(windowTimeLabel)"
+                    )
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 13) {
-                            ForEach(group.apps) { app in
-                                HStack(spacing: 7) {
-                                    AppIconView(
-                                        bundleIdentifier: app.bundleIdentifier,
-                                        appName: app.name,
-                                        size: 23
-                                    )
-                                    Text(app.name)
-                                        .lineLimit(1)
-                                    Text(durationLabel(app.activeSeconds))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .font(.system(size: 10, weight: .medium))
-                                .accessibilityElement(children: .combine)
+                    LazyVGrid(
+                        columns: [
+                            GridItem(
+                                .adaptive(minimum: 150, maximum: 230),
+                                spacing: 12,
+                                alignment: .leading
+                            )
+                        ],
+                        alignment: .leading,
+                        spacing: 9
+                    ) {
+                        ForEach(group.apps) { app in
+                            HStack(spacing: 8) {
+                                AppIconView(
+                                    bundleIdentifier: app.bundleIdentifier,
+                                    appName: app.name,
+                                    size: 23
+                                )
+                                Text(app.name)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text(durationLabel(app.activeSeconds))
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.secondary)
                             }
+                            .accessibilityElement(children: .combine)
                         }
                     }
 
@@ -1420,9 +1586,9 @@
 
         private var factSummary: String {
             var facts = [
-                "\(durationLabel(group.activeSeconds)) observed",
+                "\(durationLabel(group.activeSeconds)) recorded",
                 "\(group.apps.count) \(group.apps.count == 1 ? "app" : "apps")",
-                "\(group.appChangeCount) app \(group.appChangeCount == 1 ? "change" : "changes")",
+                "\(group.appChangeCount) app \(group.appChangeCount == 1 ? "switch" : "switches")",
             ]
             if group.inputEventCount > 0 {
                 facts.append("\(group.inputEventCount.formatted()) inputs")
@@ -1430,6 +1596,12 @@
                 facts.append("\(group.recordedEventCount.formatted()) source events")
             }
             return facts.joined(separator: " · ")
+        }
+
+        private var windowTimeLabel: String {
+            DashboardFormatters.shortTime.string(from: group.start)
+                + "\n–"
+                + DashboardFormatters.shortTime.string(from: group.end)
         }
 
         private func durationLabel(_ seconds: TimeInterval) -> String {
@@ -1445,8 +1617,8 @@
                 "\(DashboardFormatters.shortTime.string(from: session.start))–"
                 + DashboardFormatters.shortTime.string(from: session.end)
             let details = session.sourceSessionCount == 1
-                ? "1 source detail"
-                : "\(session.sourceSessionCount) source details"
+                ? "1 recorded segment"
+                : "\(session.sourceSessionCount) recorded segments"
             return "\(interval) · \(durationLabel(session.duration)) · \(details)"
         }
     }

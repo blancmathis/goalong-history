@@ -348,9 +348,14 @@ enum ComputerHistoryEpisodeBuilder {
         eventLookup: EventLookup
     ) -> Bool {
         let previous = builder.last
-        let gap = next.start.timeIntervalSince(previous.end)
-        guard gap >= -1, gap <= 20 * 60 else { return false }
-        if eventLookup.hasSuppressedEvent(after: previous.end, before: next.start) {
+        // Semantic `after`/`settled` observations can extend several simultaneous
+        // foreground actions to the same later timestamp. Treat that overlap as a
+        // zero-second gap instead of splitting each app/window/focus observation
+        // into a synthetic one-interaction episode. Capture gaps are checked between
+        // action starts so an extended semantic observation cannot hide one.
+        let gap = max(0, next.start.timeIntervalSince(previous.end))
+        guard gap <= 20 * 60 else { return false }
+        if eventLookup.hasSuppressedEvent(after: previous.start, before: next.start) {
             return false
         }
 
@@ -441,19 +446,6 @@ enum ComputerHistoryEpisodeBuilder {
         let sites = ComputerHistorySupport.rankedDistinct(
             interactions.compactMap(\.host)
         )
-        var semanticEvidence = BoundedTextEvidence(
-            compact: interactions.count > 512
-        )
-        for interaction in interactions {
-            semanticEvidence.append(contentsOf: interaction.semanticDelta)
-            if let after = interaction.afterContext {
-                semanticEvidence.append(
-                    contentsOf: ComputerHistorySupport.splitSemanticLines(after)
-                )
-            }
-        }
-        let semanticLines = semanticEvidence.values
-
         // Window titles and recorder messages are also observable foreground evidence.
         // They matter when an application exposes a state such as “tests failed” in its
         // title bar but does not expose equivalent Accessibility text inside the page.
@@ -464,18 +456,22 @@ enum ComputerHistoryEpisodeBuilder {
         )
         let visibleEventContextLines = eventLookup.contextLines(at: temporalEventIndices)
 
+        let requestEvidence = interactions.flatMap { interaction -> [String] in
+            guard [.typing, .navigationKey].contains(interaction.action) else {
+                return []
+            }
+            return interaction.semanticDelta
+        }
         let requests = ComputerHistorySupport.distinctText(
-            semanticLines.filter(ComputerHistorySupport.looksLikeRequestOrIntention),
+            requestEvidence.filter(ComputerHistorySupport.looksLikeRequestOrIntention),
             maximum: 12,
             maximumLength: 360
         )
         let outcomes = observableOutcomes(
-            interactions: interactions,
-            semanticLines: semanticLines
+            interactions: interactions
         )
         let status = inferStatus(
             interactions: interactions,
-            semanticLines: semanticLines,
             eventContextLines: visibleEventContextLines,
             requests: requests
         )
@@ -533,35 +529,35 @@ enum ComputerHistoryEpisodeBuilder {
     }
 
     private static func observableOutcomes(
-        interactions: [ComputerHistoryInteraction],
-        semanticLines: [String]
+        interactions: [ComputerHistoryInteraction]
     ) -> [String] {
         let completionMarkers = [
-            "saved", "sent", "submitted", "published", "merged", "closed", "resolved",
-            "deployed", "passed", "success", "completed", "done", "created", "updated",
-            "enregistr", "envoy", "publi", "fusionn", "ferme", "resolu", "reussi", "termine",
+            " saved ", " sent ", " submitted ", " published ", " merged ", " closed ",
+            " resolved ", " deployed ", " passed ", " success ", " completed ",
+            " created ", " updated ", " enregistre ", " enregistree ", " enregistres ",
+            " envoye ", " envoyee ", " envoyes ", " publie ", " publiee ", " publies ",
+            " fusionne ", " fusionnee ", " fusionnes ", " ferme ", " fermee ", " fermes ",
+            " resolu ", " resolue ", " resolus ", " reussi ", " reussie ", " reussis ",
+            " termine ", " terminee ", " termines ",
         ]
-        var output = semanticLines.compactMap { line -> String? in
-            let normalized = ComputerHistorySupport.normalized(line)
-            guard
-                ComputerHistorySupport.containsAny(
-                    normalized,
-                    markers: completionMarkers
-                )
-            else { return nil }
-            return ComputerHistorySupport.bounded(line, maximum: 360)
-        }
-        let lastDelta = interactions.reversed().lazy.compactMap {
-            $0.semanticDelta.first
-        }.first
-        if output.isEmpty, let lastDelta {
-            output.append(
-                "Last observable change: "
-                    + ComputerHistorySupport.bounded(lastDelta, maximum: 320)
-            )
-        }
-        if output.isEmpty, let last = interactions.last {
-            output.append("Last observable action: \(last.label)")
+        let output = interactions.flatMap { interaction -> [String] in
+            guard [
+                ComputerHistoryActionKind.click,
+                .drag,
+                .shortcut,
+                .navigationKey,
+            ].contains(interaction.action)
+            else { return [] }
+            return interaction.semanticDelta.compactMap { line -> String? in
+                let normalized = " " + ComputerHistorySupport.normalized(line) + " "
+                guard
+                    ComputerHistorySupport.containsAny(
+                        normalized,
+                        markers: completionMarkers
+                    )
+                else { return nil }
+                return ComputerHistorySupport.bounded(line, maximum: 360)
+            }
         }
         return ComputerHistorySupport.distinctText(
             output,
@@ -589,7 +585,6 @@ enum ComputerHistoryEpisodeBuilder {
 
     private static func inferStatus(
         interactions: [ComputerHistoryInteraction],
-        semanticLines: [String],
         eventContextLines: [String],
         requests: [String]
     ) -> StatusResult {
@@ -603,29 +598,19 @@ enum ComputerHistoryEpisodeBuilder {
         ]
         let completed = [
             " saved ", " sent ", " submitted ", " published ", " merged ", " closed ",
-            " resolved ", " deployed ", " tests passed ", " success ", " completed ",
-            " done ", " enregistre ", " envoye ", " publie ", " fusionne ", " ferme ",
-            " resolu ", " reussi ", " termine ",
+            " resolved ", " deployed ", " tests passed ", " completed successfully ",
+            " enregistre ", " envoye ", " publie ", " fusionne ", " ferme ",
+            " resolu ", " reussi ", " termine avec succes ",
         ]
 
         // The latest observable state wins over earlier transient errors. This avoids
         // marking a task blocked when a later retry visibly succeeded.
-        var recentLines = interactions.suffix(3).flatMap { interaction -> [String] in
-            var values = interaction.semanticDelta
-            if let after = interaction.afterContext {
-                values.append(contentsOf: ComputerHistorySupport.splitSemanticLines(after))
-            }
-            values.append(interaction.label)
-            return values
-        }
-        recentLines.append(contentsOf: eventContextLines.suffix(3))
-        let recentText =
-            " "
-            + ComputerHistorySupport.normalized(
-                recentLines.joined(separator: " ")
-            ) + " "
+        let recentEvidence = statusEvidence(
+            interactions: Array(interactions.suffix(3)),
+            eventContextLines: Array(eventContextLines.suffix(3))
+        )
         if let recent = explicitStatus(
-            in: recentText,
+            in: recentEvidence,
             blocked: blocked,
             waiting: waiting,
             completed: completed,
@@ -634,23 +619,15 @@ enum ComputerHistoryEpisodeBuilder {
             return recent
         }
 
-        let interactionLabels: [String]
-        if interactions.count > 512 {
-            var labelEvidence = BoundedTextEvidence(compact: true)
-            for interaction in interactions {
-                labelEvidence.append(interaction.label)
-            }
-            interactionLabels = labelEvidence.values
-        } else {
-            interactionLabels = interactions.map(\.label)
-        }
-        let allText =
-            " "
-            + ComputerHistorySupport.normalized(
-                (semanticLines + eventContextLines + interactionLabels).joined(separator: " ")
-            ) + " "
+        // An old error from another app or an already-bypassed transient dialog
+        // must not label a long, subsequently active episode as blocked. The last
+        // bounded causal tail still preserves a genuine unresolved terminal state.
+        let trailingEvidence = statusEvidence(
+            interactions: Array(interactions.suffix(12)),
+            eventContextLines: Array(eventContextLines.suffix(12))
+        )
         if let historical = explicitStatus(
-            in: allText,
+            in: trailingEvidence,
             blocked: blocked,
             waiting: waiting,
             completed: completed,
@@ -671,28 +648,84 @@ enum ComputerHistoryEpisodeBuilder {
         return StatusResult(value: .unknown, confidence: 0.45)
     }
 
+    private struct StatusEvidenceLine {
+        let text: String
+        let allowsCompletion: Bool
+    }
+
+    private static func statusEvidence(
+        interactions: [ComputerHistoryInteraction],
+        eventContextLines: [String]
+    ) -> [StatusEvidenceLine] {
+        var output: [StatusEvidenceLine] = []
+        output.reserveCapacity(interactions.count * 2 + eventContextLines.count)
+        for interaction in interactions {
+            let canProduceOutcome = [
+                ComputerHistoryActionKind.click,
+                .drag,
+                .shortcut,
+                .navigationKey,
+            ].contains(interaction.action)
+            for line in interaction.semanticDelta {
+                output.append(
+                    StatusEvidenceLine(
+                        text: line,
+                        allowsCompletion: canProduceOutcome
+                    )
+                )
+            }
+            // A visible control named “Done” or “Success” is not proof that the
+            // user's task completed, so action labels only carry blocked/waiting state.
+            output.append(
+                StatusEvidenceLine(
+                    text: interaction.label,
+                    allowsCompletion: false
+                )
+            )
+        }
+        output.append(
+            contentsOf: eventContextLines.map {
+                // A title or ambient window line may describe documentation,
+                // another task, or a historical result. It can expose a blocker or
+                // waiting state, but it is not causal proof that this activity ended.
+                StatusEvidenceLine(text: $0, allowsCompletion: false)
+            }
+        )
+        return output
+    }
+
     private static func explicitStatus(
-        in text: String,
+        in evidence: [StatusEvidenceLine],
         blocked: [String],
         waiting: [String],
         completed: [String],
         confidence: Double
     ) -> StatusResult? {
-        let completionIsNegated =
-            text.contains(" not completed ")
-            || text.contains(" not done ")
-            || text.contains(" pas termine ")
-            || text.contains(" non termine ")
-        if ComputerHistorySupport.containsAny(text, markers: completed),
-            !completionIsNegated
-        {
-            return StatusResult(value: .completed, confidence: confidence)
-        }
-        if ComputerHistorySupport.containsAny(text, markers: blocked) {
-            return StatusResult(value: .blocked, confidence: confidence)
-        }
-        if ComputerHistorySupport.containsAny(text, markers: waiting) {
-            return StatusResult(value: .waiting, confidence: confidence - 0.04)
+        for item in evidence.reversed() {
+            let text = " " + ComputerHistorySupport.normalized(item.text) + " "
+            let completionIsNegated =
+                text.contains(" not completed ")
+                || text.contains(" not done ")
+                || text.contains(" pas termine ")
+                || text.contains(" non termine ")
+            let describesEarlierOrQuotedState = [
+                " yesterday ", " last week ", " previous ", " earlier ",
+                " hier ", " semaine derniere ", " precedent ", " auparavant ",
+                " example ", " exemple ", " document says ", " instructions say ",
+            ].contains { text.contains($0) }
+            if item.allowsCompletion,
+                ComputerHistorySupport.containsAny(text, markers: completed),
+                !completionIsNegated,
+                !describesEarlierOrQuotedState
+            {
+                return StatusResult(value: .completed, confidence: confidence)
+            }
+            if ComputerHistorySupport.containsAny(text, markers: blocked) {
+                return StatusResult(value: .blocked, confidence: confidence)
+            }
+            if ComputerHistorySupport.containsAny(text, markers: waiting) {
+                return StatusResult(value: .waiting, confidence: confidence - 0.04)
+            }
         }
         return nil
     }
@@ -711,9 +744,7 @@ enum ComputerHistoryEpisodeBuilder {
             return "Worked on "
                 + ComputerHistorySupport.bounded(resource.title, maximum: 86)
         }
-        if let outcome = outcomes.first,
-            !outcome.hasPrefix("Last observable")
-        {
+        if let outcome = outcomes.first {
             return ComputerHistorySupport.sentenceTitle(outcome, maximum: 100)
         }
         if let delta = interactions.lazy.compactMap({ $0.semanticDelta.first }).first {

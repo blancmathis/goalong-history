@@ -207,6 +207,95 @@
             )
         }
 
+        func testContextChangesCoalesceIntoOneHighestLevelTransition() throws {
+            let chrome = AppSnapshot(
+                name: "Chrome",
+                bundleIdentifier: "com.google.Chrome",
+                processIdentifier: 10
+            )
+            let safari = AppSnapshot(
+                name: "Safari",
+                bundleIdentifier: "com.apple.Safari",
+                processIdentifier: 11
+            )
+            let firstWindow = WindowSnapshot(title: "First", role: "AXWindow", subrole: nil)
+            let secondWindow = WindowSnapshot(title: "Second", role: "AXWindow", subrole: nil)
+            let firstFocus = ElementSnapshot(
+                role: "AXTextField",
+                subrole: nil,
+                title: "First field",
+                label: nil,
+                identifier: "first",
+                isSecure: false
+            )
+            let secondFocus = ElementSnapshot(
+                role: "AXButton",
+                subrole: nil,
+                title: "Continue",
+                label: nil,
+                identifier: "continue",
+                isSecure: false
+            )
+            let firstURL = URLSnapshot(
+                value: "https://example.com/first",
+                host: "example.com",
+                redactionApplied: false
+            )
+            let secondURL = URLSnapshot(
+                value: "https://example.com/second",
+                host: "example.com",
+                redactionApplied: false
+            )
+            let initial = ContextSnapshot(
+                app: chrome,
+                window: firstWindow,
+                focusedElement: firstFocus,
+                url: firstURL,
+                suppressionReason: nil
+            )
+
+            let applicationChange = try XCTUnwrap(
+                ContextMonitor.contextTransition(
+                    from: initial,
+                    to: ContextSnapshot(
+                        app: safari,
+                        window: secondWindow,
+                        focusedElement: secondFocus,
+                        url: secondURL,
+                        suppressionReason: nil
+                    )
+                )
+            )
+            XCTAssertEqual(applicationChange.kind.rawValue, EventKind.applicationActivated.rawValue)
+            XCTAssertEqual(applicationChange.changedFields, ["application", "window", "url", "focus"])
+
+            let windowChange = try XCTUnwrap(
+                ContextMonitor.contextTransition(
+                    from: initial,
+                    to: ContextSnapshot(
+                        app: chrome,
+                        window: secondWindow,
+                        focusedElement: secondFocus,
+                        url: secondURL,
+                        suppressionReason: nil
+                    )
+                )
+            )
+            XCTAssertEqual(windowChange.kind.rawValue, EventKind.windowChanged.rawValue)
+            XCTAssertEqual(windowChange.changedFields, ["window", "url", "focus"])
+
+            XCTAssertNil(ContextMonitor.contextTransition(from: initial, to: initial))
+        }
+
+        func testScrollBurstsWaitForHumanPauseBeforeCapture() {
+            XCTAssertGreaterThanOrEqual(EventTapMonitor.scrollBurstQuietInterval, 1.0)
+            XCTAssertLessThanOrEqual(EventTapMonitor.scrollBurstQuietInterval, 2.0)
+            XCTAssertGreaterThan(
+                EventTapMonitor.scrollSettledCaptureInterval,
+                EventTapMonitor.scrollBurstQuietInterval
+            )
+        }
+
         func testContextPollingBacksOffAtRestWithoutExceedingMinuteFreshness() throws {
             let warmIdle = try XCTUnwrap(
                 ContextMonitor.nextPollInterval(

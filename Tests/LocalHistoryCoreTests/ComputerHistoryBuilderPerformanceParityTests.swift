@@ -45,16 +45,16 @@ final class ComputerHistoryBuilderPerformanceParityTests: XCTestCase {
                 id: "late-status-action",
                 sequence: 2,
                 offset: 2,
-                kind: .typingBurst,
+                kind: .mouseClick,
                 app: application,
                 windowTitle: nil,
                 host: nil,
                 metadata: [ComputerHistoryMetadata.interactionID: interactionID],
-                keyboard: KeyboardSnapshot(
-                    category: "text_activity",
-                    key: nil,
-                    modifiers: [],
-                    isRepeat: false
+                pointer: PointerSnapshot(
+                    button: "left",
+                    x: 120,
+                    y: 80,
+                    clickCount: 1
                 )
             ),
             fixtureEvent(
@@ -732,7 +732,7 @@ final class ComputerHistoryBuilderPerformanceParityTests: XCTestCase {
         }
     }
 
-    func testSimultaneousOverlappingEpisodesKeepDistinctStableIdentifiers() {
+    func testSimultaneousOverlappingInteractionsMergeIntoOneStableEpisode() {
         let interactions = [
             makeInteraction(
                 id: "simultaneous-first",
@@ -761,10 +761,14 @@ final class ComputerHistoryBuilderPerformanceParityTests: XCTestCase {
             resources: []
         )
 
-        XCTAssertEqual(first.count, 2)
+        XCTAssertEqual(first.count, 1)
         XCTAssertEqual(first.map(\.id), second.map(\.id))
         XCTAssertEqual(Set(first.map(\.id)).count, first.count)
-        XCTAssertEqual(first.map(\.start), [fixtureStart, fixtureStart])
+        XCTAssertEqual(first.map(\.start), [fixtureStart])
+        XCTAssertEqual(
+            first.first?.interactions.map(\.id),
+            ["simultaneous-first", "simultaneous-second"]
+        )
     }
 
     func testEpisodeIndexUsesInclusiveWindowAndIndependentProvenanceKeys() {
@@ -854,13 +858,13 @@ final class ComputerHistoryBuilderPerformanceParityTests: XCTestCase {
             host: "same.example",
             provenanceEvents: []
         )
-        let completed = fixtureEvent(
-            id: "completed",
+        let waiting = fixtureEvent(
+            id: "waiting",
             sequence: 4,
             offset: 9,
             kind: .diagnostic,
             windowTitle: nil,
-            message: "Deployment completed successfully"
+            message: "Deployment waiting for approval"
         )
         let neutral = (1...3).map { index in
             fixtureEvent(
@@ -878,20 +882,20 @@ final class ComputerHistoryBuilderPerformanceParityTests: XCTestCase {
         let originalOrderEpisode = try! XCTUnwrap(
             ComputerHistoryEpisodeBuilder.build(
                 interactions: [interaction],
-                events: [completed] + neutral,
+                events: [waiting] + neutral,
                 resources: []
             ).first
         )
         let chronologicalEpisode = try! XCTUnwrap(
             ComputerHistoryEpisodeBuilder.build(
                 interactions: [interaction],
-                events: neutral + [completed],
+                events: neutral + [waiting],
                 resources: []
             ).first
         )
 
         XCTAssertEqual(originalOrderEpisode.status, .blocked)
-        XCTAssertEqual(chronologicalEpisode.status, .completed)
+        XCTAssertEqual(chronologicalEpisode.status, .waiting)
     }
 
     func testEpisodeIndexHandlesOneLongChronologicalEpisodeAtVolume() {
@@ -971,6 +975,70 @@ final class ComputerHistoryBuilderPerformanceParityTests: XCTestCase {
                 ["boundary-0", "boundary-1"],
                 ["boundary-2"],
             ])
+    }
+
+    func testCompleteActivityIndexKeepsEveryEpisodeBeyondTheDetailBudget() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: -8 * 3_600)!
+        var events: [HistoryEvent] = []
+        events.reserveCapacity(550)
+        for episodeIndex in 0..<50 {
+            let episodeOffset = TimeInterval(episodeIndex * 1_300)
+            for interactionIndex in 0..<11 {
+                let sequence = UInt64(episodeIndex * 11 + interactionIndex + 1)
+                events.append(
+                    fixtureEvent(
+                        id: "indexed-activity-\(episodeIndex)-\(interactionIndex)",
+                        sequence: sequence,
+                        offset: episodeOffset + TimeInterval(interactionIndex),
+                        kind: .mouseClick,
+                        windowTitle: "Task \(episodeIndex)",
+                        host: "task-\(episodeIndex).example",
+                        pointer: PointerSnapshot(
+                            button: "left",
+                            x: Double(interactionIndex),
+                            y: Double(episodeIndex),
+                            clickCount: 1
+                        )
+                    )
+                )
+            }
+        }
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            day: fixtureStart,
+            calendar: calendar,
+            generatedAt: fixtureStart
+        )
+        let index = ComputerHistoryEngine.completeActivityIndex(
+            events: events,
+            day: fixtureStart,
+            calendar: calendar,
+            generatedAt: fixtureStart
+        )
+
+        XCTAssertTrue(memory.coverage.usesRepresentativeProjection)
+        XCTAssertEqual(memory.coverage.episodeCount, 50)
+        XCTAssertEqual(memory.coverage.retainedEpisodeCount, 50)
+        XCTAssertEqual(memory.episodes.count, 50)
+        XCTAssertEqual(index.activities.count, 50)
+        XCTAssertEqual(index.coverage.episodeCount, index.activities.count)
+        XCTAssertEqual(index.activities.map(\.id), memory.episodes.map(\.id))
+
+        let middle = index.activities[25]
+        XCTAssertEqual(middle.interactionCount, 11)
+        let detail = try XCTUnwrap(
+            ComputerHistoryEngine.exactActivity(
+                id: middle.id,
+                events: events,
+                day: fixtureStart,
+                calendar: calendar
+            )
+        )
+        XCTAssertEqual(detail.episode.interactions.count, 11)
+        XCTAssertEqual(detail.episode.totalInteractionCount, 11)
+        XCTAssertEqual(detail.resources.count, 1)
     }
 
     private struct ReferenceObservation {

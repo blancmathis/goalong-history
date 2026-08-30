@@ -1,5 +1,14 @@
 import Foundation
 
+extension CodingUserInfoKey {
+    /// Read-only analysis paths need chain order and hashes, not every selective-
+    /// disclosure opening. The default decoder remains fully reconstructive for
+    /// export and verification callers.
+    package static let compactHistoryEventIntegrity = CodingUserInfoKey(
+        rawValue: "ai.goalong.localhistory.compact-history-event-integrity"
+    )!
+}
+
 public enum EventKind: String, Codable, CaseIterable {
     case recorderStarted
     case recorderStopped
@@ -465,6 +474,8 @@ public struct HistoryEvent: Codable, Equatable {
         )
 
         let integrity: EventIntegrity?
+        let usesCompactInMemoryIntegrity =
+            decoder.userInfo[.compactHistoryEventIntegrity] as? Bool == true
         if schemaVersion >= 5,
             let packed = try? container.decode(PackedEventIntegrity.self, forKey: .integrity),
             packed.format == PackedEventIntegrity.currentFormat
@@ -485,16 +496,22 @@ public struct HistoryEvent: Codable, Equatable {
             let eventRoot = material.hashes[1]
             let eventHash = material.hashes[2]
             let rawEventDigest = material.hashes[3]
-            guard let commitments = EventIntegrityMaterial.rehydrateFieldCommitments(
-                for: base,
-                saltBase64Values: material.saltBase64Values,
-                rawEventDigest: rawEventDigest
-            ) else {
-                throw DecodingError.dataCorruptedError(
-                    forKey: .integrity,
-                    in: container,
-                    debugDescription: "Packed event integrity salts are incomplete or invalid."
-                )
+            let commitments: [LocalFieldCommitment]
+            if usesCompactInMemoryIntegrity {
+                commitments = []
+            } else {
+                guard let hydrated = EventIntegrityMaterial.rehydrateFieldCommitments(
+                    for: base,
+                    saltBase64Values: material.saltBase64Values,
+                    rawEventDigest: rawEventDigest
+                ) else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .integrity,
+                        in: container,
+                        debugDescription: "Packed event integrity salts are incomplete or invalid."
+                    )
+                }
+                commitments = hydrated
             }
             integrity = EventIntegrity(
                 sequence: packed.sequence,
@@ -511,16 +528,33 @@ public struct HistoryEvent: Codable, Equatable {
             ),
             compact.format == CompactEventIntegrityV1.formatName
         {
-            guard let commitments = EventIntegrityMaterial.rehydrateFieldCommitments(
-                for: base,
-                saltBase64Values: compact.fieldSalts,
-                rawEventDigest: compact.rawEventDigest
-            ) else {
-                throw DecodingError.dataCorruptedError(
-                    forKey: .integrity,
-                    in: container,
-                    debugDescription: "Compact event integrity salts are incomplete or invalid."
-                )
+            let commitments: [LocalFieldCommitment]
+            if usesCompactInMemoryIntegrity {
+                guard EventIntegrityMaterial.compactFieldMaterialIsValid(
+                    schemaVersion: schemaVersion,
+                    saltBase64Values: compact.fieldSalts,
+                    rawEventDigest: compact.rawEventDigest
+                ) else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .integrity,
+                        in: container,
+                        debugDescription: "Compact event integrity salts are incomplete or invalid."
+                    )
+                }
+                commitments = []
+            } else {
+                guard let hydrated = EventIntegrityMaterial.rehydrateFieldCommitments(
+                    for: base,
+                    saltBase64Values: compact.fieldSalts,
+                    rawEventDigest: compact.rawEventDigest
+                ) else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .integrity,
+                        in: container,
+                        debugDescription: "Compact event integrity salts are incomplete or invalid."
+                    )
+                }
+                commitments = hydrated
             }
             integrity = EventIntegrity(
                 sequence: compact.sequence,
@@ -531,7 +565,18 @@ public struct HistoryEvent: Codable, Equatable {
                 storageFormat: .compactSalts
             )
         } else {
-            integrity = try container.decodeIfPresent(EventIntegrity.self, forKey: .integrity)
+            let decoded = try container.decodeIfPresent(EventIntegrity.self, forKey: .integrity)
+            if usesCompactInMemoryIntegrity, let decoded {
+                integrity = EventIntegrity(
+                    sequence: decoded.sequence,
+                    previousEventHash: decoded.previousEventHash,
+                    eventRoot: decoded.eventRoot,
+                    eventHash: decoded.eventHash,
+                    fieldCommitments: []
+                )
+            } else {
+                integrity = decoded
+            }
         }
 
         self.init(

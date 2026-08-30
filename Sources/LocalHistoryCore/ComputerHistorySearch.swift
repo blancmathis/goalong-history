@@ -589,6 +589,50 @@ public struct ComputerHistorySearchService {
     ) -> DateInterval? {
         let query = SearchText.PreparedQuery(rawQuery)
         let today = calendar.startOfDay(for: now)
+        let requestedDayStart: Date?
+        let requestedDayEnd: Date?
+        if SearchText.containsAny(query.normalized, ["yesterday", "hier"]),
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
+        {
+            requestedDayStart = yesterday
+            requestedDayEnd = today
+        } else if SearchText.containsAny(
+            query.normalized,
+            ["today", "aujourd hui", "aujourd'hui"]
+        ) {
+            requestedDayStart = today
+            requestedDayEnd = now.addingTimeInterval(0.001)
+        } else {
+            requestedDayStart = nil
+            requestedDayEnd = nil
+        }
+
+        if let hours = explicitClockRange(in: rawQuery) {
+            let base = requestedDayStart ?? today
+            guard let start = calendar.date(
+                bySettingHour: hours.startHour,
+                minute: hours.startMinute,
+                second: 0,
+                of: base
+            ), var end = calendar.date(
+                bySettingHour: hours.endHour,
+                minute: hours.endMinute,
+                second: 0,
+                of: base
+            ) else { return nil }
+            if end <= start {
+                end = calendar.date(byAdding: .day, value: 1, to: end) ?? end
+            }
+            if let requestedDayEnd { end = min(end, requestedDayEnd) }
+            guard end > start else {
+                return DateInterval(
+                    start: start,
+                    end: start.addingTimeInterval(0.001)
+                )
+            }
+            return DateInterval(start: start, end: end)
+        }
+
         if SearchText.containsAny(
             query.normalized,
             ["today", "aujourd hui", "aujourd'hui"]
@@ -615,13 +659,82 @@ public struct ComputerHistorySearchService {
         return nil
     }
 
+    private struct ClockRange {
+        let startHour: Int
+        let startMinute: Int
+        let endHour: Int
+        let endMinute: Int
+    }
+
+    private static func explicitClockRange(in rawQuery: String) -> ClockRange? {
+        let value = ComputerHistoryNaturalLanguage.canonicalize(rawQuery)
+            .folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: Locale(identifier: "en_US_POSIX")
+            )
+            .lowercased()
+        let patterns = [
+            #"(?:between|entre|from|de)\s+([0-2]?\d)(?:\s*(?:h|:)\s*([0-5]?\d))?\s*(am|pm)?\s+(?:and|et|to|a)\s+([0-2]?\d)(?:\s*(?:h|:)\s*([0-5]?\d))?\s*(am|pm)?"#,
+            #"([0-2]?\d)\s*(?:h|:)\s*([0-5]?\d)?\s*(am|pm)?\s*(?:-|to|a|et)\s*([0-2]?\d)\s*(?:h|:)\s*([0-5]?\d)?\s*(am|pm)?"#,
+        ]
+        for pattern in patterns {
+            guard let expression = try? NSRegularExpression(pattern: pattern) else {
+                continue
+            }
+            let range = NSRange(value.startIndex..., in: value)
+            guard let match = expression.firstMatch(in: value, range: range) else {
+                continue
+            }
+            func group(_ index: Int) -> String? {
+                let range = match.range(at: index)
+                guard range.location != NSNotFound,
+                    let swiftRange = Range(range, in: value)
+                else { return nil }
+                let result = String(value[swiftRange])
+                return result.isEmpty ? nil : result
+            }
+            guard let rawStartHour = group(1).flatMap(Int.init),
+                let rawEndHour = group(4).flatMap(Int.init)
+            else { continue }
+            let startMinute = group(2).flatMap(Int.init) ?? 0
+            let endMinute = group(5).flatMap(Int.init) ?? 0
+            guard let startHour = normalizedClockHour(
+                rawStartHour,
+                meridiem: group(3)
+            ), let endHour = normalizedClockHour(
+                rawEndHour,
+                meridiem: group(6)
+            ) else { continue }
+            return ClockRange(
+                startHour: startHour,
+                startMinute: startMinute,
+                endHour: endHour,
+                endMinute: endMinute
+            )
+        }
+        return nil
+    }
+
+    private static func normalizedClockHour(
+        _ hour: Int,
+        meridiem: String?
+    ) -> Int? {
+        if let meridiem {
+            guard (1...12).contains(hour) else { return nil }
+            if meridiem == "am" { return hour == 12 ? 0 : hour }
+            return hour == 12 ? 12 : hour + 12
+        }
+        return (0...23).contains(hour) ? hour : nil
+    }
+
     public func ask(
         _ rawQuery: String,
         now: Date = Date(),
         maximumHits: Int = 12
     ) -> ComputerHistoryAnswer {
         let preparedQuery = SearchText.PreparedQuery(rawQuery)
-        let corpus = SearchCorpus(memories: memories)
+        let interval = Self.explicitTemporalInterval(for: rawQuery, now: now)
+        let corpus = SearchCorpus(memories: memories, interval: interval)
         let intent = SearchIntent.detect(preparedQuery)
         let limit = min(max(1, maximumHits), 100)
 
@@ -864,19 +977,26 @@ public struct ComputerHistorySearchService {
         maximumHits: Int,
         corpus: SearchCorpus
     ) -> ComputerHistoryAnswer {
-        let scoped = memoriesForTemporalQuery(query, now: now)
-        guard !scoped.isEmpty else { return emptyAnswer(query.raw) }
+        guard !corpus.episodes.isEmpty else { return emptyAnswer(query.raw) }
         let selectedEpisodes = standupEpisodes(
-            from: scoped.flatMap(\.episodes),
+            from: corpus.episodes,
             maximum: maximumHits
         )
         let selectedIDs = Set(selectedEpisodes.map(\.id))
         var lines: [String] = []
-        for memory in scoped {
+        for memory in memories {
             let dayEpisodes = memory.episodes.filter { selectedIDs.contains($0.id) }
             guard !dayEpisodes.isEmpty else { continue }
             lines.append("## \(dayFormatter.string(from: memory.dayStart))")
-            lines.append(memory.executiveSummary)
+            if Self.explicitClockRange(in: query.raw) == nil {
+                lines.append(memory.executiveSummary)
+            } else {
+                lines.append(
+                    "Reconstructed \(dayEpisodes.count) selected work episode"
+                        + (dayEpisodes.count == 1 ? "" : "s")
+                        + " inside the requested time interval."
+                )
+            }
             for episode in dayEpisodes {
                 lines.append(
                     "- **\(episode.title)** — `\(episode.status.rawValue)` — \(episode.summary)"
@@ -1066,16 +1186,32 @@ public struct ComputerHistorySearchService {
         private let resourceIndexByID: [String: Int]
         private let latestEpisodeIndexByResourceID: [String: Int]
 
-        init(memories: [ComputerHistoryDayMemory]) {
-            episodes = memories.flatMap(\.episodes).sorted {
+        init(
+            memories: [ComputerHistoryDayMemory],
+            interval: DateInterval? = nil
+        ) {
+            let allEpisodes = memories.flatMap(\.episodes)
+            episodes = allEpisodes.filter { episode in
+                guard let interval else { return true }
+                return episode.end >= interval.start
+                    && episode.start < interval.end
+            }.sorted {
                 if $0.start != $1.start { return $0.start < $1.start }
                 if $0.end != $1.end { return $0.end < $1.end }
                 return $0.id < $1.id
             }
 
             var mergedResources: [String: ComputerHistoryResourceReference] = [:]
+            let referencedResourceIDs = Set(episodes.flatMap(\.resourceIDs))
             for memory in memories {
                 for resource in memory.resources {
+                    if let interval,
+                        !referencedResourceIDs.contains(resource.id),
+                        !(resource.lastSeen >= interval.start
+                            && resource.firstSeen < interval.end)
+                    {
+                        continue
+                    }
                     guard let existing = mergedResources[resource.id] else {
                         mergedResources[resource.id] = resource
                         continue

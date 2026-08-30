@@ -314,7 +314,7 @@ final class ComputerHistoryMemoryCompactionTests: XCTestCase {
             compacted.coverage.retainedInteractionCount,
             compacted.episodes.reduce(0) { $0 + $1.interactions.count }
         )
-        XCTAssertLessThanOrEqual(compacted.episodes.count, 256)
+        XCTAssertEqual(compacted.episodes.count, 300)
         XCTAssertTrue(compacted.coverage.usesRepresentativeProjection)
         XCTAssertTrue(compacted.markdown.isEmpty)
         XCTAssertEqual(
@@ -370,8 +370,12 @@ final class ComputerHistoryMemoryCompactionTests: XCTestCase {
         XCTAssertEqual(memory.coverage.linkedInteractionCount, actionCount)
         XCTAssertEqual(memory.coverage.episodeCount, actionCount)
         XCTAssertEqual(memory.coverage.retainedEpisodeCount, memory.episodes.count)
-        XCTAssertLessThanOrEqual(memory.episodes.count, 256)
-        XCTAssertTrue(memory.episodes.allSatisfy { !$0.interactions.isEmpty })
+        XCTAssertEqual(memory.episodes.count, actionCount)
+        XCTAssertTrue(memory.episodes.allSatisfy { $0.totalInteractionCount == 1 })
+        XCTAssertLessThanOrEqual(
+            memory.episodes.reduce(0) { $0 + $1.interactions.count },
+            640
+        )
 
         let retainedEpisodeIDs = Set(memory.episodes.map(\.id))
         XCTAssertTrue(

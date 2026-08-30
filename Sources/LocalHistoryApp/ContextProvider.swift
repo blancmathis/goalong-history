@@ -54,7 +54,8 @@
         }
 
         func capture() -> ContextSnapshot? {
-            guard let runningApplication = NSWorkspace.shared.frontmostApplication else { return nil }
+            guard let workspaceApplication = NSWorkspace.shared.frontmostApplication else { return nil }
+            let runningApplication = focusedRunningApplication(fallback: workspaceApplication)
             let config = configManager.config
             let app = AppSnapshot(
                 name: StringSanitizer.clean(
@@ -355,6 +356,20 @@
             cachedURL = nil
             cachedBrowserIdentity = nil
             lastURLProbe = .distantPast
+        }
+
+        private func focusedRunningApplication(
+            fallback workspaceApplication: NSRunningApplication
+        ) -> NSRunningApplication {
+            guard permissions.currentStatus.accessibility,
+                let focusedProcessIdentifier = AXReader.focusedApplicationProcessIdentifier(),
+                focusedProcessIdentifier != workspaceApplication.processIdentifier,
+                let focusedApplication = NSRunningApplication(
+                    processIdentifier: focusedProcessIdentifier
+                ),
+                !focusedApplication.isTerminated
+            else { return workspaceApplication }
+            return focusedApplication
         }
 
         private func isBrowser(app: AppSnapshot, config: RecorderConfig) -> Bool {

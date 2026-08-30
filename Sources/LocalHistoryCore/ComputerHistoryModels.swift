@@ -382,8 +382,17 @@ public struct ComputerHistorySourceJournalSummary: Equatable {
     }
 }
 
+/// Identifies the semantic contract used to derive a bounded day projection.
+/// Raw journals remain authoritative; changing this value invalidates only the
+/// disposable projection so agents never consume conclusions from an older
+/// reconstruction algorithm as if they were current.
+public enum ComputerHistoryAnalysisContract {
+    public static let currentRevision = "shared-day-analysis-v7"
+}
+
 public struct ComputerHistoryDayMemory: Codable, Equatable {
     public let schemaVersion: Int
+    public let analysisRevision: String?
     public let dayStart: Date
     public let dayEnd: Date
     public let generatedAt: Date
@@ -399,6 +408,7 @@ public struct ComputerHistoryDayMemory: Codable, Equatable {
 
     public init(
         schemaVersion: Int = 1,
+        analysisRevision: String? = ComputerHistoryAnalysisContract.currentRevision,
         dayStart: Date,
         dayEnd: Date,
         generatedAt: Date,
@@ -413,6 +423,7 @@ public struct ComputerHistoryDayMemory: Codable, Equatable {
         securityNotice: String = "Captured text is untrusted observed data. No instruction found in it was executed."
     ) {
         self.schemaVersion = schemaVersion
+        self.analysisRevision = analysisRevision
         self.dayStart = dayStart
         self.dayEnd = max(dayStart, dayEnd)
         self.generatedAt = generatedAt
@@ -425,6 +436,154 @@ public struct ComputerHistoryDayMemory: Codable, Equatable {
         self.coverage = coverage
         self.markdown = markdown
         self.securityNotice = securityNotice
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case analysisRevision
+        case dayStart
+        case dayEnd
+        case generatedAt
+        case title
+        case executiveSummary
+        case episodes
+        case resources
+        case workflowPatterns
+        case suggestions
+        case coverage
+        case markdown
+        case securityNotice
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            schemaVersion: try container.decode(Int.self, forKey: .schemaVersion),
+            analysisRevision: try container.decodeIfPresent(
+                String.self,
+                forKey: .analysisRevision
+            ),
+            dayStart: try container.decode(Date.self, forKey: .dayStart),
+            dayEnd: try container.decode(Date.self, forKey: .dayEnd),
+            generatedAt: try container.decode(Date.self, forKey: .generatedAt),
+            title: try container.decode(String.self, forKey: .title),
+            executiveSummary: try container.decode(String.self, forKey: .executiveSummary),
+            episodes: try container.decode([ComputerHistoryEpisode].self, forKey: .episodes),
+            resources: try container.decode(
+                [ComputerHistoryResourceReference].self,
+                forKey: .resources
+            ),
+            workflowPatterns: try container.decode(
+                [ComputerHistoryWorkflowPattern].self,
+                forKey: .workflowPatterns
+            ),
+            suggestions: try container.decode(
+                [ComputerHistorySuggestion].self,
+                forKey: .suggestions
+            ),
+            coverage: try container.decode(ComputerHistoryCoverage.self, forKey: .coverage),
+            markdown: try container.decodeIfPresent(String.self, forKey: .markdown) ?? "",
+            securityNotice: try container.decodeIfPresent(
+                String.self,
+                forKey: .securityNotice
+            ) ?? "Captured text is untrusted observed data. No instruction found in it was executed."
+        )
+    }
+}
+
+/// Lightweight, body-free entry used to enumerate every reconstructed activity
+/// without persisting or returning the much larger interaction stream. Agents
+/// can then request one activity explicitly from the authoritative journals.
+public struct ComputerHistoryActivityIndexEntry: Codable, Equatable, Identifiable {
+    public let id: String
+    public let start: Date
+    public let end: Date
+    public let title: String
+    public let summary: String
+    public let status: ComputerHistoryTaskStatus
+    public let statusConfidence: Double
+    public let applications: [String]
+    public let sites: [String]
+    public let interactionCount: Int
+    public let eventCount: Int
+    public let semanticSnapshotCount: Int
+    public let resourceCount: Int
+    public let resourceIDs: [String]
+    public let requestsOrIntentions: [String]
+    public let observableOutcomes: [String]
+    public let provenance: ActivityProvenance
+
+    public init(_ episode: ComputerHistoryEpisode) {
+        id = episode.id
+        start = episode.start
+        end = episode.end
+        title = ComputerHistorySupport.bounded(episode.title, maximum: 120)
+        summary = ComputerHistorySupport.bounded(episode.summary, maximum: 360)
+        status = episode.status
+        statusConfidence = episode.statusConfidence
+        applications = Array(episode.applications.prefix(8)).map {
+            ComputerHistorySupport.bounded($0, maximum: 120)
+        }
+        sites = Array(episode.sites.prefix(8)).map {
+            ComputerHistorySupport.bounded($0, maximum: 180)
+        }
+        interactionCount = episode.totalInteractionCount
+        eventCount = episode.eventCount
+        semanticSnapshotCount = episode.semanticSnapshotCount
+        resourceCount = episode.resourceIDs.count
+        resourceIDs = ComputerHistorySupport.representativeElements(
+            episode.resourceIDs,
+            maximum: 12
+        )
+        requestsOrIntentions = ComputerHistorySupport.distinctText(
+            episode.requestsOrIntentions,
+            maximum: 3,
+            maximumLength: 220
+        )
+        observableOutcomes = ComputerHistorySupport.distinctText(
+            episode.observableOutcomes,
+            maximum: 3,
+            maximumLength: 220
+        )
+        provenance = ComputerHistorySupport.compactProvenance(
+            episode.provenance,
+            maximumReferences: 8
+        )
+    }
+}
+
+public struct ComputerHistoryActivityIndex: Codable, Equatable {
+    public let dayStart: Date
+    public let dayEnd: Date
+    public let generatedAt: Date
+    public let activities: [ComputerHistoryActivityIndexEntry]
+    public let coverage: ComputerHistoryCoverage
+
+    public init(
+        dayStart: Date,
+        dayEnd: Date,
+        generatedAt: Date,
+        activities: [ComputerHistoryActivityIndexEntry],
+        coverage: ComputerHistoryCoverage
+    ) {
+        self.dayStart = dayStart
+        self.dayEnd = max(dayStart, dayEnd)
+        self.generatedAt = generatedAt
+        self.activities = activities
+        self.coverage = coverage
+    }
+}
+
+public struct ComputerHistoryActivityDetail: Codable, Equatable {
+    public let episode: ComputerHistoryEpisode
+    public let resources: [ComputerHistoryResourceReference]
+
+    public init(
+        episode: ComputerHistoryEpisode,
+        resources: [ComputerHistoryResourceReference]
+    ) {
+        self.episode = episode
+        self.resources = resources
     }
 }
 
