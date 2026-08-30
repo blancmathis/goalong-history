@@ -379,7 +379,9 @@
                 sealsDirectory: fixture.seals,
                 receiptsDirectory: fixture.receipts,
                 limits: limits,
-                retryDelay: 0.1,
+                // Keep a wide margin between the enqueue assertion below and the retry.
+                // Busy CI runners can otherwise suspend this test past a 100 ms deadline.
+                retryDelay: 1,
                 uploadAttempt: { seal, completion in
                     lock.lock()
                     attempts.append(seal.anchorSequence)
