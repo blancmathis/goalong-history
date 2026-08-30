@@ -494,6 +494,61 @@
             )
         }
 
+        func testSelectedDayPublishesOnlyCompleteTitledConversationSnapshots() throws {
+            let fixture = try makeFixture("atomic-titled-overview")
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let sourceRoot = fixture.container.appendingPathComponent("Source", isDirectory: true)
+            try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+            let selectedDay = Calendar.current.startOfDay(for: Date()).addingTimeInterval(-86_400)
+            let sourceCount = 70
+            for index in 0..<sourceCount {
+                let source = sourceRoot.appendingPathComponent(String(format: "conversation-%03d.jsonl", index))
+                try Data("{\"role\":\"user\",\"content\":\"Prompt \(index)\"}\n".utf8).write(to: source)
+                try FileManager.default.setAttributes(
+                    [.modificationDate: selectedDay.addingTimeInterval(3_600 + Double(index))],
+                    ofItemAtPath: source.path
+                )
+            }
+            let folder = AgentWatchedFolder(
+                id: "atomic-titled-overview-source",
+                displayName: "Atomic title fixture",
+                path: sourceRoot.path,
+                provider: .custom,
+                captureMode: .everyFile
+            )
+            let store = try AgentActivityStore(rootDirectory: fixture.metadata)
+            _ = try store.saveConfiguration(
+                AgentActivityConfiguration(watchedFolders: [folder], maximumIndexEntries: sourceCount)
+            )
+            let runtime = try AgentActivityRuntime(
+                rootDirectory: fixture.metadata,
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                sourceDiscovery: { [] },
+                onCaptured: { _ in }
+            )
+            defer { runtime.stop() }
+
+            var published: [AgentActivityOverview] = []
+            let subscription = runtime.$overview.dropFirst().sink { overview in
+                guard overview.day == selectedDay, !overview.captures.isEmpty else { return }
+                published.append(overview)
+            }
+            runtime.selectDay(selectedDay)
+            runtime.waitForPendingScansForTesting()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            subscription.cancel()
+
+            XCTAssertFalse(published.isEmpty)
+            XCTAssertTrue(
+                published.allSatisfy { overview in
+                    overview.captures.count == sourceCount
+                        && overview.captures.allSatisfy {
+                            $0.summary.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                        }
+                }
+            )
+        }
+
         func testSignalWatcherTriggersImmediateCoalescedScanWithoutWaitingForPollInterval() throws {
             let fixture = try makeFixture("signal-watcher")
             defer { try? FileManager.default.removeItem(at: fixture.container) }

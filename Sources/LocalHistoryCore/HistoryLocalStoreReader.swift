@@ -37,6 +37,49 @@ public struct HistoryLoadedData {
     }
 }
 
+public enum DailyWebsiteUsageLoadState: String, Codable, Equatable, Sendable {
+    case ready
+    case noSourceForDay
+    case sourceUnavailable
+    case sourceChanged
+    case cancelled
+    case bounded
+}
+
+public struct DailyWebsiteUsageLoadResult {
+    public let day: Date
+    public let state: DailyWebsiteUsageLoadState
+    public let websites: [DailyWebsiteUsage]
+    public let sourceBytesRead: Int64
+    public let sourceRowCount: Int
+    public let sourceEventCount: Int
+    public let peakStreamBufferBytes: Int
+    public let peakEstimatedRetainedBytes: Int64
+    public let issues: [HistoryLoadIssue]
+
+    public init(
+        day: Date,
+        state: DailyWebsiteUsageLoadState,
+        websites: [DailyWebsiteUsage],
+        sourceBytesRead: Int64,
+        sourceRowCount: Int,
+        sourceEventCount: Int,
+        peakStreamBufferBytes: Int,
+        peakEstimatedRetainedBytes: Int64,
+        issues: [HistoryLoadIssue]
+    ) {
+        self.day = day
+        self.state = state
+        self.websites = websites
+        self.sourceBytesRead = max(0, sourceBytesRead)
+        self.sourceRowCount = max(0, sourceRowCount)
+        self.sourceEventCount = max(0, sourceEventCount)
+        self.peakStreamBufferBytes = max(0, peakStreamBufferBytes)
+        self.peakEstimatedRetainedBytes = max(0, peakEstimatedRetainedBytes)
+        self.issues = issues
+    }
+}
+
 /// The minimal persisted state needed to assess recorder health. Keeping this
 /// separate from `HistoryLoadedData` prevents lightweight status checks from
 /// decoding the complete event, memory, and semantic retention horizon.
@@ -639,6 +682,45 @@ private final class HistoryPinnedSourceDirectory {
         }
         return files.sorted { $0.name < $1.name }
     }
+
+    /// Resolves one known source filename without enumerating the directory.
+    /// This is used by single-day readers so repeated queries remain O(1) in
+    /// the number of retained day journals.
+    func regularFile(named name: String) throws -> HistoryPinnedSourceFile? {
+        guard !name.isEmpty, name != ".", name != "..", !name.contains("/") else {
+            throw HistoryPinnedDirectoryError.unsafeEntry(
+                path: url.appendingPathComponent(name).path
+            )
+        }
+        guard isPathStable() else {
+            throw HistoryPinnedDirectoryError.changed(path: url.path)
+        }
+        var entryStat = stat()
+        let result = name.withCString {
+            fstatat(descriptor, $0, &entryStat, AT_SYMLINK_NOFOLLOW)
+        }
+        guard result == 0 else {
+            if errno == ENOENT { return nil }
+            throw HistoryPinnedDirectoryError.inaccessible(
+                path: url.appendingPathComponent(name).path,
+                reason: String(cString: strerror(errno))
+            )
+        }
+        guard (entryStat.st_mode & S_IFMT) == S_IFREG else {
+            if (entryStat.st_mode & S_IFMT) == S_IFLNK {
+                throw HistoryPinnedDirectoryError.symbolicLinkFile(
+                    path: url.appendingPathComponent(name).path
+                )
+            }
+            throw HistoryPinnedDirectoryError.unsafeEntry(
+                path: url.appendingPathComponent(name).path
+            )
+        }
+        guard isPathStable() else {
+            throw HistoryPinnedDirectoryError.changed(path: url.path)
+        }
+        return HistoryPinnedSourceFile(directory: self, name: name)
+    }
 }
 
 private struct HistoryPinnedSourceFile {
@@ -1003,6 +1085,242 @@ public struct HistoryLocalStoreReader {
                 ]
             )
         }
+    }
+
+    /// Streams exactly one local event day and returns a bounded domain-only
+    /// projection. No memories, semantic payloads, full URLs, titles or page
+    /// text are retained, and the source journal is never modified.
+    public func loadDailyWebsiteUsage(
+        day: Date,
+        currentTime: Date = Date(),
+        limits: DailyWebsiteUsageLimits = .production,
+        shouldContinue: () -> Bool = { true }
+    ) -> DailyWebsiteUsageLoadResult {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)
+            ?? dayStart.addingTimeInterval(86_400)
+        var accumulator = DailyWebsiteUsageAccumulator(
+            day: dayStart,
+            currentTime: currentTime,
+            calendar: calendar,
+            limits: limits
+        )
+        var issues: [HistoryLoadIssue] = []
+        var eventBytesRead: Int64 = 0
+        var sourceRowCount = 0
+        var peakStreamBufferBytes = 0
+        var wasCancelled = false
+        var sourceBoundExceeded = false
+        var sourceChanged = false
+        var sourceUnavailable = false
+        var eventFiles: [HistoryPinnedSourceFile] = []
+        var pinnedRoot: HistoryPinnedSourceDirectory?
+        var pinnedEvents: HistoryPinnedSourceDirectory?
+        let deadlineUptime = ProcessInfo.processInfo.systemUptime + limits.maximumReadSeconds
+
+        func canContinueReading() -> Bool {
+            !sourceBoundExceeded
+                && !sourceUnavailable
+                && shouldContinue()
+                && ProcessInfo.processInfo.systemUptime < deadlineUptime
+        }
+
+        func appendIssue(path: String, line: Int?, message: String) {
+            guard issues.count < Self.maximumComputerHistoryIssues else { return }
+            issues.append(HistoryLoadIssue(path: path, line: line, message: message))
+        }
+
+        do {
+            let sourceRoot = try HistoryPinnedSourceDirectory(rootURL: rootDirectory)
+            let eventsSource = try HistoryPinnedSourceDirectory(parent: sourceRoot, name: "events")
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = calendar.timeZone
+            formatter.dateFormat = "yyyy-MM-dd"
+            let exactName = formatter.string(from: dayStart) + ".jsonl"
+            eventFiles = try eventsSource.regularFile(named: exactName).map { [$0] } ?? []
+            pinnedRoot = sourceRoot
+            pinnedEvents = eventsSource
+        } catch {
+            sourceUnavailable = true
+            appendIssue(
+                path: eventsDirectory.path,
+                line: nil,
+                message: "Could not access the read-only daily website source: \(error.localizedDescription)"
+            )
+        }
+
+        if !sourceUnavailable, eventFiles.isEmpty {
+            return DailyWebsiteUsageLoadResult(
+                day: dayStart,
+                state: .noSourceForDay,
+                websites: [],
+                sourceBytesRead: 0,
+                sourceRowCount: 0,
+                sourceEventCount: 0,
+                peakStreamBufferBytes: 0,
+                peakEstimatedRetainedBytes: 0,
+                issues: issues
+            )
+        }
+
+        let rowDecoder = decoder(compactEventIntegrity: true)
+        let streamReader = HistoryJSONLinesStreamReader()
+        for sourceFile in eventFiles {
+            guard canContinueReading() else {
+                wasCancelled = true
+                appendIssue(
+                    path: sourceFile.url.path,
+                    line: nil,
+                    message: "Daily website source reading stopped at the caller's time budget."
+                )
+                break
+            }
+            do {
+                let metrics = try streamReader.read(
+                    file: sourceFile.url,
+                    directoryDescriptor: sourceFile.directory.descriptor,
+                    relativeName: sourceFile.name,
+                    maximumBytes: limits.maximumSourceBytes,
+                    allowVerifiedAppendOnlyGrowth: true,
+                    shouldContinue: canContinueReading,
+                    onLine: { rawLine, lineNumber in
+                        autoreleasepool {
+                            guard !sourceUnavailable, !sourceChanged, !sourceBoundExceeded else {
+                                return
+                            }
+                            sourceRowCount += 1
+                            guard sourceRowCount <= limits.maximumSourceRows else {
+                                sourceBoundExceeded = true
+                                appendIssue(
+                                    path: sourceFile.url.path,
+                                    line: lineNumber,
+                                    message:
+                                        "Daily website source exceeds the \(limits.maximumSourceRows)-row safety limit."
+                                )
+                                return
+                            }
+                            do {
+                                let event = try rowDecoder.decode(
+                                    DailyWebsiteUsageEventProjection.self,
+                                    from: rawLine
+                                ).historyEvent
+                                guard event.timestamp >= dayStart, event.timestamp < dayEnd else {
+                                    return
+                                }
+                                guard event.isDerivedAnalysisEvidence else { return }
+                                accumulator.ingest(event)
+                            } catch {
+                                sourceUnavailable = true
+                                appendIssue(
+                                    path: sourceFile.url.path,
+                                    line: lineNumber,
+                                    message: "Could not decode daily website source row: \(error)"
+                                )
+                            }
+                        }
+                    },
+                    onOversizedLine: { lineNumber, maximumBytes in
+                        sourceUnavailable = true
+                        appendIssue(
+                            path: sourceFile.url.path,
+                            line: lineNumber,
+                            message:
+                                "Daily website source row exceeds the \(maximumBytes)-byte safety limit."
+                        )
+                    }
+                )
+                eventBytesRead += metrics.bytesRead
+                peakStreamBufferBytes = max(peakStreamBufferBytes, metrics.peakBufferedBytes)
+                if metrics.reachedByteLimit {
+                    sourceBoundExceeded = true
+                    appendIssue(
+                        path: sourceFile.url.path,
+                        line: nil,
+                        message:
+                            "Daily website source exceeds the \(limits.maximumSourceBytes)-byte safety limit."
+                    )
+                    break
+                }
+                if metrics.sourceChangedDuringRead {
+                    sourceChanged = true
+                    appendIssue(
+                        path: sourceFile.url.path,
+                        line: nil,
+                        message: "Daily website source changed during read; the partial projection was discarded."
+                    )
+                    break
+                }
+                if metrics.wasCancelled, !sourceBoundExceeded, !sourceUnavailable {
+                    wasCancelled = true
+                    appendIssue(
+                        path: sourceFile.url.path,
+                        line: nil,
+                        message: "Daily website source reading stopped at the caller's time budget."
+                    )
+                    break
+                }
+            } catch {
+                sourceUnavailable = true
+                appendIssue(
+                    path: sourceFile.url.path,
+                    line: nil,
+                    message: "Could not read the daily website source: \(error.localizedDescription)"
+                )
+                break
+            }
+        }
+
+        if pinnedEvents?.isPathStable() == false || pinnedRoot?.isPathStable() == false {
+            sourceChanged = true
+            appendIssue(
+                path: eventsDirectory.path,
+                line: nil,
+                message: "Daily website source directory changed during read; the partial projection was discarded."
+            )
+        }
+
+        let websites = accumulator.finish()
+        if accumulator.wasTruncated {
+            appendIssue(
+                path: eventFiles.first?.url.path ?? eventsDirectory.path,
+                line: nil,
+                message:
+                    "Daily website projection exceeded its bounded host or retained-metadata budget."
+            )
+        }
+        let state: DailyWebsiteUsageLoadState
+        let safeWebsites: [DailyWebsiteUsage]
+        if sourceChanged {
+            state = .sourceChanged
+            safeWebsites = []
+        } else if sourceUnavailable {
+            state = .sourceUnavailable
+            safeWebsites = []
+        } else if sourceBoundExceeded || accumulator.wasTruncated {
+            state = .bounded
+            safeWebsites = []
+        } else if wasCancelled {
+            state = .cancelled
+            safeWebsites = []
+        } else {
+            state = .ready
+            safeWebsites = websites
+        }
+
+        return DailyWebsiteUsageLoadResult(
+            day: dayStart,
+            state: state,
+            websites: safeWebsites,
+            sourceBytesRead: eventBytesRead,
+            sourceRowCount: sourceRowCount,
+            sourceEventCount: accumulator.sourceEventCount,
+            peakStreamBufferBytes: peakStreamBufferBytes,
+            peakEstimatedRetainedBytes: accumulator.peakEstimatedRetainedBytes,
+            issues: issues
+        )
     }
 
     public func load(

@@ -158,6 +158,9 @@
             let normalized = Calendar.current.startOfDay(for: date)
             guard normalized != selectedDay else { return }
             selectedDay = normalized
+            // Never show the previous day's rows under the new date while the direct-source
+            // projection is being rebuilt. The complete snapshot is published atomically below.
+            overview = AgentActivityOverview(day: normalized)
             updateScanSnapshot(day: normalized)
             enqueueScan(
                 forceFullDiscovery: false,
@@ -514,11 +517,6 @@
 
             if request.clearTransientAnalyses {
                 store.clearTransientAnalyses()
-                let indexOnlyOverview = store.overview(for: snapshot.day)
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, self.selectedDay == snapshot.day else { return }
-                    self.overview = indexOnlyOverview
-                }
             }
 
             let result = scanner.scan(
@@ -555,7 +553,12 @@
             let bytes: Int64?
             let validIndex: Bool?
             if shouldRefreshDerivedState {
-                nextOverview = store.overview(for: selected)
+                // A bounded selected-day pass may need several cycles. Publishing any earlier
+                // cycle mixes complete index counts with not-yet-rehydrated titles, causing the
+                // intermittent "Codex conversation" rows reported by users.
+                nextOverview = request.analyzeSelectedDay && result.analysisIncomplete
+                    ? nil
+                    : store.overview(for: selected)
                 bytes = store.storageBytes()
                 validIndex = store.indexIsValid(
                     maximumEntries: snapshot.configuration.maximumIndexEntries

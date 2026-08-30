@@ -595,6 +595,10 @@
             case .iPhone: return "iphone"
             case .iPad: return "ipad"
             case .iPod: return "ipod"
+            case .appleWatch: return "applewatch"
+            case .appleTV: return "appletv"
+            case .homePod: return "homepod"
+            case .visionPro: return "visionpro"
             case .unknown: return "display"
             }
         }

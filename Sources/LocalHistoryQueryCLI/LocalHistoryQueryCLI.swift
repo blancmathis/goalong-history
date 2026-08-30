@@ -172,6 +172,40 @@ private struct ScreenTimeEnvelope: Encodable {
     let limitation: String
 }
 
+private struct DailyWebsitesStatusEnvelope: Encodable {
+    let kind: String
+    let message: String
+}
+
+private struct DailyWebsiteRowEnvelope: Encodable {
+    let host: String
+    let foregroundSeconds: TimeInterval
+    let eventCount: Int
+    let sourceApplications: [String]
+}
+
+private struct DailyWebsitesEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let day: String
+    let generatedAt: Date
+    let status: DailyWebsitesStatusEnvelope
+    let scope: String
+    let includedInApplicationTotals: Bool
+    let sourceBytesRead: Int64
+    let sourceRowCount: Int
+    let sourceEventCount: Int
+    let peakStreamBufferBytes: Int
+    let peakEstimatedRetainedBytes: Int64
+    let totalWebsiteCount: Int
+    let offset: Int
+    let returnedWebsiteCount: Int
+    let nextOffset: Int?
+    let websites: [DailyWebsiteRowEnvelope]
+    let loadIssues: [HistoryLoadIssue]
+    let limitation: String
+}
+
 private struct AgentConversationMessageEnvelope: Encodable {
     let role: String
     let text: String
@@ -553,6 +587,28 @@ private enum LocalHistoryQueryCLI {
                 throw CLIError.usage("screen-time accepts one date and the optional --mac-only flag")
             }
             try printScreenTime(day: try day(raw), macOnly: macOnly)
+
+        case "websites":
+            let limit = try integer(arguments.removeOption("--limit") ?? "100")
+            let offset = try integer(arguments.removeOption("--offset") ?? "0")
+            guard (1...1_000).contains(limit) else {
+                throw CLIError.usage("--limit must be between 1 and 1000")
+            }
+            guard (0...50_000).contains(offset) else {
+                throw CLIError.usage("--offset must be between 0 and 50000")
+            }
+            let raw = arguments.popFirst() ?? "today"
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage(
+                    "websites accepts one date and the optional --limit and --offset values"
+                )
+            }
+            try printDailyWebsites(
+                root: root,
+                day: try day(raw),
+                limit: limit,
+                offset: offset
+            )
 
         case "ai-conversations":
             let tokenBudget = try integer(arguments.removeOption("--tokens") ?? "40000")
@@ -1164,6 +1220,74 @@ private enum LocalHistoryQueryCLI {
                 biomeIntervalCount: collection.biomeIntervalCount,
                 limitation:
                     "Read-only snapshot of Apple data available to this Goalong identity. Durations do not prove attention or productivity."
+            )
+        )
+    }
+
+    private static func printDailyWebsites(
+        root: URL,
+        day: Date,
+        limit: Int,
+        offset: Int
+    ) throws {
+        let loaded = HistoryLocalStoreReader(rootDirectory: root)
+            .loadDailyWebsiteUsage(day: day)
+        let total = loaded.websites.count
+        let boundedOffset = min(offset, total)
+        let page = Array(loaded.websites.dropFirst(boundedOffset).prefix(limit))
+        let nextOffset = boundedOffset + page.count < total
+            ? boundedOffset + page.count
+            : nil
+        let statusMessage: String = {
+            switch loaded.state {
+            case .ready:
+                return total == 0
+                    ? "No public website was observed in the local journal for this day."
+                    : "Complete ranked website usage loaded from the original local day journal."
+            case .noSourceForDay:
+                return "No local event journal exists for this day."
+            case .sourceUnavailable:
+                return "The original local event journal is absent, inaccessible or invalid."
+            case .sourceChanged:
+                return "The original local event journal changed during the read; no partial result was returned."
+            case .cancelled:
+                return "The bounded source read stopped before completion; no partial result was returned."
+            case .bounded:
+                return "A source or retained-metadata safety bound was reached; no partial ranking was returned."
+            }
+        }()
+
+        try printJSON(
+            DailyWebsitesEnvelope(
+                rootDirectory: root.path,
+                day: localDayString(loaded.day),
+                generatedAt: Date(),
+                status: DailyWebsitesStatusEnvelope(
+                    kind: loaded.state.rawValue,
+                    message: statusMessage
+                ),
+                scope: "thisMacGoalongObserved",
+                includedInApplicationTotals: true,
+                sourceBytesRead: loaded.sourceBytesRead,
+                sourceRowCount: loaded.sourceRowCount,
+                sourceEventCount: loaded.sourceEventCount,
+                peakStreamBufferBytes: loaded.peakStreamBufferBytes,
+                peakEstimatedRetainedBytes: loaded.peakEstimatedRetainedBytes,
+                totalWebsiteCount: total,
+                offset: boundedOffset,
+                returnedWebsiteCount: page.count,
+                nextOffset: nextOffset,
+                websites: page.map {
+                    DailyWebsiteRowEnvelope(
+                        host: $0.host,
+                        foregroundSeconds: $0.foregroundSeconds,
+                        eventCount: $0.eventCount,
+                        sourceApplications: $0.sourceApplications
+                    )
+                },
+                loadIssues: loaded.issues,
+                limitation:
+                    "Website durations are a Goalong-observed breakdown of browser application time on this Mac and must never be added to application or Apple Screen Time totals. Apple does not expose reliable per-site iPhone or iPad detail here. Observations do not prove attention, identity, authorship or productivity."
             )
         )
     }
@@ -1873,6 +1997,7 @@ private enum LocalHistoryQueryCLI {
           activities [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
           activity ACTIVITY_ID [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
           screen-time [today|yesterday|YYYY-MM-DD] [--mac-only]
+          websites [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
           ai-conversations [today|yesterday|YYYY-MM-DD] [--tokens N] [--limit N] [--offset N]
           recap [today|yesterday|YYYY-MM-DD]
           recaps
@@ -1899,7 +2024,9 @@ private enum LocalHistoryQueryCLI {
         user prompts and final assistant answers from the existing lightweight source index;
         it never scans providers, updates the index or copies a transcript. `screen-time` uses the bundled,
         identically signed read-only adapter to inspect Apple's local stores once and returns complete
-        per-device segments and application durations. `recap` reads only the bounded
+        per-device segments and application durations. `websites` streams one original local
+        day journal and returns a bounded, paginated domain-only ranking; it never exposes full
+        URLs or stores another copy. `recap` reads only the bounded
         canonical daily recap JSON; `days` lists the dates currently queryable from
         Goalong's existing stores.
         """

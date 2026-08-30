@@ -108,7 +108,11 @@
                     showsHeader: false
                 )
             case .screenTime:
-                GoalongScreenTimePage(model: model, showsHeader: false)
+                GoalongScreenTimePage(
+                    model: model,
+                    screenTimeModel: screenTime,
+                    showsHeader: false
+                )
             case .conversations:
                 AgentActivityPage(agents: agents, presentation: .history)
             }
@@ -133,6 +137,7 @@
             case .computer:
                 model.refreshEverything()
             case .screenTime:
+                model.refreshEverything()
                 screenTime.refresh()
             case .conversations:
                 agents.scanNow(analyzeSelectedDay: true)

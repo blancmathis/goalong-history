@@ -45,7 +45,7 @@ All SQLite connections are `SQLITE_OPEN_READONLY`. The feature never writes to, 
 
 Apple protects these locations with TCC. The signed Goalong History app needs **Full Disk Access** once. The UI detects a permission failure and links directly to the relevant System Settings pane.
 
-The page refreshes every five seconds, but iPhone/iPad freshness is controlled by Apple's iCloud/Biome synchronization. “Real time” therefore means automatic and continuously re-read as Apple syncs—not a guaranteed zero-latency push channel.
+The visible page refreshes every 30 seconds, and the refresh button still re-reads immediately. This avoids repeatedly enumerating Apple stores while keeping the UI current; iPhone/iPad freshness is controlled by Apple's iCloud/Biome synchronization. “Real time” therefore means automatic and continuously re-read as Apple syncs—not a guaranteed zero-latency push channel.
 
 ## Device-scope semantics
 

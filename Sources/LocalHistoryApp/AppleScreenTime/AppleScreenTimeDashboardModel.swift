@@ -9,9 +9,14 @@
     final class AppleScreenTimeDashboardModel: ObservableObject {
         typealias CollectionProvider = (Date) -> AppleSystemScreenTimeCollection
 
+        /// Apple/iCloud usage stores do not meaningfully update at sub-second cadence.
+        /// Keep the visible dashboard responsive without repeatedly enumerating them.
+        static let defaultRefreshInterval: TimeInterval = 30
+
         @Published var selectedDay: Date
         @Published var configuration: AppleScreenTimeConfiguration
         @Published private(set) var summary: AppleScreenTimeDaySummary?
+        @Published private(set) var unfilteredSummary: AppleScreenTimeDaySummary?
         @Published private(set) var availableDevices: [AppleScreenTimeDevice] = []
         @Published private(set) var isBusy = false
         @Published private(set) var lastRefreshAt: Date?
@@ -26,6 +31,7 @@
         private let store: AppleScreenTimeStore?
         private let appleSource: AppleSystemScreenTimeSource
         private let collectionProvider: CollectionProvider
+        private let includesUnfilteredSummary: Bool
         private let refreshInterval: TimeInterval
         private let queue = DispatchQueue(
             label: "ai.goalong.localhistory.apple-system-screen-time.dashboard",
@@ -40,12 +46,14 @@
             rootDirectory: URL,
             deviceID: String,
             selectedDay: Date = Date(),
-            refreshInterval: TimeInterval = 5,
+            refreshInterval: TimeInterval = AppleScreenTimeDashboardModel.defaultRefreshInterval,
+            includesUnfilteredSummary: Bool = false,
             collectionProvider: CollectionProvider? = nil
         ) {
             let source = AppleSystemScreenTimeSource(deviceID: deviceID)
             self.appleSource = source
             self.collectionProvider = collectionProvider ?? { source.collect(for: $0) }
+            self.includesUnfilteredSummary = includesUnfilteredSummary
             self.refreshInterval = max(1, refreshInterval)
             self.currentMacDevice = source.currentMacDevice
             self.selectedDay = Calendar.current.startOfDay(for: selectedDay)
@@ -132,12 +140,12 @@
                     rawCollection,
                     currentMac: source.currentMacDevice
                 )
-                let normalizedScope = requestedScope.normalized(
+                let effectiveScope = requestedScope.normalized(
                     availableDevices: collection.availableDevices
                 )
                 let scoped = Self.scopedExport(
                     collection.storedExport,
-                    scope: normalizedScope,
+                    scope: effectiveScope,
                     currentMacID: source.currentMacDevice.id
                 )
                 let interval = Calendar.current.dateInterval(of: .day, for: day)
@@ -146,10 +154,22 @@
                         AppleScreenTimeAnalyzer.summary(
                             from: $0,
                             interval: interval,
-                            scope: normalizedScope
+                            scope: effectiveScope
                         )
                     }
                 }
+                let nextUnfilteredSummary = self?.includesUnfilteredSummary == true
+                    ? interval.flatMap { interval in
+                        scoped.flatMap {
+                            AppleScreenTimeAnalyzer.summary(
+                                from: $0,
+                                interval: interval,
+                                scope: effectiveScope,
+                                includingSystemInactivity: true
+                            )
+                        }
+                    }
+                    : nil
 
                 DispatchQueue.main.async {
                     guard let self else { return }
@@ -172,18 +192,12 @@
                     self.deviceSourceLabels = collection.deviceSourceLabels
                     self.status = collection.status
                     self.summary = nextSummary
+                    self.unfilteredSummary = nextUnfilteredSummary
                     self.latestAppleUpdate = collection.latestAppleUpdate
                     self.knowledgeIntervalCount = collection.knowledgeIntervalCount
                     self.biomeIntervalCount = collection.biomeIntervalCount
                     self.lastRefreshAt = Date()
                     self.isBusy = false
-
-                    if normalizedScope != requestedScope {
-                        self.configuration.scope = normalizedScope
-                        if let store = self.store {
-                            try? store.saveConfiguration(self.configuration)
-                        }
-                    }
                 }
             }
         }

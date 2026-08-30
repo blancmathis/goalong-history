@@ -1420,6 +1420,9 @@
             ] {
                 result += estimatedStringBytes(value)
             }
+            for value in usage.sourceApplications {
+                result += estimatedStringBytes(value)
+            }
             return result
         }
 
@@ -2075,23 +2078,29 @@
                 var activeMinuteKeys = Set<Int64>()
                 var eventCount = 0
                 var categories: [String: Int] = [:]
+                var sourceApplicationCounts: [String: Int] = [:]
                 var identityProofAvailable = true
             }
 
             var counters: [String: Counter] = [:]
+            var websiteAccumulator = DailyWebsiteUsageAccumulator(day: day)
             // `snapshot(for:)` supplies one timestamp-ordered array. Reusing it avoids
             // a second full-size allocation for large current-day journals.
             let ordered = events
+            let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: day)
+                ?? day.addingTimeInterval(86_400)
             for (index, event) in ordered.enumerated() {
+                websiteAccumulator.ingest(event)
                 guard event.kind != .agentArtifactCaptured,
                     event.suppressionReason == nil,
-                    let app = event.app
+                    let app = event.app,
+                    Self.isActiveUsageEvidence(event)
                 else { continue }
 
                 let nextTimestamp: Date = {
                     if index + 1 < ordered.count { return ordered[index + 1].timestamp }
-                    if Calendar.current.isDateInToday(day) { return Date() }
-                    return event.timestamp.addingTimeInterval(60)
+                    if Calendar.current.isDateInToday(day) { return min(Date(), dayEnd) }
+                    return min(event.timestamp.addingTimeInterval(60), dayEnd)
                 }()
                 let observedSeconds = min(75, max(0, nextTimestamp.timeIntervalSince(event.timestamp)))
                 let isInput = event.pointer != nil || event.keyboard != nil || event.scroll != nil
@@ -2130,46 +2139,25 @@
                     appCounter.categories[category, default: 0] += 1
                 }
                 counters[appKey] = appCounter
-
-                guard let rawHost = event.url?.host else { continue }
-                let host = SharingSubjectKey.normalizedHost(rawHost)
-                guard !host.isEmpty else { continue }
-                let siteKey = SharingSubjectKey.website(host: host)
-                if counters[siteKey] == nil {
-                    try budget.reserve(
-                        192 + estimatedStringBytes(siteKey) + estimatedStringBytes(host)
-                            + estimatedStringBytes(app.name)
-                            + estimatedStringBytes(app.bundleIdentifier)
-                    )
-                }
-                var siteCounter =
-                    counters[siteKey]
-                    ?? Counter(
-                        kind: .website,
-                        name: host,
-                        appName: app.name,
-                        bundleIdentifier: app.bundleIdentifier,
-                        host: host
-                    )
-                siteCounter.foregroundSeconds += observedSeconds
-                siteCounter.eventCount += 1
-                if isInput, !siteCounter.activeMinuteKeys.contains(minute) {
-                    try budget.reserve(16)
-                    siteCounter.activeMinuteKeys.insert(minute)
-                }
-                if let category {
-                    if siteCounter.categories[category] == nil {
-                        try budget.reserve(48 + estimatedStringBytes(category))
-                    }
-                    siteCounter.categories[category, default: 0] += 1
-                }
-                if event.schemaVersion < 3 { siteCounter.identityProofAvailable = false }
-                counters[siteKey] = siteCounter
             }
 
+            let websiteUsage = websiteAccumulator.finish()
+            guard !websiteAccumulator.wasTruncated else {
+                throw JournalReadError.budgetExceeded(
+                    .derivedBytes,
+                    bytesRead: 0,
+                    rowsDecoded: websiteAccumulator.sourceEventCount
+                )
+            }
             var result: [TrackedUsageItem] = []
-            result.reserveCapacity(counters.count)
+            result.reserveCapacity(counters.count + websiteUsage.count)
             for (key, value) in counters {
+                let sourceApplications = value.sourceApplicationCounts
+                    .sorted { left, right in
+                        if left.value != right.value { return left.value > right.value }
+                        return left.key.localizedCaseInsensitiveCompare(right.key) == .orderedAscending
+                    }
+                    .map(\.key)
                 let category = value.categories.max { left, right in
                     if left.value == right.value { return left.key > right.key }
                     return left.value < right.value
@@ -2178,7 +2166,8 @@
                     id: key,
                     kind: value.kind,
                     name: value.name,
-                    appName: value.appName,
+                    appName: sourceApplications.first ?? value.appName,
+                    sourceApplications: sourceApplications,
                     bundleIdentifier: value.bundleIdentifier,
                     host: value.host,
                     category: category,
@@ -2188,6 +2177,24 @@
                     identityProofAvailable: value.identityProofAvailable
                 )
                 guard item.foregroundSeconds > 0 || item.eventCount > 0 else { continue }
+                try budget.reserve(estimateTrackedUsageBytes(item))
+                result.append(item)
+            }
+            for usage in websiteUsage {
+                let item = TrackedUsageItem(
+                    id: SharingSubjectKey.website(host: usage.host),
+                    kind: .website,
+                    name: usage.host,
+                    appName: usage.sourceApplications.first,
+                    sourceApplications: usage.sourceApplications,
+                    bundleIdentifier: usage.primaryBundleIdentifier,
+                    host: usage.host,
+                    category: usage.category,
+                    foregroundSeconds: usage.foregroundSeconds,
+                    activeMinutes: usage.activeMinuteCount,
+                    eventCount: usage.eventCount,
+                    identityProofAvailable: usage.identityProofAvailable
+                )
                 try budget.reserve(estimateTrackedUsageBytes(item))
                 result.append(item)
             }
@@ -2460,6 +2467,12 @@
             _ event: DashboardEventProjection
         ) -> HistoryEvent? {
             guard event.shouldRetain else { return nil }
+            let compactMetadata: [String: String]? = {
+                guard event.kind == .heartbeat,
+                    let idleSeconds = event.metadata?["idle_seconds"]
+                else { return nil }
+                return ["idle_seconds": idleSeconds]
+            }()
             return HistoryEvent(
                 schemaVersion: event.schemaVersion,
                 id: event.id,
@@ -2478,7 +2491,12 @@
                 },
                 element: nil,
                 url: event.url.map {
-                    URLSnapshot(value: "", host: $0.host, redactionApplied: true)
+                    let scheme = URLComponents(string: $0.value)?.scheme?.lowercased()
+                    return URLSnapshot(
+                        value: scheme.map { "\($0)://" } ?? "",
+                        host: $0.host,
+                        redactionApplied: true
+                    )
                 },
                 pointer: event.pointer.map { _ in
                     PointerSnapshot(button: "", x: 0, y: 0, clickCount: 0)
@@ -2510,9 +2528,17 @@
                 },
                 suppressionReason: event.suppressionReason,
                 message: event.message,
-                metadata: nil,
+                metadata: compactMetadata,
                 integrity: nil
             )
+        }
+
+        private static func isActiveUsageEvidence(_ event: HistoryEvent) -> Bool {
+            guard event.kind == .heartbeat else { return true }
+            guard let rawIdleSeconds = event.metadata?["idle_seconds"],
+                let idleSeconds = Double(rawIdleSeconds)
+            else { return false }
+            return idleSeconds < 90
         }
 
         private static func isActivityEvent(_ event: HistoryEvent) -> Bool {

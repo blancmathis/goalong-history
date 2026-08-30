@@ -157,6 +157,42 @@
             XCTAssertTrue(components.contains(".help(\"Return to today\")"))
         }
 
+        func testScreenTimeRefreshUpdatesBothSourcesAndLongListsStayLazy() throws {
+            let repositoryRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let history = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/UnifiedHistoryPage.swift"),
+                encoding: .utf8
+            )
+            let screenTime = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent(
+                        "Sources/LocalHistoryApp/AppleScreenTime/GoalongScreenTimePage.swift"
+                    ),
+                encoding: .utf8
+            )
+            let overview = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/OverviewPage.swift"),
+                encoding: .utf8
+            )
+
+            XCTAssertTrue(
+                history.contains(
+                    "case .screenTime:\n                model.refreshEverything()\n                screenTime.refresh()"
+                )
+            )
+            XCTAssertGreaterThanOrEqual(
+                screenTime.components(separatedBy: "LazyVStack(spacing: 0)").count - 1,
+                2
+            )
+            XCTAssertFalse(screenTime.contains("with input"))
+            XCTAssertFalse(overview.contains("with input"))
+        }
+
         func testAIConversationListOrdersNewestFirstAndCompactsLongFallbackTitles() {
             let older = makeAgentConversation(
                 id: "older",
@@ -181,6 +217,18 @@
                     maximumCharacters: 24
                 ),
                 "A deliberately long fal…"
+            )
+            var lightweight = newer
+            lightweight.summary.visibleMessages = []
+            lightweight.summary.userMessageCount = 7
+            lightweight.summary.assistantMessageCount = 5
+            XCTAssertEqual(
+                AgentConversationListPresentation.visibleMessageCounts(for: lightweight).prompts,
+                7
+            )
+            XCTAssertEqual(
+                AgentConversationListPresentation.visibleMessageCounts(for: lightweight).replies,
+                5
             )
         }
 

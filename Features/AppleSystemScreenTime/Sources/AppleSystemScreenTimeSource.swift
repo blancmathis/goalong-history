@@ -64,6 +64,7 @@
         let biomeSyncDatabase: URL
         let biomeLocalDirectory: URL
         let biomeRemoteDirectory: URL
+        let appleAccountDeviceDatabase: URL
 
         static let `default`: AppleSystemScreenTimePaths = {
             let home = FileManager.default.homeDirectoryForCurrentUser
@@ -73,7 +74,6 @@
                 .appendingPathComponent("streams", isDirectory: true)
                 .appendingPathComponent("restricted", isDirectory: true)
                 .appendingPathComponent("App.InFocus", isDirectory: true)
-
             return AppleSystemScreenTimePaths(
                 knowledgeDatabase: library
                     .appendingPathComponent("Application Support", isDirectory: true)
@@ -83,7 +83,11 @@
                     .appendingPathComponent("sync", isDirectory: true)
                     .appendingPathComponent("sync.db", isDirectory: false),
                 biomeLocalDirectory: appInFocus.appendingPathComponent("local", isDirectory: true),
-                biomeRemoteDirectory: appInFocus.appendingPathComponent("remote", isDirectory: true)
+                biomeRemoteDirectory: appInFocus.appendingPathComponent("remote", isDirectory: true),
+                appleAccountDeviceDatabase: library
+                    .appendingPathComponent("Application Support", isDirectory: true)
+                    .appendingPathComponent("com.apple.akd", isDirectory: true)
+                    .appendingPathComponent("devicelist.db", isDirectory: false)
             )
         }()
     }
@@ -91,6 +95,11 @@
     struct AppleBiomeFileFingerprint: Equatable {
         let size: Int
         let modifiedAt: Date
+    }
+
+    struct AppleBiomeDeviceDescriptor: Equatable, Sendable {
+        let hardwareIdentifier: String?
+        let platform: Int?
     }
 
     struct AppleBiomeFileCacheLimits: Equatable {
@@ -114,6 +123,11 @@
         let events: [AppleBiomeFocusEvent]
         let retainedBytes: Int
         var lastAccess: UInt64
+    }
+
+    private struct AppleAccountDeviceCatalogCache {
+        let fingerprint: AppleBiomeFileFingerprint
+        let devices: [AppleAccountDeviceMetadata]
     }
 
     struct AppleBiomeFileCache {
@@ -228,6 +242,7 @@
         private let calendar: Calendar
         private let nowProvider: () -> Date
         private var biomeFileCache: AppleBiomeFileCache
+        private var accountDeviceCatalogCache: AppleAccountDeviceCatalogCache?
 
         public convenience init(deviceID: String) {
             self.init(deviceID: deviceID, paths: .default)
@@ -246,6 +261,7 @@
             self.calendar = calendar
             self.nowProvider = nowProvider
             biomeFileCache = AppleBiomeFileCache(limits: biomeCacheLimits)
+            accountDeviceCatalogCache = nil
             self.currentMacDevice = AppleScreenTimeDevice(
                 id: "apple-system-current-mac:\(deviceID)",
                 name: Self.localHostName(),
@@ -267,6 +283,7 @@
             let now = nowProvider()
             let effectiveEnd = calendar.isDateInToday(day) ? min(dayInterval.end, now) : dayInterval.end
             let requestedInterval = DateInterval(start: dayInterval.start, end: max(dayInterval.start, effectiveEnd))
+            let accountDevices = readAppleAccountDeviceCatalog()
             let catalogRead = readDeviceCatalog()
             let knowledgeRead = readKnowledgeIntervals(
                 interval: requestedInterval,
@@ -282,11 +299,25 @@
                 preferred: knowledgeRead.values,
                 supplemental: biomeRead.values
             )
-            let discoveredDevices = mergeDeviceLists(
-                catalogRead.devices.values.map(\.device),
-                merged.map(\.device)
+            let rawReports = makeReports(from: merged)
+            let resolvedReports = AppleScreenTimeDeviceIdentityResolver.resolve(
+                reports: rawReports,
+                accountDevices: accountDevices,
+                currentMacID: currentMacDevice.id,
+                now: now
             )
-            let reports = makeReports(from: merged)
+            // Preserve the complete Apple report after source merging. Default summaries remove
+            // explicit lock/screen-saver rows, while an opt-in UI can reveal the source truth
+            // without re-reading Apple stores or maintaining a second copy.
+            let reports = resolvedReports
+            let selectableDevices = AppleScreenTimeDeviceIdentityResolver.selectableDevices(
+                catalogDevices: catalogRead.devices.values.map(\.device),
+                reports: reports,
+                accountDevices: accountDevices,
+                currentMac: currentMacDevice,
+                now: now
+            )
+            let discoveredDevices = mergeDeviceLists(selectableDevices)
             let latestUpdate = [
                 knowledgeRead.latestUpdate,
                 biomeRead.latestUpdate,
@@ -300,7 +331,7 @@
                 .compactMap { $0 }
             let remoteDeviceCount = discoveredDevices.filter { $0.id != currentMacDevice.id }.count
             let status = makeStatus(
-                hasData: !reports.isEmpty,
+                hasData: !rawReports.isEmpty,
                 permissionDenied: denied,
                 remoteDeviceCount: remoteDeviceCount,
                 warnings: warnings
@@ -406,7 +437,12 @@
                     {
                         device = currentMacDevice
                     } else if let known = catalog[row.deviceID]?.device {
-                        device = known
+                        let knowledgeDevice = Self.makeRemoteDevice(
+                            id: row.deviceID,
+                            hardwareIdentifier: row.model,
+                            platform: nil
+                        )
+                        device = Self.moreSpecificDevice(known, knowledgeDevice)
                     } else {
                         device = Self.makeRemoteDevice(
                             id: row.deviceID,
@@ -458,6 +494,13 @@
             let appleEpochOffset: TimeInterval = 978_307_200
             let start = interval.start.timeIntervalSince1970 - appleEpochOffset
             let end = interval.end.timeIntervalSince1970 - appleEpochOffset
+            let objectColumns = try database.tableColumns("ZOBJECT")
+            let metadataColumns = try database.tableColumns("ZSTRUCTUREDMETADATA")
+            let (streamColumn, metadataJoin) = try Self.knowledgeStreamReference(
+                objectColumns: objectColumns,
+                metadataColumns: metadataColumns
+            )
+
             let canonical = """
                 SELECT
                   COALESCE(ZOBJECT.ZVALUESTRING, ''),
@@ -466,13 +509,12 @@
                   COALESCE(ZSOURCE.ZDEVICEID, ''),
                   COALESCE(ZSYNCPEER.ZMODEL, '')
                 FROM ZOBJECT
-                  LEFT JOIN ZSTRUCTUREDMETADATA
-                    ON ZOBJECT.ZSTRUCTUREDMETADATA = ZSTRUCTUREDMETADATA.Z_PK
+                  \(metadataJoin)
                   LEFT JOIN ZSOURCE
                     ON ZOBJECT.ZSOURCE = ZSOURCE.Z_PK
                   LEFT JOIN ZSYNCPEER
                     ON ZSOURCE.ZDEVICEID = ZSYNCPEER.ZDEVICEID
-                WHERE ZSTRUCTUREDMETADATA.ZSTREAMNAME = '/app/usage'
+                WHERE \(streamColumn) = '/app/usage'
                   AND ZOBJECT.ZENDDATE > ?1
                   AND ZOBJECT.ZSTARTDATE < ?2
                 ORDER BY ZOBJECT.ZSTARTDATE ASC
@@ -496,6 +538,28 @@
                     model: SQLiteReadConnection.string(statement, column: 4)
                 )
             }
+        }
+
+        static func knowledgeStreamReference(
+            objectColumns: Set<String>,
+            metadataColumns: Set<String>
+        ) throws -> (column: String, join: String) {
+            if objectColumns.contains("ZSTREAMNAME") {
+                return ("ZOBJECT.ZSTREAMNAME", "")
+            }
+            if metadataColumns.contains("ZSTREAMNAME") {
+                return (
+                    "ZSTRUCTUREDMETADATA.ZSTREAMNAME",
+                    """
+                      LEFT JOIN ZSTRUCTUREDMETADATA
+                        ON ZOBJECT.ZSTRUCTUREDMETADATA = ZSTRUCTUREDMETADATA.Z_PK
+                    """
+                )
+            }
+            throw SQLiteReadError(
+                code: SQLITE_SCHEMA,
+                message: "knowledgeC does not expose an /app/usage stream column"
+            )
         }
 
         // MARK: - Biome
@@ -672,6 +736,76 @@
             return files.sorted { $0.path < $1.path }
         }
 
+        // MARK: - Apple device identity
+
+        /// Reads only the bounded, non-secret device fields needed to turn an Apple hardware
+        /// model into the friendly name already chosen by the user. The source database remains
+        /// read-only and the result is kept only in memory while the database fingerprint matches.
+        func readAppleAccountDeviceCatalog() -> [AppleAccountDeviceMetadata] {
+            let url = paths.appleAccountDeviceDatabase
+            guard fileManager.fileExists(atPath: url.path) else {
+                accountDeviceCatalogCache = nil
+                return []
+            }
+
+            do {
+                let fingerprint = try sqliteFingerprint(url)
+                if let cached = accountDeviceCatalogCache,
+                   cached.fingerprint == fingerprint
+                {
+                    return cached.devices
+                }
+
+                let database = try SQLiteReadConnection(path: url.path)
+                let required = Set(["name", "model", "os", "trusted", "last_updated_date"])
+                guard try database.tableColumns("device_list").isSuperset(of: required) else {
+                    accountDeviceCatalogCache = nil
+                    return []
+                }
+
+                let devices: [AppleAccountDeviceMetadata] = try database.query(
+                    """
+                    SELECT
+                      COALESCE(name, ''),
+                      COALESCE(model, ''),
+                      COALESCE(os, ''),
+                      last_updated_date
+                    FROM device_list
+                    WHERE trusted = 1
+                    ORDER BY last_updated_date DESC
+                    LIMIT 64
+                    """
+                ) { statement in
+                    let name = SQLiteReadConnection.string(statement, column: 0)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !name.isEmpty else { return nil }
+                    let model = SQLiteReadConnection.string(statement, column: 1)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let operatingSystem = SQLiteReadConnection.string(statement, column: 2)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let updated = SQLiteReadConnection.double(statement, column: 3)
+                        .map(Date.init(timeIntervalSince1970:))
+                    let device = AppleAccountDeviceMetadata(
+                        name: name,
+                        model: model.isEmpty ? nil : model,
+                        operatingSystem: operatingSystem.isEmpty ? nil : operatingSystem,
+                        lastUpdatedAt: updated
+                    )
+                    return device.kind == .unknown ? nil : device
+                }
+                accountDeviceCatalogCache = AppleAccountDeviceCatalogCache(
+                    fingerprint: fingerprint,
+                    devices: devices
+                )
+                return devices
+            } catch {
+                // Naming is an optional enrichment. Never let a missing, protected or changed
+                // Apple account database hide otherwise valid Screen Time usage.
+                accountDeviceCatalogCache = nil
+                return []
+            }
+        }
+
         // MARK: - Biome device catalog
 
         private struct DeviceCatalogEntry {
@@ -699,16 +833,20 @@
                         let platform = SQLiteReadConnection.int(statement, column: 2)
                         return (id, hardware, platform)
                     }
-                    for (id, hardware, platform) in rows {
-                        let device = Self.makeRemoteDevice(
+                    for (id, descriptors) in Dictionary(grouping: rows, by: { $0.0 }) {
+                        let resolved = Self.preferredRemoteDevice(
                             id: id,
-                            hardwareIdentifier: hardware,
-                            platform: platform
+                            descriptors: descriptors.map {
+                                AppleBiomeDeviceDescriptor(
+                                    hardwareIdentifier: $0.1.isEmpty ? nil : $0.1,
+                                    platform: $0.2
+                                )
+                            }
                         )
                         entries[id] = DeviceCatalogEntry(
-                            device: device,
-                            hardwareIdentifier: hardware.isEmpty ? nil : hardware,
-                            platform: platform
+                            device: resolved,
+                            hardwareIdentifier: Self.hardwareIdentifier(from: resolved),
+                            platform: descriptors.compactMap(\.2).sorted().first
                         )
                     }
                 } catch {
@@ -867,6 +1005,9 @@
                 .values
                 .compactMap { deviceRows -> AppleScreenTimeDeviceReport? in
                     guard let first = deviceRows.first else { return nil }
+                    let device = deviceRows.dropFirst().reduce(first.device) { current, row in
+                        Self.moreSpecificDevice(current, row.device)
+                    }
                     let segments = deviceRows.sorted(by: intervalOrder).map { row in
                         AppleScreenTimeSegment(
                             start: row.start,
@@ -882,7 +1023,7 @@
                         )
                     }
                     return AppleScreenTimeDeviceReport(
-                        device: first.device,
+                        device: device,
                         lastUpdatedAt: deviceRows.map(\.end).max() ?? Date.distantPast,
                         segments: segments
                     )
@@ -962,7 +1103,7 @@
                     kind: .localOnly,
                     title: "Official Apple data for this Mac",
                     message:
-                        "No iPhone or iPad stream is present yet. Enable Screen Time → Share Across Devices on the same Apple Account to populate the All devices view automatically."
+                        "No remote Apple device stream is present yet. Enable Screen Time → Share Across Devices on the same Apple Account to populate the All devices view automatically."
                 )
             }
             if hasData {
@@ -1005,6 +1146,85 @@
             return nil
         }
 
+        static func preferredRemoteDevice(
+            id: String,
+            descriptors: [AppleBiomeDeviceDescriptor]
+        ) -> AppleScreenTimeDevice {
+            let cleaned = descriptors.map { descriptor in
+                let hardware = descriptor.hardwareIdentifier?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return AppleBiomeDeviceDescriptor(
+                    hardwareIdentifier: hardware?.isEmpty == false ? hardware : nil,
+                    platform: descriptor.platform
+                )
+            }
+            let knownKinds = Set(cleaned.compactMap { descriptor -> AppleScreenTimeDeviceKind? in
+                let kind = deviceKind(model: descriptor.hardwareIdentifier)
+                return kind == .unknown ? nil : kind
+            })
+
+            if knownKinds.count > 1 {
+                return makeRemoteDevice(id: id, hardwareIdentifier: nil, platform: nil)
+            }
+            if let knownKind = knownKinds.first {
+                let matching = cleaned.filter {
+                    deviceKind(model: $0.hardwareIdentifier) == knownKind
+                }
+                if let best = matching.sorted(by: descriptorOrder).first {
+                    return makeRemoteDevice(
+                        id: id,
+                        hardwareIdentifier: best.hardwareIdentifier,
+                        platform: best.platform
+                    )
+                }
+            }
+            let best = cleaned.sorted(by: descriptorOrder).first
+            return makeRemoteDevice(
+                id: id,
+                hardwareIdentifier: best?.hardwareIdentifier,
+                platform: best?.platform
+            )
+        }
+
+        private static func descriptorOrder(
+            _ lhs: AppleBiomeDeviceDescriptor,
+            _ rhs: AppleBiomeDeviceDescriptor
+        ) -> Bool {
+            let leftHardware = lhs.hardwareIdentifier ?? ""
+            let rightHardware = rhs.hardwareIdentifier ?? ""
+            if leftHardware.isEmpty != rightHardware.isEmpty { return !leftHardware.isEmpty }
+            if (lhs.platform == nil) != (rhs.platform == nil) { return lhs.platform != nil }
+            if leftHardware != rightHardware {
+                return leftHardware.localizedCaseInsensitiveCompare(rightHardware) == .orderedAscending
+            }
+            return (lhs.platform ?? Int.max) < (rhs.platform ?? Int.max)
+        }
+
+        private static func moreSpecificDevice(
+            _ lhs: AppleScreenTimeDevice,
+            _ rhs: AppleScreenTimeDevice
+        ) -> AppleScreenTimeDevice {
+            func score(_ device: AppleScreenTimeDevice) -> Int {
+                var value = device.kind == .unknown ? 0 : 100
+                let base = device.displayName.components(separatedBy: " · ").first?.lowercased() ?? ""
+                if base != "apple device", base != "iphone or ipad" { value += 20 }
+                return value
+            }
+            let left = score(lhs)
+            let right = score(rhs)
+            if left != right { return left > right ? lhs : rhs }
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) != .orderedDescending
+                ? lhs
+                : rhs
+        }
+
+        private static func hardwareIdentifier(from device: AppleScreenTimeDevice) -> String? {
+            guard device.kind != .unknown else { return nil }
+            let value = device.displayName.components(separatedBy: " · ").first?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return value?.isEmpty == false ? value : nil
+        }
+
         private static func makeRemoteDevice(
             id: String,
             hardwareIdentifier: String?,
@@ -1012,19 +1232,15 @@
         ) -> AppleScreenTimeDevice {
             let hardware = hardwareIdentifier?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let kind = deviceKind(model: hardware)
-            let resolvedKind: AppleScreenTimeDeviceKind = {
-                if kind != .unknown { return kind }
-                // Apple Biome currently uses platform 2 for iOS/iPadOS peers. Without a
-                // hardware identifier, keep the device generic rather than falsely naming it.
-                return .unknown
-            }()
+            let modelKind = deviceKind(model: hardware)
+            let platformKind = deviceKind(platform: platform)
+            let resolvedKind = modelKind == .unknown ? platformKind : modelKind
             let shortID = id.count > 8 ? String(id.prefix(8)) : id
             let name: String
             if let hardware, !hardware.isEmpty {
                 name = "\(hardware) · \(shortID)"
-            } else if platform == 2 {
-                name = "iPhone or iPad · \(shortID)"
+            } else if resolvedKind != .unknown {
+                name = "\(resolvedKind.displayName) · \(shortID)"
             } else {
                 name = "Apple device · \(shortID)"
             }
@@ -1038,8 +1254,27 @@
             if normalized.hasPrefix("iphone") { return .iPhone }
             if normalized.hasPrefix("ipad") { return .iPad }
             if normalized.hasPrefix("ipod") { return .iPod }
+            if normalized.hasPrefix("watch") || normalized.contains("apple watch") { return .appleWatch }
+            if normalized.hasPrefix("appletv") || normalized.contains("apple tv") { return .appleTV }
+            if normalized.hasPrefix("homepod") || normalized.hasPrefix("audioaccessory") { return .homePod }
+            if normalized.hasPrefix("realitydevice") || normalized.contains("vision pro") { return .visionPro }
             if normalized.hasPrefix("mac") { return .mac }
             return .unknown
+        }
+
+        static func deviceKind(platform: Int?) -> AppleScreenTimeDeviceKind {
+            // Values are BMDevicePlatform, verified against the locally installed
+            // BiomeFoundation framework. Unknown future values remain generic.
+            switch platform {
+            case 1: return .iPad
+            case 2: return .iPhone
+            case 3, 4: return .mac
+            case 5: return .appleTV
+            case 6: return .appleWatch
+            case 7: return .homePod
+            case 8: return .visionPro
+            default: return .unknown
+            }
         }
 
         private static func looksLikePermissionFailure(_ error: Error) -> Bool {
@@ -1106,6 +1341,21 @@
             return AppleBiomeFileFingerprint(
                 size: values.fileSize ?? 0,
                 modifiedAt: values.contentModificationDate ?? .distantPast
+            )
+        }
+
+        private func sqliteFingerprint(_ url: URL) throws -> AppleBiomeFileFingerprint {
+            let primary = try fileFingerprint(url)
+            let wal = URL(fileURLWithPath: url.path + "-wal")
+            guard fileManager.fileExists(atPath: wal.path),
+                  let walFingerprint = try? fileFingerprint(wal)
+            else { return primary }
+            let size = primary.size > Int.max - walFingerprint.size
+                ? Int.max
+                : primary.size + walFingerprint.size
+            return AppleBiomeFileFingerprint(
+                size: size,
+                modifiedAt: max(primary.modifiedAt, walFingerprint.modifiedAt)
             )
         }
     }

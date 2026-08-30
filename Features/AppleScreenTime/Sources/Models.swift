@@ -5,6 +5,10 @@ public enum AppleScreenTimeDeviceKind: String, Codable, CaseIterable, Hashable, 
     case iPhone
     case iPad
     case iPod
+    case appleWatch
+    case appleTV
+    case homePod
+    case visionPro
     case unknown
 
     public var displayName: String {
@@ -13,6 +17,10 @@ public enum AppleScreenTimeDeviceKind: String, Codable, CaseIterable, Hashable, 
         case .iPhone: return "iPhone"
         case .iPad: return "iPad"
         case .iPod: return "iPod"
+        case .appleWatch: return "Apple Watch"
+        case .appleTV: return "Apple TV"
+        case .homePod: return "HomePod"
+        case .visionPro: return "Apple Vision Pro"
         case .unknown: return "Apple device"
         }
     }

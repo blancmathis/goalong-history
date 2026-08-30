@@ -93,13 +93,20 @@ public enum AppleScreenTimeAnalyzer {
     public static func summary(
         from storedExport: AppleScreenTimeStoredExport,
         interval: DateInterval,
-        scope: AppleScreenTimeScope
+        scope: AppleScreenTimeScope,
+        includingSystemInactivity: Bool = false
     ) -> AppleScreenTimeDaySummary? {
         guard interval.duration > 0 else { return nil }
 
         let availableDevices = storedExport.envelope.reports.map(\.device)
         let normalizedScope = scope.normalized(availableDevices: availableDevices)
-        let reports = storedExport.envelope.reports.filter { normalizedScope.includes($0.device) }
+        let sourceReports = includingSystemInactivity
+            ? storedExport.envelope.reports
+            : AppleScreenTimeUsageFilter.removingSystemInactivity(
+                from: storedExport.envelope.reports
+            )
+        let reports = sourceReports
+            .filter { normalizedScope.includes($0.device) }
 
         var deviceSummaries: [AppleScreenTimeDeviceSummary] = []
         var applicationTotals: [String: AppleScreenTimeApplicationUsage] = [:]

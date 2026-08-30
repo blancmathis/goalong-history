@@ -187,6 +187,44 @@ public final class AgentActivityStore: @unchecked Sendable {
         }
     }
 
+    /// The tiny process-local projection needed to keep conversation rows stable after the
+    /// heavier visible-message summary leaves the LRU. This never reaches the persisted index:
+    /// it retains only one bounded title and two counts, not transcript messages or excerpts.
+    private struct TransientConversationPresentation: Equatable, Sendable {
+        var title: String?
+        var userPromptCount: Int
+        var finalReplyCount: Int
+        var projectionIsComplete: Bool
+
+        init(_ record: AgentCaptureRecord) {
+            title = AgentUTF8Bound.optional(
+                record.summary.title,
+                maximumBytes: AgentDocumentSummary.maximumTitleBytes
+            )
+            let visibleMessages = record.summary.visibleMessages
+            userPromptCount = visibleMessages.isEmpty
+                ? max(record.summary.userMessageCount, 0)
+                : visibleMessages.filter { $0.role == .user }.count
+            finalReplyCount = visibleMessages.isEmpty
+                ? max(record.summary.assistantMessageCount, 0)
+                : visibleMessages.filter { $0.role == .assistantFinal }.count
+            projectionIsComplete = record.projectionIsComplete
+        }
+
+        func summary(metrics: TransientAnalysisMetrics) -> AgentDocumentSummary {
+            AgentDocumentSummary(
+                title: title,
+                startedAt: metrics.startedAt,
+                endedAt: metrics.endedAt,
+                messageCount: metrics.messageCount,
+                userMessageCount: userPromptCount,
+                assistantMessageCount: finalReplyCount,
+                toolCallCount: metrics.toolCallCount,
+                errorCount: metrics.errorCount
+            )
+        }
+    }
+
     /// Accounting for the process-local summary cache. The byte count is the complete UTF-8
     /// payload retained by the record plus a conservative fixed/container overhead; no joined
     /// search string is materialized or cached.
@@ -199,6 +237,7 @@ public final class AgentActivityStore: @unchecked Sendable {
         var index: AgentActivityIndex
         var transientRecordsByID: [String: AgentCaptureRecord]
         var transientMetricsByID: [String: TransientAnalysisMetrics]
+        var transientPresentationsByID: [String: TransientConversationPresentation]
         var transientMetricAccessByID: [String: UInt64]
         var transientMetricAccessCounter: UInt64
         var transientAccessByID: [String: UInt64]
@@ -252,6 +291,7 @@ public final class AgentActivityStore: @unchecked Sendable {
     private var entryPositionsByFolderID: [String: [Int]] = [:]
     private var transientRecordsByID: [String: AgentCaptureRecord] = [:]
     private var transientMetricsByID: [String: TransientAnalysisMetrics] = [:]
+    private var transientPresentationsByID: [String: TransientConversationPresentation] = [:]
     private var transientMetricAccessByID: [String: UInt64] = [:]
     private var transientMetricAccessCounter: UInt64 = 0
     private var transientAccessByID: [String: UInt64] = [:]
@@ -750,6 +790,24 @@ public final class AgentActivityStore: @unchecked Sendable {
         return transientMetricsByID.count
     }
 
+    func transientPresentationCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        _ = reloadIndexFromDisk()
+        reconcileTransientCache()
+        return transientPresentationsByID.count
+    }
+
+    func transientPresentationTitleByteCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        _ = reloadIndexFromDisk()
+        reconcileTransientCache()
+        return transientPresentationsByID.values.reduce(0) {
+            $0 + ($1.title?.utf8.count ?? 0)
+        }
+    }
+
     func analyzedEntryIDs() -> Set<String> {
         lock.lock()
         defer { lock.unlock() }
@@ -819,6 +877,7 @@ public final class AgentActivityStore: @unchecked Sendable {
         defer { lock.unlock() }
         transientRecordsByID.removeAll(keepingCapacity: false)
         transientMetricsByID.removeAll(keepingCapacity: false)
+        transientPresentationsByID.removeAll(keepingCapacity: false)
         transientMetricAccessByID.removeAll(keepingCapacity: false)
         transientMetricAccessCounter = 0
         transientAccessByID.removeAll(keepingCapacity: false)
@@ -848,7 +907,7 @@ public final class AgentActivityStore: @unchecked Sendable {
         return newestEntries(index.entries, limit: Self.maximumTransientRecords).map { storedEntry in
             let entry = effectiveEntry(storedEntry)
             guard var record = transientRecordsByID[entry.id] else {
-                return AgentCaptureRecord(index: entry, isAnalyzed: false)
+                return lightweightPresentedRecord(for: entry)
             }
             if record.digestScope == .fullSource {
                 record.index = entry
@@ -920,7 +979,7 @@ public final class AgentActivityStore: @unchecked Sendable {
         newestRelevant.sort { isNewer($0, than: $1) }
         let captures = newestRelevant.map { entry in
             guard var record = transientRecordsByID[entry.id] else {
-                return AgentCaptureRecord(index: entry, isAnalyzed: false)
+                return lightweightPresentedRecord(for: entry)
             }
             if record.digestScope == .fullSource { record.index = entry }
             return record
@@ -1817,6 +1876,7 @@ public final class AgentActivityStore: @unchecked Sendable {
             return
         }
         transientMetricsByID[record.id] = TransientAnalysisMetrics(record)
+        transientPresentationsByID[record.id] = TransientConversationPresentation(record)
         touchTransientMetric(id: record.id)
         enforceTransientMetricBound()
         guard retainFullSummary else {
@@ -1866,7 +1926,24 @@ public final class AgentActivityStore: @unchecked Sendable {
     private func removeTransientAnalysis(id: String) {
         removeTransientSummary(id: id)
         transientMetricsByID.removeValue(forKey: id)
+        transientPresentationsByID.removeValue(forKey: id)
         transientMetricAccessByID.removeValue(forKey: id)
+    }
+
+    private func lightweightPresentedRecord(for entry: AgentSourceIndexEntry) -> AgentCaptureRecord {
+        guard let metrics = transientMetricsByID[entry.id],
+            let presentation = transientPresentationsByID[entry.id]
+        else {
+            return AgentCaptureRecord(index: entry, isAnalyzed: false)
+        }
+        return AgentCaptureRecord(
+            index: entry,
+            summary: presentation.summary(metrics: metrics),
+            isAnalyzed: false,
+            digestScope: metrics.digestScope,
+            analysisInterval: metrics.analysisInterval,
+            projectionIsComplete: presentation.projectionIsComplete
+        )
     }
 
     private func touchTransientMetric(id: String) {
@@ -1995,6 +2072,7 @@ public final class AgentActivityStore: @unchecked Sendable {
             index: index,
             transientRecordsByID: transientRecordsByID,
             transientMetricsByID: transientMetricsByID,
+            transientPresentationsByID: transientPresentationsByID,
             transientMetricAccessByID: transientMetricAccessByID,
             transientMetricAccessCounter: transientMetricAccessCounter,
             transientAccessByID: transientAccessByID,
@@ -2013,6 +2091,7 @@ public final class AgentActivityStore: @unchecked Sendable {
             index = snapshot.index
             transientRecordsByID = snapshot.transientRecordsByID
             transientMetricsByID = snapshot.transientMetricsByID
+            transientPresentationsByID = snapshot.transientPresentationsByID
             transientMetricAccessByID = snapshot.transientMetricAccessByID
             transientMetricAccessCounter = snapshot.transientMetricAccessCounter
             transientAccessByID = snapshot.transientAccessByID

@@ -101,6 +101,285 @@ final class AppleScreenTimeTests: XCTestCase {
         XCTAssertEqual(phoneOnly.totalScreenOnDuration, 3_600, accuracy: 0.001)
     }
 
+    func testAnalyzerExcludesSystemLockAndScreenSaverTimeFromUsageTotals() throws {
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+        let end = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: start))
+        let interval = DateInterval(start: start, end: end)
+        let mac = AppleScreenTimeDevice(id: "mac", name: "MacBook Pro", kind: .mac)
+        let phone = AppleScreenTimeDevice(id: "phone", name: "iPhone", kind: .iPhone)
+        let provenance = AppleScreenTimeProvenance(
+            collectorBundleIdentifier: "ai.goalong.screentime",
+            collectorVersion: "1.0",
+            collectorPlatform: "test",
+            authorization: .approvedWithDataAccess,
+            fetchPolicy: .live,
+            euCustomerRequirementAcknowledged: true
+        )
+        let envelope = AppleScreenTimeExportEnvelope(
+            requestedStart: start,
+            requestedEnd: end,
+            requestedScope: .allDevices,
+            provenance: provenance,
+            reports: [
+                AppleScreenTimeDeviceReport(
+                    device: mac,
+                    lastUpdatedAt: end,
+                    segments: [
+                        segment(
+                            start: start,
+                            duration: 8 * 3_600,
+                            bundleIdentifier: "com.apple.loginwindow",
+                            displayName: "loginwindow"
+                        ),
+                        segment(
+                            start: start.addingTimeInterval(8 * 3_600),
+                            duration: 2 * 3_600,
+                            bundleIdentifier: "com.apple.dt.Xcode",
+                            displayName: "Xcode"
+                        ),
+                        segment(
+                            start: start.addingTimeInterval(10 * 3_600),
+                            duration: 3_600,
+                            bundleIdentifier: "com.apple.ScreenSaver.Engine",
+                            displayName: "ScreenSaverEngine"
+                        ),
+                    ]
+                ),
+                AppleScreenTimeDeviceReport(
+                    device: phone,
+                    lastUpdatedAt: end,
+                    segments: [
+                        segment(
+                            start: start,
+                            duration: 30 * 60,
+                            bundleIdentifier: "com.apple.SleepLockScreen",
+                            displayName: "Sleep Lock Screen"
+                        ),
+                        segment(
+                            start: start.addingTimeInterval(30 * 60),
+                            duration: 60 * 60,
+                            bundleIdentifier: "com.google.ios.youtube",
+                            displayName: "YouTube"
+                        ),
+                    ]
+                ),
+            ]
+        )
+
+        let summary = try XCTUnwrap(
+            AppleScreenTimeAnalyzer.summary(
+                from: AppleScreenTimeStoredExport(verification: .unsigned, envelope: envelope),
+                interval: interval,
+                scope: .allDevices
+            )
+        )
+
+        XCTAssertEqual(summary.totalScreenOnDuration, 3 * 3_600, accuracy: 0.001)
+        XCTAssertEqual(
+            Dictionary(uniqueKeysWithValues: summary.deviceSummaries.map {
+                ($0.device.id, $0.screenOnDuration)
+            }),
+            ["mac": TimeInterval(2 * 3_600), "phone": TimeInterval(3_600)]
+        )
+        XCTAssertEqual(summary.topApplications.map(\.resolvedName), ["Xcode", "YouTube"])
+
+        let unfiltered = try XCTUnwrap(
+            AppleScreenTimeAnalyzer.summary(
+                from: AppleScreenTimeStoredExport(verification: .unsigned, envelope: envelope),
+                interval: interval,
+                scope: .allDevices,
+                includingSystemInactivity: true
+            )
+        )
+        XCTAssertEqual(unfiltered.totalScreenOnDuration, 12.5 * 3_600, accuracy: 0.001)
+        XCTAssertEqual(
+            Dictionary(uniqueKeysWithValues: unfiltered.deviceSummaries.map {
+                ($0.device.id, $0.screenOnDuration)
+            }),
+            ["mac": TimeInterval(11 * 3_600), "phone": TimeInterval(1.5 * 3_600)]
+        )
+        XCTAssertEqual(
+            Dictionary(uniqueKeysWithValues: unfiltered.topApplications.map {
+                ($0.bundleIdentifier ?? "", $0.duration)
+            }),
+            [
+                "com.apple.loginwindow": TimeInterval(8 * 3_600),
+                "com.apple.dt.Xcode": TimeInterval(2 * 3_600),
+                "com.apple.ScreenSaver.Engine": TimeInterval(3_600),
+                "com.apple.SleepLockScreen": TimeInterval(30 * 60),
+                "com.google.ios.youtube": TimeInterval(3_600),
+            ]
+        )
+
+        let phoneOnly = try XCTUnwrap(
+            AppleScreenTimeAnalyzer.summary(
+                from: AppleScreenTimeStoredExport(verification: .unsigned, envelope: envelope),
+                interval: interval,
+                scope: AppleScreenTimeScope(
+                    mode: .selectedDevices,
+                    selectedDeviceIDs: [phone.id]
+                )
+            )
+        )
+        XCTAssertEqual(phoneOnly.totalScreenOnDuration, 3_600, accuracy: 0.001)
+        XCTAssertEqual(phoneOnly.topApplications.map(\.resolvedName), ["YouTube"])
+
+        let unfilteredPhone = try XCTUnwrap(
+            AppleScreenTimeAnalyzer.summary(
+                from: AppleScreenTimeStoredExport(verification: .unsigned, envelope: envelope),
+                interval: interval,
+                scope: AppleScreenTimeScope(
+                    mode: .selectedDevices,
+                    selectedDeviceIDs: [phone.id]
+                ),
+                includingSystemInactivity: true
+            )
+        )
+        XCTAssertEqual(unfilteredPhone.totalScreenOnDuration, 1.5 * 3_600, accuracy: 0.001)
+        XCTAssertEqual(
+            Set(unfilteredPhone.topApplications.map(\.resolvedName)),
+            ["Sleep Lock Screen", "YouTube"]
+        )
+    }
+
+    func testAnalyzerSubtractsOnlyLockDurationFromMixedSegments() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let end = start.addingTimeInterval(2 * 3_600)
+        let device = AppleScreenTimeDevice(id: "mac", name: "MacBook Pro", kind: .mac)
+        let segment = AppleScreenTimeSegment(
+            start: start,
+            end: end,
+            totalScreenOnDuration: 2 * 3_600,
+            applications: [
+                AppleScreenTimeApplicationUsage(
+                    bundleIdentifier: "com.apple.loginwindow",
+                    displayName: "loginwindow",
+                    duration: 30 * 60
+                ),
+                AppleScreenTimeApplicationUsage(
+                    bundleIdentifier: "com.apple.dt.Xcode",
+                    displayName: "Xcode",
+                    duration: 90 * 60
+                ),
+            ]
+        )
+        let envelope = AppleScreenTimeExportEnvelope(
+            requestedStart: start,
+            requestedEnd: end,
+            requestedScope: .allDevices,
+            provenance: AppleScreenTimeProvenance(
+                collectorBundleIdentifier: "test",
+                collectorVersion: "1",
+                collectorPlatform: "test",
+                authorization: .approvedWithDataAccess,
+                fetchPolicy: .live,
+                euCustomerRequirementAcknowledged: true
+            ),
+            reports: [AppleScreenTimeDeviceReport(device: device, lastUpdatedAt: end, segments: [segment])]
+        )
+
+        let summary = try XCTUnwrap(
+            AppleScreenTimeAnalyzer.summary(
+                from: AppleScreenTimeStoredExport(verification: .unsigned, envelope: envelope),
+                interval: DateInterval(start: start, end: end),
+                scope: .allDevices
+            )
+        )
+
+        XCTAssertEqual(summary.totalScreenOnDuration, 90 * 60, accuracy: 0.001)
+        XCTAssertEqual(summary.topApplications.map(\.resolvedName), ["Xcode"])
+        XCTAssertEqual(summary.topApplications.first?.duration ?? 0, 90 * 60, accuracy: 0.001)
+
+        let unfiltered = try XCTUnwrap(
+            AppleScreenTimeAnalyzer.summary(
+                from: AppleScreenTimeStoredExport(verification: .unsigned, envelope: envelope),
+                interval: DateInterval(start: start, end: end),
+                scope: .allDevices,
+                includingSystemInactivity: true
+            )
+        )
+        XCTAssertEqual(unfiltered.totalScreenOnDuration, 2 * 3_600, accuracy: 0.001)
+        XCTAssertEqual(Set(unfiltered.topApplications.map(\.resolvedName)), ["loginwindow", "Xcode"])
+    }
+
+    func testUsageFilterUsesExactDeviceSpecificSystemIdentifiers() {
+        XCTAssertFalse(
+            AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                bundleIdentifier: "  COM.APPLE.LOGINWINDOW ",
+                deviceKind: .mac
+            )
+        )
+        XCTAssertFalse(
+            AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                bundleIdentifier: "com.apple.ScreenSaver.Engine",
+                deviceKind: .mac
+            )
+        )
+        XCTAssertFalse(
+            AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                bundleIdentifier: "com.apple.ScreenSaver.Drift",
+                deviceKind: .mac
+            )
+        )
+        XCTAssertFalse(
+            AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                bundleIdentifier: "com.apple.SleepLockScreen",
+                deviceKind: .iPhone
+            )
+        )
+        XCTAssertTrue(
+            AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                bundleIdentifier: "com.apple.loginwindow",
+                deviceKind: .iPhone
+            )
+        )
+        XCTAssertTrue(
+            AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                bundleIdentifier: "com.apple.SleepLockScreen",
+                deviceKind: .mac
+            )
+        )
+        XCTAssertTrue(
+            AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                bundleIdentifier: "com.example.loginwindow",
+                deviceKind: .mac
+            )
+        )
+        XCTAssertTrue(
+            AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                bundleIdentifier: "com.example.ScreenSaver.Engine",
+                deviceKind: .mac
+            )
+        )
+        XCTAssertTrue(
+            AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                bundleIdentifier: "com.apple.springboard",
+                deviceKind: .iPhone
+            )
+        )
+    }
+
+    func testUsageFilterRemovesIdleOnlyReportsWhenRequested() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let end = start.addingTimeInterval(60)
+        let report = AppleScreenTimeDeviceReport(
+            device: AppleScreenTimeDevice(id: "mac", name: "MacBook Pro", kind: .mac),
+            lastUpdatedAt: end,
+            segments: [
+                segment(
+                    start: start,
+                    duration: 60,
+                    bundleIdentifier: "com.apple.loginwindow",
+                    displayName: "loginwindow"
+                )
+            ]
+        )
+
+        XCTAssertTrue(
+            AppleScreenTimeUsageFilter.removingSystemInactivity(from: [report]).isEmpty
+        )
+    }
+
     func testShareDisclosureLevelsAreActuallySelective() throws {
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let end = start.addingTimeInterval(86_400)
@@ -224,5 +503,25 @@ final class AppleScreenTimeTests: XCTestCase {
         XCTAssertThrowsError(try AppleScreenTimeValidator.validate(envelope)) { error in
             XCTAssertEqual(error as? AppleScreenTimeValidationError, .duplicateDeviceID("same-device"))
         }
+    }
+
+    private func segment(
+        start: Date,
+        duration: TimeInterval,
+        bundleIdentifier: String,
+        displayName: String
+    ) -> AppleScreenTimeSegment {
+        AppleScreenTimeSegment(
+            start: start,
+            end: start.addingTimeInterval(duration),
+            totalScreenOnDuration: duration,
+            applications: [
+                AppleScreenTimeApplicationUsage(
+                    bundleIdentifier: bundleIdentifier,
+                    displayName: displayName,
+                    duration: duration
+                )
+            ]
+        )
     }
 }

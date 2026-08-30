@@ -7,6 +7,8 @@
         @ObservedObject var model: DashboardViewModel
         @StateObject private var screenTime: AppleScreenTimeDashboardModel
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
+        @State private var showsAllApplications = false
+        @State private var usageMode: OverviewUsageMode = .applications
 
         init(model: DashboardViewModel) {
             self.model = model
@@ -14,7 +16,8 @@
                 wrappedValue: AppleScreenTimeDashboardModel(
                     rootDirectory: AppPaths.screenTimeDirectory,
                     deviceID: model.deviceID,
-                    selectedDay: model.selectedDay
+                    selectedDay: model.selectedDay,
+                    includesUnfilteredSummary: true
                 )
             )
             _recapRuntime = ObservedObject(wrappedValue: ChatGPTRecapRuntime.shared)
@@ -110,7 +113,7 @@
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Your day")
                                 .font(.system(size: 18, weight: .bold, design: .rounded))
-                            Text("Screen Time and Goalong activity in one place.")
+                            Text("Apple Screen Time and Goalong observations shown side by side, never added together.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
@@ -126,7 +129,7 @@
 
                     HStack(alignment: .top, spacing: 18) {
                         dayMetric(
-                            title: "SCREEN TIME",
+                            title: "APPLE SCREEN TIME",
                             value: screenTimeValue,
                             detail: screenTimeDetail
                         )
@@ -165,7 +168,7 @@
                     }
 
                     Divider()
-                    topApplicationsSection
+                    topUsageSection
                         .padding(20)
 
                     Divider()
@@ -207,62 +210,150 @@
             .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        private var topApplicationsSection: some View {
-            let applications = Array(combinedAppUsage.prefix(6))
-            let maximum = max(1, applications.map(\.displaySeconds).max() ?? 1)
+        private var topUsageSection: some View {
+            let applications = showsAllApplications
+                ? combinedAppUsage
+                : Array(combinedAppUsage.prefix(6))
+            let websites = Array(topWebsiteUsage.prefix(6))
 
             return VStack(alignment: .leading, spacing: 13) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Most used")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("One list across Apple devices and this Mac.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Most used")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(usageMode.detail)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 8) {
+                        Picker("Usage type", selection: $usageMode) {
+                            ForEach(OverviewUsageMode.allCases) { item in
+                                Text(item.title).tag(item)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 230)
+
+                        if usageMode == .applications, canShowAllApplications {
+                            Toggle("Show all apps", isOn: $showsAllApplications)
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                                .accessibilityHint(
+                                    "Shows the complete app list and includes Apple system rows in the Screen Time total."
+                                )
+                                .help(
+                                    "Show the complete app list and include Apple system rows in the Screen Time total."
+                                )
+                        } else if usageMode == .websites, !topWebsiteUsage.isEmpty {
+                            Text("Top \(websites.count) of \(topWebsiteUsage.count) websites")
+                                .font(.system(size: 9, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
-                if applications.isEmpty {
-                    Text("Application usage will appear here as Screen Time or Goalong records the day.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
+                if usageMode == .applications {
+                    applicationUsageRows(applications)
                 } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(applications.enumerated()), id: \.element.id) { index, usage in
-                            HStack(spacing: 12) {
-                                AppIconView(
-                                    bundleIdentifier: usage.bundleIdentifier,
-                                    appName: usage.name,
-                                    size: 34
-                                )
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack(spacing: 12) {
-                                        Text(usage.name)
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .lineLimit(1)
-                                        Spacer()
-                                        Text(formattedDuration(usage.displaySeconds))
-                                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                                            .monospacedDigit()
-                                    }
-                                    Text(usage.sourceDetail)
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                    ProgressBar(
-                                        value: usage.displaySeconds / maximum,
-                                        tint: LHTheme.accent
-                                    )
-                                }
-                            }
-                            .padding(.vertical, 8)
+                    websiteUsageRows(websites)
+                }
+            }
+        }
 
-                            if index < applications.count - 1 {
-                                Divider().padding(.leading, 46)
+        @ViewBuilder private func applicationUsageRows(_ applications: [DailyAppUsage]) -> some View {
+            if applications.isEmpty {
+                Text("Application usage will appear here as Screen Time or Goalong records the day.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
+            } else {
+                let maximum = max(1, applications.map(\.displaySeconds).max() ?? 1)
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(applications.enumerated()), id: \.element.id) { index, usage in
+                        HStack(spacing: 12) {
+                            AppIconView(
+                                bundleIdentifier: usage.bundleIdentifier,
+                                appName: usage.name,
+                                size: 34
+                            )
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 12) {
+                                    Text(usage.name)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(formattedDuration(usage.displaySeconds))
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                        .monospacedDigit()
+                                }
+                                Text(usage.sourceDetail)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                ProgressBar(
+                                    value: usage.displaySeconds / maximum,
+                                    tint: LHTheme.accent
+                                )
                             }
+                        }
+                        .padding(.vertical, 8)
+
+                        if index < applications.count - 1 {
+                            Divider().padding(.leading, 46)
                         }
                     }
                 }
             }
+        }
+
+        @ViewBuilder private func websiteUsageRows(_ websites: [TrackedUsageItem]) -> some View {
+            if websites.isEmpty {
+                Text("No public website URL was exposed by the active browsers for this day.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
+            } else {
+                let maximum = max(1, websites.map(\.foregroundSeconds).max() ?? 1)
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(websites.enumerated()), id: \.element.id) { index, site in
+                        HStack(spacing: 12) {
+                            WebsiteIconView(host: site.host ?? site.name, size: 34)
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 12) {
+                                    Text(site.host ?? site.name)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(formattedDuration(site.foregroundSeconds))
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                        .monospacedDigit()
+                                }
+                                Text(websiteSourceDetail(site))
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                ProgressBar(
+                                    value: site.foregroundSeconds / maximum,
+                                    tint: LHTheme.teal
+                                )
+                            }
+                        }
+                        .padding(.vertical, 8)
+
+                        if index < websites.count - 1 {
+                            Divider().padding(.leading, 46)
+                        }
+                    }
+                }
+            }
+        }
+
+        private func websiteSourceDetail(_ site: TrackedUsageItem) -> String {
+            [site.sourceApplicationLabel, "This Mac"]
+                .compactMap { $0 }
+                .joined(separator: " · ")
         }
 
         private var timelineSection: some View {
@@ -418,75 +509,61 @@
         }
 
         private var screenTimeValue: String {
-            guard let duration = screenTime.summary?.totalScreenOnDuration else { return "—" }
+            guard let duration = displayedScreenTimeSummary?.totalScreenOnDuration else {
+                return screenTime.unfilteredSummary == nil ? "—" : "0m"
+            }
             return formattedDuration(duration)
         }
 
         private var screenTimeDetail: String {
-            guard let summary = screenTime.summary else { return "Apple data not available" }
+            guard screenTime.unfilteredSummary != nil else { return "Apple data not available" }
+            guard let summary = displayedScreenTimeSummary else { return "No active Apple device" }
             let count = summary.deviceSummaries.count
-            return "\(count) Apple device\(count == 1 ? "" : "s")"
+            let suffix = showsAllApplications && hasHiddenSystemApplications ? " · all reported apps" : ""
+            return "\(count) Apple device\(count == 1 ? "" : "s")\(suffix)"
+        }
+
+        private var displayedScreenTimeSummary: AppleScreenTimeDaySummary? {
+            OverviewUsageProjection.summary(
+                filtered: screenTime.summary,
+                allReported: screenTime.unfilteredSummary,
+                showsAllApplications: showsAllApplications
+            )
+        }
+
+        private var hasHiddenSystemApplications: Bool {
+            OverviewUsageProjection.hasHiddenSystemApplications(
+                filtered: screenTime.summary,
+                allReported: screenTime.unfilteredSummary
+            )
+        }
+
+        private var canShowAllApplications: Bool {
+            hasHiddenSystemApplications || defaultAppUsage.count > 6
+        }
+
+        private var defaultAppUsage: [DailyAppUsage] {
+            OverviewUsageProjection.applications(
+                filteredSummary: screenTime.summary,
+                allReportedSummary: screenTime.unfilteredSummary,
+                goalongUsage: model.snapshot.trackedUsage,
+                currentMacDeviceID: screenTime.currentMacDeviceID,
+                showsAllApplications: false
+            )
         }
 
         private var combinedAppUsage: [DailyAppUsage] {
-            var merged: [String: DailyAppUsage] = [:]
-
-            for application in screenTime.summary?.topApplications ?? [] {
-                let key = appKey(
-                    name: application.resolvedName,
-                    bundleIdentifier: application.bundleIdentifier
-                )
-                merged[key] = DailyAppUsage(
-                    id: key,
-                    name: application.resolvedName,
-                    bundleIdentifier: application.bundleIdentifier,
-                    screenTimeSeconds: application.duration,
-                    goalongSeconds: 0
-                )
-            }
-
-            for application in model.snapshot.appUsage {
-                let key = appKey(
-                    name: application.appName,
-                    bundleIdentifier: application.bundleIdentifier
-                )
-                if var existing = merged[key] {
-                    existing.goalongSeconds = TimeInterval(application.activeMinutes * 60)
-                    if existing.bundleIdentifier == nil {
-                        existing.bundleIdentifier = application.bundleIdentifier
-                    }
-                    if existing.name == (existing.bundleIdentifier ?? "") {
-                        existing.name = application.appName
-                    }
-                    merged[key] = existing
-                } else {
-                    merged[key] = DailyAppUsage(
-                        id: key,
-                        name: application.appName,
-                        bundleIdentifier: application.bundleIdentifier,
-                        screenTimeSeconds: 0,
-                        goalongSeconds: TimeInterval(application.activeMinutes * 60)
-                    )
-                }
-            }
-
-            return merged.values.sorted { lhs, rhs in
-                if lhs.displaySeconds != rhs.displaySeconds {
-                    return lhs.displaySeconds > rhs.displaySeconds
-                }
-                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-            }
+            OverviewUsageProjection.applications(
+                filteredSummary: screenTime.summary,
+                allReportedSummary: screenTime.unfilteredSummary,
+                goalongUsage: model.snapshot.trackedUsage,
+                currentMacDeviceID: screenTime.currentMacDeviceID,
+                showsAllApplications: showsAllApplications
+            )
         }
 
-        private func appKey(name: String, bundleIdentifier: String?) -> String {
-            if let bundleIdentifier, !bundleIdentifier.isEmpty {
-                return "bundle:\(bundleIdentifier.lowercased())"
-            }
-            let normalized = name
-                .lowercased()
-                .components(separatedBy: CharacterSet.alphanumerics.inverted)
-                .joined()
-            return "name:\(normalized)"
+        private var topWebsiteUsage: [TrackedUsageItem] {
+            OverviewUsageProjection.websites(model.snapshot.trackedUsage)
         }
 
         private func formattedDuration(_ seconds: TimeInterval) -> String {
@@ -523,25 +600,213 @@
         }
     }
 
-    private struct DailyAppUsage: Identifiable {
+    struct DailyAppUsage: Identifiable, Equatable {
         let id: String
         var name: String
         var bundleIdentifier: String?
-        var screenTimeSeconds: TimeInterval
+        var appleCurrentMacSeconds: TimeInterval
+        var appleOtherDeviceSeconds: TimeInterval
         var goalongSeconds: TimeInterval
 
-        // Apple and Goalong can describe the same foreground period. Keep the larger
-        // bounded duration instead of adding both and presenting a false total.
+        var screenTimeSeconds: TimeInterval {
+            appleCurrentMacSeconds + appleOtherDeviceSeconds
+        }
+
+        // Apple and Goalong can describe the same foreground period on this Mac.
+        // Reconcile that overlap first, then add Apple usage from distinct devices.
         var displaySeconds: TimeInterval {
-            max(screenTimeSeconds, goalongSeconds)
+            appleOtherDeviceSeconds + max(appleCurrentMacSeconds, goalongSeconds)
         }
 
         var sourceDetail: String {
             if screenTimeSeconds > 0, goalongSeconds > 0 {
-                return "Screen Time + \(DashboardFormatters.duration(seconds: goalongSeconds)) active on this Mac"
+                return "Apple \(DashboardFormatters.duration(seconds: screenTimeSeconds)) · Goalong \(DashboardFormatters.duration(seconds: goalongSeconds)) observed on this Mac"
             }
             if screenTimeSeconds > 0 { return "Apple Screen Time" }
-            return "Goalong active use"
+            return "Goalong observed foreground on this Mac"
+        }
+    }
+
+    enum OverviewUsageMode: String, CaseIterable, Identifiable {
+        case applications
+        case websites
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .applications: return "Applications"
+            case .websites: return "Websites"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .applications:
+                return "Apple totals and Goalong observations, reconciled without double counting."
+            case .websites:
+                return "Goalong-observed browser time on this Mac. Already included in app totals; Apple does not expose per-site iPhone or iPad detail."
+            }
+        }
+    }
+
+    enum OverviewUsageProjection {
+        static func summary(
+            filtered: AppleScreenTimeDaySummary?,
+            allReported: AppleScreenTimeDaySummary?,
+            showsAllApplications: Bool
+        ) -> AppleScreenTimeDaySummary? {
+            showsAllApplications ? (allReported ?? filtered) : filtered
+        }
+
+        static func hasHiddenSystemApplications(
+            filtered: AppleScreenTimeDaySummary?,
+            allReported: AppleScreenTimeDaySummary?
+        ) -> Bool {
+            guard let allReported else { return false }
+            let filteredDuration = filtered?.totalScreenOnDuration ?? 0
+            if allReported.totalScreenOnDuration > filteredDuration + 0.5 { return true }
+
+            let filteredIDs = Set(
+                filtered?.deviceSummaries.flatMap(\.applications).map(\.id) ?? []
+            )
+            return allReported.deviceSummaries
+                .flatMap(\.applications)
+                .contains { !filteredIDs.contains($0.id) }
+        }
+
+        static func applications(
+            filteredSummary: AppleScreenTimeDaySummary?,
+            allReportedSummary: AppleScreenTimeDaySummary?,
+            goalongUsage: [TrackedUsageItem],
+            currentMacDeviceID: String,
+            showsAllApplications: Bool
+        ) -> [DailyAppUsage] {
+            let selectedSummary = summary(
+                filtered: filteredSummary,
+                allReported: allReportedSummary,
+                showsAllApplications: showsAllApplications
+            )
+            var merged: [String: DailyAppUsage] = [:]
+
+            for deviceSummary in selectedSummary?.deviceSummaries ?? [] {
+                for application in deviceSummary.applications {
+                    let key = appKey(
+                        name: application.resolvedName,
+                        bundleIdentifier: application.bundleIdentifier
+                    )
+                    let isCurrentMac = deviceSummary.device.id == currentMacDeviceID
+                    if var existing = merged[key] {
+                        if isCurrentMac {
+                            existing.appleCurrentMacSeconds += application.duration
+                        } else {
+                            existing.appleOtherDeviceSeconds += application.duration
+                        }
+                        merged[key] = existing
+                    } else {
+                        merged[key] = DailyAppUsage(
+                            id: key,
+                            name: application.resolvedName,
+                            bundleIdentifier: application.bundleIdentifier,
+                            appleCurrentMacSeconds: isCurrentMac ? application.duration : 0,
+                            appleOtherDeviceSeconds: isCurrentMac ? 0 : application.duration,
+                            goalongSeconds: 0
+                        )
+                    }
+                }
+            }
+
+            for application in goalongUsage where application.kind == .application {
+                if !showsAllApplications,
+                   !AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                       bundleIdentifier: application.bundleIdentifier,
+                       deviceKind: .mac
+                   )
+                {
+                    continue
+                }
+                let key = appKey(
+                    name: application.name,
+                    bundleIdentifier: application.bundleIdentifier
+                )
+                if var existing = merged[key] {
+                    existing.goalongSeconds = max(
+                        existing.goalongSeconds,
+                        application.foregroundSeconds
+                    )
+                    if existing.bundleIdentifier == nil {
+                        existing.bundleIdentifier = application.bundleIdentifier
+                    }
+                    if existing.name == (existing.bundleIdentifier ?? "") {
+                        existing.name = application.name
+                    }
+                    merged[key] = existing
+                } else {
+                    merged[key] = DailyAppUsage(
+                        id: key,
+                        name: application.name,
+                        bundleIdentifier: application.bundleIdentifier,
+                        appleCurrentMacSeconds: 0,
+                        appleOtherDeviceSeconds: 0,
+                        goalongSeconds: application.foregroundSeconds
+                    )
+                }
+            }
+
+            return merged.values.sorted { lhs, rhs in
+                if lhs.displaySeconds != rhs.displaySeconds {
+                    return lhs.displaySeconds > rhs.displaySeconds
+                }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+        }
+
+        static func websites(_ trackedUsage: [TrackedUsageItem]) -> [TrackedUsageItem] {
+            trackedUsage
+                .filter {
+                    $0.kind == .website
+                        && $0.foregroundSeconds > 0
+                        && SharingSubjectKey.displayableWebsiteHost($0.host ?? $0.name) != nil
+                }
+                .sorted { lhs, rhs in
+                    if lhs.foregroundSeconds != rhs.foregroundSeconds {
+                        return lhs.foregroundSeconds > rhs.foregroundSeconds
+                    }
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+        }
+
+        static func appleApplications(
+            _ summary: AppleScreenTimeDaySummary?
+        ) -> [AppleScreenTimeApplicationUsage] {
+            var merged: [String: AppleScreenTimeApplicationUsage] = [:]
+            for application in summary?.deviceSummaries.flatMap(\.applications) ?? [] {
+                if let existing = merged[application.id] {
+                    merged[application.id] = AppleScreenTimeApplicationUsage(
+                        bundleIdentifier: existing.bundleIdentifier ?? application.bundleIdentifier,
+                        displayName: existing.displayName ?? application.displayName,
+                        duration: existing.duration + application.duration
+                    )
+                } else {
+                    merged[application.id] = application
+                }
+            }
+            return merged.values.sorted { lhs, rhs in
+                if lhs.duration != rhs.duration { return lhs.duration > rhs.duration }
+                return lhs.resolvedName.localizedCaseInsensitiveCompare(rhs.resolvedName)
+                    == .orderedAscending
+            }
+        }
+
+        private static func appKey(name: String, bundleIdentifier: String?) -> String {
+            if let bundleIdentifier, !bundleIdentifier.isEmpty {
+                return "bundle:\(bundleIdentifier.lowercased())"
+            }
+            let normalized = name
+                .lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .joined()
+            return "name:\(normalized)"
         }
     }
 

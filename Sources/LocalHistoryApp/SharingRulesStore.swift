@@ -57,8 +57,16 @@
             return value
         }
 
+        static func displayableWebsiteHost(_ host: String?) -> String? {
+            DailyWebsiteUsageAccumulator.displayableHost(host)
+        }
+
+        static func trackedWebsiteHost(from snapshot: URLSnapshot?) -> String? {
+            DailyWebsiteUsageAccumulator.trackedHost(from: snapshot)
+        }
+
         static func forEvent(_ event: HistoryEvent) -> String? {
-            if let host = event.url?.host, !normalizedHost(host).isEmpty {
+            if let host = trackedWebsiteHost(from: event.url) {
                 return website(host: host)
             }
             guard let app = event.app else { return nil }

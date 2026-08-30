@@ -127,6 +127,7 @@
         let kind: TrackedSubjectKind
         let name: String
         let appName: String?
+        let sourceApplications: [String]
         let bundleIdentifier: String?
         let host: String?
         let category: String?
@@ -136,10 +137,17 @@
         let identityProofAvailable: Bool
 
         var searchableText: String {
-            [name, appName, bundleIdentifier, host, category]
-                .compactMap { $0 }
+            ([name, appName, bundleIdentifier, host, category]
+                .compactMap { $0 } + sourceApplications)
                 .joined(separator: " ")
                 .lowercased()
+        }
+
+        var sourceApplicationLabel: String? {
+            let values = sourceApplications.isEmpty ? [appName].compactMap { $0 } : sourceApplications
+            guard !values.isEmpty else { return nil }
+            if values.count <= 2 { return values.joined(separator: " + ") }
+            return values.prefix(2).joined(separator: " + ") + " +\(values.count - 2)"
         }
     }
 

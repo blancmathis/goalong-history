@@ -840,6 +840,173 @@
             XCTAssertEqual(projectedSession.latestMessage, "Useful message")
         }
 
+        func testTrackedWebsiteDurationsUseOneTimelineAndRejectInternalBrowserSurfaces() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let day = makeDay(year: 2026, month: 8, day: 24)
+            let eventURL = fixture.events.appendingPathComponent("2026-08-24.jsonl")
+            let events = [
+                usageEvent(
+                    id: "x-1",
+                    timestamp: day,
+                    appName: "Aside",
+                    bundleIdentifier: "at.studio.AsideBrowser",
+                    urlValue: "https://x.com/home",
+                    host: "x.com"
+                ),
+                usageEvent(
+                    id: "x-2",
+                    timestamp: day.addingTimeInterval(10),
+                    appName: "Chrome",
+                    bundleIdentifier: "com.google.Chrome",
+                    urlValue: "https://x.com/search",
+                    host: "x.com"
+                ),
+                usageEvent(
+                    id: "chatgpt",
+                    timestamp: day.addingTimeInterval(20),
+                    appName: "Aside",
+                    bundleIdentifier: "at.studio.AsideBrowser",
+                    urlValue: "https://chatgpt.com/",
+                    host: "chatgpt.com"
+                ),
+                usageEvent(
+                    id: "app-surface",
+                    timestamp: day.addingTimeInterval(40),
+                    appName: "Aside",
+                    bundleIdentifier: "at.studio.AsideBrowser",
+                    urlValue: "app://-/local",
+                    host: "-"
+                ),
+                usageEvent(
+                    id: "new-tab",
+                    timestamp: day.addingTimeInterval(50),
+                    appName: "Chrome",
+                    bundleIdentifier: "com.google.Chrome",
+                    urlValue: "chrome://newtab/",
+                    host: "newtab"
+                ),
+                usageEvent(
+                    id: "finder",
+                    timestamp: day.addingTimeInterval(60),
+                    appName: "Finder",
+                    bundleIdentifier: "com.apple.finder",
+                    urlValue: nil,
+                    host: nil
+                ),
+            ]
+            var journal = Data()
+            for event in events { journal.append(try line(event)) }
+            try journal.write(to: eventURL)
+
+            let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
+            let websites = snapshot.trackedUsage.filter { $0.kind == .website }
+
+            XCTAssertEqual(websites.map(\.name), ["chatgpt.com", "x.com"])
+            XCTAssertEqual(websites.map(\.foregroundSeconds), [20, 20])
+            XCTAssertEqual(websites.reduce(0) { $0 + $1.foregroundSeconds }, 40)
+            XCTAssertFalse(websites.contains { ["-", "newtab"].contains($0.name) })
+            let x = try XCTUnwrap(websites.first { $0.name == "x.com" })
+            XCTAssertEqual(x.sourceApplications, ["Aside", "Chrome"])
+            XCTAssertEqual(x.sourceApplicationLabel, "Aside + Chrome")
+            let browserSeconds = snapshot.trackedUsage
+                .filter {
+                    $0.kind == .application
+                        && ["at.studio.AsideBrowser", "com.google.Chrome"]
+                            .contains($0.bundleIdentifier ?? "")
+                }
+                .reduce(0) { $0 + $1.foregroundSeconds }
+            XCTAssertEqual(browserSeconds, 60, accuracy: 0.001)
+            XCTAssertLessThanOrEqual(
+                websites.reduce(0) { $0 + $1.foregroundSeconds },
+                browserSeconds,
+                "Website time is a breakdown of browser time, not an additional total."
+            )
+        }
+
+        func testIdleHeartbeatsStopExtendingWebsiteForegroundTime() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let day = makeDay(year: 2026, month: 8, day: 24)
+            let eventURL = fixture.events.appendingPathComponent("2026-08-24.jsonl")
+            let events = [
+                usageEvent(
+                    id: "input",
+                    timestamp: day,
+                    urlValue: "https://example.com/",
+                    host: "example.com"
+                ),
+                usageEvent(
+                    id: "heartbeat-active",
+                    timestamp: day.addingTimeInterval(60),
+                    kind: .heartbeat,
+                    urlValue: "https://example.com/",
+                    host: "example.com",
+                    idleSeconds: 60
+                ),
+                usageEvent(
+                    id: "heartbeat-idle",
+                    timestamp: day.addingTimeInterval(120),
+                    kind: .heartbeat,
+                    urlValue: "https://example.com/",
+                    host: "example.com",
+                    idleSeconds: 120
+                ),
+                usageEvent(
+                    id: "heartbeat-more-idle",
+                    timestamp: day.addingTimeInterval(180),
+                    kind: .heartbeat,
+                    urlValue: "https://example.com/",
+                    host: "example.com",
+                    idleSeconds: 180
+                ),
+                usageEvent(
+                    id: "finder",
+                    timestamp: day.addingTimeInterval(240),
+                    appName: "Finder",
+                    bundleIdentifier: "com.apple.finder",
+                    urlValue: nil,
+                    host: nil
+                ),
+            ]
+            var journal = Data()
+            for event in events { journal.append(try line(event)) }
+            try journal.write(to: eventURL)
+
+            let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
+            let website = try XCTUnwrap(
+                snapshot.trackedUsage.first {
+                    $0.kind == .website && $0.name == "example.com"
+                }
+            )
+
+            XCTAssertEqual(website.foregroundSeconds, 120, accuracy: 0.001)
+            XCTAssertEqual(website.activeMinutes, 1)
+        }
+
+        func testHistoricalLastWebsiteIntervalStopsAtDayBoundary() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let day = makeDay(year: 2026, month: 8, day: 24)
+            let eventURL = fixture.events.appendingPathComponent("2026-08-24.jsonl")
+            let event = usageEvent(
+                id: "end-of-day",
+                timestamp: Calendar.current.startOfDay(for: day).addingTimeInterval(86_390),
+                urlValue: "https://example.com/",
+                host: "example.com"
+            )
+            try line(event).write(to: eventURL)
+
+            let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
+            let website = try XCTUnwrap(
+                snapshot.trackedUsage.first {
+                    $0.kind == .website && $0.name == "example.com"
+                }
+            )
+
+            XCTAssertEqual(website.foregroundSeconds, 10, accuracy: 0.001)
+        }
+
         func testRowBudgetStopsDuringStreamingAndWarmRevisionIsNotRescanned() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -1046,6 +1213,37 @@
                     classifierVersion: "fixture"
                 ),
                 message: id
+            )
+        }
+
+        private func usageEvent(
+            id: String,
+            timestamp: Date,
+            kind: EventKind = .mouseClick,
+            appName: String = "Browser",
+            bundleIdentifier: String = "com.example.browser",
+            urlValue: String?,
+            host: String?,
+            idleSeconds: Double? = nil
+        ) -> HistoryEvent {
+            HistoryEvent(
+                id: id,
+                sessionID: "dashboard-usage-test",
+                timestamp: timestamp,
+                kind: kind,
+                app: AppSnapshot(
+                    name: appName,
+                    bundleIdentifier: bundleIdentifier,
+                    processIdentifier: 42
+                ),
+                window: WindowSnapshot(title: appName, role: "AXWindow", subrole: nil),
+                url: urlValue.map {
+                    URLSnapshot(value: $0, host: host, redactionApplied: true)
+                },
+                pointer: kind == .mouseClick
+                    ? PointerSnapshot(button: "left", x: 10, y: 20, clickCount: 1)
+                    : nil,
+                metadata: idleSeconds.map { ["idle_seconds": String($0)] }
             )
         }
 

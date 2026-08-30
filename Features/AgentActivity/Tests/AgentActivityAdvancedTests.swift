@@ -884,6 +884,42 @@ final class AgentActivityAdvancedTests: XCTestCase {
         XCTAssertTrue(records.allSatisfy { store.cachedRecord(id: $0.id) == nil })
     }
 
+    func testConversationPresentationSurvivesHeavySummaryExpiryWithoutDiskCopy() throws {
+        var now = Date(timeIntervalSince1970: 1_787_472_100)
+        let root = try makeTemporaryDirectory("presentation-after-summary-expiry")
+        let store = try AgentActivityStore(rootDirectory: root, currentDate: { now })
+        let title = "A bounded title that must remain stable in the UI"
+        let prompt = "PROMPT-MUST-REMAIN-ONLY-IN-THE-TRANSIENT-SUMMARY"
+        let answer = "ANSWER-MUST-REMAIN-ONLY-IN-THE-TRANSIENT-SUMMARY"
+        var analyzed = record(id: "stable-presentation", observedAt: now)
+        analyzed.summary.title = title
+        analyzed.summary.visibleMessages = [
+            AgentVisibleMessage(role: .user, text: prompt),
+            AgentVisibleMessage(role: .assistantFinal, text: answer),
+        ]
+        analyzed.projectionIsComplete = false
+        _ = try store.upsert(analyzed, maximumEntries: 100)
+
+        let warm = try XCTUnwrap(store.overview(for: now).captures.first)
+        XCTAssertEqual(warm.summary.title, title)
+        XCTAssertEqual(warm.summary.visibleMessages.count, 2)
+
+        now = now.addingTimeInterval(AgentActivityStore.transientSummaryTTL + 1)
+        let lightweight = try XCTUnwrap(store.overview(for: now).captures.first)
+        XCTAssertEqual(lightweight.summary.title, title)
+        XCTAssertTrue(lightweight.summary.visibleMessages.isEmpty)
+        XCTAssertEqual(lightweight.summary.userMessageCount, 1)
+        XCTAssertEqual(lightweight.summary.assistantMessageCount, 1)
+        XCTAssertFalse(lightweight.isAnalyzed)
+        XCTAssertFalse(lightweight.projectionIsComplete)
+        XCTAssertEqual(store.transientSummaryCount(), 0)
+
+        let persisted = try Data(contentsOf: store.indexFile)
+        XCTAssertNil(persisted.range(of: Data(title.utf8)))
+        XCTAssertNil(persisted.range(of: Data(prompt.utf8)))
+        XCTAssertNil(persisted.range(of: Data(answer.utf8)))
+    }
+
     func testContentFreeTransientMetricsHaveStrictLRUCardinalityBound() throws {
         let store = try AgentActivityStore(rootDirectory: try makeTemporaryDirectory("metric-cache"))
         let observedAt = Date(timeIntervalSince1970: 1_787_472_100)
@@ -897,6 +933,15 @@ final class AgentActivityAdvancedTests: XCTestCase {
             store.transientAnalysisCount(),
             AgentActivityStore.maximumTransientAnalysisMetrics
         )
+        XCTAssertLessThanOrEqual(
+            store.transientPresentationCount(),
+            AgentActivityStore.maximumTransientAnalysisMetrics
+        )
+        XCTAssertLessThanOrEqual(
+            store.transientPresentationTitleByteCount(),
+            AgentActivityStore.maximumTransientAnalysisMetrics
+                * AgentDocumentSummary.maximumTitleBytes
+        )
         XCTAssertLessThanOrEqual(store.transientSummaryCount(), AgentActivityStore.maximumTransientRecords)
         XCTAssertLessThanOrEqual(
             store.transientSummaryByteCount(),
@@ -908,6 +953,7 @@ final class AgentActivityAdvancedTests: XCTestCase {
         XCTAssertEqual(store.transientSummaryCount(), 0)
         XCTAssertEqual(store.transientSummaryByteCount(), 0)
         XCTAssertEqual(store.transientAnalysisCount(), metricCount)
+        XCTAssertEqual(store.transientPresentationCount(), metricCount)
     }
 
     private struct FileSnapshot: Equatable {

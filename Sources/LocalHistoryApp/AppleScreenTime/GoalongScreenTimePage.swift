@@ -9,15 +9,20 @@
         @State private var search = ""
         private let showsHeader: Bool
 
-        init(model: DashboardViewModel, showsHeader: Bool = true) {
+        init(
+            model: DashboardViewModel,
+            screenTimeModel: AppleScreenTimeDashboardModel? = nil,
+            showsHeader: Bool = true
+        ) {
             _dashboard = ObservedObject(wrappedValue: model)
             self.showsHeader = showsHeader
             _screenTime = StateObject(
-                wrappedValue: AppleScreenTimeDashboardModel(
-                    rootDirectory: AppPaths.screenTimeDirectory,
-                    deviceID: model.deviceID,
-                    selectedDay: model.selectedDay
-                )
+                wrappedValue: screenTimeModel
+                    ?? AppleScreenTimeDashboardModel(
+                        rootDirectory: AppPaths.screenTimeDirectory,
+                        deviceID: model.deviceID,
+                        selectedDay: model.selectedDay
+                    )
             )
         }
 
@@ -47,12 +52,12 @@
                     }
 
                     statusBanner
-                    usageCard
 
                     if let summary = screenTime.summary {
-                        metrics(summary)
+                        dayOverview(summary)
                     }
 
+                    usageCard
                     deviceScopeCard
                     deviceUsageCard
                     shareCard
@@ -128,39 +133,46 @@
 
         private var usageCard: some View {
             LHCard(padding: 0) {
-                VStack(spacing: 0) {
-                    HStack(spacing: 12) {
-                        Picker("Usage", selection: $mode) {
-                            ForEach(UsageMode.allCases) { item in
-                                Text(item.title).tag(item)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 300)
-
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(.secondary)
-                            TextField("Search", text: $search)
-                                .textFieldStyle(.plain)
-                            if !search.isEmpty {
-                                Button {
-                                    search = ""
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
+                LazyVStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 12) {
+                            Picker("Usage", selection: $mode) {
+                                ForEach(UsageMode.allCases) { item in
+                                    Text(item.title).tag(item)
                                 }
-                                .buttonStyle(.plain)
                             }
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(height: 34)
-                        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            .pickerStyle(.segmented)
+                            .frame(width: 300)
 
-                        Spacer()
-                        Text(usageCountText)
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            HStack(spacing: 8) {
+                                Image(systemName: "magnifyingglass")
+                                    .foregroundStyle(.secondary)
+                                TextField(mode.searchPlaceholder, text: $search)
+                                    .textFieldStyle(.plain)
+                                if !search.isEmpty {
+                                    Button {
+                                        search = ""
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(height: 34)
+                            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                            Spacer()
+                            Text(usageCountText)
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Text(mode.detail)
+                            .font(.system(size: 9))
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(14)
 
@@ -187,7 +199,7 @@
                 )
                 .frame(minHeight: 230)
             } else {
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
                         HStack(spacing: 12) {
                             AppIconView(
@@ -227,9 +239,10 @@
             if sites.isEmpty {
                 EmptyStateView(
                     symbol: "globe",
-                    title: "No website activity",
-                    message:
-                        "Goalong shows locally observed websites here because Apple's Screen Time stores do not expose a reliable cross-device website breakdown to this app."
+                    title: search.isEmpty ? "No website activity" : "No matching website",
+                    message: search.isEmpty
+                        ? "No public website URL was exposed by the active browsers for this day. iPhone and iPad website detail is not available from Apple's local Screen Time stores."
+                        : "No locally observed website matches this search."
                 )
                 .frame(minHeight: 230)
             } else {
@@ -238,10 +251,10 @@
                         HStack(spacing: 12) {
                             WebsiteIconView(host: site.host ?? site.name, size: 38)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(site.name)
+                                Text(site.host ?? site.name)
                                     .font(.system(size: 12, weight: .semibold))
                                     .lineLimit(1)
-                                Text([site.host, site.appName].compactMap { $0 }.joined(separator: " · "))
+                                Text(websiteDetail(site))
                                     .font(.system(size: 9))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
@@ -262,33 +275,68 @@
             }
         }
 
-        private func metrics(_ summary: AppleScreenTimeDaySummary) -> some View {
-            HStack(spacing: 12) {
-                metric(
-                    title: "SCREEN TIME",
-                    value: duration(summary.totalScreenOnDuration),
-                    detail: summary.deviceSummaries.count > 1 ? "Sum across included devices" : "Apple app-usage intervals",
-                    symbol: "hourglass"
-                )
-                metric(
-                    title: "APPLICATIONS",
-                    value: String(summary.topApplications.count),
-                    detail: "Apps with attributed usage",
-                    symbol: "square.grid.2x2.fill"
-                )
-                metric(
-                    title: "DEVICES",
-                    value: String(summary.deviceSummaries.count),
-                    detail: scopeDescription,
-                    symbol: "macbook.and.iphone"
-                )
-                metric(
-                    title: "APPLE UPDATE",
-                    value: screenTime.latestAppleUpdate.map(relativeDate) ?? "—",
-                    detail: screenTime.selectedDayIsToday ? "Refreshed automatically" : "Last stored Apple event",
-                    symbol: "icloud.and.arrow.down"
-                )
+        private func dayOverview(_ summary: AppleScreenTimeDaySummary) -> some View {
+            LHCard(padding: 0) {
+                VStack(spacing: 0) {
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Day overview")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("Apple Screen Time for the selected day and device scope.")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(scopeDescription)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 14)
+
+                    Divider()
+
+                    HStack(spacing: 0) {
+                        overviewMetric(
+                            title: "TOTAL SCREEN TIME",
+                            value: duration(summary.totalScreenOnDuration),
+                            detail: totalScreenTimeDetail(summary),
+                            symbol: "hourglass",
+                            isPrimary: true,
+                            accessibilityIdentifier: "screen-time-day-total"
+                        )
+                        overviewDivider
+                        overviewMetric(
+                            title: "APPLICATIONS",
+                            value: String(OverviewUsageProjection.appleApplications(summary).count),
+                            detail: "Apps with recorded use",
+                            symbol: "square.grid.2x2.fill",
+                            accessibilityIdentifier: "screen-time-day-applications"
+                        )
+                        overviewDivider
+                        overviewMetric(
+                            title: "DEVICES",
+                            value: String(summary.deviceSummaries.count),
+                            detail: "Included in this total",
+                            symbol: "macbook.and.iphone",
+                            accessibilityIdentifier: "screen-time-day-devices"
+                        )
+                        overviewDivider
+                        overviewMetric(
+                            title: "APPLE UPDATE",
+                            value: screenTime.latestAppleUpdate.map(relativeDate) ?? "—",
+                            detail: screenTime.selectedDayIsToday
+                                ? "Automatic every 30 seconds"
+                                : "Latest stored Apple event",
+                            symbol: "icloud.and.arrow.down",
+                            accessibilityIdentifier: "screen-time-day-update"
+                        )
+                    }
+                    .padding(.vertical, 15)
+                }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("screen-time-day-overview")
         }
 
         private var deviceScopeCard: some View {
@@ -298,7 +346,7 @@
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Devices included")
                                 .font(.system(size: 14, weight: .semibold))
-                            Text("Only devices with useful activity for this day are offered, plus this Mac.")
+                            Text("Apple devices detected on this Mac stay selectable even when Apple reports no usage for the selected day.")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                         }
@@ -312,7 +360,7 @@
                         ) {
                             Text("This Mac").tag(AppleScreenTimeScopeMode.macOnly)
                             Text("All devices").tag(AppleScreenTimeScopeMode.allDevices)
-                            Text("Selected").tag(AppleScreenTimeScopeMode.selectedDevices)
+                            Text("Selected devices").tag(AppleScreenTimeScopeMode.selectedDevices)
                         }
                         .pickerStyle(.segmented)
                         .frame(width: 350)
@@ -330,10 +378,10 @@
                                             .frame(width: 18)
                                         VStack(alignment: .leading, spacing: 1) {
                                             Text(device.displayName)
-                                                .font(.system(size: 10, weight: .semibold))
+                                                .font(.system(size: 11, weight: .semibold))
                                                 .lineLimit(1)
-                                            Text(device.id == screenTime.currentMacDeviceID ? "This Mac" : screenTime.sourceLabel(for: device))
-                                                .font(.system(size: 8))
+                                            Text(deviceDetail(device))
+                                                .font(.system(size: 9))
                                                 .foregroundStyle(.secondary)
                                                 .lineLimit(1)
                                         }
@@ -372,8 +420,8 @@
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.device.displayName)
                                             .font(.system(size: 11, weight: .semibold))
-                                        Text(item.device.id == screenTime.currentMacDeviceID ? "This Mac" : screenTime.sourceLabel(for: item.device))
-                                            .font(.system(size: 8))
+                                        Text(deviceDetail(item.device))
+                                            .font(.system(size: 9))
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
@@ -439,7 +487,7 @@
                         Text("Data sources")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "Application and device totals come from Apple's local knowledgeC /app/usage database and iCloud-synchronized Biome App.InFocus streams. The Websites tab comes from Goalong's local recorder for the selected day."
+                            "Application and device totals come from Apple's local knowledgeC /app/usage database and iCloud-synchronized Biome App.InFocus streams. Explicit lock-screen and screen-saver intervals are excluded. Websites come only from Goalong's local Mac recorder and are already part of the browser application time; they are never added to Apple Screen Time."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
@@ -457,7 +505,7 @@
         }
 
         private var filteredApplications: [AppleScreenTimeApplicationUsage] {
-            let values = screenTime.summary?.topApplications ?? []
+            let values = OverviewUsageProjection.appleApplications(screenTime.summary)
             let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard !query.isEmpty else { return values }
             return values.filter {
@@ -470,14 +518,7 @@
         }
 
         private var filteredWebsites: [TrackedUsageItem] {
-            let values = dashboard.snapshot.trackedUsage
-                .filter { $0.kind == .website }
-                .sorted { lhs, rhs in
-                    if lhs.foregroundSeconds != rhs.foregroundSeconds {
-                        return lhs.foregroundSeconds > rhs.foregroundSeconds
-                    }
-                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                }
+            let values = OverviewUsageProjection.websites(dashboard.snapshot.trackedUsage)
             let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard !query.isEmpty else { return values }
             return values.filter { $0.searchableText.contains(query) }
@@ -516,22 +557,47 @@
             }
         }
 
-        private func metric(title: String, value: String, detail: String, symbol: String) -> some View {
-            LHCard(padding: 15) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Label(title, systemImage: symbol)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Text(value)
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                    Text(detail)
-                        .font(.system(size: 8))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        private var overviewDivider: some View {
+            Divider()
+                .frame(height: 62)
+        }
+
+        private func overviewMetric(
+            title: String,
+            value: String,
+            detail: String,
+            symbol: String,
+            isPrimary: Bool = false,
+            accessibilityIdentifier: String
+        ) -> some View {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(title, systemImage: symbol)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.system(size: isPrimary ? 23 : 19, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .accessibilityIdentifier(accessibilityIdentifier)
+                Text(detail)
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
+            .padding(.horizontal, 18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        private func totalScreenTimeDetail(_ summary: AppleScreenTimeDaySummary) -> String {
+            if summary.deviceSummaries.count > 1 {
+                return "Sum across \(summary.deviceSummaries.count) devices · simultaneous use may overlap · lock time excluded"
+            }
+            return "Active-use intervals · lock time excluded"
+        }
+
+        private func websiteDetail(_ site: TrackedUsageItem) -> String {
+            [site.sourceApplicationLabel, "This Mac only"]
+                .compactMap { $0 }
+                .joined(separator: " · ")
         }
 
         private func deviceSymbol(_ kind: AppleScreenTimeDeviceKind) -> String {
@@ -540,8 +606,17 @@
             case .iPhone: return "iphone"
             case .iPad: return "ipad"
             case .iPod: return "ipod"
+            case .appleWatch: return "applewatch"
+            case .appleTV: return "appletv"
+            case .homePod: return "homepod"
+            case .visionPro: return "visionpro"
             case .unknown: return "display"
             }
+        }
+
+        private func deviceDetail(_ device: AppleScreenTimeDevice) -> String {
+            if device.id == screenTime.currentMacDeviceID { return "This Mac" }
+            return "\(device.kind.displayName) · \(screenTime.sourceLabel(for: device))"
         }
 
         private func duration(_ seconds: TimeInterval) -> String {
@@ -554,6 +629,9 @@
         }
 
         private func relativeDate(_ date: Date) -> String {
+            if abs(date.timeIntervalSinceNow) < 60 {
+                return "Just now"
+            }
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .abbreviated
             return formatter.localizedString(for: date, relativeTo: Date())
@@ -573,6 +651,22 @@
                 switch self {
                 case .applications: return "Applications"
                 case .websites: return "Websites"
+                }
+            }
+
+            var searchPlaceholder: String {
+                switch self {
+                case .applications: return "Search applications"
+                case .websites: return "Search websites"
+                }
+            }
+
+            var detail: String {
+                switch self {
+                case .applications:
+                    return "Apple application totals for the selected device scope."
+                case .websites:
+                    return "Goalong-observed browser time on this Mac only. It is already included in browser app totals; changing the Apple device scope does not change this list. Apple does not expose reliable per-site iPhone or iPad detail here."
                 }
             }
         }

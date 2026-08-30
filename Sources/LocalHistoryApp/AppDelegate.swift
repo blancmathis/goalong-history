@@ -42,6 +42,7 @@
         private var sharingRulesStore: SharingRulesStore!
         private var agentActivityRuntime: AgentActivityRuntime!
         private var dashboardWindowController: DashboardWindowController!
+        private var applicationMenuController: ApplicationMenuController!
         private var menuBarController: MenuBarController!
 
         private var permissionTimer: Timer?
@@ -157,6 +158,22 @@
                     }
                 )
                 dashboardWindowController = DashboardWindowController(viewModel: dashboardViewModel)
+
+                applicationMenuController = ApplicationMenuController(
+                    onOpenSettings: { [weak self] in
+                        self?.dashboardWindowController.show(section: .settings)
+                    },
+                    onCheckForUpdates: {
+                        SoftwareUpdateManager.shared.checkForUpdates()
+                    },
+                    canCheckForUpdates: {
+                        SoftwareUpdateManager.shared.canCheckForUpdates
+                    },
+                    onQuit: {
+                        NSApplication.shared.terminate(nil)
+                    }
+                )
+                applicationMenuController.install(in: NSApplication.shared)
 
                 menuBarController = MenuBarController(
                     state: captureState,

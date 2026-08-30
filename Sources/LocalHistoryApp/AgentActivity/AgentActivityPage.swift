@@ -35,6 +35,20 @@
             let end = title.index(title.startIndex, offsetBy: maximumCharacters - 1)
             return title[..<end].trimmingCharacters(in: .whitespacesAndNewlines) + "…"
         }
+
+        static func visibleMessageCounts(for record: AgentCaptureRecord) -> (prompts: Int, replies: Int) {
+            let visibleMessages = record.summary.visibleMessages
+            guard !visibleMessages.isEmpty else {
+                return (
+                    max(record.summary.userMessageCount, 0),
+                    max(record.summary.assistantMessageCount, 0)
+                )
+            }
+            return (
+                visibleMessages.filter { $0.role == .user }.count,
+                visibleMessages.filter { $0.role == .assistantFinal }.count
+            )
+        }
     }
 
     struct AgentActivityPage: View {
@@ -243,10 +257,10 @@
 
         private var conversationSummaryDetail: String {
             let prompts = agents.overview.captures.reduce(0) { count, record in
-                count + record.summary.visibleMessages.filter { $0.role == .user }.count
+                count + AgentConversationListPresentation.visibleMessageCounts(for: record).prompts
             }
             let replies = agents.overview.captures.reduce(0) { count, record in
-                count + record.summary.visibleMessages.filter { $0.role == .assistantFinal }.count
+                count + AgentConversationListPresentation.visibleMessageCounts(for: record).replies
             }
             var parts = [
                 "\(prompts) prompt\(prompts == 1 ? "" : "s")",
@@ -265,13 +279,12 @@
             guard record.availability == .available else {
                 return record.provider.displayName
             }
-            let prompts = record.summary.visibleMessages.filter { $0.role == .user }.count
-            let answers = record.summary.visibleMessages.filter { $0.role == .assistantFinal }.count
-            guard record.isAnalyzed, prompts + answers > 0 else {
+            let counts = AgentConversationListPresentation.visibleMessageCounts(for: record)
+            guard counts.prompts + counts.replies > 0 else {
                 return record.provider.displayName
             }
             return
-                "\(record.provider.displayName) · \(prompts) prompt\(prompts == 1 ? "" : "s") · \(answers) repl\(answers == 1 ? "y" : "ies")"
+                "\(record.provider.displayName) · \(counts.prompts) prompt\(counts.prompts == 1 ? "" : "s") · \(counts.replies) repl\(counts.replies == 1 ? "y" : "ies")"
         }
 
         private static let timeFormatter: DateFormatter = {
