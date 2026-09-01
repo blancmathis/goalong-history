@@ -48,10 +48,17 @@ if "$CLI" --root "$TEST_ROOT" recap 2026-02-31 >/dev/null 2>&1; then
   echo "Goalong CLI accepted an invalid calendar date." >&2
   exit 1
 fi
-"$CLI" --root "$TEST_ROOT" screen-time today \
-  | jq -e '.schemaVersion == 1 and (.reports | type == "array") and (.status.kind | type == "string")' >/dev/null
-"$CLI" --root "$TEST_ROOT" screen-time --mac-only \
-  | jq -e '.scope == "macOnly" and (.reports | type == "array")' >/dev/null
+set +e
+screen_time_error="$("$CLI" --root "$TEST_ROOT" screen-time today 2>&1)"
+screen_time_status=$?
+mac_only_error="$("$CLI" --root "$TEST_ROOT" screen-time --mac-only 2>&1)"
+mac_only_status=$?
+set -e
+[[ "$screen_time_status" -eq 4 ]]
+[[ "$mac_only_status" -eq 4 ]]
+[[ "$screen_time_error" == *"Apple Screen Time is unavailable"* ]]
+[[ "$screen_time_error" == *"explicitly enable Screen Time"* ]]
+[[ "$mac_only_error" == *"Apple Screen Time is unavailable"* ]]
 "$CLI" --root "$TEST_ROOT" websites 2026-08-27 --limit 1 \
   | jq -e '.status.kind == "ready" and .scope == "thisMacGoalongObserved" and .includedInApplicationTotals == true and .sourceRowCount == 7 and .sourceEventCount == 5 and .peakEstimatedRetainedBytes > 0 and .totalWebsiteCount == 2 and .returnedWebsiteCount == 1 and .nextOffset == 1 and .websites[0].host == "x.com" and .websites[0].foregroundSeconds == 60 and .websites[0].sourceApplications == ["Aside", "Google Chrome"]' >/dev/null
 "$CLI" --root "$TEST_ROOT" websites 2026-08-27 --limit 1 --offset 1 \
@@ -63,9 +70,9 @@ if "$CLI" --root "$TEST_ROOT" websites 2026-08-27 --limit 1001 >/dev/null 2>&1; 
   exit 1
 fi
 "$CLI" --root "$TEST_ROOT" ai-conversations 2026-08-27 \
-  | jq -e '.status == "notIndexed" and .conversations == [] and .candidateOffset == 0 and .nextCandidateOffset == null and .visitedConversationCandidateCount == 0 and .returnedConversationCount == 0 and .noVisibleMessageCandidateCount == 0 and .outputDroppedConversationCount == 0' >/dev/null
+  | jq -e '.status == "consentRequired" and .conversations == [] and .candidateOffset == 0 and .nextCandidateOffset == null and .visitedConversationCandidateCount == 0 and .returnedConversationCount == 0 and .noVisibleMessageCandidateCount == 0 and .outputDroppedConversationCount == 0' >/dev/null
 "$CLI" --root "$TEST_ROOT" ai-conversations 2026-08-27 --offset 24 \
-  | jq -e '.status == "notIndexed" and .candidateOffset == 24 and .nextCandidateOffset == null' >/dev/null
+  | jq -e '.status == "consentRequired" and .candidateOffset == 24 and .nextCandidateOffset == null' >/dev/null
 if "$CLI" --root "$TEST_ROOT" ai-conversations 2026-08-27 --offset 50001 >/dev/null 2>&1; then
   echo "Goalong CLI accepted an out-of-range AI conversation offset." >&2
   exit 1
@@ -75,4 +82,4 @@ fi
 after="$(find "$TEST_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
 [[ "$before" == "$after" ]]
 
-echo "Goalong CLI tests passed: lightweight status, day discovery, recap integrity states, offline recap/share verification, direct Screen Time status, ranked daily websites, AI index-missing state, and zero source writes."
+echo "Goalong CLI tests passed: lightweight status, day discovery, recap integrity states, offline recap/share verification, fail-closed Screen Time access without the consented app broker, ranked daily websites, default-off AI consent, and zero source writes."
