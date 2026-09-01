@@ -1,4 +1,9 @@
-# Validation notes — Goalong History v0.5.1
+# Historical validation notes — Goalong History v0.5.1
+
+> This file preserves the original v0.5.1 validation record. It is not current v0.6.0 release
+> evidence. Current public artifacts must be validated from their generated
+> `release-manifest.json`, `security-capabilities.json`, SPDX SBOM, Apple notarization result and
+> the exact GitHub Actions run for their commit.
 
 Validation performed on macOS 26.5.1 with Apple Silicon:
 

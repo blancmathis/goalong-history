@@ -79,10 +79,17 @@ final class DailyWebsiteUsageProjectionTests: XCTestCase {
 
         XCTAssertEqual(result.map(\.host), ["x.com", "chatgpt.com"])
         XCTAssertEqual(result[0].foregroundSeconds, 90, accuracy: 0.001)
-        XCTAssertEqual(result[0].sourceApplications, ["Aside", "Google Chrome"])
+        XCTAssertEqual(result[0].sourceApplications, ["Google Chrome", "Aside"])
+        XCTAssertEqual(result[0].sourceUsage.map(\.applicationName), ["Google Chrome", "Aside"])
+        XCTAssertEqual(result[0].sourceUsage.map(\.foregroundSeconds), [60, 30])
+        XCTAssertEqual(result[0].sourceUsage.map(\.eventCount), [1, 1])
+        XCTAssertEqual(result[0].foregroundSeconds, result[0].sourceUsage.reduce(0) {
+            $0 + $1.foregroundSeconds
+        }, accuracy: 0.001)
         XCTAssertEqual(result[0].activeMinuteCount, 1)
         XCTAssertEqual(result[1].foregroundSeconds, 20, accuracy: 0.001)
         XCTAssertEqual(result[1].sourceApplications, ["Aside"])
+        XCTAssertEqual(result[1].sourceUsage.first?.foregroundSeconds, 20)
         XCTAssertFalse(result.contains { ["-", "newtab"].contains($0.host) })
         XCTAssertFalse(projection.wasTruncated)
     }
@@ -110,6 +117,76 @@ final class DailyWebsiteUsageProjectionTests: XCTestCase {
 
         XCTAssertEqual(result.count, 1)
         XCTAssertEqual(result[0].foregroundSeconds, 10, accuracy: 0.001)
+    }
+
+    func testLegacyCodableRowDefaultsPerBrowserBreakdownToEmpty() throws {
+        let data = Data(
+            #"{"host":"example.com","foregroundSeconds":30,"activeMinuteCount":1,"eventCount":1,"sourceApplications":["Safari"],"primaryBundleIdentifier":"com.apple.Safari","category":"web","identityProofAvailable":true}"#.utf8
+        )
+
+        let decoded = try JSONDecoder().decode(DailyWebsiteUsage.self, from: data)
+
+        XCTAssertEqual(decoded.host, "example.com")
+        XCTAssertEqual(decoded.sourceApplications, ["Safari"])
+        XCTAssertEqual(decoded.sourceUsage, [])
+    }
+
+    func testSourceIdentityUsesBundleAndKeepsDifferentBundlesSeparate() {
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: fixtureStart)
+        var projection = DailyWebsiteUsageAccumulator(
+            day: day,
+            currentTime: day.addingTimeInterval(180),
+            calendar: calendar
+        )
+        let events = [
+            websiteEvent(
+                at: day,
+                app: "Chrome",
+                bundleIdentifier: "com.google.Chrome",
+                URL: "https://example.com/one",
+                host: "example.com"
+            ),
+            websiteEvent(
+                at: day.addingTimeInterval(30),
+                app: "Google Chrome",
+                bundleIdentifier: "com.google.Chrome",
+                URL: "https://example.com/two",
+                host: "example.com"
+            ),
+            websiteEvent(
+                at: day.addingTimeInterval(60),
+                app: "Chrome",
+                bundleIdentifier: "com.example.second-browser",
+                URL: "https://example.com/three",
+                host: "example.com"
+            ),
+            websiteEvent(
+                at: day.addingTimeInterval(90),
+                app: "Finder",
+                bundleIdentifier: "com.apple.finder",
+                URL: nil,
+                host: nil
+            ),
+        ]
+        for event in events { projection.ingest(event) }
+
+        let sources = projection.finish().first?.sourceUsage ?? []
+
+        XCTAssertEqual(sources.count, 2)
+        XCTAssertEqual(
+            sources.first { $0.bundleIdentifier == "com.google.Chrome" }?.foregroundSeconds,
+            60
+        )
+        XCTAssertEqual(
+            sources.first { $0.bundleIdentifier == "com.google.Chrome" }?.eventCount,
+            2
+        )
+        XCTAssertEqual(
+            sources.first { $0.bundleIdentifier == "com.example.second-browser" }?
+                .foregroundSeconds,
+            30
+        )
     }
 
     func testReaderStreamsOnlyTheOriginalDayJournalAndReportsMissingSourceClearly() throws {
@@ -326,6 +403,7 @@ final class DailyWebsiteUsageProjectionTests: XCTestCase {
         let stringResult = stringBound.finish()
         XCTAssertTrue(stringBound.wasTruncated)
         XCTAssertEqual(stringResult.first?.sourceApplications, [])
+        XCTAssertEqual(stringResult.first?.sourceUsage, [])
         XCTAssertNil(stringResult.first?.primaryBundleIdentifier)
         XCTAssertNil(stringResult.first?.category)
         XCTAssertNil(

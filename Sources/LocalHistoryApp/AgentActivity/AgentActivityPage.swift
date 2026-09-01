@@ -53,6 +53,7 @@
 
     struct AgentActivityPage: View {
         @ObservedObject var agents: AgentActivityRuntime
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @State private var search = ""
         @State private var providerFilter: AgentProvider?
         @State private var editingFolder: AgentWatchedFolder?
@@ -69,7 +70,10 @@
         var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if presentation == .history {
+                    sourceConsentCard
+                    if !consents.isEnabled(.aiConversations) {
+                        disabledSourceExplanation
+                    } else if presentation == .history {
                         conversationHistoryList
                     } else {
                         PageHeader(
@@ -113,10 +117,17 @@
             }
             .background(LHTheme.pageBackground)
             .onAppear {
-                agents.scanNow(
-                    forceFullDiscovery: false,
-                    analyzeSelectedDay: true
-                )
+                if consents.isEnabled(.aiConversations) {
+                    agents.scanNow(
+                        forceFullDiscovery: false,
+                        analyzeSelectedDay: true
+                    )
+                }
+            }
+            .onChange(of: consents.document) { _ in
+                if consents.isEnabled(.aiConversations) {
+                    agents.scanNow(forceFullDiscovery: false, analyzeSelectedDay: true)
+                }
             }
             .alert(item: $agents.alert) { item in
                 Alert(
@@ -131,6 +142,58 @@
                     editingFolder = nil
                 } onCancel: {
                     editingFolder = nil
+                }
+            }
+        }
+
+        private var sourceConsentCard: some View {
+            LHCard {
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: "cpu")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(LHTheme.accent)
+                        .frame(width: 42, height: 42)
+                        .background(
+                            LHTheme.accent.opacity(0.1),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(consents.isEnabled(.aiConversations) ? "Local conversation reading enabled" : "Local conversation reading is off")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(
+                            "Goalong reads only sources you authorize, directly at their original location. It keeps a bounded metadata index and never stores a second copy of transcript bodies."
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 14)
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { consents.isEnabled(.aiConversations) },
+                            set: {
+                                _ = consents.set(.aiConversations, enabled: $0, surface: .settings)
+                            }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+            }
+        }
+
+        private var disabledSourceExplanation: some View {
+            LHCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("No provider source is being scanned", systemImage: "pause.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(
+                        "Existing Goalong events and proofs stay available. Turn this source on only if you want the app to inspect Codex, Claude, OpenCode or another folder you explicitly add."
+                    )
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

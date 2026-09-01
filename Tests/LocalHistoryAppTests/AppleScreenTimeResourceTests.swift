@@ -8,6 +8,41 @@
     @testable import LocalHistoryApp
 
     final class AppleScreenTimeResourceTests: XCTestCase {
+        func testRemoteAppleApplicationsUseReadableNamesWithoutBeingInstalledOnThisMac() {
+            XCTAssertEqual(
+                AppleSystemScreenTimeSource.applicationDisplayName("com.google.ios.youtube"),
+                "YouTube"
+            )
+            XCTAssertEqual(
+                AppleSystemScreenTimeSource.applicationDisplayName("com.apple.mobileslideshow"),
+                "Photos"
+            )
+            XCTAssertEqual(
+                AppleSystemScreenTimeSource.applicationDisplayName("com.burbn.instagram"),
+                "Instagram"
+            )
+            XCTAssertEqual(
+                AppleSystemScreenTimeSource.applicationDisplayName("com.apple.MobileSMS"),
+                "Messages"
+            )
+            XCTAssertEqual(
+                AppleSystemScreenTimeSource.applicationDisplayName("com.openai.sky.CUAService"),
+                "Codex Computer Use"
+            )
+            XCTAssertEqual(
+                AppleSystemScreenTimeSource.applicationDisplayName("com.openai.sky.CUAService.cli"),
+                "Codex Computer Use Helper"
+            )
+            XCTAssertEqual(
+                AppleSystemScreenTimeSource.applicationDisplayName("com.openai.codex"),
+                "ChatGPT"
+            )
+            XCTAssertEqual(
+                AppleSystemScreenTimeSource.applicationDisplayName("ai.goalong.localhistory"),
+                "Goalong History"
+            )
+        }
+
         func testDashboardDefaultRefreshIntervalAvoidsAggressiveAppleStorePolling() {
             XCTAssertEqual(AppleScreenTimeDashboardModel.defaultRefreshInterval, 30)
         }
@@ -271,6 +306,227 @@
             XCTAssertEqual(cache.snapshot, snapshot)
         }
 
+        func testOverlappingAppleApplicationRowsKeepEveryAppButUnionPhysicalScreenTime() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-overlapping-apps-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+
+            let knowledge = root.appendingPathComponent("knowledgeC.db")
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let hour: TimeInterval = 3_600
+            try createKnowledgeDatabase(
+                at: knowledge,
+                day: day,
+                rows: [
+                    ("ai.goalong.localhistory", 9 * hour, 11 * hour + 57 * 60),
+                    ("at.studio.AsideBrowser", 9 * hour + 15 * 60, 13 * hour + 15 * 60),
+                    ("com.openai.sky.CUAService", 9 * hour + 30 * 60, 13 * hour + 15 * 60),
+                    // A repeated Apple row for the same application must not inflate its duration.
+                    ("com.openai.sky.CUAService", 10 * hour, 12 * hour),
+                ]
+            )
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: knowledge,
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db")
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(14 * hour) }
+            )
+
+            let collection = source.collect(for: day)
+            let stored = try XCTUnwrap(collection.storedExport)
+            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: day))
+            let summary = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+            )
+            let applications = try XCTUnwrap(summary.deviceSummaries.first).applications
+            let durationByBundle = Dictionary(uniqueKeysWithValues: applications.compactMap { application in
+                application.bundleIdentifier.map { ($0, application.duration) }
+            })
+
+            XCTAssertEqual(collection.knowledgeIntervalCount, 4)
+            XCTAssertEqual(summary.totalScreenOnDuration, 4 * hour + 15 * 60, accuracy: 0.001)
+            XCTAssertEqual(durationByBundle["ai.goalong.localhistory"] ?? -1, 2 * hour + 57 * 60, accuracy: 0.001)
+            XCTAssertEqual(durationByBundle["at.studio.AsideBrowser"] ?? -1, 4 * hour, accuracy: 0.001)
+            XCTAssertEqual(durationByBundle["com.openai.sky.CUAService"] ?? -1, 3 * hour + 45 * 60, accuracy: 0.001)
+            XCTAssertEqual(
+                applications.first { $0.bundleIdentifier == "com.openai.sky.CUAService" }?.resolvedName,
+                "Codex Computer Use"
+            )
+        }
+
+        func testScreenTimeAppUsageReplacesConflictingMacFallbackAttribution() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-app-usage-priority-\(UUID().uuidString)", isDirectory: true)
+            let appUsageDirectory = root.appendingPathComponent("ScreenTime.AppUsage", isDirectory: true)
+            try FileManager.default.createDirectory(at: appUsageDirectory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+
+            let knowledge = root.appendingPathComponent("knowledgeC.db")
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let hour: TimeInterval = 3_600
+            try createKnowledgeDatabase(
+                at: knowledge,
+                day: day,
+                rows: [
+                    // This spans beyond every healthy AppUsage row. None of it may leak
+                    // back into the final Mac ranking or physical total.
+                    ("ai.goalong.localhistory", 8 * hour, 14 * hour),
+                ]
+            )
+            let appUsageFile = makeScreenTimeAppUsageV1([
+                (
+                    bundle: "at.studio.AsideBrowser",
+                    parentBundle: nil,
+                    starting: true,
+                    timestamp: day.addingTimeInterval(9 * hour + 15 * 60)
+                ),
+                (
+                    bundle: "com.openai.sky.CUAService.cli",
+                    parentBundle: "com.openai.sky.CUAService",
+                    starting: true,
+                    timestamp: day.addingTimeInterval(9 * hour + 30 * 60)
+                ),
+                (
+                    bundle: "com.openai.sky.CUAService.cli",
+                    parentBundle: "com.openai.sky.CUAService",
+                    starting: false,
+                    timestamp: day.addingTimeInterval(13 * hour + 15 * 60)
+                ),
+                (
+                    bundle: "at.studio.AsideBrowser",
+                    parentBundle: nil,
+                    starting: false,
+                    timestamp: day.addingTimeInterval(13 * hour + 15 * 60)
+                ),
+            ])
+            try appUsageFile.write(
+                to: appUsageDirectory.appendingPathComponent("fixture.segb"),
+                options: .atomic
+            )
+            let tombstoneDirectory = appUsageDirectory.appendingPathComponent("tombstone", isDirectory: true)
+            try FileManager.default.createDirectory(at: tombstoneDirectory, withIntermediateDirectories: true)
+            try Data("not-segb".utf8).write(
+                to: tombstoneDirectory.appendingPathComponent("removed.segb")
+            )
+
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: knowledge,
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                    biomeScreenTimeAppUsageDirectory: appUsageDirectory
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(14 * hour) }
+            )
+
+            let collection = source.collect(for: day)
+            let stored = try XCTUnwrap(collection.storedExport)
+            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: day))
+            let summary = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+            )
+            let applications = try XCTUnwrap(summary.deviceSummaries.first).applications
+            let durationByBundle = Dictionary(uniqueKeysWithValues: applications.compactMap { application in
+                application.bundleIdentifier.map { ($0, application.duration) }
+            })
+
+            XCTAssertEqual(collection.screenTimeAppUsageIntervalCount, 2)
+            XCTAssertEqual(summary.totalScreenOnDuration, 4 * hour, accuracy: 0.001)
+            XCTAssertEqual(durationByBundle["at.studio.AsideBrowser"] ?? -1, 4 * hour, accuracy: 0.001)
+            XCTAssertEqual(durationByBundle["com.openai.sky.CUAService"] ?? -1, 3 * hour + 45 * 60, accuracy: 0.001)
+            XCTAssertNil(durationByBundle["ai.goalong.localhistory"])
+            XCTAssertNotEqual(collection.status.kind, .partial)
+            XCTAssertEqual(
+                collection.deviceSourceLabels[source.currentMacDevice.id],
+                "Apple ScreenTime.AppUsage"
+            )
+        }
+
+        func testPartialScreenTimeAppUsageKeepsConcurrentFallbackAttribution() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-app-usage-partial-\(UUID().uuidString)", isDirectory: true)
+            let appUsageDirectory = root.appendingPathComponent("ScreenTime.AppUsage", isDirectory: true)
+            try FileManager.default.createDirectory(at: appUsageDirectory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+
+            let knowledge = root.appendingPathComponent("knowledgeC.db")
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let hour: TimeInterval = 3_600
+            try createKnowledgeDatabase(
+                at: knowledge,
+                day: day,
+                rows: [("ai.goalong.localhistory", 9 * hour, 10 * hour)]
+            )
+            let appUsageFile = makeScreenTimeAppUsageV1([
+                (
+                    bundle: "com.openai.sky.CUAService.cli",
+                    parentBundle: "com.openai.sky.CUAService",
+                    starting: true,
+                    timestamp: day.addingTimeInterval(9 * hour)
+                ),
+                (
+                    bundle: "com.openai.sky.CUAService.cli",
+                    parentBundle: "com.openai.sky.CUAService",
+                    starting: false,
+                    timestamp: day.addingTimeInterval(10 * hour)
+                ),
+            ])
+            try appUsageFile.write(to: appUsageDirectory.appendingPathComponent("valid.segb"))
+            try Data("not-segb".utf8).write(
+                to: appUsageDirectory.appendingPathComponent("malformed.segb")
+            )
+
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: knowledge,
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                    biomeScreenTimeAppUsageDirectory: appUsageDirectory
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(11 * hour) }
+            )
+
+            let collection = source.collect(for: day)
+            let stored = try XCTUnwrap(collection.storedExport)
+            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: day))
+            let summary = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+            )
+            let applications = try XCTUnwrap(summary.deviceSummaries.first).applications
+            let bundles = Set(applications.compactMap(\.bundleIdentifier))
+
+            XCTAssertEqual(collection.status.kind, .partial)
+            XCTAssertEqual(collection.screenTimeAppUsageIntervalCount, 1)
+            XCTAssertEqual(summary.totalScreenOnDuration, hour, accuracy: 0.001)
+            XCTAssertTrue(bundles.contains("com.openai.sky.CUAService"))
+            XCTAssertTrue(bundles.contains("ai.goalong.localhistory"))
+            XCTAssertEqual(
+                collection.deviceSourceLabels[source.currentMacDevice.id],
+                "Apple ScreenTime.AppUsage + knowledgeC"
+            )
+        }
+
         func testSystemSourcePreservesExplicitIdleRowsWhileDefaultSummaryFiltersThem() throws {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("apple-screen-time-idle-filter-\(UUID().uuidString)", isDirectory: true)
@@ -349,6 +605,23 @@
         }
 
         private func createKnowledgeDatabase(at url: URL, day: Date) throws {
+            let hour: TimeInterval = 3_600
+            try createKnowledgeDatabase(
+                at: url,
+                day: day,
+                rows: [
+                    ("com.apple.loginwindow", 0.0, 8.5 * hour),
+                    ("com.apple.ScreenSaver.Engine", 8.5 * hour, 9 * hour),
+                    ("com.apple.Safari", 9 * hour, 9 * hour + 20 * 60),
+                ]
+            )
+        }
+
+        private func createKnowledgeDatabase(
+            at url: URL,
+            day: Date,
+            rows: [(bundleIdentifier: String, start: TimeInterval, end: TimeInterval)]
+        ) throws {
             var database: OpaquePointer?
             XCTAssertEqual(sqlite3_open(url.path, &database), SQLITE_OK)
             guard let database else { throw NSError(domain: "SQLiteTest", code: 1) }
@@ -372,17 +645,80 @@
             func appleTime(_ offset: TimeInterval) -> TimeInterval {
                 day.addingTimeInterval(offset).timeIntervalSince1970 - appleEpochOffset
             }
-            let rows: [(String, TimeInterval, TimeInterval)] = [
-                ("com.apple.loginwindow", 0.0, 8.5 * 3_600),
-                ("com.apple.ScreenSaver.Engine", 8.5 * 3_600, 9 * 3_600),
-                ("com.apple.Safari", 9 * 3_600, 9 * 3_600 + 20 * 60),
-            ]
             for row in rows {
                 try execute(
                     database,
-                    "INSERT INTO ZOBJECT VALUES ('\(row.0)',\(appleTime(row.1)),\(appleTime(row.2)),NULL,'/app/usage');"
+                    "INSERT INTO ZOBJECT VALUES ('\(row.bundleIdentifier)',\(appleTime(row.start)),\(appleTime(row.end)),NULL,'/app/usage');"
                 )
             }
+        }
+
+        private typealias AppUsageFixtureEvent = (
+            bundle: String,
+            parentBundle: String?,
+            starting: Bool,
+            timestamp: Date
+        )
+
+        private func makeScreenTimeAppUsageV1(_ events: [AppUsageFixtureEvent]) -> Data {
+            var output = Data(repeating: 0, count: 56)
+            output.replaceSubrange(52 ..< 56, with: Data("SEGB".utf8))
+            for event in events {
+                let payload = makeScreenTimeAppUsagePayload(event)
+                var header = Data(repeating: 0, count: 32)
+                header.replaceSubrange(0 ..< 4, with: uint32LE(UInt32(payload.count)))
+                header.replaceSubrange(4 ..< 8, with: uint32LE(1))
+                output.append(header)
+                output.append(payload)
+                while output.count % 8 != 0 { output.append(0) }
+            }
+            output.replaceSubrange(0 ..< 4, with: uint32LE(UInt32(output.count)))
+            return output
+        }
+
+        private func makeScreenTimeAppUsagePayload(_ event: AppUsageFixtureEvent) -> Data {
+            var output = Data()
+            appendVarint(UInt64((1 << 3) | 0), to: &output)
+            appendVarint(event.starting ? 1 : 0, to: &output)
+            appendVarint(UInt64((2 << 3) | 1), to: &output)
+            output.append(uint64LE(event.timestamp.timeIntervalSince1970.bitPattern))
+            appendString(event.bundle, field: 3, to: &output)
+            if let parentBundle = event.parentBundle {
+                appendString(parentBundle, field: 4, to: &output)
+            }
+            appendVarint(UInt64((5 << 3) | 0), to: &output)
+            appendVarint(1, to: &output)
+            return output
+        }
+
+        private func appendString(_ value: String, field: Int, to data: inout Data) {
+            let valueData = Data(value.utf8)
+            appendVarint(UInt64((field << 3) | 2), to: &data)
+            appendVarint(UInt64(valueData.count), to: &data)
+            data.append(valueData)
+        }
+
+        private func appendVarint(_ value: UInt64, to data: inout Data) {
+            var remaining = value
+            repeat {
+                var byte = UInt8(remaining & 0x7f)
+                remaining >>= 7
+                if remaining != 0 { byte |= 0x80 }
+                data.append(byte)
+            } while remaining != 0
+        }
+
+        private func uint32LE(_ value: UInt32) -> Data {
+            Data([
+                UInt8(value & 0xff),
+                UInt8((value >> 8) & 0xff),
+                UInt8((value >> 16) & 0xff),
+                UInt8((value >> 24) & 0xff),
+            ])
+        }
+
+        private func uint64LE(_ value: UInt64) -> Data {
+            Data((0 ..< 8).map { UInt8((value >> UInt64($0 * 8)) & 0xff) })
         }
 
         private func execute(_ database: OpaquePointer, _ sql: String) throws {

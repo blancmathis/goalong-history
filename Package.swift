@@ -1,6 +1,29 @@
 // swift-tools-version: 5.9
 
 import PackageDescription
+import Foundation
+
+let cliInfoPlistPath = ProcessInfo.processInfo.environment["LOCALHISTORY_CLI_INFO_PLIST"]
+
+var packageDependencies: [Package.Dependency] = []
+var appDependencies: [Target.Dependency] = [
+    "LocalHistoryCore",
+    "AppleScreenTime",
+    "AppleSystemScreenTime",
+    "AgentActivity",
+    "LocalHistoryQueryCLI",
+]
+let appExcludes: [String] = [
+    "AppAttestManager.swift",
+    "CommitmentUploader.swift",
+    "SoftwareUpdateManager.swift",
+    "LocalOnlyCodexAppServerClient.swift",
+]
+let appSwiftSettings: [SwiftSetting] = [.define("GOALONG_UNIFIED_APP")]
+let appTestExcludes: [String] = [
+    "CommitmentUploaderTests.swift",
+    "SoftwareUpdatePresentationStateTests.swift",
+]
 
 let package = Package(
     name: "LocalHistory",
@@ -12,12 +35,10 @@ let package = Package(
         .library(name: "AppleSystemScreenTime", targets: ["AppleSystemScreenTime"]),
         .library(name: "AgentActivity", targets: ["AgentActivity"]),
         .executable(name: "LocalHistory", targets: ["LocalHistoryApp"]),
-        .executable(name: "goalong", targets: ["LocalHistoryQueryCLI"]),
-        .executable(name: "goalong-history-query", targets: ["LocalHistoryQueryCLI"]),
+        .executable(name: "goalong", targets: ["GoalongCLI"]),
+        .executable(name: "goalong-history-query", targets: ["GoalongCLI"]),
     ],
-    dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6")
-    ],
+    dependencies: packageDependencies,
     targets: [
         .target(
             name: "AppleScreenTime",
@@ -46,14 +67,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "LocalHistoryApp",
-            dependencies: [
-                "LocalHistoryCore",
-                "AppleScreenTime",
-                "AppleSystemScreenTime",
-                "AgentActivity",
-                .product(name: "Sparkle", package: "Sparkle"),
-            ],
+            dependencies: appDependencies,
             path: "Sources/LocalHistoryApp",
+            exclude: appExcludes,
+            swiftSettings: appSwiftSettings,
             linkerSettings: [
                 .linkedFramework("AppKit", .when(platforms: [.macOS])),
                 .linkedFramework("SwiftUI", .when(platforms: [.macOS])),
@@ -70,12 +87,30 @@ let package = Package(
                 ),
             ]
         ),
-        .executableTarget(
+        .target(
             name: "LocalHistoryQueryCLI",
             dependencies: [
                 "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "AgentActivity",
             ],
             path: "Sources/LocalHistoryQueryCLI"
+        ),
+        .executableTarget(
+            name: "GoalongCLI",
+            dependencies: ["LocalHistoryQueryCLI"],
+            path: "Sources/GoalongCLI",
+            linkerSettings: cliInfoPlistPath.map {
+                [
+                    .unsafeFlags(
+                        [
+                            "-Xlinker", "-sectcreate",
+                            "-Xlinker", "__TEXT",
+                            "-Xlinker", "__info_plist",
+                            "-Xlinker", $0,
+                        ],
+                        .when(platforms: [.macOS])
+                    )
+                ]
+            } ?? []
         ),
         .testTarget(
             name: "LocalHistoryCoreTests",
@@ -95,7 +130,14 @@ let package = Package(
         .testTarget(
             name: "LocalHistoryAppTests",
             dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime"],
-            path: "Tests/LocalHistoryAppTests"
+            path: "Tests/LocalHistoryAppTests",
+            exclude: appTestExcludes,
+            swiftSettings: appSwiftSettings
+        ),
+        .testTarget(
+            name: "LocalHistoryQueryCLITests",
+            dependencies: ["LocalHistoryQueryCLI"],
+            path: "Tests/LocalHistoryQueryCLITests"
         ),
     ],
     swiftLanguageVersions: [.v5]

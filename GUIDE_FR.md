@@ -24,13 +24,15 @@ renouveler une autorisation lorsque son identité de build change.
 
 ## L’assistant de première ouverture
 
-Le premier lancement est volontairement progressif. Il présente cinq étapes :
+Le premier lancement est volontairement progressif. Il présente sept étapes :
 
 1. **Bienvenue** — ce que Goalong History apporte concrètement ;
 2. **Confidentialité** — ce qui est enregistré et ce qui ne le sera jamais ;
-3. **Accessibilité** — pourquoi cette autorisation est nécessaire ;
-4. **Surveillance de l’entrée** — comment l’activité est mesurée sans enregistrer le texte saisi ;
-5. **Vérification finale** — état des autorisations et choix explicite du lancement à la connexion.
+3. **Computer History** — choix explicite, désactivé par défaut ;
+4. **Accessibilité et Surveillance de l’entrée** — demandées seulement si Computer History a été choisi ;
+5. **Screen Time Apple** — choix distinct, désactivé par défaut ;
+6. **Conversations IA** — lecture directe optionnelle, désactivée par défaut ;
+7. **Vérification finale** — état des autorisations et choix explicite du lancement à la connexion.
 
 Chaque demande d’autorisation est faite séparément, au moment où son intérêt vient d’être expliqué. L’état se met à jour en direct et un bouton ouvre directement le bon écran des Réglages Système.
 
@@ -93,7 +95,7 @@ La navigation privée des navigateurs reconnus ou détectés par leurs capacité
 ~/Library/Application Support/LocalHistory/
 ```
 
-Les détails restent sur le Mac. La vérification réseau est désactivée par défaut. Lorsqu’elle est activée volontairement, seuls des engagements cryptographiques opaques sont envoyés ; pas les noms d’application, URL, titres de fenêtre ou clics.
+Les détails restent sur le Mac. L’application publique ne contient ni transport HTTP Goalong, ni téléverseur, ni système de mise à jour intégré. L’analyse ChatGPT est une frontière externe distincte : elle ne démarre qu’après un consentement séparé et utilise la connexion Codex locale avec un contexte quotidien borné.
 
 Depuis **Confidentialité et sécurité**, vous pouvez ouvrir le dossier local, examiner les protections et supprimer les détails. La suppression des détails conserve les sceaux cryptographiques ; la période devient alors privée et ne peut plus être révélée en détail.
 
@@ -120,14 +122,14 @@ L’icône de barre des menus permet de :
 - consulter les diagnostics ;
 - quitter l’application.
 
-Le tableau de bord contient : **Vue d’ensemble**, **Computer History**, **Screen
-Time**, **Conversations IA**, **Activity**, **Partager**, **Confidentialité** et
-**Réglages**. La vue **Computer History** réunit les apps et sites,
-le récapitulatif factuel de la journée et la chronologie. **Conversations IA**
-lit les historiques locaux configurés directement à leur
-emplacement d’origine et ne conserve pas une seconde copie des transcriptions.
-**Activity** combine ces données avec Screen Time et peut produire un rapport
-quotidien de cinq lignes via le compte ChatGPT connecté.
+Le tableau de bord garde trois destinations principales : **Today**, **History**
+et **Settings**. **Today** réunit Screen Time et l’activité Goalong de la journée.
+**History** permet d’ouvrir une date puis de filtrer Computer History, Screen Time
+et Conversations IA. **Settings** regroupe la connexion ChatGPT, les sources,
+les autorisations, la confidentialité et les réglages experts. Les historiques
+IA configurés sont lus directement à leur emplacement d’origine sans seconde
+copie des transcriptions. L’analyse quotidienne optionnelle combine ces sources
+dans un rapport de cinq lignes via le compte ChatGPT connecté.
 
 Dans **Activité → Apps & sites**, toutes les applications et tous les sites observés sont listés avec leur temps estimé au premier plan et leurs minutes d’entrée active. Le temps au premier plan est volontairement prudent : Goalong History n’invente jamais plus de 75 secondes entre deux observations.
 
@@ -143,13 +145,12 @@ La clé qui signe les preuves est liée à la signature stable de l’applicatio
 
 ## Mises à jour
 
-La build directe depuis les sources désactive la mise à jour intégrée. Elle ne
-doit pas pouvoir remplacer silencieusement la frontière de confidentialité par
-le bundle public ancien. Lorsqu’une release compatible avec l’indexation directe
-sera publiée, l’installateur public devra encore vérifier son identité, sa
-signature, son marqueur de confidentialité et sa politique Sparkle avant de
-l’installer. L’état courant de la release est indiqué dans le
-[`README`](README.md).
+Goalong History n’intègre aucun mécanisme de mise à jour et ne vérifie pas
+GitHub en arrière-plan. Une mise à jour est un remplacement manuel. L’installateur
+public vérifie le SHA-256, l’identité unique de l’application, les marqueurs de
+confidentialité, la signature Developer ID, la notarisation Apple et la
+continuité de l’identité macOS avant tout remplacement. L’état courant de la
+release est indiqué dans le [`README`](README.md).
 
 ## Désinstallation
 

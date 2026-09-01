@@ -5,11 +5,13 @@
 // FORM: A precisely specified operational dashboard extension inside Goalong's existing visual system; no new identity.
 
 #if os(macOS)
+    import LocalHistoryCore
     import SwiftUI
 
     struct ChatGPTRecapPage: View {
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
         init(model: DashboardViewModel) {
             self.model = model
@@ -21,13 +23,19 @@
                 VStack(alignment: .leading, spacing: 18) {
                     header
 
-                    if !isConnected {
+                    analysisConsentCard
+
+                    if consents.isEnabled(.chatGPTAnalysis), !isConnected {
                         ChatGPTAccountConnectionCard(runtime: recapRuntime)
                     }
 
                     reportCard
 
-                    if let overview = recapRuntime.dayOverview {
+                    if let proof = recapRuntime.recap?.proof {
+                        proofCard(proof, report: recapRuntime.proofReport)
+                    }
+
+                    if consents.isEnabled(.chatGPTAnalysis), let overview = recapRuntime.dayOverview {
                         metricsBand(overview)
                         HStack(alignment: .top, spacing: 14) {
                             usagePanel(
@@ -55,7 +63,9 @@
                         emptyDataCard
                     }
 
-                    automaticCard
+                    if consents.isEnabled(.chatGPTAnalysis) {
+                        automaticCard
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 28)
@@ -65,10 +75,19 @@
             .onAppear {
                 recapRuntime.configure(deviceID: model.deviceID)
                 recapRuntime.selectDay(model.selectedDay)
-                recapRuntime.activate()
+                if consents.isEnabled(.chatGPTAnalysis) {
+                    recapRuntime.activate()
+                }
             }
             .onChange(of: model.selectedDay) { next in
                 recapRuntime.selectDay(next)
+            }
+            .onChange(of: consents.document) { _ in
+                if consents.isEnabled(.chatGPTAnalysis) {
+                    recapRuntime.activate()
+                } else {
+                    recapRuntime.stop()
+                }
             }
             .alert(item: $recapRuntime.alert) { item in
                 Alert(
@@ -77,6 +96,131 @@
                     dismissButton: .default(Text("OK"))
                 )
             }
+        }
+
+        private var analysisConsentCard: some View {
+            LHCard {
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(LHTheme.accent)
+                        .frame(width: 42, height: 42)
+                        .background(
+                            LHTheme.accent.opacity(0.1),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(consents.isEnabled(.chatGPTAnalysis) ? "ChatGPT analysis enabled" : "ChatGPT analysis is off")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(
+                            "Existing signed reports remain readable while this is off. When enabled, Goalong uses the dedicated Codex connection only for an explicit or scheduled analysis and never sends system prompts or agent work traces."
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 14)
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { consents.isEnabled(.chatGPTAnalysis) },
+                            set: {
+                                _ = consents.set(.chatGPTAnalysis, enabled: $0, surface: .settings)
+                            }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+            }
+        }
+
+        private func proofCard(
+            _ proof: AnalysisProofReference,
+            report: AnalysisProofVerificationReport?
+        ) -> some View {
+            LHCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Label("Analysis proof", systemImage: "checkmark.shield")
+                            .font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Button {
+                            recapRuntime.exportProofPackage()
+                        } label: {
+                            Label("Export proof", systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        Text(String(proof.executionID.prefix(8)))
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(
+                        "Each check is independent. A local signature does not imply that ChatGPT, Apple or a verification server signed the analysis."
+                    )
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+
+                    HStack(spacing: 8) {
+                        proofPill(
+                            "Run signature",
+                            state: report?.runSignature ?? proof.localSignatureStatus,
+                            positive: (report?.runSignature ?? proof.localSignatureStatus) == "valid"
+                        )
+                        proofPill(
+                            "Source commitments",
+                            state: report?.sourceCommitments ?? proof.contextStatus,
+                            positive: (report?.sourceCommitments ?? proof.contextStatus).contains("valid")
+                        )
+                        proofPill(
+                            "Provider observation",
+                            state: report?.providerObservation ?? proof.providerObservationStatus,
+                            positive: true
+                        )
+                        proofPill(
+                            "External receipt",
+                            state: report?.externalReceipt ?? proof.externalReceiptStatus,
+                            positive: (report?.externalReceipt ?? proof.externalReceiptStatus) != "not_present"
+                        )
+                        proofPill(
+                            "App Attest",
+                            state: report?.appAttest ?? proof.appAttestStatus,
+                            positive: (report?.appAttest ?? proof.appAttestStatus).contains("valid")
+                        )
+                    }
+
+                    Divider()
+                    HStack(spacing: 8) {
+                        Image(systemName: "lock.doc")
+                            .foregroundStyle(LHTheme.success)
+                        Text(
+                            "Prompt: hash only · source conversations: original storage only · generated response: encrypted locally for 30 days"
+                        )
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
+            }
+        }
+
+        private func proofPill(_ title: String, state: String, positive: Bool) -> some View {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(state.replacingOccurrences(of: "_", with: " "))
+                    .font(.system(size: 8, weight: .bold))
+                    .lineLimit(1)
+                    .foregroundStyle(positive ? LHTheme.success : LHTheme.warning)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill((positive ? LHTheme.success : LHTheme.warning).opacity(0.08))
+            )
         }
 
         private var header: some View {
@@ -94,6 +238,11 @@
                         Label("Report files", systemImage: "doc.text.magnifyingglass")
                     }
                     .buttonStyle(.bordered)
+                    .help(
+                        recapRuntime.recap?.verifiesLocalAttestation == true
+                            ? "Share the JSON report file to preserve its signature. A recipient can verify it offline with: goalong verify-recap PATH"
+                            : "Open the local report files. Legacy reports do not contain a local signature."
+                    )
                     Button {
                         recapRuntime.generateRecap()
                     } label: {
@@ -161,6 +310,23 @@
                                 Text("Five-line daily report")
                                     .font(.system(size: 13, weight: .semibold))
                                 Spacer()
+                                if recap.verifiesLocalAttestation {
+                                    StatusPill(
+                                        title: "Locally signed",
+                                        symbol: "signature",
+                                        tint: LHTheme.success
+                                    )
+                                    .help(
+                                        "The saved result, prompt hash, source-count hash, model claim and context digest match a P-256 signature from this Mac. This is not provider or App Attest proof."
+                                    )
+                                } else {
+                                    StatusPill(
+                                        title: "Legacy unsigned",
+                                        symbol: "clock.arrow.circlepath",
+                                        tint: LHTheme.warning
+                                    )
+                                    .help("This report predates locally signed analysis runs. Regenerate it to add tamper detection.")
+                                }
                                 Text(recap.generatedAt.formatted(date: .abbreviated, time: .shortened))
                                     .font(.system(size: 9))
                                     .foregroundStyle(.secondary)

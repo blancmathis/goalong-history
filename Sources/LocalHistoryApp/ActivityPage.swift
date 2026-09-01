@@ -180,7 +180,9 @@
         }
 
         private var analysesLoading: Bool {
-            model.isRefreshing || (mode == .dayRecap && analysisModel.isLoading)
+            model.isRefreshing
+                || (mode == .computerHistory && computerHistoryModel.isLoading)
+                || (mode == .dayRecap && analysisModel.isLoading)
         }
 
         private var refreshHelp: String {
@@ -203,8 +205,14 @@
         }
 
         private func refreshVisibleAnalysis(day: Date, forceRebuild: Bool = false) {
-            guard mode == .dayRecap else { return }
-            analysisModel.refresh(day: day, forceRebuild: forceRebuild)
+            switch mode {
+            case .computerHistory:
+                computerHistoryModel.refresh(day: day, forceRebuild: forceRebuild)
+            case .dayRecap:
+                analysisModel.refresh(day: day, forceRebuild: forceRebuild)
+            case .appsAndSites, .timeline:
+                break
+            }
         }
 
         func headlineCard(_ analysis: ActivityDayAnalysis) -> some View {

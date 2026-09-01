@@ -24,7 +24,9 @@
         @Published private(set) var status: AppleSystemScreenTimeStatus = .loading
         @Published private(set) var knowledgeIntervalCount = 0
         @Published private(set) var biomeIntervalCount = 0
+        @Published private(set) var screenTimeAppUsageIntervalCount = 0
         @Published var alert: AppleScreenTimeDashboardAlert?
+        @Published private(set) var accessEnabled: Bool
 
         let currentMacDevice: AppleScreenTimeDevice
 
@@ -46,6 +48,7 @@
             rootDirectory: URL,
             deviceID: String,
             selectedDay: Date = Date(),
+            accessEnabled: Bool = true,
             refreshInterval: TimeInterval = AppleScreenTimeDashboardModel.defaultRefreshInterval,
             includesUnfilteredSummary: Bool = false,
             collectionProvider: CollectionProvider? = nil
@@ -55,6 +58,7 @@
             self.collectionProvider = collectionProvider ?? { source.collect(for: $0) }
             self.includesUnfilteredSummary = includesUnfilteredSummary
             self.refreshInterval = max(1, refreshInterval)
+            self.accessEnabled = accessEnabled
             self.currentMacDevice = source.currentMacDevice
             self.selectedDay = Calendar.current.startOfDay(for: selectedDay)
 
@@ -62,13 +66,13 @@
                 let store = try AppleScreenTimeStore(rootDirectory: rootDirectory)
                 self.store = store
                 var config = store.loadConfiguration()
-                config.enabled = true
+                config.enabled = accessEnabled
                 self.configuration = config
                 try? store.saveConfiguration(config)
             } catch {
                 self.store = nil
                 self.configuration = AppleScreenTimeConfiguration(
-                    enabled: true,
+                    enabled: accessEnabled,
                     scope: .allDevices,
                     shareLevel: .perDevice
                 )
@@ -115,7 +119,7 @@
             guard active != isActive else { return }
             isActive = active
             lifecycleGeneration &+= 1
-            if active {
+            if active, accessEnabled {
                 refresh()
                 startRefreshTimer()
             } else {
@@ -125,6 +129,7 @@
         }
 
         func refresh() {
+            guard accessEnabled else { return }
             guard isActive else { return }
             guard !isBusy else { return }
             isBusy = true
@@ -196,9 +201,36 @@
                     self.latestAppleUpdate = collection.latestAppleUpdate
                     self.knowledgeIntervalCount = collection.knowledgeIntervalCount
                     self.biomeIntervalCount = collection.biomeIntervalCount
+                    self.screenTimeAppUsageIntervalCount = collection.screenTimeAppUsageIntervalCount
                     self.lastRefreshAt = Date()
                     self.isBusy = false
                 }
+            }
+        }
+
+        func setAccessEnabled(_ enabled: Bool) {
+            guard accessEnabled != enabled else { return }
+            accessEnabled = enabled
+            configuration.enabled = enabled
+            try? store?.saveConfiguration(configuration)
+            lifecycleGeneration &+= 1
+            if enabled {
+                if isActive {
+                    refresh()
+                    startRefreshTimer()
+                }
+            } else {
+                stopRefreshTimer()
+                isBusy = false
+                summary = nil
+                unfilteredSummary = nil
+                availableDevices = []
+                latestAppleUpdate = nil
+                status = AppleSystemScreenTimeStatus(
+                    kind: .noAppleData,
+                    title: "Apple Screen Time is off",
+                    message: "Enable this source before Goalong reads Apple’s protected local stores."
+                )
             }
         }
 
@@ -301,12 +333,14 @@
 
         func openConfigurationFolder() {
             guard let store else { return }
-            NSWorkspace.shared.open(store.rootDirectory)
+            GoalongWorkspaceOpenPolicy.open(store.rootDirectory, purpose: .localFile)
         }
 
         private func openSettings(candidates: [String]) {
             for candidate in candidates {
-                if let url = URL(string: candidate), NSWorkspace.shared.open(url) { return }
+                if let url = URL(string: candidate),
+                    GoalongWorkspaceOpenPolicy.open(url, purpose: .systemSettings)
+                { return }
             }
         }
 

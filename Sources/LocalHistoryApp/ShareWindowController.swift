@@ -132,7 +132,7 @@
         private let tableView = NSTableView()
         private let statusLabel = NSTextField(labelWithString: "")
         private let exportButton = NSButton(
-            title: "Export verified share package…",
+            title: "Export locally signed share package…",
             target: nil,
             action: nil
         )
@@ -149,7 +149,7 @@
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Share verified Goalong History"
+            window.title = "Share locally signed Goalong History"
             window.center()
             super.init(window: window)
             window.delegate = self
@@ -169,7 +169,7 @@
 
             let explanation = NSTextField(
                 wrappingLabelWithString:
-                    "Nothing is uploaded by this window until you export/share the package. Choose what each sealed minute may reveal. Completely private reveals only the existence/time/coverage proof; it cannot be counted as verified work."
+                    "Nothing is uploaded by this window until you export/share the package. Choose what each sealed minute may reveal. Completely private reveals only the existence/time/coverage proof; it cannot be counted as disclosed work."
             )
             explanation.translatesAutoresizingMaskIntoConstraints = false
 
@@ -332,7 +332,7 @@
             let day = day
             let panel = NSSavePanel()
             panel.canCreateDirectories = true
-            panel.nameFieldStringValue = "\(AppPaths.localDayString(for: day)).verified-share.json"
+            panel.nameFieldStringValue = "\(AppPaths.localDayString(for: day)).signed-share.json"
             panel.allowedContentTypes = [.json]
 
             exportWork.startAfterChoosingDestination(
@@ -341,7 +341,7 @@
                 },
                 onStart: { [weak self] in
                     self?.exportButton.isEnabled = false
-                    self?.statusLabel.stringValue = "Building verified package…"
+                    self?.statusLabel.stringValue = "Verifying signatures and building package…"
                 },
                 work: { destination, cancellation in
                     let package = try builder.build(
@@ -361,7 +361,7 @@
                     self.exportButton.isEnabled = !self.rows.isEmpty
                     switch result {
                     case .success(let destination):
-                        self.statusLabel.stringValue = "Verified package exported"
+                        self.statusLabel.stringValue = "Locally signed package exported"
                         NSWorkspace.shared.activateFileViewerSelecting([destination])
                     case .failure(let error):
                         if let buildError = error as? ShareBuildError,
@@ -371,7 +371,7 @@
                         }
                         self.statusLabel.stringValue = String(describing: error)
                         let alert = NSAlert(error: error)
-                        alert.messageText = "Could not export verified share package"
+                        alert.messageText = "Could not export locally signed share package"
                         alert.runModal()
                     }
                 }

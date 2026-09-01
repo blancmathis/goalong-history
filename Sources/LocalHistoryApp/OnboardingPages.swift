@@ -10,8 +10,8 @@
                         welcomePage
                     case .privacy:
                         privacyPage
-                    case .context:
-                        fullContextPage
+                    case .recording:
+                        recordingConsentPage
                     case .accessibility:
                         permissionPage(
                             symbol: "accessibility",
@@ -46,6 +46,8 @@
                             action: requestInputMonitoring,
                             settingsAction: permissions.openInputMonitoringSettings
                         )
+                    case .protectedSources:
+                        protectedSourcesPage
                     case .ready:
                         readyPage
                     }
@@ -120,7 +122,7 @@
                 Text("Useful context, with a hard privacy boundary.")
                     .font(.system(size: 25, weight: .bold, design: .rounded))
                 Text(
-                    "Detailed activity and optional Accessibility text remain local unless you create a selective share package or explicitly launch an external recap."
+                    "The single Goalong app keeps detailed activity local. It contains no Sparkle updater or first-party HTTP uploader. A selective share is created only when you export one; ChatGPT receives a bounded context only after you separately enable and run analysis."
                 )
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
@@ -133,7 +135,7 @@
                         items: [
                             "Active app, window, page, and clicked control",
                             "Cleaned browser URL or local file path when available",
-                            "Clicks, scrolling, shortcuts, and grouped typing activity",
+                            "Clicks, scrolling, generic shortcut/navigation activity, and grouped typing",
                             "Bounded selected and visible text only with full-context consent",
                         ]
                     )
@@ -159,10 +161,10 @@
             }
         }
 
-        var fullContextPage: some View {
+        var recordingConsentPage: some View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .top, spacing: 18) {
-                    Image(systemName: "brain.head.profile.fill")
+                    Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.system(size: 34, weight: .medium))
                         .foregroundStyle(LHTheme.privateTint)
                         .frame(width: 76, height: 76)
@@ -171,10 +173,10 @@
                             in: RoundedRectangle(cornerRadius: 20, style: .continuous)
                         )
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("Choose how much the local analysis may understand")
+                        Text("Computer History starts off")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                         Text(
-                            "Full context is required to reach Computer History-level task reconstruction. You can still choose metadata-only capture."
+                            "Goalong will not observe apps, windows, clicks or keyboard activity unless you explicitly enable this capability. macOS permissions alone never start it."
                         )
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
@@ -184,20 +186,53 @@
 
                 VStack(spacing: 12) {
                     analysisChoice(
-                        selected: fullContextPreference,
-                        symbol: "sparkles.rectangle.stack.fill",
-                        title: "Full Computer History context",
-                        badge: "RECOMMENDED",
-                        detail: "Stores bounded selected and visible text exposed by macOS Accessibility, linked to before/action/after events. This enables intentions, semantic changes, task status, resource lookup, resume answers, and repeated-workflow suggestions.",
-                        action: { fullContextPreference = true }
+                        selected: !consents.isEnabled(.localComputerHistory),
+                        symbol: "pause.circle.fill",
+                        title: "Keep Computer History off",
+                        badge: "DEFAULT",
+                        detail: "No foreground context or interaction events are collected. Existing local history remains readable.",
+                        action: {
+                            _ = consents.set(
+                                .localComputerHistory,
+                                enabled: false,
+                                surface: .onboarding
+                            )
+                            fullContextPreference = false
+                        }
                     )
                     analysisChoice(
-                        selected: !fullContextPreference,
-                        symbol: "list.bullet.rectangle",
-                        title: "Metadata-only history",
+                        selected: consents.isEnabled(.localComputerHistory),
+                        symbol: "clock.arrow.circlepath",
+                        title: "Enable local Computer History",
                         badge: nil,
-                        detail: "Stores apps, windows, cleaned URLs, clicked controls, shortcuts, scrolling, and grouped typing signals. Exact intentions and outcomes will often remain unknown.",
-                        action: { fullContextPreference = false }
+                        detail: "Stores app and window context, sanitized websites, clicks, scrolling and grouped typing signals. It never stores typed characters, screenshots, audio, clipboard data or secure-field values.",
+                        action: {
+                            _ = consents.set(
+                                .localComputerHistory,
+                                enabled: true,
+                                surface: .onboarding
+                            )
+                        }
+                    )
+                }
+
+                if consents.isEnabled(.localComputerHistory) {
+                    Toggle(isOn: $fullContextPreference) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Use bounded visible context")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(
+                                "Adds selected or visible text exposed by Accessibility after private and secure contexts are suppressed. This is off by default."
+                            )
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .padding(15)
+                    .background(
+                        LHTheme.cardBackground,
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                     )
                 }
 
@@ -217,6 +252,108 @@
                     in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                 )
             }
+        }
+
+        var protectedSourcesPage: some View {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(alignment: .top, spacing: 18) {
+                    Image(systemName: "externaldrive.badge.checkmark")
+                        .font(.system(size: 34, weight: .medium))
+                        .foregroundStyle(LHTheme.accent)
+                        .frame(width: 76, height: 76)
+                        .background(
+                            LHTheme.accent.opacity(0.1),
+                            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        )
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("Choose each protected source separately")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                        Text(
+                            "Full Disk Access is a broad macOS permission. Goalong still keeps Apple Screen Time and AI-conversation reading off until you select them here."
+                        )
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                protectedSourceToggle(
+                    .appleScreenTime,
+                    symbol: "macbook.and.iphone",
+                    detail: "Reads Apple’s local Screen Time and iCloud-synced device stores in place. Databases are never copied into Goalong storage."
+                )
+                protectedSourceToggle(
+                    .aiConversations,
+                    symbol: "cpu",
+                    detail: "Discovers Codex, Claude, OpenCode and folders you add. Only a bounded metadata index is stored; transcript bodies stay at the provider source."
+                )
+
+                HStack(spacing: 12) {
+                    Button("Open Full Disk Access") {
+                        permissions.openFullDiskAccessSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(
+                        !consents.isEnabled(.appleScreenTime)
+                            && !consents.isEnabled(.aiConversations)
+                    )
+                    Text("You may skip this. Denied sources report a clear unavailable state without affecting Goalong’s other local data.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+
+                callout(
+                    symbol: "lock.shield.fill",
+                    tint: LHTheme.success,
+                    title: "Read at the original location",
+                    detail: "Goalong uses provider-specific read-only adapters, fixed discovery roots, no-follow checks and bounded parsing. It never recreates the old transcript blob vault."
+                )
+            }
+        }
+
+        func protectedSourceToggle(
+            _ capability: GoalongCapability,
+            symbol: String,
+            detail: String
+        ) -> some View {
+            Toggle(
+                isOn: Binding(
+                    get: { consents.isEnabled(capability) },
+                    set: {
+                        _ = consents.set(capability, enabled: $0, surface: .onboarding)
+                    }
+                )
+            ) {
+                HStack(alignment: .top, spacing: 13) {
+                    Image(systemName: symbol)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(LHTheme.accent)
+                        .frame(width: 34, height: 34)
+                        .background(
+                            LHTheme.accent.opacity(0.09),
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(capability.title)
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(detail)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .toggleStyle(.switch)
+            .padding(15)
+            .background(
+                LHTheme.cardBackground,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07))
+            )
         }
 
         func analysisChoice(
@@ -403,12 +540,14 @@
 
                 VStack(spacing: 0) {
                     finalCheckRow(
-                        symbol: "brain.head.profile",
-                        title: "Analysis depth",
-                        detail: fullContextPreference
-                            ? "Full before/action/after context enabled"
-                            : "Metadata-only context selected",
-                        complete: fullContextPreference
+                        symbol: "clock.arrow.circlepath",
+                        title: "Computer History",
+                        detail: consents.isEnabled(.localComputerHistory)
+                            ? (fullContextPreference
+                                ? "Enabled with bounded visible context"
+                                : "Enabled without visible-text context")
+                            : "Off — no local activity capture",
+                        complete: true
                     )
                     Divider().padding(.leading, 48)
                     finalCheckRow(
@@ -416,8 +555,10 @@
                         title: "Accessibility",
                         detail: model.runtime.accessibilityGranted
                             ? "Foreground context available"
-                            : "Still needs approval",
-                        complete: model.runtime.accessibilityGranted
+                            : (consents.isEnabled(.localComputerHistory)
+                                ? "Still needs approval" : "Not requested"),
+                        complete: !consents.isEnabled(.localComputerHistory)
+                            || model.runtime.accessibilityGranted
                     )
                     Divider().padding(.leading, 48)
                     finalCheckRow(
@@ -425,8 +566,25 @@
                         title: "Activity monitoring",
                         detail: model.runtime.inputMonitoringGranted
                             ? "Activity signals available"
-                            : "Still needs approval",
-                        complete: model.runtime.inputMonitoringGranted
+                            : (consents.isEnabled(.localComputerHistory)
+                                ? "Still needs approval" : "Not requested"),
+                        complete: !consents.isEnabled(.localComputerHistory)
+                            || model.runtime.inputMonitoringGranted
+                    )
+                    Divider().padding(.leading, 48)
+                    finalCheckRow(
+                        symbol: "externaldrive.fill",
+                        title: "Protected sources",
+                        detail: [
+                            consents.isEnabled(.appleScreenTime) ? "Screen Time" : nil,
+                            consents.isEnabled(.aiConversations) ? "AI conversations" : nil,
+                        ].compactMap { $0 }.joined(separator: " + ").isEmpty
+                            ? "Off — Full Disk Access is not needed by Goalong"
+                            : [
+                                consents.isEnabled(.appleScreenTime) ? "Screen Time" : nil,
+                                consents.isEnabled(.aiConversations) ? "AI conversations" : nil,
+                            ].compactMap { $0 }.joined(separator: " + "),
+                        complete: true
                     )
                 }
                 .padding(.horizontal, 16)
@@ -444,7 +602,7 @@
                         Text("Start \(ProductIdentity.displayName) when I log in")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "Recommended to avoid accidental gaps. You can change this later."
+                            "Off by default. Enable only if you want Goalong to start automatically."
                         )
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)

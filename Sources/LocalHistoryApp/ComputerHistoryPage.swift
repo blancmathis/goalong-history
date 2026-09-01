@@ -127,11 +127,14 @@
 
         func open(_ resource: ComputerHistoryResourceReference) {
             if let localPath = resource.localPath {
-                NSWorkspace.shared.open(URL(fileURLWithPath: localPath))
+                GoalongWorkspaceOpenPolicy.open(
+                    URL(fileURLWithPath: localPath),
+                    purpose: .localFile
+                )
                 return
             }
             if let raw = resource.canonicalURI, let url = URL(string: raw) {
-                NSWorkspace.shared.open(url)
+                GoalongWorkspaceOpenPolicy.open(url, purpose: .observedWebsite)
             }
         }
 
@@ -141,7 +144,7 @@
             let files = store.memoryFileURLs(for: day)
                 .filter { FileManager.default.fileExists(atPath: $0.path) }
             if files.isEmpty {
-                NSWorkspace.shared.open(directory)
+                GoalongWorkspaceOpenPolicy.open(directory, purpose: .localFile)
             } else {
                 NSWorkspace.shared.activateFileViewerSelecting(files)
             }

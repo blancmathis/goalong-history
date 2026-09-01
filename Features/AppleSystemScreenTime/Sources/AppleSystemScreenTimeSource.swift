@@ -39,6 +39,7 @@
         public let latestAppleUpdate: Date?
         public let knowledgeIntervalCount: Int
         public let biomeIntervalCount: Int
+        public let screenTimeAppUsageIntervalCount: Int
 
         public init(
             storedExport: AppleScreenTimeStoredExport?,
@@ -47,7 +48,8 @@
             deviceSourceLabels: [String: String],
             latestAppleUpdate: Date?,
             knowledgeIntervalCount: Int,
-            biomeIntervalCount: Int
+            biomeIntervalCount: Int,
+            screenTimeAppUsageIntervalCount: Int = 0
         ) {
             self.storedExport = storedExport
             self.availableDevices = availableDevices
@@ -56,6 +58,7 @@
             self.latestAppleUpdate = latestAppleUpdate
             self.knowledgeIntervalCount = knowledgeIntervalCount
             self.biomeIntervalCount = biomeIntervalCount
+            self.screenTimeAppUsageIntervalCount = screenTimeAppUsageIntervalCount
         }
     }
 
@@ -65,6 +68,23 @@
         let biomeLocalDirectory: URL
         let biomeRemoteDirectory: URL
         let appleAccountDeviceDatabase: URL
+        let biomeScreenTimeAppUsageDirectory: URL?
+
+        init(
+            knowledgeDatabase: URL,
+            biomeSyncDatabase: URL,
+            biomeLocalDirectory: URL,
+            biomeRemoteDirectory: URL,
+            appleAccountDeviceDatabase: URL,
+            biomeScreenTimeAppUsageDirectory: URL? = nil
+        ) {
+            self.knowledgeDatabase = knowledgeDatabase
+            self.biomeSyncDatabase = biomeSyncDatabase
+            self.biomeLocalDirectory = biomeLocalDirectory
+            self.biomeRemoteDirectory = biomeRemoteDirectory
+            self.appleAccountDeviceDatabase = appleAccountDeviceDatabase
+            self.biomeScreenTimeAppUsageDirectory = biomeScreenTimeAppUsageDirectory
+        }
 
         static let `default`: AppleSystemScreenTimePaths = {
             let home = FileManager.default.homeDirectoryForCurrentUser
@@ -87,7 +107,12 @@
                 appleAccountDeviceDatabase: library
                     .appendingPathComponent("Application Support", isDirectory: true)
                     .appendingPathComponent("com.apple.akd", isDirectory: true)
-                    .appendingPathComponent("devicelist.db", isDirectory: false)
+                    .appendingPathComponent("devicelist.db", isDirectory: false),
+                biomeScreenTimeAppUsageDirectory: biome
+                    .appendingPathComponent("streams", isDirectory: true)
+                    .appendingPathComponent("restricted", isDirectory: true)
+                    .appendingPathComponent("ScreenTime.AppUsage", isDirectory: true)
+                    .appendingPathComponent("local", isDirectory: true)
             )
         }()
     }
@@ -118,9 +143,14 @@
         let paths: Set<String>
     }
 
+    private enum AppleBiomeCachedPayload {
+        case focus([AppleBiomeFocusEvent])
+        case screenTimeAppUsage([AppleBiomeScreenTimeAppUsageEvent])
+    }
+
     private struct AppleBiomeCachedFile {
         let fingerprint: AppleBiomeFileFingerprint
-        let events: [AppleBiomeFocusEvent]
+        let payload: AppleBiomeCachedPayload
         let retainedBytes: Int
         var lastAccess: UInt64
     }
@@ -156,13 +186,59 @@
             accessCounter &+= 1
             entry.lastAccess = accessCounter
             entries[path] = entry
-            return entry.events
+            guard case .focus(let events) = entry.payload else { return nil }
+            return events
+        }
+
+        mutating func screenTimeAppUsageEvents(
+            for path: String,
+            fingerprint: AppleBiomeFileFingerprint
+        ) -> [AppleBiomeScreenTimeAppUsageEvent]? {
+            guard var entry = entries[path] else { return nil }
+            guard entry.fingerprint == fingerprint else {
+                entries.removeValue(forKey: path)
+                retainedBytes -= entry.retainedBytes
+                return nil
+            }
+            accessCounter &+= 1
+            entry.lastAccess = accessCounter
+            entries[path] = entry
+            guard case .screenTimeAppUsage(let events) = entry.payload else { return nil }
+            return events
         }
 
         mutating func insert(
             path: String,
             fingerprint: AppleBiomeFileFingerprint,
             events: [AppleBiomeFocusEvent],
+            retainedBytes incomingBytes: Int
+        ) {
+            insert(
+                path: path,
+                fingerprint: fingerprint,
+                payload: .focus(events),
+                retainedBytes: incomingBytes
+            )
+        }
+
+        mutating func insert(
+            path: String,
+            fingerprint: AppleBiomeFileFingerprint,
+            screenTimeAppUsageEvents: [AppleBiomeScreenTimeAppUsageEvent],
+            retainedBytes incomingBytes: Int
+        ) {
+            insert(
+                path: path,
+                fingerprint: fingerprint,
+                payload: .screenTimeAppUsage(screenTimeAppUsageEvents),
+                retainedBytes: incomingBytes
+            )
+        }
+
+        private mutating func insert(
+            path: String,
+            fingerprint: AppleBiomeFileFingerprint,
+            payload: AppleBiomeCachedPayload,
             retainedBytes incomingBytes: Int
         ) {
             if let previous = entries.removeValue(forKey: path) {
@@ -190,7 +266,7 @@
             accessCounter &+= 1
             entries[path] = AppleBiomeCachedFile(
                 fingerprint: fingerprint,
-                events: events,
+                payload: payload,
                 retainedBytes: boundedBytes,
                 lastAccess: accessCounter
             )
@@ -227,8 +303,10 @@
 
     /// Reads Apple-generated Screen Time data already present on the Mac.
     ///
+    /// - Biome `ScreenTime.AppUsage` provides Apple application-usage transitions for this Mac,
+    ///   including parent-bundle attribution for helper processes.
     /// - `knowledgeC.db` provides Apple `/app/usage` intervals for the Mac and any device
-    ///   rows Apple has synchronized into the database.
+    ///   rows Apple has synchronized into the database, and fills local coverage gaps.
     /// - Biome `App.InFocus` provides automatic iCloud-synced focus transitions for iPhone,
     ///   iPad and other devices when “Share Across Devices” is enabled.
     ///
@@ -294,11 +372,38 @@
                 now: now,
                 catalog: catalogRead.devices
             )
+            let screenTimeAppUsageRead = readScreenTimeAppUsageIntervals(
+                interval: requestedInterval,
+                now: now
+            )
 
-            let merged = mergeIntervals(
+            let fallbackMerged = mergeIntervals(
                 preferred: knowledgeRead.values,
                 supplemental: biomeRead.values
             )
+            let merged: [UsageInterval]
+            if screenTimeAppUsageRead.values.isEmpty {
+                merged = fallbackMerged
+            } else {
+                let localFallback = fallbackMerged.filter { $0.device.id == currentMacDevice.id }
+                let remoteFallback = fallbackMerged.filter { $0.device.id != currentMacDevice.id }
+                if screenTimeAppUsageRead.warning == nil,
+                   !screenTimeAppUsageRead.permissionDenied
+                {
+                    // A healthy ScreenTime.AppUsage stream is Apple's dedicated local
+                    // application-usage source. Do not fill its intentional gaps with
+                    // focus/process rows from knowledgeC or App.InFocus: doing so can
+                    // resurrect applications Apple omitted and inflate both ranking and total.
+                    merged = remoteFallback + screenTimeAppUsageRead.values
+                } else {
+                    // A partial AppUsage read must not erase a concurrent application that a
+                    // readable fallback still reports. Keep every distinct app, deduplicate only
+                    // the same bundle, and surface the partial status above.
+                    merged = remoteFallback + mergeAdjacent(
+                        normalizeIntervals(screenTimeAppUsageRead.values + localFallback)
+                    )
+                }
+            }
             let rawReports = makeReports(from: merged)
             let resolvedReports = AppleScreenTimeDeviceIdentityResolver.resolve(
                 reports: rawReports,
@@ -321,13 +426,20 @@
             let latestUpdate = [
                 knowledgeRead.latestUpdate,
                 biomeRead.latestUpdate,
+                screenTimeAppUsageRead.latestUpdate,
                 reports.map(\.lastUpdatedAt).max(),
             ].compactMap { $0 }.max()
 
             let denied = catalogRead.permissionDenied
                 || knowledgeRead.permissionDenied
                 || biomeRead.permissionDenied
-            let warnings = [catalogRead.warning, knowledgeRead.warning, biomeRead.warning]
+                || screenTimeAppUsageRead.permissionDenied
+            let warnings = [
+                catalogRead.warning,
+                knowledgeRead.warning,
+                biomeRead.warning,
+                screenTimeAppUsageRead.warning,
+            ]
                 .compactMap { $0 }
             let remoteDeviceCount = discoveredDevices.filter { $0.id != currentMacDevice.id }.count
             let status = makeStatus(
@@ -336,26 +448,32 @@
                 remoteDeviceCount: remoteDeviceCount,
                 warnings: warnings
             )
+            var resolvedSourceLabels = sourceLabels(
+                devices: discoveredDevices,
+                knowledgeDeviceIDs: Set(knowledgeRead.values.map(\.device.id)),
+                biomeDeviceIDs: Set(biomeRead.values.map(\.device.id))
+            )
+            let currentMacIntervals = merged.filter { $0.device.id == currentMacDevice.id }
+            if !currentMacIntervals.isEmpty {
+                resolvedSourceLabels[currentMacDevice.id] = sourceLabel(for: currentMacIntervals)
+            }
 
             guard !reports.isEmpty else {
                 return AppleSystemScreenTimeCollection(
                     storedExport: nil,
                     availableDevices: discoveredDevices,
                     status: status,
-                    deviceSourceLabels: sourceLabels(
-                        devices: discoveredDevices,
-                        knowledgeDeviceIDs: Set(knowledgeRead.values.map(\.device.id)),
-                        biomeDeviceIDs: Set(biomeRead.values.map(\.device.id))
-                    ),
+                    deviceSourceLabels: resolvedSourceLabels,
                     latestAppleUpdate: latestUpdate,
                     knowledgeIntervalCount: knowledgeRead.values.count,
-                    biomeIntervalCount: biomeRead.values.count
+                    biomeIntervalCount: biomeRead.values.count,
+                    screenTimeAppUsageIntervalCount: screenTimeAppUsageRead.values.count
                 )
             }
 
             let info = Bundle.main.infoDictionary
             let provenance = AppleScreenTimeProvenance(
-                api: "Apple system Screen Time stores: knowledgeC /app/usage + Biome App.InFocus iCloud sync",
+                api: sourceAPI(for: merged),
                 collectorBundleIdentifier: Bundle.main.bundleIdentifier ?? "ai.goalong.localhistory",
                 collectorVersion: info?["CFBundleShortVersionString"] as? String ?? "unknown",
                 collectorPlatform: ProcessInfo.processInfo.operatingSystemVersionString,
@@ -380,14 +498,11 @@
                 storedExport: stored,
                 availableDevices: discoveredDevices,
                 status: status,
-                deviceSourceLabels: sourceLabels(
-                    devices: discoveredDevices,
-                    knowledgeDeviceIDs: Set(knowledgeRead.values.map(\.device.id)),
-                    biomeDeviceIDs: Set(biomeRead.values.map(\.device.id))
-                ),
+                deviceSourceLabels: resolvedSourceLabels,
                 latestAppleUpdate: latestUpdate,
                 knowledgeIntervalCount: knowledgeRead.values.count,
-                biomeIntervalCount: biomeRead.values.count
+                biomeIntervalCount: biomeRead.values.count,
+                screenTimeAppUsageIntervalCount: screenTimeAppUsageRead.values.count
             )
         }
 
@@ -563,6 +678,161 @@
         }
 
         // MARK: - Biome
+
+        private func readScreenTimeAppUsageIntervals(
+            interval: DateInterval,
+            now: Date
+        ) -> SourceRead<UsageInterval> {
+            guard let directory = paths.biomeScreenTimeAppUsageDirectory,
+                  fileManager.fileExists(atPath: directory.path)
+            else {
+                return SourceRead(values: [], latestUpdate: nil, permissionDenied: false, warning: nil)
+            }
+
+            do {
+                let files = try regularFiles(recursivelyIn: directory).filter { file in
+                    !file.pathComponents.contains { $0.caseInsensitiveCompare("tombstone") == .orderedSame }
+                }
+                let maximumFiles = 512
+                let maximumRelevantEvents = 250_000
+                guard files.count <= maximumFiles else {
+                    return SourceRead(
+                        values: [],
+                        latestUpdate: latestModificationDate(directory),
+                        permissionDenied: false,
+                        warning: "ScreenTime.AppUsage has too many source segments to scan safely"
+                    )
+                }
+
+                var eventsInsideInterval: [AppleBiomeScreenTimeAppUsageEvent] = []
+                var latestBeforeInterval: [String: AppleBiomeScreenTimeAppUsageEvent] = [:]
+                var earliestAfterInterval: [String: AppleBiomeScreenTimeAppUsageEvent] = [:]
+                var latestModification: Date?
+                var latestEvent: Date?
+                var malformedCount = 0
+                var exceededRelevantEventBudget = false
+
+                func retainedEventCount() -> Int {
+                    eventsInsideInterval.count
+                        + latestBeforeInterval.count
+                        + earliestAfterInterval.count
+                }
+
+                func retainRelevantEvents(_ events: [AppleBiomeScreenTimeAppUsageEvent]) {
+                    for event in events {
+                        latestEvent = maxDate(latestEvent, event.timestamp)
+                        let key = event.canonicalBundleIdentifier.lowercased()
+                        if event.timestamp < interval.start {
+                            if let existing = latestBeforeInterval[key] {
+                                if event.timestamp > existing.timestamp {
+                                    latestBeforeInterval[key] = event
+                                }
+                            } else if retainedEventCount() < maximumRelevantEvents {
+                                latestBeforeInterval[key] = event
+                            } else {
+                                exceededRelevantEventBudget = true
+                            }
+                        } else if event.timestamp <= interval.end {
+                            if retainedEventCount() < maximumRelevantEvents {
+                                eventsInsideInterval.append(event)
+                            } else {
+                                exceededRelevantEventBudget = true
+                            }
+                        } else if let existing = earliestAfterInterval[key] {
+                            if event.timestamp < existing.timestamp {
+                                earliestAfterInterval[key] = event
+                            }
+                        } else if retainedEventCount() < maximumRelevantEvents {
+                            earliestAfterInterval[key] = event
+                        } else {
+                            exceededRelevantEventBudget = true
+                        }
+                    }
+                }
+
+                for file in files {
+                    let fingerprint = try fileFingerprint(file)
+                    latestModification = maxDate(latestModification, fingerprint.modifiedAt)
+                    let key = file.standardizedFileURL.path
+                    if let cached = biomeFileCache.screenTimeAppUsageEvents(
+                        for: key,
+                        fingerprint: fingerprint
+                    ) {
+                        retainRelevantEvents(cached)
+                        continue
+                    }
+
+                    do {
+                        let data = try Data(contentsOf: file, options: [.mappedIfSafe])
+                        let events = try AppleBiomeSEGBDecoder.decodeScreenTimeAppUsage(data)
+                        biomeFileCache.insert(
+                            path: key,
+                            fingerprint: fingerprint,
+                            screenTimeAppUsageEvents: events,
+                            retainedBytes: Self.estimatedRetainedBytes(
+                                sourceBytes: fingerprint.size,
+                                screenTimeAppUsageEvents: events
+                            )
+                        )
+                        retainRelevantEvents(events)
+                    } catch {
+                        malformedCount += 1
+                    }
+                }
+
+                let existing = Set(files.map { $0.standardizedFileURL.path })
+                biomeFileCache.retainFiles(existing, under: directory.standardizedFileURL.path)
+
+                if exceededRelevantEventBudget {
+                    return SourceRead(
+                        values: [],
+                        latestUpdate: maxDate(latestModification, latestEvent),
+                        permissionDenied: false,
+                        warning: "ScreenTime.AppUsage exceeded Goalong's bounded daily event budget"
+                    )
+                }
+
+                let allEvents = Array(latestBeforeInterval.values)
+                    + eventsInsideInterval
+                    + Array(earliestAfterInterval.values)
+                let isToday = calendar.isDateInToday(interval.start)
+                let stitched = AppleBiomeScreenTimeAppUsageIntervalBuilder.intervals(
+                    from: allEvents,
+                    closeOpenIntervalAt: isToday ? min(now, interval.end) : nil,
+                    maximumOpenIntervalAge: isToday ? 20 * 60 : nil
+                )
+                let values = stitched.compactMap { row -> UsageInterval? in
+                    let start = max(row.start, interval.start)
+                    let end = min(row.end, interval.end)
+                    guard end > start else { return nil }
+                    return UsageInterval(
+                        device: currentMacDevice,
+                        bundleIdentifier: row.bundleIdentifier,
+                        displayName: Self.applicationDisplayName(row.bundleIdentifier),
+                        start: start,
+                        end: end,
+                        source: .screenTimeAppUsage
+                    )
+                }
+                let warning = malformedCount > 0
+                    ? "Skipped \(malformedCount) unrecognized Apple ScreenTime.AppUsage file\(malformedCount == 1 ? "" : "s")"
+                    : nil
+                return SourceRead(
+                    values: values,
+                    latestUpdate: maxDate(latestModification, latestEvent),
+                    permissionDenied: false,
+                    warning: warning
+                )
+            } catch {
+                let denied = Self.looksLikePermissionFailure(error)
+                return SourceRead(
+                    values: [],
+                    latestUpdate: nil,
+                    permissionDenied: denied,
+                    warning: denied ? nil : "ScreenTime.AppUsage: \(error)"
+                )
+            }
+        }
 
         private func readBiomeIntervals(
             interval: DateInterval,
@@ -894,6 +1164,7 @@
         private enum UsageSource: Int {
             case biome = 1
             case knowledgeC = 2
+            case screenTimeAppUsage = 3
         }
 
         private struct UsageInterval {
@@ -927,6 +1198,9 @@
 
             for candidate in supplemental.sorted(by: intervalOrder) {
                 var fragments = [candidate]
+                // The caller supplies the more authoritative Apple source first. Supplemental
+                // rows fill only physical coverage gaps, so a lower-priority source cannot add
+                // conflicting attribution for time the preferred source already explains.
                 for existing in preferredNormalized where existing.device.id == candidate.device.id {
                     fragments = fragments.flatMap { subtract($0, occupiedBy: existing) }
                     if fragments.isEmpty { break }
@@ -947,7 +1221,10 @@
 
             for candidate in ordered where candidate.duration > 0 {
                 var fragments = [candidate]
-                for existing in accepted where existing.device.id == candidate.device.id {
+                for existing in accepted
+                    where existing.device.id == candidate.device.id
+                        && sameApplication(existing, candidate)
+                {
                     fragments = fragments.flatMap { subtract($0, occupiedBy: existing) }
                     if fragments.isEmpty { break }
                 }
@@ -1008,20 +1285,7 @@
                     let device = deviceRows.dropFirst().reduce(first.device) { current, row in
                         Self.moreSpecificDevice(current, row.device)
                     }
-                    let segments = deviceRows.sorted(by: intervalOrder).map { row in
-                        AppleScreenTimeSegment(
-                            start: row.start,
-                            end: row.end,
-                            totalScreenOnDuration: row.duration,
-                            applications: [
-                                AppleScreenTimeApplicationUsage(
-                                    bundleIdentifier: row.bundleIdentifier,
-                                    displayName: row.displayName,
-                                    duration: row.duration
-                                )
-                            ]
-                        )
-                    }
+                    let segments = makeTimelineSegments(from: deviceRows)
                     return AppleScreenTimeDeviceReport(
                         device: device,
                         lastUpdatedAt: deviceRows.map(\.end).max() ?? Date.distantPast,
@@ -1036,6 +1300,99 @@
                     }
                     return $0.device.displayName.localizedCaseInsensitiveCompare($1.device.displayName) == .orderedAscending
                 }
+        }
+
+        /// Apple may retain concurrent usage rows for helpers and the application they operate.
+        /// Keep every application's duration while representing physical screen-on coverage once.
+        private func makeTimelineSegments(from intervals: [UsageInterval]) -> [AppleScreenTimeSegment] {
+            guard !intervals.isEmpty else { return [] }
+
+            var starting: [Date: [UsageInterval]] = [:]
+            var ending: [Date: [UsageInterval]] = [:]
+            var boundarySet = Set<Date>()
+            for interval in intervals where interval.duration > 0 {
+                starting[interval.start, default: []].append(interval)
+                ending[interval.end, default: []].append(interval)
+                boundarySet.insert(interval.start)
+                boundarySet.insert(interval.end)
+            }
+
+            let boundaries = boundarySet.sorted()
+            guard boundaries.count > 1 else { return [] }
+
+            var active: [String: UsageInterval] = [:]
+            var segments: [AppleScreenTimeSegment] = []
+            segments.reserveCapacity(boundaries.count - 1)
+
+            for index in 0 ..< boundaries.count - 1 {
+                let start = boundaries[index]
+                let end = boundaries[index + 1]
+
+                for interval in ending[start] ?? [] {
+                    active.removeValue(forKey: applicationKey(interval))
+                }
+                for interval in starting[start] ?? [] {
+                    active[applicationKey(interval)] = interval
+                }
+
+                let duration = end.timeIntervalSince(start)
+                guard duration > 0, !active.isEmpty else { continue }
+                let applications = active.values
+                    .sorted {
+                        applicationKey($0) < applicationKey($1)
+                    }
+                    .map { interval in
+                        AppleScreenTimeApplicationUsage(
+                            bundleIdentifier: interval.bundleIdentifier,
+                            displayName: interval.displayName,
+                            duration: duration
+                        )
+                    }
+
+                if let previous = segments.last,
+                   previous.end == start,
+                   previous.applications.map(applicationKey) == applications.map(applicationKey)
+                {
+                    let combinedApplications = zip(previous.applications, applications).map { old, new in
+                        AppleScreenTimeApplicationUsage(
+                            bundleIdentifier: old.bundleIdentifier ?? new.bundleIdentifier,
+                            displayName: old.displayName ?? new.displayName,
+                            duration: old.duration + new.duration
+                        )
+                    }
+                    segments[segments.count - 1] = AppleScreenTimeSegment(
+                        start: previous.start,
+                        end: end,
+                        totalScreenOnDuration: previous.totalScreenOnDuration + duration,
+                        applications: combinedApplications
+                    )
+                } else {
+                    segments.append(
+                        AppleScreenTimeSegment(
+                            start: start,
+                            end: end,
+                            totalScreenOnDuration: duration,
+                            applications: applications
+                        )
+                    )
+                }
+            }
+            return segments
+        }
+
+        private func sameApplication(_ lhs: UsageInterval, _ rhs: UsageInterval) -> Bool {
+            applicationKey(lhs) == applicationKey(rhs)
+        }
+
+        private func applicationKey(_ interval: UsageInterval) -> String {
+            interval.bundleIdentifier.lowercased()
+        }
+
+        private func applicationKey(_ application: AppleScreenTimeApplicationUsage) -> String {
+            if let bundleIdentifier = application.bundleIdentifier {
+                return "bundle:\(bundleIdentifier.lowercased())"
+            }
+            return "name:\((application.displayName ?? "unknown").lowercased())"
         }
 
         private func mergeDeviceLists(_ groups: [AppleScreenTimeDevice]...) -> [AppleScreenTimeDevice] {
@@ -1074,6 +1431,37 @@
             })
         }
 
+        private func sourceLabel(for intervals: [UsageInterval]) -> String {
+            var components: [String] = []
+            if intervals.contains(where: { $0.source == .screenTimeAppUsage }) {
+                components.append("ScreenTime.AppUsage")
+            }
+            if intervals.contains(where: { $0.source == .knowledgeC }) {
+                components.append("knowledgeC")
+            }
+            if intervals.contains(where: { $0.source == .biome }) {
+                components.append("Biome local")
+            }
+            return components.isEmpty
+                ? "Apple system usage stores"
+                : "Apple " + components.joined(separator: " + ")
+        }
+
+        private func sourceAPI(for intervals: [UsageInterval]) -> String {
+            var components: [String] = []
+            if intervals.contains(where: { $0.source == .screenTimeAppUsage }) {
+                components.append("ScreenTime.AppUsage")
+            }
+            if intervals.contains(where: { $0.source == .knowledgeC }) {
+                components.append("knowledgeC /app/usage")
+            }
+            if intervals.contains(where: { $0.source == .biome }) {
+                components.append("Biome App.InFocus local/iCloud sync")
+            }
+            return "Apple system Screen Time stores: "
+                + (components.isEmpty ? "none" : components.joined(separator: " + "))
+        }
+
         // MARK: - Status and helpers
 
         private func makeStatus(
@@ -1087,7 +1475,7 @@
                     kind: .fullDiskAccessRequired,
                     title: "Full Disk Access required",
                     message:
-                        "Apple protects Screen Time’s knowledgeC and Biome stores. Grant Goalong History Full Disk Access once, then reopen or refresh the app."
+                        "Apple protects its ScreenTime.AppUsage, knowledgeC and Biome stores. Grant Goalong History Full Disk Access once, then reopen or refresh the app."
                 )
             }
             if hasData, permissionDenied || !warnings.isEmpty {
@@ -1101,17 +1489,17 @@
             if hasData, remoteDeviceCount == 0 {
                 return AppleSystemScreenTimeStatus(
                     kind: .localOnly,
-                    title: "Official Apple data for this Mac",
+                    title: "Apple activity data for this Mac",
                     message:
-                        "No remote Apple device stream is present yet. Enable Screen Time → Share Across Devices on the same Apple Account to populate the All devices view automatically."
+                        "No remote Apple device stream is present yet. Enable Screen Time → Share Across Devices on the same Apple Account to populate the All devices view automatically. Totals are reconstructed from Apple stores readable on this Mac and can differ from Settings."
                 )
             }
             if hasData {
                 return AppleSystemScreenTimeStatus(
                     kind: .ready,
-                    title: "Official Apple Screen Time connected",
+                    title: "Apple activity sources connected",
                     message:
-                        "The view is built from Apple’s local usage database and iCloud-synced Biome device streams, not from Goalong History’s activity recorder."
+                        "The view is reconstructed from Apple’s readable ScreenTime.AppUsage, knowledgeC and iCloud-synced Biome streams, never Goalong’s recorder. macOS may protect the private DeviceActivity summary used by Settings, so exact Settings parity is not guaranteed."
                 )
             }
             return AppleSystemScreenTimeStatus(
@@ -1122,19 +1510,35 @@
             )
         }
 
-        private static func applicationDisplayName(_ bundleIdentifier: String) -> String? {
+        static func applicationDisplayName(_ bundleIdentifier: String) -> String? {
             let builtIns: [String: String] = [
+                "ai.goalong.localhistory": "Goalong History",
                 "com.apple.springboard": "Home & Lock Screen",
                 "com.apple.mobilesafari": "Safari",
-                "com.apple.MobileSMS": "Messages",
+                "com.apple.mobilesms": "Messages",
                 "com.apple.mobilemail": "Mail",
-                "com.apple.Maps": "Maps",
+                "com.apple.maps": "Maps",
                 "com.apple.camera": "Camera",
-                "com.apple.Preferences": "Settings",
-                "com.apple.AppStore": "App Store",
+                "com.apple.preferences": "Settings",
+                "com.apple.appstore": "App Store",
                 "com.apple.youtube": "YouTube",
+                "com.google.ios.youtube": "YouTube",
+                "com.apple.mobileslideshow": "Photos",
+                "com.burbn.instagram": "Instagram",
+                "com.apple.mobiletimer": "Clock",
+                "com.apple.mobilecal": "Calendar",
+                "com.apple.mobilephone": "Phone",
+                "com.apple.facetime": "FaceTime",
+                "com.apple.mobilenotes": "Notes",
+                "com.apple.podcasts": "Podcasts",
+                "com.apple.weather": "Weather",
+                "com.spotify.client": "Spotify",
+                "com.openai.codex": "ChatGPT",
+                "com.openai.sky.cuaservice": "Codex Computer Use",
+                "com.openai.sky.cuaservice.cli": "Codex Computer Use Helper",
+                "net.whatsapp.whatsapp": "WhatsApp",
             ]
-            if let value = builtIns[bundleIdentifier] { return value }
+            if let value = builtIns[bundleIdentifier.lowercased()] { return value }
 
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),
                let bundle = Bundle(url: url)
@@ -1336,6 +1740,20 @@
             return max(max(1, sourceBytes), decodedBytes)
         }
 
+        private static func estimatedRetainedBytes(
+            sourceBytes: Int,
+            screenTimeAppUsageEvents events: [AppleBiomeScreenTimeAppUsageEvent]
+        ) -> Int {
+            let decodedBytes = events.reduce(into: 0) { result, event in
+                let addition = MemoryLayout<AppleBiomeScreenTimeAppUsageEvent>.stride
+                    + event.bundleIdentifier.utf8.count
+                    + (event.parentBundleIdentifier?.utf8.count ?? 0)
+                    + 48
+                result = result > Int.max - addition ? Int.max : result + addition
+            }
+            return max(max(1, sourceBytes), decodedBytes)
+        }
+
         private func fileFingerprint(_ url: URL) throws -> AppleBiomeFileFingerprint {
             let values = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
             return AppleBiomeFileFingerprint(
@@ -1364,16 +1782,73 @@
         private var database: OpaquePointer?
 
         init(path: String) throws {
-            let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
-            let result = sqlite3_open_v2(path, &database, flags, nil)
-            guard result == SQLITE_OK, database != nil else {
+            var authorizedStatus = stat()
+            guard Darwin.lstat(path, &authorizedStatus) == 0,
+                  authorizedStatus.st_mode & S_IFMT == S_IFREG,
+                  let resolvedCString = Darwin.realpath(path, nil)
+            else {
+                throw SQLiteReadError(code: SQLITE_CANTOPEN, message: "SQLite source is not a regular file")
+            }
+            defer { Darwin.free(resolvedCString) }
+            let resolvedPath = String(cString: resolvedCString)
+            var resolvedStatus = stat()
+            guard Darwin.lstat(resolvedPath, &resolvedStatus) == 0,
+                  resolvedStatus.st_mode & S_IFMT == S_IFREG,
+                  resolvedStatus.st_dev == authorizedStatus.st_dev,
+                  resolvedStatus.st_ino == authorizedStatus.st_ino
+            else {
+                throw SQLiteReadError(code: SQLITE_CANTOPEN, message: "SQLite source changed while resolving its path")
+            }
+
+            let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_NOFOLLOW
+            let result = sqlite3_open_v2(resolvedPath, &database, flags, nil)
+            guard result == SQLITE_OK, let database,
+                  sqlite3_db_readonly(database, "main") == 1
+            else {
                 let message = database.map { String(cString: sqlite3_errmsg($0)) }
                     ?? "SQLite could not open the file"
                 if let database { sqlite3_close(database) }
                 database = nil
                 throw SQLiteReadError(code: result, message: message)
             }
-            sqlite3_busy_timeout(database, 500)
+            do {
+                try executeConnectionPragma("PRAGMA temp_store=MEMORY")
+                try executeConnectionPragma("PRAGMA mmap_size=0")
+                try executeConnectionPragma("PRAGMA query_only=ON")
+                guard try integerConnectionPragma("PRAGMA temp_store") == 2,
+                      try integerConnectionPragma("PRAGMA mmap_size") == 0,
+                      try integerConnectionPragma("PRAGMA query_only") == 1,
+                      sqlite3_db_readonly(database, "main") == 1
+                else {
+                    throw SQLiteReadError(
+                        code: SQLITE_READONLY,
+                        message: "SQLite could not be locked to read-only operation"
+                    )
+                }
+                guard sqlite3_set_authorizer(
+                    database,
+                    { _, action, _, _, _, _ in
+                        switch action {
+                        case SQLITE_SELECT, SQLITE_READ, SQLITE_FUNCTION, SQLITE_PRAGMA,
+                            SQLITE_RECURSIVE:
+                            return SQLITE_OK
+                        default:
+                            return SQLITE_DENY
+                        }
+                    },
+                    nil
+                ) == SQLITE_OK else {
+                    throw SQLiteReadError(
+                        code: SQLITE_AUTH,
+                        message: "SQLite read-only authorizer could not be installed"
+                    )
+                }
+                sqlite3_busy_timeout(database, 500)
+            } catch {
+                sqlite3_close(database)
+                self.database = nil
+                throw error
+            }
         }
 
         deinit {
@@ -1387,6 +1862,33 @@
                 return name.isEmpty ? nil : name
             }
             return Set(rows)
+        }
+
+        private func executeConnectionPragma(_ sql: String) throws {
+            guard let database else {
+                throw SQLiteReadError(code: SQLITE_MISUSE, message: "Database closed")
+            }
+            var statement: OpaquePointer?
+            let prepare = sqlite3_prepare_v2(database, sql, -1, &statement, nil)
+            guard prepare == SQLITE_OK, let statement else {
+                throw SQLiteReadError(code: prepare, message: String(cString: sqlite3_errmsg(database)))
+            }
+            defer { sqlite3_finalize(statement) }
+            let step = sqlite3_step(statement)
+            guard step == SQLITE_DONE || step == SQLITE_ROW else {
+                throw SQLiteReadError(code: step, message: String(cString: sqlite3_errmsg(database)))
+            }
+        }
+
+        private func integerConnectionPragma(_ sql: String) throws -> Int {
+            let values: [Int] = try query(sql) { statement in
+                guard sqlite3_column_type(statement, 0) != SQLITE_NULL else { return nil }
+                return Int(sqlite3_column_int64(statement, 0))
+            }
+            guard let value = values.first else {
+                throw SQLiteReadError(code: SQLITE_ERROR, message: "SQLite pragma returned no value")
+            }
+            return value
         }
 
         func query<T>(

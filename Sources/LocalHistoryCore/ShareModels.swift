@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(CryptoKit)
+    import CryptoKit
+#endif
+
 public enum ShareLevel: String, Codable, CaseIterable {
     case everything
     case applicationOnly
@@ -57,8 +61,12 @@ public struct EventDisclosure: Codable, Equatable {
     }
 
     public func verifiesRoot() -> Bool {
-        let byName = Dictionary(uniqueKeysWithValues: fieldCommitments.map { ($0.name, $0.commitmentHex) })
-        let fieldOrder = IntegrityDomains.eventFieldOrder(for: schemaVersion ?? 2)
+        let resolvedSchemaVersion = schemaVersion ?? 2
+        guard (2...5).contains(resolvedSchemaVersion), rawEvent == nil else { return false }
+        let fieldOrder = IntegrityDomains.eventFieldOrder(for: resolvedSchemaVersion)
+        guard let byName = exactCommitmentsByName(fieldCommitments, order: fieldOrder) else {
+            return false
+        }
         let leaves = fieldOrder.compactMap { name -> (String, String)? in
             guard let value = byName[name] else { return nil }
             return (name, value)
@@ -67,6 +75,22 @@ public struct EventDisclosure: Codable, Equatable {
         guard fieldCommitments.allSatisfy({ $0.verifies() }) else { return false }
         return MerkleTree.root(labeledHexValues: leaves) == eventRoot
     }
+}
+
+private func exactCommitmentsByName(
+    _ fields: [FieldDisclosure],
+    order: [String]
+) -> [String: String]? {
+    guard fields.count == order.count else { return nil }
+    var result: [String: String] = [:]
+    result.reserveCapacity(fields.count)
+    for field in fields {
+        guard result.updateValue(field.commitmentHex, forKey: field.name) == nil else {
+            return nil
+        }
+    }
+    guard Set(result.keys) == Set(order) else { return nil }
+    return result
 }
 
 public struct MinuteDisclosure: Codable, Equatable {
@@ -118,7 +142,10 @@ public struct MinuteDisclosure: Codable, Equatable {
     }
 
     public func verifiesStructure() -> Bool {
-        let minuteByName = Dictionary(uniqueKeysWithValues: minuteFields.map { ($0.name, $0.commitmentHex) })
+        guard let minuteByName = exactCommitmentsByName(
+            minuteFields,
+            order: IntegrityDomains.minuteFieldOrder
+        ) else { return false }
         let minuteLeaves = IntegrityDomains.minuteFieldOrder.compactMap { name -> (String, String)? in
             guard let value = minuteByName[name] else { return nil }
             return (name, value)
@@ -147,6 +174,121 @@ public struct MinuteDisclosure: Codable, Equatable {
         else { return false }
 
         return true
+    }
+
+    /// Verifies the P-256 signature carried by this disclosure against the
+    /// exact minute-chain message that Goalong signs at capture time.
+    ///
+    /// This is intentionally separate from `verifiesStructure()`: older callers
+    /// may still need to inspect structural commitments, while anything claiming
+    /// local authenticity must require both checks through
+    /// `verifiesLocallySignedIntegrity()`.
+    public func verifiesDeviceSignature() -> Bool {
+        AnchorSignatureVerifier.verifies(
+            deviceID: deviceID,
+            sequence: anchorSequence,
+            previousAnchorHash: previousAnchorHash,
+            minuteRoot: minuteRoot,
+            publicKeyBase64: publicKeyBase64,
+            signatureBase64: signatureBase64,
+            signatureAlgorithm: signatureAlgorithm
+        )
+    }
+
+    public func verifiesLocallySignedIntegrity() -> Bool {
+        verifiesStructure() && verifiesDeviceSignature()
+    }
+}
+
+public enum AnchorSignatureVerifier {
+    public static let supportedAlgorithm = "P-256/ECDSA-X9.62-SHA256"
+
+    public static func verifies(
+        deviceID: String,
+        sequence: UInt64,
+        previousAnchorHash: String,
+        minuteRoot: String,
+        publicKeyBase64: String?,
+        signatureBase64: String?,
+        signatureAlgorithm: String?
+    ) -> Bool {
+        let message = ChainHash.signingMessage(
+            deviceID: deviceID,
+            sequence: sequence,
+            previous: previousAnchorHash,
+            minuteRoot: minuteRoot
+        )
+        return DeviceP256SignatureVerifier.verifies(
+            message: message,
+            deviceID: deviceID,
+            publicKeyBase64: publicKeyBase64,
+            signatureBase64: signatureBase64,
+            signatureAlgorithm: signatureAlgorithm
+        )
+    }
+}
+
+public enum DeviceP256SignatureVerifier {
+    public static func verifies(
+        message: Data,
+        deviceID: String,
+        publicKeyBase64: String?,
+        signatureBase64: String?,
+        signatureAlgorithm: String?
+    ) -> Bool {
+        #if canImport(CryptoKit)
+            guard signatureAlgorithm == AnchorSignatureVerifier.supportedAlgorithm,
+                let publicKeyBase64,
+                let signatureBase64,
+                let publicKeyData = Data(base64Encoded: publicKeyBase64),
+                let signatureData = Data(base64Encoded: signatureBase64),
+                SHA256Digest.hashHex(publicKeyData) == deviceID,
+                let publicKey = try? P256.Signing.PublicKey(
+                    x963Representation: publicKeyData
+                ),
+                let signature = try? P256.Signing.ECDSASignature(
+                    derRepresentation: signatureData
+                )
+            else { return false }
+
+            return publicKey.isValidSignature(signature, for: message)
+        #else
+            return false
+        #endif
+    }
+}
+
+public struct DaySharePackageVerificationReport: Codable, Equatable {
+    public let schemaVersion: Int
+    public let isLocallyValid: Bool
+    public let minuteCount: Int
+    public let validStructureCount: Int
+    public let validDeviceSignatureCount: Int
+    public let referencedServerReceiptCount: Int
+    public let unverifiedMetadataFields: [String]
+    public let issues: [String]
+    public let limitation: String
+
+    public init(
+        schemaVersion: Int = 1,
+        isLocallyValid: Bool,
+        minuteCount: Int,
+        validStructureCount: Int,
+        validDeviceSignatureCount: Int,
+        referencedServerReceiptCount: Int,
+        unverifiedMetadataFields: [String],
+        issues: [String],
+        limitation: String
+    ) {
+        self.schemaVersion = schemaVersion
+        self.isLocallyValid = isLocallyValid
+        self.minuteCount = minuteCount
+        self.validStructureCount = validStructureCount
+        self.validDeviceSignatureCount = validDeviceSignatureCount
+        self.referencedServerReceiptCount = referencedServerReceiptCount
+        self.unverifiedMetadataFields = unverifiedMetadataFields
+        self.issues = issues
+        self.limitation = limitation
     }
 }
 
@@ -181,5 +323,143 @@ public struct DaySharePackage: Codable, Equatable {
         self.boundaryBefore = boundaryBefore
         self.boundaryAfter = boundaryAfter
         self.minutes = minutes
+    }
+
+    /// Performs the checks that are possible using only the exported package:
+    /// commitments, Merkle roots, minute chaining, boundary linkage, declared
+    /// device identities, and every embedded P-256 device signature.
+    ///
+    /// A receipt identifier is only an opaque reference. Without the signed
+    /// receipt payload and its verifier key, this offline report deliberately
+    /// does not claim that a server or Apple App Attest verified anything.
+    public func verificationReport() -> DaySharePackageVerificationReport {
+        var issues: [String] = []
+        var validStructureCount = 0
+        var validSignatureCount = 0
+
+        // v2 is the single-device uniform-disclosure package, v3 adds
+        // per-event disclosure levels, and v4 makes device rotation explicit.
+        // Reject anything else instead of attempting a best-effort parse.
+        if !(2...4).contains(schemaVersion) {
+            issues.append("unsupported_package_schema")
+        }
+
+        if minutes.isEmpty {
+            issues.append("package_contains_no_minutes")
+        }
+
+        for minute in minutes {
+            if minute.verifiesStructure() {
+                validStructureCount += 1
+            } else {
+                issues.append("minute_\(minute.anchorSequence)_structure_invalid")
+            }
+            if minute.verifiesDeviceSignature() {
+                validSignatureCount += 1
+            } else {
+                issues.append("minute_\(minute.anchorSequence)_device_signature_invalid")
+            }
+            guard let time = minute.minuteFields.first(where: { $0.name == "time" }),
+                time.opening?.fields["local_day"] == localDay
+            else {
+                issues.append("minute_\(minute.anchorSequence)_local_day_invalid")
+                continue
+            }
+        }
+
+        for (current, next) in zip(minutes, minutes.dropFirst()) {
+            guard current.anchorSequence < UInt64.max,
+                next.anchorSequence == current.anchorSequence + 1,
+                next.previousAnchorHash == current.anchorHash
+            else {
+                issues.append("minute_chain_invalid_after_\(current.anchorSequence)")
+                continue
+            }
+        }
+
+        if let first = minutes.first, deviceID != first.deviceID {
+            issues.append("primary_device_identity_mismatch")
+        }
+
+        let observedDeviceIDs = Set(minutes.map(\.deviceID))
+        if let deviceIDs {
+            if Set(deviceIDs).count != deviceIDs.count || Set(deviceIDs) != observedDeviceIDs {
+                issues.append("declared_device_identities_mismatch")
+            }
+        } else if observedDeviceIDs.count > 1 || observedDeviceIDs.first != deviceID {
+            issues.append("undeclared_device_identity_rotation")
+        }
+
+        if let boundaryBefore {
+            if !boundaryBefore.verifiesLocallySignedIntegrity() {
+                issues.append("boundary_before_invalid")
+            }
+            if let first = minutes.first {
+                guard boundaryBefore.anchorSequence < UInt64.max,
+                    boundaryBefore.anchorSequence + 1 == first.anchorSequence,
+                    boundaryBefore.anchorHash == first.previousAnchorHash
+                else {
+                    issues.append("boundary_before_link_invalid")
+                    return makeVerificationReport(
+                        issues: issues,
+                        validStructureCount: validStructureCount,
+                        validSignatureCount: validSignatureCount
+                    )
+                }
+            }
+        }
+
+        if let boundaryAfter {
+            if !boundaryAfter.verifiesLocallySignedIntegrity() {
+                issues.append("boundary_after_invalid")
+            }
+            if let last = minutes.last {
+                guard last.anchorSequence < UInt64.max,
+                    boundaryAfter.anchorSequence == last.anchorSequence + 1,
+                    boundaryAfter.previousAnchorHash == last.anchorHash
+                else {
+                    issues.append("boundary_after_link_invalid")
+                    return makeVerificationReport(
+                        issues: issues,
+                        validStructureCount: validStructureCount,
+                        validSignatureCount: validSignatureCount
+                    )
+                }
+            }
+        }
+
+        return makeVerificationReport(
+            issues: issues,
+            validStructureCount: validStructureCount,
+            validSignatureCount: validSignatureCount
+        )
+    }
+
+    private func makeVerificationReport(
+        issues: [String],
+        validStructureCount: Int,
+        validSignatureCount: Int
+    ) -> DaySharePackageVerificationReport {
+        DaySharePackageVerificationReport(
+            isLocallyValid: issues.isEmpty,
+            minuteCount: minutes.count,
+            validStructureCount: validStructureCount,
+            validDeviceSignatureCount: validSignatureCount,
+            referencedServerReceiptCount:
+                minutes.filter { $0.liveReceiptID != nil }.count
+                + (boundaryBefore?.liveReceiptID == nil ? 0 : 1)
+                + (boundaryAfter?.liveReceiptID == nil ? 0 : 1),
+            unverifiedMetadataFields: [
+                "createdAt",
+                "classifierVersion",
+                "minute.shareLevel",
+                "minute.trustTier",
+                "minute.liveReceiptID",
+                "event.shareLevel",
+            ],
+            issues: issues,
+            limitation:
+                "This offline report proves disclosed commitments, local-day binding, chains and signatures from the included local device keys. The listed metadata fields are not covered by those minute signatures. Receipt IDs are references only; it does not prove Apple App Attest, an external timestamp, the official Goalong build, or provider authorship."
+        )
     }
 }

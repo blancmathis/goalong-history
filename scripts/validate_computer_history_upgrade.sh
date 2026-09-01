@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-DEFAULT_REPO="/Users/mathisblanc/Documents/ChatGPT/be-productive/localhistory"
+DEFAULT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_DATA_ROOT="$HOME/Library/Application Support/LocalHistory"
 REPO="$DEFAULT_REPO"
 DATA_ROOT="$DEFAULT_DATA_ROOT"

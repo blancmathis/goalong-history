@@ -7,9 +7,10 @@
         @State var step: SetupStep = .welcome
         @State var askedForAccessibility = false
         @State var askedForInputMonitoring = false
-        @State var launchAtLoginPreference = true
-        @State var fullContextPreference = true
+        @State var launchAtLoginPreference = false
+        @State var fullContextPreference = false
         @State var note: String?
+        @ObservedObject var consents = GoalongCapabilityConsentStore.shared
 
         let permissions = PermissionManager()
 
@@ -29,13 +30,11 @@
             .onAppear {
                 launchAtLogin.refresh()
                 let defaults = UserDefaults.standard
-                launchAtLoginPreference = defaults.object(forKey: "launchAtLoginPreference") == nil
-                    ? true
-                    : defaults.bool(forKey: "launchAtLoginPreference")
+                launchAtLoginPreference = consents.isEnabled(.launchAtLogin)
                 fullContextPreference = defaults.object(
                     forKey: ActivityAnalysisPreferences.richContextEnabledKey
                 ) == nil
-                    ? true
+                    ? false
                     : defaults.bool(
                         forKey: ActivityAnalysisPreferences.richContextEnabledKey
                     )
@@ -200,7 +199,7 @@
                         .buttonStyle(.bordered)
                         .controlSize(.large)
                 }
-                if step == .accessibility || step == .inputMonitoring {
+                if step == .accessibility || step == .inputMonitoring || step == .protectedSources {
                     Button("Set up later", action: advance)
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
@@ -219,21 +218,28 @@
         }
 
         var allPermissionsGranted: Bool {
-            model.runtime.accessibilityGranted && model.runtime.inputMonitoringGranted
+            !consents.isEnabled(.localComputerHistory)
+                || (model.runtime.accessibilityGranted && model.runtime.inputMonitoringGranted)
         }
 
         var canAdvance: Bool {
             switch step {
             case .accessibility:
-                return model.runtime.accessibilityGranted || askedForAccessibility
+                return !consents.isEnabled(.localComputerHistory)
+                    || model.runtime.accessibilityGranted || askedForAccessibility
             case .inputMonitoring:
-                return model.runtime.inputMonitoringGranted || askedForInputMonitoring
+                return !consents.isEnabled(.localComputerHistory)
+                    || model.runtime.inputMonitoringGranted || askedForInputMonitoring
             default:
                 return true
             }
         }
 
         func requestAccessibility() {
+            guard consents.isEnabled(.localComputerHistory) else {
+                note = "Enable Computer History first. Goalong never requests Accessibility for a disabled capability."
+                return
+            }
             askedForAccessibility = true
             _ = permissions.requestAccessibility()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
@@ -245,6 +251,10 @@
         }
 
         func requestInputMonitoring() {
+            guard consents.isEnabled(.localComputerHistory) else {
+                note = "Enable Computer History first. Goalong never requests Input Monitoring for a disabled capability."
+                return
+            }
             askedForInputMonitoring = true
             _ = permissions.requestInputMonitoring()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
@@ -275,6 +285,22 @@
                 forKey: ActivityAnalysisPreferences.richContextEnabledKey
             )
             ActivityAnalysisRuntime.shared.richContextPreferenceDidChange()
+            do {
+                try model.configureCaptureForOnboarding(
+                    enabled: consents.isEnabled(.localComputerHistory)
+                )
+            } catch {
+                note = "Capture settings could not be saved: \(error.localizedDescription)"
+                return
+            }
+            guard consents.set(
+                .launchAtLogin,
+                enabled: launchAtLoginPreference,
+                surface: .onboarding
+            ) else {
+                note = "The launch-at-login choice could not be saved."
+                return
+            }
             guard launchAtLogin.setEnabled(launchAtLoginPreference) else {
                 note = launchAtLogin.message
                     ?? "macOS could not update the login-item setting."
@@ -291,13 +317,13 @@
     }
 
     enum SetupStep: Int, CaseIterable, Identifiable {
-        case welcome, privacy, context, accessibility, inputMonitoring, ready
+        case welcome, privacy, recording, accessibility, inputMonitoring, protectedSources, ready
         var id: Int { rawValue }
 
         var eyebrow: String {
             [
-                "Welcome", "Privacy first", "Analysis depth",
-                "Permission one", "Permission two", "Final check",
+                "Welcome", "Privacy first", "Local capability",
+                "Permission one", "Permission two", "Protected sources", "Final check",
             ][rawValue]
         }
 
@@ -307,12 +333,14 @@
                 return "Meet \(ProductIdentity.displayName)"
             case .privacy:
                 return "Understand the boundary"
-            case .context:
-                return "Choose what the analysis may understand"
+            case .recording:
+                return "Choose whether Goalong may record"
             case .accessibility:
                 return "Add foreground context"
             case .inputMonitoring:
                 return "Measure activity"
+            case .protectedSources:
+                return "Choose protected data sources"
             case .ready:
                 return "Start your timeline"
             }
@@ -320,15 +348,15 @@
 
         var sidebarTitle: String {
             [
-                "Welcome", "Privacy", "Analysis", "Accessibility",
-                "Input Monitoring", "Ready",
+                "Welcome", "Privacy", "Recording", "Accessibility",
+                "Input Monitoring", "Full Disk Access", "Ready",
             ][rawValue]
         }
 
         var sidebarDetail: String {
             [
-                "What the app does", "What stays private", "Metadata or full context",
-                "Foreground context", "Activity signals", "Review and start",
+                "What the app does", "What stays private", "Off until you opt in",
+                "Foreground context", "Activity signals", "Apple and agent sources", "Review and start",
             ][rawValue]
         }
     }

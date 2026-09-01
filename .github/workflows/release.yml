@@ -26,7 +26,7 @@ jobs:
       PRODUCT: Goalong History
       BUNDLE_ID: ai.goalong.localhistory
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Resolve version
         id: version
@@ -51,10 +51,8 @@ jobs:
           API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
         run: |
-          for name in CERTIFICATE CERTIFICATE_PASSWORD SIGN_IDENTITY API_KEY_ID API_ISSUER_ID API_PRIVATE_KEY SPARKLE_PUBLIC_KEY SPARKLE_PRIVATE_KEY; do
+          for name in CERTIFICATE CERTIFICATE_PASSWORD SIGN_IDENTITY API_KEY_ID API_ISSUER_ID API_PRIVATE_KEY; do
             if [[ -z "${!name:-}" ]]; then
               echo "Missing required release secret: $name" >&2
               exit 1
@@ -98,17 +96,14 @@ jobs:
           LOCALHISTORY_ARCHS: arm64 x86_64
           LOCALHISTORY_RUN_TESTS: 1
           LOCALHISTORY_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
-          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
         run: ./scripts/build_app.sh
 
-      - name: Confirm universal architecture, signature, and updater policy
-        env:
-          LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
+      - name: Confirm universal architecture, signature, and privacy policy
         run: |
           lipo -info "dist/Goalong History.app/Contents/MacOS/Goalong History"
           lipo -verify_arch arm64 x86_64 "dist/Goalong History.app/Contents/MacOS/Goalong History"
           codesign --verify --strict --verbose=4 "dist/Goalong History.app"
-          ./scripts/verify_sparkle_bundle.sh
+          ./scripts/verify_local_bundle.sh
 
       - name: Notarize and staple app
         env:
@@ -152,19 +147,20 @@ jobs:
             shasum -a 256 Goalong-History-macOS-universal.zip > Goalong-History-macOS-universal.zip.sha256
           )
 
-      - name: Generate signed Sparkle appcast
-        env:
-          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+      - name: Generate auditable release inventory
         run: |
-          ./scripts/generate_sparkle_appcast.sh \
-            "${{ steps.version.outputs.value }}" \
-            dist/Goalong-History-macOS-universal.zip \
-            dist/appcast.xml
-          test -s dist/appcast.xml
-          grep -q 'sparkle:edSignature=' dist/appcast.xml
+          python3 scripts/generate_security_artifacts.py \
+            --app "dist/Goalong History.app" \
+            --edition unified \
+            --output-dir dist \
+            --include-release-artifacts
+          python3 scripts/verify_security_capabilities.py \
+            --manifest dist/security-capabilities.json \
+            --app "dist/Goalong History.app" \
+            --edition unified
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.value) }}
           name: Goalong History ${{ steps.version.outputs.value }}
@@ -176,4 +172,6 @@ jobs:
             dist/Goalong-History-macOS-universal.dmg.sha256
             dist/Goalong-History-macOS-universal.zip
             dist/Goalong-History-macOS-universal.zip.sha256
-            dist/appcast.xml
+            dist/security-capabilities.json
+            dist/sbom.spdx.json
+            dist/release-manifest.json

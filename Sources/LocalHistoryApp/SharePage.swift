@@ -8,9 +8,9 @@
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(
                     eyebrow: "Selective disclosure",
-                    title: "Share a verified day",
+                    title: "Share a locally signed day",
                     subtitle:
-                        "Set one clear rule for each app and website. Goalong History applies those rules automatically when it creates the package."
+                        "Set one clear rule for each app and website. Goalong verifies its local device signatures and integrity chain before creating the package."
                 ) {
                     HStack(spacing: 10) {
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
@@ -128,7 +128,9 @@
                             : "No sealed minutes are available for this day"
                     )
                     .font(.system(size: 11, weight: .semibold))
-                    Text("Nothing is uploaded by this action. You choose where to save the JSON package.")
+                    Text(
+                        "Offline checks include commitments, chains, device identities and P-256 signatures. Receipt IDs remain references; nothing is uploaded by this action."
+                    )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                 }
@@ -136,7 +138,7 @@
                 Button {
                     model.exportSharePackage()
                 } label: {
-                    Label("Export verified package", systemImage: "square.and.arrow.up")
+                    Label("Export signed package", systemImage: "square.and.arrow.up")
                         .frame(minWidth: 176)
                 }
                 .buttonStyle(.borderedProminent)

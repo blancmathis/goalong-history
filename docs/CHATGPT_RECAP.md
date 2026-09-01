@@ -78,12 +78,62 @@ of inactivity or procrastination.
 7. The app validates the strict five-line result, redacts it again, commits one
    canonical JSON report plus a regenerable Markdown mirror, and removes the
    temporary run directory on a best-effort basis.
+8. Every new run also creates a small immutable proof directory: a signed
+   analysis-definition revision, a metadata-only context manifest, hash-only
+   provider request/response descriptors, the five-line result, the installation
+   public key and one chained ES256 run attestation. The exact generated response
+   is encrypted locally in a separate bounded capsule; the prompt is never
+   retained because it contains source conversation material.
 
 Agent transcript bodies, titles, excerpts, commands, tools, and touched files are
 never added to the Agent Activity index or daily report storage. They exist in
 Goalong memory only while the source is being read and the prompt is assembled.
 The saved report contains only the two scores, five derived lines, source counts,
-model/effort proof fields, timestamps, and the bounded context digest.
+model/effort observation fields, timestamps, the bounded context digest, a small
+local-device attestation and a reference to the immutable proof. The proof stores
+the exact prompt SHA-256 and byte count, never the prompt body. Exported source
+locations are opaque `goalong://` references or hashes; absolute local paths are
+not shared.
+
+## Local analysis proof
+
+New schema-v4 reports keep the compact schema-v3 signature and add a standalone
+proof protocol. Goalong signs the immutable definition and one canonical run
+payload using strict integer-only canonical JSON and compact ES256 JWS. The run
+binds a random execution ID and nonce, monotonic local sequence, previous-run
+hash, day and UTC period, trigger, exact prompt descriptor, context manifest,
+provider response descriptor, parsed five-line result, salted source-commitment
+root, available first/last minute-anchor hashes, requested model/effort, build
+state, key identity and independent external-receipt/App-Attest states.
+
+The verifier checks the strict store-only `.goalong-proof` ZIP profile, every
+listed byte count and digest, both JWS signatures, the public-key ID, every signed
+artifact descriptor, execution/provider/day/source-root consistency, the
+response-to-result link and the salted source Merkle root. Unknown or missing
+schema fields, duplicate/unsafe paths, hidden entries, ZIP64, data descriptors,
+compression and oversized entries fail closed. A producer report is never
+trusted; the CLI regenerates its own report offline.
+
+The context manifest contains provider, opaque stable/reference identifiers,
+timestamps, byte counts, source fingerprints, bounded offsets, coverage states
+and hashes of the transient included projection. It never contains the body of a
+source conversation. A growing source is read to a pinned complete prefix; a
+rewrite, replacement or truncation remains an error.
+
+Only the bounded final assistant response is kept for up to 30 days in an
+AES-256-GCM capsule with one random per-run DEK stored as a `ThisDeviceOnly`
+Keychain item. Authenticated metadata binds the execution, artifact kind, format
+and plaintext hash. Deleting the DEK first provides cryptographic deletion. The
+complete prompt remains hash-only and cannot be reconstructed by Goalong after
+the run.
+
+This is deliberately described as **locally signed**, not generically
+"verified." It proves that the included local device key signed those exact
+claims. It does not prove that OpenAI authored the response, that the official
+Goalong build produced it, or that Apple App Attest or an external timestamp
+service accepted it. Existing schema-v2 reports remain **Legacy unsigned**.
+Schema-v3 reports remain locally signed but have no standalone proof. Neither is
+promoted retroactively; regenerate a day to create a schema-v4 proof.
 
 Legacy normalized ChatGPT-export files are retained for backwards compatibility
 if they already exist, but the Activity report does not read them and the Activity
@@ -113,8 +163,12 @@ and a small buffer for the previous day's local journal to settle.
 
 New report Markdown is limited to 8 KiB and canonical JSON to 64 KiB. Each line
 is limited to 512 UTF-8 bytes. Existing schema-v1 reports can still be read under
-their legacy limits and appear as legacy reports until regenerated; every new
-write must satisfy the schema-v2 five-line contract.
+their legacy limits and appear as legacy reports until regenerated; schema-v2
+five-line reports remain readable as legacy unsigned reports and schema-v3
+reports retain their compact local signature. Every new production run writes
+the schema-v4 contract and a bounded proof. Typical metadata-only proofs are
+under 16 KiB; hard limits remain 32 KiB for a signed run, 4 MiB per package entry
+and 16 MiB per package. Proof creation adds no resident process or polling loop.
 
 The canonical JSON is committed last. If that commit fails, the Markdown mirror
 is restored or removed so readers never accept a partially advanced report.

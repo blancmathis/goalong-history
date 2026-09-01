@@ -388,7 +388,7 @@ final class ComputerHistoryEpisodeQualityTests: XCTestCase {
     func testFileResourceStopsAtItsExtensionInsteadOfAbsorbingFollowingProse() {
         let context = payload(
             id: "path-with-following-prose",
-            text: "Read /Users/mathisblanc/Documents/work/UPLOAD_STATE.md et considère ce fichier comme la vérité courante.",
+            text: "Read /Users/example/Documents/work/UPLOAD_STATE.md et considère ce fichier comme la vérité courante.",
             offset: 0
         )
         let event = fixtureEvent(
@@ -417,7 +417,7 @@ final class ComputerHistoryEpisodeQualityTests: XCTestCase {
 
         let file = memory.resources.first { $0.kind == .file }
         XCTAssertEqual(file?.title, "UPLOAD_STATE.md")
-        XCTAssertEqual(file?.localPath, "/Users/mathisblanc/Documents/work/UPLOAD_STATE.md")
+        XCTAssertEqual(file?.localPath, "/Users/example/Documents/work/UPLOAD_STATE.md")
     }
 
     func testLocalIntranetHostRemainsAReopenableWebResource() {

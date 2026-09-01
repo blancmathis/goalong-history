@@ -189,13 +189,26 @@
                 screenTime.components(separatedBy: "LazyVStack(spacing: 0)").count - 1,
                 2
             )
-            XCTAssertTrue(
-                screenTime.contains(
-                    "All active-use applications for the selected device scope. Login, lock-screen, and screen-saver time is excluded."
-                )
-            )
+            XCTAssertTrue(screenTime.contains("Where your screen time went"))
+            XCTAssertTrue(screenTime.contains("Group sites by browser"))
+            XCTAssertTrue(screenTime.contains("Same usage and total; only the grouping changes."))
+            XCTAssertTrue(screenTime.contains("isOn: groupsSitesByBrowser"))
+            XCTAssertFalse(screenTime.contains("Picker(\"Screen Time breakdown\""))
+            XCTAssertTrue(screenTime.contains("DisclosureGroup"))
+            XCTAssertTrue(screenTime.contains("Show \\(hiddenCount) more"))
+            XCTAssertFalse(screenTime.contains("Apps & website breakdown"))
+            XCTAssertFalse(screenTime.contains("Inside browser apps · This Mac only · never added"))
             XCTAssertFalse(screenTime.contains("with input"))
             XCTAssertFalse(overview.contains("with input"))
+            XCTAssertTrue(overview.contains("Where your screen time went"))
+            XCTAssertTrue(overview.contains("Group sites by browser"))
+            XCTAssertTrue(overview.contains("Same usage and total; only the grouping changes."))
+            XCTAssertTrue(overview.contains("isOn: groupsSitesByBrowser"))
+            XCTAssertFalse(overview.contains("Picker(\"Screen Time breakdown\""))
+            XCTAssertTrue(overview.contains("DisclosureGroup"))
+            XCTAssertTrue(overview.contains("Show \\(hiddenCount) more"))
+            XCTAssertFalse(overview.contains("Website breakdown"))
+            XCTAssertFalse(overview.contains("Inside browser apps · This Mac only · never added"))
             XCTAssertTrue(overview.contains("Include login and lock-screen time"))
             XCTAssertTrue(
                 overview.contains(

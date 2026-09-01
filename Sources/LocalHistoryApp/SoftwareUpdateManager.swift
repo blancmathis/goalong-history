@@ -159,6 +159,17 @@
             }
         }
 
+        func stop() {
+            guard hasStarted else { return }
+            updaterController = nil
+            hasStarted = false
+            isConfigured = false
+            isChecking = false
+            automaticallyChecksForUpdates = false
+            presentationState = SoftwareUpdatePresentationState()
+            statusMessage = "Automatic update checks are off."
+        }
+
         func refreshAvailableUpdate() {
             guard let updater = updaterController?.updater, updater.canCheckForUpdates else { return }
             guard !updater.sessionInProgress else { return }
@@ -210,7 +221,10 @@
         }
 
         func openRollingReleasePage() {
-            NSWorkspace.shared.open(ProductIdentity.rollingReleasePageURL)
+            GoalongWorkspaceOpenPolicy.open(
+                ProductIdentity.rollingReleasePageURL,
+                purpose: .updatePage
+            )
         }
 
         func setAutomaticallyChecksForUpdates(_ enabled: Bool) {

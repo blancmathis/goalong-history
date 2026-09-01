@@ -10,11 +10,16 @@ trap '/bin/rm -rf -- "$TEST_ROOT"' EXIT
 APP="$TEST_ROOT/Goalong History.app"
 BIN="$TEST_ROOT/bin"
 /bin/mkdir -p "$APP/Contents/MacOS" "$BIN"
-/bin/cp /usr/bin/true "$APP/Contents/MacOS/goalong"
+/bin/cp /usr/bin/true "$APP/Contents/MacOS/Goalong History"
+/usr/bin/printf '%s\n' \
+  '<?xml version="1.0" encoding="UTF-8"?>' \
+  '<plist version="1.0"><dict>' \
+  '<key>CFBundleExecutable</key><string>Goalong History</string>' \
+  '</dict></plist>' > "$APP/Contents/Info.plist"
 
 install_goalong_cli_link "$APP" "$BIN"
 [[ -L "$BIN/goalong" ]]
-[[ "$(/usr/bin/readlink "$BIN/goalong")" == "$APP/Contents/MacOS/goalong" ]]
+[[ "$(/usr/bin/readlink "$BIN/goalong")" == "$APP/Contents/MacOS/Goalong History" ]]
 
 /bin/rm "$BIN/goalong"
 /usr/bin/printf '%s\n' 'owned by user' > "$BIN/goalong"

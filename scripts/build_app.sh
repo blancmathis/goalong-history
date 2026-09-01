@@ -5,8 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORE_BUILDER="$ROOT_DIR/scripts/build_app_core.sh"
 CODESIGN_POLICY="$ROOT_DIR/scripts/codesign_policy.sh"
 SOURCE_CODESIGN_IDENTITY="$ROOT_DIR/scripts/source_codesign_identity.sh"
-APP_NAME="Goalong History"
-BUNDLE_ID="ai.goalong.localhistory"
+BUILD_EDITION="unified"
+APP_NAME="${LOCALHISTORY_APP_NAME:-Goalong History}"
+BUNDLE_ID="${LOCALHISTORY_BUNDLE_ID:-ai.goalong.localhistory}"
 DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Goalong History}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
 if [[ ! -f "$SOURCE_CODESIGN_IDENTITY" ]]; then
@@ -52,7 +53,7 @@ fi
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$INFO_PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $DISPLAY_NAME" "$INFO_PLIST"
 /usr/libexec/PlistBuddy -c "Set :NSAccessibilityUsageDescription $DISPLAY_NAME uses Accessibility to understand the foreground app, window, permitted URL, focused control, and clicked interface element. It never controls your Mac." "$INFO_PLIST"
-/usr/libexec/PlistBuddy -c "Set :NSInputMonitoringUsageDescription $DISPLAY_NAME uses event-listening access to count clicks, scrolling, shortcuts, navigation keys, and typing duration. It never stores typed characters, passwords, or clipboard contents." "$INFO_PLIST"
+/usr/libexec/PlistBuddy -c "Set :NSInputMonitoringUsageDescription $DISPLAY_NAME uses event-listening access to count clicks, scrolling, coarse shortcut or navigation activity, and typing duration. It never stores typed characters, exact keys, passwords, or clipboard contents." "$INFO_PLIST"
 /usr/bin/plutil -lint "$INFO_PLIST" >/dev/null
 
 for locale in en fr; do
@@ -83,7 +84,17 @@ fi
 LOCALHISTORY_APP_PATH="$APP_PATH" \
 LOCALHISTORY_DISPLAY_NAME="$DISPLAY_NAME" \
 LOCALHISTORY_REQUIRE_LOCALIZED_NAME=1 \
-  "$ROOT_DIR/scripts/verify_sparkle_bundle.sh"
+  "$ROOT_DIR/scripts/verify_local_bundle.sh"
+
+/usr/bin/python3 "$ROOT_DIR/scripts/generate_security_artifacts.py" \
+  --app "$APP_PATH" \
+  --edition "$BUILD_EDITION" \
+  --output-dir "$OUTPUT_DIR" \
+  --source-root "$ROOT_DIR"
+/usr/bin/python3 "$ROOT_DIR/scripts/verify_security_capabilities.py" \
+  --manifest "$OUTPUT_DIR/security-capabilities.json" \
+  --app "$APP_PATH" \
+  --edition "$BUILD_EDITION"
 
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")" = "$DISPLAY_NAME"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")" = "$DISPLAY_NAME"
@@ -93,3 +104,4 @@ for locale in en fr; do
   test "$(/usr/bin/plutil -extract CFBundleName raw -o - "$localized")" = "$DISPLAY_NAME"
 done
 printf 'Finalized %s at %s\n' "$DISPLAY_NAME" "$APP_PATH"
+printf 'Security artifacts: %s\n' "$OUTPUT_DIR/security-capabilities.json"

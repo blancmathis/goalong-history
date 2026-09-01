@@ -48,7 +48,7 @@ public struct RecorderConfig: Codable, Equatable {
         maxStringLength: Int,
         verificationServerURL: String? = nil,
         verificationEnabled: Bool? = false,
-        enableAppAttest: Bool? = true,
+        enableAppAttest: Bool? = false,
         excludedBundleIdentifiers: [String],
         excludedDomains: [String],
         includedBundleIdentifiers: [String]? = nil,
@@ -85,18 +85,18 @@ public struct RecorderConfig: Codable, Equatable {
         retentionDays: 30,
         pollIntervalMilliseconds: 650,
         heartbeatSeconds: 60,
-        captureClicks: true,
-        captureScroll: true,
-        captureKeyboardActivity: true,
-        captureShortcuts: true,
-        captureWindowTitles: true,
-        captureElementLabels: true,
-        captureURLs: true,
+        captureClicks: false,
+        captureScroll: false,
+        captureKeyboardActivity: false,
+        captureShortcuts: false,
+        captureWindowTitles: false,
+        captureElementLabels: false,
+        captureURLs: false,
         redactAllURLQueryValues: true,
         maxStringLength: 512,
         verificationServerURL: nil,
         verificationEnabled: false,
-        enableAppAttest: true,
+        enableAppAttest: false,
         excludedBundleIdentifiers: [
             "ai.goalong.localhistory",
             "com.apple.Passwords",
@@ -229,7 +229,7 @@ public struct RecorderConfig: Codable, Equatable {
             output.verificationServerURL = nil
         }
         output.verificationEnabled = output.verificationEnabled ?? false
-        output.enableAppAttest = output.enableAppAttest ?? true
+        output.enableAppAttest = output.enableAppAttest ?? false
 
         output.excludedBundleIdentifiers = Self.cleanedList(
             output.excludedBundleIdentifiers,

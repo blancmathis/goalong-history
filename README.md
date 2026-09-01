@@ -7,7 +7,7 @@
 
 A native menu-bar app that turns foreground activity into a clear local timeline, seals it against later rewriting, and lets the user disclose only what they choose.
 
-[Install the audited source build](#build-from-source) · [Guide français](GUIDE_FR.md) · [Security model](SECURITY.md)
+[Install the audited source build](#build-from-source) · [Guide français](GUIDE_FR.md) · [Security and privacy](docs/INDEX.md)
 </div>
 
 > **Agent Activity privacy notice:** the currently published `latest-main` bundle predates
@@ -29,13 +29,17 @@ After installation, open **Goalong History** and follow the native setup assista
 compatible with macOS 13 Ventura or later. A source build automatically uses an available Apple
 Development identity for stable local permissions; without one it warns and falls back to ad-hoc signing.
 
-The first launch guides the user through five focused screens:
+The first launch guides the user through focused, skippable screens. Every sensitive capability is off until the user enables it:
 
 1. what Goalong History does;
 2. the exact privacy boundary;
-3. Accessibility, explained and requested in context;
-4. Input Monitoring, explained and requested separately;
-5. a final health check and an explicit “start at login” choice.
+3. an explicit Computer History choice, off by default;
+4. Accessibility and Input Monitoring, requested only when Computer History was enabled;
+5. separate Apple Screen Time and AI-conversation choices, both off by default;
+6. a final health check and an explicit “start at login” choice, also off by default.
+
+macOS permission state never counts as Goalong consent. A previously granted Full Disk Access,
+Accessibility or Input Monitoring switch cannot silently reactivate a Goalong source.
 
 The installed app also provides a read-only `goalong` terminal command for users and local agents. It exposes Computer History, detailed Apple Screen Time, direct-source AI conversations, available dates, daily recaps, and bounded agent context as JSON without creating a second history store or background process. See [`docs/CLI.md`](docs/CLI.md).
 
@@ -43,13 +47,13 @@ Permission state updates live. Every step includes a direct System Settings rout
 
 ## What the app records
 
-When the relevant macOS permissions are granted, Goalong History can store:
+When both the relevant Goalong capability and macOS permission are enabled, Goalong History can store:
 
 - the active app and bundle identifier;
 - active window title and accessible control metadata;
 - a cleaned browser URL where available and allowed;
 - clicks and grouped scroll activity;
-- shortcuts and navigation keys;
+- generic shortcut and navigation activity, without exact keys or modifiers;
 - typing count and duration, **never the characters**;
 - app, window, focus, lock, sleep, pause, and suppression transitions;
 - limited Core Graphics input-origin signals.
@@ -66,6 +70,7 @@ This abridged tree includes the principal preserved data stores:
 ```text
 ~/Library/Application Support/LocalHistory/
 ├── config.json
+├── capability-consent.json   # created after a choice; absence fails closed to all-off
 ├── sharing-rules.json
 ├── integrity-state.json
 ├── diagnostics.log
@@ -81,12 +86,21 @@ This abridged tree includes the principal preserved data stores:
 ├── computer-history/
 ├── apple-screen-time/
 ├── agent-activity-v2/
+├── chatgpt/
+│   ├── recaps/
+│   └── proofs/          # small signed metadata, never transcript bodies
 └── shares/
 ```
 
 Directories use mode `0700`; detailed files use mode `0600`.
 
-Verification networking is disabled by default. When the user enables it, the only live upload is an opaque minute commitment. App names, URLs, window titles, clicks, categories, event roots, event counts, and local event timestamps are not included in that upload.
+There is exactly one public application: **Goalong History**, bundle identifier
+`ai.goalong.localhistory`. Its compiled target contains no Goalong first-party HTTP uploader,
+App Attest transport or in-app updater. Optional ChatGPT analysis starts the fixed local Codex
+`app-server` process only after its own consent; this is the sole intentional external-analysis
+path. Full Disk Access readers still share the main app process, which is documented as a
+remaining limitation rather than hidden behind an “offline” label. See
+[`docs/GUARANTEES.md`](docs/GUARANTEES.md).
 
 ## Verifiable without forcing disclosure
 
@@ -98,7 +112,7 @@ time · application · website · context · activity · classification · cover
 
 Each group receives a random 256-bit salt and SHA-256 commitment. Those commitments form an event Merkle root. Event roots are chained with a monotonic sequence and the previous event hash.
 
-Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. Goalong History first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable Developer ID build. Ad-hoc builds, including the current rolling release, use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
+Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. Goalong History first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable certificate-backed build. Ad-hoc development builds use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation. Public releases are accepted only when Developer ID signed and notarized by Apple.
 
 Signing identities are scoped to the app's designated code-signing requirement. If that requirement changes, Goalong History records a visible identity rotation and keeps the existing chain data instead of repeatedly requesting access to an incompatible old key. A refused authentication attempt also suspends background signing for that launch, so it can never create a password dialog every minute.
 
@@ -108,7 +122,18 @@ The contextual **Share day** action stores one rule for every observed applicati
 - show only its category;
 - hide its identifying details.
 
-Website rules take priority over the containing browser rule. The original JSONL is never rewritten. Export creates a separate `*.verified-share.json` package containing only the selected event-level openings and the hashes required to reconstruct the already-sealed roots. Every sealed minute remains represented, so anonymization cannot silently turn into omission.
+Website rules take priority over the containing browser rule. The original JSONL is never rewritten. Export creates a separate `*.signed-share.json` package containing only the selected event-level openings and the hashes required to reconstruct the already-sealed roots. Before writing it, Goalong recomputes the disclosed commitments, day and boundary links, device identities, and every included P-256 signature. `goalong verify-share PATH` repeats those checks offline. Every sealed minute remains represented, so anonymization cannot silently turn into omission. Receipt IDs, trust-tier labels, export time and classifier version remain explicitly unverified metadata in the current package rather than being presented as App Attest proof.
+
+New daily AI analyses use the same honest separation of claims. Goalong signs a
+metadata-only context manifest, exact prompt/response hashes, the five-line
+result and the run chain into a bounded ES256 proof. The complete prompt and
+source conversations are never copied; only the bounded generated response is
+temporarily encrypted with a per-run Keychain key. `goalong export-proof` creates
+a path-redacted `.goalong-proof`, and `goalong verify-proof` independently checks
+its strict ZIP inventory, hashes, source commitments, artifact links and local
+signatures offline. Provider authorship, App Attest and an external timestamp
+remain separate and are reported as absent unless their own signed evidence is
+actually included.
 
 ## Native dashboard
 
@@ -132,7 +157,9 @@ A menu-bar control keeps pause/resume, status, dashboard access, and sharing imm
 
 Start-at-login is an explicit onboarding choice implemented with Apple’s `SMAppService`. Goalong History no longer installs a hand-written LaunchAgent. Upgrading preserves the local history and settings directory.
 
-A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. The current audited source build deliberately disables in-app updates so it cannot consume the older public Agent Activity bundle. Update controls can be enabled again only in a compatible Sparkle release that carries the direct-source privacy marker and passes the installer’s identity, signature, checksum, and update-policy checks.
+A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. The
+single app has no in-app updater. Releases are downloaded and replaced manually so the exact
+signed artifact, SHA-256 inventory and capability manifest can be inspected before installation.
 
 ## Build from source
 
@@ -153,7 +180,7 @@ Or run the individual quality gates:
 
 ```bash
 swift test
-./scripts/audit_privacy_boundaries.sh
+./scripts/verify_source_security.sh --with-tests
 LOCALHISTORY_ARCHS="$(uname -m)" ./scripts/build_app.sh
 ```
 
@@ -167,15 +194,23 @@ make dmg
 make install-source
 ```
 
-The build script creates a real `.app` bundle, generates the `.icns` asset, writes the release Info.plist, code signs the bundle, and verifies it. Local builds automatically use a stable Apple Development identity when available. Public rolling builds require Developer ID, Hardened Runtime, notarization, and a separate Sparkle EdDSA signature.
+The build script creates the single `.app` bundle, generates the `.icns` asset, writes the release
+Info.plist, code signs the bundle, and verifies it. It also generates
+`security-capabilities.json`, an SPDX SBOM and `release-manifest.json` from the final signed
+artifact. Local builds automatically use a stable Apple Development identity when available.
+Public releases require Developer ID, Hardened Runtime and notarization.
 
 ## Release pipeline
 
-Every successful merge to `main` attempts to increment the last published visible patch version (`0.5.1` → `0.5.2` → `0.5.3`), build both architectures, create the universal binary, verify the Sparkle configuration, create the branded DMG and ZIP, sign the update archive and feed with EdDSA, and replace the `latest-main` prerelease. Publication is skipped unless Developer ID signing and notarization credentials are complete; no ad-hoc public artifact is built. The repository [`VERSION`](VERSION) file can request a larger next version such as `0.6.0`; automatic patch increments continue from there. Sparkle keeps a separate monotonic `5000.x.y` build number for update ordering. The separate stable-tag workflow remains reserved for explicit stable releases.
+Every successful merge to `main` can build both architectures, create the universal binary,
+verify the single-app security manifest, create the branded DMG and ZIP, and replace the
+`latest-main` prerelease. Publication is skipped unless Developer ID signing and notarization
+credentials are complete; no ad-hoc public artifact is published. Updates remain manual and
+auditable. The separate stable-tag workflow remains reserved for explicit stable releases.
 
 Release credentials and the exact process are documented in [`docs/RELEASING.md`](docs/RELEASING.md). Installation design principles are documented in [`docs/INSTALLATION_UX.md`](docs/INSTALLATION_UX.md).
 
-## Reference verification server
+## Archived reference verification server
 
 The included backend is deliberately a reference implementation:
 
@@ -187,19 +222,20 @@ pip install -r requirements.txt
 uvicorn app:app --host 127.0.0.1 --port 8787
 ```
 
-Then enable opaque minute commitments under **Settings → Anti-tamper verification** and use:
-
-```text
-http://127.0.0.1:8787
-```
-
-HTTP is accepted only for localhost development. Use authenticated accounts, HTTPS, rate limits, challenge expiry, append-only or audited anchor storage, and a production App Attest verifier before presenting activity as platform-verified.
+The repository retains a reference server for protocol research, but the single public app does
+not contain its uploader and cannot send data to it. Reintroducing any remote verification path
+requires a new explicit design review, consent surface, manifest entry and release gate.
 
 ## Honest trust boundary
 
-The defensible claim is:
+The defensible local-only claim is:
 
-> The official client observed and committed these data at those times; the disclosed fields match the live anchors and were not rewritten later.
+> The disclosed fields match the included commitments, and the included local device key signed the linked minute anchors.
+
+That local proof does not authenticate the official Goalong build, Apple App Attest,
+an external timestamp, or an AI provider. Those stronger claims require their own
+independently verifiable evidence and are never inferred from a receipt ID or a
+locally saved model name.
 
 It is not proof of a person’s identity, internal attention, or intellectual effort. Hardware HID emulation, another person at the keyboard, remote hardware, and a compromised operating system remain fundamental limits.
 

@@ -25,7 +25,8 @@
                     }),
                     latestAppleUpdate: collection.latestAppleUpdate,
                     knowledgeIntervalCount: collection.knowledgeIntervalCount,
-                    biomeIntervalCount: collection.biomeIntervalCount
+                    biomeIntervalCount: collection.biomeIntervalCount,
+                    screenTimeAppUsageIntervalCount: collection.screenTimeAppUsageIntervalCount
                 )
             }
 
@@ -74,7 +75,8 @@
                 deviceSourceLabels: labels,
                 latestAppleUpdate: collection.latestAppleUpdate,
                 knowledgeIntervalCount: collection.knowledgeIntervalCount,
-                biomeIntervalCount: collection.biomeIntervalCount
+                biomeIntervalCount: collection.biomeIntervalCount,
+                screenTimeAppUsageIntervalCount: collection.screenTimeAppUsageIntervalCount
             )
         }
 

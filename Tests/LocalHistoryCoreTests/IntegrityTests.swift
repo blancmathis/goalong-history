@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 
@@ -117,11 +118,23 @@ final class IntegrityTests: XCTestCase {
         XCTAssertTrue(disclosure.verifiesRoot())
         XCTAssertNotNil(disclosure.fieldCommitments.first(where: { $0.name == "application" })?.opening)
         XCTAssertNil(disclosure.fieldCommitments.first(where: { $0.name == "context" })?.opening)
+
+        let injectedRawEvent = EventDisclosure(
+            eventRoot: disclosure.eventRoot,
+            fieldCommitments: disclosure.fieldCommitments,
+            rawEvent: HistoryEvent(
+                sessionID: "unsigned-injected-event",
+                kind: .applicationActivated
+            ),
+            schemaVersion: disclosure.schemaVersion,
+            shareLevel: disclosure.shareLevel
+        )
+        XCTAssertFalse(injectedRawEvent.verifiesRoot())
     }
 
     func testPrivateMinuteVerifiesWithoutRevealingEvents() {
         let minuteFields = IntegrityDomains.minuteFieldOrder.enumerated().map { index, name in
-            CommitmentBuilder.makeMinute(
+            return CommitmentBuilder.makeMinute(
                 name: name,
                 fields: ["value": "hidden-\(name)"],
                 salt: Data(repeating: UInt8(index + 11), count: 32)
@@ -158,6 +171,154 @@ final class IntegrityTests: XCTestCase {
         XCTAssertTrue(disclosure.verifiesStructure())
         XCTAssertNil(disclosure.minuteFields.first(where: { $0.name == "events_root" })?.opening)
         XCTAssertNil(disclosure.minuteFields.first(where: { $0.name == "event_count" })?.opening)
+    }
+
+    func testSharePackageRequiresAuthenticP256DeviceSignatures() throws {
+        let minuteFields = IntegrityDomains.minuteFieldOrder.enumerated().map { index, name in
+            let fields = name == "time"
+                ? ["local_day": "2026-08-31"]
+                : ["value": "signed-\(name)"]
+            return CommitmentBuilder.makeMinute(
+                name: name,
+                fields: fields,
+                salt: Data(repeating: UInt8(index + 31), count: 32)
+            )
+        }
+        let commitments = Dictionary(
+            uniqueKeysWithValues: minuteFields.map { ($0.name, $0.commitmentHex) }
+        )
+        let minuteRoot = MerkleTree.root(
+            labeledHexValues: IntegrityDomains.minuteFieldOrder.map {
+                ($0, commitments[$0]!)
+            }
+        )
+        let previous = String(repeating: "0", count: 64)
+        let key = P256.Signing.PrivateKey()
+        let publicKeyData = key.publicKey.x963Representation
+        let deviceID = SHA256Digest.hashHex(publicKeyData)
+        let message = ChainHash.signingMessage(
+            deviceID: deviceID,
+            sequence: 7,
+            previous: previous,
+            minuteRoot: minuteRoot
+        )
+        let signature = try key.signature(for: message)
+        let disclosure = MinuteDisclosure(
+            anchorSequence: 7,
+            minuteRoot: minuteRoot,
+            previousAnchorHash: previous,
+            anchorHash: ChainHash.anchor(sequence: 7, previous: previous, minuteRoot: minuteRoot),
+            shareLevel: .privateOnly,
+            minuteFields: minuteFields.map {
+                FieldDisclosure(
+                    name: $0.name,
+                    commitmentHex: $0.commitmentHex,
+                    opening: ["time", "coverage"].contains($0.name) ? $0.opening : nil
+                )
+            },
+            eventRoots: nil,
+            events: nil,
+            signatureBase64: signature.derRepresentation.base64EncodedString(),
+            signatureAlgorithm: AnchorSignatureVerifier.supportedAlgorithm,
+            publicKeyBase64: publicKeyData.base64EncodedString(),
+            deviceID: deviceID,
+            trustTier: "keychain_software",
+            liveReceiptID: "opaque-reference"
+        )
+
+        XCTAssertTrue(disclosure.verifiesLocallySignedIntegrity())
+        let package = DaySharePackage(
+            deviceID: deviceID,
+            deviceIDs: [deviceID],
+            localDay: "2026-08-31",
+            classifierVersion: "test",
+            minutes: [disclosure]
+        )
+        let validReport = package.verificationReport()
+        XCTAssertTrue(validReport.isLocallyValid)
+        XCTAssertEqual(validReport.validDeviceSignatureCount, 1)
+        XCTAssertEqual(validReport.referencedServerReceiptCount, 1)
+        XCTAssertTrue(validReport.limitation.contains("references only"))
+        XCTAssertTrue(validReport.unverifiedMetadataFields.contains("minute.liveReceiptID"))
+
+        for supportedSchema in 2...4 {
+            let supportedReport = DaySharePackage(
+                schemaVersion: supportedSchema,
+                deviceID: deviceID,
+                deviceIDs: [deviceID],
+                localDay: "2026-08-31",
+                classifierVersion: "test",
+                minutes: [disclosure]
+            ).verificationReport()
+            XCTAssertTrue(supportedReport.isLocallyValid)
+        }
+
+        let duplicateMinuteField = MinuteDisclosure(
+            anchorSequence: disclosure.anchorSequence,
+            minuteRoot: disclosure.minuteRoot,
+            previousAnchorHash: disclosure.previousAnchorHash,
+            anchorHash: disclosure.anchorHash,
+            shareLevel: disclosure.shareLevel,
+            minuteFields: disclosure.minuteFields + [disclosure.minuteFields[0]],
+            eventRoots: disclosure.eventRoots,
+            events: disclosure.events,
+            signatureBase64: disclosure.signatureBase64,
+            signatureAlgorithm: disclosure.signatureAlgorithm,
+            publicKeyBase64: disclosure.publicKeyBase64,
+            deviceID: disclosure.deviceID,
+            trustTier: disclosure.trustTier,
+            liveReceiptID: disclosure.liveReceiptID
+        )
+        XCTAssertFalse(duplicateMinuteField.verifiesStructure())
+
+        let unsupportedSchemaReport = DaySharePackage(
+            schemaVersion: 99,
+            deviceID: deviceID,
+            deviceIDs: [deviceID],
+            localDay: "2026-08-31",
+            classifierVersion: "test",
+            minutes: [disclosure]
+        ).verificationReport()
+        XCTAssertFalse(unsupportedSchemaReport.isLocallyValid)
+        XCTAssertTrue(unsupportedSchemaReport.issues.contains("unsupported_package_schema"))
+
+        let wrongDayReport = DaySharePackage(
+            deviceID: deviceID,
+            deviceIDs: [deviceID],
+            localDay: "2026-09-01",
+            classifierVersion: "test",
+            minutes: [disclosure]
+        ).verificationReport()
+        XCTAssertFalse(wrongDayReport.isLocallyValid)
+        XCTAssertTrue(wrongDayReport.issues.contains("minute_7_local_day_invalid"))
+
+        let tamperedSignature = MinuteDisclosure(
+            anchorSequence: disclosure.anchorSequence,
+            minuteRoot: disclosure.minuteRoot,
+            previousAnchorHash: disclosure.previousAnchorHash,
+            anchorHash: disclosure.anchorHash,
+            shareLevel: disclosure.shareLevel,
+            minuteFields: disclosure.minuteFields,
+            eventRoots: disclosure.eventRoots,
+            events: disclosure.events,
+            signatureBase64: Data("tampered".utf8).base64EncodedString(),
+            signatureAlgorithm: disclosure.signatureAlgorithm,
+            publicKeyBase64: disclosure.publicKeyBase64,
+            deviceID: disclosure.deviceID,
+            trustTier: disclosure.trustTier,
+            liveReceiptID: disclosure.liveReceiptID
+        )
+        let tamperedReport = DaySharePackage(
+            deviceID: deviceID,
+            deviceIDs: [deviceID],
+            localDay: "2026-08-31",
+            classifierVersion: "test",
+            minutes: [tamperedSignature]
+        ).verificationReport()
+        XCTAssertFalse(tamperedReport.isLocallyValid)
+        XCTAssertEqual(tamperedReport.validStructureCount, 1)
+        XCTAssertEqual(tamperedReport.validDeviceSignatureCount, 0)
+        XCTAssertTrue(tamperedReport.issues.contains("minute_7_device_signature_invalid"))
     }
 
     func testV3WebsiteDisclosureRevealsHostWithoutOpeningContext() {
@@ -201,6 +362,24 @@ final class IntegrityTests: XCTestCase {
         )
         XCTAssertNil(disclosure.fieldCommitments.first(where: { $0.name == "context" })?.opening)
         XCTAssertNil(disclosure.fieldCommitments.first(where: { $0.name == "application" })?.opening)
+
+        let duplicate = EventDisclosure(
+            eventRoot: disclosure.eventRoot,
+            fieldCommitments: disclosure.fieldCommitments + [disclosure.fieldCommitments[0]],
+            rawEvent: nil,
+            schemaVersion: disclosure.schemaVersion,
+            shareLevel: disclosure.shareLevel
+        )
+        XCTAssertFalse(duplicate.verifiesRoot())
+
+        let unsupportedSchema = EventDisclosure(
+            eventRoot: disclosure.eventRoot,
+            fieldCommitments: disclosure.fieldCommitments,
+            rawEvent: nil,
+            schemaVersion: 99,
+            shareLevel: disclosure.shareLevel
+        )
+        XCTAssertFalse(unsupportedSchema.verifiesRoot())
     }
 
     func testSchemaV5EventPersistsPackedMaterialAndRehydratesFullCommitments() throws {

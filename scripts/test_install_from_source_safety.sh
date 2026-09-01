@@ -30,6 +30,7 @@ make_fixture_bundle() {
   /usr/bin/plutil -insert CFBundleExecutable -string "$EXECUTABLE_NAME" "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert CFBundlePackageType -string APPL "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert CFBundleVersion -string "$build_number" "$app_bundle/Contents/Info.plist"
+  /usr/bin/plutil -insert GoalongBuildEdition -string unified "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert LocalHistoryAgentActivityDirectSourceV2 -bool true "$app_bundle/Contents/Info.plist"
   /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle/Contents/MacOS/goalong" >/dev/null 2>&1
   /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle" >/dev/null 2>&1
@@ -113,6 +114,16 @@ finalize_replacement
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$TARGET_APP/Contents/Info.plist")" == "2" ]]
 [[ ! -e "$BACKUP_APP" && ! -L "$BACKUP_APP" ]]
 
+obsolete_local_app="$TEST_ROOT/$OBSOLETE_LOCAL_APP_NAME.app"
+make_fixture_bundle "$obsolete_local_app" "$OBSOLETE_LOCAL_BUNDLE_ID" "1"
+remove_verified_obsolete_local_bundle "$obsolete_local_app"
+[[ ! -e "$obsolete_local_app" && ! -L "$obsolete_local_app" ]]
+
+unexpected_local_app="$TEST_ROOT/unexpected-$OBSOLETE_LOCAL_APP_NAME.app"
+make_fixture_bundle "$unexpected_local_app" "example.unrelated.local" "1"
+remove_verified_obsolete_local_bundle "$unexpected_local_app"
+[[ -d "$unexpected_local_app" && ! -L "$unexpected_local_app" ]]
+
 INSTALL_STAGE_ROOT="$TARGET_DIR/.goalong-history-source-stage.rollback"
 /bin/mkdir -p "$INSTALL_STAGE_ROOT"
 make_fixture_bundle "$INSTALL_STAGE_ROOT/$APP_NAME.app" "invalid.example.bundle" "3"
@@ -172,4 +183,4 @@ if [[ "$marker_audit_status" -eq 0 ]] || ! /usr/bin/grep -Fq 'Legacy Agent Activ
   exit 1
 fi
 
-echo "Source installer safety tests passed: forced tests, unique target selection, symlink refusal, exact identity, staged validation, rollback, verbose state preservation, binary audit and bounded logs."
+echo "Source installer safety tests passed: forced tests, unique target selection, symlink refusal, exact identities, single-app cleanup, staged validation, rollback, verbose state preservation, binary audit and bounded logs."

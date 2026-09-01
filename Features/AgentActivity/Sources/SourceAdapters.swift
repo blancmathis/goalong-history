@@ -2531,7 +2531,8 @@ enum AgentDirectSourceReader {
             min(maximumBytes, bodyReadBudget.limits.maximumBytes)
         )
         let ext = url.pathExtension.lowercased()
-        if initial.byteCount > effectiveMaximumBytes,
+        let preferredFullIntervalScanBytes: Int64 = 8 * 1_024 * 1_024
+        if initial.byteCount > min(effectiveMaximumBytes, preferredFullIntervalScanBytes),
             analyzeContent,
             let analysisInterval,
             [.codex, .claudeCode].contains(provider),
@@ -2697,11 +2698,12 @@ enum AgentDirectSourceReader {
     }
 
     /// Reads only the chronological tail needed for one selected day when a JSONL transcript
-    /// exceeds the configured full-source ceiling. The original file remains open read-only,
-    /// the projection is never persisted, and the byte budget bounds both timestamp probes and
-    /// the final streamed slice. Codex/Claude JSONL timestamps are chronological, so a small
-    /// exponentially widened tail usually covers a continued older conversation without
-    /// rereading hundreds of megabytes of prior turns.
+    /// exceeds the smaller of the configured source ceiling and the preferred 8 MiB full-scan
+    /// ceiling. The original file remains open read-only, the projection is never persisted,
+    /// and the byte budget bounds both timestamp probes and the final streamed slice.
+    /// Codex/Claude JSONL timestamps are chronological, so a small exponentially widened tail
+    /// usually covers a continued older conversation without rereading hundreds of megabytes
+    /// of prior turns.
     private static func streamChronologicalJSONLProjection(
         at url: URL,
         descriptor: Int32,

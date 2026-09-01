@@ -11,6 +11,10 @@
 
     extension DeviceIdentity: MinuteSealSigningIdentity {}
 
+    protocol MinuteSealUploader: AnyObject {
+        func enqueue(_ seal: LocalMinuteSeal)
+    }
+
     struct MinuteSealerRuntimeSnapshot: Equatable {
         let pendingMinuteCount: Int
         let pendingRootCount: Int
@@ -76,7 +80,7 @@
         private let identity: MinuteSealSigningIdentity
         private let sealDirectory: URL
         private let sealAppender: SealAppender
-        private weak var uploader: CommitmentUploader?
+        private weak var uploader: MinuteSealUploader?
 
         private var timer: DispatchSourceTimer?
         private var nextMinuteStart: Date
@@ -136,7 +140,7 @@
             }
         }
 
-        func setUploader(_ uploader: CommitmentUploader?) {
+        func setUploader(_ uploader: MinuteSealUploader?) {
             queue.async { [weak self] in self?.uploader = uploader }
         }
 

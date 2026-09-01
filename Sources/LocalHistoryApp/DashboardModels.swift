@@ -128,6 +128,7 @@
         let name: String
         let appName: String?
         let sourceApplications: [String]
+        let sourceUsage: [DailyWebsiteSourceUsage]
         let bundleIdentifier: String?
         let host: String?
         let category: String?
@@ -138,7 +139,11 @@
 
         var searchableText: String {
             ([name, appName, bundleIdentifier, host, category]
-                .compactMap { $0 } + sourceApplications)
+                .compactMap { $0 }
+                + sourceApplications
+                + sourceUsage.flatMap {
+                    [$0.applicationName, $0.bundleIdentifier].compactMap { $0 }
+                })
                 .joined(separator: " ")
                 .lowercased()
         }

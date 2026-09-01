@@ -226,7 +226,7 @@
             let draft = DashboardSettingsDraft(config: configManager.config)
             settingsDraft = draft
             savedSettingsDraft = draft
-            showWelcome = !UserDefaults.standard.bool(forKey: "didShowLocalHistoryOnboardingV3")
+            showWelcome = !UserDefaults.standard.bool(forKey: "didShowLocalHistoryConsentOnboardingV5")
 
         }
 
@@ -418,24 +418,27 @@
         }
 
         func dismissWelcome() {
-            UserDefaults.standard.set(true, forKey: "didShowLocalHistoryOnboardingV3")
+            UserDefaults.standard.set(true, forKey: "didShowLocalHistoryConsentOnboardingV5")
             showWelcome = false
         }
 
         func openDataFolder() {
-            NSWorkspace.shared.open(AppPaths.applicationSupportDirectory)
+            GoalongWorkspaceOpenPolicy.open(
+                AppPaths.applicationSupportDirectory,
+                purpose: .localFile
+            )
         }
 
         func openConfiguration() {
-            NSWorkspace.shared.open(AppPaths.configFile)
+            GoalongWorkspaceOpenPolicy.open(AppPaths.configFile, purpose: .localFile)
         }
 
         func openTodayJSON() {
             let file = AppPaths.eventFileURL(for: selectedDay)
             if FileManager.default.fileExists(atPath: file.path) {
-                NSWorkspace.shared.open(file)
+                GoalongWorkspaceOpenPolicy.open(file, purpose: .localFile)
             } else {
-                NSWorkspace.shared.open(AppPaths.eventsDirectory)
+                GoalongWorkspaceOpenPolicy.open(AppPaths.eventsDirectory, purpose: .localFile)
             }
         }
 
@@ -444,7 +447,7 @@
             if FileManager.default.fileExists(atPath: file.path) {
                 NSWorkspace.shared.activateFileViewerSelecting([file])
             } else {
-                NSWorkspace.shared.open(AppPaths.eventsDirectory)
+                GoalongWorkspaceOpenPolicy.open(AppPaths.eventsDirectory, purpose: .localFile)
             }
         }
 
@@ -456,7 +459,7 @@
                     attributes: [.posixPermissions: 0o600]
                 )
             }
-            NSWorkspace.shared.open(AppPaths.diagnosticsFile)
+            GoalongWorkspaceOpenPolicy.open(AppPaths.diagnosticsFile, purpose: .localFile)
         }
 
         func selectSession(_ id: String) {
@@ -581,7 +584,7 @@
             let panel = NSSavePanel()
             panel.canCreateDirectories = true
             panel.allowedContentTypes = [.json]
-            panel.nameFieldStringValue = "\(AppPaths.localDayString(for: selectedDay)).verified-share.json"
+            panel.nameFieldStringValue = "\(AppPaths.localDayString(for: selectedDay)).signed-share.json"
             guard panel.runModal() == .OK, let destination = panel.url else { return }
 
             let day = selectedDay
@@ -602,7 +605,7 @@
                         cancellation: { token.isCancelled }
                     )
                     guard !token.isCancelled else { throw ShareBuildError.cancelled }
-                    guard package.minutes.allSatisfy({ $0.verifiesStructure() }) else {
+                    guard package.verificationReport().isLocallyValid else {
                         throw ShareBuildError.brokenSeal(package.minutes.first?.anchorSequence ?? 0)
                     }
                     try self.shareBuilder.write(
@@ -616,9 +619,9 @@
                         self.isExportingShare = false
                         self.alert = DashboardAlert(
                             kind: .information,
-                            title: "Verified package exported",
+                            title: "Locally signed package exported",
                             message:
-                                "The package follows your saved app and website rules. Hidden fields remain on this Mac."
+                                "Goalong verified every included P-256 device signature and integrity chain before export. The package follows your saved app and website rules; hidden fields remain on this Mac."
                         )
                         NSWorkspace.shared.activateFileViewerSelecting([destination])
                     }
@@ -643,6 +646,11 @@
         }
 
         func saveSettings() {
+            if !GoalongBuildCapabilities.permitsRemoteVerification {
+                settingsDraft.verificationEnabled = false
+                settingsDraft.verificationServerURL = ""
+                settingsDraft.enableAppAttest = false
+            }
             if settingsDraft.verificationEnabled {
                 let raw = settingsDraft.verificationServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard Self.isValidVerificationURL(raw) else {
@@ -675,6 +683,25 @@
                     message: String(describing: error)
                 )
             }
+        }
+
+        func configureCaptureForOnboarding(enabled: Bool) throws {
+            var draft = settingsDraft
+            draft.captureClicks = enabled
+            draft.captureScroll = enabled
+            draft.captureKeyboardActivity = enabled
+            draft.captureShortcuts = enabled
+            draft.captureWindowTitles = enabled
+            draft.captureElementLabels = enabled
+            draft.captureURLs = enabled
+            draft.verificationEnabled = false
+            draft.verificationServerURL = ""
+            draft.enableAppAttest = false
+            let applied = try onSaveConfiguration(draft.applying(to: configManager.config))
+            let refreshed = DashboardSettingsDraft(config: applied)
+            settingsDraft = refreshed
+            savedSettingsDraft = refreshed
+            refreshRuntime()
         }
 
         func discardSettingsChanges() {
@@ -799,8 +826,11 @@
                 accessibilityGranted: status.accessibility,
                 inputMonitoringGranted: status.inputMonitoring,
                 eventTapRunning: tap,
-                verificationEnabled: configManager.config.verificationEnabled == true,
-                verificationServer: configManager.config.verificationServerURL,
+                verificationEnabled: GoalongBuildCapabilities.permitsRemoteVerification
+                    && configManager.config.verificationEnabled == true,
+                verificationServer: GoalongBuildCapabilities.permitsRemoteVerification
+                    ? configManager.config.verificationServerURL
+                    : nil,
                 captureHealth: health,
                 captureHealthSnapshot: healthSnapshot
             )

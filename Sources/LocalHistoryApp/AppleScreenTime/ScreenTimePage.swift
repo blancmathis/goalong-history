@@ -320,7 +320,7 @@
                 HStack(spacing: 16) {
                     featureIcon("square.and.arrow.up.on.square.fill", tint: LHTheme.accent)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Share this official Apple view")
+                        Text("Share this Apple-source view")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
                             "The export states the exact device scope, Apple system-store provenance, aggregation rule and whether application details are included."
@@ -391,7 +391,7 @@
                         Text("What is being read")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "This page reads Apple-generated data directly: `knowledgeC.db` `/app/usage` intervals for macOS and Biome `App.InFocus` streams synchronized by iCloud for other devices."
+                            "This page reads Apple-generated data directly: ScreenTime.AppUsage for the best available Mac attribution, knowledgeC `/app/usage` as a fallback, and Biome `App.InFocus` streams synchronized by iCloud for other devices. macOS may keep the private DeviceActivity summary used by Settings inaccessible, so reconstructed totals can differ from the Settings app."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
@@ -405,6 +405,7 @@
                     }
                     Spacer(minLength: 18)
                     VStack(alignment: .trailing, spacing: 5) {
+                        Text("\(screenTime.screenTimeAppUsageIntervalCount) AppUsage intervals")
                         Text("\(screenTime.knowledgeIntervalCount) knowledgeC intervals")
                         Text("\(screenTime.biomeIntervalCount) Biome intervals")
                     }

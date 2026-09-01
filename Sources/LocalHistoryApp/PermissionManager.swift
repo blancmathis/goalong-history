@@ -37,7 +37,7 @@
             case .accessibility:
                 return "Allows the app to read the foreground application, window and permitted interface context."
             case .inputMonitoring:
-                return "Allows the app to observe clicks, scrolling, shortcuts and typing activity without reading typed characters."
+                return "Allows the app to observe clicks, scrolling and coarse keyboard activity without reading characters or exact keys."
             }
         }
     }
@@ -220,6 +220,21 @@
             openPrivacySettingsDirectly()
         }
 
+        func openFullDiskAccessSettings() {
+            let candidates = [
+                "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles",
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+            ]
+            for candidate in candidates {
+                if let url = URL(string: candidate),
+                    GoalongWorkspaceOpenPolicy.open(url, purpose: .systemSettings)
+                {
+                    return
+                }
+            }
+            openPrivacySettingsDirectly()
+        }
+
         private func presentGuide(for permission: MacPermissionKind) {
             if !Thread.isMainThread {
                 DispatchQueue.main.async { [weak self] in
@@ -254,7 +269,9 @@
             ]
 
             for candidate in candidates {
-                if let url = URL(string: candidate), NSWorkspace.shared.open(url) {
+                if let url = URL(string: candidate),
+                    GoalongWorkspaceOpenPolicy.open(url, purpose: .systemSettings)
+                {
                     return
                 }
             }
@@ -267,7 +284,9 @@
             ]
 
             for candidate in candidates {
-                if let url = URL(string: candidate), NSWorkspace.shared.open(url) {
+                if let url = URL(string: candidate),
+                    GoalongWorkspaceOpenPolicy.open(url, purpose: .systemSettings)
+                {
                     return
                 }
             }

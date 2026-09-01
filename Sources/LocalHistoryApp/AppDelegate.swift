@@ -3,6 +3,7 @@
     import AppKit
     import Foundation
     import LocalHistoryCore
+    import LocalHistoryQueryCLI
 
     struct DailyMaintenanceGate {
         private let calendar: Calendar
@@ -33,7 +34,6 @@
         private var deviceIdentity: DeviceIdentity!
         private var integrityJournal: IntegrityJournal!
         private var minuteSealer: MinuteSealer!
-        private var commitmentUploader: CommitmentUploader?
         private var recorder: EventRecorder!
         private var contextProvider: ContextProvider!
         private var contextMonitor: ContextMonitor!
@@ -41,15 +41,19 @@
         private var dashboardViewModel: DashboardViewModel!
         private var sharingRulesStore: SharingRulesStore!
         private var agentActivityRuntime: AgentActivityRuntime!
+        private var readOnlyQueryServer: GoalongReadOnlyQueryServer?
         private var dashboardWindowController: DashboardWindowController!
         private var applicationMenuController: ApplicationMenuController!
         private var menuBarController: MenuBarController!
+        private var capabilityConsents: GoalongCapabilityConsentStore!
 
         private var permissionTimer: Timer?
         private var lastPermissionStatus: PermissionStatus?
         private var lastRecordedHealthState: CaptureHealthState?
         private var workspaceObservers: [NSObjectProtocol] = []
+        private var capabilityConsentObserver: NSObjectProtocol?
         private var retentionCleanupGate = DailyMaintenanceGate()
+        private var localCaptureRuntimeActive = false
 
         func applicationDidFinishLaunching(_ notification: Notification) {
             guard !anotherInstanceIsRunning() else {
@@ -79,6 +83,7 @@
                     Diagnostics.write(diagnostic)
                 }
                 configManager = ConfigManager()
+                capabilityConsents = GoalongCapabilityConsentStore.shared
                 permissions = PermissionManager()
                 captureHealthStore = CaptureHealthStore(permissions: permissions)
                 semanticContextStore = SemanticContextStore()
@@ -92,8 +97,7 @@
                 deviceIdentity = try DeviceIdentity()
                 integrityJournal = IntegrityJournal(stateStore: integrityStateStore)
                 minuteSealer = MinuteSealer(stateStore: integrityStateStore, identity: deviceIdentity)
-                commitmentUploader = CommitmentUploader(config: configManager.config, identity: deviceIdentity)
-                minuteSealer.setUploader(commitmentUploader)
+                minuteSealer.setUploader(nil)
                 recorder = EventRecorder(
                     store: store,
                     integrityJournal: integrityJournal,
@@ -128,6 +132,7 @@
                 agentActivityRuntime = try AgentActivityRuntime(
                     rootDirectory: AppPaths.agentActivityDirectory,
                     executableURL: executableURL,
+                    performInitialDiscovery: capabilityConsents.isEnabled(.aiConversations),
                     onCaptured: { _ in }
                 )
 
@@ -200,45 +205,36 @@
             }
 
             applyDailyRetentionCleanupIfNeeded()
-            minuteSealer.start()
-            commitmentUploader?.replayPending()
-
-            recorder.record(
-                kind: .recorderStarted,
-                message: "Goalong History started",
-                metadata: [
-                    "storage": AppPaths.eventsDirectory.path,
-                    "network_upload": configManager.config.verificationEnabled == true
-                        ? "opaque_commitments_only" : "disabled",
-                    "verification_server": configManager.config.verificationServerURL ?? "none",
-                    "device_trust_tier": deviceIdentity.info.trustTier,
-                    "raw_text_capture": "disabled",
-                    "interface_version":
-                        (Bundle.main.object(
-                            forInfoDictionaryKey: "CFBundleShortVersionString"
-                        ) as? String) ?? "0.5.1-dev",
-                ]
-            )
-            agentActivityRuntime.start()
+            applyCapabilityConsents(recordTransition: false)
             ChatGPTRecapRuntime.shared.configure(deviceID: deviceIdentity.info.deviceID)
-            ChatGPTRecapRuntime.shared.start()
+            installCapabilityConsentObserver()
 
             installWorkspaceObservers()
-            contextMonitor.start()
-            checkPermissionsAndStartTap()
-            showDashboardOnFirstV3Launch()
+            showDashboardOnFirstConsentLaunch()
         }
 
         func applicationWillTerminate(_ notification: Notification) {
             permissionTimer?.invalidate()
+            if let capabilityConsentObserver {
+                NotificationCenter.default.removeObserver(capabilityConsentObserver)
+            }
+            capabilityConsentObserver = nil
+            readOnlyQueryServer?.stop()
+            readOnlyQueryServer = nil
             agentActivityRuntime?.stop()
-            ChatGPTRecapRuntime.shared.stop()
+            if GoalongBuildCapabilities.permitsRemoteAnalysis {
+                ChatGPTRecapRuntime.shared.stop()
+            }
             contextMonitor?.stop()
             eventTapMonitor?.stop()
-            recorder?.record(kind: .recorderStopped, message: "Goalong History stopped")
+            if capabilityConsents?.isEnabled(.localComputerHistory) == true {
+                recorder?.record(kind: .recorderStopped, message: "Goalong History stopped")
+            }
             recorder?.flush()
             captureHealthStore?.flush()
-            minuteSealer?.stopAndSeal()
+            if capabilityConsents?.isEnabled(.localComputerHistory) == true {
+                minuteSealer?.stopAndSeal()
+            }
             recorder?.close()
 
             let center = NSWorkspace.shared.notificationCenter
@@ -254,6 +250,23 @@
         }
 
         private func toggleManualPause() {
+            if !capabilityConsents.isEnabled(.localComputerHistory) {
+                do {
+                    try dashboardViewModel.configureCaptureForOnboarding(enabled: true)
+                } catch {
+                    Diagnostics.write(
+                        "Computer History stayed off because its local configuration could not be enabled: \(error)"
+                    )
+                    return
+                }
+                guard capabilityConsents.set(
+                    .localComputerHistory,
+                    enabled: true,
+                    surface: .menuBar
+                ) else { return }
+                applyCapabilityConsents(recordTransition: true)
+                return
+            }
             if captureState.isManuallyPaused {
                 captureState.setManualPaused(false)
                 captureHealthStore.setPaused(false)
@@ -265,6 +278,7 @@
                 recorder.flush()
                 captureState.setManualPaused(true)
                 captureHealthStore.setPaused(true)
+                _ = minuteSealer.stopAndSeal()
             }
             menuBarController.updateStatus()
         }
@@ -290,9 +304,8 @@
         }
 
         private func configureUploader(for config: RecorderConfig) {
-            commitmentUploader = CommitmentUploader(config: config, identity: deviceIdentity)
-            minuteSealer.setUploader(commitmentUploader)
-            commitmentUploader?.replayPending()
+            _ = config
+            minuteSealer.setUploader(nil)
         }
 
         private func deleteDetails(
@@ -601,7 +614,7 @@
             }
         }
 
-        private func showDashboardOnFirstV3Launch() {
+        private func showDashboardOnFirstConsentLaunch() {
             guard dashboardViewModel.showWelcome else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
                 self?.dashboardWindowController.show(section: .overview)
@@ -623,6 +636,16 @@
         }
 
         private func checkPermissionsAndStartTap(forceRefresh: Bool = false) {
+            guard capabilityConsents.isEnabled(.localComputerHistory) else {
+                permissionTimer?.invalidate()
+                permissionTimer = nil
+                eventTapMonitor.stop()
+                contextMonitor.stop()
+                captureState.setManualPaused(true)
+                captureHealthStore.setPaused(true)
+                menuBarController.updateStatus()
+                return
+            }
             applyDailyRetentionCleanupIfNeeded()
             let status =
                 forceRefresh
@@ -670,6 +693,127 @@
             }
             menuBarController.updateStatus()
             schedulePermissionWatchdog()
+        }
+
+        private func installCapabilityConsentObserver() {
+            capabilityConsentObserver = NotificationCenter.default.addObserver(
+                forName: .goalongCapabilityConsentDidChange,
+                object: capabilityConsents,
+                queue: .main
+            ) { [weak self] _ in
+                self?.applyCapabilityConsents(recordTransition: true)
+            }
+        }
+
+        private func applyCapabilityConsents(recordTransition: Bool) {
+            let localCaptureEnabled = capabilityConsents.isEnabled(.localComputerHistory)
+            if localCaptureEnabled {
+                let wasActive = localCaptureRuntimeActive
+                localCaptureRuntimeActive = true
+                captureState.setManualPaused(false)
+                captureHealthStore.setPaused(false)
+                minuteSealer.start()
+                contextMonitor.start()
+                checkPermissionsAndStartTap(forceRefresh: true)
+                if recordTransition && !wasActive {
+                    recorder.record(
+                        kind: .recordingResumed,
+                        message: "Computer History enabled by explicit consent"
+                    )
+                } else {
+                    recorder.record(
+                        kind: .recorderStarted,
+                        message: "Goalong History started",
+                        metadata: [
+                            "storage": AppPaths.eventsDirectory.path,
+                            "build_edition": GoalongBuildCapabilities.edition.rawValue,
+                            "network_upload": GoalongBuildCapabilities.permitsRemoteVerification
+                                && capabilityConsents.isEnabled(.remoteVerification)
+                                && configManager.config.verificationEnabled == true
+                                ? "opaque_commitments_only" : "disabled",
+                            "verification_server": GoalongBuildCapabilities.permitsRemoteVerification
+                                && capabilityConsents.isEnabled(.remoteVerification)
+                                ? (configManager.config.verificationServerURL ?? "none")
+                                : "disabled",
+                            "device_trust_tier": deviceIdentity.info.trustTier,
+                            "raw_text_capture": "disabled",
+                            "interface_version":
+                                (Bundle.main.object(
+                                    forInfoDictionaryKey: "CFBundleShortVersionString"
+                                ) as? String) ?? "0.6.0-dev",
+                        ]
+                    )
+                }
+            } else {
+                let wasActive = localCaptureRuntimeActive
+                localCaptureRuntimeActive = false
+                permissionTimer?.invalidate()
+                permissionTimer = nil
+                eventTapMonitor.stop()
+                contextMonitor.stop()
+                captureState.setManualPaused(true)
+                captureHealthStore.setPaused(true)
+                if wasActive {
+                    _ = minuteSealer.stopAndSeal()
+                }
+                if recordTransition && wasActive {
+                    recorder.record(
+                        kind: .recordingPaused,
+                        message: "Computer History disabled by explicit consent"
+                    )
+                    recorder.flush()
+                }
+            }
+
+            if capabilityConsents.isEnabled(.aiConversations) {
+                agentActivityRuntime.start()
+            } else {
+                agentActivityRuntime.stop()
+            }
+
+            configureReadOnlyQueryServer()
+
+            let analysisEnabled = GoalongBuildCapabilities.permitsRemoteAnalysis
+                && capabilityConsents.isEnabled(.chatGPTAnalysis)
+            if analysisEnabled {
+                ChatGPTRecapRuntime.shared.start()
+            } else {
+                ChatGPTRecapRuntime.shared.stop()
+            }
+
+            configureUploader(for: configManager.config)
+            dashboardViewModel.refreshEverything()
+        }
+
+        private func configureReadOnlyQueryServer() {
+            guard capabilityConsents.isEnabled(.appleScreenTime) else {
+                readOnlyQueryServer?.stop()
+                readOnlyQueryServer = nil
+                do {
+                    try GoalongReadOnlyQueryServer.removeOwnedStaleSocket(
+                        rootDirectory: AppPaths.applicationSupportDirectory
+                    )
+                } catch {
+                    Diagnostics.write(
+                        "Screen Time CLI broker stayed off but an unexpected socket path was preserved: \(error)"
+                    )
+                }
+                return
+            }
+            guard readOnlyQueryServer == nil else { return }
+
+            let server = GoalongReadOnlyQueryServer(
+                rootDirectory: AppPaths.applicationSupportDirectory
+            )
+            do {
+                try server.start()
+                readOnlyQueryServer = server
+            } catch {
+                server.stop()
+                Diagnostics.write(
+                    "Screen Time CLI broker stayed off because it could not start safely: \(error)"
+                )
+            }
         }
 
         private func applyDailyRetentionCleanupIfNeeded(now: Date = Date()) {

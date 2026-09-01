@@ -16,6 +16,40 @@ public struct AppleBiomeFocusEvent: Equatable, Sendable {
     }
 }
 
+/// A start or stop transition emitted by Apple's private Biome
+/// `ScreenTime.AppUsage` stream.
+///
+/// Apple records both the concrete process bundle and the parent bundle used for
+/// Screen Time attribution. The parent is the canonical application when it is
+/// present; older or incomplete records fall back to the concrete bundle.
+public struct AppleBiomeScreenTimeAppUsageEvent: Equatable, Sendable {
+    public let bundleIdentifier: String
+    public let parentBundleIdentifier: String?
+    public let isStarting: Bool
+    public let isUsageTrusted: Bool?
+    public let timestamp: Date
+
+    public init(
+        bundleIdentifier: String,
+        parentBundleIdentifier: String?,
+        isStarting: Bool,
+        isUsageTrusted: Bool?,
+        timestamp: Date
+    ) {
+        self.bundleIdentifier = bundleIdentifier
+        self.parentBundleIdentifier = parentBundleIdentifier
+        self.isStarting = isStarting
+        self.isUsageTrusted = isUsageTrusted
+        self.timestamp = timestamp
+    }
+
+    public var canonicalBundleIdentifier: String {
+        let parent = parentBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bundle = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        return parent.flatMap { $0.isEmpty ? nil : $0 } ?? bundle
+    }
+}
+
 /// A non-overlapping application interval reconstructed from Apple focus transitions.
 public struct AppleBiomeApplicationInterval: Equatable, Sendable {
     public let bundleIdentifier: String
@@ -33,6 +67,7 @@ public struct AppleBiomeApplicationInterval: Equatable, Sendable {
 
 public enum AppleBiomeFormatError: Error, CustomStringConvertible, Equatable {
     case unsupportedFormat
+    case unsupportedPayload
     case malformedHeader
     case unreasonableRecordCount
     case unreasonableRecordLength
@@ -41,6 +76,7 @@ public enum AppleBiomeFormatError: Error, CustomStringConvertible, Equatable {
     public var description: String {
         switch self {
         case .unsupportedFormat: return "The Apple Biome file is not a supported SEGB stream."
+        case .unsupportedPayload: return "The Apple Biome file contains an unrecognized event payload."
         case .malformedHeader: return "The Apple Biome SEGB header is malformed."
         case .unreasonableRecordCount: return "The Apple Biome file declares an unreasonable record count."
         case .unreasonableRecordLength: return "The Apple Biome file declares an unreasonable record length."
@@ -61,6 +97,21 @@ public enum AppleBiomeSEGBDecoder {
     private static let maximumRecordCount = 250_000
 
     public static func decode(_ data: Data) throws -> [AppleBiomeFocusEvent] {
+        try decodePayloads(data).compactMap(decodeAppInFocusProtobuf)
+    }
+
+    public static func decodeScreenTimeAppUsage(
+        _ data: Data
+    ) throws -> [AppleBiomeScreenTimeAppUsageEvent] {
+        let payloads = try decodePayloads(data)
+        let events = payloads.compactMap(decodeScreenTimeAppUsageProtobuf)
+        guard events.count == payloads.count else {
+            throw AppleBiomeFormatError.unsupportedPayload
+        }
+        return events
+    }
+
+    private static func decodePayloads(_ data: Data) throws -> [Data] {
         if data.count >= 32, data.prefix(4) == Data("SEGB".utf8) {
             return try decodeV2(data)
         }
@@ -70,7 +121,7 @@ public enum AppleBiomeSEGBDecoder {
         throw AppleBiomeFormatError.unsupportedFormat
     }
 
-    private static func decodeV1(_ data: Data) throws -> [AppleBiomeFocusEvent] {
+    private static func decodeV1(_ data: Data) throws -> [Data] {
         guard let declaredEnd = data.uint32LE(at: 0) else {
             throw AppleBiomeFormatError.malformedHeader
         }
@@ -80,7 +131,7 @@ public enum AppleBiomeSEGBDecoder {
         }
 
         var cursor = 56
-        var events: [AppleBiomeFocusEvent] = []
+        var payloads: [Data] = []
         while cursor < endOfData {
             guard cursor + 32 <= endOfData,
                   let rawLength = data.int32LE(at: cursor),
@@ -105,15 +156,15 @@ public enum AppleBiomeSEGBDecoder {
                 let payload = data.subdata(in: payloadStart..<payloadEnd)
                 if !payload.allSatisfy({ $0 == 0 }),
                    (storedCRC == 0 || crc32(payload) == storedCRC),
-                   let event = decodeAppInFocusProtobuf(payload)
+                   !payload.isEmpty
                 {
-                    events.append(event)
+                    payloads.append(payload)
                 }
             }
 
             cursor = align(payloadEnd, to: 8)
         }
-        return events
+        return payloads
     }
 
     private struct V2TrailerEntry {
@@ -122,7 +173,7 @@ public enum AppleBiomeSEGBDecoder {
         let state: Int32
     }
 
-    private static func decodeV2(_ data: Data) throws -> [AppleBiomeFocusEvent] {
+    private static func decodeV2(_ data: Data) throws -> [Data] {
         guard let rawCount = data.int32LE(at: 4) else {
             throw AppleBiomeFormatError.malformedHeader
         }
@@ -166,7 +217,7 @@ public enum AppleBiomeSEGBDecoder {
         let currentEntries = latestByEndOffset.values.sorted { $0.endOffset < $1.endOffset }
 
         var relativeCursor = 0
-        var events: [AppleBiomeFocusEvent] = []
+        var payloads: [Data] = []
         for entry in currentEntries {
             guard entry.endOffset >= relativeCursor else { continue }
             let entryLength = entry.endOffset - relativeCursor
@@ -190,11 +241,9 @@ public enum AppleBiomeSEGBDecoder {
             let payload = data.subdata(in: payloadStart..<absoluteEnd)
             if payload.isEmpty || payload.allSatisfy({ $0 == 0 }) { continue }
             if storedCRC != 0, crc32(payload) != storedCRC { continue }
-            if let event = decodeAppInFocusProtobuf(payload) {
-                events.append(event)
-            }
+            payloads.append(payload)
         }
-        return events
+        return payloads
     }
 
     private static func decodeAppInFocusProtobuf(_ data: Data) -> AppleBiomeFocusEvent? {
@@ -246,6 +295,71 @@ public enum AppleBiomeSEGBDecoder {
             isForeground: foreground ?? false,
             timestamp: Date(timeIntervalSince1970: unixTime)
         )
+    }
+
+    private static func decodeScreenTimeAppUsageProtobuf(
+        _ data: Data
+    ) -> AppleBiomeScreenTimeAppUsageEvent? {
+        var cursor = 0
+        var bundleIdentifier: String?
+        var parentBundleIdentifier: String?
+        var starting: Bool?
+        var usageTrusted: Bool?
+        var unixTime: Double?
+
+        while cursor < data.count {
+            guard let tag = readVarint(data, cursor: &cursor) else { return nil }
+            let field = Int(tag >> 3)
+            let wireType = Int(tag & 0x07)
+
+            switch (field, wireType) {
+            case (1, 0):
+                guard let value = readVarint(data, cursor: &cursor) else { return nil }
+                starting = value != 0
+            case (2, 1):
+                guard let bits = data.uint64LE(at: cursor) else { return nil }
+                unixTime = Double(bitPattern: bits)
+                cursor += 8
+            case (3, 2):
+                guard let value = readString(data, cursor: &cursor) else { return nil }
+                bundleIdentifier = value
+            case (4, 2):
+                guard let value = readString(data, cursor: &cursor) else { return nil }
+                parentBundleIdentifier = value
+            case (5, 0):
+                guard let value = readVarint(data, cursor: &cursor) else { return nil }
+                usageTrusted = value != 0
+            default:
+                guard skipField(wireType: wireType, data: data, cursor: &cursor) else { return nil }
+            }
+        }
+
+        guard let bundle = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !bundle.isEmpty,
+              let unixTime,
+              unixTime.isFinite,
+              unixTime > 0,
+              unixTime < 32_503_680_000 // year 3000 sanity bound
+        else { return nil }
+
+        let parent = parentBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return AppleBiomeScreenTimeAppUsageEvent(
+            bundleIdentifier: bundle,
+            parentBundleIdentifier: parent.flatMap { $0.isEmpty ? nil : $0 },
+            isStarting: starting ?? false,
+            isUsageTrusted: usageTrusted,
+            timestamp: Date(timeIntervalSince1970: unixTime)
+        )
+    }
+
+    private static func readString(_ data: Data, cursor: inout Int) -> String? {
+        guard let rawLength = readVarint(data, cursor: &cursor),
+              rawLength <= UInt64(Int.max)
+        else { return nil }
+        let length = Int(rawLength)
+        guard length >= 0, cursor + length <= data.count else { return nil }
+        defer { cursor += length }
+        return String(data: data.subdata(in: cursor..<(cursor + length)), encoding: .utf8)
     }
 
     private static func skipField(wireType: Int, data: Data, cursor: inout Int) -> Bool {
@@ -385,6 +499,95 @@ public enum AppleBiomeIntervalBuilder {
                 let key = Key(
                     bundle: event.bundleIdentifier,
                     foreground: event.isForeground,
+                    milliseconds: Int64((event.timestamp.timeIntervalSince1970 * 1_000).rounded())
+                )
+                return seen.insert(key).inserted
+            }
+    }
+}
+
+public enum AppleBiomeScreenTimeAppUsageIntervalBuilder {
+    /// Stitches independent Screen Time application transitions into intervals.
+    ///
+    /// Unlike `App.InFocus`, `ScreenTime.AppUsage` may keep more than one
+    /// application active at once. Each canonical parent bundle therefore owns
+    /// its own open interval. Explicitly untrusted events are ignored; records
+    /// from older schemas that omit the trust bit remain usable.
+    public static func intervals(
+        from events: [AppleBiomeScreenTimeAppUsageEvent],
+        closeOpenIntervalAt: Date? = nil,
+        maximumOpenIntervalAge: TimeInterval? = nil,
+        maximumInterval: TimeInterval = 86_400
+    ) -> [AppleBiomeApplicationInterval] {
+        let ordered = deduplicated(events.filter { $0.isUsageTrusted != false })
+        var openStarts: [String: Date] = [:]
+        var output: [AppleBiomeApplicationInterval] = []
+
+        func close(bundleIdentifier: String, at end: Date) {
+            guard let start = openStarts.removeValue(forKey: bundleIdentifier) else { return }
+            let duration = end.timeIntervalSince(start)
+            guard duration > 0, duration <= maximumInterval else { return }
+            output.append(
+                AppleBiomeApplicationInterval(
+                    bundleIdentifier: bundleIdentifier,
+                    start: start,
+                    end: end
+                )
+            )
+        }
+
+        for event in ordered {
+            let bundle = event.canonicalBundleIdentifier
+            if event.isStarting {
+                if openStarts[bundle] == nil {
+                    openStarts[bundle] = event.timestamp
+                }
+            } else {
+                close(bundleIdentifier: bundle, at: event.timestamp)
+            }
+        }
+
+        if let closeOpenIntervalAt {
+            for (bundle, start) in openStarts.sorted(by: { $0.key < $1.key }) {
+                guard closeOpenIntervalAt > start else { continue }
+                if let maximumOpenIntervalAge,
+                   closeOpenIntervalAt.timeIntervalSince(start) > maximumOpenIntervalAge
+                {
+                    continue
+                }
+                close(bundleIdentifier: bundle, at: closeOpenIntervalAt)
+            }
+        }
+
+        return output.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            if $0.end != $1.end { return $0.end < $1.end }
+            return $0.bundleIdentifier < $1.bundleIdentifier
+        }
+    }
+
+    private static func deduplicated(
+        _ events: [AppleBiomeScreenTimeAppUsageEvent]
+    ) -> [AppleBiomeScreenTimeAppUsageEvent] {
+        struct Key: Hashable {
+            let bundle: String
+            let starting: Bool
+            let milliseconds: Int64
+        }
+
+        var seen = Set<Key>()
+        return events
+            .sorted {
+                if $0.timestamp != $1.timestamp { return $0.timestamp < $1.timestamp }
+                if $0.canonicalBundleIdentifier != $1.canonicalBundleIdentifier {
+                    return $0.canonicalBundleIdentifier < $1.canonicalBundleIdentifier
+                }
+                return !$0.isStarting && $1.isStarting
+            }
+            .filter { event in
+                let key = Key(
+                    bundle: event.canonicalBundleIdentifier,
+                    starting: event.isStarting,
                     milliseconds: Int64((event.timestamp.timeIntervalSince1970 * 1_000).rounded())
                 )
                 return seen.insert(key).inserted

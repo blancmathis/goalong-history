@@ -234,8 +234,11 @@
 
             uploader.replayPending()
             wait(for: [challengeRequested], timeout: 2)
-            let invalidationDeadline = Date().addingTimeInterval(2)
-            while registration.isRegistered(deviceID: "device"), Date() < invalidationDeadline {
+            let retryDeadline = Date().addingTimeInterval(2)
+            while (
+                registration.isRegistered(deviceID: "device")
+                    || uploader.runtimeSnapshot.status != .networkRetry
+            ), Date() < retryDeadline {
                 Thread.sleep(forTimeInterval: 0.002)
             }
             XCTAssertFalse(registration.isRegistered(deviceID: "device"))

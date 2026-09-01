@@ -119,7 +119,6 @@
                     EventTapPendingInput(
                         kind: .keyDown,
                         observedAt: start.addingTimeInterval(0.01),
-                        keyCode: 0,
                         capturingWasEnabled: true,
                         secureInputWasEnabled: true
                     )
@@ -130,7 +129,6 @@
                     EventTapPendingInput(
                         kind: .keyDown,
                         observedAt: start.addingTimeInterval(0.02),
-                        keyCode: 0,
                         capturingWasEnabled: false,
                         secureInputWasEnabled: false
                     )
@@ -170,7 +168,6 @@
                     EventTapPendingInput(
                         kind: .keyDown,
                         observedAt: start,
-                        keyCode: 0,
                         targetProcessIdentifier: 20,
                         observedContext: firstContext
                     )
@@ -181,7 +178,6 @@
                     EventTapPendingInput(
                         kind: .keyDown,
                         observedAt: start.addingTimeInterval(0.6),
-                        keyCode: 0,
                         targetProcessIdentifier: 20,
                         observedContext: firstContext
                     )
@@ -192,7 +188,6 @@
                     EventTapPendingInput(
                         kind: .keyDown,
                         observedAt: start.addingTimeInterval(0.71),
-                        keyCode: 0,
                         targetProcessIdentifier: 20,
                         observedContext: firstContext
                     )
@@ -203,7 +198,6 @@
                     EventTapPendingInput(
                         kind: .keyDown,
                         observedAt: start.addingTimeInterval(0.72),
-                        keyCode: 0,
                         targetProcessIdentifier: 20,
                         observedContext: secondContext
                     )
@@ -266,7 +260,6 @@
                     EventTapPendingInput(
                         kind: .keyDown,
                         observedAt: start,
-                        keyCode: 0,
                         targetProcessIdentifier: 42,
                         observedContext: publicContext
                     )
@@ -277,7 +270,6 @@
                     EventTapPendingInput(
                         kind: .keyDown,
                         observedAt: start.addingTimeInterval(0.01),
-                        keyCode: 0,
                         targetProcessIdentifier: 42,
                         observedContext: privateContext
                     )
@@ -462,6 +454,40 @@
                     "Event-tap callback regressed across the non-blocking boundary: \(forbidden)"
                 )
             }
+        }
+
+        func testKeyboardIngressRetainsOnlyCoarseActivityClassification() throws {
+            let repositoryRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let source = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/EventTapMonitor.swift"),
+                encoding: .utf8
+            )
+            let pendingInput = try XCTUnwrap(
+                source.slice(
+                    from: "    struct EventTapPendingInput: Equatable {",
+                    through: "    struct EventTapIngressMetrics: Equatable {"
+                )
+            )
+            let keyHandler = try XCTUnwrap(
+                source.slice(
+                    from: "        private func handleKeyDown(",
+                    through: "        private func addTypingActivity("
+                )
+            )
+
+            XCTAssertTrue(pendingInput.contains("var keyActivity: KeyActivity"))
+            XCTAssertFalse(pendingInput.contains("keyCode"))
+            XCTAssertFalse(pendingInput.contains("flagsRawValue"))
+            XCTAssertFalse(pendingInput.contains("isRepeat"))
+            XCTAssertFalse(source.contains("keyboardEventAutorepeat"))
+            XCTAssertFalse(source.contains("KeyDescriptor"))
+            XCTAssertFalse(source.contains("CGEventKeyboardGetUnicodeString"))
+            XCTAssertTrue(keyHandler.contains("key: nil"))
+            XCTAssertTrue(keyHandler.contains("modifiers: []"))
         }
 
         func testBurstSemanticCaptureUsesOnlyOneSettledSnapshotAfterInactivity() throws {
@@ -668,7 +694,6 @@
             EventTapPendingInput(
                 kind: .keyDown,
                 observedAt: date,
-                keyCode: 0,
                 sourceProcessIdentifier: sourcePID,
                 targetProcessIdentifier: targetPID
             )

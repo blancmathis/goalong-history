@@ -1,10 +1,13 @@
 #if os(macOS)
+    import CryptoKit
     import Foundation
     import LocalHistoryCore
     import XCTest
     @testable import LocalHistoryApp
 
     final class SharePackageBuilderResourceTests: XCTestCase {
+        private let signingKey = P256.Signing.PrivateKey()
+
         func testWarmCacheReadsZeroBytesAndRetainsOnlySmallSummaries() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -196,7 +199,7 @@
             XCTAssertTrue(builder.readDiagnostics.usedFullScan)
         }
 
-        func testConcurrentAppendDuringReadFailsClosedWithoutCachingMixedSource() throws {
+        func testConcurrentAppendDuringReadUsesStableCompletePrefix() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.root) }
             try writeLines(
@@ -216,11 +219,45 @@
                 try self.appendRaw(Data("\n".utf8), to: file)
             })
 
+            let rows = try builder.minuteRows(for: fixture.day)
+            XCTAssertTrue(mutated)
+            XCTAssertEqual(rows.count, 1)
+            XCTAssertEqual(rows.first?.appSummary, "Codex")
+            XCTAssertEqual(builder.readDiagnostics.retainedSummaries, 1)
+            XCTAssertTrue(builder.readDiagnostics.usedFullScan)
+        }
+
+        func testConcurrentRewriteWithinCapturedTailStillFailsClosed() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            try writeLines(
+                [event(root: "root", application: "Codex", category: "work", padding: 8_192)],
+                to: fixture.events
+            )
+            try writeLines(
+                [seal(sequence: 1, root: "root", day: fixture.day)],
+                to: fixture.seals
+            )
+            var mutated = false
+            let builder = fixture.builder(afterSourceReadForTesting: { file in
+                guard file.standardizedFileURL == fixture.events.standardizedFileURL,
+                    !mutated
+                else { return }
+                mutated = true
+                let handle = try FileHandle(forWritingTo: file)
+                defer { try? handle.close() }
+                let size = try XCTUnwrap(
+                    FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber
+                ).uint64Value
+                try handle.seek(toOffset: size - 2)
+                try handle.write(contentsOf: Data(" ".utf8))
+            })
+
             XCTAssertThrowsError(try builder.minuteRows(for: fixture.day)) { error in
                 guard let buildError = error as? ShareBuildError,
                     case .sourceIncomplete(let detail) = buildError
-                else { return XCTFail("Expected a changed-source error, got \(error)") }
-                XCTAssertTrue(detail.contains("changed while it was read"))
+                else { return XCTFail("Expected a changed-prefix error, got \(error)") }
+                XCTAssertTrue(detail.contains("captured prefix"))
             }
             XCTAssertTrue(mutated)
             XCTAssertEqual(builder.readDiagnostics.retainedSummaries, 0)
@@ -392,13 +429,13 @@
                 sequence: 2
             )
             let eventRoot = try XCTUnwrap(sourceEvent.integrity?.eventRoot)
-            let boundary = validSeal(
+            let boundary = try validSeal(
                 sequence: 1,
                 eventRoots: [],
                 previousAnchorHash: zeroHash,
                 day: fixture.day
             )
-            let current = validSeal(
+            let current = try validSeal(
                 sequence: 2,
                 eventRoots: [eventRoot],
                 previousAnchorHash: boundary.anchorHash,
@@ -432,9 +469,29 @@
             XCTAssertTrue(try XCTUnwrap(package.boundaryBefore).verifiesStructure())
             let minute = try XCTUnwrap(package.minutes.first)
             XCTAssertTrue(minute.verifiesStructure())
+            XCTAssertTrue(minute.verifiesDeviceSignature())
+            XCTAssertTrue(package.verificationReport().isLocallyValid)
             XCTAssertEqual(minute.shareLevel, .applicationOnly)
-            XCTAssertEqual(minute.trustTier, "app_attest")
+            XCTAssertEqual(minute.trustTier, current.trustTier)
             XCTAssertEqual(minute.liveReceiptID, matchingReceipt.receiptID)
+
+            let signatureTampered = replacingSignature(
+                in: current,
+                with: Data("not-a-valid-signature".utf8).base64EncodedString()
+            )
+            try writeLines([signatureTampered], to: fixture.seals, atomically: true)
+            XCTAssertThrowsError(
+                try builder.build(
+                    for: fixture.day,
+                    sharingRules: [:],
+                    defaultVisibility: .identity
+                )
+            ) { error in
+                guard let buildError = error as? ShareBuildError,
+                    case .brokenSeal(current.anchorSequence) = buildError
+                else { return XCTFail("Expected a signature failure, got \(error)") }
+            }
+            try writeLines([current], to: fixture.seals, atomically: true)
 
             let mismatchedReceipt = AnchorReceipt(
                 deviceID: "another-device",
@@ -453,7 +510,7 @@
             XCTAssertEqual(receiptRejected.minutes.first?.trustTier, current.trustTier)
             XCTAssertNil(receiptRejected.minutes.first?.liveReceiptID)
 
-            let unrelatedBoundary = validSeal(
+            let unrelatedBoundary = try validSeal(
                 sequence: 1,
                 eventRoots: [],
                 previousAnchorHash: SHA256Digest.hashHex("unrelated-chain"),
@@ -475,17 +532,63 @@
 
             try writeLines([boundary], to: boundaryFile, atomically: true)
             try FileManager.default.removeItem(at: fixture.events)
-            XCTAssertThrowsError(
-                try builder.build(
-                    for: fixture.day,
-                    sharingRules: [:],
-                    defaultVisibility: .identity
-                )
-            ) { error in
-                guard let buildError = error as? ShareBuildError,
-                    case .missingEvents(current.anchorSequence) = buildError
-                else { return XCTFail("Expected a missing-events error, got \(error)") }
-            }
+            let privateFallback = try builder.build(
+                for: fixture.day,
+                sharingRules: [:],
+                defaultVisibility: .identity
+            )
+            XCTAssertTrue(privateFallback.verificationReport().isLocallyValid)
+            XCTAssertEqual(privateFallback.minutes.first?.shareLevel, .privateOnly)
+            XCTAssertNil(privateFallback.minutes.first?.eventRoots)
+            XCTAssertNil(privateFallback.minutes.first?.events)
+        }
+
+        func testUnreconstructibleEventFallsBackToSignedPrivateMinute() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let source = validEvent(
+                application: "Codex",
+                category: "work",
+                sequence: 1
+            )
+            let eventRoot = try XCTUnwrap(source.integrity?.eventRoot)
+            let tampered = HistoryEvent(
+                schemaVersion: source.schemaVersion,
+                id: source.id,
+                sessionID: source.sessionID,
+                timestamp: source.timestamp,
+                kind: source.kind,
+                app: AppSnapshot(
+                    name: "Changed after capture",
+                    bundleIdentifier: source.app?.bundleIdentifier,
+                    processIdentifier: source.app?.processIdentifier ?? 0
+                ),
+                classification: source.classification,
+                integrity: source.integrity
+            )
+            let seal = try validSeal(
+                sequence: 1,
+                eventRoots: [eventRoot],
+                previousAnchorHash: String(repeating: "0", count: 64),
+                day: fixture.day
+            )
+            try writeLines([tampered], to: fixture.events)
+            try writeLines([seal], to: fixture.seals)
+
+            let builder = fixture.builder()
+            let row = try XCTUnwrap(builder.minuteRows(for: fixture.day).first)
+            XCTAssertFalse(row.canRevealDetails)
+            XCTAssertEqual(row.level, .privateOnly)
+
+            let package = try builder.build(
+                for: fixture.day,
+                sharingRules: [:],
+                defaultVisibility: .identity
+            )
+            XCTAssertTrue(package.verificationReport().isLocallyValid)
+            XCTAssertEqual(package.minutes.first?.shareLevel, .privateOnly)
+            XCTAssertNil(package.minutes.first?.eventRoots)
+            XCTAssertNil(package.minutes.first?.events)
         }
 
         private struct Fixture {
@@ -592,20 +695,36 @@
             sequence: UInt64
         ) -> HistoryEvent {
             let schemaVersion = 2
-            let fieldOrder = IntegrityDomains.eventFieldOrder(for: schemaVersion)
-            let commitments = fieldOrder.enumerated().map { index, name in
-                let fields: [String: String]
-                switch name {
-                case "application": fields = ["name": application]
-                case "classification": fields = ["category": category]
-                default: fields = ["value": name]
-                }
-                return CommitmentBuilder.make(
-                    name: name,
-                    fields: fields,
-                    salt: Data(repeating: UInt8(index + 20), count: 32)
+            let base = HistoryEvent(
+                schemaVersion: schemaVersion,
+                id: "event-\(sequence)",
+                sessionID: "share-resource-test",
+                timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+                kind: .mouseClick,
+                app: AppSnapshot(
+                    name: application,
+                    bundleIdentifier: "test.\(application.lowercased())",
+                    processIdentifier: 42
+                ),
+                classification: LocalClassification(
+                    category: category,
+                    isWork: true,
+                    confidence: 1,
+                    classifierVersion: "fixture"
                 )
-            }
+            )
+            let fieldOrder = IntegrityDomains.eventFieldOrder(for: schemaVersion)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            let rawEventDigest = SHA256Digest.hashHex(try! encoder.encode(base))
+            let commitments = EventIntegrityMaterial.makeFieldCommitments(
+                for: base,
+                salts: fieldOrder.indices.map {
+                    Data(repeating: UInt8($0 + 20), count: 32)
+                },
+                rawEventDigest: rawEventDigest
+            )
             let commitmentsByName = Dictionary(
                 uniqueKeysWithValues: commitments.map { ($0.name, $0.commitmentHex) }
             )
@@ -624,25 +743,7 @@
                 ),
                 fieldCommitments: commitments
             )
-            return HistoryEvent(
-                schemaVersion: schemaVersion,
-                id: "event-\(sequence)",
-                sessionID: "share-resource-test",
-                timestamp: Date(timeIntervalSince1970: 1_700_000_000),
-                kind: .mouseClick,
-                app: AppSnapshot(
-                    name: application,
-                    bundleIdentifier: "test.\(application.lowercased())",
-                    processIdentifier: 42
-                ),
-                classification: LocalClassification(
-                    category: category,
-                    isWork: true,
-                    confidence: 1,
-                    classifierVersion: "fixture"
-                ),
-                integrity: integrity
-            )
+            return base.replacingIntegrity(integrity)
         }
 
         private func validSeal(
@@ -650,7 +751,7 @@
             eventRoots: [String],
             previousAnchorHash: String,
             day: Date
-        ) -> LocalMinuteSeal {
+        ) throws -> LocalMinuteSeal {
             let start = day.addingTimeInterval(TimeInterval(sequence * 60))
             let eventsRoot = MerkleTree.root(
                 labeledHexValues: eventRoots.enumerated().map {
@@ -664,6 +765,7 @@
                     fields = [
                         "start": String(start.timeIntervalSince1970),
                         "end": String(start.addingTimeInterval(60).timeIntervalSince1970),
+                        "local_day": AppPaths.localDayString(for: day),
                     ]
                 case "events_root": fields = ["events_root": eventsRoot]
                 case "event_count": fields = ["count": String(eventRoots.count)]
@@ -684,6 +786,15 @@
                     ($0, commitmentsByName[$0]!)
                 }
             )
+            let publicKeyData = signingKey.publicKey.x963Representation
+            let deviceID = SHA256Digest.hashHex(publicKeyData)
+            let signingMessage = ChainHash.signingMessage(
+                deviceID: deviceID,
+                sequence: sequence,
+                previous: previousAnchorHash,
+                minuteRoot: minuteRoot
+            )
+            let signature = try signingKey.signature(for: signingMessage)
             return LocalMinuteSeal(
                 anchorSequence: sequence,
                 minuteStart: start,
@@ -697,11 +808,33 @@
                     previous: previousAnchorHash,
                     minuteRoot: minuteRoot
                 ),
-                deviceID: "fixture-device",
-                publicKeyBase64: "fixture-key",
-                trustTier: "fixture",
-                signatureBase64: "fixture-signature",
-                signatureAlgorithm: "fixture"
+                deviceID: deviceID,
+                publicKeyBase64: publicKeyData.base64EncodedString(),
+                trustTier: "keychain_software",
+                signatureBase64: signature.derRepresentation.base64EncodedString(),
+                signatureAlgorithm: AnchorSignatureVerifier.supportedAlgorithm
+            )
+        }
+
+        private func replacingSignature(
+            in seal: LocalMinuteSeal,
+            with signatureBase64: String
+        ) -> LocalMinuteSeal {
+            LocalMinuteSeal(
+                schemaVersion: seal.schemaVersion,
+                anchorSequence: seal.anchorSequence,
+                minuteStart: seal.minuteStart,
+                minuteEnd: seal.minuteEnd,
+                minuteFields: seal.minuteFields,
+                eventRoots: seal.eventRoots,
+                minuteRoot: seal.minuteRoot,
+                previousAnchorHash: seal.previousAnchorHash,
+                anchorHash: seal.anchorHash,
+                deviceID: seal.deviceID,
+                publicKeyBase64: seal.publicKeyBase64,
+                trustTier: seal.trustTier,
+                signatureBase64: signatureBase64,
+                signatureAlgorithm: seal.signatureAlgorithm
             )
         }
 

@@ -320,7 +320,7 @@
         }
     }
 
-    final class CommitmentUploader {
+    final class CommitmentUploader: MinuteSealUploader {
         typealias UploadAttempt = (LocalMinuteSeal, @escaping (Bool) -> Void) -> Void
 
         private let queue = DispatchQueue(label: "ai.goalong.localhistory.commitment-uploader")
@@ -814,7 +814,7 @@
         }
 
         private var appVersion: String {
-            (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.5.1-dev"
+            (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.6.0-dev"
         }
 
         private func appendReceipt(_ receipt: AnchorReceipt) throws {

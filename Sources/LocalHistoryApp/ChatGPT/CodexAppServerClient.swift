@@ -439,8 +439,8 @@
         }
 
         func completedAssessment() throws -> ChatGPTDailyAssessment {
-            let raw = (finalText ?? streamed).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !raw.isEmpty else {
+            let raw = finalText ?? streamed
+            guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
             }
             guard raw.utf8.count <= limits.maximumRecapMarkdownBytes else {
@@ -459,8 +459,21 @@
         let productivityScore: Int
         let confidenceScore: Int
         let summaryLines: [String]
+        /// Exact final assistant bytes observed on the local app-server stream.
+        /// This is transient and is retained only as the bounded generated result,
+        /// never as a copy of the source conversation context.
+        let rawResponse: String?
+        let threadID: String?
+        let turnID: String?
 
-        init(productivityScore: Int, confidenceScore: Int, summaryLines: [String]) throws {
+        init(
+            productivityScore: Int,
+            confidenceScore: Int,
+            summaryLines: [String],
+            rawResponse: String? = nil,
+            threadID: String? = nil,
+            turnID: String? = nil
+        ) throws {
             guard (0...100).contains(productivityScore), (0...100).contains(confidenceScore) else {
                 throw CodexAppServerError.malformedResponse(
                     "daily assessment scores must be between 0 and 100"
@@ -486,6 +499,9 @@
             self.productivityScore = productivityScore
             self.confidenceScore = confidenceScore
             self.summaryLines = sanitized
+            self.rawResponse = rawResponse
+            self.threadID = threadID
+            self.turnID = turnID
         }
 
         static func decode(_ raw: String) throws -> ChatGPTDailyAssessment {
@@ -497,7 +513,8 @@
                 return try ChatGPTDailyAssessment(
                     productivityScore: decoded.productivityScore,
                     confidenceScore: decoded.confidenceScore,
-                    summaryLines: decoded.summaryLines
+                    summaryLines: decoded.summaryLines,
+                    rawResponse: raw
                 )
             } catch let error as CodexAppServerError {
                 throw error
@@ -512,6 +529,17 @@
             summaryLines.joined(separator: "\n")
         }
 
+        func withTransport(threadID: String, turnID: String?) throws -> ChatGPTDailyAssessment {
+            try ChatGPTDailyAssessment(
+                productivityScore: productivityScore,
+                confidenceScore: confidenceScore,
+                summaryLines: summaryLines,
+                rawResponse: rawResponse,
+                threadID: threadID,
+                turnID: turnID
+            )
+        }
+
         private struct Unvalidated: Decodable {
             let productivityScore: Int
             let confidenceScore: Int
@@ -520,6 +548,8 @@
     }
 
     enum CodexDailyAssessmentContract {
+        static let definitionID = GoalongDailyAnalysisDefinition.identifier
+        static let definitionRevision = GoalongDailyAnalysisDefinition.revision
         static let model = "gpt-5.6-luna"
         static let reasoningEffort = "high"
         static let threadStartTimeout: TimeInterval = 120
@@ -911,7 +941,7 @@
                 )
             }
 
-            _ = try request(
+            let startedTurn = try request(
                 method: "turn/start",
                 params: [
                     "threadId": threadID,
@@ -927,6 +957,8 @@
                 timeout: CodexDailyAssessmentContract.turnStartTimeout,
                 operation: "starting the recap turn"
             )
+            let turnID = (startedTurn["turn"] as? [String: Any])?["id"] as? String
+                ?? startedTurn["turnId"] as? String
 
             let deadline = Date().addingTimeInterval(CodexDailyAssessmentContract.generationTimeout)
             var output = CodexRecapOutputCollector(limits: limits)
@@ -976,7 +1008,10 @@
                     if status == "completed" {
                         let safeTail = streamingRedactor.finish()
                         if !safeTail.isEmpty { onDelta?(safeTail) }
-                        return try output.completedAssessment()
+                        return try output.completedAssessment().withTransport(
+                            threadID: threadID,
+                            turnID: turnID
+                        )
                     }
                     let error = turn["error"] as? [String: Any]
                     let message = CodexAppServerLimits.boundedUTF8(

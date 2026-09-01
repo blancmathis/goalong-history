@@ -99,11 +99,15 @@
             "recaps", isDirectory: true)
         static let chatGPTRunsDirectory = chatGPTDirectory.appendingPathComponent(
             "runs", isDirectory: true)
+        static let chatGPTProofsDirectory = chatGPTDirectory.appendingPathComponent(
+            "proofs", isDirectory: true)
         static let chatGPTCodexHomeDirectory = chatGPTDirectory.appendingPathComponent(
             "codex-home", isDirectory: true)
         static let integrityStateFile = applicationSupportDirectory.appendingPathComponent(
             "integrity-state.json", isDirectory: false)
         static let configFile = applicationSupportDirectory.appendingPathComponent("config.json", isDirectory: false)
+        static let capabilityConsentFile = applicationSupportDirectory.appendingPathComponent(
+            "capability-consent.json", isDirectory: false)
         static let sharingRulesFile = applicationSupportDirectory.appendingPathComponent(
             "sharing-rules.json", isDirectory: false)
         static let softwareSigningKeyFile = applicationSupportDirectory.appendingPathComponent(
@@ -292,6 +296,7 @@
                 chatGPT.appendingPathComponent("history", isDirectory: true),
                 chatGPT.appendingPathComponent("recaps", isDirectory: true),
                 chatGPT.appendingPathComponent("runs", isDirectory: true),
+                chatGPT.appendingPathComponent("proofs", isDirectory: true),
                 chatGPT.appendingPathComponent("codex-home", isDirectory: true),
             ]
         }

@@ -45,6 +45,7 @@
         case invalidRoot
         case noMessages
         case tooManyMessages
+        case importsDisabled
 
         var errorDescription: String? {
             switch self {
@@ -65,6 +66,8 @@
                 return "No dated user or assistant messages were found in this export."
             case .tooManyMessages:
                 return "The export contains more than 250,000 messages and was not imported."
+            case .importsDisabled:
+                return "Transcript imports are disabled. Goalong reads configured conversations directly from their original storage and never creates a second transcript archive."
             }
         }
     }
@@ -475,67 +478,22 @@
         let rootDirectory: URL
         let archiveFile: URL
 
-        private let encoder: JSONEncoder
         private let decoder: JSONDecoder
 
         init(rootDirectory: URL, fileManager _: FileManager = .default) {
             self.rootDirectory = rootDirectory
             self.archiveFile = self.rootDirectory.appendingPathComponent(
                 "normalized-conversations.json", isDirectory: false)
-            encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
             decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
         }
 
         func importConversations(
-            from sourceURL: URL,
-            importedAt: Date = Date(),
-            sourceReadCheckpoint: ((ChatGPTSourceReadCheckpoint) -> Void)? = nil
+            from _: URL,
+            importedAt _: Date = Date(),
+            sourceReadCheckpoint _: ((ChatGPTSourceReadCheckpoint) -> Void)? = nil
         ) throws -> ChatGPTImportSummary {
-            let data = try Self.readStableSource(
-                at: sourceURL,
-                maximumBytes: Self.maximumSourceBytes,
-                checkpoint: sourceReadCheckpoint
-            )
-            let parsed = try Self.parseConversations(data: data)
-            guard !parsed.messages.isEmpty else { throw ChatGPTHistoryStoreError.noMessages }
-            guard parsed.messages.count <= Self.maximumMessages else {
-                throw ChatGPTHistoryStoreError.tooManyMessages
-            }
-
-            let sorted = parsed.messages.sorted {
-                if $0.createdAt == $1.createdAt { return $0.id < $1.id }
-                return $0.createdAt < $1.createdAt
-            }
-            let summary = ChatGPTImportSummary(
-                importedAt: importedAt,
-                conversationCount: parsed.conversationIDs.count,
-                messageCount: sorted.count,
-                firstMessageAt: sorted.first?.createdAt,
-                lastMessageAt: sorted.last?.createdAt,
-                sourceSHA256: SHA256Digest.hashHex(data)
-            )
-            let archive = ChatGPTNormalizedArchive(
-                schemaVersion: 1,
-                summary: summary,
-                messages: sorted
-            )
-            if let existing = loadArchive(),
-                existing.schemaVersion == archive.schemaVersion,
-                existing.summary.sourceSHA256 == summary.sourceSHA256,
-                existing.messages == sorted
-            {
-                return existing.summary
-            }
-            let archiveData = try encoder.encode(archive)
-            guard Int64(archiveData.count) <= Self.maximumArchiveBytes else {
-                throw ChatGPTHistoryStoreError.fileTooLarge(Int64(archiveData.count))
-            }
-            try prepare()
-            try secureWrite(archiveData, to: archiveFile)
-            return summary
+            throw ChatGPTHistoryStoreError.importsDisabled
         }
 
         static func readStableSource(
@@ -650,14 +608,6 @@
                 )
             else { return nil }
             return try? decoder.decode(ChatGPTNormalizedArchive.self, from: data)
-        }
-
-        private func prepare() throws {
-            try ChatGPTSecureStorage.prepareDirectory(rootDirectory)
-        }
-
-        private func secureWrite(_ data: Data, to destination: URL) throws {
-            try ChatGPTSecureStorage.writeFileAtomically(data, to: destination)
         }
 
         struct ParsedConversations {

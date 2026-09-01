@@ -1,5 +1,6 @@
 #if os(macOS)
     import AgentActivity
+    import CryptoKit
     import Darwin
     import Foundation
     import LocalHistoryCore
@@ -988,6 +989,8 @@
         }
 
         func testDailyAssessmentContractPinsLunaHighAndRequiresExactlyFiveLines() throws {
+            XCTAssertEqual(CodexDailyAssessmentContract.definitionID, "daily-activity-five-line")
+            XCTAssertEqual(CodexDailyAssessmentContract.definitionRevision, "2026.08.v1")
             XCTAssertEqual(CodexDailyAssessmentContract.model, "gpt-5.6-luna")
             XCTAssertEqual(CodexDailyAssessmentContract.reasoningEffort, "high")
             XCTAssertEqual(CodexDailyAssessmentContract.threadStartTimeout, 120)
@@ -1010,6 +1013,12 @@
             XCTAssertEqual(result.confidenceScore, 67)
             XCTAssertEqual(result.summaryLines.count, 5)
             XCTAssertEqual(result.markdown.components(separatedBy: "\n").count, 5)
+            XCTAssertEqual(
+                result.rawResponse,
+                """
+                {"productivityScore":78,"confidenceScore":67,"summaryLines":["one","two","three","four","five"]}
+                """
+            )
 
             var invalid = CodexRecapOutputCollector()
             try invalid.setFinalText(
@@ -1018,6 +1027,236 @@
                 """
             )
             XCTAssertThrowsError(try invalid.completedAssessment())
+        }
+
+        func testGeneratedResponseCapsuleIsEncryptedBoundedAuthenticatedAndCryptographicallyDeleted() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-evidence-capsule")
+            defer { try? FileManager.default.removeItem(at: container) }
+            let executionID = UUID().uuidString.lowercased()
+            let plaintext = Data(
+                #"{"productivityScore":81,"summaryLines":["one","two","three","four","five"]}"#.utf8
+            )
+            let store = AnalysisEvidenceCapsuleStore(directory: container)
+            defer { try? store.destroy(executionID: executionID) }
+
+            let url = try store.storeGeneratedResponse(
+                plaintext,
+                executionID: executionID,
+                createdAt: Date()
+            )
+            let capsule = try Data(contentsOf: url)
+            XCTAssertNil(capsule.range(of: plaintext))
+            XCTAssertLessThanOrEqual(
+                capsule.count - plaintext.count,
+                AnalysisEvidenceCapsuleStore.maximumCapsuleOverheadBytes
+            )
+            XCTAssertEqual(
+                try store.decryptGeneratedResponse(executionID: executionID),
+                plaintext
+            )
+
+            var tampered = capsule
+            tampered[tampered.count - 1] ^= 0x01
+            try tampered.write(to: url, options: [.atomic])
+            XCTAssertThrowsError(try store.decryptGeneratedResponse(executionID: executionID))
+
+            try store.destroy(executionID: executionID)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+            XCTAssertThrowsError(try store.decryptGeneratedResponse(executionID: executionID))
+        }
+
+        func testAnalysisProofStoreCreatesBoundedVerifiableArtifactsWithoutCopyingPromptOrTranscript() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-analysis-proof-store")
+            defer { try? FileManager.default.removeItem(at: container) }
+            let proofRoot = container.appendingPathComponent("proofs", isDirectory: true)
+            let missingEvents = container.appendingPathComponent("events", isDirectory: true)
+            let missingSeals = container.appendingPathComponent("seals", isDirectory: true)
+            let missingReceipts = container.appendingPathComponent("receipts", isDirectory: true)
+            let shareBuilder = SharePackageBuilder(
+                eventFileURL: { day in
+                    missingEvents.appendingPathComponent("\(AppPaths.localDayString(for: day)).jsonl")
+                },
+                sealFileURL: { day in
+                    missingSeals.appendingPathComponent("\(AppPaths.localDayString(for: day)).seals.jsonl")
+                },
+                sealsDirectory: missingSeals,
+                receiptsDirectory: missingReceipts
+            )
+            let store = AnalysisProofStore(
+                rootDirectory: proofRoot,
+                shareBuilder: shareBuilder
+            )
+            let runID = UUID()
+            defer {
+                try? AnalysisEvidenceCapsuleStore(
+                    directory: proofRoot.appendingPathComponent("private-evidence", isDirectory: true)
+                ).destroy(executionID: runID.uuidString.lowercased())
+            }
+            let day = Calendar.current.startOfDay(
+                for: Date(timeIntervalSince1970: 1_788_148_800)
+            )
+            let transcriptSecret = "UNIQUE_TRANSCRIPT_BODY_MUST_NEVER_BE_STORED"
+            let promptSecret = "UNIQUE_COMPLETE_PROMPT_MUST_NEVER_BE_STORED"
+            let sourcePath = container.appendingPathComponent("original-session.jsonl").path
+            let sourceIndex = AgentSourceIndexEntry(
+                id: "ignored",
+                stableConversationID: "conversation-proof-fixture",
+                watchedFolderID: "fixture-folder",
+                watchedFolderName: "Fixture",
+                provider: .codex,
+                reference: AgentSourceReference(kind: .file, path: sourcePath),
+                relativePath: "original-session.jsonl",
+                sourceCreatedAt: day,
+                sourceModifiedAt: day.addingTimeInterval(60),
+                conversationStartedAt: day,
+                conversationEndedAt: day.addingTimeInterval(120),
+                firstIndexedAt: day,
+                lastObservedAt: day.addingTimeInterval(120),
+                byteCount: 1_024,
+                sha256: SHA256Digest.hashHex(Data("original source".utf8)),
+                startOffset: 10,
+                endOffset: 900,
+                availability: .available
+            )
+            let capture = AgentCaptureRecord(
+                index: sourceIndex,
+                summary: AgentDocumentSummary(
+                    format: .jsonLines,
+                    sessionID: "conversation-proof-fixture",
+                    title: "Proof fixture",
+                    startedAt: day,
+                    endedAt: day.addingTimeInterval(120),
+                    messageCount: 2,
+                    userMessageCount: 1,
+                    assistantMessageCount: 1,
+                    visibleMessages: [
+                        AgentVisibleMessage(role: .user, text: transcriptSecret),
+                        AgentVisibleMessage(role: .assistantFinal, text: "Bounded final answer"),
+                    ]
+                ),
+                isAnalyzed: true,
+                digestScope: .selectedIntervalProjection,
+                analysisInterval: DateInterval(start: day, duration: 86_400),
+                projectionIsComplete: true
+            )
+            let sourceCounts = ChatGPTRecapSourceCounts(
+                localEvents: 0,
+                activeMinutes: 0,
+                semanticSnapshots: 0,
+                screenTimeDevices: 0,
+                screenTimeApplications: 0,
+                agentCaptures: 1,
+                agentMessages: 2,
+                visibleAgentMessages: 2,
+                analyzedAgentCaptures: 1,
+                importedChatMessages: 0,
+                computerHistoryEpisodes: 0,
+                computerHistoryResources: 0,
+                workflowSuggestions: 0
+            )
+            let rendered = "Context includes \(transcriptSecret)"
+            let context = ChatGPTRecapContext(
+                day: day,
+                activity: ActivityAnalysisEngine.analyze(events: [], day: day),
+                computerHistory: nil,
+                screenTime: nil,
+                agentActivity: AgentActivityOverview(
+                    day: day,
+                    captures: [capture],
+                    sessionCount: 1,
+                    analyzedSessionCount: 1,
+                    messageCount: 2,
+                    visibleMessageCount: 2,
+                    sourceBytes: 1_024,
+                    indexBytes: 512,
+                    lastCaptureAt: day.addingTimeInterval(120)
+                ),
+                importedChats: [],
+                localJournalSourceAbsent: true,
+                renderedData: rendered,
+                sourceCounts: sourceCounts,
+                digest: SHA256Digest.hashHex(Data(rendered.utf8))
+            )
+            let lines = ["one", "two", "three", "four", "five"]
+            let recap = ChatGPTDailyRecap(
+                schemaVersion: 3,
+                day: day,
+                generatedAt: day.addingTimeInterval(3_600),
+                planType: "plus",
+                contextDigest: context.digest,
+                sourceCounts: sourceCounts,
+                markdown: lines.joined(separator: "\n"),
+                model: CodexDailyAssessmentContract.model,
+                reasoningEffort: CodexDailyAssessmentContract.reasoningEffort,
+                productivityScore: 80,
+                confidenceScore: 70,
+                summaryLines: lines
+            )
+            let rawResponse =
+                #"{"productivityScore":80,"confidenceScore":70,"summaryLines":["one","two","three","four","five"]}"#
+            let assessment = try ChatGPTDailyAssessment(
+                productivityScore: 80,
+                confidenceScore: 70,
+                summaryLines: lines,
+                rawResponse: rawResponse,
+                threadID: "thread-proof-fixture",
+                turnID: "turn-proof-fixture"
+            )
+            let prompt = "\(promptSecret)\n<goalong_context>\n\(rendered)\n</goalong_context>"
+            let result = try store.create(
+                runID: runID,
+                day: day,
+                generatedAt: recap.generatedAt,
+                trigger: "manual",
+                prompt: prompt,
+                context: context,
+                assessment: assessment,
+                recap: recap,
+                identity: FixtureAnalysisIdentity()
+            )
+            XCTAssertTrue(result.report.isLocallyValid, result.report.issues.joined(separator: ", "))
+            XCTAssertEqual(result.reference.retentionMode, "hash_only_no_transcript_copy")
+
+            let proofDirectory = proofRoot.appendingPathComponent(
+                result.reference.proofDirectoryName, isDirectory: true
+            )
+            let files = try FileManager.default.contentsOfDirectory(
+                at: proofDirectory,
+                includingPropertiesForKeys: nil
+            )
+            let proofBytes = try files.reduce(0) { total, file in
+                total + (try Data(contentsOf: file).count)
+            }
+            XCTAssertLessThan(proofBytes, 128 * 1_024)
+            for file in files {
+                let text = String(decoding: try Data(contentsOf: file), as: UTF8.self)
+                XCTAssertFalse(text.contains(transcriptSecret), file.lastPathComponent)
+                XCTAssertFalse(text.contains(promptSecret), file.lastPathComponent)
+            }
+
+            let allProofFiles = FileManager.default.enumerator(
+                at: proofRoot,
+                includingPropertiesForKeys: [.isRegularFileKey]
+            )?.allObjects as? [URL] ?? []
+            for file in allProofFiles {
+                guard (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+                    continue
+                }
+                let bytes = try Data(contentsOf: file)
+                XCTAssertNil(bytes.range(of: Data(transcriptSecret.utf8)), file.path)
+                XCTAssertNil(bytes.range(of: Data(promptSecret.utf8)), file.path)
+            }
+
+            let exported = container.appendingPathComponent("fixture.goalong-proof")
+            let exportReport = try store.export(reference: result.reference, to: exported)
+            XCTAssertTrue(exportReport.isLocallyValid)
+            let archive = try Data(contentsOf: exported)
+            XCTAssertLessThan(archive.count, 128 * 1_024)
+            XCTAssertTrue(try GoalongProofPackageVerifier.verify(archive: archive).isLocallyValid)
+            XCTAssertNil(archive.range(of: Data(transcriptSecret.utf8)))
+            XCTAssertNil(archive.range(of: Data(promptSecret.utf8)))
+            XCTAssertNil(archive.range(of: Data(sourcePath.utf8)))
+            print("Analysis proof bytes=\(proofBytes) archive_bytes=\(archive.count)")
         }
 
         func testAutomaticRecapScheduleTargetsOnlyThePreviousCompletedDay() throws {
@@ -1255,6 +1494,163 @@
                 CodexAppServerError.generationFailed("api_key=\(secret)")
                     .localizedDescription.contains(secret)
             )
+        }
+
+        func testSignedRecapBindsSavedResultWithoutPersistingPromptBody() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-signed-recap")
+            defer { try? FileManager.default.removeItem(at: container) }
+            let directory = container.appendingPathComponent("recaps", isDirectory: true)
+            let day = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_700_000_000))
+            let unsigned = try ChatGPTRecapPersistence.preparedForPersistence(
+                recapFixture(day: day, markdown: "A signed useful result.")
+            )
+            let prompt = Data("private prompt body that must not be copied".utf8)
+            let identity = FixtureAnalysisIdentity()
+            let attestation = try AnalysisRunAttestationSigner.sign(
+                runID: UUID(),
+                day: day,
+                generatedAt: unsigned.generatedAt,
+                trigger: "manual",
+                prompt: prompt,
+                recap: unsigned,
+                identity: identity
+            )
+            let signed = ChatGPTDailyRecap(
+                schemaVersion: 3,
+                day: unsigned.day,
+                generatedAt: unsigned.generatedAt,
+                provider: unsigned.provider,
+                planType: unsigned.planType,
+                contextDigest: unsigned.contextDigest,
+                sourceCounts: unsigned.sourceCounts,
+                markdown: unsigned.markdown,
+                model: unsigned.model,
+                reasoningEffort: unsigned.reasoningEffort,
+                productivityScore: unsigned.productivityScore,
+                confidenceScore: unsigned.confidenceScore,
+                summaryLines: unsigned.summaryLines,
+                attestation: attestation
+            )
+
+            XCTAssertTrue(signed.verifiesLocalAttestation)
+            XCTAssertTrue(signed.isValidCurrentAssessment)
+            try ChatGPTRecapPersistence.write(signed, to: directory)
+            XCTAssertEqual(ChatGPTRecapPersistence.load(for: day, from: directory), signed)
+
+            let persisted = try Data(
+                contentsOf: ChatGPTRecapPersistence.jsonURL(for: day, in: directory)
+            )
+            let comparisonEncoder = JSONEncoder()
+            comparisonEncoder.dateEncodingStrategy = .iso8601
+            comparisonEncoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            let unsignedBytes = try comparisonEncoder.encode(unsigned).count
+            XCTAssertLessThan(persisted.count, ChatGPTRecapPersistence.maximumJSONBytes)
+            XCTAssertLessThan(persisted.count - unsignedBytes, 4 * 1_024)
+            XCTAssertFalse(String(decoding: persisted, as: UTF8.self).contains(String(decoding: prompt, as: UTF8.self)))
+            XCTAssertTrue(String(decoding: persisted, as: UTF8.self).contains(attestation.promptSHA256))
+            print(
+                "ChatGPT signed recap bytes=\(persisted.count) "
+                    + "unsigned_bytes=\(unsignedBytes) overhead=\(persisted.count - unsignedBytes)"
+            )
+
+            let tampered = ChatGPTDailyRecap(
+                schemaVersion: 3,
+                day: signed.day,
+                generatedAt: signed.generatedAt,
+                provider: signed.provider,
+                planType: signed.planType,
+                contextDigest: signed.contextDigest,
+                sourceCounts: signed.sourceCounts,
+                markdown: signed.markdown.replacingOccurrences(of: "useful", with: "altered"),
+                model: signed.model,
+                reasoningEffort: signed.reasoningEffort,
+                productivityScore: signed.productivityScore,
+                confidenceScore: signed.confidenceScore,
+                summaryLines: signed.summaryLines?.map {
+                    $0.replacingOccurrences(of: "useful", with: "altered")
+                },
+                attestation: signed.attestation
+            )
+            XCTAssertFalse(tampered.verifiesLocalAttestation)
+            XCTAssertThrowsError(try ChatGPTRecapPersistence.write(tampered, to: directory))
+            XCTAssertEqual(ChatGPTRecapPersistence.load(for: day, from: directory), signed)
+
+            let tamperedScore = ChatGPTDailyRecap(
+                schemaVersion: 3,
+                day: signed.day,
+                generatedAt: signed.generatedAt,
+                provider: signed.provider,
+                planType: signed.planType,
+                contextDigest: signed.contextDigest,
+                sourceCounts: signed.sourceCounts,
+                markdown: signed.markdown,
+                model: signed.model,
+                reasoningEffort: signed.reasoningEffort,
+                productivityScore: 99,
+                confidenceScore: signed.confidenceScore,
+                summaryLines: signed.summaryLines,
+                attestation: signed.attestation
+            )
+            XCTAssertFalse(tamperedScore.verifiesLocalAttestation)
+            XCTAssertThrowsError(try ChatGPTRecapPersistence.write(tamperedScore, to: directory))
+            XCTAssertEqual(ChatGPTRecapPersistence.load(for: day, from: directory), signed)
+        }
+
+        func testSignedRecapTimestampSurvivesISO8601PersistenceRoundTrip() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-signed-recap-time")
+            defer { try? FileManager.default.removeItem(at: container) }
+            let directory = container.appendingPathComponent("recaps", isDirectory: true)
+            let day = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_700_000_000))
+            let base = recapFixture(day: day, markdown: "A time-stable signed result.")
+            let fractionalGeneratedAt = Date(timeIntervalSince1970: 1_700_000_000.789)
+            let draft = ChatGPTDailyRecap(
+                day: base.day,
+                generatedAt: fractionalGeneratedAt,
+                provider: base.provider,
+                planType: base.planType,
+                contextDigest: base.contextDigest,
+                sourceCounts: base.sourceCounts,
+                markdown: base.markdown,
+                model: base.model,
+                reasoningEffort: base.reasoningEffort,
+                productivityScore: base.productivityScore,
+                confidenceScore: base.confidenceScore,
+                summaryLines: base.summaryLines
+            )
+            let normalized = try ChatGPTRecapPersistence.preparedForPersistence(draft)
+            let attestation = try AnalysisRunAttestationSigner.sign(
+                runID: UUID(),
+                day: day,
+                generatedAt: fractionalGeneratedAt,
+                trigger: "automatic",
+                prompt: Data("transient prompt".utf8),
+                recap: normalized,
+                identity: FixtureAnalysisIdentity()
+            )
+            let signed = ChatGPTDailyRecap(
+                schemaVersion: 3,
+                day: normalized.day,
+                generatedAt: normalized.generatedAt,
+                provider: normalized.provider,
+                planType: normalized.planType,
+                contextDigest: normalized.contextDigest,
+                sourceCounts: normalized.sourceCounts,
+                markdown: normalized.markdown,
+                model: normalized.model,
+                reasoningEffort: normalized.reasoningEffort,
+                productivityScore: normalized.productivityScore,
+                confidenceScore: normalized.confidenceScore,
+                summaryLines: normalized.summaryLines,
+                attestation: attestation
+            )
+
+            try ChatGPTRecapPersistence.write(signed, to: directory)
+            let reloaded = try XCTUnwrap(
+                ChatGPTRecapPersistence.load(for: day, from: directory)
+            )
+            XCTAssertTrue(reloaded.verifiesLocalAttestation)
+            XCTAssertEqual(reloaded.attestation?.generatedAtMilliseconds, 1_700_000_000_000)
+            XCTAssertEqual(reloaded.generatedAt.timeIntervalSince1970, 1_700_000_000)
         }
 
         func testChatGPTStorageRejectsSymlinkedDirectoriesAndFiles() throws {
@@ -1591,7 +1987,8 @@
                 automaticRetryScheduler: { delay, workItem in
                     scheduledDelays.append(delay)
                     scheduledWork.append(workItem)
-                }
+                },
+                analysisConsentProvider: { true }
             )
             runtime.automaticRecapsEnabled = true
             runtime.start()
@@ -1637,9 +2034,11 @@
                 automaticBoundaryFallbackScheduler: { fireDate, workItem in
                     scheduledDates.append(fireDate)
                     scheduledItems.append(workItem)
-                }
+                },
+                analysisConsentProvider: { true }
             )
 
+            runtime.automaticRecapsEnabled = true
             runtime.start()
 
             XCTAssertEqual(scheduledDates.count, 1)
@@ -1657,6 +2056,38 @@
 
             runtime.stop()
             XCTAssertTrue(scheduledItems[0].isCancelled)
+            XCTAssertFalse(runtime.hasAutomaticBoundaryFallbackForTesting)
+        }
+
+        func testAutomaticRecapCannotStartWithoutGoalongConsent() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-recap-no-consent")
+            defer { try? FileManager.default.removeItem(at: container) }
+            var scheduledDates: [Date] = []
+            var delayedAutomaticItems: [DispatchWorkItem] = []
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(
+                    rootDirectory: container.appendingPathComponent("history", isDirectory: true)
+                ),
+                recapsDirectory: container.appendingPathComponent("recaps", isDirectory: true),
+                executableLocator: { nil },
+                sessionFactory: { _ in
+                    throw NSError(domain: "ChatGPTRecapTests", code: 103)
+                },
+                directoryOpener: { _ in },
+                fileRevealer: { _ in },
+                delayedAutomaticScheduler: { delayedAutomaticItems.append($0) },
+                automaticRetryScheduler: { _, _ in },
+                automaticBoundaryFallbackScheduler: { fireDate, _ in
+                    scheduledDates.append(fireDate)
+                },
+                analysisConsentProvider: { false }
+            )
+
+            runtime.automaticRecapsEnabled = true
+            runtime.start()
+
+            XCTAssertTrue(scheduledDates.isEmpty)
+            XCTAssertTrue(delayedAutomaticItems.isEmpty)
             XCTAssertFalse(runtime.hasAutomaticBoundaryFallbackForTesting)
         }
 
@@ -1697,7 +2128,7 @@
             XCTAssertEqual(try String(contentsOf: markdownURL, encoding: .utf8), recap.markdown)
         }
 
-        func testChatGPTImportIsStableIdempotentAndLeavesSourceUnchanged() throws {
+        func testChatGPTTranscriptImportIsDisabledAndCreatesNoArchive() throws {
             let container = try makeTemporaryDirectory(prefix: "goalong-chatgpt-import")
             defer { try? FileManager.default.removeItem(at: container) }
             let source = container.appendingPathComponent("conversations.json")
@@ -1706,54 +2137,14 @@
             let store = ChatGPTHistoryStore(
                 rootDirectory: container.appendingPathComponent("history", isDirectory: true)
             )
-            let importedAt = Date(timeIntervalSince1970: 1_700_000_100)
-
-            let first = try store.importConversations(from: source, importedAt: importedAt)
-            let firstArchive = try Data(contentsOf: store.archiveFile)
-            let second = try store.importConversations(from: source)
-
-            XCTAssertEqual(first, second)
-            XCTAssertEqual(first.messageCount, 1)
+            XCTAssertThrowsError(try store.importConversations(from: source)) { error in
+                guard case ChatGPTHistoryStoreError.importsDisabled = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+            }
             XCTAssertEqual(try Data(contentsOf: source), sourceData)
-            XCTAssertEqual(try Data(contentsOf: store.archiveFile), firstArchive)
-            XCTAssertEqual(store.summary(), first)
-            let permissions = try XCTUnwrap(
-                FileManager.default.attributesOfItem(atPath: store.archiveFile.path)[.posixPermissions]
-                    as? NSNumber
-            )
-            let directoryPermissions = try XCTUnwrap(
-                FileManager.default.attributesOfItem(atPath: store.rootDirectory.path)[.posixPermissions]
-                    as? NSNumber
-            )
-            XCTAssertEqual(permissions.intValue & 0o777, 0o600)
-            XCTAssertEqual(directoryPermissions.intValue & 0o777, 0o700)
-
-            let normalParsed = try ChatGPTHistoryStore.parseConversations(data: sourceData)
-            XCTAssertEqual(normalParsed.messages.first?.conversationID, "conversation-1")
-            XCTAssertEqual(normalParsed.messages.first?.id, "conversation-1:message-user")
-
-            let sensitiveConversationID =
-                "Authorization: Bearer identifier-secret-that-must-not-be-persisted"
-            let oversizedMessageID = String(repeating: "oversized-id-", count: 10_000)
-            let amplifiedSource = try exportFixtureData(
-                text: "A bounded imported message",
-                conversationID: sensitiveConversationID,
-                messageID: oversizedMessageID
-            )
-            try amplifiedSource.write(to: source, options: [.atomic])
-            _ = try store.importConversations(from: source)
-            let boundedArchive = try Data(contentsOf: store.archiveFile)
-            let boundedArchiveString = try XCTUnwrap(String(data: boundedArchive, encoding: .utf8))
-            let boundedParsed = try ChatGPTHistoryStore.parseConversations(data: amplifiedSource)
-            let boundedMessage = try XCTUnwrap(boundedParsed.messages.first)
-            XCTAssertLessThan(boundedMessage.conversationID.utf8.count, 100)
-            XCTAssertLessThan(boundedMessage.id.utf8.count, 200)
-            XCTAssertFalse(boundedArchiveString.contains(sensitiveConversationID))
-            XCTAssertFalse(boundedArchiveString.contains(oversizedMessageID))
-            XCTAssertLessThan(boundedArchive.count, amplifiedSource.count)
-
-            _ = try store.importConversations(from: source)
-            XCTAssertEqual(try Data(contentsOf: store.archiveFile), boundedArchive)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: store.archiveFile.path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: store.rootDirectory.path))
         }
 
         func testRemoveImportRefusesUnexpectedDirectoryOrSymlink() throws {
@@ -1785,66 +2176,25 @@
             XCTAssertEqual(try Data(contentsOf: outside), outsideBytes)
         }
 
-        func testChatGPTImportRejectsGrowingReplacedAndSymlinkSourcesWithoutArchiveChanges() throws {
+        func testDisabledChatGPTImportDoesNotOpenSymlinkOrCreateStorage() throws {
             let container = try makeTemporaryDirectory(prefix: "goalong-chatgpt-import-races")
             defer { try? FileManager.default.removeItem(at: container) }
-            let source = container.appendingPathComponent("conversations.json")
-            let initialData = try exportFixtureData(text: "Initial archive")
-            try initialData.write(to: source)
+            let outside = container.appendingPathComponent("outside.json")
+            let outsideData = try exportFixtureData(text: "Do not read or copy")
+            try outsideData.write(to: outside)
+            let source = container.appendingPathComponent("conversations-link.json")
+            try FileManager.default.createSymbolicLink(at: source, withDestinationURL: outside)
             let store = ChatGPTHistoryStore(
                 rootDirectory: container.appendingPathComponent("history", isDirectory: true)
             )
-            _ = try store.importConversations(
-                from: source,
-                importedAt: Date(timeIntervalSince1970: 1_700_000_100)
-            )
-            let lastKnownGood = try Data(contentsOf: store.archiveFile)
-
-            var didGrow = false
-            XCTAssertThrowsError(
-                try store.importConversations(from: source) { checkpoint in
-                    guard case .opened = checkpoint, !didGrow else { return }
-                    didGrow = true
-                    let handle = try? FileHandle(forWritingTo: source)
-                    _ = try? handle?.seekToEnd()
-                    try? handle?.write(contentsOf: Data(" ".utf8))
-                    try? handle?.close()
-                }
-            ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("changed, grew, or was replaced"))
-            }
-            XCTAssertEqual(try Data(contentsOf: store.archiveFile), lastKnownGood)
-
-            try initialData.write(to: source, options: [.atomic])
-            let displaced = container.appendingPathComponent("original.json")
-            let replacementData = try exportFixtureData(text: "Replacement archive")
-            var replacementMutationError: Error?
-            var didReplace = false
-            XCTAssertThrowsError(
-                try store.importConversations(from: source) { checkpoint in
-                    guard case .reachedEnd = checkpoint, !didReplace else { return }
-                    didReplace = true
-                    do {
-                        try FileManager.default.moveItem(at: source, to: displaced)
-                        try replacementData.write(to: source)
-                    } catch {
-                        replacementMutationError = error
-                    }
-                }
-            ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("changed, grew, or was replaced"))
-            }
-            XCTAssertNil(replacementMutationError)
-            XCTAssertEqual(try Data(contentsOf: source), replacementData)
-            XCTAssertEqual(try Data(contentsOf: store.archiveFile), lastKnownGood)
-
-            try? FileManager.default.removeItem(at: source)
-            try FileManager.default.createSymbolicLink(at: source, withDestinationURL: displaced)
             XCTAssertThrowsError(try store.importConversations(from: source)) { error in
-                XCTAssertTrue(error.localizedDescription.contains("symbolic link"))
+                guard case ChatGPTHistoryStoreError.importsDisabled = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
             }
-            XCTAssertEqual(try Data(contentsOf: store.archiveFile), lastKnownGood)
-            XCTAssertEqual(try Data(contentsOf: displaced), initialData)
+            XCTAssertEqual(try Data(contentsOf: outside), outsideData)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: store.archiveFile.path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: store.rootDirectory.path))
         }
 
         func testBoundedRecapContextKeepsLateSectionsExactCoverageAndRedactsSecrets() throws {
@@ -2240,6 +2590,23 @@
                 confidenceScore: 68,
                 summaryLines: lines
             )
+        }
+
+        private final class FixtureAnalysisIdentity: AnalysisRunSigningIdentity {
+            private let key = P256.Signing.PrivateKey()
+            lazy var info: DeviceIdentityInfo = {
+                let publicKey = key.publicKey.x963Representation
+                return DeviceIdentityInfo(
+                    deviceID: SHA256Digest.hashHex(publicKey),
+                    publicKeyBase64: publicKey.base64EncodedString(),
+                    trustTier: "fixture",
+                    algorithm: AnchorSignatureVerifier.supportedAlgorithm
+                )
+            }()
+
+            func sign(_ message: Data) throws -> Data {
+                try key.signature(for: message).derRepresentation
+            }
         }
 
         private func exportFixtureData(

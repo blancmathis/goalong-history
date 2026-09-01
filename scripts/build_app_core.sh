@@ -1,29 +1,26 @@
 #!/bin/bash
 set -euo pipefail
 
-APP_NAME="Goalong History"
+BUILD_EDITION="unified"
+APP_NAME="${LOCALHISTORY_APP_NAME:-Goalong History}"
+EXECUTABLE_NAME="${LOCALHISTORY_EXECUTABLE_NAME:-Goalong History}"
+BUNDLE_ID="${LOCALHISTORY_BUNDLE_ID:-ai.goalong.localhistory}"
 PRODUCT_NAME="LocalHistory"
 CLI_PRODUCT_NAME="goalong"
-EXECUTABLE_NAME="Goalong History"
-BUNDLE_ID="ai.goalong.localhistory"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CODESIGN_POLICY="$ROOT_DIR/scripts/codesign_policy.sh"
-# shellcheck source=sparkle_release.env
-source "$ROOT_DIR/scripts/sparkle_release.env"
 if [[ ! -f "$CODESIGN_POLICY" ]]; then
   echo "Code-signing policy is missing: $CODESIGN_POLICY" >&2
   exit 1
 fi
 # shellcheck source=codesign_policy.sh
 source "$CODESIGN_POLICY"
-VERSION="${LOCALHISTORY_VERSION:-0.5.1}"
+VERSION="${LOCALHISTORY_VERSION:-0.6.0}"
 BUILD_NUMBER="${LOCALHISTORY_BUILD_NUMBER:-1}"
 ARCHS="${LOCALHISTORY_ARCHS:-$(uname -m)}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
 SIGN_IDENTITY="${LOCALHISTORY_CODESIGN_IDENTITY:--}"
 RUN_TESTS="${LOCALHISTORY_RUN_TESTS:-1}"
-DISABLE_APP_ATTEST="${LOCALHISTORY_DISABLE_APP_ATTEST:-auto}"
-SPARKLE_PUBLIC_ED_KEY="${LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY:-}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build_app.sh must run on macOS." >&2
@@ -46,46 +43,41 @@ mkdir -p "$OUTPUT_DIR"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/localhistory-build.XXXXXX")"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-APP_ATTEST_DISABLED=0
-case "$DISABLE_APP_ATTEST" in
-  1|true|yes) APP_ATTEST_DISABLED=1 ;;
-  0|false|no) APP_ATTEST_DISABLED=0 ;;
-  auto) ;;
-  *)
-    echo "LOCALHISTORY_DISABLE_APP_ATTEST must be auto, 0, or 1." >&2
-    exit 1
-    ;;
-esac
-
-is_app_attest_sdk_failure() {
-  /usr/bin/grep -Eq "AppAttestManager\\.swift:[0-9]+:[0-9]+: (error|fatal error):|error: no such module 'DeviceCheck'|error: cannot find 'DCAppAttestService'" "$1"
-}
-
-run_swift_test() {
-  if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
-    xcrun swift test -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST
-  else
-    xcrun swift test
-  fi
-}
+# A CLI launched outside the app bundle still needs a stable bundle identity so macOS TCC
+# can evaluate it against the same certificate-backed designated requirement as the app.
+# Without an embedded Info.plist, codesign supplies an identifier but TCC treats the Mach-O
+# as an unrelated command-line tool and Goalong's Full Disk Access decision does not apply.
+CLI_INFO_PLIST="$WORK_DIR/goalong-Info.plist"
+cat > "$CLI_INFO_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>$CLI_PRODUCT_NAME</string>
+    <key>CFBundleIdentifier</key>
+    <string>$BUNDLE_ID</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$CLI_PRODUCT_NAME</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$VERSION</string>
+    <key>CFBundleVersion</key>
+    <string>$BUILD_NUMBER</string>
+</dict>
+</plist>
+PLIST
+/usr/bin/plutil -lint "$CLI_INFO_PLIST" >/dev/null
+export LOCALHISTORY_CLI_INFO_PLIST="$CLI_INFO_PLIST"
 
 if [[ "$RUN_TESTS" == "1" ]]; then
   echo "Testing Goalong History…"
-  TEST_LOG="$WORK_DIR/tests.log"
-  set +e
-  (cd "$ROOT_DIR" && run_swift_test) >"$TEST_LOG" 2>&1
-  TEST_STATUS=$?
-  set -e
-
-  if [[ $TEST_STATUS -ne 0 && "$DISABLE_APP_ATTEST" == "auto" ]] && is_app_attest_sdk_failure "$TEST_LOG"; then
-    APP_ATTEST_DISABLED=1
-    (cd "$ROOT_DIR" && run_swift_test)
-  elif [[ $TEST_STATUS -ne 0 ]]; then
-    cat "$TEST_LOG" >&2
-    exit "$TEST_STATUS"
-  else
-    cat "$TEST_LOG"
-  fi
+  (cd "$ROOT_DIR" && xcrun swift test)
 fi
 
 build_arch() {
@@ -94,9 +86,6 @@ build_arch() {
   local log="$WORK_DIR/build-$arch.log"
   local cli_log="$WORK_DIR/build-$arch-cli.log"
   local command=(xcrun swift build -c release --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
-  if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
-    command+=( -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST )
-  fi
 
   echo "Building ${arch}…"
   set +e
@@ -104,18 +93,12 @@ build_arch() {
   local status=$?
   set -e
 
-  if [[ $status -ne 0 && "$DISABLE_APP_ATTEST" == "auto" && "$APP_ATTEST_DISABLED" -eq 0 ]] && is_app_attest_sdk_failure "$log"; then
-    return 42
-  fi
   if [[ $status -ne 0 ]]; then
     cat "$log" >&2
     return "$status"
   fi
 
   local bin_command=(xcrun swift build -c release --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch" --show-bin-path)
-  if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
-    bin_command+=( -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST )
-  fi
   local bin_dir
   bin_dir="$(cd "$ROOT_DIR" && "${bin_command[@]}")"
   local binary="$bin_dir/$PRODUCT_NAME"
@@ -126,9 +109,6 @@ build_arch() {
   cp "$binary" "$WORK_DIR/$PRODUCT_NAME-$arch"
 
   local cli_command=(xcrun swift build -c release --product "$CLI_PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
-  if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
-    cli_command+=( -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST )
-  fi
   if ! (cd "$ROOT_DIR" && "${cli_command[@]}") >"$cli_log" 2>&1; then
     cat "$cli_log" >&2
     return 1
@@ -148,24 +128,11 @@ build_all_archs() {
   done
 }
 
-set +e
 build_all_archs
-BUILD_STATUS=$?
-set -e
-if [[ $BUILD_STATUS -eq 42 ]]; then
-  echo "The installed SDK does not support the optional App Attest bridge; rebuilding with it disabled."
-  APP_ATTEST_DISABLED=1
-  rm -f "$WORK_DIR/$PRODUCT_NAME-"*
-  rm -f "$WORK_DIR/$CLI_PRODUCT_NAME-"*
-  rm -rf "$WORK_DIR"/build-*
-  build_all_archs
-elif [[ $BUILD_STATUS -ne 0 ]]; then
-  exit "$BUILD_STATUS"
-fi
 
 APP_DIR="$WORK_DIR/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
-mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Frameworks"
+mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 
 BINARY_COUNT=0
 for arch in $ARCHS; do
@@ -189,21 +156,8 @@ fi
 chmod 755 "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 chmod 755 "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
-# SwiftPM links Sparkle dynamically but does not create our hand-built .app bundle for us.
-# Copy the exact binary artifact resolved by Package.swift, preserving symlinks and metadata.
-SPARKLE_FRAMEWORK="$(find "$WORK_DIR" -type d -name Sparkle.framework -path '*/artifacts/sparkle/Sparkle/*' -print -quit 2>/dev/null || true)"
-if [[ -z "$SPARKLE_FRAMEWORK" ]]; then
-  echo "Sparkle.framework was not found in SwiftPM build artifacts." >&2
-  exit 1
-fi
-/usr/bin/ditto "$SPARKLE_FRAMEWORK" "$CONTENTS/Frameworks/Sparkle.framework"
-
-if ! /usr/bin/otool -L "$CONTENTS/MacOS/$EXECUTABLE_NAME" | /usr/bin/grep -q '@rpath/Sparkle.framework'; then
-  echo "Built binary is not linked to Sparkle.framework." >&2
-  exit 1
-fi
-if ! /usr/bin/otool -l "$CONTENTS/MacOS/$EXECUTABLE_NAME" | /usr/bin/grep -A2 LC_RPATH | /usr/bin/grep -q '@executable_path/../Frameworks'; then
-  echo "Built binary is missing the app-relative Frameworks rpath." >&2
+if /usr/bin/otool -L "$CONTENTS/MacOS/$EXECUTABLE_NAME" | /usr/bin/grep -q 'Sparkle.framework'; then
+  echo "The single public app unexpectedly links Sparkle.framework." >&2
   exit 1
 fi
 
@@ -257,6 +211,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>$BUILD_NUMBER</string>
     <key>LocalHistoryAgentActivityDirectSourceV2</key>
     <true/>
+    <key>GoalongBuildEdition</key>
+    <string>$BUILD_EDITION</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.productivity</string>
     <key>LSMinimumSystemVersion</key>
@@ -277,21 +233,6 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Production/CI bundles receive a Sparkle key explicitly. Development source builds omit
-# the updater keys and SoftwareUpdateManager fails closed instead of hitting a live feed.
-if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
-  /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $SPARKLE_FEED_URL" "$CONTENTS/Info.plist"
-  /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_ED_KEY" "$CONTENTS/Info.plist"
-  /usr/libexec/PlistBuddy -c 'Add :SURequireSignedFeed bool true' "$CONTENTS/Info.plist"
-  /usr/libexec/PlistBuddy -c 'Add :SUVerifyUpdateBeforeExtraction bool true' "$CONTENTS/Info.plist"
-  /usr/libexec/PlistBuddy -c 'Add :SUEnableAutomaticChecks bool true' "$CONTENTS/Info.plist"
-  /usr/libexec/PlistBuddy -c 'Add :SUScheduledCheckInterval integer 86400' "$CONTENTS/Info.plist"
-  /usr/libexec/PlistBuddy -c 'Add :SUAllowsAutomaticUpdates bool false' "$CONTENTS/Info.plist"
-  /usr/libexec/PlistBuddy -c 'Add :SUAutomaticallyUpdate bool false' "$CONTENTS/Info.plist"
-  /usr/libexec/PlistBuddy -c 'Add :SUEnableSystemProfiling bool false' "$CONTENTS/Info.plist"
-  /usr/libexec/PlistBuddy -c 'Add :SUSendProfileInfo bool false' "$CONTENTS/Info.plist"
-fi
-
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
@@ -304,25 +245,6 @@ else
   SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY" "$SIGN_TIMESTAMP_ARGUMENT")
 fi
 
-sign_sparkle_component() {
-  local path="$1"
-  shift
-  if [[ -e "$path" ]]; then
-    codesign "${SIGN_ARGS[@]}" "$@" "$path"
-  fi
-}
-
-# Explicit nested-code signing order from Sparkle's manual distribution guidance.
-# Do not use --deep: Downloader.xpc carries its own entitlement metadata.
-SPARKLE_VERSION_DIR="$CONTENTS/Frameworks/Sparkle.framework/Versions/B"
-if [[ ! -d "$SPARKLE_VERSION_DIR" ]]; then
-  SPARKLE_VERSION_DIR="$CONTENTS/Frameworks/Sparkle.framework/Versions/Current"
-fi
-sign_sparkle_component "$SPARKLE_VERSION_DIR/XPCServices/Installer.xpc"
-sign_sparkle_component "$SPARKLE_VERSION_DIR/XPCServices/Downloader.xpc" --preserve-metadata=entitlements
-sign_sparkle_component "$SPARKLE_VERSION_DIR/Autoupdate"
-sign_sparkle_component "$SPARKLE_VERSION_DIR/Updater.app"
-sign_sparkle_component "$CONTENTS/Frameworks/Sparkle.framework"
 codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID" "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
 APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
@@ -342,20 +264,13 @@ codesign --verify --strict --verbose=2 "$APP_DIR"
 rm -rf "$OUTPUT_DIR/$APP_NAME.app"
 ditto "$APP_DIR" "$OUTPUT_DIR/$APP_NAME.app"
 
-LOCALHISTORY_APP_PATH="$OUTPUT_DIR/$APP_NAME.app" "$ROOT_DIR/scripts/verify_sparkle_bundle.sh"
+LOCALHISTORY_APP_PATH="$OUTPUT_DIR/$APP_NAME.app" "$ROOT_DIR/scripts/verify_local_bundle.sh"
 LOCALHISTORY_AUDIT_BINARY="$OUTPUT_DIR/$APP_NAME.app/Contents/MacOS/$EXECUTABLE_NAME" \
   "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
 
 echo
 printf 'Built %s %s (%s)\n' "$APP_NAME" "$VERSION" "$ARCHS"
 printf 'Output: %s\n' "$OUTPUT_DIR/$APP_NAME.app"
-if [[ "$APP_ATTEST_DISABLED" -eq 1 ]]; then
-  echo "Optional App Attest bridge: disabled for SDK compatibility"
-else
-  echo "Optional App Attest bridge: enabled"
-fi
-if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
-  echo "Sparkle updates: configured for signed feed checks"
-else
-  echo "Sparkle updates: framework embedded, live checks disabled in this development build"
-fi
+printf 'Edition: %s\n' "$BUILD_EDITION"
+echo "Sparkle, first-party HTTP uploader and App Attest transport: physically absent"
+echo "Optional ChatGPT analysis: delegated to Codex after explicit consent"

@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppleScreenTime
     import Foundation
+    import LocalHistoryCore
     import XCTest
     @testable import LocalHistoryApp
 
@@ -187,6 +188,276 @@
             XCTAssertEqual(result.map(\.foregroundSeconds), [35, 25, 25])
         }
 
+        func testConciseUsageShowsOnlySixEntriesAtOrAboveFiveMinutes() {
+            let applications = [12, 11, 10, 9, 8, 7, 6, 4, 0].enumerated().map { index, minutes in
+                DailyAppUsage(
+                    id: "app:\(index)",
+                    name: "App \(index)",
+                    bundleIdentifier: "com.example.app\(index)",
+                    appleCurrentMacSeconds: TimeInterval(minutes * 60),
+                    appleOtherDeviceSeconds: 0,
+                    goalongSeconds: 0
+                )
+            }
+            let websites = [12, 11, 10, 9, 8, 7, 6, 4, 0].enumerated().map { index, minutes in
+                trackedWebsite(
+                    name: "site-\(index).example",
+                    seconds: TimeInterval(minutes * 60)
+                )
+            }
+
+            let conciseApplications = OverviewUsageProjection.presentedApplications(
+                applications,
+                showsAll: false
+            )
+            let conciseWebsites = OverviewUsageProjection.presentedWebsites(
+                websites,
+                showsAll: false
+            )
+
+            XCTAssertEqual(conciseApplications.map(\.name), (0 ..< 6).map { "App \($0)" })
+            XCTAssertEqual(
+                conciseWebsites.map(\.name),
+                (0 ..< 6).map { "site-\($0).example" }
+            )
+            XCTAssertTrue(conciseApplications.allSatisfy {
+                $0.displaySeconds >= OverviewUsageProjection.conciseMinimumDuration
+            })
+            XCTAssertTrue(conciseWebsites.allSatisfy {
+                $0.foregroundSeconds >= OverviewUsageProjection.conciseMinimumDuration
+            })
+        }
+
+        func testExpandedUsageRestoresEveryPositiveEntryWithoutCreatingZeroMinuteRows() {
+            let applications = [8, 4, 1, 0].enumerated().map { index, minutes in
+                DailyAppUsage(
+                    id: "app:\(index)",
+                    name: "App \(index)",
+                    bundleIdentifier: "com.example.app\(index)",
+                    appleCurrentMacSeconds: TimeInterval(minutes * 60),
+                    appleOtherDeviceSeconds: 0,
+                    goalongSeconds: 0
+                )
+            }
+            let websites = [8, 4, 1, 0].enumerated().map { index, minutes in
+                trackedWebsite(
+                    name: "site-\(index).example",
+                    seconds: TimeInterval(minutes * 60)
+                )
+            }
+
+            XCTAssertEqual(
+                OverviewUsageProjection.presentedApplications(
+                    applications,
+                    showsAll: true
+                ).map(\.name),
+                ["App 0", "App 1", "App 2"]
+            )
+            XCTAssertEqual(
+                OverviewUsageProjection.presentedWebsites(
+                    websites,
+                    showsAll: true
+                ).map(\.name),
+                ["site-0.example", "site-1.example", "site-2.example"]
+            )
+        }
+
+        func testConciseUsageUsesAnExactFiveMinuteBoundary() {
+            let below = DailyAppUsage(
+                id: "below",
+                name: "Below",
+                bundleIdentifier: "com.example.below",
+                appleCurrentMacSeconds: 299,
+                appleOtherDeviceSeconds: 0,
+                goalongSeconds: 0
+            )
+            let boundary = DailyAppUsage(
+                id: "boundary",
+                name: "Boundary",
+                bundleIdentifier: "com.example.boundary",
+                appleCurrentMacSeconds: 300,
+                appleOtherDeviceSeconds: 0,
+                goalongSeconds: 0
+            )
+
+            XCTAssertEqual(
+                OverviewUsageProjection.presentedApplications(
+                    [boundary, below],
+                    showsAll: false
+                ).map(\.name),
+                ["Boundary"]
+            )
+            XCTAssertEqual(
+                OverviewUsageProjection.presentedWebsites(
+                    [
+                        trackedWebsite(name: "boundary.example", seconds: 300),
+                        trackedWebsite(name: "below.example", seconds: 299),
+                    ],
+                    showsAll: false
+                ).map(\.name),
+                ["boundary.example"]
+            )
+            XCTAssertEqual(
+                OverviewUsageProjection.presentedAppleApplications(
+                    [
+                        usage("com.example.boundary", "Boundary", 300),
+                        usage("com.example.below", "Below", 299),
+                    ],
+                    showsAll: false
+                ).map(\.resolvedName),
+                ["Boundary"]
+            )
+        }
+
+        func testDurationLabelMakesSubMinuteUsageExplicit() {
+            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 0), "0m")
+            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 1), "<1m")
+            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 59.9), "<1m")
+            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 60), "1m")
+        }
+
+        func testUnifiedBreakdownReplacesBrowsersWithSitesAndReconcilesTotal() throws {
+            let start = Date(timeIntervalSince1970: 1_700_000_000)
+            let end = start.addingTimeInterval(86_400)
+            let mac = AppleScreenTimeDevice(id: "mac", name: "MacBook Pro", kind: .mac)
+            let report = try summary(
+                start: start,
+                end: end,
+                device: mac,
+                total: 120 * 60,
+                applications: [
+                    usage("at.studio.AsideBrowser", "Aside", 60 * 60),
+                    usage("com.openai.codex", "ChatGPT", 30 * 60),
+                    usage("com.google.Chrome", "Google Chrome", 20 * 60),
+                    usage("com.apple.finder", "Finder", 10 * 60),
+                ]
+            )
+            let websites = [
+                trackedWebsite(
+                    name: "x.com",
+                    seconds: 45 * 60,
+                    sources: [
+                        websiteSource("Aside", "at.studio.AsideBrowser", 40 * 60),
+                        websiteSource("Google Chrome", "com.google.Chrome", 5 * 60),
+                    ]
+                ),
+                trackedWebsite(
+                    name: "chatgpt.com",
+                    seconds: 10 * 60,
+                    sources: [
+                        websiteSource("Aside", "at.studio.AsideBrowser", 10 * 60)
+                    ]
+                ),
+            ]
+
+            let result = UsageBreakdownProjection.build(
+                summary: report,
+                trackedUsage: websites
+            )
+
+            XCTAssertEqual(result.totalSeconds, 120 * 60, accuracy: 0.001)
+            XCTAssertEqual(result.websiteAttributedSeconds, 55 * 60, accuracy: 0.001)
+            XCTAssertFalse(result.appsAndWebsites.contains { ["Aside", "Google Chrome"].contains($0.name) })
+            XCTAssertEqual(
+                result.appsAndWebsites.first { $0.name == "x.com" }?.seconds,
+                45 * 60
+            )
+            XCTAssertEqual(
+                result.appsAndWebsites.first { $0.kind == .otherWeb }?.seconds,
+                25 * 60
+            )
+            XCTAssertEqual(
+                result.appsAndWebsites.reduce(0) { $0 + $1.seconds },
+                result.totalSeconds,
+                accuracy: 0.001
+            )
+            XCTAssertEqual(
+                result.appsAndBrowsers.reduce(0) { $0 + $1.seconds },
+                result.totalSeconds,
+                accuracy: 0.001
+            )
+
+            let aside = try XCTUnwrap(result.appsAndBrowsers.first { $0.name == "Aside" })
+            XCTAssertEqual(aside.kind, .browser)
+            XCTAssertEqual(aside.children.map(\.name), [
+                "x.com", "chatgpt.com", "Other or unidentified browsing",
+            ])
+            XCTAssertEqual(
+                aside.children.map(\.seconds),
+                [40 * 60, 10 * 60, 10 * 60].map(TimeInterval.init)
+            )
+        }
+
+        func testUnifiedBreakdownMakesCompactRemainderExplicit() throws {
+            let start = Date(timeIntervalSince1970: 1_700_000_000)
+            let end = start.addingTimeInterval(86_400)
+            let mac = AppleScreenTimeDevice(id: "mac", name: "MacBook Pro", kind: .mac)
+            let applications = (1 ... 10).map { index in
+                usage(
+                    "com.example.app\(index)",
+                    "App \(index)",
+                    TimeInterval((11 - index) * 60)
+                )
+            }
+            let report = try summary(
+                start: start,
+                end: end,
+                device: mac,
+                total: applications.reduce(0) { $0 + $1.duration },
+                applications: applications
+            )
+            let result = UsageBreakdownProjection.build(summary: report, trackedUsage: [])
+
+            let compact = UsageBreakdownProjection.presentedItems(
+                result.appsAndWebsites,
+                showsAll: false
+            )
+
+            XCTAssertEqual(compact.count, 6)
+            XCTAssertEqual(
+                UsageBreakdownProjection.hiddenSeconds(
+                    totalSeconds: result.totalSeconds,
+                    presentedItems: compact
+                ),
+                10 * 60,
+                accuracy: 0.001
+            )
+            XCTAssertEqual(
+                UsageBreakdownProjection.presentedItems(
+                    result.appsAndWebsites,
+                    showsAll: true
+                ).reduce(0) { $0 + $1.seconds },
+                result.totalSeconds,
+                accuracy: 0.001
+            )
+        }
+
+        func testUnifiedBreakdownStillShowsShortDayInsteadOfFalseEmptyState() throws {
+            let start = Date(timeIntervalSince1970: 1_700_000_000)
+            let end = start.addingTimeInterval(86_400)
+            let mac = AppleScreenTimeDevice(id: "mac", name: "MacBook Pro", kind: .mac)
+            let report = try summary(
+                start: start,
+                end: end,
+                device: mac,
+                total: 6 * 60,
+                applications: [
+                    usage("com.example.one", "One", 3 * 60),
+                    usage("com.example.two", "Two", 2 * 60),
+                    usage("com.example.three", "Three", 60),
+                ]
+            )
+            let result = UsageBreakdownProjection.build(summary: report, trackedUsage: [])
+
+            XCTAssertEqual(
+                UsageBreakdownProjection.presentedItems(
+                    result.appsAndWebsites,
+                    showsAll: false
+                ).map(\.name),
+                ["One", "Two", "Three"]
+            )
+        }
+
         private func summary(
             start: Date,
             end: Date,
@@ -298,12 +569,13 @@
             seconds: TimeInterval,
             eventCount: Int
         ) -> TrackedUsageItem {
-            TrackedUsageItem(
+            return TrackedUsageItem(
                 id: "app:\(bundleIdentifier.lowercased())",
                 kind: .application,
                 name: name,
                 appName: nil,
                 sourceApplications: [],
+                sourceUsage: [],
                 bundleIdentifier: bundleIdentifier,
                 host: nil,
                 category: nil,
@@ -314,18 +586,40 @@
             )
         }
 
-        private func trackedWebsite(name: String, seconds: TimeInterval) -> TrackedUsageItem {
-            TrackedUsageItem(
+        private func trackedWebsite(
+            name: String,
+            seconds: TimeInterval,
+            sources: [DailyWebsiteSourceUsage]? = nil
+        ) -> TrackedUsageItem {
+            let resolvedSources = sources ?? [
+                websiteSource("Browser", "com.example.browser", seconds)
+            ]
+            return TrackedUsageItem(
                 id: "site:\(name)",
                 kind: .website,
                 name: name,
-                appName: "Browser",
-                sourceApplications: ["Browser"],
-                bundleIdentifier: "com.example.browser",
+                appName: resolvedSources.first?.applicationName,
+                sourceApplications: resolvedSources.map(\.applicationName),
+                sourceUsage: resolvedSources,
+                bundleIdentifier: resolvedSources.first?.bundleIdentifier,
                 host: name,
                 category: nil,
                 foregroundSeconds: seconds,
                 activeMinutes: Int(ceil(seconds / 60)),
+                eventCount: 1,
+                identityProofAvailable: true
+            )
+        }
+
+        private func websiteSource(
+            _ name: String,
+            _ bundleIdentifier: String,
+            _ seconds: TimeInterval
+        ) -> DailyWebsiteSourceUsage {
+            DailyWebsiteSourceUsage(
+                applicationName: name,
+                bundleIdentifier: bundleIdentifier,
+                foregroundSeconds: seconds,
                 eventCount: 1,
                 identityProofAvailable: true
             )

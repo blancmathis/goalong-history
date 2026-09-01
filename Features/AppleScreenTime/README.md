@@ -11,7 +11,7 @@ Features/AppleScreenTime/
 │   ├── Analyzer.swift            # aggregation and selective sharing
 │   ├── Store.swift               # private Goalong configuration/export storage
 │   ├── NativeCollector.swift     # public DeviceActivity API adapter for an eligible companion
-│   └── AppleBiomeFormat.swift    # dependency-free SEGB + App.InFocus decoder
+│   └── AppleBiomeFormat.swift    # dependency-free SEGB + AppUsage/App.InFocus decoder
 └── Tests/
     ├── AppleScreenTimeTests.swift
     └── AppleBiomeFormatTests.swift
@@ -29,6 +29,9 @@ Sources/LocalHistoryApp/AppleScreenTime/
 
 The Mac app reads Apple-generated data that already exists on the user's Mac:
 
+- `~/Library/Biome/streams/restricted/ScreenTime.AppUsage/local/`
+  - Apple's local application-usage transitions for this Mac;
+  - bundle and parent-bundle identifiers, which preserve attribution for helper processes.
 - `~/Library/Application Support/Knowledge/knowledgeC.db`
   - `/app/usage` intervals;
   - bundle identifier, start/end time and Apple device metadata where available.
@@ -57,13 +60,15 @@ Totals are sums of per-device usage. Concurrent use of two devices is intentiona
 
 ## Source precedence and deduplication
 
-`knowledgeC` intervals are preferred because they are already materialized Apple usage rows. Biome intervals fill devices or time fragments not covered by knowledgeC. Interval subtraction prevents the same Apple activity from being counted twice when both stores contain it.
+For this Mac, a healthy `ScreenTime.AppUsage` stream is used alone because it carries Apple's application attribution, including the parent application of helper processes. `knowledgeC` and local `App.InFocus` are fallbacks only when that stream is missing or partial; they do not refill its gaps, which would otherwise reintroduce omitted applications and inflate totals. For synchronized iPhone, iPad and other-device data, `knowledgeC` remains preferred and `App.InFocus` fills uncovered periods. Interval subtraction prevents the same physical period from being counted twice across fallback sources, while different applications reported concurrently by the preferred source remain visible and the screen-on total is still counted once.
+
+These readable stores are Apple-generated, but they are not always the same private DeviceActivity rollup rendered by Settings. On macOS versions that vault that summary beyond Full Disk Access, Goalong reports the best available reconstruction and says so explicitly instead of claiming exact Settings parity.
 
 The current Mac is identified from the local Biome stream and from knowledgeC Mac rows that do not correspond to an iCloud remote device. Remote devices are keyed by Apple's Biome device identifier. Hardware IDs such as `iPhone14,5` and `iPad13,18` are used when present; otherwise the UI keeps a generic device label rather than guessing.
 
 ## Private-format boundary
 
-knowledgeC and Biome are Apple system data, but they are **not a public macOS Screen Time SDK**. Apple may change or vault these stores in a future release. Parse failures are isolated per file/device, surfaced as partial availability and covered by fixtures for SEGB v1/v2 and protobuf transition stitching.
+knowledgeC and Biome are Apple system data, but they are **not a public macOS Screen Time SDK**. Apple may change or vault these stores in a future release. Parse failures are isolated per file/device, surfaced as partial availability and covered by fixtures for SEGB v1/v2 plus both AppUsage and App.InFocus transition stitching.
 
 This is separate from Apple's public `DeviceActivityData.activityData(filteredBy:using:)` route. That API remains in `NativeCollector.swift` for an eligible iPhone/iPad companion and requires Apple's managed entitlement and enhanced data authorization. It is not required for the Mac to read the Apple data already synchronized locally.
 

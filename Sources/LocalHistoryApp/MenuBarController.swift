@@ -152,7 +152,7 @@
 
             pauseMenuItem.target = self
             menu.addItem(pauseMenuItem)
-            menu.addItem(makeItem("Share verified day…", action: #selector(openShare)))
+            menu.addItem(makeItem("Share signed day…", action: #selector(openShare)))
             menu.addItem(.separator())
 
             menu.addItem(makeItem("Open today's JSONL", action: #selector(openTodayFile)))
@@ -206,18 +206,21 @@
         @objc private func openTodayFile() {
             let file = AppPaths.eventFileURL()
             if FileManager.default.fileExists(atPath: file.path) {
-                NSWorkspace.shared.open(file)
+                GoalongWorkspaceOpenPolicy.open(file, purpose: .localFile)
             } else {
-                NSWorkspace.shared.open(AppPaths.eventsDirectory)
+                GoalongWorkspaceOpenPolicy.open(AppPaths.eventsDirectory, purpose: .localFile)
             }
         }
 
         @objc private func openDataFolder() {
-            NSWorkspace.shared.open(AppPaths.applicationSupportDirectory)
+            GoalongWorkspaceOpenPolicy.open(
+                AppPaths.applicationSupportDirectory,
+                purpose: .localFile
+            )
         }
 
         @objc private func openConfiguration() {
-            NSWorkspace.shared.open(AppPaths.configFile)
+            GoalongWorkspaceOpenPolicy.open(AppPaths.configFile, purpose: .localFile)
         }
 
         @objc private func openDiagnostics() {
@@ -228,7 +231,7 @@
                     attributes: [.posixPermissions: 0o600]
                 )
             }
-            NSWorkspace.shared.open(AppPaths.diagnosticsFile)
+            GoalongWorkspaceOpenPolicy.open(AppPaths.diagnosticsFile, purpose: .localFile)
         }
 
         @objc private func requestPermissions() {

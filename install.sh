@@ -5,6 +5,8 @@ APP_NAME="Goalong History"
 EXECUTABLE_NAME="Goalong History"
 PREVIOUS_APP_NAME="GoLong History"
 LEGACY_APP_NAME="LocalHistory"
+OBSOLETE_LOCAL_APP_NAME="Goalong History Local"
+OBSOLETE_LOCAL_BUNDLE_ID="ai.goalong.localhistory.local"
 DISPLAY_NAME="Goalong History"
 BUNDLE_ID="ai.goalong.localhistory"
 PRIVACY_MARKER_KEY="LocalHistoryAgentActivityDirectSourceV2"
@@ -141,26 +143,19 @@ audit_bundle_privacy() {
   env LOCALHISTORY_AUDIT_BINARY="$executable" "$audit_script" >/dev/null
 }
 
-bundle_has_required_update_policy() {
+bundle_has_single_app_security_policy() {
   local app_path="$1"
   local info_plist="$app_path/Contents/Info.plist"
-  local feed_url
-  local public_key
-  local public_key_bytes
-  local require_signed_feed
-  local verify_before_extraction
 
   [[ -f "$info_plist" && ! -L "$info_plist" ]] || return 1
-  feed_url="$(/usr/bin/plutil -extract SUFeedURL raw -expect string -o - "$info_plist" 2>/dev/null)" || return 1
-  public_key="$(/usr/bin/plutil -extract SUPublicEDKey raw -expect string -o - "$info_plist" 2>/dev/null)" || return 1
-  require_signed_feed="$(/usr/bin/plutil -extract SURequireSignedFeed raw -expect bool -o - "$info_plist" 2>/dev/null)" || return 1
-  verify_before_extraction="$(/usr/bin/plutil -extract SUVerifyUpdateBeforeExtraction raw -expect bool -o - "$info_plist" 2>/dev/null)" || return 1
-  public_key_bytes="$(printf '%s' "$public_key" | /usr/bin/base64 -D 2>/dev/null | /usr/bin/wc -c | /usr/bin/tr -d ' ')" || return 1
-
-  [[ "$feed_url" == "$BASE_URL/appcast.xml" &&
-     "$public_key_bytes" == "32" &&
-     "$require_signed_feed" == "true" &&
-     "$verify_before_extraction" == "true" ]]
+  [[ "$(/usr/bin/plutil -extract GoalongBuildEdition raw -expect string -o - "$info_plist" 2>/dev/null)" == "unified" ]] \
+    || return 1
+  for forbidden_key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks SURequireSignedFeed SUVerifyUpdateBeforeExtraction; do
+    if /usr/bin/plutil -extract "$forbidden_key" raw -o - "$info_plist" >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+  [[ ! -e "$app_path/Contents/Frameworks/Sparkle.framework" ]]
 }
 
 validate_release_bundle() {
@@ -186,8 +181,8 @@ validate_release_bundle() {
     echo "Refusing a bundle that failed the direct-source privacy audit: $app_path" >&2
     return 1
   fi
-  if ! bundle_has_required_update_policy "$app_path"; then
-    echo "Refusing a bundle without the required Sparkle verification policy: $app_path" >&2
+  if ! bundle_has_single_app_security_policy "$app_path"; then
+    echo "Refusing a bundle that is not the unified updater-free Goalong app: $app_path" >&2
     return 1
   fi
 }
@@ -370,6 +365,19 @@ remove_verified_legacy_bundle() {
   /bin/rm -rf -- "$legacy_app"
 }
 
+remove_verified_obsolete_local_bundle() {
+  local app_path="$1"
+
+  [[ ! -e "$app_path" && ! -L "$app_path" ]] && return 0
+  [[ -d "$app_path" && ! -L "$app_path" ]] || return 0
+  [[ "$(bundle_identifier_from_plist "$app_path" 2>/dev/null || true)" == "$OBSOLETE_LOCAL_BUNDLE_ID" ]] \
+    || return 0
+  [[ "$(bundle_identifier_from_signature "$app_path" 2>/dev/null || true)" == "$OBSOLETE_LOCAL_BUNDLE_ID" ]] \
+    || return 0
+  verify_bundle_signature "$app_path" >/dev/null 2>&1 || return 0
+  /bin/rm -rf -- "$app_path"
+}
+
 main() {
 
 for argument in "$@"; do
@@ -380,8 +388,8 @@ for argument in "$@"; do
       cat <<HELP
 Usage: ./install.sh [--source] [--verbose]
 
-The normal path downloads the latest Sparkle-enabled Goalong History build from GitHub.
-Use --source only for a local developer build; source builds cannot self-update.
+The normal path downloads the latest signed Goalong History build from GitHub.
+Use --source for an audited local developer build. All updates are manual replacements.
 HELP
       exit 0
       ;;
@@ -477,7 +485,7 @@ CHECKSUM_PATH="$WORK_DIR/$RELEASE_ASSET.sha256"
 BASE_URL="https://github.com/$REPOSITORY/releases/download/$RELEASE_TAG"
 DOWNLOAD_LOG="$WORK_DIR/download.log"
 
-printf '  • Downloading the latest update-enabled Git build… '
+printf '  • Downloading the latest signed Goalong build… '
 set +e
 /usr/bin/curl --fail --location --silent --show-error --retry 2 --connect-timeout 12 \
   "$BASE_URL/$RELEASE_ASSET" -o "$ZIP_PATH" >"$DOWNLOAD_LOG" 2>&1
@@ -486,7 +494,7 @@ set -e
 if [[ $DOWNLOAD_STATUS -ne 0 ]]; then
   echo "unavailable"
   fail "No rolling release is currently available from GitHub."
-  note "The installer will not silently fall back to a source build because that would disable in-app updates."
+  note "The installer will not silently compile or install a different artifact."
   note "Developers can explicitly run ./install.sh --source."
   if [[ "$VERBOSE" == true ]]; then
     cat "$DOWNLOAD_LOG" >&2
@@ -527,7 +535,7 @@ fi
 
 if ! validate_release_bundle "$SOURCE_APP"; then
   echo "failed"
-  fail "The downloaded bundle failed identity, signature, update-policy, or privacy validation."
+  fail "The downloaded bundle failed identity, signature, single-app, or privacy validation."
   note "Use ./install.sh --source until a privacy-compatible release is published."
   exit 1
 fi
@@ -535,7 +543,7 @@ fi
 APPLE_VERIFIED=false
 if /usr/sbin/spctl --assess --type execute --verbose=2 "$SOURCE_APP" >/dev/null 2>&1; then
   APPLE_VERIFIED=true
-  echo "verified by Apple and Sparkle"
+  echo "verified by Apple and Goalong's single-app security gate"
 else
   echo "failed"
   fail "The release is not Developer ID signed and notarized by Apple."
@@ -545,7 +553,7 @@ fi
 
 SYSTEM_INSTALL_PRESENT=false
 USER_INSTALL_PRESENT=false
-for related_app in "$APP_NAME" "$PREVIOUS_APP_NAME" "$LEGACY_APP_NAME"; do
+for related_app in "$APP_NAME" "$PREVIOUS_APP_NAME" "$LEGACY_APP_NAME" "$OBSOLETE_LOCAL_APP_NAME"; do
   if [[ -e "/Applications/$related_app.app" || -L "/Applications/$related_app.app" ]]; then
     SYSTEM_INSTALL_PRESENT=true
   fi
@@ -595,6 +603,7 @@ headline "Installing"
 /usr/bin/pkill -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true
 /usr/bin/pkill -x "$PREVIOUS_APP_NAME" >/dev/null 2>&1 || true
 /usr/bin/pkill -x "$LEGACY_APP_NAME" >/dev/null 2>&1 || true
+/usr/bin/pkill -x "$OBSOLETE_LOCAL_APP_NAME" >/dev/null 2>&1 || true
 /bin/sleep 0.4
 replace_staged_bundle "$STAGED_APP"
 validate_release_bundle "$TARGET_APP"
@@ -607,10 +616,15 @@ for legacy_app in \
   "$HOME/Applications/$LEGACY_APP_NAME.app"; do
   remove_verified_legacy_bundle "$legacy_app"
 done
+for obsolete_local_app in \
+  "/Applications/$OBSOLETE_LOCAL_APP_NAME.app" \
+  "$HOME/Applications/$OBSOLETE_LOCAL_APP_NAME.app"; do
+  remove_verified_obsolete_local_bundle "$obsolete_local_app"
+done
 status "Installed in $TARGET_DIR"
 status "Legacy background service cleaned up"
 status "Your existing history, settings, and bundle ID were preserved"
-status "Sparkle update verification enabled"
+status "Single updater-free app policy verified"
 if [[ "$APPLE_VERIFIED" == true ]]; then
   warn "macOS may ask you to approve this app copy once; the in-app guide handles that step"
 else

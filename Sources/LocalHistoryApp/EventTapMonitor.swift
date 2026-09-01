@@ -36,14 +36,19 @@
             case tapDisabled
         }
 
+        enum KeyActivity: Equatable {
+            case none
+            case typing
+            case shortcut
+            case navigation
+        }
+
         var sequence: UInt64 = 0
         let kind: Kind
         let observedAt: Date
         var lastObservedAt: Date
         var occurrences: Int
-        var flagsRawValue: UInt64
-        var keyCode: UInt16
-        var isRepeat: Bool
+        var keyActivity: KeyActivity
         var locationX: Double
         var locationY: Double
         var lastLocationX: Double
@@ -64,9 +69,7 @@
             observedAt: Date,
             lastObservedAt: Date? = nil,
             occurrences: Int = 1,
-            flagsRawValue: UInt64 = 0,
-            keyCode: UInt16 = 0,
-            isRepeat: Bool = false,
+            keyActivity: KeyActivity? = nil,
             locationX: Double = 0,
             locationY: Double = 0,
             lastLocationX: Double? = nil,
@@ -86,9 +89,7 @@
             self.observedAt = observedAt
             self.lastObservedAt = lastObservedAt ?? observedAt
             self.occurrences = max(1, occurrences)
-            self.flagsRawValue = flagsRawValue
-            self.keyCode = keyCode
-            self.isRepeat = isRepeat
+            self.keyActivity = keyActivity ?? (kind == .keyDown ? .typing : .none)
             self.locationX = Self.boundedCoordinate(locationX)
             self.locationY = Self.boundedCoordinate(locationY)
             self.lastLocationX = Self.boundedCoordinate(lastLocationX ?? locationX)
@@ -106,11 +107,7 @@
         }
 
         fileprivate var isCoalescibleTyping: Bool {
-            guard kind == .keyDown else { return false }
-            let flags = CGEventFlags(rawValue: flagsRawValue)
-            return !flags.contains(.maskCommand)
-                && !flags.contains(.maskControl)
-                && KeyDescriptor.specialName(for: keyCode) == nil
+            kind == .keyDown && keyActivity == .typing
         }
 
         var eventTimeContextIsPrivate: Bool {
@@ -134,6 +131,7 @@
                 sourceProcessIdentifier == incoming.sourceProcessIdentifier,
                 sourceUserIdentifier == incoming.sourceUserIdentifier,
                 sourceStateIdentifier == incoming.sourceStateIdentifier,
+                keyActivity == incoming.keyActivity,
                 observedContext == incoming.observedContext
             else { return false }
 
@@ -151,7 +149,6 @@
                 && incoming.lastObservedAt.timeIntervalSince(observedAt) <= 0.70
                 && isCoalescibleTyping && incoming.isCoalescibleTyping:
                 occurrences += incoming.occurrences
-                isRepeat = isRepeat || incoming.isRepeat
             case (.leftMouseDragged, .leftMouseDragged),
                 (.rightMouseDragged, .rightMouseDragged),
                 (.otherMouseDragged, .otherMouseDragged)
@@ -828,12 +825,26 @@
             // Only scalar fields are copied here. In particular, resolving the source
             // process name with NSRunningApplication is deferred to the main-thread drain.
             let observedAt = Date()
+            let keyActivity: EventTapPendingInput.KeyActivity
+            if kind == .keyDown {
+                let flags = event.flags
+                if flags.contains(.maskCommand) || flags.contains(.maskControl) {
+                    keyActivity = .shortcut
+                } else {
+                    let keyCode = UInt16(
+                        event.getIntegerValueField(.keyboardEventKeycode)
+                    )
+                    keyActivity = KeyActivityClassifier.isNavigationKey(keyCode)
+                        ? .navigation
+                        : .typing
+                }
+            } else {
+                keyActivity = .none
+            }
             let input = EventTapPendingInput(
                 kind: kind,
                 observedAt: observedAt,
-                flagsRawValue: event.flags.rawValue,
-                keyCode: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
-                isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
+                keyActivity: keyActivity,
                 locationX: Double(event.location.x),
                 locationY: Double(event.location.y),
                 clickCount: max(1, Int(event.getIntegerValueField(.mouseEventClickState))),
@@ -1433,18 +1444,15 @@
             context: ContextSnapshot
         ) {
             flushScrollBurst()
-            let flags = CGEventFlags(rawValue: input.flagsRawValue)
-            let modifiers = KeyDescriptor.modifierNames(from: flags)
-            let isShortcut = flags.contains(.maskCommand) || flags.contains(.maskControl)
 
-            if isShortcut, configManager.config.captureShortcuts {
+            if input.keyActivity == .shortcut, configManager.config.captureShortcuts {
                 flushTypingBurst()
                 let interactionID = UUID().uuidString
                 let keyboard = KeyboardSnapshot(
                     category: "shortcut",
-                    key: KeyDescriptor.name(for: input.keyCode),
-                    modifiers: modifiers,
-                    isRepeat: input.isRepeat
+                    key: nil,
+                    modifiers: [],
+                    isRepeat: false
                 )
                 recorder.record(
                     kind: .keyboardShortcut,
@@ -1465,21 +1473,21 @@
                 )
                 return
             }
-            if isShortcut {
+            if input.keyActivity == .shortcut {
                 // A disabled shortcut category must never fall through as text activity.
                 flushTypingBurst()
                 return
             }
 
-            if let specialKey = KeyDescriptor.specialName(for: input.keyCode) {
+            if input.keyActivity == .navigation {
                 flushTypingBurst()
                 guard configManager.config.captureKeyboardActivity else { return }
                 let interactionID = UUID().uuidString
                 let keyboard = KeyboardSnapshot(
                     category: "navigation",
-                    key: specialKey,
-                    modifiers: modifiers,
-                    isRepeat: input.isRepeat
+                    key: nil,
+                    modifiers: [],
+                    isRepeat: false
                 )
                 recorder.record(
                     kind: .keyPressed,
@@ -1500,6 +1508,7 @@
                 return
             }
 
+            guard input.keyActivity == .typing else { return }
             guard configManager.config.captureKeyboardActivity else { return }
             addTypingActivity(
                 context: context,
@@ -1832,67 +1841,15 @@
         }
     }
 
-    private enum KeyDescriptor {
-        private static let names: [UInt16: String] = [
-            0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X",
-            8: "C", 9: "V", 11: "B", 12: "Q", 13: "W", 14: "E", 15: "R",
-            16: "Y", 17: "T", 18: "1", 19: "2", 20: "3", 21: "4", 22: "6",
-            23: "5", 24: "=", 25: "9", 26: "7", 27: "-", 28: "8", 29: "0",
-            30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P", 37: "L",
-            38: "J", 39: "'", 40: "K", 41: ";", 42: "\\", 43: ",", 44: "/",
-            45: "N", 46: "M", 47: ".", 50: "`",
+    private enum KeyActivityClassifier {
+        private static let navigationKeyCodes: Set<UInt16> = [
+            36, 48, 51, 53, 71, 76,
+            96, 97, 98, 99, 100, 101, 103, 105, 107, 109, 111, 113,
+            115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126,
         ]
 
-        private static let specialNames: [UInt16: String] = [
-            36: "Return",
-            48: "Tab",
-            51: "Delete",
-            53: "Escape",
-            71: "KeypadClear",
-            76: "KeypadEnter",
-            96: "F5",
-            97: "F6",
-            98: "F7",
-            99: "F3",
-            100: "F8",
-            101: "F9",
-            103: "F11",
-            105: "F13",
-            107: "F14",
-            109: "F10",
-            111: "F12",
-            113: "F15",
-            115: "Home",
-            116: "PageUp",
-            117: "ForwardDelete",
-            118: "F4",
-            119: "End",
-            120: "F2",
-            121: "PageDown",
-            122: "F1",
-            123: "LeftArrow",
-            124: "RightArrow",
-            125: "DownArrow",
-            126: "UpArrow",
-        ]
-
-        static func name(for keyCode: UInt16) -> String {
-            names[keyCode] ?? specialNames[keyCode] ?? "KeyCode_\(keyCode)"
-        }
-
-        static func specialName(for keyCode: UInt16) -> String? {
-            specialNames[keyCode]
-        }
-
-        static func modifierNames(from flags: CGEventFlags) -> [String] {
-            var output: [String] = []
-            if flags.contains(.maskCommand) { output.append("command") }
-            if flags.contains(.maskControl) { output.append("control") }
-            if flags.contains(.maskAlternate) { output.append("option") }
-            if flags.contains(.maskShift) { output.append("shift") }
-            if flags.contains(.maskSecondaryFn) { output.append("function") }
-            if flags.contains(.maskAlphaShift) { output.append("caps_lock") }
-            return output
+        static func isNavigationKey(_ keyCode: UInt16) -> Bool {
+            navigationKeyCodes.contains(keyCode)
         }
     }
 #endif

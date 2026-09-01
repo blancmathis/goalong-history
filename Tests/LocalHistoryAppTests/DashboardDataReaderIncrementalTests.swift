@@ -909,6 +909,13 @@
             let x = try XCTUnwrap(websites.first { $0.name == "x.com" })
             XCTAssertEqual(x.sourceApplications, ["Aside", "Chrome"])
             XCTAssertEqual(x.sourceApplicationLabel, "Aside + Chrome")
+            XCTAssertEqual(x.sourceUsage.map(\.applicationName), ["Aside", "Chrome"])
+            XCTAssertEqual(x.sourceUsage.map(\.foregroundSeconds), [10, 10])
+            XCTAssertEqual(
+                x.sourceUsage.reduce(0) { $0 + $1.foregroundSeconds },
+                x.foregroundSeconds,
+                accuracy: 0.001
+            )
             let browserSeconds = snapshot.trackedUsage
                 .filter {
                     $0.kind == .application

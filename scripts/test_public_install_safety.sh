@@ -45,7 +45,7 @@ make_fixture_bundle() {
   local identifier="$2"
   local build_number="$3"
   local include_marker="${4:-true}"
-  local include_update_policy="${5:-true}"
+  local include_single_app_policy="${5:-true}"
 
   /bin/mkdir -p "$app_bundle/Contents/MacOS"
   /bin/cp /bin/echo "$app_bundle/Contents/MacOS/$EXECUTABLE_NAME"
@@ -58,11 +58,8 @@ make_fixture_bundle() {
   if [[ "$include_marker" == true ]]; then
     /usr/bin/plutil -insert "$PRIVACY_MARKER_KEY" -bool true "$app_bundle/Contents/Info.plist"
   fi
-  if [[ "$include_update_policy" == true ]]; then
-    /usr/bin/plutil -insert SUFeedURL -string "$BASE_URL/appcast.xml" "$app_bundle/Contents/Info.plist"
-    /usr/bin/plutil -insert SUPublicEDKey -string 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' "$app_bundle/Contents/Info.plist"
-    /usr/bin/plutil -insert SURequireSignedFeed -bool true "$app_bundle/Contents/Info.plist"
-    /usr/bin/plutil -insert SUVerifyUpdateBeforeExtraction -bool true "$app_bundle/Contents/Info.plist"
+  if [[ "$include_single_app_policy" == true ]]; then
+    /usr/bin/plutil -insert GoalongBuildEdition -string unified "$app_bundle/Contents/Info.plist"
   fi
   /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle/Contents/MacOS/goalong" >/dev/null 2>&1
   /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle" >/dev/null 2>&1
@@ -150,7 +147,7 @@ reset_stage
 missing_policy_app="$TEST_ROOT/missing-policy/$APP_NAME.app"
 make_fixture_bundle "$missing_policy_app" "$BUNDLE_ID" "4" true false
 if stage_release_bundle "$missing_policy_app" >/dev/null 2>&1; then
-  echo "A bundle without the signed-update policy passed staging." >&2
+  echo "A bundle without the unified single-app policy passed staging." >&2
   exit 1
 fi
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$TARGET_APP/Contents/Info.plist")" == "2" ]]
@@ -193,4 +190,9 @@ recover_interrupted_replacement >/dev/null 2>&1
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$TARGET_APP/Contents/Info.plist")" == "2" ]]
 [[ ! -e "$BACKUP_APP" && ! -L "$BACKUP_APP" ]]
 
-echo "Public installer safety tests passed: exact identity, symlink/tamper refusal, target-filesystem staging, privacy/update fail-closed checks, rollback, and interrupted-install recovery."
+obsolete_local_app="$TEST_ROOT/$OBSOLETE_LOCAL_APP_NAME.app"
+make_fixture_bundle "$obsolete_local_app" "$OBSOLETE_LOCAL_BUNDLE_ID" "1"
+remove_verified_obsolete_local_bundle "$obsolete_local_app"
+[[ ! -e "$obsolete_local_app" && ! -L "$obsolete_local_app" ]]
+
+echo "Public installer safety tests passed: exact identity, symlink/tamper refusal, target-filesystem staging, privacy/single-app fail-closed checks, rollback, interrupted-install recovery, and obsolete Local-edition cleanup."

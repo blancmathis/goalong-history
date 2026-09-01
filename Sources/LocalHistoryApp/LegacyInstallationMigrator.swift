@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppKit
     import Foundation
+    import ServiceManagement
 
     enum LegacyInstallationMigrator {
         private static let bundleIdentifier = "ai.goalong.localhistory"
@@ -30,9 +31,17 @@
 
         private static func migrateOnboardingState() {
             let defaults = UserDefaults.standard
-            let migrationKey = "didPrepareLocalHistoryOnboardingV4"
+            let migrationKey = "didPrepareLocalHistoryConsentOnboardingV5"
             guard !defaults.bool(forKey: migrationKey) else { return }
-            defaults.removeObject(forKey: "didShowLocalHistoryOnboardingV3")
+            defaults.removeObject(forKey: "didShowLocalHistoryConsentOnboardingV5")
+            defaults.set(false, forKey: "chatgptRecap.automaticEnabled")
+            defaults.set(false, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
+            defaults.set(false, forKey: "launchAtLoginPreference")
+            if SMAppService.mainApp.status == .enabled
+                || SMAppService.mainApp.status == .requiresApproval
+            {
+                try? SMAppService.mainApp.unregister()
+            }
             defaults.set(true, forKey: migrationKey)
         }
 

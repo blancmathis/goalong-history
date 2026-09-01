@@ -14,7 +14,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Environment
         run: |
@@ -28,7 +28,9 @@ jobs:
           python3 -m py_compile \
             scripts/check_computer_history_answer.py \
             scripts/check_computer_history_memory.py \
+            scripts/generate_security_artifacts.py \
             scripts/probe_computer_history_parity.py \
+            scripts/verify_security_capabilities.py \
             scripts/test_probe_computer_history_parity.py
           bash scripts/test_check_computer_history_memory.sh
           bash scripts/test_probe_computer_history_parity.sh
@@ -61,22 +63,23 @@ jobs:
 
       - name: Build installable app bundle
         env:
-          LOCALHISTORY_VERSION: 0.5.1-ci
+          LOCALHISTORY_VERSION: 0.6.0-ci
           LOCALHISTORY_BUILD_NUMBER: ${{ github.run_number }}
           LOCALHISTORY_RUN_TESTS: 0
           LOCALHISTORY_ARCHS: ${{ runner.arch == 'ARM64' && 'arm64' || 'x86_64' }}
-          # CI-only 32-byte public key. Production releases inject the real EdDSA public key secret.
-          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: ./scripts/build_app.sh
 
-      - name: Validate bundle and Sparkle integration
-        env:
-          LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
+      - name: Validate the single security-first bundle
         run: |
           plutil -lint "dist/Goalong History.app/Contents/Info.plist"
           codesign --verify --strict --verbose=2 "dist/Goalong History.app"
           test "$(defaults read "$PWD/dist/Goalong History.app/Contents/Info" CFBundleIdentifier)" = "ai.goalong.localhistory"
-          ./scripts/verify_sparkle_bundle.sh
+          LOCALHISTORY_APP_PATH="dist/Goalong History.app" \
+            ./scripts/verify_local_bundle.sh
+          python3 scripts/verify_security_capabilities.py \
+            --manifest dist/security-capabilities.json \
+            --app "dist/Goalong History.app" \
+            --edition unified
           bash scripts/test_goalong_cli.sh \
             "dist/Goalong History.app/Contents/MacOS/goalong"
 
@@ -87,10 +90,13 @@ jobs:
           test -s dist/Goalong-History-macOS-universal.dmg
 
       - name: Upload CI app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Goalong-History-${{ runner.arch }}-${{ github.sha }}
           path: |
             dist/Goalong History.app
             dist/Goalong-History-macOS-universal.zip
+            dist/security-capabilities.json
+            dist/sbom.spdx.json
+            dist/release-manifest.json
           retention-days: 7

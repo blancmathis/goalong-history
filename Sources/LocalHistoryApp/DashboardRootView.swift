@@ -257,7 +257,7 @@
 
         private static var version: String {
             let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            return "v\(value ?? "0.5.1-dev")"
+            return "v\(value ?? "0.6.0-dev")"
         }
     }
 

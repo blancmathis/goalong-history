@@ -15,9 +15,6 @@ AGENT_ACTIVITY_MODELS="$AGENT_ACTIVITY_SOURCE_ROOT/Models.swift"
 AGENT_ACTIVITY_MIGRATION="$ROOT_DIR/Sources/LocalHistoryApp/AppPaths.swift"
 AGENT_ACTIVITY_RECAP_CONTEXT="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/ChatGPTRecapContext.swift"
 AGENT_ACTIVITY_RECAP_RUNTIME="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/ChatGPTRecapRuntime.swift"
-# shellcheck source=sparkle_release.env
-source "$ROOT_DIR/scripts/sparkle_release.env"
-
 CONTENT_FORBIDDEN='NSPasteboard|UIPasteboard|CGWindowListCreateImage|ScreenCaptureKit|SCStream|AVCaptureSession|AVAudioEngine|keyboardGetUnicodeString|NSEvent\.characters|CGEventKeyboardGetUnicodeString'
 SHELL_EXECUTION_FORBIDDEN='NSAppleScript|osascript|NSTask|/bin/sh|/bin/bash'
 CODEX_BRIDGE="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/CodexAppServerClient.swift"
@@ -27,6 +24,21 @@ failed=false
 if grep -R -nE "$CONTENT_FORBIDDEN" "${CODE_ROOTS[@]}"; then
   echo "Forbidden content-capture API found." >&2
   failed=true
+fi
+
+# The event callback may classify a key transiently, but raw key codes, exact
+# modifiers and repeat flags must be discarded before entering the bounded queue.
+EVENT_TAP_MONITOR="$ROOT_DIR/Sources/LocalHistoryApp/EventTapMonitor.swift"
+if [[ -f "$EVENT_TAP_MONITOR" ]]; then
+  pending_input="$(awk '/struct EventTapPendingInput: Equatable/{flag=1} flag{print} /struct EventTapIngressMetrics: Equatable/{if(flag){exit}}' "$EVENT_TAP_MONITOR")"
+  if echo "$pending_input" | grep -nE 'keyCode|flagsRawValue|isRepeat'; then
+    echo "Raw keyboard detail entered the event-tap ingress buffer." >&2
+    failed=true
+  fi
+  if grep -nE 'keyboardEventAutorepeat|KeyDescriptor|CGEventKeyboardGetUnicodeString' "$EVENT_TAP_MONITOR"; then
+    echo "Exact keyboard detail or character decoding returned to the event pipeline." >&2
+    failed=true
+  fi
 fi
 if grep -R -nE "$SHELL_EXECUTION_FORBIDDEN" "${CODE_ROOTS[@]}"; then
   echo "Forbidden shell/automation execution API found." >&2
@@ -105,10 +117,8 @@ if [[ -f "$CODEX_BRIDGE" ]]; then
   fi
 fi
 
-# Activity/verification networking remains isolated to the opaque commitment uploader.
-# The optional ChatGPT recap path delegates its HTTPS transport and managed OAuth tokens
-# to the reviewed local Codex app-server process; Goalong source must not add direct AI networking.
-# Sparkle owns its own HTTPS update transport inside the reviewed, exact-pinned dependency.
+# Goalong contains no first-party network client. Optional ChatGPT analysis delegates transport
+# to the reviewed local Codex app-server process after a separate Goalong consent.
 while IFS= read -r match; do
   file="${match%%:*}"
   if [[ "$file" != *"/CommitmentUploader.swift" ]]; then
@@ -116,6 +126,12 @@ while IFS= read -r match; do
     failed=true
   fi
 done < <(grep -R -nE 'URLSession|HTTPURLResponse|URLRequest' "${CODE_ROOTS[@]}" || true)
+if ! grep -Fq '"CommitmentUploader.swift"' "$ROOT_DIR/Package.swift" \
+  || ! grep -Fq '"SoftwareUpdateManager.swift"' "$ROOT_DIR/Package.swift" \
+  || ! grep -Fq '"AppAttestManager.swift"' "$ROOT_DIR/Package.swift"; then
+  echo "The retired network and updater implementations are not physically excluded from the app target." >&2
+  failed=true
+fi
 
 # Never allow obviously sensitive event fields into the anchor upload model.
 ANCHOR_MODEL="$ROOT_DIR/Sources/LocalHistoryCore/SealModels.swift"
@@ -130,15 +146,41 @@ fi
 # Apple Screen Time private stores are permitted only through the isolated read-only adapter.
 APPLE_SYSTEM_SOURCE="$ROOT_DIR/Features/AppleSystemScreenTime/Sources/AppleSystemScreenTimeSource.swift"
 if [[ -f "$APPLE_SYSTEM_SOURCE" ]]; then
-  if ! grep -Fq 'SQLITE_OPEN_READONLY' "$APPLE_SYSTEM_SOURCE"; then
-    echo "Apple system Screen Time SQLite access is not explicitly read-only." >&2
-    failed=true
-  fi
+  for required_fragment in \
+    'SQLITE_OPEN_READONLY' \
+    'SQLITE_OPEN_NOFOLLOW' \
+    'sqlite3_db_readonly(database, "main") == 1' \
+    'PRAGMA query_only=ON' \
+    'PRAGMA temp_store=MEMORY' \
+    'PRAGMA mmap_size=0' \
+    'sqlite3_set_authorizer('; do
+    if ! grep -Fq "$required_fragment" "$APPLE_SYSTEM_SOURCE"; then
+      echo "Apple system Screen Time read-only invariant is missing: $required_fragment" >&2
+      failed=true
+    fi
+  done
   if grep -nE 'sqlite3_exec|SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|INSERT[[:space:]]|UPDATE[[:space:]]|DELETE[[:space:]]|VACUUM|FileHandle\(forWritingTo:|\.write\(to:' "$APPLE_SYSTEM_SOURCE"; then
     echo "Apple system Screen Time adapter appears capable of mutating Apple-owned stores." >&2
     failed=true
   fi
 fi
+
+# LaunchServices is a network-capable escape hatch when handed an HTTP URL. Every app-side open
+# must pass through the reviewed policy, which rejects HTTP(S) entirely in the Local edition.
+WORKSPACE_OPEN_POLICY="$ROOT_DIR/Sources/LocalHistoryApp/WorkspaceOpenPolicy.swift"
+if [[ ! -f "$WORKSPACE_OPEN_POLICY" ]] \
+  || ! grep -Fq 'GoalongBuildCapabilities.permitsHTTPWorkspaceOpening' "$WORKSPACE_OPEN_POLICY" \
+  || ! grep -Fq 'scheme == "https"' "$WORKSPACE_OPEN_POLICY"; then
+  echo "The centralized NSWorkspace URL policy is missing or no longer edition-aware." >&2
+  failed=true
+fi
+while IFS= read -r match; do
+  file="${match%%:*}"
+  if [[ "$file" != "$WORKSPACE_OPEN_POLICY" ]]; then
+    echo "NSWorkspace.open bypasses the reviewed policy: $match" >&2
+    failed=true
+  fi
+done < <(grep -R -nE --include='*.swift' 'NSWorkspace\.shared\.open\(' "$ROOT_DIR/Sources/LocalHistoryApp" || true)
 
 # The deprecated LocalHistory-derived Screen Time approximation must not return.
 if [[ -e "$ROOT_DIR/Sources/LocalHistoryApp/AppleScreenTime/LiveMacScreenTimeSource.swift" ]]; then
@@ -287,6 +329,16 @@ if [[ -f "$AGENT_ACTIVITY_RECAP_RUNTIME" ]]; then
   done
 fi
 
+# The retired ChatGPT export importer may clean up an old archive, but cannot read an export or
+# create a normalized transcript archive. Daily analysis uses direct provider sources instead.
+CHATGPT_HISTORY_STORE="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/ChatGPTHistoryStore.swift"
+if [[ ! -f "$CHATGPT_HISTORY_STORE" ]] \
+  || ! grep -Fq 'throw ChatGPTHistoryStoreError.importsDisabled' "$CHATGPT_HISTORY_STORE" \
+  || grep -Fq 'importConversations(' "$AGENT_ACTIVITY_RECAP_RUNTIME"; then
+  echo "The retired ChatGPT transcript importer can still be reached or create a second vault." >&2
+  failed=true
+fi
+
 # The one-time v2 migration may delete the retired vault only after normalizing recognized
 # metadata. It must never byte-copy an arbitrary legacy index/configuration into the new store.
 if [[ -f "$AGENT_ACTIVITY_MIGRATION" ]]; then
@@ -381,15 +433,18 @@ if [[ -n "${LOCALHISTORY_AUDIT_BINARY:-}" ]]; then
   fi
 fi
 
-# Supply-chain rule: Sparkle is the only remote Swift dependency, and it must stay exact-pinned.
-EXPECTED_SPARKLE=".package(url: \"$SPARKLE_PACKAGE_URL\", exact: \"$SPARKLE_VERSION\")"
+# Supply-chain rule: the single public app has no remote Swift package dependency.
 REMOTE_DEPENDENCY_COUNT="$(grep -cE '\.package\s*\(' "$ROOT_DIR/Package.swift" || true)"
-if [[ "$REMOTE_DEPENDENCY_COUNT" != "1" ]] || ! grep -Fq "$EXPECTED_SPARKLE" "$ROOT_DIR/Package.swift"; then
-  echo "SwiftPM dependencies must contain exactly the reviewed Sparkle $SPARKLE_VERSION package pin." >&2
+if [[ "$REMOTE_DEPENDENCY_COUNT" != "0" ]]; then
+  echo "The single public app must not introduce a remote Swift package dependency." >&2
   failed=true
 fi
-if grep -nE '\.package\s*\(' "$ROOT_DIR/Package.swift" | grep -Fv "$EXPECTED_SPARKLE"; then
-  echo "Unexpected remote Swift package dependency found." >&2
+if ! grep -Fq 'capabilityConsents.isEnabled(.appleScreenTime)' "$ROOT_DIR/Sources/LocalHistoryApp/AppDelegate.swift" \
+  || ! grep -Fq 'configureReadOnlyQueryServer()' "$ROOT_DIR/Sources/LocalHistoryApp/AppDelegate.swift" \
+  || ! grep -Fq 'the CLI never reads Apple' "$ROOT_DIR/Sources/LocalHistoryQueryCLI/LocalHistoryQueryCLI.swift" \
+  || ! grep -Fq 'capability: "aiConversations"' "$ROOT_DIR/Sources/LocalHistoryQueryCLI/LocalHistoryQueryCLI.swift" \
+  || ! grep -Fq 'status: "consentRequired"' "$ROOT_DIR/Sources/LocalHistoryQueryCLI/LocalHistoryQueryCLI.swift"; then
+  echo "A protected-source app/CLI consent boundary is missing." >&2
   failed=true
 fi
 
@@ -398,4 +453,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity provider stores remain direct-read and read-only; Agent Activity persists only its bounded metadata index and wake-up signals; Process execution is isolated to the fixed Codex app-server bridge; first-party networking is limited to opaque commitments; Sparkle is the sole exact-pinned update dependency."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is isolated to the fixed Codex app-server bridge; first-party networking, Sparkle and remote Swift dependencies are absent from the single app target."

@@ -27,7 +27,7 @@
             do {
                 let destination = try preferredDestination()
                 try replaceApplication(at: destination, with: source)
-                guard NSWorkspace.shared.open(destination) else {
+                guard GoalongWorkspaceOpenPolicy.open(destination, purpose: .localFile) else {
                     throw InstallationError.couldNotRelaunch
                 }
                 return true
@@ -40,7 +40,10 @@
                 failure.addButton(withTitle: "Show Applications")
                 failure.addButton(withTitle: "Quit")
                 if failure.runModal() == .alertFirstButtonReturn {
-                    NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications"))
+                    GoalongWorkspaceOpenPolicy.open(
+                        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications"),
+                        purpose: .localFile
+                    )
                 }
                 return true
             }

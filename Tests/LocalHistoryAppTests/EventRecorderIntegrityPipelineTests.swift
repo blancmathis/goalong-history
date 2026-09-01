@@ -132,7 +132,7 @@
 
         func testRecorderPersistsPackedIntegrityWithoutLosingSelectiveDisclosure() throws {
             let fixture = try makeFixture()
-            let timestamp = Date(timeIntervalSince1970: 1_787_480_000)
+            let timestamp = Date(timeIntervalSince1970: 1_787_480_000.987_654)
             let components = try makeRecorder(fixture: fixture, initialDate: timestamp)
             let context = ContextSnapshot(
                 app: AppSnapshot(
@@ -195,6 +195,10 @@
             XCTAssertFalse(persistedJSON.contains("\"fieldCommitments\""))
 
             let event = try XCTUnwrap(decodeEvents(at: eventFile).single)
+            XCTAssertEqual(
+                event.timestamp.timeIntervalSince1970,
+                floor(timestamp.timeIntervalSince1970)
+            )
             let integrity = try XCTUnwrap(event.integrity)
             let order = IntegrityDomains.eventFieldOrder(for: event.schemaVersion)
             XCTAssertEqual(integrity.storageFormat, .compactSalts)
@@ -1091,23 +1095,25 @@
                 MinuteSealer.maximumEncodedSealRowBytes
             )
 
-            let scanner = CommitmentReplayScanner(
-                sealsDirectory: fixture.seals,
-                receiptsDirectory: receipts,
-                limits: .production
-            )
-            var replayed: [LocalMinuteSeal] = []
-            for _ in 0..<4 {
-                let batch = scanner.nextBatch(
-                    maximumCount: 1,
-                    maximumBytes: CommitmentReplayLimits.production.queueByteCapacity
+            #if GOALONG_FIRST_PARTY_VERIFICATION
+                let scanner = CommitmentReplayScanner(
+                    sealsDirectory: fixture.seals,
+                    receiptsDirectory: receipts,
+                    limits: .production
                 )
-                replayed.append(contentsOf: batch.seals.map(\.seal))
-                if !replayed.isEmpty { break }
-            }
-            let replayedSeal = try XCTUnwrap(replayed.single)
-            XCTAssertEqual(replayedSeal.eventRoots.count, MinuteSealer.maximumBufferedRoots)
-            XCTAssertEqual(replayedSeal.anchorHash, state.snapshot.previousAnchorHash)
+                var replayed: [LocalMinuteSeal] = []
+                for _ in 0..<4 {
+                    let batch = scanner.nextBatch(
+                        maximumCount: 1,
+                        maximumBytes: CommitmentReplayLimits.production.queueByteCapacity
+                    )
+                    replayed.append(contentsOf: batch.seals.map(\.seal))
+                    if !replayed.isEmpty { break }
+                }
+                let replayedSeal = try XCTUnwrap(replayed.single)
+                XCTAssertEqual(replayedSeal.eventRoots.count, MinuteSealer.maximumBufferedRoots)
+                XCTAssertEqual(replayedSeal.anchorHash, state.snapshot.previousAnchorHash)
+            #endif
         }
 
         func testMultiDayEmptyCatchupIsCoalescedAndPreservesAnchorChain() throws {

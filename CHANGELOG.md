@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+## 0.6.0
+
+### One private, auditable application
+
+- Replaced the former split/local-edition and Sparkle update paths with one `Goalong History`
+  application whose sensitive capabilities are all off on a new install.
+- Removed the first-party HTTP uploader, App Attest transport, in-app updater, remote Swift
+  dependencies and retired Sparkle release tooling from the compiled public target.
+- Added separate Goalong consent for Computer History, Apple Screen Time, AI conversations and
+  optional ChatGPT analysis; existing macOS permission switches never substitute for consent.
+- Added an auditable capability manifest, SPDX SBOM, release manifest, threat model, network and
+  permission documentation, pinned GitHub Actions and a fail-closed Developer ID/notarization
+  release policy.
+
+### Direct-source AI conversations and bounded agent access
+
+- Added read-only direct-source adapters for Codex, Claude and OpenCode with incremental discovery,
+  stable opaque identities and explicit missing, inaccessible, changing and deleted-source states.
+- Kept only a bounded metadata index in Goalong storage; transcript bodies, snapshots and versions
+  remain in their provider-owned locations and are read transiently only for an explicit day.
+- Added the `goalong` CLI for bounded JSON access to Computer History, Screen Time, AI
+  conversations, available dates, daily recaps and offline proof verification without a second
+  background process or history vault.
+- Added selected-day projection for very large conversations, reducing repeated source reads while
+  preserving the user-message/final-answer boundary used by daily analysis.
+
+### Clearer daily history and lower overhead
+
+- Consolidated the dashboard around Today, History and Settings, with factual ten-minute Computer
+  History windows and simpler AI-conversation presentation using provider conversation names.
+- Added incremental bounded day loading, cache reuse, event-stream backpressure, background wakeup
+  reduction and performance guards for large histories.
+- Improved Screen Time device naming, active-versus-inactive accounting, website usage projection,
+  browser/site reconciliation and compact most-used views that exclude inactive system rows by
+  default.
+
+### Verifiable AI analysis and sharing
+
+- Added bounded five-line daily assessments through the separately consented local Codex bridge,
+  using only user prompts and final agent answers rather than tool/process transcripts.
+- Added canonical ES256 proofs, chained run attestations, encrypted bounded response capsules and
+  strict offline `.goalong-proof` export/verification without copying prompts or transcripts.
+- Hardened selective share construction against source replacement, malformed input, stale caches,
+  cancellation and partial output while preserving the original event, memory, seal and Screen Time
+  stores.
+
 ## 0.5.1
 
 ### Keychain authorization loop

@@ -97,14 +97,14 @@ From the delivered upgrade bundle:
 
 ```bash
 python3 apply_upgrade.py \
-  --repo /Users/mathisblanc/Documents/ChatGPT/be-productive/localhistory
+  --repo /path/to/goalong-history
 ```
 
 That is a dry run. It verifies exact source anchors and lists planned files without writing. Review the result, then apply:
 
 ```bash
 python3 apply_upgrade.py \
-  --repo /Users/mathisblanc/Documents/ChatGPT/be-productive/localhistory \
+  --repo /path/to/goalong-history \
   --apply
 ```
 

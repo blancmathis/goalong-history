@@ -13,6 +13,14 @@
         var level: ShareLevel
     }
 
+    struct ShareAnchorBounds: Equatable {
+        let firstSequence: UInt64
+        let firstAnchorHash: String
+        let lastSequence: UInt64
+        let lastAnchorHash: String
+        let deviceID: String
+    }
+
     enum ShareBuildError: Error, CustomStringConvertible {
         case noSeals
         case brokenSeal(UInt64)
@@ -104,6 +112,7 @@
         private struct EventSummary {
             let application: String?
             let category: String?
+            let integrityValid: Bool
         }
 
         private struct EventSummaryCacheEntry {
@@ -181,7 +190,9 @@
 
             return try seals.map { seal in
                 guard !cancellation() else { throw ShareBuildError.cancelled }
-                let available = seal.eventRoots.allSatisfy { summaries[$0] != nil }
+                let available = seal.eventRoots.allSatisfy { root in
+                    summaries[root]?.integrityValid == true
+                }
                 let minuteEvents = seal.eventRoots.compactMap { summaries[$0] }
                 let apps = uniqueValues(minuteEvents.compactMap(\.application).filter { !$0.isEmpty })
                 let categories = uniqueValues(minuteEvents.compactMap(\.category).filter { !$0.isEmpty })
@@ -195,6 +206,24 @@
                     level: available ? .applicationOnly : .privateOnly
                 )
             }
+        }
+
+        func anchorBounds(
+            for day: Date = Date(),
+            cancellation: @escaping () -> Bool = { false }
+        ) throws -> ShareAnchorBounds {
+            let seals = try loadSeals(for: day, cancellation: cancellation)
+            guard let first = seals.first, let last = seals.last else {
+                throw ShareBuildError.noSeals
+            }
+            try validateSealChain(seals, cancellation: cancellation)
+            return ShareAnchorBounds(
+                firstSequence: first.anchorSequence,
+                firstAnchorHash: first.anchorHash,
+                lastSequence: last.anchorSequence,
+                lastAnchorHash: last.anchorHash,
+                deviceID: first.deviceID
+            )
         }
 
         func build(
@@ -255,7 +284,7 @@
                 boundaryAfter = nil
             }
 
-            return DaySharePackage(
+            return try verifiedPackage(DaySharePackage(
                 schemaVersion: deviceIDs.count > 1 ? 4 : 2,
                 deviceID: first.deviceID,
                 deviceIDs: deviceIDs,
@@ -264,7 +293,7 @@
                 boundaryBefore: boundaryBefore,
                 boundaryAfter: boundaryAfter,
                 minutes: disclosures
-            )
+            ))
         }
 
         func build(
@@ -334,7 +363,7 @@
                 boundaryAfter = nil
             }
 
-            return DaySharePackage(
+            return try verifiedPackage(DaySharePackage(
                 schemaVersion: deviceIDs.count > 1 ? 4 : 3,
                 deviceID: first.deviceID,
                 deviceIDs: deviceIDs,
@@ -343,7 +372,7 @@
                 boundaryBefore: boundaryBefore,
                 boundaryAfter: boundaryAfter,
                 minutes: disclosures
-            )
+            ))
         }
 
         func write(
@@ -352,6 +381,7 @@
             cancellation: () -> Bool = { false }
         ) throws {
             guard !cancellation() else { throw ShareBuildError.cancelled }
+            _ = try verifiedPackage(package)
             let output = JSONEncoder()
             output.dateEncodingStrategy = .iso8601
             output.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -372,12 +402,19 @@
 
             let resolvedEvents = seal.eventRoots.compactMap { eventsByRoot[$0] }
             let hasEveryEvent = resolvedEvents.count == seal.eventRoots.count
+            let requestedDetails = eventLevel != nil || level != .privateOnly
+            let canRevealEveryEvent = hasEveryEvent
+                && (!requestedDetails || resolvedEvents.allSatisfy(verifyLocalEvent))
             let eventLevels: [ShareLevel]
             let resolvedMinuteLevel: ShareLevel
-            if let eventLevel {
-                guard hasEveryEvent else {
-                    throw ShareBuildError.missingEvents(seal.anchorSequence)
-                }
+            if requestedDetails, !canRevealEveryEvent {
+                // The signed minute remains useful even when an old event body was
+                // deleted or cannot reconstruct every selective-disclosure opening.
+                // Keep that minute verifiable and private instead of failing the
+                // complete day or fabricating a replacement commitment.
+                eventLevels = Array(repeating: .privateOnly, count: seal.eventRoots.count)
+                resolvedMinuteLevel = .privateOnly
+            } else if let eventLevel {
                 eventLevels = resolvedEvents.map(eventLevel)
                 let uniqueLevels = Set(eventLevels)
                 if eventLevels.isEmpty || uniqueLevels == [.privateOnly] {
@@ -475,10 +512,16 @@
                 signatureAlgorithm: seal.signatureAlgorithm,
                 publicKeyBase64: seal.publicKeyBase64,
                 deviceID: seal.deviceID,
-                trustTier: receipt?.appAttestAccepted == true ? "app_attest" : seal.trustTier,
+                // The exported package currently carries only the receipt identifier,
+                // not a signed receipt payload that an offline verifier can validate.
+                // Preserve the local key tier and expose the receipt as a reference
+                // instead of overstating it as verified App Attest evidence.
+                trustTier: seal.trustTier,
                 liveReceiptID: receipt?.receiptID
             )
-            guard disclosure.verifiesStructure() else { throw ShareBuildError.brokenSeal(seal.anchorSequence) }
+            guard disclosure.verifiesLocallySignedIntegrity() else {
+                throw ShareBuildError.brokenSeal(seal.anchorSequence)
+            }
             return disclosure
         }
 
@@ -496,6 +539,15 @@
                     sequence: seal.anchorSequence, previous: seal.previousAnchorHash, minuteRoot: seal.minuteRoot)
                     == seal.anchorHash
             else { return false }
+            guard AnchorSignatureVerifier.verifies(
+                deviceID: seal.deviceID,
+                sequence: seal.anchorSequence,
+                previousAnchorHash: seal.previousAnchorHash,
+                minuteRoot: seal.minuteRoot,
+                publicKeyBase64: seal.publicKeyBase64,
+                signatureBase64: seal.signatureBase64,
+                signatureAlgorithm: seal.signatureAlgorithm
+            ) else { return false }
             let eventsRoot = MerkleTree.root(
                 labeledHexValues: seal.eventRoots.enumerated().map { ("event:\($0.offset)", $0.element) })
             guard let rootField = seal.minuteFields.first(where: { $0.name == "events_root" }),
@@ -506,12 +558,25 @@
             return true
         }
 
+        private func verifiedPackage(_ package: DaySharePackage) throws -> DaySharePackage {
+            let report = package.verificationReport()
+            guard report.isLocallyValid else {
+                throw ShareBuildError.sourceIncomplete(
+                    "local package verification failed: \(report.issues.joined(separator: ", "))"
+                )
+            }
+            return package
+        }
+
         private func verifyLocalEvent(_ event: HistoryEvent) -> Bool {
             guard let integrity = event.integrity else { return false }
             guard integrity.fieldCommitments.allSatisfy({ $0.opening.commitmentHex() == $0.commitmentHex }) else {
                 return false
             }
             guard let byName = commitmentsByUniqueName(integrity.fieldCommitments) else { return false }
+            guard
+                openingFields(event, name: "raw_digest")?["sha256"] == rawEventDigest(event)
+            else { return false }
             let fieldOrder = IntegrityDomains.eventFieldOrder(for: event.schemaVersion)
             let leaves = fieldOrder.compactMap { name -> (String, String)? in
                 guard let value = byName[name] else { return nil }
@@ -522,6 +587,13 @@
             return ChainHash.event(
                 sequence: integrity.sequence, previous: integrity.previousEventHash, eventRoot: integrity.eventRoot)
                 == integrity.eventHash
+        }
+
+        private func rawEventDigest(_ event: HistoryEvent) -> String? {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            return try? SHA256Digest.hashHex(encoder.encode(event.replacingIntegrity(nil)))
         }
 
         private func openingFields(_ event: HistoryEvent, name: String) -> [String: String]? {
@@ -749,7 +821,8 @@
         private func summary(for event: HistoryEvent) -> EventSummary {
             EventSummary(
                 application: openingFields(event, name: "application")?["name"],
-                category: openingFields(event, name: "classification")?["category"]
+                category: openingFields(event, name: "classification")?["category"],
+                integrityValid: verifyLocalEvent(event)
             )
         }
 
@@ -1083,6 +1156,16 @@
                 throw JSONLScanError.cachedPrefixChanged
             }
 
+            // The current-day journals are append-only and may grow while the
+            // share view reads them. Pin the read to the complete prefix that
+            // existed when this descriptor was opened, then prove that prefix's
+            // tail did not change. Later appends belong to the next refresh and
+            // must not invalidate this coherent point-in-time view.
+            let openedTail = try tailFingerprint(
+                descriptor: descriptor,
+                endingAt: openedIdentity.size
+            )
+
             var bytesRead: Int64 = 0
             if let expectedPrefixTailFingerprint {
                 let prefix = try tailFingerprint(descriptor: descriptor, endingAt: requestedOffset)
@@ -1177,12 +1260,29 @@
                 throw sourceUnavailable(file, operation: "reinspect open file")
             }
             let finalIdentity = identity(from: finalInformation)
-            guard finalIdentity == openedIdentity else {
+            guard finalIdentity.device == openedIdentity.device,
+                finalIdentity.inode == openedIdentity.inode,
+                finalIdentity.size >= openedIdentity.size
+            else {
                 throw ShareBuildError.sourceIncomplete(
                     "\(file.lastPathComponent) changed while it was read"
                 )
             }
-            guard let pathIdentity = try fileIdentity(at: file), pathIdentity == openedIdentity else {
+            let finalOpenedTail = try tailFingerprint(
+                descriptor: descriptor,
+                endingAt: openedIdentity.size
+            )
+            bytesRead += openedTail.bytesRead + finalOpenedTail.bytesRead
+            guard finalOpenedTail.value == openedTail.value else {
+                throw ShareBuildError.sourceIncomplete(
+                    "\(file.lastPathComponent) changed within the captured prefix"
+                )
+            }
+            guard let pathIdentity = try fileIdentity(at: file),
+                pathIdentity.device == openedIdentity.device,
+                pathIdentity.inode == openedIdentity.inode,
+                pathIdentity.size >= openedIdentity.size
+            else {
                 throw ShareBuildError.sourceIncomplete(
                     "\(file.lastPathComponent) was replaced while it was read"
                 )
@@ -1194,13 +1294,11 @@
                     throw JSONLScanError.cachedPrefixChanged
                 }
             }
-            let tail = try tailFingerprint(descriptor: descriptor, endingAt: openedIdentity.size)
-            bytesRead += tail.bytesRead
             return JSONLScanOutcome(
                 identity: openedIdentity,
                 bytesRead: bytesRead,
                 decodedRows: decodedRows,
-                tailFingerprint: tail.value
+                tailFingerprint: finalOpenedTail.value
             )
         }
 

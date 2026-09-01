@@ -1387,6 +1387,67 @@
             XCTAssertGreaterThan(result.derivedViewsWritten, 0)
         }
 
+        func testCompactJournalIntegrityCanBeSizedAfterDerivedCompaction() throws {
+            let eventRoot = SHA256Digest.hashHex("compact-derived-event-root")
+            let previousHash = String(repeating: "0", count: 64)
+            let sourceEvent = fixtureEvent(at: Date(timeIntervalSince1970: 1_700_000_000))
+                .replacingIntegrity(
+                    EventIntegrity(
+                        sequence: 42,
+                        previousEventHash: previousHash,
+                        eventRoot: eventRoot,
+                        eventHash: ChainHash.event(
+                            sequence: 42,
+                            previous: previousHash,
+                            eventRoot: eventRoot
+                        ),
+                        fieldCommitments: [],
+                        storageFormat: .compactSalts
+                    )
+                )
+
+            let derived = sourceEvent.compactedForDerivedAnalysis
+            XCTAssertEqual(derived.integrity?.storageFormat, .fullCommitments)
+            XCTAssertEqual(derived.integrity?.fieldCommitments, [])
+            XCTAssertGreaterThan(
+                try ActivityAnalysisDayLoader.estimatedRetainedBytes(for: derived),
+                0
+            )
+        }
+
+        func testOptInRealActivityDayLoaderHandlesCompactIntegrityReadOnly() throws {
+            let environment = ProcessInfo.processInfo.environment
+            guard let rootPath = environment["GOALONG_TEST_REAL_ACTIVITY_ROOT"],
+                let dayText = environment["GOALONG_TEST_REAL_ACTIVITY_DAY"]
+            else {
+                throw XCTSkip(
+                    "Set GOALONG_TEST_REAL_ACTIVITY_ROOT and GOALONG_TEST_REAL_ACTIVITY_DAY for the read-only compact-integrity probe."
+                )
+            }
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .current
+            formatter.dateFormat = "yyyy-MM-dd"
+            let day = try XCTUnwrap(formatter.date(from: dayText))
+            let root = URL(fileURLWithPath: rootPath, isDirectory: true)
+            let source = root
+                .appendingPathComponent("events", isDirectory: true)
+                .appendingPathComponent(dayText + ".jsonl")
+            let before = try fileStamp(source)
+
+            let snapshot = try ActivityAnalysisDayLoader(rootDirectory: root).load(day: day)
+
+            XCTAssertEqual(try fileStamp(source), before)
+            XCTAssertFalse(snapshot.events.isEmpty)
+            XCTAssertTrue(
+                snapshot.events.contains {
+                    $0.integrity?.storageFormat == .fullCommitments
+                        && $0.integrity?.fieldCommitments.isEmpty == true
+                }
+            )
+        }
+
         func testSharedRetainedEvidenceBudgetIsExactAndKeepsLastKnownGoodState() throws {
             XCTAssertEqual(ActivityAnalysisDayLoadLimits.production.maximumRetainedRows, 32_768)
             XCTAssertEqual(

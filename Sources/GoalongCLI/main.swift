@@ -1,0 +1,3 @@
+import LocalHistoryQueryCLI
+
+GoalongQueryCLI.main()

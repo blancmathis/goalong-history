@@ -31,7 +31,13 @@
                 schemaVersion: max(5, baseEvent.schemaVersion),
                 id: baseEvent.id,
                 sessionID: baseEvent.sessionID,
-                timestamp: baseEvent.timestamp,
+                // JSONEncoder's `.iso8601` strategy persists whole seconds. Sign the
+                // exact value that can be reconstructed from the append-only journal;
+                // otherwise a sub-second timestamp produces a valid in-memory root
+                // whose opening is impossible to recover after a read.
+                timestamp: Date(
+                    timeIntervalSince1970: floor(baseEvent.timestamp.timeIntervalSince1970)
+                ),
                 kind: baseEvent.kind,
                 app: baseEvent.app,
                 window: baseEvent.window,

@@ -1423,6 +1423,11 @@
             for value in usage.sourceApplications {
                 result += estimatedStringBytes(value)
             }
+            for source in usage.sourceUsage {
+                result += 64
+                    + estimatedStringBytes(source.applicationName)
+                    + estimatedStringBytes(source.bundleIdentifier)
+            }
             return result
         }
 
@@ -2168,6 +2173,7 @@
                     name: value.name,
                     appName: sourceApplications.first ?? value.appName,
                     sourceApplications: sourceApplications,
+                    sourceUsage: [],
                     bundleIdentifier: value.bundleIdentifier,
                     host: value.host,
                     category: category,
@@ -2187,6 +2193,7 @@
                     name: usage.host,
                     appName: usage.sourceApplications.first,
                     sourceApplications: usage.sourceApplications,
+                    sourceUsage: usage.sourceUsage,
                     bundleIdentifier: usage.primaryBundleIdentifier,
                     host: usage.host,
                     category: usage.category,

@@ -121,6 +121,15 @@ private struct DailyRecap: Codable {
     let productivityScore: Int?
     let confidenceScore: Int?
     let summaryLines: [String]?
+    let attestation: AnalysisRunAttestation?
+    let proof: AnalysisProofReference?
+}
+
+private struct DailyRecapIntegrityEnvelope: Encodable {
+    let status: String
+    let localDeviceSignatureValid: Bool
+    let savedResultMatches: Bool
+    let limitation: String
 }
 
 private struct DailyRecapEnvelope: Encodable {
@@ -129,6 +138,7 @@ private struct DailyRecapEnvelope: Encodable {
     let requestedDay: String
     let status: String
     let recap: DailyRecap?
+    let integrity: DailyRecapIntegrityEnvelope?
     let sourcePath: String?
     let error: String?
 }
@@ -150,6 +160,51 @@ private struct RecapListEnvelope: Encodable {
     let recaps: [String]
 }
 
+private struct DailyRecapFileVerificationEnvelope: Encodable {
+    let schemaVersion = 1
+    let reportPath: String
+    let reportBytes: Int
+    let reportSHA256: String
+    let status: String
+    let recap: DailyRecap?
+    let integrity: DailyRecapIntegrityEnvelope?
+    let error: String?
+}
+
+private struct SharePackageVerificationEnvelope: Encodable {
+    let schemaVersion = 1
+    let packagePath: String
+    let packageBytes: Int
+    let packageSHA256: String
+    let localDay: String?
+    let createdAt: Date?
+    let report: DaySharePackageVerificationReport?
+    let status: String
+    let error: String?
+}
+
+private struct AnalysisProofPackageVerificationEnvelope: Encodable {
+    let schemaVersion = 1
+    let packagePath: String
+    let packageBytes: Int
+    let packageSHA256: String
+    let report: AnalysisProofVerificationReport?
+    let status: String
+    let error: String?
+}
+
+private struct AnalysisProofExportEnvelope: Encodable {
+    let schemaVersion = 1
+    let rootDirectory: String
+    let requestedDay: String
+    let packagePath: String?
+    let packageBytes: Int
+    let packageSHA256: String
+    let report: AnalysisProofVerificationReport?
+    let status: String
+    let error: String?
+}
+
 private struct ScreenTimeStatusEnvelope: Encodable {
     let kind: String
     let title: String
@@ -167,6 +222,7 @@ private struct ScreenTimeEnvelope: Encodable {
     let availableDevices: [AppleScreenTimeDevice]
     let deviceSourceLabels: [String: String]
     let latestAppleUpdate: Date?
+    let screenTimeAppUsageIntervalCount: Int
     let knowledgeIntervalCount: Int
     let biomeIntervalCount: Int
     let limitation: String
@@ -182,10 +238,11 @@ private struct DailyWebsiteRowEnvelope: Encodable {
     let foregroundSeconds: TimeInterval
     let eventCount: Int
     let sourceApplications: [String]
+    let sourceUsage: [DailyWebsiteSourceUsage]
 }
 
 private struct DailyWebsitesEnvelope: Encodable {
-    let schemaVersion = 1
+    let schemaVersion = 2
     let rootDirectory: String
     let day: String
     let generatedAt: Date
@@ -312,11 +369,10 @@ private struct Arguments {
     }
 }
 
-@main
-private enum LocalHistoryQueryCLI {
-    static func main() {
+public enum GoalongQueryCLI {
+    public static func main(arguments rawArguments: [String] = Array(CommandLine.arguments.dropFirst())) {
         do {
-            try run()
+            try run(arguments: rawArguments)
         } catch {
             FileHandle.standardError.write(Data("goalong: \(String(describing: error))\n".utf8))
             FileHandle.standardError.write(Data((usage + "\n").utf8))
@@ -324,8 +380,8 @@ private enum LocalHistoryQueryCLI {
         }
     }
 
-    private static func run() throws {
-        var arguments = Arguments(values: Array(CommandLine.arguments.dropFirst()))
+    private static func run(arguments rawArguments: [String]) throws {
+        var arguments = Arguments(values: rawArguments)
         let root = arguments.removeOption("--root").map(expandedURL) ?? defaultRoot
         guard let command = arguments.popFirst() else { throw CLIError.usage("Missing command") }
 
@@ -586,7 +642,7 @@ private enum LocalHistoryQueryCLI {
             guard arguments.values.isEmpty else {
                 throw CLIError.usage("screen-time accepts one date and the optional --mac-only flag")
             }
-            try printScreenTime(day: try day(raw), macOnly: macOnly)
+            try printScreenTime(root: root, day: try day(raw), macOnly: macOnly)
 
         case "websites":
             let limit = try integer(arguments.removeOption("--limit") ?? "100")
@@ -655,6 +711,7 @@ private enum LocalHistoryQueryCLI {
                         requestedDay: dayString,
                         status: "notGenerated",
                         recap: nil,
+                        integrity: nil,
                         sourcePath: nil,
                         error: "No daily recap has been generated for \(dayString)."
                     )
@@ -666,12 +723,14 @@ private enum LocalHistoryQueryCLI {
                 let decoder = JSONDecoder()
                 decoder.dateDecodingStrategy = .iso8601
                 let recap = try decoder.decode(DailyRecap.self, from: data)
+                let integrity = recapIntegrity(recap)
                 try printJSON(
                     DailyRecapEnvelope(
                         rootDirectory: root.path,
                         requestedDay: dayString,
                         status: "available",
                         recap: recap,
+                        integrity: integrity,
                         sourcePath: recapURL.path,
                         error: nil
                     )
@@ -683,7 +742,224 @@ private enum LocalHistoryQueryCLI {
                         requestedDay: dayString,
                         status: "inaccessibleOrInvalid",
                         recap: nil,
+                        integrity: nil,
                         sourcePath: recapURL.path,
+                        error: String(describing: error)
+                    )
+                )
+            }
+
+        case "verify-recap":
+            guard let rawPath = arguments.popFirst(), arguments.values.isEmpty else {
+                throw CLIError.usage("verify-recap requires exactly one report path")
+            }
+            let reportURL = expandedURL(rawPath)
+            do {
+                let data = try readStableRegularFile(reportURL, maximumBytes: 64 * 1_024)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let recap = try decoder.decode(DailyRecap.self, from: data)
+                let integrity = recapIntegrity(recap)
+                let status: String
+                switch integrity.status {
+                case "locallySigned": status = "locallyValid"
+                case "legacyUnsigned": status = "legacyUnsigned"
+                default: status = "invalid"
+                }
+                try printJSON(
+                    DailyRecapFileVerificationEnvelope(
+                        reportPath: reportURL.path,
+                        reportBytes: data.count,
+                        reportSHA256: SHA256Digest.hashHex(data),
+                        status: status,
+                        recap: recap,
+                        integrity: integrity,
+                        error: status == "invalid" ? "The local analysis attestation is invalid." : nil
+                    )
+                )
+            } catch {
+                try printJSON(
+                    DailyRecapFileVerificationEnvelope(
+                        reportPath: reportURL.path,
+                        reportBytes: 0,
+                        reportSHA256: "",
+                        status: "inaccessibleOrInvalid",
+                        recap: nil,
+                        integrity: nil,
+                        error: String(describing: error)
+                    )
+                )
+            }
+
+        case "export-proof":
+            let outputPath = arguments.removeOption("--output")
+            let raw = arguments.popFirst() ?? "yesterday"
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("export-proof accepts one date and optional --output PATH")
+            }
+            let requestedDay = try day(raw)
+            let dayString = localDayString(requestedDay)
+            let recapURL = root
+                .appendingPathComponent("chatgpt", isDirectory: true)
+                .appendingPathComponent("recaps", isDirectory: true)
+                .appendingPathComponent("\(dayString).chatgpt-recap.json", isDirectory: false)
+            do {
+                let recapData = try readStableRegularFile(recapURL, maximumBytes: 64 * 1_024)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let recap = try decoder.decode(DailyRecap.self, from: recapData)
+                guard let proof = recap.proof,
+                    UUID(uuidString: proof.executionID) != nil,
+                    proof.proofDirectoryName == proof.executionID
+                else {
+                    throw CLIError.usage(
+                        "No standalone analysis proof is available for \(dayString); regenerate this day with the current Goalong build"
+                    )
+                }
+                let proofDirectory = root
+                    .appendingPathComponent("chatgpt", isDirectory: true)
+                    .appendingPathComponent("proofs", isDirectory: true)
+                    .appendingPathComponent(proof.proofDirectoryName, isDirectory: true)
+                let names = [
+                    "manifest.json", "definition.jws", "context-manifest.json",
+                    "provider-request.json", "provider-response.json", "result.json",
+                    "device-public-key.x963", "run.jws",
+                ]
+                var entries: [String: Data] = [:]
+                for name in names {
+                    entries[name] = try readStableRegularFile(
+                        proofDirectory.appendingPathComponent(name, isDirectory: false),
+                        maximumBytes: 4 * 1_024 * 1_024
+                    )
+                }
+                let archive = try GoalongProofArchive.create(entries: entries)
+                let report = try GoalongProofPackageVerifier.verify(archive: archive)
+                guard report.isLocallyValid else {
+                    throw CLIError.usage("The local proof failed verification and was not exported")
+                }
+                let destination: URL
+                if let outputPath {
+                    destination = expandedFileURL(outputPath)
+                } else {
+                    destination = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                        .appendingPathComponent(
+                            "\(dayString)-\(String(proof.executionID.prefix(8))).goalong-proof",
+                            isDirectory: false
+                        )
+                }
+                guard destination.pathExtension == "goalong-proof" else {
+                    throw CLIError.usage("--output must end in .goalong-proof")
+                }
+                guard !FileManager.default.fileExists(atPath: destination.path) else {
+                    throw CLIError.usage("The export destination already exists: \(destination.path)")
+                }
+                try archive.write(to: destination, options: [.atomic])
+                try? FileManager.default.setAttributes(
+                    [.posixPermissions: 0o600], ofItemAtPath: destination.path
+                )
+                let persisted = try readStableRegularFile(
+                    destination,
+                    maximumBytes: Int64(GoalongProofArchive.maximumArchiveBytes)
+                )
+                let persistedReport = try GoalongProofPackageVerifier.verify(archive: persisted)
+                try printJSON(
+                    AnalysisProofExportEnvelope(
+                        rootDirectory: root.path,
+                        requestedDay: dayString,
+                        packagePath: destination.path,
+                        packageBytes: persisted.count,
+                        packageSHA256: GoalongProofDigest.sha256(persisted),
+                        report: persistedReport,
+                        status: persistedReport.isLocallyValid ? "locallyValid" : "invalid",
+                        error: persistedReport.isLocallyValid ? nil : persistedReport.issues.joined(separator: ", ")
+                    )
+                )
+            } catch {
+                try printJSON(
+                    AnalysisProofExportEnvelope(
+                        rootDirectory: root.path,
+                        requestedDay: dayString,
+                        packagePath: nil,
+                        packageBytes: 0,
+                        packageSHA256: "",
+                        report: nil,
+                        status: "unavailableOrInvalid",
+                        error: String(describing: error)
+                    )
+                )
+            }
+
+        case "verify-proof":
+            guard let rawPath = arguments.popFirst(), arguments.values.isEmpty else {
+                throw CLIError.usage("verify-proof requires exactly one .goalong-proof path")
+            }
+            let packageURL = expandedFileURL(rawPath)
+            do {
+                let data = try readStableRegularFile(
+                    packageURL,
+                    maximumBytes: Int64(GoalongProofArchive.maximumArchiveBytes)
+                )
+                let report = try GoalongProofPackageVerifier.verify(archive: data)
+                try printJSON(
+                    AnalysisProofPackageVerificationEnvelope(
+                        packagePath: packageURL.path,
+                        packageBytes: data.count,
+                        packageSHA256: GoalongProofDigest.sha256(data),
+                        report: report,
+                        status: report.isLocallyValid ? "locallyValid" : "invalid",
+                        error: report.isLocallyValid ? nil : report.issues.joined(separator: ", ")
+                    )
+                )
+            } catch {
+                try printJSON(
+                    AnalysisProofPackageVerificationEnvelope(
+                        packagePath: packageURL.path,
+                        packageBytes: 0,
+                        packageSHA256: "",
+                        report: nil,
+                        status: "inaccessibleOrInvalid",
+                        error: String(describing: error)
+                    )
+                )
+            }
+
+        case "verify-share":
+            guard let rawPath = arguments.popFirst(), arguments.values.isEmpty else {
+                throw CLIError.usage("verify-share requires exactly one package path")
+            }
+            let packageURL = expandedURL(rawPath)
+            do {
+                let data = try readStableRegularFile(
+                    packageURL,
+                    maximumBytes: 384 * 1_024 * 1_024
+                )
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let package = try decoder.decode(DaySharePackage.self, from: data)
+                let report = package.verificationReport()
+                try printJSON(
+                    SharePackageVerificationEnvelope(
+                        packagePath: packageURL.path,
+                        packageBytes: data.count,
+                        packageSHA256: SHA256Digest.hashHex(data),
+                        localDay: package.localDay,
+                        createdAt: package.createdAt,
+                        report: report,
+                        status: report.isLocallyValid ? "locallyValid" : "invalid",
+                        error: report.isLocallyValid
+                            ? nil : report.issues.joined(separator: ", ")
+                    )
+                )
+            } catch {
+                try printJSON(
+                    SharePackageVerificationEnvelope(
+                        packagePath: packageURL.path,
+                        packageBytes: 0,
+                        packageSHA256: "",
+                        localDay: nil,
+                        createdAt: nil,
+                        report: nil,
+                        status: "inaccessibleOrInvalid",
                         error: String(describing: error)
                     )
                 )
@@ -1168,7 +1444,32 @@ private enum LocalHistoryQueryCLI {
         )
     }
 
-    private static func printScreenTime(day: Date, macOnly: Bool) throws {
+    static func screenTimePayload(day rawDay: String, macOnly: Bool) throws -> Data {
+        try encodedScreenTime(
+            day: try day(rawDay),
+            macOnly: macOnly
+        )
+    }
+
+    private static func printScreenTime(root: URL, day: Date, macOnly: Bool) throws {
+        do {
+            let payload = try GoalongReadOnlyQueryBroker.requestScreenTime(
+                rootDirectory: root,
+                day: localDayString(day),
+                macOnly: macOnly
+            )
+            FileHandle.standardOutput.write(payload)
+        } catch {
+            throw CLIError.unsafeSource(
+                "Apple Screen Time is unavailable. Open Goalong History and explicitly enable Screen Time; the CLI never reads Apple's protected stores directly. Broker error: \(error)"
+            )
+        }
+    }
+
+    private static func encodedScreenTime(
+        day: Date,
+        macOnly: Bool
+    ) throws -> Data {
         guard let dayInterval = Calendar.current.dateInterval(of: .day, for: day) else {
             throw CLIError.invalidDate(localDayString(day))
         }
@@ -1201,7 +1502,7 @@ private enum LocalHistoryQueryCLI {
         let summary = stored.flatMap {
             AppleScreenTimeAnalyzer.summary(from: $0, interval: dayInterval, scope: scope)
         }
-        try printJSON(
+        return try encodedJSON(
             ScreenTimeEnvelope(
                 day: localDayString(day),
                 generatedAt: Date(),
@@ -1216,6 +1517,7 @@ private enum LocalHistoryQueryCLI {
                 availableDevices: collection.availableDevices,
                 deviceSourceLabels: collection.deviceSourceLabels,
                 latestAppleUpdate: collection.latestAppleUpdate,
+                screenTimeAppUsageIntervalCount: collection.screenTimeAppUsageIntervalCount,
                 knowledgeIntervalCount: collection.knowledgeIntervalCount,
                 biomeIntervalCount: collection.biomeIntervalCount,
                 limitation:
@@ -1282,7 +1584,8 @@ private enum LocalHistoryQueryCLI {
                         host: $0.host,
                         foregroundSeconds: $0.foregroundSeconds,
                         eventCount: $0.eventCount,
-                        sourceApplications: $0.sourceApplications
+                        sourceApplications: $0.sourceApplications,
+                        sourceUsage: $0.sourceUsage
                     )
                 },
                 loadIssues: loaded.issues,
@@ -1303,6 +1606,36 @@ private enum LocalHistoryQueryCLI {
         let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)!
         let requestedDay = localDayString(dayStart)
         let outputByteBudget = tokenBudget * 4
+        guard capabilityConsentEnabled(
+            rootDirectory: root,
+            capability: "aiConversations"
+        ) else {
+            try printJSON(
+                AgentConversationsEnvelope(
+                    rootDirectory: root.path,
+                    requestedDay: requestedDay,
+                    generatedAt: Date(),
+                    status: "consentRequired",
+                    indexedConversationCount: 0,
+                    relevantConversationCount: 0,
+                    candidateOffset: candidateOffset,
+                    visitedConversationCandidateCount: 0,
+                    nextCandidateOffset: nil,
+                    returnedConversationCount: 0,
+                    noVisibleMessageCandidateCount: 0,
+                    outputDroppedConversationCount: 0,
+                    omittedConversationCount: 0,
+                    currentSourceBytesRead: 0,
+                    outputByteBudget: outputByteBudget,
+                    conversations: [],
+                    issues: [
+                        "AI conversations are off in Goalong. Enable that source explicitly before the CLI reads provider-owned histories."
+                    ],
+                    limitation: agentConversationLimitation
+                )
+            )
+            return
+        }
         let activityRoot = root.appendingPathComponent("agent-activity-v2", isDirectory: true)
         guard FileManager.default.fileExists(atPath: activityRoot.path) else {
             try printJSON(
@@ -1590,6 +1923,26 @@ private enum LocalHistoryQueryCLI {
             }
             omittedCount += 1
         }
+    }
+
+    static func capabilityConsentEnabled(
+        rootDirectory: URL,
+        capability: String
+    ) -> Bool {
+        let file = rootDirectory.appendingPathComponent(
+            "capability-consent.json",
+            isDirectory: false
+        )
+        guard
+            let data = try? readStableRegularFile(file, maximumBytes: 64 * 1_024),
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            root["schemaVersion"] as? Int == 1,
+            root["policyVersion"] as? Int == 1,
+            let capabilities = root["capabilities"] as? [String: Any],
+            let record = capabilities[capability] as? [String: Any],
+            record["enabled"] as? Bool == true
+        else { return false }
+        return true
     }
 
     private static func agentEntry(
@@ -1954,6 +2307,70 @@ private enum LocalHistoryQueryCLI {
         return formatter.string(from: value)
     }
 
+    private static func recapIntegrity(_ recap: DailyRecap) -> DailyRecapIntegrityEnvelope {
+        let limitation =
+            "A valid signature proves that this Mac's Goalong device key signed the saved hashes and model/provider claims. It does not prove that OpenAI authored the response, that the official Goalong build produced it, or that App Attest accepted it."
+        guard let attestation = recap.attestation else {
+            return DailyRecapIntegrityEnvelope(
+                status: "legacyUnsigned",
+                localDeviceSignatureValid: false,
+                savedResultMatches: false,
+                limitation: limitation
+            )
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let sourceCountsData = try? encoder.encode(recap.sourceCounts)
+        let savedResultData: Data? = {
+            guard let productivityScore = recap.productivityScore,
+                let confidenceScore = recap.confidenceScore,
+                let summaryLines = recap.summaryLines
+            else { return nil }
+            return AnalysisRunSavedResult(
+                markdown: recap.markdown,
+                productivityScore: productivityScore,
+                confidenceScore: confidenceScore,
+                summaryLines: summaryLines
+            ).canonicalData()
+        }()
+        let responseMatches = sourceCountsData.flatMap { sourceCounts in
+            savedResultData.map { savedResult in
+            attestation.matches(
+                response: savedResult,
+                contextDigest: recap.contextDigest,
+                sourceCountsCanonicalData: sourceCounts
+            )
+            }
+        } ?? false
+        let proofReferenceMatches = recap.schemaVersion == 3
+            ? recap.proof == nil
+            : recap.schemaVersion == 4
+                && recap.proof?.executionID == attestation.runID
+                && recap.proof?.localSignatureStatus == "valid"
+                && recap.proof?.retentionMode == "hash_only_no_transcript_copy"
+                && (recap.proof.map { GoalongProofDigest.isValid($0.runJWSSHA256) } ?? false)
+        let claimsMatch = [3, 4].contains(recap.schemaVersion)
+            && proofReferenceMatches
+            && attestation.day == localDayString(recap.day)
+            && attestation.generatedAtMilliseconds
+                == Int64((recap.generatedAt.timeIntervalSince1970 * 1_000).rounded(.towardZero))
+            && attestation.definitionID == GoalongDailyAnalysisDefinition.identifier
+            && attestation.definitionRevision == GoalongDailyAnalysisDefinition.revision
+            && attestation.provider == recap.provider
+            && attestation.planType == recap.planType
+            && attestation.model == recap.model
+            && attestation.reasoningEffort == recap.reasoningEffort
+        let signatureValid = attestation.verifiesDeviceSignature()
+        return DailyRecapIntegrityEnvelope(
+            status: claimsMatch && signatureValid && responseMatches
+                ? "locallySigned" : "invalid",
+            localDeviceSignatureValid: claimsMatch && signatureValid,
+            savedResultMatches: responseMatches,
+            limitation: limitation
+        )
+    }
+
     private static func parseTimestamp(_ raw: String) throws -> Date {
         if let value = fractionalISO.date(from: raw) ?? basicISO.date(from: raw) { return value }
         return try day(raw)
@@ -1962,6 +2379,11 @@ private enum LocalHistoryQueryCLI {
     private static func expandedURL(_ raw: String) -> URL {
         let expanded = NSString(string: raw).expandingTildeInPath
         return URL(fileURLWithPath: expanded, isDirectory: true)
+    }
+
+    private static func expandedFileURL(_ raw: String) -> URL {
+        let expanded = NSString(string: raw).expandingTildeInPath
+        return URL(fileURLWithPath: expanded, isDirectory: false)
     }
 
     private static let defaultRoot: URL = {
@@ -2001,6 +2423,10 @@ private enum LocalHistoryQueryCLI {
           ai-conversations [today|yesterday|YYYY-MM-DD] [--tokens N] [--limit N] [--offset N]
           recap [today|yesterday|YYYY-MM-DD]
           recaps
+          verify-recap PATH_TO_SIGNED_RECAP_JSON
+          export-proof [today|yesterday|YYYY-MM-DD] [--output PATH.goalong-proof]
+          verify-proof PATH_TO_GOALONG_PROOF
+          verify-share PATH_TO_SIGNED_SHARE_JSON
           days
           ask [--days N] NATURAL_LANGUAGE_QUESTION
           search TEXT
@@ -2022,12 +2448,25 @@ private enum LocalHistoryQueryCLI {
         activity as a lightweight pageable index; `activity` reopens one exact source activity
         and pages its ordered interactions without storing them. `ai-conversations` directly reads only
         user prompts and final assistant answers from the existing lightweight source index;
-        it never scans providers, updates the index or copies a transcript. `screen-time` uses the bundled,
-        identically signed read-only adapter to inspect Apple's local stores once and returns complete
-        per-device segments and application durations. `websites` streams one original local
-        day journal and returns a bounded, paginated domain-only ranking; it never exposes full
-        URLs or stores another copy. `recap` reads only the bounded
+        it never scans providers, updates the index or copies a transcript. `screen-time` asks the running,
+        identically signed Goalong app through an owner-only local socket, so Goalong consent cannot be
+        bypassed; only the app then reads Apple's stores transiently. `websites` streams one original local
+        day journal and returns a bounded, paginated domain-only ranking with exact per-browser
+        seconds; it never exposes full URLs or stores another copy. `recap` reads only the bounded
         canonical daily recap JSON; `days` lists the dates currently queryable from
-        Goalong's existing stores.
+        Goalong's existing stores. `verify-recap` is fully offline and verifies
+        the local P-256 signature plus the complete saved result (both scores and
+        all five lines), prompt hash, source-count hash and context digest.
+        `export-proof` creates a strict standalone store-only ZIP containing the
+        signed run, signed immutable definition, context/source commitments,
+        request/response descriptors, parsed result and public key. It never
+        exports the complete prompt, source conversation bodies or the private
+        encrypted response capsule. `verify-proof` rejects duplicate paths,
+        traversal, symlinks, ZIP64, compression and unlisted entries before
+        verifying canonical JSON, artifact hashes, source Merkle root and ES256 JWS.
+        `verify-share` is fully offline: it recomputes
+        commitments, Merkle roots, minute and boundary chains, device identities and
+        every embedded P-256 signature. A receipt ID remains only a reference unless a
+        future proof format includes a signed receipt payload and its verifier key.
         """
 }

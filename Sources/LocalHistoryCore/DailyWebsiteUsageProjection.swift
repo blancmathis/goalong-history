@@ -1,5 +1,34 @@
 import Foundation
 
+public struct DailyWebsiteSourceUsage: Codable, Equatable, Identifiable, Sendable {
+    public let applicationName: String
+    public let bundleIdentifier: String?
+    public let foregroundSeconds: TimeInterval
+    public let eventCount: Int
+    public let identityProofAvailable: Bool
+
+    public var id: String {
+        if let bundleIdentifier, !bundleIdentifier.isEmpty {
+            return "bundle:\(bundleIdentifier.lowercased())"
+        }
+        return "name:\(applicationName.lowercased())"
+    }
+
+    public init(
+        applicationName: String,
+        bundleIdentifier: String?,
+        foregroundSeconds: TimeInterval,
+        eventCount: Int,
+        identityProofAvailable: Bool
+    ) {
+        self.applicationName = applicationName
+        self.bundleIdentifier = bundleIdentifier
+        self.foregroundSeconds = max(0, foregroundSeconds)
+        self.eventCount = max(0, eventCount)
+        self.identityProofAvailable = identityProofAvailable
+    }
+}
+
 public struct DailyWebsiteUsage: Codable, Equatable, Identifiable, Sendable {
     public let host: String
     public let foregroundSeconds: TimeInterval
@@ -7,10 +36,23 @@ public struct DailyWebsiteUsage: Codable, Equatable, Identifiable, Sendable {
     public let eventCount: Int
     public let sourceApplications: [String]
     public let primaryBundleIdentifier: String?
+    public let sourceUsage: [DailyWebsiteSourceUsage]
     public let category: String?
     public let identityProofAvailable: Bool
 
     public var id: String { host }
+
+    private enum CodingKeys: String, CodingKey {
+        case host
+        case foregroundSeconds
+        case activeMinuteCount
+        case eventCount
+        case sourceApplications
+        case primaryBundleIdentifier
+        case sourceUsage
+        case category
+        case identityProofAvailable
+    }
 
     public init(
         host: String,
@@ -19,6 +61,7 @@ public struct DailyWebsiteUsage: Codable, Equatable, Identifiable, Sendable {
         eventCount: Int,
         sourceApplications: [String],
         primaryBundleIdentifier: String?,
+        sourceUsage: [DailyWebsiteSourceUsage] = [],
         category: String?,
         identityProofAvailable: Bool
     ) {
@@ -28,8 +71,49 @@ public struct DailyWebsiteUsage: Codable, Equatable, Identifiable, Sendable {
         self.eventCount = max(0, eventCount)
         self.sourceApplications = sourceApplications
         self.primaryBundleIdentifier = primaryBundleIdentifier
+        self.sourceUsage = sourceUsage
         self.category = category
         self.identityProofAvailable = identityProofAvailable
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            host: try container.decode(String.self, forKey: .host),
+            foregroundSeconds: try container.decode(
+                TimeInterval.self,
+                forKey: .foregroundSeconds
+            ),
+            activeMinuteCount: try container.decode(Int.self, forKey: .activeMinuteCount),
+            eventCount: try container.decode(Int.self, forKey: .eventCount),
+            sourceApplications: try container.decode([String].self, forKey: .sourceApplications),
+            primaryBundleIdentifier: try container.decodeIfPresent(
+                String.self,
+                forKey: .primaryBundleIdentifier
+            ),
+            sourceUsage: try container.decodeIfPresent(
+                [DailyWebsiteSourceUsage].self,
+                forKey: .sourceUsage
+            ) ?? [],
+            category: try container.decodeIfPresent(String.self, forKey: .category),
+            identityProofAvailable: try container.decode(
+                Bool.self,
+                forKey: .identityProofAvailable
+            )
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(host, forKey: .host)
+        try container.encode(foregroundSeconds, forKey: .foregroundSeconds)
+        try container.encode(activeMinuteCount, forKey: .activeMinuteCount)
+        try container.encode(eventCount, forKey: .eventCount)
+        try container.encode(sourceApplications, forKey: .sourceApplications)
+        try container.encodeIfPresent(primaryBundleIdentifier, forKey: .primaryBundleIdentifier)
+        try container.encode(sourceUsage, forKey: .sourceUsage)
+        try container.encodeIfPresent(category, forKey: .category)
+        try container.encode(identityProofAvailable, forKey: .identityProofAvailable)
     }
 }
 
@@ -218,13 +302,20 @@ struct DailyWebsiteUsageEventProjection: Decodable {
 /// It retains only domains and bounded counters; full URLs, titles and page text
 /// never enter the result and nothing is persisted.
 public struct DailyWebsiteUsageAccumulator {
+    private struct SourceCounter {
+        let applicationName: String
+        let bundleIdentifier: String?
+        var foregroundSeconds: TimeInterval = 0
+        var eventCount = 0
+        var identityProofAvailable = true
+    }
+
     private struct Counter {
         var foregroundSeconds: TimeInterval = 0
         var activeMinuteCount = 0
         var activeMinuteWords: [UInt64]?
         var eventCount = 0
-        var sourceApplicationCounts: [String: Int] = [:]
-        var primaryBundleIdentifier: String?
+        var sourceCounters: [String: SourceCounter] = [:]
         var categories: [String: Int] = [:]
         var identityProofAvailable = true
     }
@@ -234,6 +325,7 @@ public struct DailyWebsiteUsageAccumulator {
     private static let maximumBundleIdentifierBytes = 255
     private static let maximumCategoryBytes = 64
     private static let estimatedCounterBytes: Int64 = 256
+    private static let estimatedSourceCounterBytes: Int64 = 64
     private static let estimatedStoredStringOverheadBytes: Int64 = 64
 
     private let dayStart: Date
@@ -301,12 +393,28 @@ public struct DailyWebsiteUsageAccumulator {
         isFinished = true
 
         return counters.map { host, counter in
-            let applications = counter.sourceApplicationCounts
-                .sorted { left, right in
-                    if left.value != right.value { return left.value > right.value }
-                    return left.key.localizedCaseInsensitiveCompare(right.key) == .orderedAscending
+            let sourceUsage = counter.sourceCounters.values
+                .map {
+                    DailyWebsiteSourceUsage(
+                        applicationName: $0.applicationName,
+                        bundleIdentifier: $0.bundleIdentifier,
+                        foregroundSeconds: $0.foregroundSeconds,
+                        eventCount: $0.eventCount,
+                        identityProofAvailable: $0.identityProofAvailable
+                    )
                 }
-                .map(\.key)
+                .sorted { left, right in
+                    if left.foregroundSeconds != right.foregroundSeconds {
+                        return left.foregroundSeconds > right.foregroundSeconds
+                    }
+                    if left.eventCount != right.eventCount {
+                        return left.eventCount > right.eventCount
+                    }
+                    return left.applicationName.localizedCaseInsensitiveCompare(
+                        right.applicationName
+                    ) == .orderedAscending
+                }
+            let applications = sourceUsage.map(\.applicationName)
             let category = counter.categories.max { left, right in
                 if left.value == right.value { return left.key > right.key }
                 return left.value < right.value
@@ -317,7 +425,8 @@ public struct DailyWebsiteUsageAccumulator {
                 activeMinuteCount: counter.activeMinuteCount,
                 eventCount: counter.eventCount,
                 sourceApplications: applications,
-                primaryBundleIdentifier: counter.primaryBundleIdentifier,
+                primaryBundleIdentifier: sourceUsage.first?.bundleIdentifier,
+                sourceUsage: sourceUsage,
                 category: category,
                 identityProofAvailable: counter.identityProofAvailable
             )
@@ -391,31 +500,40 @@ public struct DailyWebsiteUsageAccumulator {
         var counter = counters[host] ?? Counter()
         counter.foregroundSeconds += observedSeconds
         counter.eventCount += 1
-        if counter.primaryBundleIdentifier == nil,
-            let bundleIdentifier = boundedStoredString(
-                app.bundleIdentifier,
-                maximumBytes: Self.maximumBundleIdentifierBytes
-            )
-        {
-            if reserveRetainedBytes(Self.estimatedStoredStringOverheadBytes + Int64(bundleIdentifier.utf8.count)) {
-                counter.primaryBundleIdentifier = bundleIdentifier
-            } else {
-                wasTruncated = true
-            }
-        }
         if let applicationName = boundedStoredString(
             app.name,
             maximumBytes: Self.maximumApplicationNameBytes
         ) {
-            if counter.sourceApplicationCounts[applicationName] != nil {
-                counter.sourceApplicationCounts[applicationName, default: 0] += 1
-            } else if counter.sourceApplicationCounts.count
-                < limits.maximumSourceApplicationsPerHost
-            {
-                if reserveRetainedBytes(
-                    Self.estimatedStoredStringOverheadBytes + Int64(applicationName.utf8.count)
-                ) {
-                    counter.sourceApplicationCounts[applicationName] = 1
+            let bundleIdentifier = boundedStoredString(
+                app.bundleIdentifier,
+                maximumBytes: Self.maximumBundleIdentifierBytes
+            )
+            let sourceKey = Self.sourceKey(
+                applicationName: applicationName,
+                bundleIdentifier: bundleIdentifier
+            )
+            if var source = counter.sourceCounters[sourceKey] {
+                source.foregroundSeconds += observedSeconds
+                source.eventCount += 1
+                if event.schemaVersion < 3 { source.identityProofAvailable = false }
+                counter.sourceCounters[sourceKey] = source
+            } else if counter.sourceCounters.count < limits.maximumSourceApplicationsPerHost {
+                let retainedBytes = Self.estimatedSourceCounterBytes
+                    + Self.estimatedStoredStringOverheadBytes
+                    + Int64(applicationName.utf8.count)
+                    + Self.estimatedStoredStringOverheadBytes
+                    + Int64(sourceKey.utf8.count)
+                    + (bundleIdentifier.map {
+                        Self.estimatedStoredStringOverheadBytes + Int64($0.utf8.count)
+                    } ?? 0)
+                if reserveRetainedBytes(retainedBytes) {
+                    counter.sourceCounters[sourceKey] = SourceCounter(
+                        applicationName: applicationName,
+                        bundleIdentifier: bundleIdentifier,
+                        foregroundSeconds: observedSeconds,
+                        eventCount: 1,
+                        identityProofAvailable: event.schemaVersion >= 3
+                    )
                 } else {
                     wasTruncated = true
                 }
@@ -467,6 +585,20 @@ public struct DailyWebsiteUsageAccumulator {
         }
         if event.schemaVersion < 3 { counter.identityProofAvailable = false }
         counters[host] = counter
+    }
+
+    private static func sourceKey(
+        applicationName: String,
+        bundleIdentifier: String?
+    ) -> String {
+        if let bundleIdentifier, !bundleIdentifier.isEmpty {
+            return "bundle:\(bundleIdentifier.lowercased())"
+        }
+        let normalizedName = applicationName
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .joined()
+        return "name:\(normalizedName)"
     }
 
     private mutating func reserveRetainedBytes(_ requestedBytes: Int64) -> Bool {

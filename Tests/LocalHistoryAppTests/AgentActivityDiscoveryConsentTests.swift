@@ -168,6 +168,7 @@
                 sourceDiscovery: discovery,
                 onCaptured: { _ in }
             )
+            runtime.start()
             runtime.removeFolder(id: discovered.id)
             runtime.detectCommonSources()
             runtime.stop()
@@ -421,6 +422,7 @@
             )
             defer { runtime.stop() }
 
+            runtime.start()
             runtime.scanNow()
             runtime.waitForPendingScansForTesting()
             XCTAssertEqual(runtime.derivedStateRefreshCountForTesting, 0)
@@ -478,6 +480,7 @@
             )
             defer { runtime.stop() }
 
+            runtime.start()
             runtime.scanNow(forceFullDiscovery: true, analyzeSelectedDay: true)
             runtime.waitForPendingScansForTesting()
 
@@ -533,6 +536,7 @@
                 guard overview.day == selectedDay, !overview.captures.isEmpty else { return }
                 published.append(overview)
             }
+            runtime.start()
             runtime.selectDay(selectedDay)
             runtime.waitForPendingScansForTesting()
             RunLoop.main.run(until: Date().addingTimeInterval(0.2))

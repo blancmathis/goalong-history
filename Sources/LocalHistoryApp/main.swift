@@ -2,7 +2,14 @@
     import AgentActivity
     import AppKit
     import Darwin
+    import Foundation
+    import LocalHistoryQueryCLI
     import ServiceManagement
+
+    if URL(fileURLWithPath: CommandLine.arguments.first ?? "").lastPathComponent == "goalong" {
+        GoalongQueryCLI.main()
+        exit(0)
+    }
 
     if let hookIndex = CommandLine.arguments.firstIndex(of: "--agent-hook-ingest") {
         guard CommandLine.arguments.indices.contains(hookIndex + 2) else {
@@ -49,7 +56,7 @@
     }
 
     if CommandLine.arguments.contains("--reset-onboarding") {
-        UserDefaults.standard.removeObject(forKey: "didShowLocalHistoryOnboardingV3")
+        UserDefaults.standard.removeObject(forKey: "didShowLocalHistoryConsentOnboardingV5")
         exit(0)
     }
 
@@ -62,20 +69,9 @@
 
     LegacyInstallationMigrator.run()
 
-    let updateObserver = NotificationCenter.default.addObserver(
-        forName: NSApplication.didFinishLaunchingNotification,
-        object: application,
-        queue: .main
-    ) { _ in
-        Task { @MainActor in
-            SoftwareUpdateManager.shared.start()
-        }
-    }
-
     let delegate = AppDelegate()
     application.delegate = delegate
     application.run()
-    NotificationCenter.default.removeObserver(updateObserver)
 #else
     import Foundation
     fputs("Goalong History is a macOS-only application.\n", stderr)

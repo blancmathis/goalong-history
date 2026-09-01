@@ -5,6 +5,8 @@ APP_NAME="Goalong History"
 EXECUTABLE_NAME="Goalong History"
 PREVIOUS_APP_NAME="GoLong History"
 LEGACY_APP_NAME="LocalHistory"
+OBSOLETE_LOCAL_APP_NAME="Goalong History Local"
+OBSOLETE_LOCAL_BUNDLE_ID="ai.goalong.localhistory.local"
 BUNDLE_ID="ai.goalong.localhistory"
 PRIVACY_MARKER_KEY="LocalHistoryAgentActivityDirectSourceV2"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -147,6 +149,21 @@ audit_bundle_privacy() {
   env LOCALHISTORY_AUDIT_BINARY="$executable" "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
 }
 
+bundle_has_single_app_security_policy() {
+  local app_path="$1"
+  local info_plist="$app_path/Contents/Info.plist"
+
+  [[ -f "$info_plist" && ! -L "$info_plist" ]] || return 1
+  [[ "$(/usr/bin/plutil -extract GoalongBuildEdition raw -expect string -o - "$info_plist" 2>/dev/null)" == "unified" ]] \
+    || return 1
+  for forbidden_key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks SURequireSignedFeed SUVerifyUpdateBeforeExtraction; do
+    if /usr/bin/plutil -extract "$forbidden_key" raw -o - "$info_plist" >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+  [[ ! -e "$app_path/Contents/Frameworks/Sparkle.framework" ]]
+}
+
 validate_app_bundle() {
   local app_path="$1"
 
@@ -164,6 +181,10 @@ validate_app_bundle() {
   fi
   verify_bundle_signature "$app_path" || return 1
   audit_bundle_privacy "$app_path" || return 1
+  if ! bundle_has_single_app_security_policy "$app_path"; then
+    echo "Refusing a bundle that is not the unified updater-free Goalong app: $app_path" >&2
+    return 1
+  fi
 }
 
 trim_log_to_limit() {
@@ -495,6 +516,19 @@ remove_verified_legacy_bundle() {
   /bin/rm -rf -- "$legacy_app"
 }
 
+remove_verified_obsolete_local_bundle() {
+  local app_path="$1"
+
+  [[ ! -e "$app_path" && ! -L "$app_path" ]] && return 0
+  [[ -d "$app_path" && ! -L "$app_path" ]] || return 0
+  [[ "$(bundle_identifier_from_plist "$app_path" 2>/dev/null || true)" == "$OBSOLETE_LOCAL_BUNDLE_ID" ]] \
+    || return 0
+  [[ "$(bundle_identifier_from_signature "$app_path" 2>/dev/null || true)" == "$OBSOLETE_LOCAL_BUNDLE_ID" ]] \
+    || return 0
+  verify_bundle_signature "$app_path" >/dev/null 2>&1 || return 0
+  /bin/rm -rf -- "$app_path"
+}
+
 main() {
   local source_app
   local source_build_number
@@ -524,7 +558,7 @@ main() {
   BUILD_OUTPUT="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/localhistory-source-install.XXXXXX")"
   source_build_number="${LOCALHISTORY_BUILD_NUMBER:-$(/bin/date -u +%Y%m%d.%H%M%S)}"
   run_step "Testing and building the native app" env \
-    LOCALHISTORY_VERSION="${LOCALHISTORY_VERSION:-0.5.1}" \
+    LOCALHISTORY_VERSION="${LOCALHISTORY_VERSION:-0.6.0}" \
     LOCALHISTORY_BUILD_NUMBER="$source_build_number" \
     LOCALHISTORY_ARCHS="$(/usr/bin/uname -m)" \
     LOCALHISTORY_OUTPUT_DIR="$BUILD_OUTPUT" \
@@ -570,6 +604,7 @@ main() {
   /usr/bin/pkill -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true
   /usr/bin/pkill -x "$PREVIOUS_APP_NAME" >/dev/null 2>&1 || true
   /usr/bin/pkill -x "$LEGACY_APP_NAME" >/dev/null 2>&1 || true
+  /usr/bin/pkill -x "$OBSOLETE_LOCAL_APP_NAME" >/dev/null 2>&1 || true
   /bin/sleep 0.4
 
   run_step "Installing with rollback protection" replace_staged_bundle "$staged_app"
@@ -580,6 +615,8 @@ main() {
   remove_verified_legacy_bundle "$HOME/Applications/$PREVIOUS_APP_NAME.app"
   remove_verified_legacy_bundle "/Applications/$LEGACY_APP_NAME.app"
   remove_verified_legacy_bundle "$HOME/Applications/$LEGACY_APP_NAME.app"
+  remove_verified_obsolete_local_bundle "/Applications/$OBSOLETE_LOCAL_APP_NAME.app"
+  remove_verified_obsolete_local_bundle "$HOME/Applications/$OBSOLETE_LOCAL_APP_NAME.app"
   finalize_replacement
 
   /usr/bin/open "$TARGET_APP"

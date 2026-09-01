@@ -2,12 +2,13 @@
 
 ## What the page now represents
 
-The **History → Screen Time** filter reads Apple's own local and iCloud-synchronized usage data. It does not calculate a replacement Screen Time number from Goalong History events.
+The **History → Screen Time** filter reads Apple's own local and iCloud-synchronized usage data. It never calculates a replacement Screen Time number from Goalong History events. On current macOS releases, Apple's private DeviceActivity rollup used by Settings may be inaccessible even with Full Disk Access, so this page is a transparent reconstruction from the Apple stores macOS still exposes rather than a claim of exact Settings parity.
 
-The runtime combines two Apple sources:
+The runtime combines three Apple sources:
 
-1. **knowledgeC `/app/usage`** for Apple-created application usage intervals;
-2. **Biome `App.InFocus`** for local and remote device focus transitions synchronized through iCloud.
+1. **Biome `ScreenTime.AppUsage`** for Apple's local application-usage transitions on this Mac, including parent-app attribution for helpers;
+2. **knowledgeC `/app/usage`** for Apple-created application usage intervals and fallback coverage;
+3. **Biome `App.InFocus`** for local and remote device focus transitions synchronized through iCloud.
 
 The source code is isolated under `Sources/LocalHistoryApp/AppleScreenTime/` and the SEGB/protobuf decoder lives in the independent `AppleScreenTime` module.
 
@@ -22,7 +23,7 @@ No daily export, manual file selection, companion snapshot or Goalong server is 
 
 ## Automatic updates
 
-The dashboard checks the Apple stores every five seconds while viewing today. Unchanged Biome files are served from an in-memory fingerprint cache; only newly created or modified SEGB files are decoded again.
+The dashboard checks the Apple stores every 30 seconds while viewing today. Unchanged Biome files are served from an in-memory fingerprint cache; only newly created or modified SEGB files are decoded again.
 
 The Mac-side refresh cadence is deterministic. Cross-device latency is not: Apple controls when iCloud/Biome delivers iPhone and iPad transitions. The page displays the latest Apple file/event update so a user can distinguish a live Mac refresh from a stale remote sync.
 
@@ -52,15 +53,17 @@ The **Selected devices** list also keeps trusted, recently updated Apple devices
 
 ## How application time is reconstructed
 
-knowledgeC rows already contain start/end application intervals. Biome stores protobuf transition events:
+knowledgeC rows already contain start/end application intervals. Biome `App.InFocus` stores protobuf transition events:
 
 - field 3: gained/lost foreground state;
 - field 4: CFAbsoluteTime timestamp;
 - field 6: bundle identifier.
 
-The native decoder supports Apple SEGB v1 and v2 containers. A foreground gain opens an interval; a matching loss or a different app gaining focus closes it. A currently open interval is extended to “now” only when Apple's latest event is recent, preventing a stale iCloud stream from inventing hours of usage.
+Biome `ScreenTime.AppUsage` contains an independent start/stop stream per application, a Unix timestamp, a bundle identifier, an optional parent bundle identifier and an optional Apple trust bit. Goalong attributes a helper to its non-empty parent bundle, keeps concurrent applications distinct, ignores explicitly untrusted events and deduplicates repeated transitions of the same app.
 
-knowledgeC has precedence. Biome contributes only uncovered fragments, so data present in both stores is not double-counted.
+The native decoder supports Apple SEGB v1 and v2 containers. For `App.InFocus`, a foreground gain opens an interval; a matching loss or a different app gaining focus closes it. For `ScreenTime.AppUsage`, each application owns its own interval. A currently open interval is extended to “now” only when Apple's latest event is recent, preventing a stale stream from inventing hours of usage.
+
+On this Mac, a healthy `ScreenTime.AppUsage` stream is used by itself for application attribution and physical coverage. Goalong does not refill its intentional gaps with knowledgeC/App.InFocus rows, because doing so can resurrect an application Apple omitted and inflate both ranking and total. knowledgeC/App.InFocus are used for the Mac only when `ScreenTime.AppUsage` is missing or partial. On synchronized remote devices, knowledgeC has precedence and App.InFocus fills uncovered fragments. Different apps may legitimately overlap, so Goalong retains every app duration but counts each physical screen-on slice once.
 
 Goalong preserves Apple's complete merged report in memory, including explicit operating-system inactivity surfaces. Default summaries then hide those rows and subtract their durations. On Mac this means `com.apple.loginwindow` and Apple's `com.apple.ScreenSaver.*` bundle family; on iPhone, iPad and iPod it means `com.apple.SleepLockScreen`. Keeping those markers through the merge prevents a stale Biome foreground app from refilling a period Apple already identified as locked. The filter uses exact Apple bundle namespaces, not display names or broad “system app” guesses.
 
@@ -83,6 +86,7 @@ The defensible source claim is:
 > Goalong History read these usage intervals from Apple-owned Screen Time/usage stores present on this Mac, including Apple-synchronized remote-device streams where available.
 
 It is not a cryptographic attestation from Apple and it is not proof of attention or productive work.
+It is also not guaranteed to equal the Settings → Screen Time rollup when macOS withholds that private DeviceActivity summary from third-party processes.
 
 ## Public Apple API path
 

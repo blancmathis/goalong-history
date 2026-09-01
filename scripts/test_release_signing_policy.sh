@@ -10,6 +10,9 @@ INSTALLER="$ROOT_DIR/install.sh"
 /usr/bin/grep -Fq 'Developer ID signed and notarized by Apple' "$WORKFLOW"
 /usr/bin/grep -Fq 'Public release skipped; missing Apple value:' "$WORKFLOW"
 /usr/bin/grep -Fq "needs.release-readiness.outputs.apple_enabled == 'true'" "$WORKFLOW"
+/usr/bin/grep -Fq 'Remove retired rolling-release assets' "$WORKFLOW"
+/usr/bin/grep -Fq 'LocalHistory-macOS-universal.dmg' "$WORKFLOW"
+/usr/bin/grep -Fq 'appcast.xml' "$WORKFLOW"
 
 if /usr/bin/grep -Eq 'Sparkle EdDSA \(free mode\)|This build is ad-hoc code signed' "$WORKFLOW"; then
   echo "The public release workflow still contains an ad-hoc publication path." >&2
@@ -22,4 +25,9 @@ if /usr/bin/grep -Fq 'verified by Sparkle (Apple verification pending)' "$INSTAL
   exit 1
 fi
 
-echo "Release signing policy tests passed: public updates require Developer ID, notarization, and Apple verification."
+if /usr/bin/grep -Eq 'SUFeedURL|SUPublicEDKey|SPARKLE_' "$WORKFLOW"; then
+  echo "The public release workflow still contains an automatic-update trust path." >&2
+  exit 1
+fi
+
+echo "Release signing policy tests passed: public releases require Developer ID, notarization, Apple verification, and no in-app updater."

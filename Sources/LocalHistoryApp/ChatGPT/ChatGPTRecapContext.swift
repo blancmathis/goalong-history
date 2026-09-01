@@ -163,6 +163,8 @@
             for day: Date,
             deviceID: String,
             chatHistoryStore: ChatGPTHistoryStore,
+            includeScreenTime: Bool = true,
+            includeAgentActivity: Bool = true,
             analyzeAgentContent: Bool = true
         ) throws -> ChatGPTRecapContext {
             let normalizedDay = Calendar.current.startOfDay(for: day)
@@ -174,11 +176,15 @@
             )
             let activity = localActivity.activity
             let computerHistory = localActivity.computerHistory
-            let screenTime = loadScreenTime(for: normalizedDay, deviceID: deviceID)
-            let agentActivity = loadAgentActivity(
-                for: normalizedDay,
-                analyzeContent: analyzeAgentContent
-            )
+            let screenTime = includeScreenTime
+                ? loadScreenTime(for: normalizedDay, deviceID: deviceID)
+                : nil
+            let agentActivity = includeAgentActivity
+                ? loadAgentActivity(
+                    for: normalizedDay,
+                    analyzeContent: analyzeAgentContent
+                )
+                : AgentActivityOverview(day: normalizedDay)
             // Legacy ChatGPT exports are deliberately excluded from new daily reports.
             // AI conversations are analyzed transiently from their configured original
             // provider storage instead of creating or consulting a transcript copy.

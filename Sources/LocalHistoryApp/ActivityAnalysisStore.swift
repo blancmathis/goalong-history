@@ -168,9 +168,12 @@
         func openAgentBrief(for day: Date) {
             let URL = ActivityAnalysisPaths.agentMarkdownFile(for: day)
             if FileManager.default.fileExists(atPath: URL.path) {
-                NSWorkspace.shared.open(URL)
+                GoalongWorkspaceOpenPolicy.open(URL, purpose: .localFile)
             } else {
-                NSWorkspace.shared.open(ActivityAnalysisPaths.analysisDirectory)
+                GoalongWorkspaceOpenPolicy.open(
+                    ActivityAnalysisPaths.analysisDirectory,
+                    purpose: .localFile
+                )
             }
         }
 
@@ -180,7 +183,10 @@
                 ActivityAnalysisPaths.JSONFile(for: day),
             ].filter { FileManager.default.fileExists(atPath: $0.path) }
             if files.isEmpty {
-                NSWorkspace.shared.open(ActivityAnalysisPaths.analysisDirectory)
+                GoalongWorkspaceOpenPolicy.open(
+                    ActivityAnalysisPaths.analysisDirectory,
+                    purpose: .localFile
+                )
             } else {
                 NSWorkspace.shared.activateFileViewerSelecting(files)
             }

@@ -4,6 +4,7 @@
     struct SettingsPage: View {
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @State private var pane: SettingsPane = .home
 
         init(model: DashboardViewModel) {
@@ -29,8 +30,12 @@
             }
             .background(LHTheme.pageBackground)
             .onAppear {
-                recapRuntime.configure(deviceID: model.deviceID)
-                recapRuntime.activate()
+                if GoalongBuildCapabilities.permitsRemoteAnalysis,
+                    consents.isEnabled(.chatGPTAnalysis)
+                {
+                    recapRuntime.configure(deviceID: model.deviceID)
+                    recapRuntime.activate()
+                }
             }
             .alert(item: $recapRuntime.alert) { item in
                 Alert(
@@ -70,7 +75,12 @@
         @ViewBuilder private var paneContent: some View {
             switch pane {
             case .home:
-                ChatGPTAccountConnectionCard(runtime: recapRuntime)
+                capabilityConsentCard
+                if GoalongBuildCapabilities.permitsRemoteAnalysis,
+                    consents.isEnabled(.chatGPTAnalysis)
+                {
+                    ChatGPTAccountConnectionCard(runtime: recapRuntime)
+                }
                 settingsNavigation
             case .recording:
                 captureCard
@@ -80,6 +90,83 @@
                 monitoringScopeCard
                 advancedCard
             }
+        }
+
+        private var capabilityConsentCard: some View {
+            LHCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionTitle(
+                        title: "Optional capabilities",
+                        subtitle: "Every capability is off until you enable it here or during setup. macOS permissions alone never activate Goalong."
+                    )
+                    capabilityToggle(
+                        .localComputerHistory,
+                        message: "Observe foreground apps and coarse interaction signals; detailed events stay on this Mac."
+                    )
+                    Divider()
+                    capabilityToggle(
+                        .appleScreenTime,
+                        message: "Read Apple’s protected Screen Time stores in place; Full Disk Access may be required."
+                    )
+                    Divider()
+                    capabilityToggle(
+                        .aiConversations,
+                        message: "Index local provider metadata and read selected conversations directly from their original files."
+                    )
+                    Divider()
+                    capabilityToggle(
+                        .chatGPTAnalysis,
+                        message: "Send only the bounded analysis context to the Codex/ChatGPT connection after you explicitly start or schedule a run."
+                    )
+                    if GoalongBuildCapabilities.permitsRemoteVerification {
+                        Divider()
+                        capabilityToggle(
+                            .remoteVerification,
+                            message: "Allow opaque signed commitments—not activity contents—to reach the configured verifier."
+                        )
+                    }
+                    if GoalongBuildCapabilities.permitsAutomaticUpdates {
+                        Divider()
+                        capabilityToggle(
+                            .automaticUpdates,
+                            message: "Allow the signed updater to check the published release feed."
+                        )
+                    }
+                }
+            }
+        }
+
+        private func capabilityToggle(
+            _ capability: GoalongCapability,
+            message: String
+        ) -> some View {
+            Toggle(
+                isOn: Binding(
+                    get: { consents.isEnabled(capability) },
+                    set: {
+                        if capability == .localComputerHistory, $0,
+                            !consents.isEnabled(.localComputerHistory)
+                        {
+                            do {
+                                try model.configureCaptureForOnboarding(enabled: true)
+                            } catch {
+                                return
+                            }
+                        }
+                        _ = consents.set(capability, enabled: $0, surface: .settings)
+                    }
+                )
+            ) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(capability.title)
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(message)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.switch)
         }
 
         private var settingsNavigation: some View {
@@ -256,16 +343,23 @@
             settingsCard(
                 symbol: "checkmark.seal.fill",
                 title: "Anti-tamper verification",
-                subtitle: "When enabled, the server receives opaque signed commitments — never your detailed activity"
+                subtitle: GoalongBuildCapabilities.permitsRemoteVerification
+                    ? "When enabled, the server receives opaque signed commitments — never your detailed activity"
+                    : "Local proofs remain available; this edition contains no uploader"
             ) {
                 VStack(spacing: 15) {
                     settingToggle(
                         title: "Send opaque minute commitments",
-                        message: "Allows later verification that a selectively shared day was not rewritten",
+                        message: GoalongBuildCapabilities.permitsRemoteVerification
+                            ? "Allows later verification that a selectively shared day was not rewritten"
+                            : "Unavailable because the Local target physically excludes the network uploader",
                         isOn: $model.settingsDraft.verificationEnabled
                     )
+                    .disabled(!GoalongBuildCapabilities.permitsRemoteVerification)
 
-                    if model.settingsDraft.verificationEnabled {
+                    if GoalongBuildCapabilities.permitsRemoteVerification,
+                        model.settingsDraft.verificationEnabled
+                    {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Verification server")
                                 .font(.system(size: 10, weight: .semibold))

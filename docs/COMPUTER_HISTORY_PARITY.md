@@ -921,7 +921,7 @@ size and fingerprint remain verified.
 | direct-source working set | 399,171,152 logical source bytes verified across the selected conversations; output retains only bounded transient dialogue projections |
 | lightweight index | 809 entries in 791,663 bytes (about 979 bytes per entry); configuration 1,632 bytes and wake-up signal 146 bytes |
 | no-duplication proof | every file below `agent-activity-v2` had the same SHA-256 before and after the real CLI query; no `blobs` directory exists |
-| package validation | arm64 release bundle 29,420 allocated KiB; embedded CLI 7,382,128 bytes; bundle, CLI and Sparkle components passed strict signature and privacy validation |
+| package validation | historical arm64 bundle 29,420 allocated KiB; embedded CLI 7,382,128 bytes; its then-present updater components passed that snapshot’s checks. The current unified app has no updater or Sparkle tooling. |
 
 That package was built ad hoc only as an isolated validation artifact and was not installed,
 because replacing the installed app with an ad hoc identity would make macOS privacy grants

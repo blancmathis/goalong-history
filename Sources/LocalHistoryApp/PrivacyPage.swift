@@ -29,6 +29,7 @@
                         }
                     }
 
+                    buildSecurityCard
                     dataFlowCard
                     permissionsCard
                     protectionGrid
@@ -59,12 +60,97 @@
             }
         }
 
+        private var buildSecurityCard: some View {
+            let capabilities = GoalongBuildCapabilities.self
+            return LHCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionTitle(
+                        title: "This exact build",
+                        subtitle: "Capabilities are selected at compile time, not hidden behind a preference."
+                    )
+
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(LHTheme.success)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                LHTheme.success.opacity(0.1),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            )
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Goalong History · one public app")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(capabilities.summary)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        StatusPill(
+                            title: capabilities.edition.displayName,
+                            symbol: "internaldrive.fill",
+                            tint: LHTheme.success
+                        )
+                    }
+
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 170), spacing: 10)],
+                        alignment: .leading,
+                        spacing: 10
+                    ) {
+                        capabilityRow(
+                            "First-party network transport",
+                            present: capabilities.permitsFirstPartyNetworking
+                        )
+                        capabilityRow(
+                            "Automatic update framework",
+                            present: capabilities.permitsAutomaticUpdates
+                        )
+                        capabilityRow(
+                            "Managed ChatGPT analysis bridge",
+                            present: capabilities.permitsRemoteAnalysis
+                        )
+                        capabilityRow("Direct local source readers", present: true)
+                    }
+
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.shield.fill")
+                            .foregroundStyle(LHTheme.warning)
+                        Text(
+                            "Full Disk Access remains a broad macOS permission. Provider readers are read-only and audited, but they still run inside the main app process; a separately sandboxed reader service has not yet been proven or shipped."
+                        )
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(11)
+                    .background(
+                        LHTheme.warning.opacity(0.06),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                }
+            }
+        }
+
+        private func capabilityRow(_ title: String, present: Bool) -> some View {
+            HStack(spacing: 8) {
+                Image(systemName: present ? "checkmark.circle.fill" : "minus.circle.fill")
+                    .foregroundStyle(present ? LHTheme.accent : LHTheme.success)
+                Text("\(title): \(present ? "present" : "absent")")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+
         private var dataFlowCard: some View {
             LHCard {
                 VStack(alignment: .leading, spacing: 18) {
                     SectionTitle(
                         title: "What happens to your data",
-                        subtitle: "The detailed record and the cryptographic proof follow separate paths"
+                        subtitle: GoalongBuildCapabilities.permitsRemoteVerification
+                            ? "The detailed record and the cryptographic proof follow separate paths"
+                            : "Detailed records and integrity proofs stay separate and local"
                     )
 
                     HStack(alignment: .center, spacing: 12) {
@@ -83,9 +169,11 @@
                         flowNode(
                             symbol: "number.square.fill",
                             title: "3. Anchor",
-                            message: model.runtime.verificationEnabled
-                                ? "Opaque signed commitments only"
-                                : "Stored locally until verification is enabled"
+                            message: GoalongBuildCapabilities.permitsRemoteVerification
+                                ? (model.runtime.verificationEnabled
+                                    ? "Opaque signed commitments only"
+                                    : "Stored locally until verification is enabled")
+                                : "Local commitments never leave this build"
                         )
                         flowArrow
                         flowNode(
@@ -99,7 +187,9 @@
                         Image(systemName: "info.circle.fill")
                             .foregroundStyle(LHTheme.accent)
                         Text(
-                            "An opaque commitment does not contain the application, URL, window title, clicks or category. Your server necessarily sees connection metadata such as arrival time and IP when commitments are enabled."
+                            GoalongBuildCapabilities.permitsRemoteVerification
+                                ? "An opaque commitment does not contain the application, URL, window title, clicks or category. Your server necessarily sees connection metadata such as arrival time and IP when commitments are enabled."
+                                : "Local commitments verify integrity without exposing the detailed record or contacting a server. This Local build contains no commitment transport."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
@@ -256,7 +346,7 @@
                 protectionCard(
                     symbol: "keyboard.badge.ellipsis",
                     title: "No raw typed text",
-                    message: "\(ProductIdentity.displayName) stores typing counts and duration, never reconstructed characters.",
+                    message: "\(ProductIdentity.displayName) stores typing counts and duration plus generic shortcut/navigation activity, never characters or exact keys.",
                     tint: LHTheme.teal
                 )
                 protectionCard(

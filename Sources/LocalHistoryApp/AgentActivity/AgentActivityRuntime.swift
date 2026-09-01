@@ -62,6 +62,7 @@
         private var pendingSelectedDayAnalysis = false
         private var scanGeneration: UInt64 = 0
         private var isStopping = false
+        private var initialDiscoveryPerformed: Bool
 
         private struct ScanRequest {
             let forceFullDiscovery: Bool
@@ -72,6 +73,7 @@
         init(
             rootDirectory: URL,
             executableURL: URL,
+            performInitialDiscovery: Bool = true,
             sourceDiscovery: @escaping () -> [AgentWatchedFolder] = {
                 AgentDefaultSourceDiscovery.discover()
             },
@@ -83,12 +85,15 @@
             store = try AgentActivityStore(rootDirectory: rootDirectory)
             scanner = AgentActivityScanner(store: store)
             installer = AgentIntegrationInstaller(executableURL: executableURL)
+            initialDiscoveryPerformed = performInitialDiscovery
 
-            let discovered = sourceDiscovery()
-            let merged = AgentDefaultSourceDiscovery.merging(
-                configuration: store.loadConfiguration(),
-                discovered: discovered
-            )
+            let storedConfiguration = store.loadConfiguration()
+            let merged = performInitialDiscovery
+                ? AgentDefaultSourceDiscovery.merging(
+                    configuration: storedConfiguration,
+                    discovered: sourceDiscovery()
+                )
+                : storedConfiguration
             let initialConfiguration = (try? store.saveConfiguration(merged)) ?? merged
             let initialDay = Calendar.current.startOfDay(for: Date())
             configuration = initialConfiguration
@@ -113,6 +118,16 @@
 
         func start() {
             guard !started else { return }
+            if !initialDiscoveryPerformed {
+                let merged = AgentDefaultSourceDiscovery.merging(
+                    configuration: store.loadConfiguration(),
+                    discovered: sourceDiscovery()
+                )
+                let applied = (try? store.saveConfiguration(merged)) ?? merged
+                configuration = applied
+                updateScanSnapshot(configuration: applied)
+                initialDiscoveryPerformed = true
+            }
             started = true
             scanStateLock.lock()
             isStopping = false
@@ -147,6 +162,7 @@
             forceFullDiscovery: Bool = false,
             analyzeSelectedDay: Bool = false
         ) {
+            guard started else { return }
             enqueueScan(
                 forceFullDiscovery: forceFullDiscovery,
                 clearTransientAnalyses: false,
@@ -162,11 +178,13 @@
             // projection is being rebuilt. The complete snapshot is published atomically below.
             overview = AgentActivityOverview(day: normalized)
             updateScanSnapshot(day: normalized)
-            enqueueScan(
-                forceFullDiscovery: false,
-                clearTransientAnalyses: true,
-                analyzeSelectedDay: true
-            )
+            if started {
+                enqueueScan(
+                    forceFullDiscovery: false,
+                    clearTransientAnalyses: true,
+                    analyzeSelectedDay: true
+                )
+            }
         }
 
         func dashboardDidBecomeHidden() {
@@ -180,6 +198,7 @@
         }
 
         func detectCommonSources() {
+            guard started else { return }
             let discovered = sourceDiscovery()
             let merged = AgentDefaultSourceDiscovery.merging(
                 configuration: configuration,
@@ -190,6 +209,7 @@
         }
 
         func chooseFolder() {
+            guard started else { return }
             let panel = NSOpenPanel()
             panel.canChooseFiles = false
             panel.canChooseDirectories = true
@@ -388,15 +408,15 @@
         }
 
         func openRootFolder() {
-            NSWorkspace.shared.open(rootDirectory)
+            GoalongWorkspaceOpenPolicy.open(rootDirectory, purpose: .localFile)
         }
 
         func openSignalsFolder() {
-            NSWorkspace.shared.open(store.signalsDirectory)
+            GoalongWorkspaceOpenPolicy.open(store.signalsDirectory, purpose: .localFile)
         }
 
         func openFolder(_ folder: AgentWatchedFolder) {
-            NSWorkspace.shared.open(folder.url)
+            GoalongWorkspaceOpenPolicy.open(folder.url, purpose: .localFile)
         }
 
         func openOriginal(_ record: AgentCaptureRecord) {

@@ -9,7 +9,19 @@ extension HistoryEvent {
     /// commitment array for every useful row therefore multiplies the working set
     /// without changing any derived result.
     package var compactedForDerivedAnalysis: HistoryEvent {
-        guard let integrity, !integrity.fieldCommitments.isEmpty else { return self }
+        guard let integrity else { return self }
+        // A compact journal decode intentionally keeps only chain hashes and marks
+        // the integrity as `.compactSalts`. That representation cannot be encoded
+        // again because its salts were deliberately discarded. Derived-analysis
+        // copies use an empty, ordinary commitment array instead: the retained
+        // chain provenance stays intact and transient sizing/diagnostic encoders
+        // cannot mistake the copy for material that is safe to write back as a
+        // source-journal row.
+        if integrity.fieldCommitments.isEmpty,
+            integrity.storageFormat == .fullCommitments
+        {
+            return self
+        }
         return HistoryEvent(
             schemaVersion: schemaVersion,
             id: id,

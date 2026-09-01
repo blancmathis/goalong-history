@@ -22,6 +22,7 @@ trap '/bin/rm -rf -- "$TEST_ROOT"' EXIT
   "confidenceScore": 80,
   "summaryLines": ["One.", "Two.", "Three.", "Four.", "Five."]
 }' > "$TEST_ROOT/chatgpt/recaps/2026-08-27.chatgpt-recap.json"
+/usr/bin/printf '%s\n' '{"not":"a share package"}' > "$TEST_ROOT/invalid-share.json"
 /usr/bin/printf '%s\n' \
   '{"schemaVersion":4,"id":"site-1","sessionID":"fixture","timestamp":"2026-08-27T10:00:00Z","kind":"urlChanged","app":{"name":"Aside","bundleIdentifier":"at.studio.AsideBrowser","processIdentifier":1},"url":{"value":"https://x.com/home","host":"x.com","redactionApplied":true}}' \
   '{"schemaVersion":4,"id":"health","sessionID":"fixture","timestamp":"2026-08-27T10:00:10Z","kind":"recorderHealth","metadata":{"observation_gap":"false"}}' \
@@ -38,7 +39,9 @@ before="$(find "$TEST_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
 "$CLI" --root "$TEST_ROOT" days \
   | jq -e '.recaps == ["2026-08-27"] and .aiConversationCandidateDays == [] and .agentActivityIndexStatus == "notIndexed"' >/dev/null
 "$CLI" --root "$TEST_ROOT" recap 2026-08-27 \
-  | jq -e '.status == "available" and .recap.productivityScore == 64' >/dev/null
+  | jq -e '.status == "available" and .recap.productivityScore == 64 and .integrity.status == "legacyUnsigned" and .integrity.localDeviceSignatureValid == false' >/dev/null
+"$CLI" verify-recap "$TEST_ROOT/chatgpt/recaps/2026-08-27.chatgpt-recap.json" \
+  | jq -e '.status == "legacyUnsigned" and .recap.productivityScore == 64 and .integrity.savedResultMatches == false' >/dev/null
 "$CLI" --root "$TEST_ROOT" recap 2026-08-28 \
   | jq -e '.status == "notGenerated" and .recap == null' >/dev/null
 if "$CLI" --root "$TEST_ROOT" recap 2026-02-31 >/dev/null 2>&1; then
@@ -67,7 +70,9 @@ if "$CLI" --root "$TEST_ROOT" ai-conversations 2026-08-27 --offset 50001 >/dev/n
   echo "Goalong CLI accepted an out-of-range AI conversation offset." >&2
   exit 1
 fi
+"$CLI" verify-share "$TEST_ROOT/invalid-share.json" \
+  | jq -e '.status == "inaccessibleOrInvalid" and .report == null and (.error | type == "string")' >/dev/null
 after="$(find "$TEST_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
 [[ "$before" == "$after" ]]
 
-echo "Goalong CLI tests passed: lightweight status, day discovery, recap present/missing states, direct Screen Time status, ranked daily websites, AI index-missing state, and zero source writes."
+echo "Goalong CLI tests passed: lightweight status, day discovery, recap integrity states, offline recap/share verification, direct Screen Time status, ranked daily websites, AI index-missing state, and zero source writes."

@@ -8,7 +8,9 @@
         @StateObject private var screenTime: AppleScreenTimeDashboardModel
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
         @State private var includesInactiveSystemTime = false
-        @State private var usageMode: OverviewUsageMode = .applications
+        @State private var showsAllUsage = false
+        @State private var usageMode: UsageBreakdownMode = .websites
+        @State private var expandedBrowserIDs = Set<String>()
 
         init(model: DashboardViewModel) {
             self.model = model
@@ -17,6 +19,7 @@
                     rootDirectory: AppPaths.screenTimeDirectory,
                     deviceID: model.deviceID,
                     selectedDay: model.selectedDay,
+                    accessEnabled: GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime),
                     includesUnfilteredSummary: true
                 )
             )
@@ -66,7 +69,16 @@
             }
             .onDisappear { screenTime.setActive(false) }
             .onChange(of: model.dashboardIsVisible) { screenTime.setActive($0) }
+            .onReceive(
+                NotificationCenter.default.publisher(for: .goalongCapabilityConsentDidChange)
+            ) { _ in
+                screenTime.setAccessEnabled(
+                    GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)
+                )
+            }
             .onChange(of: model.selectedDay) { day in
+                showsAllUsage = false
+                expandedBrowserIDs.removeAll()
                 synchronizeSecondarySources(with: day)
             }
             .alert(item: $recapRuntime.alert) { item in
@@ -211,147 +223,167 @@
         }
 
         private var topUsageSection: some View {
-            let applications = combinedAppUsage
-            let websites = Array(topWebsiteUsage.prefix(6))
+            let breakdown = UsageBreakdownProjection.build(
+                summary: displayedScreenTimeSummary,
+                trackedUsage: model.snapshot.trackedUsage,
+                includesInactiveSystemTime: includesInactiveSystemTime
+            )
+            let allItems = breakdown.items(for: usageMode)
+            let items = UsageBreakdownProjection.presentedItems(
+                allItems,
+                showsAll: showsAllUsage
+            )
+            let hiddenCount = max(0, allItems.count - items.count)
+            let shownSeconds = items.reduce(0) { $0 + $1.seconds }
+            let hiddenSeconds = UsageBreakdownProjection.hiddenSeconds(
+                totalSeconds: breakdown.totalSeconds,
+                presentedItems: items
+            )
 
             return VStack(alignment: .leading, spacing: 13) {
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Most used")
+                        Text("Where your screen time went")
                             .font(.system(size: 15, weight: .semibold))
-                        Text(usageMode.detail)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            usageMode == .websites
+                                ? "Apps and sites share one ranking. Browser rows stay hidden."
+                                : "The same usage is grouped by browser. Expand a browser to see its sites."
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 8) {
-                        Picker("Usage type", selection: $usageMode) {
-                            ForEach(OverviewUsageMode.allCases) { item in
-                                Text(item.title).tag(item)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 230)
+                        Toggle("Group sites by browser", isOn: groupsSitesByBrowser)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .accessibilityHint(
+                                "Changes only how the same usage is grouped. Off lists sites beside apps. On lists browsers that expand into sites."
+                            )
+                            .help(
+                                "Show the same Screen Time grouped into expandable browser rows instead of individual website rows."
+                            )
 
-                        if usageMode == .applications, hasHiddenInactiveSystemTime {
-                            Toggle(
-                                "Include login and lock-screen time",
-                                isOn: $includesInactiveSystemTime
-                            )
-                                .toggleStyle(.switch)
-                                .controlSize(.small)
-                                .accessibilityHint(
-                                    "Adds login screen, lock screen, and screen saver time Apple may report while the device is not actively being used."
-                                )
-                                .help(
-                                    "Include Apple-reported login screen, lock screen, and screen saver time. This can increase Screen Time even when you were not actively using the device."
-                                )
-                            Text(
-                                "Apple may record these periods while the device is not actively being used."
-                            )
+                        Text("Same usage and total; only the grouping changes.")
                             .font(.system(size: 9))
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: 300, alignment: .trailing)
-                            .fixedSize(horizontal: false, vertical: true)
-                        } else if usageMode == .websites, !topWebsiteUsage.isEmpty {
-                            Text("Top \(websites.count) of \(topWebsiteUsage.count) websites")
-                                .font(.system(size: 9, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
 
-                if usageMode == .applications {
-                    applicationUsageRows(applications)
-                } else {
-                    websiteUsageRows(websites)
-                }
-            }
-        }
-
-        @ViewBuilder private func applicationUsageRows(_ applications: [DailyAppUsage]) -> some View {
-            if applications.isEmpty {
-                Text("Application usage will appear here as Screen Time or Goalong records the day.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
-            } else {
-                let maximum = max(1, applications.map(\.displaySeconds).max() ?? 1)
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(applications.enumerated()), id: \.element.id) { index, usage in
-                        HStack(spacing: 12) {
-                            AppIconView(
-                                bundleIdentifier: usage.bundleIdentifier,
-                                appName: usage.name,
-                                size: 34
+                        if hasHiddenInactiveSystemTime {
+                            Toggle(
+                                "Include login and lock-screen time",
+                                isOn: $includesInactiveSystemTime
                             )
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack(spacing: 12) {
-                                    Text(usage.name)
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Text(formattedDuration(usage.displaySeconds))
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                        .monospacedDigit()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .accessibilityHint(
+                                "Adds login screen, lock screen, and screen saver time Apple may report while the device is not actively being used."
+                            )
+                            .help(
+                                "Include Apple-reported login screen, lock screen, and screen saver time. This can increase Screen Time even when you were not actively using the device."
+                            )
+                            Text("Apple may record these periods while the device is not actively being used.")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: 300, alignment: .trailing)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+
+                breakdownRows(items, hasHiddenUsage: hiddenCount > 0)
+
+                if breakdown.totalSeconds > 0.5 {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 10) {
+                            if hiddenSeconds > 0.5 {
+                                Text("Shown \(formattedDuration(shownSeconds))")
+                                Text("·")
+                                Text("More \(formattedDuration(hiddenSeconds))")
+                                Text("·")
+                                Text("Total \(formattedDuration(breakdown.totalSeconds))")
+                                    .fontWeight(.semibold)
+                            } else {
+                                Text("All \(formattedDuration(breakdown.totalSeconds)) shown")
+                                    .fontWeight(.semibold)
+                            }
+                            Spacer()
+                            if hiddenCount > 0 || showsAllUsage {
+                                Button {
+                                    showsAllUsage.toggle()
+                                } label: {
+                                    Label(
+                                        showsAllUsage
+                                            ? "Show less"
+                                            : "Show \(hiddenCount) more · \(formattedDuration(hiddenSeconds))",
+                                        systemImage: showsAllUsage ? "chevron.up" : "chevron.down"
+                                    )
                                 }
-                                Text(usage.sourceDetail)
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                ProgressBar(
-                                    value: usage.displaySeconds / maximum,
-                                    tint: LHTheme.accent
-                                )
+                                .buttonStyle(.bordered)
+                                .accessibilityValue(showsAllUsage ? "Expanded" : "Collapsed")
                             }
                         }
-                        .padding(.vertical, 8)
+                        .font(.system(size: 9, design: .rounded))
+                        .foregroundStyle(.secondary)
 
-                        if index < applications.count - 1 {
-                            Divider().padding(.leading, 46)
-                        }
+                        Text(
+                            breakdown.usesAppleTotal
+                                ? "Apple total across the selected devices. Simultaneous use on different devices may overlap. Website details currently cover this Mac only."
+                                : "Goalong-observed foreground time on this Mac. Website rows replace browser time; they are not added to it."
+                        )
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
         }
 
-        @ViewBuilder private func websiteUsageRows(_ websites: [TrackedUsageItem]) -> some View {
-            if websites.isEmpty {
-                Text("No public website URL was exposed by the active browsers for this day.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
+        private var groupsSitesByBrowser: Binding<Bool> {
+            Binding(
+                get: { usageMode == .browsers },
+                set: { groups in
+                    usageMode = groups ? .browsers : .websites
+                    showsAllUsage = false
+                    expandedBrowserIDs.removeAll()
+                }
+            )
+        }
+
+        @ViewBuilder private func breakdownRows(
+            _ items: [UsageBreakdownItem],
+            hasHiddenUsage: Bool
+        ) -> some View {
+            if items.isEmpty {
+                Text(
+                    hasHiddenUsage
+                        ? "No activity reached five minutes. Show more to include shorter use."
+                        : "Usage will appear here as Apple Screen Time or Goalong records the day."
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
             } else {
-                let maximum = max(1, websites.map(\.foregroundSeconds).max() ?? 1)
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(websites.enumerated()), id: \.element.id) { index, site in
-                        HStack(spacing: 12) {
-                            WebsiteIconView(host: site.host ?? site.name, size: 34)
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack(spacing: 12) {
-                                    Text(site.host ?? site.name)
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Text(formattedDuration(site.foregroundSeconds))
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                        .monospacedDigit()
-                                }
-                                Text(websiteSourceDetail(site))
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                ProgressBar(
-                                    value: site.foregroundSeconds / maximum,
-                                    tint: LHTheme.teal
-                                )
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if item.kind == .browser {
+                            DisclosureGroup(isExpanded: browserExpansionBinding(item.id)) {
+                                breakdownChildren(item.children)
+                            } label: {
+                                breakdownLabel(item)
                             }
+                            .padding(.vertical, 8)
+                        } else {
+                            breakdownLabel(item)
+                                .padding(.vertical, 8)
                         }
-                        .padding(.vertical, 8)
 
-                        if index < websites.count - 1 {
+                        if index < items.count - 1 {
                             Divider().padding(.leading, 46)
                         }
                     }
@@ -359,10 +391,95 @@
             }
         }
 
-        private func websiteSourceDetail(_ site: TrackedUsageItem) -> String {
-            [site.sourceApplicationLabel, "This Mac"]
-                .compactMap { $0 }
-                .joined(separator: " · ")
+        private func breakdownLabel(_ item: UsageBreakdownItem) -> some View {
+            HStack(spacing: 12) {
+                breakdownIcon(item)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                    Text(breakdownDetail(item))
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Text(formattedDuration(item.seconds))
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+            }
+            .accessibilityElement(children: .combine)
+        }
+
+        @ViewBuilder private func breakdownIcon(_ item: UsageBreakdownItem) -> some View {
+            switch item.kind {
+            case .application, .browser:
+                AppIconView(
+                    bundleIdentifier: item.bundleIdentifier,
+                    appName: item.name,
+                    size: 34
+                )
+            case .website:
+                WebsiteIconView(host: item.host ?? item.name, size: 34)
+            case .otherWeb, .otherActive:
+                Image(systemName: item.kind == .otherWeb ? "globe.desk" : "clock")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        Color.primary.opacity(0.05),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    )
+            }
+        }
+
+        private func breakdownDetail(_ item: UsageBreakdownItem) -> String {
+            switch item.kind {
+            case .application: return "Application"
+            case .website: return "Website · This Mac"
+            case .browser:
+                let count = item.children.filter { $0.kind == .website }.count
+                return count == 0
+                    ? "Browser · no public site detail available"
+                    : "Browser · expand for \(count) site\(count == 1 ? "" : "s")"
+            case .otherWeb: return "Browser time without a public site detail"
+            case .otherActive: return "Active time without an application attribution"
+            }
+        }
+
+        private func browserExpansionBinding(_ id: String) -> Binding<Bool> {
+            Binding(
+                get: { expandedBrowserIDs.contains(id) },
+                set: { isExpanded in
+                    if isExpanded { expandedBrowserIDs.insert(id) }
+                    else { expandedBrowserIDs.remove(id) }
+                }
+            )
+        }
+
+        private func breakdownChildren(_ children: [UsageBreakdownChild]) -> some View {
+            VStack(spacing: 0) {
+                ForEach(children) { child in
+                    HStack(spacing: 10) {
+                        if child.kind == .website {
+                            WebsiteIconView(host: child.host ?? child.name, size: 24)
+                        } else {
+                            Image(systemName: "ellipsis")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 24, height: 24)
+                        }
+                        Text(child.name)
+                            .font(.system(size: 10, weight: .medium))
+                            .lineLimit(1)
+                        Spacer()
+                        Text(formattedDuration(child.seconds))
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                    }
+                    .padding(.leading, 46)
+                    .padding(.vertical, 6)
+                }
+            }
         }
 
         private var timelineSection: some View {
@@ -549,23 +666,8 @@
             )
         }
 
-        private var combinedAppUsage: [DailyAppUsage] {
-            OverviewUsageProjection.applications(
-                filteredSummary: screenTime.summary,
-                allReportedSummary: screenTime.unfilteredSummary,
-                goalongUsage: model.snapshot.trackedUsage,
-                currentMacDeviceID: screenTime.currentMacDeviceID,
-                includesInactiveSystemTime: includesInactiveSystemTime
-            )
-        }
-
-        private var topWebsiteUsage: [TrackedUsageItem] {
-            OverviewUsageProjection.websites(model.snapshot.trackedUsage)
-        }
-
         private func formattedDuration(_ seconds: TimeInterval) -> String {
-            guard seconds > 0 else { return "0m" }
-            return DashboardFormatters.duration(seconds: seconds)
+            OverviewUsageProjection.durationLabel(seconds: seconds)
         }
 
         private func selectDay(_ date: Date) {
@@ -624,30 +726,16 @@
         }
     }
 
-    enum OverviewUsageMode: String, CaseIterable, Identifiable {
-        case applications
-        case websites
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .applications: return "Applications"
-            case .websites: return "Websites"
-            }
-        }
-
-        var detail: String {
-            switch self {
-            case .applications:
-                return "All active-use apps, with Apple and Goalong reconciled without double counting. Login and lock-screen time is hidden by default."
-            case .websites:
-                return "Goalong-observed browser time on this Mac. Already included in app totals; Apple does not expose per-site iPhone or iPad detail."
-            }
-        }
-    }
-
     enum OverviewUsageProjection {
+        static let conciseMinimumDuration: TimeInterval = 5 * 60
+        static let conciseMaximumItems = 6
+
+        static func durationLabel(seconds: TimeInterval) -> String {
+            guard seconds > 0 else { return "0m" }
+            if seconds < 60 { return "<1m" }
+            return DashboardFormatters.duration(seconds: seconds)
+        }
+
         static func summary(
             filtered: AppleScreenTimeDaySummary?,
             allReported: AppleScreenTimeDaySummary?,
@@ -750,12 +838,14 @@
                 }
             }
 
-            return merged.values.sorted { lhs, rhs in
-                if lhs.displaySeconds != rhs.displaySeconds {
-                    return lhs.displaySeconds > rhs.displaySeconds
+            return merged.values
+                .filter { $0.displaySeconds > 0.5 }
+                .sorted { lhs, rhs in
+                    if lhs.displaySeconds != rhs.displaySeconds {
+                        return lhs.displaySeconds > rhs.displaySeconds
+                    }
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
                 }
-                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-            }
         }
 
         static func websites(_ trackedUsage: [TrackedUsageItem]) -> [TrackedUsageItem] {
@@ -788,11 +878,60 @@
                     merged[application.id] = application
                 }
             }
-            return merged.values.sorted { lhs, rhs in
-                if lhs.duration != rhs.duration { return lhs.duration > rhs.duration }
-                return lhs.resolvedName.localizedCaseInsensitiveCompare(rhs.resolvedName)
-                    == .orderedAscending
-            }
+            return merged.values
+                .filter { $0.duration > 0.5 }
+                .sorted { lhs, rhs in
+                    if lhs.duration != rhs.duration { return lhs.duration > rhs.duration }
+                    return lhs.resolvedName.localizedCaseInsensitiveCompare(rhs.resolvedName)
+                        == .orderedAscending
+                }
+        }
+
+        static func presentedApplications(
+            _ applications: [DailyAppUsage],
+            showsAll: Bool
+        ) -> [DailyAppUsage] {
+            presentedValues(
+                applications,
+                showsAll: showsAll,
+                duration: \DailyAppUsage.displaySeconds
+            )
+        }
+
+        static func presentedWebsites(
+            _ websites: [TrackedUsageItem],
+            showsAll: Bool
+        ) -> [TrackedUsageItem] {
+            presentedValues(
+                websites,
+                showsAll: showsAll,
+                duration: \TrackedUsageItem.foregroundSeconds
+            )
+        }
+
+        static func presentedAppleApplications(
+            _ applications: [AppleScreenTimeApplicationUsage],
+            showsAll: Bool
+        ) -> [AppleScreenTimeApplicationUsage] {
+            presentedValues(
+                applications,
+                showsAll: showsAll,
+                duration: \AppleScreenTimeApplicationUsage.duration
+            )
+        }
+
+        private static func presentedValues<Value>(
+            _ values: [Value],
+            showsAll: Bool,
+            duration: KeyPath<Value, TimeInterval>
+        ) -> [Value] {
+            let positive = values.filter { $0[keyPath: duration] > 0.5 }
+            guard !showsAll else { return positive }
+            return Array(
+                positive
+                    .filter { $0[keyPath: duration] >= conciseMinimumDuration }
+                    .prefix(conciseMaximumItems)
+            )
         }
 
         private static func appKey(name: String, bundleIdentifier: String?) -> String {
