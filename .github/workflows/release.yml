@@ -63,7 +63,7 @@ jobs:
           set -euo pipefail
           APP="dist/Goalong History.app"
           lipo -info "$APP/Contents/MacOS/Goalong History"
-          lipo -verify_arch arm64 x86_64 "$APP/Contents/MacOS/Goalong History"
+          lipo "$APP/Contents/MacOS/Goalong History" -verify_arch arm64 x86_64
           codesign --verify --strict --verbose=4 "$APP"
           SIGNING_DETAILS="$(codesign -dv --verbose=4 "$APP" 2>&1)"
           grep -Fxq 'Signature=adhoc' <<<"$SIGNING_DETAILS"
