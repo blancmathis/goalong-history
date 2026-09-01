@@ -14,11 +14,13 @@ privacy_identity_replacement_allowed \
   'development' 'developerID' 'identifier "development"' 'identifier "public"'
 privacy_identity_replacement_allowed \
   'developerID' 'developerID' 'identifier "stable"' 'identifier "stable"'
-if privacy_identity_replacement_allowed \
+PRIVACY_REAUTH_REQUIRED=0
+if ! privacy_identity_replacement_allowed \
     'adHoc' 'adHoc' 'cdhash H"old"' 'cdhash H"new"'; then
-  echo "A changed ad-hoc public identity was allowed to reset macOS permissions." >&2
+  echo "A valid Community update with a changed ad-hoc identity was rejected." >&2
   exit 1
 fi
+[[ "$PRIVACY_REAUTH_REQUIRED" -eq 1 ]]
 if privacy_identity_replacement_allowed \
     'developerID' 'developerID' 'identifier "team-one"' 'identifier "team-two"'; then
   echo "A changed public signing identity was allowed to reset macOS permissions." >&2
@@ -195,4 +197,4 @@ make_fixture_bundle "$obsolete_local_app" "$OBSOLETE_LOCAL_BUNDLE_ID" "1"
 remove_verified_obsolete_local_bundle "$obsolete_local_app"
 [[ ! -e "$obsolete_local_app" && ! -L "$obsolete_local_app" ]]
 
-echo "Public installer safety tests passed: exact identity, symlink/tamper refusal, target-filesystem staging, privacy/single-app fail-closed checks, rollback, interrupted-install recovery, and obsolete Local-edition cleanup."
+echo "Public installer safety tests passed: Community reauthorization disclosure, exact identity, symlink/tamper refusal, target-filesystem staging, privacy/single-app fail-closed checks, rollback, interrupted-install recovery, and obsolete Local-edition cleanup."

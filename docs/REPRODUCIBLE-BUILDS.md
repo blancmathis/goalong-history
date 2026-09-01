@@ -7,7 +7,7 @@ context_room:
 
 ## Summary
 
-Goalong publishes the inputs and hashes needed for comparison, but byte-for-byte independent reproducibility is not yet proven. macOS timestamps, Developer ID signatures, notarization tickets and DMG metadata are expected sources of nondeterminism.
+Goalong publishes the inputs and hashes needed for comparison plus a GitHub/Sigstore build-provenance attestation, but byte-for-byte independent reproducibility is not yet proven. Swift/macOS build metadata and DMG metadata remain expected sources of nondeterminism.
 
 ## Defines
 
@@ -23,18 +23,19 @@ Release signing custody or a SLSA provenance level not yet achieved.
 - exact Swift package revision/version in `Package.resolved` and the SPDX SBOM;
 - executable SHA-256 values, linked libraries, entitlements, Team ID, CDHash and designated requirement in `security-capabilities.json`;
 - pinned GitHub Actions commits;
-- declared app version, build number, architectures and edition.
+- declared app version, build number, architectures and edition;
+- Sigstore-backed GitHub provenance binding released artifact digests to the repository workflow and commit.
 
 ## Independent comparison
 
-Check out the recorded commit, use the Xcode/Swift versions reported by CI, build the same edition and compare the unsigned executable/library contents before signing. Then compare semantic signing properties and entitlements separately. Do not expect timestamped signatures, notarization staples or the final DMG bytes to match.
+Check out the recorded commit, use the Xcode/Swift versions reported by CI, build the same edition and compare the executable/library contents before packaging. Then compare semantic signing properties and entitlements separately. Do not expect the final DMG bytes to match.
 
 ## Not yet proven
 
 - a hermetic build environment;
 - normalized `SOURCE_DATE_EPOCH` across Swift, asset generation and packaging;
 - independent third-party reproduction of a release;
-- signed SLSA/in-toto provenance;
+- an independently operated build attestation or a claimed SLSA level beyond GitHub's generated provenance;
 - deterministic pre-signature bundle root across arm64 and x86_64 builders.
 
 Until those exist, release notes must say “verifiable inventory” rather than “reproducible build.”

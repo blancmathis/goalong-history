@@ -1,9 +1,10 @@
 # Updates and macOS permission continuity
 
 Goalong has one bundle identity, `ai.goalong.localhistory`. Local builds use a stable Apple
-Development identity when available; public builds require Developer ID and notarization. Keeping
-the bundle identifier and designated requirement stable reduces unnecessary permission prompts,
-but macOS may still require the user to confirm a switch after replacement or policy changes.
+Development identity when one is already available. The free public Community Build is ad-hoc
+signed and not notarized, so its designated requirement can change with the binary and macOS may
+request fresh Goalong permissions after replacement. The installer reports that consequence before
+replacing the app; history and settings remain preserved.
 
 The app never assumes permission from a switch alone. It verifies functional Accessibility/input
 health and separately requires the corresponding Goalong capability consent. Replacing the app

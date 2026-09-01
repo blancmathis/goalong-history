@@ -6,21 +6,27 @@ L’application est destinée à votre propre Mac. Elle ne doit jamais servir à
 
 ## Installation recommandée actuellement
 
-Le bundle public `latest-main` actuellement publié est antérieur à l’indexation
-directe des historiques d’agents. Ne téléchargez pas son DMG : l’installateur le
-refuse volontairement pour éviter de recréer un coffre de transcriptions.
+Téléchargez le DMG universel de la dernière **Community Build** sur GitHub, puis
+glissez **Goalong History** dans Applications. C’est l’unique application
+publique : elle est gratuite, open source et ne nécessite ni Xcode ni abonnement
+Apple Developer payant.
 
-Depuis ce dépôt, utilisez l’[installation auditée depuis les
-sources](#installation-actuelle-depuis-les-sources). Elle nécessite le Terminal
-et les Command Line Tools de Xcode, exécute les tests et l’audit de
-confidentialité, puis remplace l’application avec une protection de retour en
-arrière. Aucune commande administrateur n’est nécessaire lorsque votre dossier
-Applications est accessible en écriture.
+La Community Build est signée ad hoc pour vérifier l’intégrité du bundle, mais
+elle n’est pas notariée par Apple. Après avoir vérifié le SHA-256, le manifeste
+de release et la provenance GitHub/Sigstore, si macOS bloque la première
+ouverture, essayez d’ouvrir l’app une fois puis utilisez uniquement :
 
-Après l’installation, ouvrez **Goalong History** et suivez l’assistant. La build
-locale fonctionne sur le Mac qui l’a construite et exige macOS 13 Ventura ou une
-version plus récente. Comme elle est signée localement, macOS peut demander de
-renouveler une autorisation lorsque son identité de build change.
+```text
+Réglages Système → Confidentialité et sécurité → Ouvrir quand même
+```
+
+Ne désactivez jamais Gatekeeper globalement.
+
+Après l’installation, ouvrez **Goalong History** et suivez l’assistant. L’app
+exige macOS 13 Ventura ou une version plus récente. Comme la signature gratuite
+n’a pas d’identité Apple stable, macOS peut demander de renouveler les
+autorisations Goalong après une mise à jour ; l’historique et les réglages restent
+conservés.
 
 ## L’assistant de première ouverture
 
@@ -147,10 +153,12 @@ La clé qui signe les preuves est liée à la signature stable de l’applicatio
 
 Goalong History n’intègre aucun mécanisme de mise à jour et ne vérifie pas
 GitHub en arrière-plan. Une mise à jour est un remplacement manuel. L’installateur
-public vérifie le SHA-256, l’identité unique de l’application, les marqueurs de
-confidentialité, la signature Developer ID, la notarisation Apple et la
-continuité de l’identité macOS avant tout remplacement. L’état courant de la
-release est indiqué dans le [`README`](README.md).
+public vérifie le SHA-256, l’identité unique de l’application, sa signature ad
+hoc, les marqueurs de confidentialité et la politique d’app unique avant tout
+remplacement. Chaque release publie aussi le commit source exact, un manifeste
+de capacités, un SBOM et une attestation de provenance GitHub/Sigstore. Cette
+preuve n’est pas une notarisation Apple. L’état courant de la release est indiqué
+dans le [`README`](README.md).
 
 ## Désinstallation
 

@@ -343,7 +343,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "forbiddenLocalEntitlementsPresent": sorted(FORBIDDEN_LOCAL_ENTITLEMENTS.intersection(app_entitlements)),
         "codeObjects": code_objects,
         "limitations": [
-            "This manifest inventories the built artifact; it does not prove source-to-binary reproducibility.",
+            "This manifest inventories the built artifact; the separately published GitHub/Sigstore attestation binds artifact digests to CI provenance but does not prove source-to-binary reproducibility.",
             "Absence of reviewed transport markers does not create an OS network sandbox.",
             "Full Disk Access readers still run in the main process; a separately sandboxed reader is not shipped.",
             "The explicit-consent Codex process bridge is an emission path and remains part of the review surface.",

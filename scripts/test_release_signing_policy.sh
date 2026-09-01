@@ -3,31 +3,31 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKFLOW="$ROOT_DIR/.github/workflows/continuous-release.yml"
+STABLE_WORKFLOW="$ROOT_DIR/.github/workflows/release.yml"
 INSTALLER="$ROOT_DIR/install.sh"
 
-/usr/bin/grep -Fq 'Missing required Apple release value:' "$WORKFLOW"
-/usr/bin/grep -Fq 'refuses to publish an ad-hoc signed update' "$WORKFLOW"
-/usr/bin/grep -Fq 'Developer ID signed and notarized by Apple' "$WORKFLOW"
-/usr/bin/grep -Fq 'Public release skipped; missing Apple value:' "$WORKFLOW"
-/usr/bin/grep -Fq "needs.release-readiness.outputs.apple_enabled == 'true'" "$WORKFLOW"
+/usr/bin/grep -Fq 'LOCALHISTORY_CODESIGN_IDENTITY:' "$WORKFLOW"
+/usr/bin/grep -Fq "Community releases must not depend on a certificate-backed Apple identity." "$WORKFLOW"
+/usr/bin/grep -Fq "Community releases must not be presented as Apple-notarized builds." "$WORKFLOW"
+/usr/bin/grep -Fq 'Sigstore-backed build-provenance attestation' "$WORKFLOW"
+/usr/bin/grep -Fq 'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6' "$WORKFLOW"
+/usr/bin/grep -Fq 'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6' "$STABLE_WORKFLOW"
 /usr/bin/grep -Fq 'Remove retired rolling-release assets' "$WORKFLOW"
 /usr/bin/grep -Fq 'LocalHistory-macOS-universal.dmg' "$WORKFLOW"
 /usr/bin/grep -Fq 'appcast.xml' "$WORKFLOW"
 
-if /usr/bin/grep -Eq 'Sparkle EdDSA \(free mode\)|This build is ad-hoc code signed' "$WORKFLOW"; then
-  echo "The public release workflow still contains an ad-hoc publication path." >&2
+if /usr/bin/grep -Eq 'MACOS_CERTIFICATE|APPLE_API_|notarytool|stapler' "$WORKFLOW" "$STABLE_WORKFLOW"; then
+  echo "The free Community release workflow still depends on paid Apple release credentials." >&2
   exit 1
 fi
 
-/usr/bin/grep -Fq 'The release is not Developer ID signed and notarized by Apple.' "$INSTALLER"
-if /usr/bin/grep -Fq 'verified by Sparkle (Apple verification pending)' "$INSTALLER"; then
-  echo "The public installer still accepts a release that Apple has not verified." >&2
-  exit 1
-fi
+/usr/bin/grep -Fq 'The public artifact is not the expected free ad-hoc Community Build.' "$INSTALLER"
+/usr/bin/grep -Fq 'Never disable Gatekeeper globally' "$INSTALLER"
+/usr/bin/grep -Fq 'This free Community update has a new ad-hoc identity' "$INSTALLER"
 
 if /usr/bin/grep -Eq 'SUFeedURL|SUPublicEDKey|SPARKLE_' "$WORKFLOW"; then
   echo "The public release workflow still contains an automatic-update trust path." >&2
   exit 1
 fi
 
-echo "Release signing policy tests passed: public releases require Developer ID, notarization, Apple verification, and no in-app updater."
+echo "Release policy tests passed: one free ad-hoc Community Build, pinned GitHub provenance attestation, explicit Gatekeeper/permission limits, and no in-app updater."

@@ -13,8 +13,8 @@
 - Added separate Goalong consent for Computer History, Apple Screen Time, AI conversations and
   optional ChatGPT analysis; existing macOS permission switches never substitute for consent.
 - Added an auditable capability manifest, SPDX SBOM, release manifest, threat model, network and
-  permission documentation, pinned GitHub Actions and a fail-closed Developer ID/notarization
-  release policy.
+  permission documentation, pinned GitHub Actions and a single free Community release policy with
+  explicit Gatekeeper limits and Sigstore-backed GitHub provenance.
 
 ### Direct-source AI conversations and bounded agent access
 

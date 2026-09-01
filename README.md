@@ -7,27 +7,27 @@
 
 A native menu-bar app that turns foreground activity into a clear local timeline, seals it against later rewriting, and lets the user disclose only what they choose.
 
-[Install the audited source build](#build-from-source) · [Guide français](GUIDE_FR.md) · [Security and privacy](docs/INDEX.md)
+[Download the free Community Build](https://github.com/blancmathis/goalong-history/releases/latest) · [Guide français](GUIDE_FR.md) · [Security and privacy](docs/INDEX.md)
 </div>
 
-> **Agent Activity privacy notice:** the currently published `latest-main` bundle predates
-> direct-source indexing. Do not install that bundle. From this checkout, use
-> `./install.sh --source`; the installer builds, audits, stages, and validates the
-> direct-source app before replacing an existing installation.
+> **Community Build:** Goalong History is distributed as one free, open-source app. The public
+> DMG and ZIP are ad-hoc code signed for bundle-integrity checks, but they are not Apple-notarized.
+> Verify the published SHA-256/provenance, then use **System Settings → Privacy & Security → Open
+> Anyway** if macOS blocks the first launch. Never disable Gatekeeper globally.
 
 > Goalong History is for a Mac you own and use yourself. Never use it to monitor another person without their prior, explicit consent.
 
 ## A Mac installation that feels like a product
 
-The current public `latest-main` artifact is intentionally rejected by the installer because it
-predates the direct-source Agent Activity privacy boundary. Until a replacement release is
-published, build and install this checkout with `./install.sh --source`. That workflow runs the
-tests and privacy audit, builds the app for the current Mac architecture, validates its identity and direct-source marker,
-then replaces an existing installation atomically with rollback on failure.
+Download the universal Community DMG from the latest GitHub release, drag **Goalong History** to
+Applications, then open it. The same artifact is available as a ZIP for scripted installation.
+Every release includes SHA-256 files, a capability manifest, an SPDX SBOM, an exact source-commit
+manifest and a Sigstore-backed GitHub build-provenance attestation.
 
 After installation, open **Goalong History** and follow the native setup assistant. The app is
-compatible with macOS 13 Ventura or later. A source build automatically uses an available Apple
-Development identity for stable local permissions; without one it warns and falls back to ad-hoc signing.
+compatible with macOS 13 Ventura or later. A source build automatically uses an available local
+Apple Development identity for stable permissions when one already exists; neither public download
+nor source build requires paid Apple Developer Program membership.
 
 The first launch guides the user through focused, skippable screens. Every sensitive capability is off until the user enables it:
 
@@ -112,7 +112,7 @@ time · application · website · context · activity · classification · cover
 
 Each group receives a random 256-bit salt and SHA-256 commitment. Those commitments form an event Merkle root. Event roots are chained with a monotonic sequence and the previous event hash.
 
-Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. Goalong History first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable certificate-backed build. Ad-hoc development builds use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation. Public releases are accepted only when Developer ID signed and notarized by Apple.
+Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. Goalong History first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable certificate-backed build. Ad-hoc Community and development builds use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
 
 Signing identities are scoped to the app's designated code-signing requirement. If that requirement changes, Goalong History records a visible identity rotation and keeps the existing chain data instead of repeatedly requesting access to an incompatible old key. A refused authentication attempt also suspends background signing for that launch, so it can never create a password dialog every minute.
 
@@ -159,7 +159,9 @@ Start-at-login is an explicit onboarding choice implemented with Apple’s `SMAp
 
 A legacy LaunchAgent from versions before 0.4 is removed automatically by the installer. The
 single app has no in-app updater. Releases are downloaded and replaced manually so the exact
-signed artifact, SHA-256 inventory and capability manifest can be inspected before installation.
+artifact, SHA-256 inventory, capability manifest and GitHub provenance can be inspected first.
+Because the free public build has no stable Apple-issued signing identity, macOS can ask for Goalong
+permissions again after a replacement. Goalong preserves the history and settings directory.
 
 ## Build from source
 
@@ -198,15 +200,15 @@ The build script creates the single `.app` bundle, generates the `.icns` asset, 
 Info.plist, code signs the bundle, and verifies it. It also generates
 `security-capabilities.json`, an SPDX SBOM and `release-manifest.json` from the final signed
 artifact. Local builds automatically use a stable Apple Development identity when available.
-Public releases require Developer ID, Hardened Runtime and notarization.
+The free public Community Build is deliberately ad-hoc signed and not notarized.
 
 ## Release pipeline
 
-Every successful merge to `main` can build both architectures, create the universal binary,
-verify the single-app security manifest, create the branded DMG and ZIP, and replace the
-`latest-main` prerelease. Publication is skipped unless Developer ID signing and notarization
-credentials are complete; no ad-hoc public artifact is published. Updates remain manual and
-auditable. The separate stable-tag workflow remains reserved for explicit stable releases.
+Every successful merge to `main` builds both architectures, verifies the single-app security
+manifest, creates the branded Community DMG and ZIP, publishes checksums/manifests/SBOM, records a
+Sigstore-backed GitHub provenance attestation and replaces the `latest-main` prerelease. No paid
+Apple credential is required. Updates remain manual and auditable; stable tags publish the same
+single Community Build through the separate stable-release workflow.
 
 Release credentials and the exact process are documented in [`docs/RELEASING.md`](docs/RELEASING.md). Installation design principles are documented in [`docs/INSTALLATION_UX.md`](docs/INSTALLATION_UX.md).
 

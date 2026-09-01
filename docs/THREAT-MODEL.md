@@ -38,7 +38,7 @@ The model includes a malicious future update, compromised dependency or CI actio
 | Source mutation | `READONLY`, `NOFOLLOW`, inode validation, `query_only`, SQL authorizer | Apple stores may change concurrently and must fail clearly |
 | Silent first-party transport | Compile-time exclusions, zero remote Swift dependencies, binary marker/framework/entitlement audit | No App Sandbox network deny is enabled; explicit Codex analysis remains an external path |
 | Dependency drift | No remote Swift package dependency plus immutable GitHub Action commits | Independent action provenance verification is not yet automated |
-| Release substitution | Developer ID/notarization and generated artifact hashes | Byte-for-byte independent reproduction is not yet proven |
+| Release substitution | Exact commit manifest, artifact hashes and GitHub/Sigstore provenance | No Apple notarization or byte-for-byte independent reproduction |
 | Data tampering | Salted commitments, chains and device signatures | Provider authorship and human identity are not proven |
 | Keyboard overcollection | Key events are reduced before buffering to coarse typing, shortcut or navigation activity | Existing historical rows from older builds may still contain named shortcuts |
 | Broad FDA process | Read-only conventions and audits | Separate authenticated XPC reader is not shipped |

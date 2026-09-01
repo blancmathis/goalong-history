@@ -2,8 +2,8 @@
 
 > This file preserves the original v0.5.1 validation record. It is not current v0.6.0 release
 > evidence. Current public artifacts must be validated from their generated
-> `release-manifest.json`, `security-capabilities.json`, SPDX SBOM, Apple notarization result and
-> the exact GitHub Actions run for their commit.
+> `release-manifest.json`, `security-capabilities.json`, SPDX SBOM, GitHub/Sigstore provenance and
+> the exact GitHub Actions run for their commit. The v0.6 Community Build is not Apple-notarized.
 
 Validation performed on macOS 26.5.1 with Apple Silicon:
 

@@ -1,4 +1,4 @@
-name: Continuous macOS release
+name: Continuous Community macOS release
 
 on:
   push:
@@ -8,51 +8,16 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: goalong-history-latest-main
   cancel-in-progress: true
 
 jobs:
-  release-readiness:
-    runs-on: macos-15
-    outputs:
-      apple_enabled: ${{ steps.check.outputs.apple_enabled }}
-    steps:
-      - name: Check release credentials
-        id: check
-        env:
-          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          apple_values=(
-            MACOS_CERTIFICATE_P12
-            MACOS_CERTIFICATE_PASSWORD
-            APPLE_API_KEY_ID
-            APPLE_API_ISSUER_ID
-            APPLE_API_PRIVATE_KEY
-          )
-          apple_missing=()
-          for name in "${apple_values[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              apple_missing+=("$name")
-            fi
-          done
-          if (( ${#apple_missing[@]} > 0 )); then
-            echo "apple_enabled=false" >> "$GITHUB_OUTPUT"
-            printf 'Public release skipped; missing Apple value: %s\n' "${apple_missing[@]}" >> "$GITHUB_STEP_SUMMARY"
-            echo "Goalong History will not publish an ad-hoc update because a changing CDHash can invalidate macOS privacy permissions." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          echo "apple_enabled=true" >> "$GITHUB_OUTPUT"
-
   publish-latest-main:
-    needs: release-readiness
-    if: ${{ needs.release-readiness.outputs.apple_enabled == 'true' }}
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -72,115 +37,17 @@ jobs:
           set -euo pipefail
           ./scripts/resolve_rolling_version.sh "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve release trust mode
-        id: release_mode
-        env:
-          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          apple_values=(
-            MACOS_CERTIFICATE_P12
-            MACOS_CERTIFICATE_PASSWORD
-            APPLE_API_KEY_ID
-            APPLE_API_ISSUER_ID
-            APPLE_API_PRIVATE_KEY
-          )
-          apple_missing=()
-          for name in "${apple_values[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              apple_missing+=("$name")
-            fi
-          done
-
-          if (( ${#apple_missing[@]} > 0 )); then
-            printf 'Missing required Apple release value: %s\n' "${apple_missing[@]}" >&2
-            echo "Goalong History refuses to publish an ad-hoc signed update because a changing CDHash can invalidate macOS privacy permissions." >&2
-            exit 1
-          fi
-          echo "apple_enabled=true" >> "$GITHUB_OUTPUT"
-          echo "release_note=This single-app build is Developer ID signed and notarized by Apple. It contains no in-app updater or first-party HTTP uploader." >> "$GITHUB_OUTPUT"
-          echo "### Release trust mode: Developer ID + notarization; manual updates" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Import Developer ID certificate
-        if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}
-        env:
-          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-        run: |
-          set -euo pipefail
-          umask 077
-          KEYCHAIN="$RUNNER_TEMP/goalong-history-signing.keychain-db"
-          P12_PATH="$RUNNER_TEMP/goalong-history-signing.p12"
-          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
-          printf '%s' "$CERTIFICATE" | /usr/bin/base64 -D > "$P12_PATH"
-          chmod 600 "$P12_PATH"
-          echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
-          echo "SIGNING_P12_PATH=$P12_PATH" >> "$GITHUB_ENV"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import "$P12_PATH" \
-            -k "$KEYCHAIN" \
-            -P "$CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/security
-          security list-keychains -d user -s "$KEYCHAIN"
-          security default-keychain -d user -s "$KEYCHAIN"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-
-          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN")"
-          DEVELOPER_ID_COUNT="$(printf '%s\n' "$IDENTITIES" | awk '/"Developer ID Application:/{count++} END {print count+0}')"
-          if [[ "$DEVELOPER_ID_COUNT" != "1" ]]; then
-            echo "The imported P12 must contain exactly one valid Developer ID Application identity; found $DEVELOPER_ID_COUNT." >&2
-            exit 1
-          fi
-          SIGN_IDENTITY="$(printf '%s\n' "$IDENTITIES" | sed -nE 's/^[[:space:]]*[0-9]+\) [[:xdigit:]]+ "(Developer ID Application: [^"]+)"$/\1/p')"
-          if [[ -z "$SIGN_IDENTITY" ]]; then
-            echo "Could not determine the Developer ID Application identity from the imported P12." >&2
-            exit 1
-          fi
-          echo "LOCALHISTORY_CODESIGN_IDENTITY=$SIGN_IDENTITY" >> "$GITHUB_ENV"
-          /bin/rm -P "$P12_PATH"
-
-      - name: Prepare App Store Connect API key
-        if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}
-        env:
-          API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
-          API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          umask 077
-          KEY_PATH="$RUNNER_TEMP/AuthKey_${API_KEY_ID}.p8"
-          printf '%s' "$API_PRIVATE_KEY" | /usr/bin/base64 -D > "$KEY_PATH"
-          chmod 600 "$KEY_PATH"
-          echo "NOTARY_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
-
-      - name: Validate App Store Connect notarization credentials
-        if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}
-        env:
-          API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
-          API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
-        run: |
-          set -euo pipefail
-          xcrun notarytool history \
-            --key "$NOTARY_KEY_PATH" \
-            --key-id "$API_KEY_ID" \
-            --issuer "$API_ISSUER_ID" >/dev/null
-
-      - name: Build universal single app
+      - name: Build universal Community app
         env:
           LOCALHISTORY_VERSION: ${{ steps.version.outputs.value }}
           LOCALHISTORY_BUILD_NUMBER: ${{ steps.version.outputs.build }}
           LOCALHISTORY_DISPLAY_NAME: Goalong History
           LOCALHISTORY_ARCHS: arm64 x86_64
           LOCALHISTORY_RUN_TESTS: 1
+          LOCALHISTORY_CODESIGN_IDENTITY: '-'
         run: ./scripts/build_app.sh
 
-      - name: Confirm architecture, identity, localized name, signature, and privacy policy
+      - name: Verify architecture, ad-hoc signature, identity, and privacy policy
         env:
           EXPECTED_VERSION: ${{ steps.version.outputs.value }}
           EXPECTED_BUILD: ${{ steps.version.outputs.build }}
@@ -193,6 +60,16 @@ jobs:
           lipo -info "$APP/Contents/MacOS/Goalong History"
           lipo "$APP/Contents/MacOS/Goalong History" -verify_arch arm64 x86_64
           codesign --verify --strict --verbose=4 "$APP"
+          SIGNING_DETAILS="$(codesign -dv --verbose=4 "$APP" 2>&1)"
+          grep -Fxq 'Signature=adhoc' <<<"$SIGNING_DETAILS"
+          if grep -q '^Authority=' <<<"$SIGNING_DETAILS"; then
+            echo "Community releases must not depend on a certificate-backed Apple identity." >&2
+            exit 1
+          fi
+          if spctl --assess --type execute "$APP" >/dev/null 2>&1; then
+            echo "Community releases must not be presented as Apple-notarized builds." >&2
+            exit 1
+          fi
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO")" = "$BUNDLE_ID"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")" = "$PRODUCT"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO")" = "$PRODUCT"
@@ -205,50 +82,11 @@ jobs:
           done
           ./scripts/verify_local_bundle.sh
 
-      - name: Notarize and staple app
-        if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}
-        env:
-          API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
-          API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
-        run: |
-          set -euo pipefail
-          ditto -c -k --sequesterRsrc --keepParent "dist/Goalong History.app" "$RUNNER_TEMP/notarization.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarization.zip" \
-            --key "$NOTARY_KEY_PATH" \
-            --key-id "$API_KEY_ID" \
-            --issuer "$API_ISSUER_ID" \
-            --wait
-          xcrun stapler staple "dist/Goalong History.app"
-          xcrun stapler validate "dist/Goalong History.app"
-          spctl --assess --type execute --verbose=4 "dist/Goalong History.app"
-
-      - name: Create DMG and ZIP
+      - name: Create Community DMG and ZIP
         run: |
           set -euo pipefail
           brew install create-dmg
-          ./scripts/package_release.sh
-
-      - name: Notarize and staple DMG
-        if: ${{ steps.release_mode.outputs.apple_enabled == 'true' }}
-        env:
-          API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
-          API_ISSUER_ID: ${{ vars.APPLE_API_ISSUER_ID }}
-        run: |
-          set -euo pipefail
-          DMG="dist/Goalong-History-macOS-universal.dmg"
-          xcrun notarytool submit "$DMG" \
-            --key "$NOTARY_KEY_PATH" \
-            --key-id "$API_KEY_ID" \
-            --issuer "$API_ISSUER_ID" \
-            --wait
-          xcrun stapler staple "$DMG"
-          xcrun stapler validate "$DMG"
-          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
-          (
-            cd dist
-            shasum -a 256 Goalong-History-macOS-universal.dmg > Goalong-History-macOS-universal.dmg.sha256
-            shasum -a 256 Goalong-History-macOS-universal.zip > Goalong-History-macOS-universal.zip.sha256
-          )
+          LOCALHISTORY_CODESIGN_IDENTITY=- ./scripts/package_release.sh
 
       - name: Generate auditable release inventory
         run: |
@@ -261,6 +99,18 @@ jobs:
             --manifest dist/security-capabilities.json \
             --app "dist/Goalong History.app" \
             --edition unified
+
+      - name: Attest Community release provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/Goalong-History-macOS-universal.dmg
+            dist/Goalong-History-macOS-universal.dmg.sha256
+            dist/Goalong-History-macOS-universal.zip
+            dist/Goalong-History-macOS-universal.zip.sha256
+            dist/security-capabilities.json
+            dist/sbom.spdx.json
+            dist/release-manifest.json
 
       - name: Move rolling tag to this merge
         env:
@@ -292,13 +142,15 @@ jobs:
         uses: softprops/action-gh-release@5113cdc90fd4d541c801c55356214017bf5ae34b # v3
         with:
           tag_name: latest-main
-          name: Goalong History ${{ steps.version.outputs.value }} — latest main
+          name: Goalong History ${{ steps.version.outputs.value }} Community Build — latest main
           body: |
-            Goalong History `${{ steps.version.outputs.value }}` (build `${{ steps.version.outputs.build }}`), automatically built and published from `${{ github.sha }}` on `main`.
+            Goalong History `${{ steps.version.outputs.value }}` (build `${{ steps.version.outputs.build }}`), built from `${{ github.sha }}` on `main`.
 
-            ${{ steps.release_mode.outputs.release_note }}
+            This is the single free Community Build. It is ad-hoc code signed for bundle-integrity checks, but it is not Apple-notarized and does not require a paid Apple Developer membership. On first launch, macOS may require **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper globally.
 
-            Updates are manual: users can verify these signed artifacts before replacing the app. The rolling tag and assets are intentionally replaced after every successful merge.
+            Verify the downloaded SHA-256 file and `release-manifest.json`. GitHub also publishes a Sigstore-backed build-provenance attestation; with GitHub CLI, run `gh attestation verify <downloaded-file> --repo blancmathis/goalong-history`.
+
+            Updates are manual. Because a free ad-hoc signature has no stable Apple-issued identity, macOS may ask for Goalong permissions again after replacement. Existing history and settings remain in place.
           draft: false
           prerelease: true
           make_latest: false
@@ -312,23 +164,3 @@ jobs:
             dist/security-capabilities.json
             dist/sbom.spdx.json
             dist/release-manifest.json
-
-      - name: Remove temporary credentials
-        if: ${{ always() }}
-        run: |
-          set -euo pipefail
-          if [[ -n "${NOTARY_KEY_PATH:-}" && -f "$NOTARY_KEY_PATH" ]]; then
-            chmod 600 "$NOTARY_KEY_PATH"
-            /bin/rm -P "$NOTARY_KEY_PATH"
-          fi
-          if [[ -n "${SIGNING_P12_PATH:-}" && -f "$SIGNING_P12_PATH" ]]; then
-            chmod 600 "$SIGNING_P12_PATH"
-            /bin/rm -P "$SIGNING_P12_PATH"
-          fi
-          if [[ -n "${SIGNING_KEYCHAIN:-}" && -e "$SIGNING_KEYCHAIN" ]]; then
-            security delete-keychain "$SIGNING_KEYCHAIN" || true
-            if [[ -e "$SIGNING_KEYCHAIN" ]]; then
-              chmod 600 "$SIGNING_KEYCHAIN"
-              /bin/rm -P "$SIGNING_KEYCHAIN"
-            fi
-          fi

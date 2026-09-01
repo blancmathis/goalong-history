@@ -75,7 +75,7 @@ A `privateOnly` minute does not release the event-list root opening or event-cou
 
 ## Threats not fully solved
 
-- a modified/unofficial client beyond what Developer ID, notarization and exact-artifact review can establish;
+- a modified/unofficial client beyond what exact-artifact review and the separate GitHub/Sigstore provenance can establish; the free Community Build is not Apple-notarized;
 - synthetic HID hardware that appears to macOS as genuine keyboard/mouse input;
 - another human using the device;
 - compromised kernel/hypervisor/OS;

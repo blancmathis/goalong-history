@@ -27,6 +27,7 @@ TARGET_APP=""
 BACKUP_APP=""
 REPLACEMENT_ACTIVE=0
 ORIGINAL_TARGET_PRESENT=0
+PRIVACY_REAUTH_REQUIRED=0
 
 bundle_identifier_from_plist() {
   /usr/bin/plutil -extract CFBundleIdentifier raw -expect string -o - "$1/Contents/Info.plist" 2>/dev/null
@@ -68,8 +69,8 @@ privacy_identity_replacement_allowed() {
   local installed_requirement="$3"
   local source_requirement="$4"
 
-  if [[ "$source_kind" == 'developerID' \
-       && ( "$installed_kind" == 'adHoc' || "$installed_kind" == 'development' ) ]]; then
+  if [[ "$source_kind" == 'adHoc' ]]; then
+    PRIVACY_REAUTH_REQUIRED=1
     return 0
   fi
   [[ -n "$installed_requirement" \
@@ -92,9 +93,8 @@ verify_replacement_preserves_privacy_identity() {
 
   if privacy_identity_replacement_allowed \
       "$installed_kind" "$source_kind" "$installed_requirement" "$source_requirement"; then
-    if [[ "$source_kind" == 'developerID' \
-         && ( "$installed_kind" == 'adHoc' || "$installed_kind" == 'development' ) ]]; then
-      warn "Migrating to the stable public Developer ID identity; macOS may require one final approval."
+    if [[ "$PRIVACY_REAUTH_REQUIRED" -eq 1 ]]; then
+      warn "This free Community update has a new ad-hoc identity; macOS may ask for Goalong permissions again."
     fi
     return 0
   fi
@@ -388,7 +388,7 @@ for argument in "$@"; do
       cat <<HELP
 Usage: ./install.sh [--source] [--verbose]
 
-The normal path downloads the latest signed Goalong History build from GitHub.
+The normal path downloads the latest free Goalong History Community Build from GitHub.
 Use --source for an audited local developer build. All updates are manual replacements.
 HELP
       exit 0
@@ -485,7 +485,7 @@ CHECKSUM_PATH="$WORK_DIR/$RELEASE_ASSET.sha256"
 BASE_URL="https://github.com/$REPOSITORY/releases/download/$RELEASE_TAG"
 DOWNLOAD_LOG="$WORK_DIR/download.log"
 
-printf '  • Downloading the latest signed Goalong build… '
+printf '  • Downloading the latest Goalong Community Build… '
 set +e
 /usr/bin/curl --fail --location --silent --show-error --retry 2 --connect-timeout 12 \
   "$BASE_URL/$RELEASE_ASSET" -o "$ZIP_PATH" >"$DOWNLOAD_LOG" 2>&1
@@ -540,16 +540,19 @@ if ! validate_release_bundle "$SOURCE_APP"; then
   exit 1
 fi
 
-APPLE_VERIFIED=false
-if /usr/sbin/spctl --assess --type execute --verbose=2 "$SOURCE_APP" >/dev/null 2>&1; then
-  APPLE_VERIFIED=true
-  echo "verified by Apple and Goalong's single-app security gate"
-else
+SOURCE_SIGNATURE_KIND="$(bundle_signature_kind "$SOURCE_APP" 2>/dev/null || true)"
+if [[ "$SOURCE_SIGNATURE_KIND" != 'adHoc' ]]; then
   echo "failed"
-  fail "The release is not Developer ID signed and notarized by Apple."
-  note "Goalong History refuses ad-hoc public updates because their changing identity can invalidate macOS privacy permissions."
+  fail "The public artifact is not the expected free ad-hoc Community Build."
   exit 1
 fi
+if /usr/sbin/spctl --assess --type execute --verbose=2 "$SOURCE_APP" >/dev/null 2>&1; then
+  echo "failed"
+  fail "The Community Build unexpectedly passed Apple notarization assessment."
+  note "Refusing a release whose published trust mode does not match its bundle."
+  exit 1
+fi
+echo "verified by Goalong's signature, identity, privacy, and single-app gates"
 
 SYSTEM_INSTALL_PRESENT=false
 USER_INSTALL_PRESENT=false
@@ -595,7 +598,11 @@ if ! verify_replacement_preserves_privacy_identity "$TARGET_APP" "$STAGED_APP"; 
   note "Use a release signed for the same Team ID; changing identity resets Accessibility and Full Disk Access."
   exit 1
 fi
-status "macOS privacy identity is stable or safely migrated"
+if [[ "$PRIVACY_REAUTH_REQUIRED" -eq 1 ]]; then
+  warn "This replacement can require fresh macOS permission approvals; Goalong data is preserved."
+else
+  status "macOS privacy identity is unchanged"
+fi
 
 headline "Installing"
 /usr/bin/launchctl bootout "gui/$UID" "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist" >/dev/null 2>&1 || true
@@ -625,11 +632,8 @@ status "Installed in $TARGET_DIR"
 status "Legacy background service cleaned up"
 status "Your existing history, settings, and bundle ID were preserved"
 status "Single updater-free app policy verified"
-if [[ "$APPLE_VERIFIED" == true ]]; then
-  warn "macOS may ask you to approve this app copy once; the in-app guide handles that step"
-else
-  warn "Apple Developer verification is not enabled yet; macOS may require Open Anyway on this first copy"
-fi
+warn "This free build is not Apple-notarized; macOS may require Privacy & Security → Open Anyway"
+warn "Never disable Gatekeeper globally"
 
 headline "Ready"
 note "Opening the guided setup now…"
