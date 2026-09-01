@@ -51,6 +51,7 @@
         private let snapshotLock = NSLock()
         private var scanConfiguration: AgentActivityConfiguration
         private var scanSelectedDay: Date
+        private var scanSelectedDayRequiresAnalysis = false
         private var scanDashboardIsVisible = false
         private let derivedStateRefreshLock = NSLock()
         private var derivedStateRefreshCount = 0
@@ -133,7 +134,10 @@
             isStopping = false
             scanStateLock.unlock()
             scanner.resetCancellation()
-            scanNow(forceFullDiscovery: false)
+            scanNow(
+                forceFullDiscovery: false,
+                analyzeSelectedDay: currentScanSnapshot().selectedDayRequiresAnalysis
+            )
             scheduleSignalWatcher()
             scheduleTimer()
         }
@@ -177,7 +181,7 @@
             // Never show the previous day's rows under the new date while the direct-source
             // projection is being rebuilt. The complete snapshot is published atomically below.
             overview = AgentActivityOverview(day: normalized)
-            updateScanSnapshot(day: normalized)
+            updateScanSnapshot(day: normalized, selectedDayRequiresAnalysis: true)
             if started {
                 enqueueScan(
                     forceFullDiscovery: false,
@@ -569,6 +573,9 @@
                 || result.statusChangeCount > 0
                 || result.fullDiscoveryCount > 0
                 || result.capacityLimitedFolderCount > 0
+            if request.analyzeSelectedDay, !result.analysisIncomplete {
+                completeSelectedDayAnalysisIfCurrent(selected)
+            }
             let nextOverview: AgentActivityOverview?
             let bytes: Int64?
             let validIndex: Bool?
@@ -576,7 +583,8 @@
                 // A bounded selected-day pass may need several cycles. Publishing any earlier
                 // cycle mixes complete index counts with not-yet-rehydrated titles, causing the
                 // intermittent "Codex conversation" rows reported by users.
-                nextOverview = request.analyzeSelectedDay && result.analysisIncomplete
+                nextOverview = (request.analyzeSelectedDay && result.analysisIncomplete)
+                    || (!request.analyzeSelectedDay && snapshot.selectedDayRequiresAnalysis)
                     ? nil
                     : store.overview(for: selected)
                 bytes = store.storageBytes()
@@ -800,22 +808,40 @@
         private func currentScanSnapshot() -> (
             configuration: AgentActivityConfiguration,
             day: Date,
+            selectedDayRequiresAnalysis: Bool,
             dashboardIsVisible: Bool
         ) {
             snapshotLock.lock()
             defer { snapshotLock.unlock() }
-            return (scanConfiguration, scanSelectedDay, scanDashboardIsVisible)
+            return (
+                scanConfiguration,
+                scanSelectedDay,
+                scanSelectedDayRequiresAnalysis,
+                scanDashboardIsVisible
+            )
         }
 
         private func updateScanSnapshot(
             configuration: AgentActivityConfiguration? = nil,
             day: Date? = nil,
+            selectedDayRequiresAnalysis: Bool? = nil,
             dashboardIsVisible: Bool? = nil
         ) {
             snapshotLock.lock()
             if let configuration { scanConfiguration = configuration }
             if let day { scanSelectedDay = day }
+            if let selectedDayRequiresAnalysis {
+                scanSelectedDayRequiresAnalysis = selectedDayRequiresAnalysis
+            }
             if let dashboardIsVisible { scanDashboardIsVisible = dashboardIsVisible }
+            snapshotLock.unlock()
+        }
+
+        private func completeSelectedDayAnalysisIfCurrent(_ day: Date) {
+            snapshotLock.lock()
+            if scanSelectedDay == day {
+                scanSelectedDayRequiresAnalysis = false
+            }
             snapshotLock.unlock()
         }
 
