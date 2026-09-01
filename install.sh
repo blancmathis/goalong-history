@@ -69,6 +69,10 @@ privacy_identity_replacement_allowed() {
   local installed_requirement="$3"
   local source_requirement="$4"
 
+  if [[ "$source_kind" == 'developerID' \
+       && ( "$installed_kind" == 'adHoc' || "$installed_kind" == 'development' ) ]]; then
+    return 0
+  fi
   if [[ "$source_kind" == 'adHoc' ]]; then
     PRIVACY_REAUTH_REQUIRED=1
     return 0
@@ -93,7 +97,10 @@ verify_replacement_preserves_privacy_identity() {
 
   if privacy_identity_replacement_allowed \
       "$installed_kind" "$source_kind" "$installed_requirement" "$source_requirement"; then
-    if [[ "$PRIVACY_REAUTH_REQUIRED" -eq 1 ]]; then
+    if [[ "$source_kind" == 'developerID' \
+         && ( "$installed_kind" == 'adHoc' || "$installed_kind" == 'development' ) ]]; then
+      warn "Migrating to a stable Developer ID identity; macOS may require one final approval."
+    elif [[ "$PRIVACY_REAUTH_REQUIRED" -eq 1 ]]; then
       warn "This free Community update has a new ad-hoc identity; macOS may ask for Goalong permissions again."
     fi
     return 0
