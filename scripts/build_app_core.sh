@@ -220,7 +220,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>LSUIElement</key>
     <true/>
     <key>NSAccessibilityUsageDescription</key>
-    <string>Goalong History uses Accessibility to understand the foreground app, window, permitted URL, focused control, and clicked interface element. It never controls your Mac.</string>
+    <string>Goalong History uses Accessibility to understand the foreground app and, when you request Screen Time, briefly navigate Apple's visible Screen Time page. It never types into apps or controls anything outside that bounded read.</string>
     <key>NSInputMonitoringUsageDescription</key>
     <string>Goalong History uses Input Monitoring to count clicks, scrolling, shortcuts, navigation keys, and typing duration. It never stores typed characters, passwords, or clipboard contents.</string>
     <key>NSHighResolutionCapable</key>

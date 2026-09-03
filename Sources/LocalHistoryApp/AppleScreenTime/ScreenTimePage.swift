@@ -320,10 +320,10 @@
                 HStack(spacing: 16) {
                     featureIcon("square.and.arrow.up.on.square.fill", tint: LHTheme.accent)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Share this Apple-source view")
+                        Text("Share this Screen Time source view")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
-                            "The export states the exact device scope, Apple system-store provenance, aggregation rule and whether application details are included."
+                            "The export states the device scope, exact source provenance, aggregation rule and whether application details are included. Private Apple formats are not presented as certified Settings parity."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
@@ -345,7 +345,7 @@
                     Button {
                         screenTime.exportSharePayload()
                     } label: {
-                        Label("Export Apple Screen Time", systemImage: "square.and.arrow.up")
+                        Label("Export source data", systemImage: "square.and.arrow.up")
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(screenTime.isBusy || summary.deviceSummaries.isEmpty)
@@ -391,13 +391,13 @@
                         Text("What is being read")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "This page reads Apple-generated data directly: ScreenTime.AppUsage for the best available Mac attribution, knowledgeC `/app/usage` as a fallback, and Biome `App.InFocus` streams synchronized by iCloud for other devices. macOS may keep the private DeviceActivity summary used by Settings inaccessible, so reconstructed totals can differ from the Settings app."
+                            "This page first reads Apple-owned private ScreenTimeAgent aggregate blocks in place. ScreenTime.AppUsage, knowledgeC `/app/usage` and synchronized Biome `App.InFocus` streams are bounded reconstructions when that store is unavailable."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         Text(
-                            "It never substitutes Goalong History foreground events. The Apple formats are private and may require maintenance after a macOS update."
+                            "It never substitutes Goalong History foreground events. These private formats are not a public Apple API and are not certified as exactly identical to Settings."
                         )
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)

@@ -141,7 +141,7 @@
 
                     HStack(alignment: .top, spacing: 18) {
                         dayMetric(
-                            title: "APPLE SCREEN TIME",
+                            title: screenTimeMetricTitle,
                             value: screenTimeValue,
                             detail: screenTimeDetail
                         )
@@ -641,6 +641,13 @@
             return formattedDuration(duration)
         }
 
+        private var screenTimeMetricTitle: String {
+            (displayedScreenTimeSummary?.provenance.usesAppleSettingsObservablePresentation == true
+                || displayedScreenTimeSummary?.provenance.usesScreenTimeAgentAggregateStore == true)
+                ? "APPLE SCREEN TIME"
+                : "SCREEN TIME FALLBACK"
+        }
+
         private var screenTimeDetail: String {
             guard screenTime.unfilteredSummary != nil else { return "Apple data not available" }
             guard let summary = displayedScreenTimeSummary else { return "No active Apple device" }
@@ -648,7 +655,12 @@
             let suffix = includesInactiveSystemTime && hasHiddenInactiveSystemTime
                 ? " · login and lock-screen time included"
                 : ""
-            return "\(count) Apple device\(count == 1 ? "" : "s")\(suffix)"
+            let prefix = summary.provenance.usesAppleSettingsObservablePresentation
+                ? "Matches Apple Settings · "
+                : (summary.provenance.usesScreenTimeAgentAggregateStore
+                    ? ""
+                    : "Partial Apple sources · ")
+            return "\(prefix)\(count) Apple device\(count == 1 ? "" : "s")\(suffix)"
         }
 
         private var displayedScreenTimeSummary: AppleScreenTimeDaySummary? {
@@ -711,15 +723,13 @@
             appleCurrentMacSeconds + appleOtherDeviceSeconds
         }
 
-        // Apple and Goalong can describe the same foreground period on this Mac.
-        // Reconcile that overlap first, then add Apple usage from distinct devices.
         var displaySeconds: TimeInterval {
-            appleOtherDeviceSeconds + max(appleCurrentMacSeconds, goalongSeconds)
+            screenTimeSeconds > 0 ? screenTimeSeconds : goalongSeconds
         }
 
         var sourceDetail: String {
             if screenTimeSeconds > 0, goalongSeconds > 0 {
-                return "Apple \(DashboardFormatters.duration(seconds: screenTimeSeconds)) · Goalong \(DashboardFormatters.duration(seconds: goalongSeconds)) observed on this Mac"
+                return "Apple Screen Time · Goalong independently observed \(DashboardFormatters.duration(seconds: goalongSeconds)) on this Mac"
             }
             if screenTimeSeconds > 0 { return "Apple Screen Time" }
             return "Goalong observed foreground on this Mac"
@@ -772,6 +782,7 @@
                 allReported: allReportedSummary,
                 includesInactiveSystemTime: includesInactiveSystemTime
             )
+            let hasAppleSummary = selectedSummary != nil
             var merged: [String: DailyAppUsage] = [:]
 
             for deviceSummary in selectedSummary?.deviceSummaries ?? [] {
@@ -826,7 +837,7 @@
                         existing.name = application.name
                     }
                     merged[key] = existing
-                } else {
+                } else if !hasAppleSummary {
                     merged[key] = DailyAppUsage(
                         id: key,
                         name: application.name,

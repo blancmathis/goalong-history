@@ -216,6 +216,7 @@ private struct ScreenTimeEnvelope: Encodable {
     let day: String
     let generatedAt: Date
     let scope: String
+    let sourceAssurance: String?
     let status: ScreenTimeStatusEnvelope
     let summary: AppleScreenTimeDaySummary?
     let reports: [AppleScreenTimeDeviceReport]
@@ -638,11 +639,28 @@ public enum GoalongQueryCLI {
 
         case "screen-time":
             let macOnly = arguments.removeFlag("--mac-only")
+            let selectedDeviceIDs = (arguments.removeOption("--devices") ?? "")
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard selectedDeviceIDs.count <= 32 else {
+                throw CLIError.usage("--devices accepts at most 32 comma-separated device IDs")
+            }
+            guard !macOnly || selectedDeviceIDs.isEmpty else {
+                throw CLIError.usage("Use either --mac-only or --devices, not both")
+            }
             let raw = arguments.popFirst() ?? "today"
             guard arguments.values.isEmpty else {
-                throw CLIError.usage("screen-time accepts one date and the optional --mac-only flag")
+                throw CLIError.usage(
+                    "screen-time accepts one date and either --mac-only or --devices <id,id>"
+                )
             }
-            try printScreenTime(root: root, day: try day(raw), macOnly: macOnly)
+            try printScreenTime(
+                root: root,
+                day: try day(raw),
+                macOnly: macOnly,
+                selectedDeviceIDs: selectedDeviceIDs
+            )
 
         case "websites":
             let limit = try integer(arguments.removeOption("--limit") ?? "100")
@@ -1444,19 +1462,34 @@ public enum GoalongQueryCLI {
         )
     }
 
-    static func screenTimePayload(day rawDay: String, macOnly: Bool) throws -> Data {
+    public static func screenTimePayload(
+        day rawDay: String,
+        macOnly: Bool,
+        selectedDeviceIDs: [String] = [],
+        collectionProvider: ((Date) -> AppleSystemScreenTimeCollection)? = nil,
+        currentMacProvider: (() -> AppleScreenTimeDevice)? = nil
+    ) throws -> Data {
         try encodedScreenTime(
             day: try day(rawDay),
-            macOnly: macOnly
+            macOnly: macOnly,
+            selectedDeviceIDs: selectedDeviceIDs,
+            collectionProvider: collectionProvider,
+            currentMacProvider: currentMacProvider
         )
     }
 
-    private static func printScreenTime(root: URL, day: Date, macOnly: Bool) throws {
+    private static func printScreenTime(
+        root: URL,
+        day: Date,
+        macOnly: Bool,
+        selectedDeviceIDs: [String]
+    ) throws {
         do {
             let payload = try GoalongReadOnlyQueryBroker.requestScreenTime(
                 rootDirectory: root,
                 day: localDayString(day),
-                macOnly: macOnly
+                macOnly: macOnly,
+                selectedDeviceIDs: selectedDeviceIDs
             )
             FileHandle.standardOutput.write(payload)
         } catch {
@@ -1468,45 +1501,62 @@ public enum GoalongQueryCLI {
 
     private static func encodedScreenTime(
         day: Date,
-        macOnly: Bool
+        macOnly: Bool,
+        selectedDeviceIDs: [String],
+        collectionProvider: ((Date) -> AppleSystemScreenTimeCollection)? = nil,
+        currentMacProvider: (() -> AppleScreenTimeDevice)? = nil
     ) throws -> Data {
         guard let dayInterval = Calendar.current.dateInterval(of: .day, for: day) else {
             throw CLIError.invalidDate(localDayString(day))
         }
-        let source = AppleSystemScreenTimeSource(
-            deviceID: "goalong-cli-current-mac"
-        )
+        let rawCollection: AppleSystemScreenTimeCollection
+        let currentMac: AppleScreenTimeDevice
+        if let collectionProvider, let currentMacProvider {
+            rawCollection = collectionProvider(day)
+            currentMac = currentMacProvider()
+        } else {
+            let source = AppleSystemScreenTimeSource(deviceID: "goalong-cli-current-mac")
+            rawCollection = source.collect(for: day)
+            currentMac = source.currentMacDevice
+        }
         let collection = AppleScreenTimeDeviceNormalizer.normalize(
-            source.collect(for: day),
-            currentMac: source.currentMacDevice
+            rawCollection,
+            currentMac: currentMac
         )
-        let scope: AppleScreenTimeScope = macOnly ? .macOnly : .allDevices
+        let scope: AppleScreenTimeScope
+        if macOnly {
+            scope = .macOnly
+        } else if !selectedDeviceIDs.isEmpty {
+            scope = AppleScreenTimeScope(
+                mode: .selectedDevices,
+                selectedDeviceIDs: selectedDeviceIDs
+            )
+        } else {
+            scope = .allDevices
+        }
         let reports = collection.storedExport?.envelope.reports.filter {
             scope.includes($0.device)
         } ?? []
-        let stored = collection.storedExport.map {
-            AppleScreenTimeStoredExport(
-                importedAt: $0.importedAt,
-                verification: $0.verification,
-                envelope: AppleScreenTimeExportEnvelope(
-                    schemaVersion: $0.envelope.schemaVersion,
-                    createdAt: $0.envelope.createdAt,
-                    requestedStart: $0.envelope.requestedStart,
-                    requestedEnd: $0.envelope.requestedEnd,
-                    requestedScope: scope,
-                    provenance: $0.envelope.provenance,
-                    reports: reports
-                )
-            )
-        }
-        let summary = stored.flatMap {
+        // Keep Apple's explicit All Devices presentation available to the analyzer even when
+        // the response exposes only the selected physical reports. When every physical device
+        // is selected, summing individually rounded rows can differ from Apple's own aggregate.
+        let summary = collection.storedExport.flatMap {
             AppleScreenTimeAnalyzer.summary(from: $0, interval: dayInterval, scope: scope)
+        }
+        let limitation: String
+        if summary?.provenance.usesAppleSettingsObservablePresentation == true {
+            limitation = "These are the values Apple System Settings visibly presented for the requested day and device scope when Goalong read them locally. They establish visible parity, not Apple’s inaccessible internal second-level values. Durations do not prove attention or productivity."
+        } else if summary?.provenance.usesScreenTimeAgentAggregateStore == true {
+            limitation = "Read-only snapshot of a private Apple ScreenTimeAgent aggregate. Apple does not publish this format as the Settings presentation contract, so exact parity is not certified. Durations do not prove attention or productivity."
+        } else {
+            limitation = "Partial reconstruction from Apple ScreenTime.AppUsage, knowledgeC, or Biome. Apple’s private DeviceActivity aggregate was unavailable, so totals can differ from Settings. Durations do not prove attention or productivity."
         }
         return try encodedJSON(
             ScreenTimeEnvelope(
                 day: localDayString(day),
                 generatedAt: Date(),
-                scope: macOnly ? "macOnly" : "allDevices",
+                scope: scope.mode.rawValue,
+                sourceAssurance: summary?.provenance.sourceAssurance.rawValue,
                 status: ScreenTimeStatusEnvelope(
                     kind: collection.status.kind.rawValue,
                     title: collection.status.title,
@@ -1520,8 +1570,7 @@ public enum GoalongQueryCLI {
                 screenTimeAppUsageIntervalCount: collection.screenTimeAppUsageIntervalCount,
                 knowledgeIntervalCount: collection.knowledgeIntervalCount,
                 biomeIntervalCount: collection.biomeIntervalCount,
-                limitation:
-                    "Read-only snapshot of Apple data available to this Goalong identity. Durations do not prove attention or productivity."
+                limitation: limitation
             )
         )
     }
@@ -2418,7 +2467,7 @@ public enum GoalongQueryCLI {
           computer-history-context [today|yesterday|YYYY-MM-DD] [--tokens N] [--start-utc ISO-8601Z --end-utc ISO-8601Z]
           activities [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
           activity ACTIVITY_ID [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
-          screen-time [today|yesterday|YYYY-MM-DD] [--mac-only]
+          screen-time [today|yesterday|YYYY-MM-DD] [--mac-only | --devices <id,id>]
           websites [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
           ai-conversations [today|yesterday|YYYY-MM-DD] [--tokens N] [--limit N] [--offset N]
           recap [today|yesterday|YYYY-MM-DD]

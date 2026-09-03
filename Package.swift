@@ -54,6 +54,7 @@ let package = Package(
             path: "Features/AppleSystemScreenTime/Sources",
             linkerSettings: [
                 .linkedFramework("AppKit", .when(platforms: [.macOS])),
+                .linkedFramework("ApplicationServices", .when(platforms: [.macOS])),
                 .linkedLibrary("sqlite3", .when(platforms: [.macOS])),
             ]
         ),
@@ -136,7 +137,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LocalHistoryQueryCLITests",
-            dependencies: ["LocalHistoryQueryCLI"],
+            dependencies: ["LocalHistoryQueryCLI", "AppleScreenTime", "AppleSystemScreenTime"],
             path: "Tests/LocalHistoryQueryCLITests"
         ),
     ],

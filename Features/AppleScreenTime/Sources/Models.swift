@@ -211,6 +211,21 @@ public enum AppleScreenTimeFetchPolicy: String, Codable, Sendable {
     case unknown
 }
 
+/// Describes how strongly Goalong can identify the origin of a Screen Time payload.
+///
+/// This is intentionally separate from any claim that the values are identical to the
+/// presentation in System Settings. Apple does not publish that presentation contract.
+public enum AppleScreenTimeSourceAssurance: String, Codable, Equatable, Sendable {
+    /// Values copied from the current Apple System Settings Screen Time presentation.
+    case appleSettingsObservablePresentation
+    /// Apple's public iOS/iPadOS data-export API with enhanced data-access authorization.
+    case publicDeviceActivityExport
+    /// An Apple-owned private aggregate store read in place on macOS.
+    case privateAppleAggregateStore
+    /// A bounded reconstruction from Apple-owned usage and focus streams.
+    case reconstructedAppleUsage
+}
+
 public struct AppleScreenTimeSignature: Codable, Equatable, Sendable {
     public let algorithm: String
     public let publicKeyBase64: String
@@ -231,6 +246,13 @@ public struct AppleScreenTimeSignature: Codable, Equatable, Sendable {
 }
 
 public struct AppleScreenTimeProvenance: Codable, Equatable, Sendable {
+    public static let appleSettingsAccessibilityAPI =
+        "Apple System Settings Screen Time accessibility presentation"
+    public static let appleSettingsAllDevicesReportID =
+        "apple-settings:all-devices"
+    public static let screenTimeAgentAggregateAPI =
+        "Apple ScreenTimeAgent RMAdminStore aggregate usage blocks"
+
     public let api: String
     public let collectorBundleIdentifier: String
     public let collectorVersion: String
@@ -259,6 +281,30 @@ public struct AppleScreenTimeProvenance: Codable, Equatable, Sendable {
         self.euCustomerRequirementAcknowledged = euCustomerRequirementAcknowledged
         self.signature = signature
     }
+
+    public var usesScreenTimeAgentAggregateStore: Bool {
+        api == Self.screenTimeAgentAggregateAPI
+    }
+
+    public var usesAppleSettingsObservablePresentation: Bool {
+        api == Self.appleSettingsAccessibilityAPI
+    }
+
+    public var sourceAssurance: AppleScreenTimeSourceAssurance {
+        if usesAppleSettingsObservablePresentation {
+            return .appleSettingsObservablePresentation
+        }
+        if api == "Apple DeviceActivityData.activityData",
+           authorization == .approvedWithDataAccess
+        {
+            return .publicDeviceActivityExport
+        }
+        if usesScreenTimeAgentAggregateStore {
+            return .privateAppleAggregateStore
+        }
+        return .reconstructedAppleUsage
+    }
+
 }
 
 public struct AppleScreenTimeExportEnvelope: Codable, Equatable, Sendable {

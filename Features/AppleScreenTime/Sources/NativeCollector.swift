@@ -57,7 +57,7 @@ public enum AppleScreenTimeNativeCollectorError: Error, CustomStringConvertible 
     }
 }
 
-#if os(iOS) && canImport(DeviceActivity) && canImport(FamilyControls)
+#if os(iOS) && canImport(DeviceActivity) && canImport(FamilyControls) && GOALONG_DEVICE_ACTIVITY_EXPORT_API_26_4
     import DeviceActivity
     import FamilyControls
 
@@ -66,7 +66,11 @@ public enum AppleScreenTimeNativeCollectorError: Error, CustomStringConvertible 
     /// Apple limits customer use of `activityData(filteredBy:using:)` to eligible EU devices,
     /// requires `approvedWithDataAccess`, and requires the managed
     /// `com.apple.developer.family-controls.app-and-website-usage` entitlement.
-    @available(iOS 26.0, *)
+    /// This adapter is intentionally excluded from normal builds until it has been compiled
+    /// against an iOS 26.4+ SDK and the exact managed-entitlement authorization signature has
+    /// been verified. Defining `GOALONG_DEVICE_ACTIVITY_EXPORT_API_26_4` is an explicit opt-in
+    /// for that version-matched companion target; the macOS app never enables it.
+    @available(iOS 26.4, *)
     public struct AppleDeviceActivityCollector: AppleScreenTimeCollecting {
         private struct ApplicationAccumulator {
             var bundleIdentifier: String?

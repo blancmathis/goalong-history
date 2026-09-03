@@ -88,6 +88,11 @@
                 trackedUsage: trackedUsage,
                 includesInactiveSystemTime: includesInactiveSystemTime
             )
+            let appleWebsiteApplications = applications.compactMap { application -> (String, TimeInterval)? in
+                guard let host = websiteHost(application) else { return nil }
+                return (host, application.seconds)
+            }
+            let usageApplications = applications.filter { websiteHost($0) == nil }
             let websites = OverviewUsageProjection.websites(trackedUsage)
             let sourceIdentities = websites.flatMap(sourceUsages).map {
                 SourceIdentity(
@@ -101,7 +106,7 @@
             let sourceKeys = Set(sourceIdentities.map(\.key))
             let sourceNames = Set(sourceIdentities.map(\.normalizedName))
 
-            let browserApplications = applications.filter {
+            let browserApplications = usageApplications.filter {
                 isBrowser(
                     name: $0.name,
                     bundleIdentifier: $0.bundleIdentifier,
@@ -110,7 +115,7 @@
                 )
             }
             let browserIDs = Set(browserApplications.map(\.id))
-            let ordinaryApplications = applications.filter { !browserIDs.contains($0.id) }
+            let ordinaryApplications = usageApplications.filter { !browserIDs.contains($0.id) }
 
             var browserIDBySourceKey: [String: String] = [:]
             var browserIDsByName: [String: [String]] = [:]
@@ -125,7 +130,9 @@
 
             var rawSitesByBrowser: [String: [String: TimeInterval]] = [:]
             for website in websites {
-                let host = website.host ?? website.name
+                let rawHost = website.host ?? website.name
+                let host = SharingSubjectKey.displayableWebsiteHost(rawHost)
+                    ?? rawHost.lowercased()
                 for source in sourceUsages(website) {
                     let sourceKey = applicationKey(
                         name: source.applicationName,
@@ -135,6 +142,25 @@
                     rawSitesByBrowser[browserID, default: [:]][host, default: 0]
                         += source.foregroundSeconds
                 }
+            }
+
+            let appleSiteTotals = appleWebsiteApplications.reduce(into: [:]) { result, row in
+                result[row.0, default: 0] += row.1
+            }
+            if !appleSiteTotals.isEmpty {
+                var reconciledSitesByBrowser: [String: [String: TimeInterval]] = [:]
+                for (host, exactSeconds) in appleSiteTotals {
+                    let rawTotal = rawSitesByBrowser.values.reduce(0) { total, sites in
+                        total + (sites[host] ?? 0)
+                    }
+                    guard rawTotal > 0 else { continue }
+                    let scale = exactSeconds / rawTotal
+                    for (browserID, sites) in rawSitesByBrowser {
+                        guard let rawSeconds = sites[host], rawSeconds > 0 else { continue }
+                        reconciledSitesByBrowser[browserID, default: [:]][host] = rawSeconds * scale
+                    }
+                }
+                rawSitesByBrowser = reconciledSitesByBrowser
             }
 
             var globalSites: [String: TimeInterval] = [:]
@@ -189,6 +215,13 @@
                 )
             }
 
+            if !appleWebsiteApplications.isEmpty {
+                globalSites = appleSiteTotals
+                let browserTotal = browserApplications.reduce(0) { $0 + $1.seconds }
+                let appleWebsiteTotal = globalSites.values.reduce(0, +)
+                otherWebSeconds = max(0, browserTotal - min(browserTotal, appleWebsiteTotal))
+            }
+
             let ordinaryItems = ordinaryApplications.map {
                 UsageBreakdownItem(
                     id: $0.id,
@@ -212,7 +245,11 @@
                 )
             }
 
-            let applicationTotal = applications.reduce(0) { $0 + $1.seconds }
+            let ordinaryApplicationTotal = ordinaryApplications.reduce(0) { $0 + $1.seconds }
+            let browserApplicationTotal = browserApplications.reduce(0) { $0 + $1.seconds }
+            let appleWebsiteTotal = appleWebsiteApplications.reduce(0) { $0 + $1.1 }
+            let applicationTotal = ordinaryApplicationTotal
+                + max(browserApplicationTotal, appleWebsiteTotal)
             let total = summary?.totalScreenOnDuration ?? applicationTotal
             let otherActiveSeconds = max(0, total - applicationTotal)
             var residualItems: [UsageBreakdownItem] = []
@@ -247,6 +284,19 @@
             let browserView = (
                 ordinaryItems
                     + browserItems
+                    + (appleWebsiteTotal > browserApplicationTotal + 0.5
+                        ? [
+                            UsageBreakdownItem(
+                                id: "apple-unassigned-web",
+                                kind: .otherWeb,
+                                name: "Websites not assigned to a browser",
+                                bundleIdentifier: nil,
+                                host: nil,
+                                seconds: appleWebsiteTotal - browserApplicationTotal,
+                                children: []
+                            )
+                        ]
+                        : [])
                     + residualItems.filter { $0.kind == .otherActive }
             ).sorted(by: itemSort)
             return UsageBreakdown(
@@ -323,6 +373,16 @@
                 if $0.seconds != $1.seconds { return $0.seconds > $1.seconds }
                 return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
+        }
+
+        private static func websiteHost(_ application: ApplicationSeed) -> String? {
+            guard let bundleIdentifier = application.bundleIdentifier,
+                  bundleIdentifier.lowercased().hasPrefix("website:")
+            else { return nil }
+            let host = String(bundleIdentifier.dropFirst("website:".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            return SharingSubjectKey.displayableWebsiteHost(host)
         }
 
         private static func sourceUsages(

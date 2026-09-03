@@ -1,6 +1,7 @@
 #if os(macOS)
     import AgentActivity
     import AppKit
+    import AppleSystemScreenTime
     import Foundation
     import LocalHistoryCore
     import LocalHistoryQueryCLI
@@ -802,8 +803,30 @@
             }
             guard readOnlyQueryServer == nil else { return }
 
+            // The broker already serves requests on one serial utility queue. Reuse one bounded
+            // Apple reader so repeated CLI queries reuse file fingerprints and decoded segments
+            // instead of repeatedly inflating the process allocator with identical data.
+            let appleSource = AppleSystemScreenTimeSource(
+                deviceID: "goalong-cli-current-mac"
+            )
+            let screenTimeResponseCache = GoalongScreenTimeResponseCache()
             let server = GoalongReadOnlyQueryServer(
-                rootDirectory: AppPaths.applicationSupportDirectory
+                rootDirectory: AppPaths.applicationSupportDirectory,
+                screenTimeHandler: { day, macOnly, selectedDeviceIDs in
+                    try screenTimeResponseCache.payload(
+                        day: day,
+                        macOnly: macOnly,
+                        selectedDeviceIDs: selectedDeviceIDs
+                    ) {
+                        try GoalongQueryCLI.screenTimePayload(
+                            day: day,
+                            macOnly: macOnly,
+                            selectedDeviceIDs: selectedDeviceIDs,
+                            collectionProvider: { appleSource.collect(for: $0) },
+                            currentMacProvider: { appleSource.currentMacDevice }
+                        )
+                    }
+                }
             )
             do {
                 try server.start()

@@ -69,6 +69,9 @@
         let biomeRemoteDirectory: URL
         let appleAccountDeviceDatabase: URL
         let biomeScreenTimeAppUsageDirectory: URL?
+        let biomeRemoteScreenTimeAppUsageDirectory: URL?
+        let screenTimeAdminLocalDatabase: URL?
+        let screenTimeAdminCloudDatabase: URL?
 
         init(
             knowledgeDatabase: URL,
@@ -76,7 +79,10 @@
             biomeLocalDirectory: URL,
             biomeRemoteDirectory: URL,
             appleAccountDeviceDatabase: URL,
-            biomeScreenTimeAppUsageDirectory: URL? = nil
+            biomeScreenTimeAppUsageDirectory: URL? = nil,
+            biomeRemoteScreenTimeAppUsageDirectory: URL? = nil,
+            screenTimeAdminLocalDatabase: URL? = nil,
+            screenTimeAdminCloudDatabase: URL? = nil
         ) {
             self.knowledgeDatabase = knowledgeDatabase
             self.biomeSyncDatabase = biomeSyncDatabase
@@ -84,6 +90,9 @@
             self.biomeRemoteDirectory = biomeRemoteDirectory
             self.appleAccountDeviceDatabase = appleAccountDeviceDatabase
             self.biomeScreenTimeAppUsageDirectory = biomeScreenTimeAppUsageDirectory
+            self.biomeRemoteScreenTimeAppUsageDirectory = biomeRemoteScreenTimeAppUsageDirectory
+            self.screenTimeAdminLocalDatabase = screenTimeAdminLocalDatabase
+            self.screenTimeAdminCloudDatabase = screenTimeAdminCloudDatabase
         }
 
         static let `default`: AppleSystemScreenTimePaths = {
@@ -94,6 +103,15 @@
                 .appendingPathComponent("streams", isDirectory: true)
                 .appendingPathComponent("restricted", isDirectory: true)
                 .appendingPathComponent("App.InFocus", isDirectory: true)
+            let screenTimeStore = URL(
+                fileURLWithPath: NSTemporaryDirectory(),
+                isDirectory: true
+            )
+            .standardizedFileURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("0", isDirectory: true)
+            .appendingPathComponent("com.apple.ScreenTimeAgent", isDirectory: true)
+            .appendingPathComponent("Store", isDirectory: true)
             return AppleSystemScreenTimePaths(
                 knowledgeDatabase: library
                     .appendingPathComponent("Application Support", isDirectory: true)
@@ -112,7 +130,16 @@
                     .appendingPathComponent("streams", isDirectory: true)
                     .appendingPathComponent("restricted", isDirectory: true)
                     .appendingPathComponent("ScreenTime.AppUsage", isDirectory: true)
-                    .appendingPathComponent("local", isDirectory: true)
+                    .appendingPathComponent("local", isDirectory: true),
+                biomeRemoteScreenTimeAppUsageDirectory: biome
+                    .appendingPathComponent("streams", isDirectory: true)
+                    .appendingPathComponent("restricted", isDirectory: true)
+                    .appendingPathComponent("ScreenTime.AppUsage", isDirectory: true)
+                    .appendingPathComponent("remote", isDirectory: true),
+                screenTimeAdminLocalDatabase: screenTimeStore
+                    .appendingPathComponent("RMAdminStore-Local.sqlite", isDirectory: false),
+                screenTimeAdminCloudDatabase: screenTimeStore
+                    .appendingPathComponent("RMAdminStore-Cloud.sqlite", isDirectory: false)
             )
         }()
     }
@@ -303,8 +330,12 @@
 
     /// Reads Apple-generated Screen Time data already present on the Mac.
     ///
+    /// - `ScreenTimeAgent` aggregate stores provide Apple-owned per-device totals and timed items.
+    ///   They are the preferred private macOS source when the operating system makes them readable,
+    ///   but Apple does not publish them as the Settings presentation contract.
     /// - Biome `ScreenTime.AppUsage` provides Apple application-usage transitions for this Mac,
-    ///   including parent-bundle attribution for helper processes.
+    ///   including parent-bundle attribution for helper processes when the aggregate store is
+    ///   unavailable.
     /// - `knowledgeC.db` provides Apple `/app/usage` intervals for the Mac and any device
     ///   rows Apple has synchronized into the database, and fills local coverage gaps.
     /// - Biome `App.InFocus` provides automatic iCloud-synced focus transitions for iPhone,
@@ -319,11 +350,16 @@
         private let fileManager: FileManager
         private let calendar: Calendar
         private let nowProvider: () -> Date
+        private let settingsOracle: AppleSettingsScreenTimeOracleProviding?
         private var biomeFileCache: AppleBiomeFileCache
         private var accountDeviceCatalogCache: AppleAccountDeviceCatalogCache?
 
         public convenience init(deviceID: String) {
-            self.init(deviceID: deviceID, paths: .default)
+            self.init(
+                deviceID: deviceID,
+                paths: .default,
+                settingsOracle: AppleSettingsScreenTimeOracle.production
+            )
         }
 
         init(
@@ -332,12 +368,14 @@
             fileManager: FileManager = .default,
             calendar: Calendar = .current,
             nowProvider: @escaping () -> Date = Date.init,
-            biomeCacheLimits: AppleBiomeFileCacheLimits = .production
+            biomeCacheLimits: AppleBiomeFileCacheLimits = .production,
+            settingsOracle: AppleSettingsScreenTimeOracleProviding? = nil
         ) {
             self.paths = paths
             self.fileManager = fileManager
             self.calendar = calendar
             self.nowProvider = nowProvider
+            self.settingsOracle = settingsOracle
             biomeFileCache = AppleBiomeFileCache(limits: biomeCacheLimits)
             accountDeviceCatalogCache = nil
             self.currentMacDevice = AppleScreenTimeDevice(
@@ -359,9 +397,78 @@
             }
 
             let now = nowProvider()
+            if let exact = settingsOracle?.collect(
+                dayInterval: dayInterval,
+                currentMac: currentMacDevice,
+                now: now,
+                calendar: calendar
+            ) {
+                return exact
+            }
+            let settingsOracleWarning = settingsOracle?.lastFailureDescription
             let effectiveEnd = calendar.isDateInToday(day) ? min(dayInterval.end, now) : dayInterval.end
             let requestedInterval = DateInterval(start: dayInterval.start, end: max(dayInterval.start, effectiveEnd))
             let accountDevices = readAppleAccountDeviceCatalog()
+            let adminRead = readScreenTimeAdminStores(interval: requestedInterval)
+            if adminRead.readableStoreCount > 0 {
+                let rawReports = makeAdminReports(from: adminRead.blocks)
+                let reports = AppleScreenTimeDeviceIdentityResolver.resolve(
+                    reports: rawReports,
+                    accountDevices: accountDevices,
+                    currentMacID: currentMacDevice.id,
+                    now: now
+                ).filter { Self.appearsInAppleSettingsScreenTime($0.device.kind) }
+                let reportedDevicesByID = Dictionary(
+                    uniqueKeysWithValues: reports.map { ($0.device.id, $0.device) }
+                )
+                let availableDevices = mergeDeviceLists(
+                    adminRead.devices.map { reportedDevicesByID[$0.id] ?? $0 },
+                    reports.map(\.device)
+                )
+                let warnings = [settingsOracleWarning, adminRead.warning].compactMap { $0 }
+                let status = makeStatus(
+                    hasData: !reports.isEmpty,
+                    permissionDenied: adminRead.permissionDenied,
+                    remoteDeviceCount: availableDevices.filter { $0.id != currentMacDevice.id }.count,
+                    warnings: warnings,
+                    privateAggregateStore: true
+                )
+                let info = Bundle.main.infoDictionary
+                let provenance = AppleScreenTimeProvenance(
+                    api: AppleScreenTimeProvenance.screenTimeAgentAggregateAPI,
+                    collectorBundleIdentifier: Bundle.main.bundleIdentifier ?? "ai.goalong.localhistory",
+                    collectorVersion: info?["CFBundleShortVersionString"] as? String ?? "unknown",
+                    collectorPlatform: ProcessInfo.processInfo.operatingSystemVersionString,
+                    authorization: .unknown,
+                    fetchPolicy: .live,
+                    euCustomerRequirementAcknowledged: false
+                )
+                let stored = reports.isEmpty
+                    ? nil
+                    : AppleScreenTimeStoredExport(
+                        importedAt: now,
+                        verification: .appleSystemStore,
+                        envelope: AppleScreenTimeExportEnvelope(
+                            requestedStart: dayInterval.start,
+                            requestedEnd: dayInterval.end,
+                            requestedScope: .allDevices,
+                            provenance: provenance,
+                            reports: reports
+                        )
+                    )
+                return AppleSystemScreenTimeCollection(
+                    storedExport: stored,
+                    availableDevices: availableDevices,
+                    status: status,
+                    deviceSourceLabels: Dictionary(uniqueKeysWithValues: availableDevices.map {
+                        ($0.id, "Apple Screen Time aggregate (private format)")
+                    }),
+                    latestAppleUpdate: adminRead.latestUpdate,
+                    knowledgeIntervalCount: 0,
+                    biomeIntervalCount: 0,
+                    screenTimeAppUsageIntervalCount: 0
+                )
+            }
             let catalogRead = readDeviceCatalog()
             let knowledgeRead = readKnowledgeIntervals(
                 interval: requestedInterval,
@@ -374,35 +481,38 @@
             )
             let screenTimeAppUsageRead = readScreenTimeAppUsageIntervals(
                 interval: requestedInterval,
-                now: now
+                now: now,
+                catalog: catalogRead.devices
             )
 
             let fallbackMerged = mergeIntervals(
                 preferred: knowledgeRead.values,
                 supplemental: biomeRead.values
             )
-            let merged: [UsageInterval]
-            if screenTimeAppUsageRead.values.isEmpty {
-                merged = fallbackMerged
-            } else {
-                let localFallback = fallbackMerged.filter { $0.device.id == currentMacDevice.id }
-                let remoteFallback = fallbackMerged.filter { $0.device.id != currentMacDevice.id }
-                if screenTimeAppUsageRead.warning == nil,
-                   !screenTimeAppUsageRead.permissionDenied
-                {
-                    // A healthy ScreenTime.AppUsage stream is Apple's dedicated local
-                    // application-usage source. Do not fill its intentional gaps with
-                    // focus/process rows from knowledgeC or App.InFocus: doing so can
-                    // resurrect applications Apple omitted and inflate both ranking and total.
-                    merged = remoteFallback + screenTimeAppUsageRead.values
-                } else {
-                    // A partial AppUsage read must not erase a concurrent application that a
-                    // readable fallback still reports. Keep every distinct app, deduplicate only
-                    // the same bundle, and surface the partial status above.
-                    merged = remoteFallback + mergeAdjacent(
-                        normalizeIntervals(screenTimeAppUsageRead.values + localFallback)
-                    )
+            let appUsageHealthy = screenTimeAppUsageRead.warning == nil
+                && !screenTimeAppUsageRead.permissionDenied
+            let fallbackByDevice = Dictionary(grouping: fallbackMerged, by: { $0.device.id })
+            let appUsageByDevice = Dictionary(
+                grouping: screenTimeAppUsageRead.values,
+                by: { $0.device.id }
+            )
+            let sourceDeviceIDs = Set(fallbackByDevice.keys).union(appUsageByDevice.keys)
+            let merged = sourceDeviceIDs.sorted().flatMap { deviceID -> [UsageInterval] in
+                let fallback = fallbackByDevice[deviceID] ?? []
+                let appUsage = appUsageByDevice[deviceID] ?? []
+                guard !appUsage.isEmpty else { return fallback }
+
+                if appUsageHealthy {
+                    // A healthy ScreenTime.AppUsage stream is Apple's complete source for this
+                    // device. Filling its intentional gaps from knowledgeC or App.InFocus makes
+                    // the total exceed Settings even when every visible app row already matches.
+                    return appUsage
                 }
+
+                // A partial AppUsage read must not erase a concurrent application that a
+                // readable fallback still reports. Keep every distinct app, deduplicate only
+                // the same bundle, and surface the partial status above.
+                return mergeAdjacent(normalizeIntervals(appUsage + fallback))
             }
             let rawReports = makeReports(from: merged)
             let resolvedReports = AppleScreenTimeDeviceIdentityResolver.resolve(
@@ -414,14 +524,16 @@
             // Preserve the complete Apple report after source merging. Default summaries remove
             // explicit lock/screen-saver rows, while an opt-in UI can reveal the source truth
             // without re-reading Apple stores or maintaining a second copy.
-            let reports = resolvedReports
+            let reports = resolvedReports.filter {
+                Self.appearsInAppleSettingsScreenTime($0.device.kind)
+            }
             let selectableDevices = AppleScreenTimeDeviceIdentityResolver.selectableDevices(
                 catalogDevices: catalogRead.devices.values.map(\.device),
                 reports: reports,
                 accountDevices: accountDevices,
                 currentMac: currentMacDevice,
                 now: now
-            )
+            ).filter { Self.appearsInAppleSettingsScreenTime($0.kind) }
             let discoveredDevices = mergeDeviceLists(selectableDevices)
             let latestUpdate = [
                 knowledgeRead.latestUpdate,
@@ -430,11 +542,14 @@
                 reports.map(\.lastUpdatedAt).max(),
             ].compactMap { $0 }.max()
 
-            let denied = catalogRead.permissionDenied
+            let denied = adminRead.permissionDenied
+                || catalogRead.permissionDenied
                 || knowledgeRead.permissionDenied
                 || biomeRead.permissionDenied
                 || screenTimeAppUsageRead.permissionDenied
             let warnings = [
+                settingsOracleWarning,
+                adminRead.warning,
                 catalogRead.warning,
                 knowledgeRead.warning,
                 biomeRead.warning,
@@ -523,6 +638,554 @@
                 knowledgeIntervalCount: 0,
                 biomeIntervalCount: 0
             )
+        }
+
+        // MARK: - Apple Screen Time aggregate store
+
+        /// `ScreenTimeAgent` persists Apple-owned per-device usage blocks. Reading these
+        /// aggregates avoids reconstructing totals from focus events, but does not establish
+        /// exact parity with the values or grouping rendered by System Settings.
+        /// The databases are opened with SQLite read-only/query-only protections and are never
+        /// copied into Goalong History.
+        private struct AdminUsageBlock {
+            let storePriority: Int
+            let primaryKey: Int
+            let device: AppleScreenTimeDevice
+            let start: Date
+            let end: Date
+            let screenOnDuration: TimeInterval
+            let lastUpdatedAt: Date
+            let applications: [AppleScreenTimeApplicationUsage]
+
+            var identity: String {
+                "\(device.id)|\(start.timeIntervalSinceReferenceDate)|\(end.timeIntervalSinceReferenceDate)"
+            }
+        }
+
+        private struct AdminStoreRead {
+            let blocks: [AdminUsageBlock]
+            let devices: [AppleScreenTimeDevice]
+            let latestUpdate: Date?
+            let permissionDenied: Bool
+            let warning: String?
+            let readableStoreCount: Int
+            let currentMacAliases: Set<String>
+            let currentMacNames: Set<String>
+
+            static let empty = AdminStoreRead(
+                blocks: [],
+                devices: [],
+                latestUpdate: nil,
+                permissionDenied: false,
+                warning: nil,
+                readableStoreCount: 0,
+                currentMacAliases: [],
+                currentMacNames: []
+            )
+        }
+
+        private struct AdminDeviceRow {
+            let primaryKey: Int
+            let identifier: String
+            let name: String?
+            let platform: Int?
+        }
+
+        private func readScreenTimeAdminStores(
+            interval: DateInterval
+        ) -> AdminStoreRead {
+            let configured: [(URL?, Bool, Int)] = [
+                (paths.screenTimeAdminLocalDatabase, true, 2),
+                (paths.screenTimeAdminCloudDatabase, false, 1),
+            ]
+            var reads: [AdminStoreRead] = []
+            for (url, isLocal, priority) in configured {
+                guard let url else { continue }
+                var status = stat()
+                guard Darwin.lstat(url.path, &status) == 0 else {
+                    if [EACCES, EPERM].contains(errno) {
+                        reads.append(
+                            AdminStoreRead(
+                                blocks: [],
+                                devices: [],
+                                latestUpdate: nil,
+                                permissionDenied: true,
+                                warning: nil,
+                                readableStoreCount: 0,
+                                currentMacAliases: [],
+                                currentMacNames: []
+                            )
+                        )
+                    }
+                    continue
+                }
+                reads.append(
+                    readScreenTimeAdminStore(
+                        url: url,
+                        interval: interval,
+                        treatsMacAsCurrentDevice: isLocal,
+                        storePriority: priority
+                    )
+                )
+            }
+            guard !reads.isEmpty else { return .empty }
+
+            let currentMacAliases = reads.reduce(into: Set<String>()) {
+                $0.formUnion($1.currentMacAliases)
+            }
+            let currentMacNames = reads.reduce(into: Set<String>()) {
+                $0.formUnion($1.currentMacNames)
+            }
+            func canonicalDevice(_ device: AppleScreenTimeDevice) -> AppleScreenTimeDevice {
+                let normalizedName = device.displayName.lowercased()
+                guard device.id == currentMacDevice.id
+                    || currentMacAliases.contains(device.id)
+                    || (device.kind == .mac && currentMacNames.contains(normalizedName))
+                else { return device }
+                return AppleScreenTimeDevice(
+                    id: currentMacDevice.id,
+                    name: device.name ?? currentMacDevice.name,
+                    kind: .mac
+                )
+            }
+            let canonicalBlocks = reads.flatMap(\.blocks).map { block in
+                let device = canonicalDevice(block.device)
+                return AdminUsageBlock(
+                    storePriority: block.storePriority,
+                    primaryKey: block.primaryKey,
+                    device: device,
+                    start: block.start,
+                    end: block.end,
+                    screenOnDuration: block.screenOnDuration,
+                    lastUpdatedAt: block.lastUpdatedAt,
+                    applications: block.applications
+                )
+            }
+            var blocksByIdentity: [String: AdminUsageBlock] = [:]
+            for block in canonicalBlocks {
+                if let existing = blocksByIdentity[block.identity] {
+                    let replacement = Self.preferredAdminBlock(existing, block)
+                    blocksByIdentity[block.identity] = replacement
+                } else {
+                    blocksByIdentity[block.identity] = block
+                }
+            }
+            let warnings = reads.compactMap(\.warning)
+            return AdminStoreRead(
+                blocks: blocksByIdentity.values.sorted {
+                    if $0.device.id != $1.device.id { return $0.device.id < $1.device.id }
+                    return $0.start < $1.start
+                },
+                devices: mergeDeviceLists(reads.flatMap(\.devices).map(canonicalDevice)),
+                latestUpdate: reads.compactMap(\.latestUpdate).max(),
+                permissionDenied: reads.contains(where: \.permissionDenied),
+                warning: warnings.isEmpty ? nil : warnings.joined(separator: "; "),
+                readableStoreCount: reads.reduce(0) { $0 + $1.readableStoreCount },
+                currentMacAliases: currentMacAliases,
+                currentMacNames: currentMacNames
+            )
+        }
+
+        private static func preferredAdminBlock(
+            _ lhs: AdminUsageBlock,
+            _ rhs: AdminUsageBlock
+        ) -> AdminUsageBlock {
+            if lhs.lastUpdatedAt != rhs.lastUpdatedAt {
+                return lhs.lastUpdatedAt > rhs.lastUpdatedAt ? lhs : rhs
+            }
+            if lhs.storePriority != rhs.storePriority {
+                return lhs.storePriority > rhs.storePriority ? lhs : rhs
+            }
+            if lhs.applications.count != rhs.applications.count {
+                return lhs.applications.count > rhs.applications.count ? lhs : rhs
+            }
+            return lhs
+        }
+
+        private func readScreenTimeAdminStore(
+            url: URL,
+            interval: DateInterval,
+            treatsMacAsCurrentDevice: Bool,
+            storePriority: Int
+        ) -> AdminStoreRead {
+            do {
+                let database = try SQLiteReadConnection(path: url.path)
+                let required: [String: Set<String>] = [
+                    "ZCOREDEVICE": ["Z_PK", "ZIDENTIFIER", "ZNAME", "ZPLATFORM"],
+                    "ZUSAGE": ["Z_PK", "ZDEVICE", "ZLASTUPDATEDDATE"],
+                    "ZUSAGEBLOCK": [
+                        "Z_PK", "ZUSAGE", "ZSTARTDATE", "ZDURATIONINMINUTES",
+                        "ZSCREENTIMEINSECONDS", "ZLASTEVENTDATE",
+                    ],
+                    "ZUSAGECATEGORY": ["Z_PK", "ZBLOCK"],
+                    "ZUSAGETIMEDITEM": [
+                        "ZCATEGORY", "ZBUNDLEIDENTIFIER", "ZDOMAIN",
+                        "ZTOTALTIMEINSECONDS", "ZUSAGETRUSTED",
+                    ],
+                ]
+                let missing = try required.compactMap { table, columns -> String? in
+                    let available = try database.tableColumns(table)
+                    let absent = columns.subtracting(available).sorted()
+                    return absent.isEmpty ? nil : "\(table).\(absent.joined(separator: ","))"
+                }
+                guard missing.isEmpty else {
+                    return AdminStoreRead(
+                        blocks: [],
+                        devices: [],
+                        latestUpdate: latestModificationDate(url),
+                        permissionDenied: false,
+                        warning: "Apple Screen Time aggregate schema changed: \(missing.joined(separator: "; "))",
+                        readableStoreCount: 0,
+                        currentMacAliases: [],
+                        currentMacNames: []
+                    )
+                }
+
+                let rawDevices: [AdminDeviceRow] = try database.query(
+                    """
+                    SELECT Z_PK, COALESCE(ZIDENTIFIER, ''), COALESCE(ZNAME, ''), ZPLATFORM
+                    FROM ZCOREDEVICE
+                    ORDER BY Z_PK
+                    LIMIT 128
+                    """
+                ) { statement in
+                    AdminDeviceRow(
+                        primaryKey: SQLiteReadConnection.int(statement, column: 0) ?? 0,
+                        identifier: SQLiteReadConnection.string(statement, column: 1),
+                        name: {
+                            let value = SQLiteReadConnection.string(statement, column: 2)
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            return value.isEmpty ? nil : value
+                        }(),
+                        platform: SQLiteReadConnection.int(statement, column: 3)
+                    )
+                }
+                let devicesByPrimaryKey = Dictionary(uniqueKeysWithValues: rawDevices.map { row in
+                    (row.primaryKey, adminDevice(from: row, treatsMacAsCurrentDevice: treatsMacAsCurrentDevice))
+                })
+                let localMacRows = treatsMacAsCurrentDevice
+                    ? rawDevices.filter {
+                        let nameKind = AppleScreenTimeDeviceIdentityResolver.deviceKind(
+                            model: nil,
+                            name: $0.name
+                        )
+                        return nameKind == .mac || Self.deviceKind(platform: $0.platform) == .mac
+                    }
+                    : []
+                let installedAppColumns = try database.tableColumns("ZINSTALLEDAPP")
+                let installedDisplayNames: [String: String]
+                if installedAppColumns.isSuperset(of: ["ZBUNDLEIDENTIFIER", "ZDISPLAYNAME"]) {
+                    let rows: [(String, String)] = try database.query(
+                        """
+                        SELECT COALESCE(ZBUNDLEIDENTIFIER, ''), COALESCE(ZDISPLAYNAME, '')
+                        FROM ZINSTALLEDAPP
+                        WHERE ZBUNDLEIDENTIFIER IS NOT NULL AND ZDISPLAYNAME IS NOT NULL
+                        LIMIT 20000
+                        """
+                    ) { statement in
+                        let bundle = SQLiteReadConnection.string(statement, column: 0)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        let displayName = SQLiteReadConnection.string(statement, column: 1)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !bundle.isEmpty, !displayName.isEmpty else { return nil }
+                        return (bundle.lowercased(), displayName)
+                    }
+                    installedDisplayNames = rows.reduce(into: [:]) { result, row in
+                        result[row.0] = row.1
+                    }
+                } else {
+                    installedDisplayNames = [:]
+                }
+                let appleStart = interval.start.timeIntervalSinceReferenceDate
+                let appleEnd = interval.end.timeIntervalSinceReferenceDate
+                let minimumDurations: [Int] = try database.query(
+                    """
+                    SELECT MIN(ZDURATIONINMINUTES)
+                    FROM ZUSAGEBLOCK
+                    WHERE ZDURATIONINMINUTES > 0
+                      AND ZSTARTDATE < ?
+                      AND ZSTARTDATE + (ZDURATIONINMINUTES * 60.0) > ?
+                    """,
+                    bind: { statement in
+                        sqlite3_bind_double(statement, 1, appleEnd)
+                        sqlite3_bind_double(statement, 2, appleStart)
+                    }
+                ) { statement in
+                    SQLiteReadConnection.int(statement, column: 0)
+                }
+                guard let minimumDuration = minimumDurations.first else {
+                    return AdminStoreRead(
+                        blocks: [],
+                        devices: Array(devicesByPrimaryKey.values),
+                        latestUpdate: latestModificationDate(url),
+                        permissionDenied: false,
+                        warning: nil,
+                        readableStoreCount: 1,
+                        currentMacAliases: Set(localMacRows.map(\.identifier).filter { !$0.isEmpty }),
+                        currentMacNames: Set(localMacRows.compactMap(\.name).map { $0.lowercased() })
+                    )
+                }
+
+                struct RawBlock {
+                    let primaryKey: Int
+                    let device: AppleScreenTimeDevice
+                    let start: Date
+                    let end: Date
+                    let screenOnDuration: TimeInterval
+                    let lastUpdatedAt: Date
+                }
+                let rawBlocks: [RawBlock] = try database.query(
+                    """
+                    SELECT
+                      b.Z_PK,
+                      u.ZDEVICE,
+                      b.ZSTARTDATE,
+                      b.ZDURATIONINMINUTES,
+                      b.ZSCREENTIMEINSECONDS,
+                      b.ZLASTEVENTDATE,
+                      u.ZLASTUPDATEDDATE
+                    FROM ZUSAGEBLOCK b
+                    JOIN ZUSAGE u ON u.Z_PK = b.ZUSAGE
+                    WHERE b.ZDURATIONINMINUTES = ?
+                      AND b.ZSTARTDATE < ?
+                      AND b.ZSTARTDATE + (b.ZDURATIONINMINUTES * 60.0) > ?
+                    ORDER BY b.ZSTARTDATE, b.Z_PK
+                    LIMIT 20000
+                    """,
+                    bind: { statement in
+                        sqlite3_bind_int64(statement, 1, sqlite3_int64(minimumDuration))
+                        sqlite3_bind_double(statement, 2, appleEnd)
+                        sqlite3_bind_double(statement, 3, appleStart)
+                    }
+                ) { statement in
+                    let primaryKey = SQLiteReadConnection.int(statement, column: 0) ?? 0
+                    let devicePrimaryKey = SQLiteReadConnection.int(statement, column: 1) ?? 0
+                    guard let device = devicesByPrimaryKey[devicePrimaryKey],
+                          let startValue = SQLiteReadConnection.double(statement, column: 2),
+                          let durationMinutes = SQLiteReadConnection.double(statement, column: 3),
+                          let rawScreenOn = SQLiteReadConnection.double(statement, column: 4),
+                          durationMinutes > 0,
+                          rawScreenOn >= 0
+                    else { return nil }
+                    let rawStart = Date(timeIntervalSinceReferenceDate: startValue)
+                    let rawEnd = rawStart.addingTimeInterval(durationMinutes * 60)
+                    guard let overlap = DateInterval(start: rawStart, end: rawEnd)
+                        .intersection(with: interval)
+                    else { return nil }
+                    let ratio = overlap.duration / max(1, rawEnd.timeIntervalSince(rawStart))
+                    let eventUpdate = SQLiteReadConnection.double(statement, column: 5)
+                        .map(Date.init(timeIntervalSinceReferenceDate:))
+                    let usageUpdate = SQLiteReadConnection.double(statement, column: 6)
+                        .map(Date.init(timeIntervalSinceReferenceDate:))
+                    return RawBlock(
+                        primaryKey: primaryKey,
+                        device: device,
+                        start: overlap.start,
+                        end: overlap.end,
+                        screenOnDuration: min(overlap.duration, rawScreenOn * ratio),
+                        lastUpdatedAt: maxDate(eventUpdate, usageUpdate) ?? overlap.end
+                    )
+                }
+                let itemsByBlock = try readAdminTimedItems(
+                    database: database,
+                    appleStart: appleStart,
+                    appleEnd: appleEnd,
+                    durationMinutes: minimumDuration,
+                    installedDisplayNames: installedDisplayNames,
+                    blockDurations: Dictionary(uniqueKeysWithValues: rawBlocks.map {
+                        ($0.primaryKey, max(1, $0.end.timeIntervalSince($0.start)))
+                    })
+                )
+                let blocks = rawBlocks.map { block in
+                    AdminUsageBlock(
+                        storePriority: storePriority,
+                        primaryKey: block.primaryKey,
+                        device: block.device,
+                        start: block.start,
+                        end: block.end,
+                        screenOnDuration: block.screenOnDuration,
+                        lastUpdatedAt: block.lastUpdatedAt,
+                        applications: itemsByBlock[block.primaryKey] ?? []
+                    )
+                }
+                return AdminStoreRead(
+                    blocks: blocks,
+                    devices: Array(devicesByPrimaryKey.values),
+                    latestUpdate: maxDate(
+                        blocks.map(\.lastUpdatedAt).max(),
+                        latestModificationDate(url)
+                    ),
+                    permissionDenied: false,
+                    warning: rawBlocks.count == 20000
+                        ? "Apple Screen Time aggregate daily block budget reached"
+                        : nil,
+                    readableStoreCount: 1,
+                    currentMacAliases: Set(localMacRows.map(\.identifier).filter { !$0.isEmpty }),
+                    currentMacNames: Set(localMacRows.compactMap(\.name).map { $0.lowercased() })
+                )
+            } catch {
+                let denied = Self.looksLikePermissionFailure(error)
+                    || (error as? SQLiteReadError)?.code == SQLITE_CANTOPEN
+                return AdminStoreRead(
+                    blocks: [],
+                    devices: [],
+                    latestUpdate: nil,
+                    permissionDenied: denied,
+                    warning: denied ? nil : "Apple Screen Time aggregate store: \(error)",
+                    readableStoreCount: 0,
+                    currentMacAliases: [],
+                    currentMacNames: []
+                )
+            }
+        }
+
+        private func adminDevice(
+            from row: AdminDeviceRow,
+            treatsMacAsCurrentDevice: Bool
+        ) -> AppleScreenTimeDevice {
+            let kindFromName = AppleScreenTimeDeviceIdentityResolver.deviceKind(
+                model: nil,
+                name: row.name
+            )
+            let kind = kindFromName == .unknown
+                ? Self.deviceKind(platform: row.platform)
+                : kindFromName
+            if treatsMacAsCurrentDevice, kind == .mac {
+                return AppleScreenTimeDevice(
+                    id: currentMacDevice.id,
+                    name: row.name ?? currentMacDevice.name,
+                    kind: .mac
+                )
+            }
+            let identifier = row.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+            return AppleScreenTimeDevice(
+                id: identifier.isEmpty ? "screen-time-device:\(row.primaryKey)" : identifier,
+                name: row.name,
+                kind: kind
+            )
+        }
+
+        private func readAdminTimedItems(
+            database: SQLiteReadConnection,
+            appleStart: TimeInterval,
+            appleEnd: TimeInterval,
+            durationMinutes: Int,
+            installedDisplayNames: [String: String],
+            blockDurations: [Int: TimeInterval]
+        ) throws -> [Int: [AppleScreenTimeApplicationUsage]] {
+            struct TimedItem {
+                let blockPrimaryKey: Int
+                let bundleIdentifier: String?
+                let displayName: String?
+                let duration: TimeInterval
+            }
+            let rows: [TimedItem] = try database.query(
+                """
+                SELECT
+                  c.ZBLOCK,
+                  COALESCE(i.ZBUNDLEIDENTIFIER, ''),
+                  COALESCE(i.ZDOMAIN, ''),
+                  i.ZTOTALTIMEINSECONDS
+                FROM ZUSAGETIMEDITEM i
+                JOIN ZUSAGECATEGORY c ON c.Z_PK = i.ZCATEGORY
+                JOIN ZUSAGEBLOCK b ON b.Z_PK = c.ZBLOCK
+                WHERE b.ZDURATIONINMINUTES = ?
+                  AND b.ZSTARTDATE < ?
+                  AND b.ZSTARTDATE + (b.ZDURATIONINMINUTES * 60.0) > ?
+                  AND COALESCE(i.ZUSAGETRUSTED, 1) != 0
+                  AND i.ZTOTALTIMEINSECONDS > 0
+                ORDER BY c.ZBLOCK, i.ZTOTALTIMEINSECONDS DESC
+                LIMIT 100000
+                """,
+                bind: { statement in
+                    sqlite3_bind_int64(statement, 1, sqlite3_int64(durationMinutes))
+                    sqlite3_bind_double(statement, 2, appleEnd)
+                    sqlite3_bind_double(statement, 3, appleStart)
+                }
+            ) { statement in
+                let blockPrimaryKey = SQLiteReadConnection.int(statement, column: 0) ?? 0
+                let bundle = SQLiteReadConnection.string(statement, column: 1)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let domain = SQLiteReadConnection.string(statement, column: 2)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let rawDuration = SQLiteReadConnection.double(statement, column: 3),
+                      rawDuration > 0,
+                      let maximum = blockDurations[blockPrimaryKey]
+                else { return nil }
+                // Apple can preserve the originating browser bundle on a web-domain row.
+                // The domain is the user-visible Screen Time item, so it must win over the
+                // browser identifier or the website would be misclassified as another app row.
+                if !domain.isEmpty {
+                    return TimedItem(
+                        blockPrimaryKey: blockPrimaryKey,
+                        bundleIdentifier: "website:\(domain.lowercased())",
+                        displayName: domain,
+                        duration: min(maximum, rawDuration)
+                    )
+                }
+                if !bundle.isEmpty {
+                    return TimedItem(
+                        blockPrimaryKey: blockPrimaryKey,
+                        bundleIdentifier: bundle,
+                        displayName: installedDisplayNames[bundle.lowercased()]
+                            ?? Self.applicationDisplayName(bundle),
+                        duration: min(maximum, rawDuration)
+                    )
+                }
+                return nil
+            }
+            return Dictionary(grouping: rows, by: \.blockPrimaryKey).mapValues { items in
+                var durationByIdentifier: [String: TimedItem] = [:]
+                for item in items {
+                    let key = item.bundleIdentifier ?? item.displayName ?? "unknown"
+                    if let current = durationByIdentifier[key] {
+                        durationByIdentifier[key] = TimedItem(
+                            blockPrimaryKey: item.blockPrimaryKey,
+                            bundleIdentifier: item.bundleIdentifier ?? current.bundleIdentifier,
+                            displayName: item.displayName ?? current.displayName,
+                            duration: min(
+                                blockDurations[item.blockPrimaryKey] ?? .greatestFiniteMagnitude,
+                                current.duration + item.duration
+                            )
+                        )
+                    } else {
+                        durationByIdentifier[key] = item
+                    }
+                }
+                return durationByIdentifier.values.map {
+                    AppleScreenTimeApplicationUsage(
+                        bundleIdentifier: $0.bundleIdentifier,
+                        displayName: $0.displayName,
+                        duration: $0.duration
+                    )
+                }
+                .sorted {
+                    if $0.duration != $1.duration { return $0.duration > $1.duration }
+                    return $0.resolvedName.localizedCaseInsensitiveCompare($1.resolvedName) == .orderedAscending
+                }
+            }
+        }
+
+        private func makeAdminReports(
+            from blocks: [AdminUsageBlock]
+        ) -> [AppleScreenTimeDeviceReport] {
+            Dictionary(grouping: blocks, by: { $0.device.id })
+                .values
+                .compactMap { rows -> AppleScreenTimeDeviceReport? in
+                    guard let first = rows.first else { return nil }
+                    return AppleScreenTimeDeviceReport(
+                        device: first.device,
+                        lastUpdatedAt: rows.map(\.lastUpdatedAt).max() ?? .distantPast,
+                        segments: rows.map { row in
+                            AppleScreenTimeSegment(
+                                start: row.start,
+                                end: row.end,
+                                totalScreenOnDuration: row.screenOnDuration,
+                                applications: row.applications
+                            )
+                        }
+                    )
+                }
         }
 
         // MARK: - knowledgeC
@@ -681,14 +1344,87 @@
 
         private func readScreenTimeAppUsageIntervals(
             interval: DateInterval,
-            now: Date
+            now: Date,
+            catalog: [String: DeviceCatalogEntry]
         ) -> SourceRead<UsageInterval> {
-            guard let directory = paths.biomeScreenTimeAppUsageDirectory,
-                  fileManager.fileExists(atPath: directory.path)
-            else {
-                return SourceRead(values: [], latestUpdate: nil, permissionDenied: false, warning: nil)
+            var reads: [SourceRead<UsageInterval>] = []
+            if let directory = paths.biomeScreenTimeAppUsageDirectory,
+               fileManager.fileExists(atPath: directory.path)
+            {
+                reads.append(
+                    readScreenTimeAppUsageDevice(
+                        directory: directory,
+                        device: currentMacDevice,
+                        interval: interval,
+                        now: now
+                    )
+                )
             }
 
+            if let remoteRoot = paths.biomeRemoteScreenTimeAppUsageDirectory,
+               fileManager.fileExists(atPath: remoteRoot.path)
+            {
+                do {
+                    let directories = try fileManager.contentsOfDirectory(
+                        at: remoteRoot,
+                        includingPropertiesForKeys: [.isDirectoryKey],
+                        options: [.skipsHiddenFiles]
+                    )
+                    let remoteDirectories = directories.filter {
+                        (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+                    }
+                    if remoteDirectories.count > 32 {
+                        reads.append(
+                            SourceRead(
+                                values: [],
+                                latestUpdate: latestModificationDate(remoteRoot),
+                                permissionDenied: false,
+                                warning: "ScreenTime.AppUsage exposes too many remote devices to scan safely"
+                            )
+                        )
+                    } else {
+                        for directory in remoteDirectories.sorted(by: { $0.path < $1.path }) {
+                            let id = directory.lastPathComponent
+                            let device = catalog[id]?.device
+                                ?? Self.makeRemoteDevice(id: id, hardwareIdentifier: nil, platform: nil)
+                            reads.append(
+                                readScreenTimeAppUsageDevice(
+                                    directory: directory,
+                                    device: device,
+                                    interval: interval,
+                                    now: now
+                                )
+                            )
+                        }
+                    }
+                } catch {
+                    let denied = Self.looksLikePermissionFailure(error)
+                    reads.append(
+                        SourceRead(
+                            values: [],
+                            latestUpdate: nil,
+                            permissionDenied: denied,
+                            warning: denied ? nil : "ScreenTime.AppUsage remote devices: \(error)"
+                        )
+                    )
+                }
+            }
+
+            let warnings = reads.compactMap(\.warning)
+            return SourceRead(
+                values: reads.flatMap(\.values),
+                latestUpdate: reads.compactMap(\.latestUpdate).max(),
+                permissionDenied: reads.contains(where: \.permissionDenied),
+                warning: warnings.isEmpty ? nil : warnings.joined(separator: "; ")
+            )
+        }
+
+        private func readScreenTimeAppUsageDevice(
+            directory: URL,
+            device: AppleScreenTimeDevice,
+            interval: DateInterval,
+            now: Date
+        ) -> SourceRead<UsageInterval> {
             do {
                 let files = try regularFiles(recursivelyIn: directory).filter { file in
                     !file.pathComponents.contains { $0.caseInsensitiveCompare("tombstone") == .orderedSame }
@@ -806,7 +1542,7 @@
                     let end = min(row.end, interval.end)
                     guard end > start else { return nil }
                     return UsageInterval(
-                        device: currentMacDevice,
+                        device: device,
                         bundleIdentifier: row.bundleIdentifier,
                         displayName: Self.applicationDisplayName(row.bundleIdentifier),
                         start: start,
@@ -1175,6 +1911,22 @@
             let end: Date
             let source: UsageSource
 
+            init(
+                device: AppleScreenTimeDevice,
+                bundleIdentifier: String,
+                displayName: String?,
+                start: Date,
+                end: Date,
+                source: UsageSource
+            ) {
+                self.device = device
+                self.bundleIdentifier = bundleIdentifier
+                self.displayName = displayName
+                self.start = start
+                self.end = end
+                self.source = source
+            }
+
             var duration: TimeInterval { end.timeIntervalSince(start) }
 
             func replacing(start: Date, end: Date) -> UsageInterval {
@@ -1385,7 +2137,7 @@
         }
 
         private func applicationKey(_ interval: UsageInterval) -> String {
-            interval.bundleIdentifier.lowercased()
+            return interval.bundleIdentifier.lowercased()
         }
 
         private func applicationKey(_ application: AppleScreenTimeApplicationUsage) -> String {
@@ -1398,7 +2150,9 @@
         private func mergeDeviceLists(_ groups: [AppleScreenTimeDevice]...) -> [AppleScreenTimeDevice] {
             var byID: [String: AppleScreenTimeDevice] = [currentMacDevice.id: currentMacDevice]
             for group in groups {
-                for device in group { byID[device.id] = device }
+                for device in group where Self.appearsInAppleSettingsScreenTime(device.kind) {
+                    byID[device.id] = device
+                }
             }
             return byID.values.sorted {
                 if $0.id == currentMacDevice.id { return true }
@@ -1409,6 +2163,18 @@
                 return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
             }
         }
+
+        private static func appearsInAppleSettingsScreenTime(
+            _ kind: AppleScreenTimeDeviceKind
+        ) -> Bool {
+            switch kind {
+            case .mac, .iPhone, .iPad, .iPod:
+                return true
+            case .appleWatch, .appleTV, .homePod, .visionPro, .unknown:
+                return false
+            }
+        }
+
 
         private func sourceLabels(
             devices: [AppleScreenTimeDevice],
@@ -1468,38 +2234,46 @@
             hasData: Bool,
             permissionDenied: Bool,
             remoteDeviceCount: Int,
-            warnings: [String]
+            warnings: [String],
+            privateAggregateStore: Bool = false
         ) -> AppleSystemScreenTimeStatus {
             if permissionDenied, !hasData {
                 return AppleSystemScreenTimeStatus(
                     kind: .fullDiskAccessRequired,
                     title: "Full Disk Access required",
                     message:
-                        "Apple protects its ScreenTime.AppUsage, knowledgeC and Biome stores. Grant Goalong History Full Disk Access once, then reopen or refresh the app."
+                        "Apple protects its Screen Time aggregate, ScreenTime.AppUsage, knowledgeC and Biome stores. Grant Goalong History Full Disk Access once, then reopen or refresh the app."
                 )
             }
             if hasData, permissionDenied || !warnings.isEmpty {
                 return AppleSystemScreenTimeStatus(
                     kind: .partial,
                     title: "Apple Screen Time partially available",
-                    message: warnings.first
-                        ?? "Some Apple Screen Time stores are still protected, but the readable device data is shown."
+                    message: warnings.first.map {
+                        "Apple’s private ScreenTimeAgent aggregate is unavailable. The readable fallback is shown; \($0)"
+                    } ?? "Apple’s private ScreenTimeAgent aggregate is unavailable. This is a partial reconstruction from readable Apple usage streams and can differ from Settings."
                 )
             }
             if hasData, remoteDeviceCount == 0 {
                 return AppleSystemScreenTimeStatus(
                     kind: .localOnly,
-                    title: "Apple activity data for this Mac",
-                    message:
-                        "No remote Apple device stream is present yet. Enable Screen Time → Share Across Devices on the same Apple Account to populate the All devices view automatically. Totals are reconstructed from Apple stores readable on this Mac and can differ from Settings."
+                    title: privateAggregateStore
+                        ? "Apple Screen Time aggregate for this Mac"
+                        : "Apple activity data for this Mac",
+                    message: privateAggregateStore
+                        ? "Goalong is reading an Apple-owned private aggregate in place. Apple does not guarantee exact parity with the values rendered by Settings, and no synchronized remote device is present for this day."
+                        : "No remote Apple device stream is present yet. Enable Screen Time → Share Across Devices on the same Apple Account to populate the All devices view automatically. Totals are reconstructed from Apple stores readable on this Mac and can differ from Settings."
                 )
             }
             if hasData {
                 return AppleSystemScreenTimeStatus(
                     kind: .ready,
-                    title: "Apple activity sources connected",
-                    message:
-                        "The view is reconstructed from Apple’s readable ScreenTime.AppUsage, knowledgeC and iCloud-synced Biome streams, never Goalong’s recorder. macOS may protect the private DeviceActivity summary used by Settings, so exact Settings parity is not guaranteed."
+                    title: privateAggregateStore
+                        ? "Apple Screen Time aggregate connected"
+                        : "Apple activity sources connected",
+                    message: privateAggregateStore
+                        ? "Goalong reads Apple-owned per-device aggregate blocks in place without copying them. This private format has not been certified as exactly identical to Settings."
+                        : "The view is reconstructed from Apple’s readable ScreenTime.AppUsage, knowledgeC and iCloud-synced Biome streams, never Goalong’s recorder. macOS may protect the private DeviceActivity summary used by Settings, so exact Settings parity is not guaranteed."
                 )
             }
             return AppleSystemScreenTimeStatus(

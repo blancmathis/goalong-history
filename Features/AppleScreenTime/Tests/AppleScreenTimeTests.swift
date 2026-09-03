@@ -5,9 +5,191 @@ import XCTest
 final class AppleScreenTimeTests: XCTestCase {
     private let calendar = Calendar(identifier: .gregorian)
 
+    func testProvenanceSeparatesObservableAppleSettingsPublicExportPrivateAggregateAndReconstruction() {
+        let observableSettings = AppleScreenTimeProvenance(
+            api: AppleScreenTimeProvenance.appleSettingsAccessibilityAPI,
+            collectorBundleIdentifier: "ai.goalong.localhistory",
+            collectorVersion: "1.0",
+            collectorPlatform: "macOS 26.5",
+            authorization: .unknown,
+            fetchPolicy: .live,
+            euCustomerRequirementAcknowledged: false
+        )
+        let publicExport = AppleScreenTimeProvenance(
+            collectorBundleIdentifier: "ai.goalong.screentime.mobile",
+            collectorVersion: "1.0",
+            collectorPlatform: "iOS 26.4",
+            authorization: .approvedWithDataAccess,
+            fetchPolicy: .live,
+            euCustomerRequirementAcknowledged: true
+        )
+        let privateAggregate = AppleScreenTimeProvenance(
+            api: AppleScreenTimeProvenance.screenTimeAgentAggregateAPI,
+            collectorBundleIdentifier: "ai.goalong.localhistory",
+            collectorVersion: "1.0",
+            collectorPlatform: "macOS 26.5",
+            authorization: .unknown,
+            fetchPolicy: .live,
+            euCustomerRequirementAcknowledged: false
+        )
+        let reconstructed = AppleScreenTimeProvenance(
+            api: "Apple system Screen Time stores: ScreenTime.AppUsage + knowledgeC /app/usage",
+            collectorBundleIdentifier: "ai.goalong.localhistory",
+            collectorVersion: "1.0",
+            collectorPlatform: "macOS 26.5",
+            authorization: .unknown,
+            fetchPolicy: .live,
+            euCustomerRequirementAcknowledged: false
+        )
+
+        XCTAssertEqual(observableSettings.sourceAssurance, .appleSettingsObservablePresentation)
+        XCTAssertTrue(observableSettings.usesAppleSettingsObservablePresentation)
+        XCTAssertEqual(publicExport.sourceAssurance, .publicDeviceActivityExport)
+        XCTAssertEqual(privateAggregate.sourceAssurance, .privateAppleAggregateStore)
+        XCTAssertEqual(reconstructed.sourceAssurance, .reconstructedAppleUsage)
+    }
+
+    func testObservableAppleSettingsUsesAppleAllDevicesRowAndExactIndividualSelections() throws {
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2)))
+        let end = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: start))
+        let interval = DateInterval(start: start, end: end)
+        let mac = AppleScreenTimeDevice(id: "MAC", name: "MacBook Pro", kind: .mac)
+        let phone = AppleScreenTimeDevice(id: "PHONE", name: "Alex’s iPhone", kind: .iPhone)
+        let all = AppleScreenTimeDevice(
+            id: AppleScreenTimeProvenance.appleSettingsAllDevicesReportID,
+            name: "All Devices",
+            kind: .unknown
+        )
+        func report(_ device: AppleScreenTimeDevice, _ duration: TimeInterval) -> AppleScreenTimeDeviceReport {
+            AppleScreenTimeDeviceReport(
+                device: device,
+                lastUpdatedAt: end,
+                segments: [
+                    AppleScreenTimeSegment(
+                        start: start,
+                        end: end,
+                        totalScreenOnDuration: duration,
+                        applications: [
+                            AppleScreenTimeApplicationUsage(
+                                bundleIdentifier: "apple-settings:\(device.id):row:0",
+                                displayName: device.displayName,
+                                duration: duration
+                            )
+                        ]
+                    )
+                ]
+            )
+        }
+        let stored = AppleScreenTimeStoredExport(
+            verification: .unsigned,
+            envelope: AppleScreenTimeExportEnvelope(
+                requestedStart: start,
+                requestedEnd: end,
+                requestedScope: .allDevices,
+                provenance: AppleScreenTimeProvenance(
+                    api: AppleScreenTimeProvenance.appleSettingsAccessibilityAPI,
+                    collectorBundleIdentifier: "ai.goalong.localhistory",
+                    collectorVersion: "1.0",
+                    collectorPlatform: "macOS 26.5",
+                    authorization: .unknown,
+                    fetchPolicy: .live,
+                    euCustomerRequirementAcknowledged: false
+                ),
+                reports: [report(mac, 20 * 60), report(phone, 10 * 60), report(all, 31 * 60)]
+            )
+        )
+
+        let allSummary = try XCTUnwrap(
+            AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+        )
+        XCTAssertEqual(allSummary.totalScreenOnDuration, 31 * 60, accuracy: 0.001)
+        XCTAssertEqual(allSummary.deviceSummaries.map(\.device.id), [mac.id, phone.id])
+        XCTAssertEqual(
+            allSummary.deviceSummaries.reduce(0) { $0 + $1.screenOnDuration },
+            30 * 60,
+            accuracy: 0.001
+        )
+
+        let macSummary = try XCTUnwrap(
+            AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .macOnly)
+        )
+        XCTAssertEqual(macSummary.totalScreenOnDuration, 20 * 60, accuracy: 0.001)
+        XCTAssertEqual(macSummary.deviceSummaries.map(\.device.id), [mac.id])
+
+        let everyPhysicalDevice = AppleScreenTimeScope(
+            mode: .selectedDevices,
+            selectedDeviceIDs: [mac.id, phone.id]
+        )
+        let selectedAllSummary = try XCTUnwrap(
+            AppleScreenTimeAnalyzer.summary(
+                from: stored,
+                interval: interval,
+                scope: everyPhysicalDevice
+            )
+        )
+        XCTAssertEqual(selectedAllSummary.totalScreenOnDuration, 31 * 60, accuracy: 0.001)
+        XCTAssertEqual(selectedAllSummary.deviceSummaries.map(\.device.id), [mac.id, phone.id])
+    }
+
+    func testObservableAppleSettingsPreservesVisibleOrderForEqualDurations() throws {
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 1)))
+        let end = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: start))
+        let interval = DateInterval(start: start, end: end)
+        let all = AppleScreenTimeDevice(
+            id: AppleScreenTimeProvenance.appleSettingsAllDevicesReportID,
+            name: "All Devices",
+            kind: .unknown
+        )
+        let visibleRows = ["google.com", "Google Chrome", "NordVPN", "Bouygues Telecom"]
+            .enumerated()
+            .map { index, name in
+                AppleScreenTimeApplicationUsage(
+                    bundleIdentifier: "apple-settings:all:row:\(index)",
+                    displayName: name,
+                    duration: index < 2 ? 39 : 29
+                )
+            }
+        let stored = AppleScreenTimeStoredExport(
+            verification: .unsigned,
+            envelope: AppleScreenTimeExportEnvelope(
+                requestedStart: start,
+                requestedEnd: end,
+                requestedScope: .allDevices,
+                provenance: AppleScreenTimeProvenance(
+                    api: AppleScreenTimeProvenance.appleSettingsAccessibilityAPI,
+                    collectorBundleIdentifier: "ai.goalong.localhistory",
+                    collectorVersion: "1.0",
+                    collectorPlatform: "macOS 26.5",
+                    authorization: .unknown,
+                    fetchPolicy: .live,
+                    euCustomerRequirementAcknowledged: false
+                ),
+                reports: [
+                    AppleScreenTimeDeviceReport(
+                        device: all,
+                        lastUpdatedAt: end,
+                        segments: [
+                            AppleScreenTimeSegment(
+                                start: start,
+                                end: end,
+                                totalScreenOnDuration: 136,
+                                applications: visibleRows
+                            )
+                        ]
+                    )
+                ]
+            )
+        )
+
+        let summary = try XCTUnwrap(
+            AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+        )
+        XCTAssertEqual(summary.topApplications.map(\.resolvedName), visibleRows.map(\.resolvedName))
+    }
+
     func testScopeFiltersMacAndSelectedPhysicalDevices() {
-        let mac = AppleScreenTimeDevice(name: "Mathis’s MacBook Pro", kind: .mac)
-        let phone = AppleScreenTimeDevice(name: "Mathis’s iPhone", kind: .iPhone)
+        let mac = AppleScreenTimeDevice(name: "Alex’s MacBook Pro", kind: .mac)
+        let phone = AppleScreenTimeDevice(name: "Alex’s iPhone", kind: .iPhone)
 
         XCTAssertTrue(AppleScreenTimeScope.allDevices.includes(mac))
         XCTAssertTrue(AppleScreenTimeScope.allDevices.includes(phone))
@@ -324,6 +506,12 @@ final class AppleScreenTimeTests: XCTestCase {
         XCTAssertFalse(
             AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
                 bundleIdentifier: "com.apple.SleepLockScreen",
+                deviceKind: .iPhone
+            )
+        )
+        XCTAssertFalse(
+            AppleScreenTimeUsageFilter.countsTowardDeviceUsage(
+                bundleIdentifier: "com.apple.InCallService",
                 deviceKind: .iPhone
             )
         )

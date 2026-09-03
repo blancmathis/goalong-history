@@ -15,6 +15,7 @@ public enum AppleScreenTimeUsageFilter {
                 && !identifier.hasPrefix("com.apple.screensaver.")
         case .iPhone, .iPad, .iPod:
             return identifier != "com.apple.sleeplockscreen"
+                && identifier != "com.apple.incallservice"
         case .appleWatch, .appleTV, .homePod, .visionPro, .unknown:
             return true
         }
@@ -32,6 +33,35 @@ public enum AppleScreenTimeUsageFilter {
                 device: report.device,
                 lastUpdatedAt: report.lastUpdatedAt,
                 segments: segments
+            )
+        }
+    }
+
+    /// Removes explicit inactive-system application rows while preserving Apple-provided
+    /// aggregate screen-on totals byte-for-byte. ScreenTimeAgent has already decided the total;
+    /// subtracting a timed item here would turn an exact Apple value back into a reconstruction.
+    public static func removingSystemApplicationsPreservingTotals(
+        from reports: [AppleScreenTimeDeviceReport]
+    ) -> [AppleScreenTimeDeviceReport] {
+        reports.map { report in
+            AppleScreenTimeDeviceReport(
+                device: report.device,
+                lastUpdatedAt: report.lastUpdatedAt,
+                segments: report.segments.map { segment in
+                    AppleScreenTimeSegment(
+                        start: segment.start,
+                        end: segment.end,
+                        totalScreenOnDuration: segment.totalScreenOnDuration,
+                        longestActivityStart: segment.longestActivityStart,
+                        longestActivityEnd: segment.longestActivityEnd,
+                        applications: segment.applications.filter {
+                            countsTowardDeviceUsage(
+                                bundleIdentifier: $0.bundleIdentifier,
+                                deviceKind: report.device.kind
+                            )
+                        }
+                    )
+                }
             )
         }
     }

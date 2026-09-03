@@ -2,12 +2,257 @@
     import AppleScreenTime
     @testable import AppleSystemScreenTime
     import Combine
+    import Darwin
     import Foundation
     import SQLite3
     import XCTest
     @testable import LocalHistoryApp
 
     final class AppleScreenTimeResourceTests: XCTestCase {
+        private final class FixedSettingsReader: AppleSettingsScreenTimePresentationReading {
+            let presentation: AppleSettingsScreenTimePresentation
+            private(set) var readCount = 0
+
+            init(_ presentation: AppleSettingsScreenTimePresentation) {
+                self.presentation = presentation
+            }
+
+            func read(
+                dayInterval _: DateInterval,
+                now _: Date,
+                calendar _: Calendar
+            ) throws -> AppleSettingsScreenTimePresentation {
+                readCount += 1
+                return presentation
+            }
+        }
+
+        func testAppleSettingsParserReadsVisibleEnglishAndFrenchDurations() {
+            XCTAssertEqual(
+                AppleSettingsScreenTimeParser.duration(from: "14 hours, 24 minutes"),
+                14 * 3_600 + 24 * 60
+            )
+            XCTAssertEqual(
+                AppleSettingsScreenTimeParser.duration(from: "2 heures, 5 minutes, 9 secondes"),
+                2 * 3_600 + 5 * 60 + 9
+            )
+            XCTAssertEqual(
+                AppleSettingsScreenTimeParser.duration(from: "49 seconds"),
+                49
+            )
+            XCTAssertNil(AppleSettingsScreenTimeParser.duration(from: "No usage"))
+        }
+
+        func testAppleSettingsParserKeepsExactVisibleRowNameAndDuration() throws {
+            let row = try XCTUnwrap(
+                AppleSettingsScreenTimeParser.usageRow(
+                    from: "ChatGPT\n2 hours, 30 minutes"
+                )
+            )
+            XCTAssertEqual(row.name, "ChatGPT")
+            XCTAssertEqual(row.duration, 2 * 3_600 + 30 * 60)
+        }
+
+        func testAppleSettingsDateParserValidatesRelativeAndRenderedDates() throws {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+            let now = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 9, day: 3, hour: 10))
+            )
+
+            XCTAssertEqual(
+                AppleSettingsScreenTimeDateParser.dayDistance(
+                    from: "Today, 3 September",
+                    now: now,
+                    calendar: calendar
+                ),
+                0
+            )
+            XCTAssertEqual(
+                AppleSettingsScreenTimeDateParser.dayDistance(
+                    from: "Yesterday, 2 September",
+                    now: now,
+                    calendar: calendar
+                ),
+                1
+            )
+            XCTAssertEqual(
+                AppleSettingsScreenTimeDateParser.dayDistance(
+                    from: "Tuesday 1 September",
+                    now: now,
+                    calendar: calendar
+                ),
+                2
+            )
+            XCTAssertEqual(
+                AppleSettingsScreenTimeDateParser.dayDistance(
+                    from: "mardi 1 septembre",
+                    now: now,
+                    calendar: calendar
+                ),
+                2
+            )
+        }
+
+        func testAppleSettingsOracleBuildsExactAllAndPerDeviceViewsWithoutPersisting() throws {
+            let calendar = Calendar(identifier: .gregorian)
+            let start = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 9, day: 2))
+            )
+            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: start))
+            let readAt = start.addingTimeInterval(20 * 3_600)
+            let reader = FixedSettingsReader(
+                AppleSettingsScreenTimePresentation(
+                    allDevices: AppleSettingsUsagePresentation(
+                        total: TimeInterval(31 * 60),
+                        rows: [
+                            AppleSettingsUsagePresentation.Row(
+                                name: "Aside",
+                                duration: TimeInterval(20 * 60)
+                            ),
+                            AppleSettingsUsagePresentation.Row(
+                                name: "x.com",
+                                duration: TimeInterval(11 * 60)
+                            ),
+                        ]
+                    ),
+                    devices: [
+                        AppleSettingsDeviceUsagePresentation(
+                            name: "MacBook Pro",
+                            usage: AppleSettingsUsagePresentation(
+                                total: TimeInterval(20 * 60),
+                                rows: [
+                                    AppleSettingsUsagePresentation.Row(
+                                        name: "Aside",
+                                        duration: TimeInterval(20 * 60)
+                                    )
+                                ]
+                            )
+                        ),
+                        AppleSettingsDeviceUsagePresentation(
+                            name: "Alex’s iPhone",
+                            usage: AppleSettingsUsagePresentation(
+                                total: TimeInterval(10 * 60),
+                                rows: [
+                                    AppleSettingsUsagePresentation.Row(
+                                        name: "x.com",
+                                        duration: TimeInterval(10 * 60)
+                                    )
+                                ]
+                            )
+                        ),
+                    ],
+                    readAt: readAt
+                )
+            )
+            let oracle = AppleSettingsScreenTimeOracle(reader: reader, maximumCachedDays: 2)
+            let currentMac = AppleScreenTimeDevice(id: "MAC", name: "Local Mac", kind: .mac)
+            let first = try XCTUnwrap(
+                oracle.collect(
+                    dayInterval: interval,
+                    currentMac: currentMac,
+                    now: readAt,
+                    calendar: calendar
+                )
+            )
+            let second = try XCTUnwrap(
+                oracle.collect(
+                    dayInterval: interval,
+                    currentMac: currentMac,
+                    now: readAt.addingTimeInterval(5),
+                    calendar: calendar
+                )
+            )
+            let alternateMac = AppleScreenTimeDevice(
+                id: "ALTERNATE-MAC",
+                name: "Alternate caller",
+                kind: .mac
+            )
+            let third = try XCTUnwrap(
+                oracle.collect(
+                    dayInterval: interval,
+                    currentMac: alternateMac,
+                    now: readAt.addingTimeInterval(6),
+                    calendar: calendar
+                )
+            )
+            XCTAssertEqual(reader.readCount, 1)
+            XCTAssertEqual(first.availableDevices.map(\.displayName), ["MacBook Pro", "Alex’s iPhone"])
+            XCTAssertEqual(first.availableDevices.first?.id, currentMac.id)
+            XCTAssertEqual(first.status.kind, .ready)
+            XCTAssertEqual(
+                first.storedExport?.envelope.provenance.sourceAssurance,
+                .appleSettingsObservablePresentation
+            )
+            XCTAssertEqual(second.storedExport, first.storedExport)
+            XCTAssertEqual(third.availableDevices.first?.id, alternateMac.id)
+
+            let stored = try XCTUnwrap(first.storedExport)
+            let all = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+            )
+            XCTAssertEqual(all.totalScreenOnDuration, 31 * 60, accuracy: 0.001)
+            XCTAssertEqual(all.topApplications.map(\.resolvedName), ["Aside", "x.com"])
+            let website = try XCTUnwrap(all.topApplications.first { $0.resolvedName == "x.com" })
+            XCTAssertEqual(website.bundleIdentifier, "website:x.com")
+
+            let mac = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .macOnly)
+            )
+            XCTAssertEqual(mac.totalScreenOnDuration, 20 * 60, accuracy: 0.001)
+        }
+
+        func testAppleSettingsSummaryPreservesEveryVisibleUsageRow() throws {
+            let calendar = Calendar(identifier: .gregorian)
+            let start = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 9, day: 2))
+            )
+            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: start))
+            let rows = (0 ..< 32).map { index in
+                AppleSettingsUsagePresentation.Row(
+                    name: "App \(index)",
+                    duration: TimeInterval(32 - index)
+                )
+            }
+            let reader = FixedSettingsReader(
+                AppleSettingsScreenTimePresentation(
+                    allDevices: AppleSettingsUsagePresentation(total: 528, rows: rows),
+                    devices: [
+                        AppleSettingsDeviceUsagePresentation(
+                            name: "MacBook Pro",
+                            usage: AppleSettingsUsagePresentation(total: 528, rows: rows)
+                        )
+                    ],
+                    readAt: start.addingTimeInterval(20 * 3_600)
+                )
+            )
+            let oracle = AppleSettingsScreenTimeOracle(reader: reader)
+            let collection = try XCTUnwrap(
+                oracle.collect(
+                    dayInterval: interval,
+                    currentMac: AppleScreenTimeDevice(
+                        id: "MAC",
+                        name: "MacBook Pro",
+                        kind: .mac
+                    ),
+                    now: start.addingTimeInterval(20 * 3_600),
+                    calendar: calendar
+                )
+            )
+            let summary = try XCTUnwrap(
+                collection.storedExport.flatMap {
+                    AppleScreenTimeAnalyzer.summary(
+                        from: $0,
+                        interval: interval,
+                        scope: .allDevices
+                    )
+                }
+            )
+
+            XCTAssertEqual(summary.topApplications.count, rows.count)
+            XCTAssertEqual(summary.topApplications.map(\.resolvedName), rows.map(\.name))
+        }
+
         func testRemoteAppleApplicationsUseReadableNamesWithoutBeingInstalledOnThisMac() {
             XCTAssertEqual(
                 AppleSystemScreenTimeSource.applicationDisplayName("com.google.ios.youtube"),
@@ -363,7 +608,451 @@
             )
         }
 
-        func testScreenTimeAppUsageReplacesConflictingMacFallbackAttribution() throws {
+        func testAppleAggregateStoreMatchesPerDeviceAndEverySelectedCombinationWithoutFallbackInflation() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-admin-store-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let minute: TimeInterval = 60
+            let hour: TimeInterval = 3_600
+            let localStore = root.appendingPathComponent("RMAdminStore-Local.sqlite")
+            let cloudStore = root.appendingPathComponent("RMAdminStore-Cloud.sqlite")
+            try createScreenTimeAdminDatabase(
+                at: localStore,
+                day: day,
+                devices: [
+                    (
+                        id: "LOCAL-MAC",
+                        name: "MacBook Pro",
+                        platform: 3,
+                        blocks: [
+                            (
+                                start: 9 * hour,
+                                screenOn: 10 * minute,
+                                applications: [("at.studio.AsideBrowser", nil, 10 * minute)]
+                            ),
+                            (
+                                start: 9 * hour + 15 * minute,
+                                screenOn: 5 * minute,
+                                applications: [
+                                    ("com.openai.codex", nil, 4 * minute),
+                                    // ScreenTime may retain the browser bundle on a domain row.
+                                    // Domain identity must still win so it appears as a website.
+                                    ("at.studio.AsideBrowser", "chatgpt.com", minute),
+                                ]
+                            ),
+                        ]
+                    )
+                ]
+            )
+            try createScreenTimeAdminDatabase(
+                at: cloudStore,
+                day: day,
+                devices: [
+                    (
+                        id: "PHONE",
+                        name: "Alex’s iPhone",
+                        platform: 2,
+                        blocks: [
+                            (
+                                start: 10 * hour,
+                                screenOn: 7 * minute,
+                                applications: [("com.linkedin.LinkedIn", nil, 7 * minute)]
+                            )
+                        ]
+                    ),
+                    (
+                        id: "TABLET",
+                        name: "Alex’s iPad",
+                        platform: 1,
+                        blocks: [
+                            (
+                                start: 11 * hour,
+                                screenOn: 2 * minute,
+                                applications: [("com.google.ios.youtube", nil, 2 * minute)]
+                            )
+                        ]
+                    ),
+                    // The cloud store can mirror this Mac. The raw Apple identifier and block
+                    // identity must collapse to the local device instead of double counting it.
+                    (
+                        id: "LOCAL-MAC",
+                        name: "MacBook Pro",
+                        platform: 3,
+                        blocks: [
+                            (
+                                start: 9 * hour,
+                                screenOn: 10 * minute,
+                                applications: [("at.studio.AsideBrowser", nil, 10 * minute)]
+                            )
+                        ]
+                    ),
+                ],
+                installedApps: [("com.linkedin.LinkedIn", "LinkedIn")]
+            )
+            let localBefore = try Data(contentsOf: localStore)
+            let cloudBefore = try Data(contentsOf: cloudStore)
+
+            let knowledge = root.appendingPathComponent("knowledgeC.db")
+            try createKnowledgeDatabase(
+                at: knowledge,
+                day: day,
+                rows: [("ai.goalong.localhistory", 0, 12 * hour)]
+            )
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: knowledge,
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                    screenTimeAdminLocalDatabase: localStore,
+                    screenTimeAdminCloudDatabase: cloudStore
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(12 * 3_600) }
+            )
+
+            let collection = source.collect(for: day)
+            let stored = try XCTUnwrap(collection.storedExport)
+            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: day))
+            let all = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+            )
+            let totals = Dictionary(uniqueKeysWithValues: all.deviceSummaries.map {
+                ($0.device.id, $0.screenOnDuration)
+            })
+            XCTAssertEqual(totals[source.currentMacDevice.id] ?? -1, 15 * 60, accuracy: 0.001)
+            XCTAssertEqual(totals["PHONE"] ?? -1, 7 * 60, accuracy: 0.001)
+            XCTAssertEqual(totals["TABLET"] ?? -1, 2 * 60, accuracy: 0.001)
+            XCTAssertEqual(all.totalScreenOnDuration, 24 * 60, accuracy: 0.001)
+            XCTAssertEqual(collection.knowledgeIntervalCount, 0)
+            XCTAssertEqual(collection.biomeIntervalCount, 0)
+            XCTAssertEqual(collection.screenTimeAppUsageIntervalCount, 0)
+            XCTAssertEqual(
+                Set(collection.deviceSourceLabels.values),
+                ["Apple Screen Time aggregate (private format)"]
+            )
+            XCTAssertEqual(
+                stored.envelope.provenance.sourceAssurance,
+                .privateAppleAggregateStore
+            )
+
+            let devices = [source.currentMacDevice.id, "PHONE", "TABLET"]
+            for mask in 1 ..< (1 << devices.count) {
+                let selected = devices.indices.compactMap { index in
+                    mask & (1 << index) == 0 ? nil : devices[index]
+                }
+                let expected = selected.reduce(0.0) { $0 + (totals[$1] ?? 0) }
+                let summary = try XCTUnwrap(
+                    AppleScreenTimeAnalyzer.summary(
+                        from: stored,
+                        interval: interval,
+                        scope: AppleScreenTimeScope(
+                            mode: .selectedDevices,
+                            selectedDeviceIDs: selected
+                        )
+                    )
+                )
+                XCTAssertEqual(summary.totalScreenOnDuration, expected, accuracy: 0.001)
+                XCTAssertEqual(Set(summary.deviceSummaries.map(\.device.id)), Set(selected))
+            }
+
+            let macApplications = try XCTUnwrap(
+                all.deviceSummaries.first { $0.device.id == source.currentMacDevice.id }
+            ).applications
+            XCTAssertEqual(
+                Dictionary(uniqueKeysWithValues: macApplications.compactMap { app in
+                    app.bundleIdentifier.map { ($0, app.duration) }
+                })["at.studio.AsideBrowser"] ?? -1,
+                10 * 60,
+                accuracy: 0.001
+            )
+            XCTAssertTrue(macApplications.contains {
+                $0.bundleIdentifier == "website:chatgpt.com" && $0.duration == 60
+            })
+            XCTAssertEqual(
+                all.deviceSummaries.first { $0.device.id == "PHONE" }?
+                    .applications.first?.resolvedName,
+                "LinkedIn"
+            )
+            XCTAssertEqual(try Data(contentsOf: localStore), localBefore)
+            XCTAssertEqual(try Data(contentsOf: cloudStore), cloudBefore)
+        }
+
+        func testAppleAggregateStoreRefreshesAfterModificationAndReportsDeletionWithoutStaleData() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-admin-refresh-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let database = root.appendingPathComponent("RMAdminStore-Local.sqlite")
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let paths = AppleSystemScreenTimePaths(
+                knowledgeDatabase: missing.appendingPathComponent("knowledgeC.db"),
+                biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                screenTimeAdminLocalDatabase: database
+            )
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: paths,
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(12 * 3_600) }
+            )
+            func writeStore(screenOn: TimeInterval) throws {
+                try? FileManager.default.removeItem(at: database)
+                try createScreenTimeAdminDatabase(
+                    at: database,
+                    day: day,
+                    devices: [
+                        (
+                            id: "LOCAL-MAC",
+                            name: "MacBook Pro",
+                            platform: 3,
+                            blocks: [
+                                (
+                                    start: 9 * 3_600.0,
+                                    screenOn: screenOn,
+                                    applications: [("com.openai.codex", nil, screenOn)]
+                                )
+                            ]
+                        )
+                    ]
+                )
+            }
+            func total(_ collection: AppleSystemScreenTimeCollection) throws -> TimeInterval {
+                let stored = try XCTUnwrap(collection.storedExport)
+                let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: day))
+                return try XCTUnwrap(
+                    AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+                ).totalScreenOnDuration
+            }
+
+            try writeStore(screenOn: 10 * 60)
+            XCTAssertEqual(try total(source.collect(for: day)), 10 * 60, accuracy: 0.001)
+            try writeStore(screenOn: 5 * 60)
+            XCTAssertEqual(try total(source.collect(for: day)), 5 * 60, accuracy: 0.001)
+
+            try FileManager.default.removeItem(at: database)
+            let deleted = source.collect(for: day)
+            XCTAssertNil(deleted.storedExport)
+            XCTAssertEqual(deleted.status.kind, .noAppleData)
+            XCTAssertEqual(deleted.knowledgeIntervalCount, 0)
+            XCTAssertEqual(deleted.biomeIntervalCount, 0)
+        }
+
+        func testAggregateStoreKeepsAppleScreenOnTotalWhileHidingInactiveSystemRows() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-admin-idle-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let database = root.appendingPathComponent("RMAdminStore-Local.sqlite")
+            try createScreenTimeAdminDatabase(
+                at: database,
+                day: day,
+                devices: [
+                    (
+                        id: "LOCAL-MAC",
+                        name: "MacBook Pro",
+                        platform: 3,
+                        blocks: [
+                            (
+                                start: 9 * 3_600.0,
+                                screenOn: 10 * 60.0,
+                                applications: [
+                                    ("com.apple.loginwindow", nil, 9 * 60.0),
+                                    ("com.apple.Safari", nil, 60.0),
+                                ]
+                            )
+                        ]
+                    )
+                ]
+            )
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: missing.appendingPathComponent("knowledgeC.db"),
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                    screenTimeAdminLocalDatabase: database
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(12 * 3_600) }
+            )
+
+            let stored = try XCTUnwrap(source.collect(for: day).storedExport)
+            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: day))
+            let filtered = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+            )
+            let unfiltered = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(
+                    from: stored,
+                    interval: interval,
+                    scope: .allDevices,
+                    includingSystemInactivity: true
+                )
+            )
+
+            XCTAssertEqual(filtered.totalScreenOnDuration, 10 * 60, accuracy: 0.001)
+            XCTAssertEqual(filtered.topApplications.map(\.resolvedName), ["Safari"])
+            XCTAssertEqual(unfiltered.totalScreenOnDuration, 10 * 60, accuracy: 0.001)
+            XCTAssertEqual(Set(unfiltered.topApplications.map(\.resolvedName)), ["Safari", "loginwindow"])
+        }
+
+        func testUnreadableAppleAggregateStoreFailsClosedWithClearPermissionState() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-admin-denied-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let database = root.appendingPathComponent("RMAdminStore-Local.sqlite")
+            try createScreenTimeAdminDatabase(at: database, day: day, devices: [])
+            XCTAssertEqual(chmod(database.path, 0), 0)
+            defer { _ = chmod(database.path, 0o600) }
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: missing.appendingPathComponent("knowledgeC.db"),
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                    screenTimeAdminLocalDatabase: database
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(12 * 3_600) }
+            )
+
+            let collection = source.collect(for: day)
+            XCTAssertNil(collection.storedExport)
+            XCTAssertEqual(collection.status.kind, .fullDiskAccessRequired)
+        }
+
+        func testPartiallyReadableAggregateStoresDoNotInventMissingRemoteDeviceZeros() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-admin-partial-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let localStore = root.appendingPathComponent("RMAdminStore-Local.sqlite")
+            let cloudStore = root.appendingPathComponent("RMAdminStore-Cloud.sqlite")
+            let mac: AdminDeviceFixture = (
+                id: "LOCAL-MAC",
+                name: "MacBook Pro",
+                platform: 3,
+                blocks: [
+                    (
+                        start: 9 * 3_600.0,
+                        screenOn: 10 * 60.0,
+                        applications: [("com.openai.codex", nil, 10 * 60.0)]
+                    )
+                ]
+            )
+            try createScreenTimeAdminDatabase(at: localStore, day: day, devices: [mac])
+            try createScreenTimeAdminDatabase(at: cloudStore, day: day, devices: [])
+            XCTAssertEqual(chmod(cloudStore.path, 0), 0)
+            defer { _ = chmod(cloudStore.path, 0o600) }
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: missing.appendingPathComponent("knowledgeC.db"),
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                    screenTimeAdminLocalDatabase: localStore,
+                    screenTimeAdminCloudDatabase: cloudStore
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(12 * 3_600) }
+            )
+
+            let collection = source.collect(for: day)
+            XCTAssertEqual(collection.status.kind, .partial)
+            XCTAssertEqual(collection.storedExport?.envelope.reports.map(\.device.id), [source.currentMacDevice.id])
+            XCTAssertFalse(collection.availableDevices.contains { $0.id == "unreadable-device" })
+        }
+
+        func testAggregateStoreMatchesAppleSettingsDeviceKinds() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-admin-unusual-devices-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let store = root.appendingPathComponent("RMAdminStore-Cloud.sqlite")
+            try createScreenTimeAdminDatabase(
+                at: store,
+                day: day,
+                devices: [
+                    (
+                        id: "WATCH",
+                        name: "Alex’s Apple Watch",
+                        platform: 6,
+                        blocks: [
+                            (
+                                start: 8 * 3_600.0,
+                                screenOn: 30,
+                                applications: [("com.apple.Carousel", nil, 30)]
+                            )
+                        ]
+                    ),
+                    (
+                        id: "FUTURE",
+                        name: "Future Apple device",
+                        platform: 99,
+                        blocks: [
+                            (
+                                start: 9 * 3_600.0,
+                                screenOn: 45,
+                                applications: [("com.example.future", nil, 45)]
+                            )
+                        ]
+                    ),
+                ]
+            )
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: missing.appendingPathComponent("knowledgeC.db"),
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                    screenTimeAdminCloudDatabase: store
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(12 * 3_600) }
+            )
+
+            let collection = source.collect(for: day)
+            XCTAssertNil(collection.storedExport)
+            XCTAssertEqual(collection.availableDevices.map(\.kind), [.mac])
+            XCTAssertFalse(collection.availableDevices.contains { $0.id == "WATCH" })
+            XCTAssertFalse(collection.availableDevices.contains { $0.id == "FUTURE" })
+        }
+
+        func testHealthyScreenTimeAppUsageDoesNotRefillIntentionalGapsFromFallback() throws {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("apple-screen-time-app-usage-priority-\(UUID().uuidString)", isDirectory: true)
             let appUsageDirectory = root.appendingPathComponent("ScreenTime.AppUsage", isDirectory: true)
@@ -378,8 +1067,8 @@
                 at: knowledge,
                 day: day,
                 rows: [
-                    // This spans beyond every healthy AppUsage row. None of it may leak
-                    // back into the final Mac ranking or physical total.
+                    // This spans beyond every healthy AppUsage row. Apple intentionally leaves
+                    // those gaps out of ScreenTime.AppUsage, so the fallback must not refill them.
                     ("ai.goalong.localhistory", 8 * hour, 14 * hour),
                 ]
             )
@@ -455,6 +1144,135 @@
                 collection.deviceSourceLabels[source.currentMacDevice.id],
                 "Apple ScreenTime.AppUsage"
             )
+        }
+
+        func testFallbackCoverageCannotRefillExplicitSystemInactivity() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-active-coverage-\(UUID().uuidString)", isDirectory: true)
+            let appUsageDirectory = root.appendingPathComponent("ScreenTime.AppUsage", isDirectory: true)
+            try FileManager.default.createDirectory(at: appUsageDirectory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+
+            let knowledge = root.appendingPathComponent("knowledgeC.db")
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let hour: TimeInterval = 3_600
+            try createKnowledgeDatabase(
+                at: knowledge,
+                day: day,
+                rows: [
+                    ("ai.goalong.localhistory", 8 * hour, 14 * hour),
+                    ("com.apple.loginwindow", 8 * hour, 9 * hour),
+                    ("com.apple.ScreenSaver.Engine", 13 * hour, 14 * hour),
+                ]
+            )
+            try makeScreenTimeAppUsageV1([
+                (
+                    bundle: "at.studio.AsideBrowser",
+                    parentBundle: nil,
+                    starting: true,
+                    timestamp: day.addingTimeInterval(9 * hour)
+                ),
+                (
+                    bundle: "at.studio.AsideBrowser",
+                    parentBundle: nil,
+                    starting: false,
+                    timestamp: day.addingTimeInterval(13 * hour)
+                ),
+            ]).write(to: appUsageDirectory.appendingPathComponent("fixture.segb"))
+
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: knowledge,
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                    biomeScreenTimeAppUsageDirectory: appUsageDirectory
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(14 * hour) }
+            )
+
+            let collection = source.collect(for: day)
+            let stored = try XCTUnwrap(collection.storedExport)
+            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: day))
+            let summary = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+            )
+            let applications = try XCTUnwrap(summary.deviceSummaries.first).applications
+
+            XCTAssertEqual(summary.totalScreenOnDuration, 4 * hour, accuracy: 0.001)
+            XCTAssertEqual(applications.compactMap(\.bundleIdentifier), ["at.studio.AsideBrowser"])
+        }
+
+        func testReadsRemoteScreenTimeAppUsageAtItsOriginalDeviceDirectory() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-remote-app-usage-\(UUID().uuidString)", isDirectory: true)
+            let remoteRoot = root.appendingPathComponent("remote", isDirectory: true)
+            let remoteID = "REMOTE-IPAD"
+            let remoteDirectory = remoteRoot.appendingPathComponent(remoteID, isDirectory: true)
+            let syncDatabase = root.appendingPathComponent("sync.db")
+            try FileManager.default.createDirectory(at: remoteDirectory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            try createBiomeDeviceDatabase(
+                at: syncDatabase,
+                id: remoteID,
+                hardwareIdentifier: "iPad14,5",
+                platform: 1
+            )
+
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let hour: TimeInterval = 3_600
+            try makeScreenTimeAppUsageV1([
+                (
+                    bundle: "com.google.ios.youtube",
+                    parentBundle: nil,
+                    starting: true,
+                    timestamp: day.addingTimeInterval(10 * hour)
+                ),
+                (
+                    bundle: "com.google.ios.youtube",
+                    parentBundle: nil,
+                    starting: false,
+                    timestamp: day.addingTimeInterval(11 * hour)
+                ),
+            ]).write(to: remoteDirectory.appendingPathComponent("fixture.segb"))
+
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: missing.appendingPathComponent("knowledgeC.db"),
+                    biomeSyncDatabase: syncDatabase,
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("focus-remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                    biomeRemoteScreenTimeAppUsageDirectory: remoteRoot
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(12 * hour) }
+            )
+
+            let collection = source.collect(for: day)
+            let stored = try XCTUnwrap(collection.storedExport)
+            let report = try XCTUnwrap(stored.envelope.reports.first { $0.device.id == remoteID })
+            XCTAssertEqual(report.device.kind, .iPad)
+            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: day))
+            let summary = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+            )
+            let remoteSummary = try XCTUnwrap(
+                summary.deviceSummaries.first { $0.device.id == remoteID }
+            )
+
+            XCTAssertEqual(collection.screenTimeAppUsageIntervalCount, 1)
+            XCTAssertEqual(report.segments.reduce(0) { $0 + $1.totalScreenOnDuration }, hour, accuracy: 0.001)
+            XCTAssertEqual(remoteSummary.screenOnDuration, hour, accuracy: 0.001)
+            XCTAssertEqual(remoteSummary.applications.compactMap(\.bundleIdentifier), ["com.google.ios.youtube"])
         }
 
         func testPartialScreenTimeAppUsageKeepsConcurrentFallbackAttribution() throws {
@@ -650,6 +1468,143 @@
                     database,
                     "INSERT INTO ZOBJECT VALUES ('\(row.bundleIdentifier)',\(appleTime(row.start)),\(appleTime(row.end)),NULL,'/app/usage');"
                 )
+            }
+        }
+
+        private func createBiomeDeviceDatabase(
+            at url: URL,
+            id: String,
+            hardwareIdentifier: String,
+            platform: Int
+        ) throws {
+            var database: OpaquePointer?
+            XCTAssertEqual(sqlite3_open(url.path, &database), SQLITE_OK)
+            guard let database else { throw NSError(domain: "SQLiteTest", code: 1) }
+            defer { sqlite3_close(database) }
+            try execute(
+                database,
+                """
+                CREATE TABLE DevicePeer (
+                  device_identifier TEXT,
+                  hardware_id TEXT,
+                  platform INTEGER
+                );
+                INSERT INTO DevicePeer VALUES ('\(id)', '\(hardwareIdentifier)', \(platform));
+                """
+            )
+        }
+
+        private typealias AdminApplicationFixture = (
+            bundleIdentifier: String?,
+            domain: String?,
+            duration: TimeInterval
+        )
+
+        private typealias AdminBlockFixture = (
+            start: TimeInterval,
+            screenOn: TimeInterval,
+            applications: [AdminApplicationFixture]
+        )
+
+        private typealias AdminDeviceFixture = (
+            id: String,
+            name: String,
+            platform: Int,
+            blocks: [AdminBlockFixture]
+        )
+
+        private func createScreenTimeAdminDatabase(
+            at url: URL,
+            day: Date,
+            devices: [AdminDeviceFixture],
+            installedApps: [(bundleIdentifier: String, displayName: String)] = []
+        ) throws {
+            var database: OpaquePointer?
+            XCTAssertEqual(sqlite3_open(url.path, &database), SQLITE_OK)
+            guard let database else { throw NSError(domain: "SQLiteTest", code: 1) }
+            defer { sqlite3_close(database) }
+            try execute(
+                database,
+                """
+                CREATE TABLE ZCOREDEVICE (
+                  Z_PK INTEGER PRIMARY KEY,
+                  ZIDENTIFIER TEXT,
+                  ZNAME TEXT,
+                  ZPLATFORM INTEGER
+                );
+                CREATE TABLE ZUSAGE (
+                  Z_PK INTEGER PRIMARY KEY,
+                  ZDEVICE INTEGER,
+                  ZLASTUPDATEDDATE REAL
+                );
+                CREATE TABLE ZUSAGEBLOCK (
+                  Z_PK INTEGER PRIMARY KEY,
+                  ZUSAGE INTEGER,
+                  ZSTARTDATE REAL,
+                  ZDURATIONINMINUTES INTEGER,
+                  ZSCREENTIMEINSECONDS REAL,
+                  ZLASTEVENTDATE REAL
+                );
+                CREATE TABLE ZUSAGECATEGORY (
+                  Z_PK INTEGER PRIMARY KEY,
+                  ZBLOCK INTEGER
+                );
+                CREATE TABLE ZUSAGETIMEDITEM (
+                  ZCATEGORY INTEGER,
+                  ZBUNDLEIDENTIFIER TEXT,
+                  ZDOMAIN TEXT,
+                  ZTOTALTIMEINSECONDS REAL,
+                  ZUSAGETRUSTED INTEGER
+                );
+                CREATE TABLE ZINSTALLEDAPP (
+                  ZBUNDLEIDENTIFIER TEXT,
+                  ZDISPLAYNAME TEXT
+                );
+                """
+            )
+            func quote(_ value: String?) -> String {
+                guard let value else { return "NULL" }
+                return "'\(value.replacingOccurrences(of: "'", with: "''"))'"
+            }
+            var blockPrimaryKey = 1
+            var categoryPrimaryKey = 1
+            for application in installedApps {
+                try execute(
+                    database,
+                    "INSERT INTO ZINSTALLEDAPP VALUES (\(quote(application.bundleIdentifier)),\(quote(application.displayName)));"
+                )
+            }
+            for (deviceIndex, device) in devices.enumerated() {
+                let devicePrimaryKey = deviceIndex + 1
+                let usagePrimaryKey = deviceIndex + 1
+                let updated = day.addingTimeInterval(23 * 3_600).timeIntervalSinceReferenceDate
+                try execute(
+                    database,
+                    "INSERT INTO ZCOREDEVICE VALUES (\(devicePrimaryKey),\(quote(device.id)),\(quote(device.name)),\(device.platform));"
+                )
+                try execute(
+                    database,
+                    "INSERT INTO ZUSAGE VALUES (\(usagePrimaryKey),\(devicePrimaryKey),\(updated));"
+                )
+                for block in device.blocks {
+                    let start = day.addingTimeInterval(block.start).timeIntervalSinceReferenceDate
+                    try execute(
+                        database,
+                        "INSERT INTO ZUSAGEBLOCK VALUES (\(blockPrimaryKey),\(usagePrimaryKey),\(start),15,\(block.screenOn),\(start + 15 * 60));"
+                    )
+                    try execute(
+                        database,
+                        "INSERT INTO ZUSAGECATEGORY VALUES (\(categoryPrimaryKey),\(blockPrimaryKey));"
+                    )
+                    for application in block.applications {
+                        try execute(
+                            database,
+                            "INSERT INTO ZUSAGETIMEDITEM VALUES (\(categoryPrimaryKey),\(quote(application.bundleIdentifier)),\(quote(application.domain)),\(application.duration),1);"
+                        )
+                    }
+                    blockPrimaryKey += 1
+                    categoryPrimaryKey += 1
+                }
             }
         }
 

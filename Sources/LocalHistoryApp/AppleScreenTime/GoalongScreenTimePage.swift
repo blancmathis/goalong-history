@@ -642,9 +642,9 @@
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(LHTheme.accent)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Export Apple Screen Time")
+                        Text("Export Screen Time source data")
                             .font(.system(size: 12, weight: .semibold))
-                        Text("Exports preserve the selected device scope and Apple system-store provenance.")
+                        Text("Exports preserve the selected device scope and exact source provenance; private formats do not claim certified Settings parity.")
                             .font(.system(size: 9))
                             .foregroundStyle(.secondary)
                     }
@@ -680,22 +680,43 @@
                         Text("Data sources")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "Mac application totals use Apple's local ScreenTime.AppUsage stream when it is healthy; knowledgeC /app/usage and Biome App.InFocus are Mac fallbacks only when that stream is missing or partial, and still cover synchronized remote devices. Default summaries exclude explicit lock-screen and screen-saver intervals; the raw source view keeps them. Websites come only from Goalong's local Mac recorder and are already part of browser time; they are never added to Apple Screen Time."
+                            "With Accessibility enabled, Goalong briefly opens Apple’s Screen Time presentation, reads one visible day and device at a time, then returns to Goalong. Nothing is screenshotted or stored, and today is cached in memory for two minutes. If that presentation cannot be read, private Apple stores and ScreenTime.AppUsage/knowledgeC/Biome remain clearly labelled fallbacks."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 3) {
-                        Text("\(screenTime.screenTimeAppUsageIntervalCount) AppUsage intervals")
-                        Text("\(screenTime.knowledgeIntervalCount) knowledgeC intervals")
-                        Text("\(screenTime.biomeIntervalCount) Biome intervals")
+                    if usesExactAppleSettingsPresentation || usesAppleAggregateStore {
+                        Text(aggregateSourceLabel)
+                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .foregroundStyle(LHTheme.success)
+                    } else {
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text("\(screenTime.screenTimeAppUsageIntervalCount) AppUsage intervals")
+                            Text("\(screenTime.knowledgeIntervalCount) knowledgeC intervals")
+                            Text("\(screenTime.biomeIntervalCount) Biome intervals")
+                        }
+                        .font(.system(size: 8, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
                     }
-                    .font(.system(size: 8, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
                 }
             }
+        }
+
+        private var usesAppleAggregateStore: Bool {
+            screenTime.summary?.provenance.usesScreenTimeAgentAggregateStore == true
+        }
+
+        private var usesExactAppleSettingsPresentation: Bool {
+            screenTime.summary?.provenance.usesAppleSettingsObservablePresentation == true
+        }
+
+        private var aggregateSourceLabel: String {
+            if usesExactAppleSettingsPresentation {
+                return "Apple Settings values · exact visible parity"
+            }
+            return "Private Apple aggregate · not parity-certified"
         }
 
         private var scopeDescription: String {

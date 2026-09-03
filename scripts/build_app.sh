@@ -50,10 +50,14 @@ if [[ ! -d "$APP_PATH" || ! -f "$INFO_PLIST" ]]; then
   exit 1
 fi
 
-/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$INFO_PLIST"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName $DISPLAY_NAME" "$INFO_PLIST"
-/usr/libexec/PlistBuddy -c "Set :NSAccessibilityUsageDescription $DISPLAY_NAME uses Accessibility to understand the foreground app, window, permitted URL, focused control, and clicked interface element. It never controls your Mac." "$INFO_PLIST"
-/usr/libexec/PlistBuddy -c "Set :NSInputMonitoringUsageDescription $DISPLAY_NAME uses event-listening access to count clicks, scrolling, coarse shortcut or navigation activity, and typing duration. It never stores typed characters, exact keys, passwords, or clipboard contents." "$INFO_PLIST"
+/usr/bin/plutil -replace CFBundleDisplayName -string "$DISPLAY_NAME" "$INFO_PLIST"
+/usr/bin/plutil -replace CFBundleName -string "$DISPLAY_NAME" "$INFO_PLIST"
+/usr/bin/plutil -replace NSAccessibilityUsageDescription -string \
+  "$DISPLAY_NAME uses Accessibility to understand the foreground app and, when you request Screen Time, briefly navigate Apple's visible Screen Time page. It never types into apps or controls anything outside that bounded read." \
+  "$INFO_PLIST"
+/usr/bin/plutil -replace NSInputMonitoringUsageDescription -string \
+  "$DISPLAY_NAME uses event-listening access to count clicks, scrolling, coarse shortcut or navigation activity, and typing duration. It never stores typed characters, exact keys, passwords, or clipboard contents." \
+  "$INFO_PLIST"
 /usr/bin/plutil -lint "$INFO_PLIST" >/dev/null
 
 for locale in en fr; do

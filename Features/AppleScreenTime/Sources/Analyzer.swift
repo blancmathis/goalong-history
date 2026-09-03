@@ -98,22 +98,64 @@ public enum AppleScreenTimeAnalyzer {
     ) -> AppleScreenTimeDaySummary? {
         guard interval.duration > 0 else { return nil }
 
-        let availableDevices = storedExport.envelope.reports.map(\.device)
+        let allReports = storedExport.envelope.reports
+        let isAppleSettingsPresentation = storedExport.envelope.provenance
+            .usesAppleSettingsObservablePresentation
+        let individualReports = isAppleSettingsPresentation
+            ? allReports.filter {
+                $0.device.id != AppleScreenTimeProvenance.appleSettingsAllDevicesReportID
+            }
+            : allReports
+        let availableDevices = individualReports.map(\.device)
         let normalizedScope = scope.normalized(availableDevices: availableDevices)
-        let sourceReports = includingSystemInactivity
-            ? storedExport.envelope.reports
-            : AppleScreenTimeUsageFilter.removingSystemInactivity(
-                from: storedExport.envelope.reports
+        let sourceReports: [AppleScreenTimeDeviceReport]
+        if isAppleSettingsPresentation {
+            let allIndividualIDs = Set(individualReports.map(\.device.id))
+            let selectedIDs = Set(normalizedScope.selectedDeviceIDs)
+            let usesAllDevicesPresentation = normalizedScope.mode == .allDevices
+                || (normalizedScope.mode == .selectedDevices
+                    && !allIndividualIDs.isEmpty
+                    && selectedIDs == allIndividualIDs)
+            if usesAllDevicesPresentation,
+               let aggregate = allReports.first(where: {
+                   $0.device.id == AppleScreenTimeProvenance.appleSettingsAllDevicesReportID
+               })
+            {
+                sourceReports = [aggregate]
+            } else {
+                sourceReports = individualReports
+            }
+        } else if includingSystemInactivity {
+            sourceReports = allReports
+        } else if storedExport.envelope.provenance.usesScreenTimeAgentAggregateStore {
+            // ScreenTimeAgent blocks are already Apple's screen-on oracle. Hide system rows
+            // without recomputing that exact total.
+            sourceReports = AppleScreenTimeUsageFilter.removingSystemApplicationsPreservingTotals(
+                from: allReports
             )
+        } else {
+            sourceReports = AppleScreenTimeUsageFilter.removingSystemInactivity(
+                from: allReports
+            )
+        }
         let reports = sourceReports
-            .filter { normalizedScope.includes($0.device) }
+            .filter {
+                $0.device.id == AppleScreenTimeProvenance.appleSettingsAllDevicesReportID
+                    || normalizedScope.includes($0.device)
+            }
+        let usesAppleSettingsAggregate = reports.count == 1
+            && reports[0].device.id == AppleScreenTimeProvenance.appleSettingsAllDevicesReportID
+        let deviceReports = usesAppleSettingsAggregate
+            ? individualReports.filter { normalizedScope.includes($0.device) }
+            : reports
 
         var deviceSummaries: [AppleScreenTimeDeviceSummary] = []
         var applicationTotals: [String: AppleScreenTimeApplicationUsage] = [:]
 
-        for report in reports {
+        for report in deviceReports {
             var deviceTotal: TimeInterval = 0
             var deviceApplications: [String: AppleScreenTimeApplicationUsage] = [:]
+            var deviceApplicationOrder: [String: Int] = [:]
 
             for segment in report.segments {
                 guard let overlap = overlap(of: segment.interval, with: interval) else { continue }
@@ -122,8 +164,10 @@ public enum AppleScreenTimeAnalyzer {
 
                 for application in segment.applications {
                     let duration = application.duration * ratio
+                    if deviceApplicationOrder[application.id] == nil {
+                        deviceApplicationOrder[application.id] = deviceApplicationOrder.count
+                    }
                     merge(application: application, duration: duration, into: &deviceApplications)
-                    merge(application: application, duration: duration, into: &applicationTotals)
                 }
             }
 
@@ -133,7 +177,12 @@ public enum AppleScreenTimeAnalyzer {
                     device: report.device,
                     screenOnDuration: deviceTotal,
                     lastUpdatedAt: report.lastUpdatedAt,
-                    applications: sortedApplications(deviceApplications)
+                    applications: sortedApplications(
+                        deviceApplications,
+                        preservingOrder: isAppleSettingsPresentation
+                            ? deviceApplicationOrder
+                            : nil
+                    )
                 )
             )
         }
@@ -145,8 +194,26 @@ public enum AppleScreenTimeAnalyzer {
             return $0.device.displayName.localizedCaseInsensitiveCompare($1.device.displayName) == .orderedAscending
         }
 
-        let total = deviceSummaries.reduce(0) { $0 + $1.screenOnDuration }
-        let latestUpdate = deviceSummaries.map(\.lastUpdatedAt).max()
+        var total: TimeInterval = 0
+        var applicationOrder: [String: Int] = [:]
+        for report in reports {
+            for segment in report.segments {
+                guard let overlap = overlap(of: segment.interval, with: interval) else { continue }
+                let ratio = min(1, max(0, overlap.duration / max(0.001, segment.interval.duration)))
+                total += segment.totalScreenOnDuration * ratio
+                for application in segment.applications {
+                    if applicationOrder[application.id] == nil {
+                        applicationOrder[application.id] = applicationOrder.count
+                    }
+                    merge(
+                        application: application,
+                        duration: application.duration * ratio,
+                        into: &applicationTotals
+                    )
+                }
+            }
+        }
+        let latestUpdate = (reports.map(\.lastUpdatedAt) + deviceSummaries.map(\.lastUpdatedAt)).max()
 
         return AppleScreenTimeDaySummary(
             start: interval.start,
@@ -156,7 +223,12 @@ public enum AppleScreenTimeAnalyzer {
             provenance: storedExport.envelope.provenance,
             totalScreenOnDuration: total,
             deviceSummaries: deviceSummaries,
-            topApplications: Array(sortedApplications(applicationTotals).prefix(20)),
+            // Preserve every row Apple exposed. Presentation surfaces decide how many rows to
+            // show by default, while agent context keeps its own explicit token-bound limit.
+            topApplications: sortedApplications(
+                applicationTotals,
+                preservingOrder: isAppleSettingsPresentation ? applicationOrder : nil
+            ),
             latestDataUpdate: latestUpdate
         )
     }
@@ -223,10 +295,18 @@ public enum AppleScreenTimeAnalyzer {
     }
 
     private static func sortedApplications(
-        _ values: [String: AppleScreenTimeApplicationUsage]
+        _ values: [String: AppleScreenTimeApplicationUsage],
+        preservingOrder order: [String: Int]? = nil
     ) -> [AppleScreenTimeApplicationUsage] {
         values.values.sorted {
             if $0.duration != $1.duration { return $0.duration > $1.duration }
+            if let order,
+               let lhs = order[$0.id],
+               let rhs = order[$1.id],
+               lhs != rhs
+            {
+                return lhs < rhs
+            }
             return $0.resolvedName.localizedCaseInsensitiveCompare($1.resolvedName) == .orderedAscending
         }
     }

@@ -17,6 +17,7 @@ Features/AppleScreenTime/
     └── AppleBiomeFormatTests.swift
 
 Features/AppleSystemScreenTime/Sources/
+├── AppleSettingsScreenTimeOracle.swift # bounded, in-memory read of Apple's visible Settings values
 ├── AppleSystemScreenTimeSource.swift    # shared read-only Apple knowledgeC + Biome collector
 ├── AppleScreenTimeDeviceNormalizer.swift
 
@@ -27,7 +28,9 @@ Sources/LocalHistoryApp/AppleScreenTime/
 
 ## Automatic macOS source
 
-The Mac app reads Apple-generated data that already exists on the user's Mac:
+The first source is Apple's own visible **App & Website Activity** presentation. Goalong reads it through Accessibility only when Screen Time is requested, retains at most eight days in memory, and stores no screenshot or presentation snapshot. All Devices uses Apple's visible aggregate. Individual devices use Apple's visible per-device rows; arbitrary subsets sum only those exact per-device values.
+
+When that bounded presentation read is unavailable, the Mac app reads Apple-generated data that already exists on the user's Mac:
 
 - `~/Library/Biome/streams/restricted/ScreenTime.AppUsage/local/`
   - Apple's local application-usage transitions for this Mac;
@@ -46,7 +49,7 @@ All SQLite connections are `SQLITE_OPEN_READONLY`. The feature never writes to, 
 
 ## Permissions and freshness
 
-Apple protects these locations with TCC. The signed Goalong History app needs **Full Disk Access** once. The UI detects a permission failure and links directly to the relevant System Settings pane.
+Accessibility is required for the exact visible presentation. Apple protects the fallback locations with TCC, so the signed Goalong History app needs **Full Disk Access** for those stores. The UI distinguishes both permissions and links to the relevant System Settings pane.
 
 The visible page refreshes every 30 seconds, and the refresh button still re-reads immediately. This avoids repeatedly enumerating Apple stores while keeping the UI current; iPhone/iPad freshness is controlled by Apple's iCloud/Biome synchronization. “Real time” therefore means automatic and continuously re-read as Apple syncs—not a guaranteed zero-latency push channel.
 
@@ -56,7 +59,7 @@ The visible page refreshes every 30 seconds, and the refresh button still re-rea
 - `allDevices`: every Apple device whose system rows/streams are present on this Mac;
 - `selectedDevices`: exact stable device identifiers selected by the user.
 
-Totals are sums of per-device usage. Concurrent use of two devices is intentionally not deduplicated.
+Apple's visible All Devices total is authoritative for `.allDevices`. Partial selections sum the exact visible per-device values because Apple's macOS page has no subset selector; concurrent use across selected devices is intentionally not deduplicated.
 
 ## Source precedence and deduplication
 
@@ -70,7 +73,7 @@ The current Mac is identified from the local Biome stream and from knowledgeC Ma
 
 knowledgeC and Biome are Apple system data, but they are **not a public macOS Screen Time SDK**. Apple may change or vault these stores in a future release. Parse failures are isolated per file/device, surfaced as partial availability and covered by fixtures for SEGB v1/v2 plus both AppUsage and App.InFocus transition stitching.
 
-This is separate from Apple's public `DeviceActivityData.activityData(filteredBy:using:)` route. That API remains in `NativeCollector.swift` for an eligible iPhone/iPad companion and requires Apple's managed entitlement and enhanced data authorization. It is not required for the Mac to read the Apple data already synchronized locally.
+This is separate from Apple's public `DeviceActivityData.activityData(filteredBy:using:)` route for an eligible iOS/iPadOS 26.4+ companion. `NativeCollector.swift` keeps the cross-platform collector contract, while the API-specific implementation is compile-gated until Goalong can validate it against a version-matched SDK and an approved managed entitlement. The current Mac app does not claim that private-store reads are the public API or certified Settings parity.
 
 ## Trust statement
 

@@ -8,6 +8,7 @@
         let command: String
         let day: String
         let macOnly: Bool
+        let selectedDeviceIDs: [String]?
     }
 
     private struct GoalongBrokerError: Codable {
@@ -21,7 +22,8 @@
         public static func requestScreenTime(
             rootDirectory: URL,
             day: String,
-            macOnly: Bool
+            macOnly: Bool,
+            selectedDeviceIDs: [String] = []
         ) throws -> Data {
             let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
             guard descriptor >= 0 else { throw BrokerFailure.system("socket", errno) }
@@ -41,7 +43,8 @@
                     schemaVersion: 1,
                     command: "screen-time",
                     day: day,
-                    macOnly: macOnly
+                    macOnly: macOnly,
+                    selectedDeviceIDs: selectedDeviceIDs.isEmpty ? nil : selectedDeviceIDs
                 )
             )
             request.append(0x0A)
@@ -132,8 +135,91 @@
         }
     }
 
+    /// Keeps immediately repeated agent queries from rescanning Apple's same read-only stores.
+    /// Entries are transient process memory only, expire quickly, and are capped independently of
+    /// the number of days or device selections an agent requests.
+    public final class GoalongScreenTimeResponseCache {
+        private struct Key: Hashable {
+            let day: String
+            let macOnly: Bool
+            let selectedDeviceIDs: [String]
+        }
+
+        private struct Entry {
+            let data: Data
+            let createdAt: Date
+            let lastAccessedAt: Date
+        }
+
+        private let ttl: TimeInterval
+        private let capacity: Int
+        private let nowProvider: () -> Date
+        private let lock = NSLock()
+        private var entries: [Key: Entry] = [:]
+
+        public init(
+            ttl: TimeInterval = 1,
+            capacity: Int = 8,
+            nowProvider: @escaping () -> Date = Date.init
+        ) {
+            self.ttl = max(0, ttl)
+            self.capacity = max(1, capacity)
+            self.nowProvider = nowProvider
+        }
+
+        public func payload(
+            day: String,
+            macOnly: Bool,
+            selectedDeviceIDs: [String],
+            build: () throws -> Data
+        ) rethrows -> Data {
+            let key = Key(
+                day: day,
+                macOnly: macOnly,
+                selectedDeviceIDs: Array(Set(selectedDeviceIDs)).sorted()
+            )
+            let lookupTime = nowProvider()
+            lock.lock()
+            if let entry = entries[key], lookupTime.timeIntervalSince(entry.createdAt) <= ttl {
+                entries[key] = Entry(
+                    data: entry.data,
+                    createdAt: entry.createdAt,
+                    lastAccessedAt: lookupTime
+                )
+                lock.unlock()
+                return entry.data
+            }
+            entries = entries.filter {
+                lookupTime.timeIntervalSince($0.value.createdAt) <= ttl
+            }
+            lock.unlock()
+
+            let data = try build()
+            let insertionTime = nowProvider()
+            lock.lock()
+            entries[key] = Entry(
+                data: data,
+                createdAt: insertionTime,
+                lastAccessedAt: insertionTime
+            )
+            while entries.count > capacity, let oldest = entries.min(by: {
+                $0.value.lastAccessedAt < $1.value.lastAccessedAt
+            })?.key {
+                entries.removeValue(forKey: oldest)
+            }
+            lock.unlock()
+            return data
+        }
+
+        var entryCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return entries.count
+        }
+    }
+
     public final class GoalongReadOnlyQueryServer {
-        typealias ScreenTimeHandler = (String, Bool) throws -> Data
+        public typealias ScreenTimeHandler = (String, Bool, [String]) throws -> Data
 
         private let rootDirectory: URL
         private let screenTimeHandler: ScreenTimeHandler
@@ -147,13 +233,17 @@
         public convenience init(rootDirectory: URL) {
             self.init(
                 rootDirectory: rootDirectory,
-                screenTimeHandler: { day, macOnly in
-                    try GoalongQueryCLI.screenTimePayload(day: day, macOnly: macOnly)
+                screenTimeHandler: { day, macOnly, selectedDeviceIDs in
+                    try GoalongQueryCLI.screenTimePayload(
+                        day: day,
+                        macOnly: macOnly,
+                        selectedDeviceIDs: selectedDeviceIDs
+                    )
                 }
             )
         }
 
-        init(rootDirectory: URL, screenTimeHandler: @escaping ScreenTimeHandler) {
+        public init(rootDirectory: URL, screenTimeHandler: @escaping ScreenTimeHandler) {
             self.rootDirectory = rootDirectory
             self.screenTimeHandler = screenTimeHandler
         }
@@ -240,7 +330,11 @@
                 guard request.schemaVersion == 1, request.command == "screen-time" else {
                     throw BrokerFailure.unsupportedRequest
                 }
-                let payload = try screenTimeHandler(request.day, request.macOnly)
+                let payload = try screenTimeHandler(
+                    request.day,
+                    request.macOnly,
+                    request.selectedDeviceIDs ?? []
+                )
                 try GoalongReadOnlyQueryBroker.writeAll(payload, to: client)
             } catch {
                 let payload = (try? JSONEncoder().encode(

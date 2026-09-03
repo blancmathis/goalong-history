@@ -68,11 +68,12 @@
                 currentMacDeviceID: mac.id,
                 includesInactiveSystemTime: false
             )
-            XCTAssertEqual(visible.map(\.name), ["Aside", "ChatGPT", "Safari"])
+            XCTAssertEqual(visible.map(\.name), ["ChatGPT", "Safari"])
             XCTAssertFalse(visible.contains { $0.name == "loginwindow" })
+            XCTAssertFalse(visible.contains { $0.name == "Aside" })
             XCTAssertEqual(
                 visible.first { $0.name == "Safari" }?.displaySeconds ?? -1,
-                30 * 60,
+                20 * 60,
                 accuracy: 0.001
             )
 
@@ -127,7 +128,7 @@
             XCTAssertEqual(complete.map(\.name), (1 ... 8).map { "App \($0)" })
         }
 
-        func testAppleAndGoalongOverlapOnlyOnThisMacWhileRemoteUsageIsAdded() throws {
+        func testAppleSummaryControlsDisplayedDurationWhileGoalongRemainsIndependentMetadata() throws {
             let start = Date(timeIntervalSince1970: 1_700_000_000)
             let end = start.addingTimeInterval(86_400)
             let mac = AppleScreenTimeDevice(id: "mac", name: "MacBook Pro", kind: .mac)
@@ -160,17 +161,12 @@
             XCTAssertEqual(browser.appleOtherDeviceSeconds, 10 * 60, accuracy: 0.001)
             XCTAssertEqual(browser.goalongSeconds, 20 * 60, accuracy: 0.001)
             XCTAssertEqual(browser.screenTimeSeconds, 15 * 60, accuracy: 0.001)
-            XCTAssertEqual(
-                browser.displaySeconds,
-                30 * 60,
-                accuracy: 0.001,
-                "Remote Apple usage is distinct, while Apple and Goalong on this Mac overlap."
-            )
+            XCTAssertEqual(browser.displaySeconds, 15 * 60, accuracy: 0.001)
             XCTAssertNotEqual(browser.displaySeconds, 35 * 60)
             XCTAssertFalse(browser.sourceDetail.contains("+"))
             XCTAssertEqual(
                 browser.sourceDetail,
-                "Apple 15m · Goalong 20m observed on this Mac"
+                "Apple Screen Time · Goalong independently observed 20m on this Mac"
             )
         }
 
@@ -429,6 +425,63 @@
                 ).reduce(0) { $0 + $1.seconds },
                 result.totalSeconds,
                 accuracy: 0.001
+            )
+        }
+
+        func testUnifiedBreakdownUsesAppleWebsiteTotalsWithoutDoubleCountingBrowserTime() throws {
+            let start = Date(timeIntervalSince1970: 1_700_000_000)
+            let end = start.addingTimeInterval(86_400)
+            let mac = AppleScreenTimeDevice(id: "mac", name: "MacBook Pro", kind: .mac)
+            let report = try summary(
+                start: start,
+                end: end,
+                device: mac,
+                total: 17 * 60,
+                applications: [
+                    usage("at.studio.AsideBrowser", "Aside", 10 * 60),
+                    usage("com.openai.codex", "ChatGPT", 5 * 60),
+                    usage("website:chatgpt.com", "chatgpt.com", 6 * 60),
+                ]
+            )
+            let tracked = [
+                trackedWebsite(
+                    name: "chatgpt.com",
+                    seconds: 9 * 60,
+                    sources: [websiteSource("Aside", "at.studio.AsideBrowser", 9 * 60)]
+                ),
+            ]
+
+            let result = UsageBreakdownProjection.build(summary: report, trackedUsage: tracked)
+
+            XCTAssertEqual(result.totalSeconds, 17 * 60, accuracy: 0.001)
+            XCTAssertEqual(result.websiteAttributedSeconds, 6 * 60, accuracy: 0.001)
+            XCTAssertEqual(
+                result.appsAndWebsites.first { $0.name == "chatgpt.com" }?.seconds,
+                6 * 60
+            )
+            XCTAssertEqual(
+                result.appsAndWebsites.first { $0.kind == .otherWeb }?.seconds,
+                4 * 60
+            )
+            XCTAssertFalse(result.appsAndWebsites.contains { $0.bundleIdentifier == "website:chatgpt.com" })
+            XCTAssertEqual(
+                result.appsAndWebsites.reduce(0) { $0 + $1.seconds },
+                result.totalSeconds,
+                accuracy: 0.001
+            )
+            XCTAssertEqual(
+                result.appsAndBrowsers.reduce(0) { $0 + $1.seconds },
+                result.totalSeconds,
+                accuracy: 0.001
+            )
+
+            let aside = try XCTUnwrap(result.appsAndBrowsers.first { $0.name == "Aside" })
+            XCTAssertEqual(aside.children.map(\.name), [
+                "chatgpt.com", "Other or unidentified browsing",
+            ])
+            XCTAssertEqual(
+                aside.children.map(\.seconds),
+                [6 * 60, 4 * 60].map(TimeInterval.init)
             )
         }
 

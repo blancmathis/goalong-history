@@ -30,6 +30,46 @@
                 )
             }
 
+            if stored.envelope.provenance.usesAppleSettingsObservablePresentation {
+                let displayedDevices = presentedDevices(
+                    collection.availableDevices,
+                    currentMacID: currentMac.id
+                )
+                let devicesByID = Dictionary(uniqueKeysWithValues: displayedDevices.map { ($0.id, $0) })
+                let displayedReports = stored.envelope.reports.map { report in
+                    AppleScreenTimeDeviceReport(
+                        device: devicesByID[report.device.id] ?? report.device,
+                        lastUpdatedAt: report.lastUpdatedAt,
+                        segments: report.segments
+                    )
+                }
+                let normalizedStored = AppleScreenTimeStoredExport(
+                    importedAt: stored.importedAt,
+                    verification: stored.verification,
+                    envelope: AppleScreenTimeExportEnvelope(
+                        schemaVersion: stored.envelope.schemaVersion,
+                        createdAt: stored.envelope.createdAt,
+                        requestedStart: stored.envelope.requestedStart,
+                        requestedEnd: stored.envelope.requestedEnd,
+                        requestedScope: stored.envelope.requestedScope,
+                        provenance: stored.envelope.provenance,
+                        reports: displayedReports
+                    )
+                )
+                return AppleSystemScreenTimeCollection(
+                    storedExport: normalizedStored,
+                    availableDevices: displayedDevices,
+                    status: brandedStatus(collection.status),
+                    deviceSourceLabels: Dictionary(uniqueKeysWithValues: displayedDevices.map { device in
+                        (device.id, collection.deviceSourceLabels[device.id] ?? "Apple Settings")
+                    }),
+                    latestAppleUpdate: collection.latestAppleUpdate,
+                    knowledgeIntervalCount: 0,
+                    biomeIntervalCount: 0,
+                    screenTimeAppUsageIntervalCount: 0
+                )
+            }
+
             // The source has already filtered idle catalogue peers to conservative matches with
             // recent trusted Apple-account devices. Preserve those choices here, while collapsing
             // duplicate aliases that Apple emitted for the same activity.
