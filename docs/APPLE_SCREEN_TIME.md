@@ -4,11 +4,11 @@
 
 The **History → Screen Time** filter reads Apple-owned local and iCloud-synchronized usage data. It never calculates a replacement Screen Time number from Goalong History events and never adds Computer History observations to Apple totals.
 
-The preferred source is the presentation already rendered by **System Settings → Screen Time → App & Website Activity**. On demand, Goalong uses the macOS Accessibility API to read Apple's visible All Devices total, every listed physical device, and the visible application or website rows for the requested day. It navigates the existing Apple controls, reads values in memory, restores the previous foreground app, and stores neither screenshots nor an Apple-usage snapshot. This is exact parity with the values Apple visibly presents at that instant and rounding level; it is not an undocumented database claim or an Apple attestation.
+The collector is deliberately invisible. It never opens or activates System Settings, never navigates a menu and never generates mouse or keyboard events. Screen Time refreshes therefore cannot steal focus or interfere with the user's Mac.
 
-The bounded visible reader supports today and the previous 35 days. Today's result is cached in process memory for two minutes and a past day for ten minutes, with at most eight cached days. The cache disappears when Goalong exits. Reading a fresh value can briefly bring System Settings to the foreground because Apple exposes the transient device menu only while that window is active.
+The preferred source is `ScreenTimeAgent`’s read-only `RMAdminStore-Local.sqlite` and `RMAdminStore-Cloud.sqlite`. Their `UsageBlock`, `UsageTimedItem`, `CoreDevice` and `InstalledApp` rows contain Apple-owned per-device totals, applications and sites. Goalong queries only the selected day and uses the smallest available Apple block duration so daily, weekly or other aggregate resolutions cannot be counted together. These stores are inside an Apple Data Vault and can remain unavailable to third-party applications even with Full Disk Access.
 
-If the visible presentation cannot be read, the preferred private-store fallback is `ScreenTimeAgent`’s read-only `RMAdminStore-Local.sqlite` and `RMAdminStore-Cloud.sqlite`. Their `UsageBlock`, `UsageTimedItem`, `CoreDevice` and `InstalledApp` rows contain Apple-owned per-device totals, applications and sites. Goalong queries only the selected day and uses the smallest available Apple block duration so daily, weekly or other aggregate resolutions cannot be counted together. These are private formats: Apple does not document them as the public presentation contract used by System Settings, so their values must not be described as certified exact parity.
+These are private formats: Apple does not document them as the public presentation contract used by System Settings, so their values must not be described as certified exact parity. Goalong prefers an honest background-only result over a visually exact result that controls the user's interface.
 
 When that aggregate store is absent, protected or has changed schema, the runtime exposes an explicit fallback/partial state and can use three bounded Apple sources:
 
@@ -22,15 +22,16 @@ The source code is isolated under `Sources/LocalHistoryApp/AppleScreenTime/` and
 
 1. Turn on **System Settings → Screen Time**.
 2. Turn on **Share Across Devices** on the Mac, iPhone and iPad using the same Apple Account.
-3. Grant the signed **Goalong History.app** Accessibility access. Goalong uses it only for the explicitly enabled local activity capture and the bounded on-demand read of Apple's visible Screen Time controls.
-4. Grant Full Disk Access if you also want the private-store fallback when the visible Apple page is unavailable.
-5. Reopen Goalong History if macOS does not apply a TCC grant immediately.
+3. Grant the signed **Goalong History.app** Full Disk Access so it can read the Apple usage stores in place.
+4. Reopen Goalong History if macOS does not apply the TCC grant immediately.
+
+Accessibility is not required by Screen Time. Goalong requests it separately only when the user enables Computer History.
 
 No daily export, manual file selection, companion snapshot or Goalong server is required for the data already synchronized to the Mac.
 
 ## Automatic updates
 
-The dashboard refreshes at most every 30 seconds while the page is visible. The visible Apple presentation itself is cached for two minutes today and ten minutes for past days, so a foreground page does not repeatedly drive System Settings. Aggregate-store queries are bounded to the selected day. On the fallback path, unchanged Biome files are served from an in-memory fingerprint cache; only newly created or modified SEGB files are decoded again.
+The dashboard refreshes at most every 30 seconds while the page is visible. Aggregate-store queries are bounded to the selected day. Unchanged Biome files are served from an in-memory fingerprint cache; only newly created or modified SEGB files are decoded again. No helper, watcher or persistent Screen Time process is added.
 
 The Mac-side refresh cadence is deterministic. Cross-device latency is not: Apple controls when iCloud/Biome delivers iPhone and iPad transitions. The page displays the latest Apple file/event update so a user can distinguish a live Mac refresh from a stale remote sync.
 
@@ -54,7 +55,7 @@ The page supports:
 - **All devices** — every Apple device synchronized to the Mac;
 - **Selected devices** — exact device IDs chosen individually.
 
-For **All devices**, Goalong uses Apple's own visible All Devices presentation rather than recreating it from rounded device rows. For one device or a partial selection, it uses the exact visible per-device presentations; combinations are sums of those device-specific Apple values because macOS Settings offers no multi-select subset control. Selecting every physical device switches back to Apple's explicit All Devices presentation. Each shared JSON file carries the selected scope, included device count, aggregation method, provenance and optional per-application rows.
+For **All devices**, Goalong includes every readable Apple device report. For one device or a partial selection, it sums only those device-specific Apple reports because macOS Settings offers no multi-select subset control. Each shared JSON file carries the selected scope, included device count, aggregation method, provenance and optional per-application rows. The provenance always distinguishes a private Apple aggregate from a reconstructed fallback.
 
 The **Selected devices** list also keeps trusted, recently updated Apple devices available when they have no usage on the displayed day. Historical or ambiguous Biome peers are not added unless they contributed usage for that day, so an idle iPad remains selectable without reviving old device ghosts.
 
@@ -84,7 +85,7 @@ This boundary removes known locked and screen-saver periods. It does not claim p
 
 ## Privacy and security
 
-- The exact visible reader uses Accessibility only, retains no screenshot, writes no Apple data, and keeps only a small bounded in-memory cache.
+- Screen Time contains no Accessibility navigation, synthetic input or System Settings activation code.
 - Apple fallback databases are opened with SQLite `READONLY`, `NOFOLLOW`, `query_only`, an allow-list authorizer, no mmap and an inode check after canonical path resolution.
 - Device-name enrichment reads only the account catalogue fields `name`, `model`, `os`, `trusted` and `last_updated_date`; serial numbers, account identifiers and service metadata are never selected.
 - Apple files are never modified, vacuumed, migrated or copied into Goalong storage.
@@ -93,16 +94,14 @@ This boundary removes known locked and screen-saver periods. It does not claim p
 - ScreenTimeAgent’s aggregate store is inside an Apple Data Vault and can remain inaccessible to third-party apps even with Full Disk Access. Full Disk Access is still required for the fallback knowledgeC and Biome stores.
 - The private formats can change after an OS update; failures remain isolated to this optional feature.
 
-For the visible presentation, the defensible source claim is:
-
-> Goalong History read the values Apple System Settings visibly presented for this day and device selection at the recorded read time.
-
-For a private-store fallback, the defensible source claim is:
+For a private aggregate, the defensible source claim is:
 
 > Goalong History read these per-device totals and timed items directly from Apple-owned private stores present on this Mac, including Apple-synchronized remote devices where available.
 
 It is not a cryptographic attestation from Apple and it is not proof of attention or productive work.
 Neither the private aggregate nor the reconstructed fallbacks are described as certified exact Settings parity.
+
+Apple's bundled `screentimediagnose` command was evaluated as a possible silent source. Its public `inspect` command reports settings and device/application inventory, but not the requested daily usage aggregate. Its private persistence access is granted through an Apple-only entitlement that third-party Goalong builds cannot acquire. Goalong therefore does not shell out to it or misrepresent its inventory as usage.
 
 ## Public Apple API path
 

@@ -1545,7 +1545,7 @@ public enum GoalongQueryCLI {
         }
         let limitation: String
         if summary?.provenance.usesAppleSettingsObservablePresentation == true {
-            limitation = "These are the values Apple System Settings visibly presented for the requested day and device scope when Goalong read them locally. They establish visible parity, not Apple’s inaccessible internal second-level values. Durations do not prove attention or productivity."
+            limitation = "This legacy payload records an older observable Apple Settings presentation. Current Goalong versions no longer control System Settings. Durations do not prove attention or productivity."
         } else if summary?.provenance.usesScreenTimeAgentAggregateStore == true {
             limitation = "Read-only snapshot of a private Apple ScreenTimeAgent aggregate. Apple does not publish this format as the Settings presentation contract, so exact parity is not certified. Durations do not prove attention or productivity."
         } else {

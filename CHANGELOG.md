@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Removed the Screen Time presentation oracle that could activate System Settings and synthesize
+  menu, mouse or keyboard input. Screen Time now uses only read-only Apple stores in the
+  background, with an explicit private-aggregate or reconstructed provenance state.
+
 ## 0.6.0
 
 ### One private, auditable application

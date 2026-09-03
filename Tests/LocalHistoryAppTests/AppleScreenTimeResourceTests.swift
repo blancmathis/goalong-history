@@ -9,248 +9,37 @@
     @testable import LocalHistoryApp
 
     final class AppleScreenTimeResourceTests: XCTestCase {
-        private final class FixedSettingsReader: AppleSettingsScreenTimePresentationReading {
-            let presentation: AppleSettingsScreenTimePresentation
-            private(set) var readCount = 0
+        func testAppleScreenTimeCollectorContainsNoForegroundAutomation() throws {
+            let sourceDirectory = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Features/AppleSystemScreenTime/Sources", isDirectory: true)
+            let swiftFiles = try FileManager.default.contentsOfDirectory(
+                at: sourceDirectory,
+                includingPropertiesForKeys: nil
+            ).filter { $0.pathExtension == "swift" }
 
-            init(_ presentation: AppleSettingsScreenTimePresentation) {
-                self.presentation = presentation
-            }
-
-            func read(
-                dayInterval _: DateInterval,
-                now _: Date,
-                calendar _: Calendar
-            ) throws -> AppleSettingsScreenTimePresentation {
-                readCount += 1
-                return presentation
-            }
-        }
-
-        func testAppleSettingsParserReadsVisibleEnglishAndFrenchDurations() {
-            XCTAssertEqual(
-                AppleSettingsScreenTimeParser.duration(from: "14 hours, 24 minutes"),
-                14 * 3_600 + 24 * 60
-            )
-            XCTAssertEqual(
-                AppleSettingsScreenTimeParser.duration(from: "2 heures, 5 minutes, 9 secondes"),
-                2 * 3_600 + 5 * 60 + 9
-            )
-            XCTAssertEqual(
-                AppleSettingsScreenTimeParser.duration(from: "49 seconds"),
-                49
-            )
-            XCTAssertNil(AppleSettingsScreenTimeParser.duration(from: "No usage"))
-        }
-
-        func testAppleSettingsParserKeepsExactVisibleRowNameAndDuration() throws {
-            let row = try XCTUnwrap(
-                AppleSettingsScreenTimeParser.usageRow(
-                    from: "ChatGPT\n2 hours, 30 minutes"
-                )
-            )
-            XCTAssertEqual(row.name, "ChatGPT")
-            XCTAssertEqual(row.duration, 2 * 3_600 + 30 * 60)
-        }
-
-        func testAppleSettingsDateParserValidatesRelativeAndRenderedDates() throws {
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
-            let now = try XCTUnwrap(
-                calendar.date(from: DateComponents(year: 2026, month: 9, day: 3, hour: 10))
+            XCTAssertFalse(
+                swiftFiles.contains { $0.lastPathComponent == "AppleSettingsScreenTimeOracle.swift" }
             )
 
-            XCTAssertEqual(
-                AppleSettingsScreenTimeDateParser.dayDistance(
-                    from: "Today, 3 September",
-                    now: now,
-                    calendar: calendar
-                ),
-                0
-            )
-            XCTAssertEqual(
-                AppleSettingsScreenTimeDateParser.dayDistance(
-                    from: "Yesterday, 2 September",
-                    now: now,
-                    calendar: calendar
-                ),
-                1
-            )
-            XCTAssertEqual(
-                AppleSettingsScreenTimeDateParser.dayDistance(
-                    from: "Tuesday 1 September",
-                    now: now,
-                    calendar: calendar
-                ),
-                2
-            )
-            XCTAssertEqual(
-                AppleSettingsScreenTimeDateParser.dayDistance(
-                    from: "mardi 1 septembre",
-                    now: now,
-                    calendar: calendar
-                ),
-                2
-            )
-        }
-
-        func testAppleSettingsOracleBuildsExactAllAndPerDeviceViewsWithoutPersisting() throws {
-            let calendar = Calendar(identifier: .gregorian)
-            let start = try XCTUnwrap(
-                calendar.date(from: DateComponents(year: 2026, month: 9, day: 2))
-            )
-            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: start))
-            let readAt = start.addingTimeInterval(20 * 3_600)
-            let reader = FixedSettingsReader(
-                AppleSettingsScreenTimePresentation(
-                    allDevices: AppleSettingsUsagePresentation(
-                        total: TimeInterval(31 * 60),
-                        rows: [
-                            AppleSettingsUsagePresentation.Row(
-                                name: "Aside",
-                                duration: TimeInterval(20 * 60)
-                            ),
-                            AppleSettingsUsagePresentation.Row(
-                                name: "x.com",
-                                duration: TimeInterval(11 * 60)
-                            ),
-                        ]
-                    ),
-                    devices: [
-                        AppleSettingsDeviceUsagePresentation(
-                            name: "MacBook Pro",
-                            usage: AppleSettingsUsagePresentation(
-                                total: TimeInterval(20 * 60),
-                                rows: [
-                                    AppleSettingsUsagePresentation.Row(
-                                        name: "Aside",
-                                        duration: TimeInterval(20 * 60)
-                                    )
-                                ]
-                            )
-                        ),
-                        AppleSettingsDeviceUsagePresentation(
-                            name: "Alex’s iPhone",
-                            usage: AppleSettingsUsagePresentation(
-                                total: TimeInterval(10 * 60),
-                                rows: [
-                                    AppleSettingsUsagePresentation.Row(
-                                        name: "x.com",
-                                        duration: TimeInterval(10 * 60)
-                                    )
-                                ]
-                            )
-                        ),
-                    ],
-                    readAt: readAt
-                )
-            )
-            let oracle = AppleSettingsScreenTimeOracle(reader: reader, maximumCachedDays: 2)
-            let currentMac = AppleScreenTimeDevice(id: "MAC", name: "Local Mac", kind: .mac)
-            let first = try XCTUnwrap(
-                oracle.collect(
-                    dayInterval: interval,
-                    currentMac: currentMac,
-                    now: readAt,
-                    calendar: calendar
-                )
-            )
-            let second = try XCTUnwrap(
-                oracle.collect(
-                    dayInterval: interval,
-                    currentMac: currentMac,
-                    now: readAt.addingTimeInterval(5),
-                    calendar: calendar
-                )
-            )
-            let alternateMac = AppleScreenTimeDevice(
-                id: "ALTERNATE-MAC",
-                name: "Alternate caller",
-                kind: .mac
-            )
-            let third = try XCTUnwrap(
-                oracle.collect(
-                    dayInterval: interval,
-                    currentMac: alternateMac,
-                    now: readAt.addingTimeInterval(6),
-                    calendar: calendar
-                )
-            )
-            XCTAssertEqual(reader.readCount, 1)
-            XCTAssertEqual(first.availableDevices.map(\.displayName), ["MacBook Pro", "Alex’s iPhone"])
-            XCTAssertEqual(first.availableDevices.first?.id, currentMac.id)
-            XCTAssertEqual(first.status.kind, .ready)
-            XCTAssertEqual(
-                first.storedExport?.envelope.provenance.sourceAssurance,
-                .appleSettingsObservablePresentation
-            )
-            XCTAssertEqual(second.storedExport, first.storedExport)
-            XCTAssertEqual(third.availableDevices.first?.id, alternateMac.id)
-
-            let stored = try XCTUnwrap(first.storedExport)
-            let all = try XCTUnwrap(
-                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
-            )
-            XCTAssertEqual(all.totalScreenOnDuration, 31 * 60, accuracy: 0.001)
-            XCTAssertEqual(all.topApplications.map(\.resolvedName), ["Aside", "x.com"])
-            let website = try XCTUnwrap(all.topApplications.first { $0.resolvedName == "x.com" })
-            XCTAssertEqual(website.bundleIdentifier, "website:x.com")
-
-            let mac = try XCTUnwrap(
-                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .macOnly)
-            )
-            XCTAssertEqual(mac.totalScreenOnDuration, 20 * 60, accuracy: 0.001)
-        }
-
-        func testAppleSettingsSummaryPreservesEveryVisibleUsageRow() throws {
-            let calendar = Calendar(identifier: .gregorian)
-            let start = try XCTUnwrap(
-                calendar.date(from: DateComponents(year: 2026, month: 9, day: 2))
-            )
-            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: start))
-            let rows = (0 ..< 32).map { index in
-                AppleSettingsUsagePresentation.Row(
-                    name: "App \(index)",
-                    duration: TimeInterval(32 - index)
-                )
-            }
-            let reader = FixedSettingsReader(
-                AppleSettingsScreenTimePresentation(
-                    allDevices: AppleSettingsUsagePresentation(total: 528, rows: rows),
-                    devices: [
-                        AppleSettingsDeviceUsagePresentation(
-                            name: "MacBook Pro",
-                            usage: AppleSettingsUsagePresentation(total: 528, rows: rows)
-                        )
-                    ],
-                    readAt: start.addingTimeInterval(20 * 3_600)
-                )
-            )
-            let oracle = AppleSettingsScreenTimeOracle(reader: reader)
-            let collection = try XCTUnwrap(
-                oracle.collect(
-                    dayInterval: interval,
-                    currentMac: AppleScreenTimeDevice(
-                        id: "MAC",
-                        name: "MacBook Pro",
-                        kind: .mac
-                    ),
-                    now: start.addingTimeInterval(20 * 3_600),
-                    calendar: calendar
-                )
-            )
-            let summary = try XCTUnwrap(
-                collection.storedExport.flatMap {
-                    AppleScreenTimeAnalyzer.summary(
-                        from: $0,
-                        interval: interval,
-                        scope: .allDevices
+            let forbiddenRuntimeOperations = [
+                "AXUIElementPerformAction",
+                "CGEvent(",
+                ".post(tap:",
+                ".activate(options:",
+                "NSWorkspace.shared.open(",
+            ]
+            for file in swiftFiles {
+                let source = try String(contentsOf: file, encoding: .utf8)
+                for operation in forbiddenRuntimeOperations {
+                    XCTAssertFalse(
+                        source.contains(operation),
+                        "\(file.lastPathComponent) must not drive foreground UI through \(operation)"
                     )
                 }
-            )
-
-            XCTAssertEqual(summary.topApplications.count, rows.count)
-            XCTAssertEqual(summary.topApplications.map(\.resolvedName), rows.map(\.name))
+            }
         }
 
         func testRemoteAppleApplicationsUseReadableNamesWithoutBeingInstalledOnThisMac() {

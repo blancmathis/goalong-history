@@ -350,16 +350,11 @@
         private let fileManager: FileManager
         private let calendar: Calendar
         private let nowProvider: () -> Date
-        private let settingsOracle: AppleSettingsScreenTimeOracleProviding?
         private var biomeFileCache: AppleBiomeFileCache
         private var accountDeviceCatalogCache: AppleAccountDeviceCatalogCache?
 
         public convenience init(deviceID: String) {
-            self.init(
-                deviceID: deviceID,
-                paths: .default,
-                settingsOracle: AppleSettingsScreenTimeOracle.production
-            )
+            self.init(deviceID: deviceID, paths: .default)
         }
 
         init(
@@ -368,14 +363,12 @@
             fileManager: FileManager = .default,
             calendar: Calendar = .current,
             nowProvider: @escaping () -> Date = Date.init,
-            biomeCacheLimits: AppleBiomeFileCacheLimits = .production,
-            settingsOracle: AppleSettingsScreenTimeOracleProviding? = nil
+            biomeCacheLimits: AppleBiomeFileCacheLimits = .production
         ) {
             self.paths = paths
             self.fileManager = fileManager
             self.calendar = calendar
             self.nowProvider = nowProvider
-            self.settingsOracle = settingsOracle
             biomeFileCache = AppleBiomeFileCache(limits: biomeCacheLimits)
             accountDeviceCatalogCache = nil
             self.currentMacDevice = AppleScreenTimeDevice(
@@ -397,15 +390,6 @@
             }
 
             let now = nowProvider()
-            if let exact = settingsOracle?.collect(
-                dayInterval: dayInterval,
-                currentMac: currentMacDevice,
-                now: now,
-                calendar: calendar
-            ) {
-                return exact
-            }
-            let settingsOracleWarning = settingsOracle?.lastFailureDescription
             let effectiveEnd = calendar.isDateInToday(day) ? min(dayInterval.end, now) : dayInterval.end
             let requestedInterval = DateInterval(start: dayInterval.start, end: max(dayInterval.start, effectiveEnd))
             let accountDevices = readAppleAccountDeviceCatalog()
@@ -425,7 +409,7 @@
                     adminRead.devices.map { reportedDevicesByID[$0.id] ?? $0 },
                     reports.map(\.device)
                 )
-                let warnings = [settingsOracleWarning, adminRead.warning].compactMap { $0 }
+                let warnings = [adminRead.warning].compactMap { $0 }
                 let status = makeStatus(
                     hasData: !reports.isEmpty,
                     permissionDenied: adminRead.permissionDenied,
@@ -548,7 +532,6 @@
                 || biomeRead.permissionDenied
                 || screenTimeAppUsageRead.permissionDenied
             let warnings = [
-                settingsOracleWarning,
                 adminRead.warning,
                 catalogRead.warning,
                 knowledgeRead.warning,

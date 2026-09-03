@@ -642,8 +642,7 @@
         }
 
         private var screenTimeMetricTitle: String {
-            (displayedScreenTimeSummary?.provenance.usesAppleSettingsObservablePresentation == true
-                || displayedScreenTimeSummary?.provenance.usesScreenTimeAgentAggregateStore == true)
+            (displayedScreenTimeSummary?.provenance.usesScreenTimeAgentAggregateStore == true)
                 ? "APPLE SCREEN TIME"
                 : "SCREEN TIME FALLBACK"
         }
@@ -655,11 +654,9 @@
             let suffix = includesInactiveSystemTime && hasHiddenInactiveSystemTime
                 ? " · login and lock-screen time included"
                 : ""
-            let prefix = summary.provenance.usesAppleSettingsObservablePresentation
-                ? "Matches Apple Settings · "
-                : (summary.provenance.usesScreenTimeAgentAggregateStore
-                    ? ""
-                    : "Partial Apple sources · ")
+            let prefix = summary.provenance.usesScreenTimeAgentAggregateStore
+                ? "Apple private aggregate · "
+                : "Partial Apple sources · "
             return "\(prefix)\(count) Apple device\(count == 1 ? "" : "s")\(suffix)"
         }
 

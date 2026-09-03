@@ -680,14 +680,14 @@
                         Text("Data sources")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "With Accessibility enabled, Goalong briefly opens Apple’s Screen Time presentation, reads one visible day and device at a time, then returns to Goalong. Nothing is screenshotted or stored, and today is cached in memory for two minutes. If that presentation cannot be read, private Apple stores and ScreenTime.AppUsage/knowledgeC/Biome remain clearly labelled fallbacks."
+                            "Goalong reads Apple-owned ScreenTimeAgent, ScreenTime.AppUsage, knowledgeC and Biome data directly in the background. It never opens or controls System Settings, sends mouse or keyboard events, or stores a copy of Apple usage data. Private aggregates and reconstructed fallbacks stay clearly labelled."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    if usesExactAppleSettingsPresentation || usesAppleAggregateStore {
+                    if usesAppleAggregateStore {
                         Text(aggregateSourceLabel)
                             .font(.system(size: 8, weight: .semibold, design: .rounded))
                             .foregroundStyle(LHTheme.success)
@@ -708,15 +708,8 @@
             screenTime.summary?.provenance.usesScreenTimeAgentAggregateStore == true
         }
 
-        private var usesExactAppleSettingsPresentation: Bool {
-            screenTime.summary?.provenance.usesAppleSettingsObservablePresentation == true
-        }
-
         private var aggregateSourceLabel: String {
-            if usesExactAppleSettingsPresentation {
-                return "Apple Settings values · exact visible parity"
-            }
-            return "Private Apple aggregate · not parity-certified"
+            "Private Apple aggregate · background only"
         }
 
         private var scopeDescription: String {
