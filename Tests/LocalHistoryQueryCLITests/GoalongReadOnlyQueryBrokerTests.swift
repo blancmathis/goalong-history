@@ -71,9 +71,90 @@
             )
 
             XCTAssertEqual(json["sourceAssurance"] as? String, "privateAppleAggregateStore")
+            XCTAssertEqual(
+                json["freshness"] as? String,
+                "collectedOnDemandForThisRequest"
+            )
             XCTAssertTrue(
                 (json["limitation"] as? String)?.contains("exact parity is not certified") == true
             )
+        }
+
+        func testIndirectScreenTimeIntentRecognizesUsageQuestionsWithoutOvermatchingWorkQuestions() {
+            XCTAssertTrue(
+                GoalongQueryCLI.questionRequiresFreshScreenTime(
+                    "Combien de temps ai-je passé sur mes applications hier ?"
+                )
+            )
+            XCTAssertTrue(
+                GoalongQueryCLI.questionRequiresFreshScreenTime(
+                    "Quelle était ma productivité et mon temps perdu sur l'ordinateur ?"
+                )
+            )
+            XCTAssertTrue(
+                GoalongQueryCLI.questionRequiresFreshScreenTime(
+                    "Combien de temps ai-je passé sur ChatGPT ?"
+                )
+            )
+            XCTAssertTrue(
+                GoalongQueryCLI.questionRequiresFreshScreenTime(
+                    "What was my Screen Time across my iPhone and iPad?"
+                )
+            )
+            XCTAssertFalse(
+                GoalongQueryCLI.questionRequiresFreshScreenTime(
+                    "Sur quoi ai-je travaillé hier ?"
+                )
+            )
+        }
+
+        func testIndirectScreenTimeContextPerformsFreshRequestForEveryIncludedDay() throws {
+            let calendar = Calendar(identifier: .gregorian)
+            let firstDay = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 9, day: 2))
+            )
+            let end = try XCTUnwrap(calendar.date(byAdding: .day, value: 2, to: firstDay))
+            var requestedDays: [String] = []
+
+            let context = GoalongQueryCLI.freshScreenTimeContext(
+                root: URL(fileURLWithPath: "/unused", isDirectory: true),
+                question: "Quel était mon temps d'écran sur mes appareils ?",
+                firstDay: firstDay,
+                endExclusive: end,
+                maximumDays: 2,
+                requestProvider: { _, day, macOnly, selectedDeviceIDs in
+                    requestedDays.append(day)
+                    XCTAssertFalse(macOnly)
+                    XCTAssertTrue(selectedDeviceIDs.isEmpty)
+                    return Data(
+                        """
+                        {
+                          "schemaVersion": 1,
+                          "day": "\(day)",
+                          "generatedAt": "2026-09-03T12:00:00Z",
+                          "freshness": "collectedOnDemandForThisRequest",
+                          "scope": "allDevices",
+                          "status": {"kind":"ready","title":"Ready","message":"Fresh"},
+                          "summary": null,
+                          "reports": [],
+                          "availableDevices": [],
+                          "deviceSourceLabels": {},
+                          "latestAppleUpdate": null,
+                          "screenTimeAppUsageIntervalCount": 0,
+                          "knowledgeIntervalCount": 0,
+                          "biomeIntervalCount": 0,
+                          "limitation": "Test fixture"
+                        }
+                        """.utf8
+                    )
+                }
+            )
+
+            XCTAssertTrue(context.requested)
+            XCTAssertEqual(context.refreshPolicy, "freshOnDemandAppleReadForEveryIncludedDay")
+            XCTAssertEqual(context.days.map(\.day), requestedDays)
+            XCTAssertEqual(requestedDays.count, 2)
+            XCTAssertTrue(context.issues.isEmpty)
         }
 
         func testScreenTimeCLIUsesAppleAggregateWhenEveryPhysicalDeviceIsSelected() throws {
@@ -270,32 +351,34 @@
             )
         }
 
-        func testScreenTimeResponseCacheIsShortLivedScopeNormalizedAndBounded() throws {
-            var now = Date(timeIntervalSinceReferenceDate: 1_000)
-            let cache = GoalongScreenTimeResponseCache(
-                ttl: 1,
-                capacity: 2,
-                nowProvider: { now }
-            )
+        func testBrokerBuildsFreshScreenTimeForEveryRequest() throws {
+            let root = try temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
             var buildCount = 0
-            func payload(_ day: String, _ ids: [String]) -> Data {
-                cache.payload(day: day, macOnly: false, selectedDeviceIDs: ids) {
+            let server = GoalongReadOnlyQueryServer(
+                rootDirectory: root,
+                screenTimeHandler: { _, _, _ in
                     buildCount += 1
-                    return Data("payload-\(buildCount)".utf8)
+                    return Data("{\"generation\":\(buildCount)}".utf8)
                 }
-            }
+            )
+            try server.start()
+            defer { server.stop() }
 
-            XCTAssertEqual(payload("2026-09-01", ["phone", "mac"]), Data("payload-1".utf8))
-            XCTAssertEqual(payload("2026-09-01", ["mac", "phone", "phone"]), Data("payload-1".utf8))
-            XCTAssertEqual(buildCount, 1)
+            let first = try GoalongReadOnlyQueryBroker.requestScreenTime(
+                rootDirectory: root,
+                day: "2026-09-01",
+                macOnly: false
+            )
+            let second = try GoalongReadOnlyQueryBroker.requestScreenTime(
+                rootDirectory: root,
+                day: "2026-09-01",
+                macOnly: false
+            )
 
-            now.addTimeInterval(1.01)
-            XCTAssertEqual(payload("2026-09-01", ["mac", "phone"]), Data("payload-2".utf8))
+            XCTAssertEqual(first, Data("{\"generation\":1}".utf8))
+            XCTAssertEqual(second, Data("{\"generation\":2}".utf8))
             XCTAssertEqual(buildCount, 2)
-
-            _ = payload("2026-08-31", ["mac"])
-            _ = payload("2026-08-30", ["mac"])
-            XCTAssertEqual(cache.entryCount, 2)
         }
 
         private func temporaryRoot() throws -> URL {

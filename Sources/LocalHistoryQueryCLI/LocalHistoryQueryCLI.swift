@@ -45,6 +45,7 @@ private struct ComputerHistoryAnswerEnvelope: Encodable {
     let answer: ComputerHistoryAnswer
     let reconstructedDays: Int
     let retainedProjectionBytes: Int64
+    let screenTime: ScreenTimeAskContext
     let loadIssues: [HistoryLoadIssue]
 }
 
@@ -205,16 +206,17 @@ private struct AnalysisProofExportEnvelope: Encodable {
     let error: String?
 }
 
-private struct ScreenTimeStatusEnvelope: Encodable {
+struct ScreenTimeStatusEnvelope: Codable {
     let kind: String
     let title: String
     let message: String
 }
 
-private struct ScreenTimeEnvelope: Encodable {
-    let schemaVersion = 1
+struct ScreenTimeEnvelope: Codable {
+    let schemaVersion: Int
     let day: String
     let generatedAt: Date
+    let freshness: String?
     let scope: String
     let sourceAssurance: String?
     let status: ScreenTimeStatusEnvelope
@@ -227,6 +229,42 @@ private struct ScreenTimeEnvelope: Encodable {
     let knowledgeIntervalCount: Int
     let biomeIntervalCount: Int
     let limitation: String
+}
+
+struct ScreenTimeAskUsage: Encodable {
+    let name: String
+    let bundleIdentifier: String?
+    let duration: TimeInterval
+}
+
+struct ScreenTimeAskDevice: Encodable {
+    let id: String
+    let name: String
+    let kind: String
+    let screenOnDuration: TimeInterval
+    let lastUpdatedAt: Date
+}
+
+struct ScreenTimeAskDay: Encodable {
+    let day: String
+    let generatedAt: Date
+    let sourceAssurance: String?
+    let status: ScreenTimeStatusEnvelope
+    let totalScreenOnDuration: TimeInterval?
+    let devices: [ScreenTimeAskDevice]
+    let applicationCount: Int
+    let applications: [ScreenTimeAskUsage]
+    let omittedApplicationCount: Int
+    let latestAppleUpdate: Date?
+    let limitation: String
+}
+
+struct ScreenTimeAskContext: Encodable {
+    let requested: Bool
+    let refreshPolicy: String
+    let days: [ScreenTimeAskDay]
+    let issues: [String]
+    let nextStep: String?
 }
 
 private struct DailyWebsitesStatusEnvelope: Encodable {
@@ -1039,12 +1077,20 @@ public enum GoalongQueryCLI {
                 hits: baseAnswer.hits,
                 limitations: baseAnswer.limitations + reconstruction.limitations
             )
+            let screenTime = freshScreenTimeContext(
+                root: root,
+                question: question,
+                firstDay: firstDay,
+                endExclusive: reconstructionEnd,
+                maximumDays: maximumDays
+            )
             try printJSON(
                 ComputerHistoryAnswerEnvelope(
                     rootDirectory: root.path,
                     answer: answer,
                     reconstructedDays: reconstruction.memories.count,
                     retainedProjectionBytes: reconstruction.retainedProjectionBytes,
+                    screenTime: screenTime,
                     loadIssues: reconstruction.loadIssues
                 )
             )
@@ -1478,6 +1524,148 @@ public enum GoalongQueryCLI {
         )
     }
 
+    static func questionRequiresFreshScreenTime(_ question: String) -> Bool {
+        let normalized = question
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        let directPhrases = [
+            "screen time", "screentime", "temps d ecran", "temps ecran",
+            "all devices", "tous les appareils", "iphone", "ipad", "apple watch",
+        ]
+        if directPhrases.contains(where: normalized.contains) { return true }
+
+        let durationPhrases = [
+            "combien de temps", "combien d heures", "temps passe", "temps perdu",
+            "heures productives", "productivite", "how long", "how much time",
+            "time spent", "hours spent", "productive hours", "wasted time", "productif",
+            "productive", "efficacite", "efficiency",
+        ]
+        if durationPhrases.contains(where: normalized.contains) { return true }
+
+        let rankingPhrases = ["plus utilise", "most used", "principal usage", "top app"]
+        let usageSubjects = [
+            " app ", "application", "site", "browser", "navigateur", "mac",
+            "ordinateur", "telephone", "device", "appareil",
+        ]
+        let padded = " \(normalized) "
+        return rankingPhrases.contains(where: normalized.contains)
+            && usageSubjects.contains(where: padded.contains)
+    }
+
+    static func freshScreenTimeContext(
+        root: URL,
+        question: String,
+        firstDay: Date,
+        endExclusive: Date,
+        maximumDays: Int,
+        requestProvider: (URL, String, Bool, [String]) throws -> Data = {
+            root, day, macOnly, selectedDeviceIDs in
+            try GoalongReadOnlyQueryBroker.requestScreenTime(
+                rootDirectory: root,
+                day: day,
+                macOnly: macOnly,
+                selectedDeviceIDs: selectedDeviceIDs
+            )
+        }
+    ) -> ScreenTimeAskContext {
+        guard questionRequiresFreshScreenTime(question) else {
+            return ScreenTimeAskContext(
+                requested: false,
+                refreshPolicy: "notNeededForThisQuestion",
+                days: [],
+                issues: [],
+                nextStep: nil
+            )
+        }
+
+        let calendar = Calendar.current
+        var requestedDays: [Date] = []
+        var cursor = calendar.startOfDay(for: firstDay)
+        let boundedEnd = max(endExclusive, cursor.addingTimeInterval(1))
+        while cursor < boundedEnd {
+            requestedDays.append(cursor)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor),
+                next > cursor
+            else { break }
+            cursor = next
+        }
+
+        let maximumFreshDays = min(max(1, maximumDays), 31)
+        let omittedDayCount = max(0, requestedDays.count - maximumFreshDays)
+        if omittedDayCount > 0 {
+            requestedDays = Array(requestedDays.suffix(maximumFreshDays))
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        var days: [ScreenTimeAskDay] = []
+        var issues: [String] = []
+        if omittedDayCount > 0 {
+            issues.append(
+                "The indirect Screen Time context is limited to the latest \(maximumFreshDays) requested days; \(omittedDayCount) older days were omitted to bound CPU and output size."
+            )
+        }
+
+        for day in requestedDays {
+            let dayString = localDayString(day)
+            do {
+                let payload = try requestProvider(root, dayString, false, [])
+                let envelope = try decoder.decode(ScreenTimeEnvelope.self, from: payload)
+                let applications = envelope.summary?.topApplications ?? []
+                let includedApplications = applications.prefix(24).map {
+                    ScreenTimeAskUsage(
+                        name: $0.resolvedName,
+                        bundleIdentifier: $0.bundleIdentifier,
+                        duration: $0.duration
+                    )
+                }
+                days.append(
+                    ScreenTimeAskDay(
+                        day: envelope.day,
+                        generatedAt: envelope.generatedAt,
+                        sourceAssurance: envelope.sourceAssurance,
+                        status: envelope.status,
+                        totalScreenOnDuration: envelope.summary?.totalScreenOnDuration,
+                        devices: envelope.summary?.deviceSummaries.map {
+                            ScreenTimeAskDevice(
+                                id: $0.device.id,
+                                name: $0.device.displayName,
+                                kind: $0.device.kind.rawValue,
+                                screenOnDuration: $0.screenOnDuration,
+                                lastUpdatedAt: $0.lastUpdatedAt
+                            )
+                        } ?? [],
+                        applicationCount: applications.count,
+                        applications: includedApplications,
+                        omittedApplicationCount: max(
+                            0,
+                            applications.count - includedApplications.count
+                        ),
+                        latestAppleUpdate: envelope.latestAppleUpdate,
+                        limitation: envelope.limitation
+                    )
+                )
+            } catch {
+                issues.append("\(dayString): fresh Apple Screen Time read failed: \(error)")
+            }
+        }
+
+        let needsDirectDetail = days.contains { $0.omittedApplicationCount > 0 }
+            || omittedDayCount > 0
+        return ScreenTimeAskContext(
+            requested: true,
+            refreshPolicy: "freshOnDemandAppleReadForEveryIncludedDay",
+            days: days,
+            issues: issues,
+            nextStep: needsDirectDetail
+                ? "Run goalong screen-time DAY for every application and source detail omitted from this compact indirect context."
+                : nil
+        )
+    }
+
     private static func printScreenTime(
         root: URL,
         day: Date,
@@ -1553,8 +1741,10 @@ public enum GoalongQueryCLI {
         }
         return try encodedJSON(
             ScreenTimeEnvelope(
+                schemaVersion: 1,
                 day: localDayString(day),
                 generatedAt: Date(),
+                freshness: "collectedOnDemandForThisRequest",
                 scope: scope.mode.rawValue,
                 sourceAssurance: summary?.provenance.sourceAssurance.rawValue,
                 status: ScreenTimeStatusEnvelope(
@@ -2492,6 +2682,8 @@ public enum GoalongQueryCLI {
         it never writes a clipped source or derived snapshot. `ask` uses those
         projections and a bounded transient source-keyword pass when useful; it supports
         questions about recent work, resources, status, standups and repeatable workflows.
+        When a question depends on Screen Time, `ask` requests a fresh Apple read for each
+        included day and returns a compact, explicitly bounded Screen Time context.
         `computer-history-context` emits a deterministic, token-bounded evidence pack for
         an agent without persisting another copy. `activities` enumerates every reconstructed
         activity as a lightweight pageable index; `activity` reopens one exact source activity
@@ -2499,7 +2691,9 @@ public enum GoalongQueryCLI {
         user prompts and final assistant answers from the existing lightweight source index;
         it never scans providers, updates the index or copies a transcript. `screen-time` asks the running,
         identically signed Goalong app through an owner-only local socket, so Goalong consent cannot be
-        bypassed; only the app then reads Apple's stores transiently. `websites` streams one original local
+        bypassed; only the app then reads Apple's stores transiently. Every direct or indirect
+        Screen Time request rebuilds its response after rechecking Apple's source fingerprints;
+        response payloads are never cached. `websites` streams one original local
         day journal and returns a bounded, paginated domain-only ranking with exact per-browser
         seconds; it never exposes full URLs or stores another copy. `recap` reads only the bounded
         canonical daily recap JSON; `days` lists the dates currently queryable from

@@ -806,29 +806,22 @@
             }
             guard readOnlyQueryServer == nil else { return }
 
-            // The broker already serves requests on one serial utility queue. Reuse one bounded
-            // Apple reader so repeated CLI queries reuse file fingerprints and decoded segments
-            // instead of repeatedly inflating the process allocator with identical data.
+            // The broker serves requests on one serial utility queue. Reuse one bounded Apple
+            // reader so unchanged source files can reuse decoded segments, but build a new
+            // response for every request after rechecking Apple's current file fingerprints.
             let appleSource = AppleSystemScreenTimeSource(
                 deviceID: "goalong-cli-current-mac"
             )
-            let screenTimeResponseCache = GoalongScreenTimeResponseCache()
             let server = GoalongReadOnlyQueryServer(
                 rootDirectory: AppPaths.applicationSupportDirectory,
                 screenTimeHandler: { day, macOnly, selectedDeviceIDs in
-                    try screenTimeResponseCache.payload(
+                    try GoalongQueryCLI.screenTimePayload(
                         day: day,
                         macOnly: macOnly,
-                        selectedDeviceIDs: selectedDeviceIDs
-                    ) {
-                        try GoalongQueryCLI.screenTimePayload(
-                            day: day,
-                            macOnly: macOnly,
-                            selectedDeviceIDs: selectedDeviceIDs,
-                            collectionProvider: { appleSource.collect(for: $0) },
-                            currentMacProvider: { appleSource.currentMacDevice }
-                        )
-                    }
+                        selectedDeviceIDs: selectedDeviceIDs,
+                        collectionProvider: { appleSource.collect(for: $0) },
+                        currentMacProvider: { appleSource.currentMacDevice }
+                    )
                 }
             )
             do {
