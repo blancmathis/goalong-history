@@ -52,6 +52,8 @@
                 SharePage(model: model)
             case .privacy:
                 PrivacyPage(model: model)
+            case .cli:
+                CLIHelpPage()
             case .settings:
                 SettingsPage(model: model)
             }
@@ -62,7 +64,7 @@
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var updates = SoftwareUpdateManager.shared
 
-        private let primarySections: [DashboardSection] = [.overview, .history, .settings]
+        private let primarySections: [DashboardSection] = [.overview, .history, .cli, .settings]
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
@@ -261,8 +263,8 @@
         }
     }
 
-    private extension DashboardSection {
-        var simpleTitle: String {
+    extension DashboardSection {
+        fileprivate var simpleTitle: String {
             switch self {
             case .overview: return "Today"
             case .history: return "History"
@@ -272,11 +274,12 @@
             case .chatGPTRecap: return "Activity"
             case .share: return "Share"
             case .privacy: return "Privacy"
+            case .cli: return "CLI"
             case .settings: return "Settings"
             }
         }
 
-        var sidebarParent: DashboardSection {
+        fileprivate var sidebarParent: DashboardSection {
             switch self {
             case .overview, .chatGPTRecap, .share:
                 return .overview
@@ -284,6 +287,8 @@
                 return .history
             case .agentActivity, .privacy, .settings:
                 return .settings
+            case .cli:
+                return .cli
             }
         }
     }

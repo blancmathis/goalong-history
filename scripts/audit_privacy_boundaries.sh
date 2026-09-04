@@ -18,12 +18,35 @@ AGENT_ACTIVITY_RECAP_RUNTIME="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/ChatGPTR
 CONTENT_FORBIDDEN='NSPasteboard|UIPasteboard|CGWindowListCreateImage|ScreenCaptureKit|SCStream|AVCaptureSession|AVAudioEngine|keyboardGetUnicodeString|NSEvent\.characters|CGEventKeyboardGetUnicodeString'
 SHELL_EXECUTION_FORBIDDEN='NSAppleScript|osascript|NSTask|/bin/sh|/bin/bash'
 CODEX_BRIDGE="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/CodexAppServerClient.swift"
+CLIPBOARD_WRITER="$ROOT_DIR/Sources/LocalHistoryApp/GoalongClipboardWriter.swift"
 
 failed=false
 
 if grep -R -nE "$CONTENT_FORBIDDEN" "${CODE_ROOTS[@]}"; then
   echo "Forbidden content-capture API found." >&2
   failed=true
+fi
+
+# A user-triggered copy action may write Goalong's own static help text to the clipboard through
+# one reviewed Carbon boundary. Clipboard reads remain forbidden everywhere, and pasteboard APIs
+# may not spread to another source file.
+while IFS= read -r match; do
+  file="${match%%:*}"
+  if [[ "$file" != "$CLIPBOARD_WRITER" ]]; then
+    echo "Pasteboard API outside the reviewed write-only helper: $match" >&2
+    failed=true
+  fi
+done < <(grep -R -nE --include='*.swift' 'Pasteboard(Create|Clear|PutItemFlavor|Copy|Get)' "${CODE_ROOTS[@]}" || true)
+if [[ -f "$CLIPBOARD_WRITER" ]]; then
+  if ! grep -Fq 'PasteboardClear(clipboard)' "$CLIPBOARD_WRITER" \
+    || ! grep -Fq 'PasteboardPutItemFlavor(' "$CLIPBOARD_WRITER"; then
+    echo "The reviewed clipboard helper is no longer an explicit clear-and-write boundary." >&2
+    failed=true
+  fi
+  if grep -nE 'Pasteboard(Copy|Get)|NSPasteboard|UIPasteboard' "$CLIPBOARD_WRITER"; then
+    echo "The reviewed clipboard helper contains a clipboard read-capable API." >&2
+    failed=true
+  fi
 fi
 
 # The event callback may classify a key transiently, but raw key codes, exact

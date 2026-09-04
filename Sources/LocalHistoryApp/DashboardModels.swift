@@ -11,6 +11,7 @@
         case chatGPTRecap
         case share
         case privacy
+        case cli
         case settings
 
         var id: String { rawValue }
@@ -25,6 +26,7 @@
             case .chatGPTRecap: return "Activity"
             case .share: return "Share"
             case .privacy: return "Privacy & security"
+            case .cli: return "Goalong CLI"
             case .settings: return "Settings"
             }
         }
@@ -39,6 +41,7 @@
             case .chatGPTRecap: return "chart.bar.xaxis"
             case .share: return "square.and.arrow.up"
             case .privacy: return "hand.raised"
+            case .cli: return "terminal"
             case .settings: return "slider.horizontal.3"
             }
         }

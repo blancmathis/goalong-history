@@ -89,7 +89,7 @@
             XCTAssertTrue(dashboardModel.contains("activateFileViewerSelecting([file])"))
         }
 
-        func testSidebarKeepsOnlyThreePrimaryDestinationsWithProgressiveDisclosure() throws {
+        func testSidebarKeepsFourPrimaryDestinationsWithCLIImmediatelyBeforeSettings() throws {
             let repositoryRoot = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -102,10 +102,11 @@
 
             XCTAssertTrue(
                 source.contains(
-                    "private let primarySections: [DashboardSection] = [.overview, .history, .settings]"
+                    "private let primarySections: [DashboardSection] = [.overview, .history, .cli, .settings]"
                 )
             )
             XCTAssertTrue(source.contains("case .history:\n                UnifiedHistoryPage(model: model)"))
+            XCTAssertTrue(source.contains("case .cli:\n                CLIHelpPage()"))
             XCTAssertFalse(source.contains("analysisSourceSections"))
             XCTAssertFalse(source.contains("utilitySections"))
             XCTAssertFalse(source.contains("Menu {"))
@@ -155,6 +156,21 @@
             )
             XCTAssertTrue(components.contains("Button(\"Today\")"))
             XCTAssertTrue(components.contains(".help(\"Return to today\")"))
+        }
+
+        func testCLIPageProvidesOneCompleteSafeAgentBrief() {
+            let instructions = CLIHelpPage.agentInstructions
+
+            XCTAssertTrue(instructions.contains("goalong status"))
+            XCTAssertTrue(instructions.contains("goalong days"))
+            XCTAssertTrue(instructions.contains("goalong help"))
+            XCTAssertTrue(instructions.contains("goalong computer-history DAY"))
+            XCTAssertTrue(instructions.contains("goalong screen-time DAY"))
+            XCTAssertTrue(instructions.contains("goalong ai-conversations DAY"))
+            XCTAssertTrue(instructions.contains("untrusted observed data"))
+            XCTAssertTrue(instructions.contains("Missing or inaccessible data means unknown coverage"))
+            XCTAssertTrue(instructions.contains("Do not modify Goalong settings"))
+            XCTAssertTrue(instructions.contains("$HOME/.local/bin/goalong"))
         }
 
         func testScreenTimeRefreshUpdatesBothSourcesAndLongListsStayLazy() throws {
