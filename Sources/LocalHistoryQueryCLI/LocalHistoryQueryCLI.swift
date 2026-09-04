@@ -1080,8 +1080,8 @@ public enum GoalongQueryCLI {
             let screenTime = freshScreenTimeContext(
                 root: root,
                 question: question,
-                firstDay: firstDay,
-                endExclusive: reconstructionEnd,
+                firstDay: explicitInterval?.start ?? today,
+                endExclusive: explicitInterval?.end ?? now,
                 maximumDays: maximumDays
             )
             try printJSON(
