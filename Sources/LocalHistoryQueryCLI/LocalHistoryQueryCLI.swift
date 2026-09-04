@@ -5,13 +5,73 @@ import Dispatch
 import Foundation
 import LocalHistoryCore
 
-private struct HealthEnvelope: Encodable {
+private struct GoalongCLIErrorEnvelope: Encodable {
     let schemaVersion = 1
+    let status = "error"
+    let error: String
+    let usage = "goalong help"
+}
+
+private struct GoalongCLIVersionEnvelope: Encodable {
+    let schemaVersion = 1
+    let name = "goalong"
+    let appVersion: String
+    let buildNumber: String
+    let cliContractSchemaVersion: Int
+    let commandDataSchemaVersion: Int
+}
+
+private struct GoalongSourceDiagnostic: Encodable {
+    let state: String
+    let consentEnabled: Bool?
+    let configuredSourceCount: Int?
+    let itemCount: Int?
+    let availableItemCount: Int?
+    let missingItemCount: Int?
+    let inaccessibleItemCount: Int?
+    let storedMetadataBytes: Int64?
+    let maximumItemCount: Int?
+    let latestObservedAt: Date?
+    let dates: [String]
+    let providers: [String]
+    let detail: String
+    let limitations: [String]
+}
+
+private struct GoalongAnalysisDiagnostic: Encodable {
+    let state: String
+    let consentEnabled: Bool
+    let savedRecapCount: Int
+    let latestSavedRecapDay: String?
+    let connectionProbe: String
+    let detail: String
+}
+
+private struct GoalongRuntimeDiagnostic: Encodable {
+    let appRunningForActiveScreenTime: Bool
+    let brokerState: String
+    let detail: String
+}
+
+private struct GoalongStatusSources: Encodable {
+    let computerHistory: GoalongSourceDiagnostic
+    let screenTime: GoalongSourceDiagnostic
+    let aiConversations: GoalongSourceDiagnostic
+    let dailyRecaps: GoalongSourceDiagnostic
+    let chatGPTAnalysis: GoalongAnalysisDiagnostic
+}
+
+private struct HealthEnvelope: Encodable {
+    let schemaVersion = 2
+    let generatedAt: Date
     let rootDirectory: String
+    let overallState: String
     let snapshot: CaptureHealthSnapshot?
     let assessment: CaptureHealthAssessment?
+    let runtime: GoalongRuntimeDiagnostic
+    let sources: GoalongStatusSources
     let loadIssues: [HistoryLoadIssue]
-    let limitation: String
+    let limitations: [String]
 }
 
 private struct QueryEnvelope: Encodable {
@@ -448,8 +508,12 @@ public enum GoalongQueryCLI {
         do {
             try run(arguments: rawArguments)
         } catch {
-            FileHandle.standardError.write(Data("goalong: \(String(describing: error))\n".utf8))
-            FileHandle.standardError.write(Data((usage + "\n").utf8))
+            let payload = GoalongCLIErrorEnvelope(error: String(describing: error))
+            if let data = try? encodedJSON(payload) {
+                FileHandle.standardError.write(data)
+            } else {
+                FileHandle.standardError.write(Data("{\"status\":\"error\"}\n".utf8))
+            }
             Foundation.exit(EXIT_FAILURE)
         }
     }
@@ -461,27 +525,33 @@ public enum GoalongQueryCLI {
 
         switch command {
         case "help", "--help", "-h":
-            FileHandle.standardOutput.write(Data((usage + "\n").utf8))
+            let machineReadable = arguments.removeFlag("--json")
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("help accepts only --json")
+            }
+            if machineReadable {
+                try printJSON(GoalongCLIContract.capabilities)
+            } else {
+                FileHandle.standardOutput.write(Data((usage + "\n").utf8))
+            }
+
+        case "capabilities":
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("capabilities does not accept arguments")
+            }
+            try printJSON(GoalongCLIContract.capabilities)
 
         case "version", "--version":
-            try printJSON([
-                "name": "goalong",
-                "schemaVersion": "1",
-            ])
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("version does not accept arguments")
+            }
+            try printJSON(versionEnvelope())
 
         case "status":
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).loadCaptureHealth()
-            let assessment = loaded.snapshot.map { CaptureHealthEvaluator.assess($0) }
-            try printJSON(
-                HealthEnvelope(
-                    rootDirectory: root.path,
-                    snapshot: loaded.snapshot,
-                    assessment: assessment,
-                    loadIssues: loaded.issues,
-                    limitation:
-                        "Health is based on persisted evidence. A created event tap is not considered proof until a real callback is observed."
-                )
-            )
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("status does not accept arguments")
+            }
+            FileHandle.standardOutput.write(try statusPayload(rootDirectory: root))
 
         case "recent":
             let minutes = try integer(arguments.removeOption("--minutes") ?? "60")
@@ -2595,6 +2665,451 @@ public enum GoalongQueryCLI {
         return true
     }
 
+    public static func capabilitiesPayload() throws -> Data {
+        try encodedJSON(GoalongCLIContract.capabilities)
+    }
+
+    public static func versionPayload() throws -> Data {
+        try encodedJSON(versionEnvelope())
+    }
+
+    public static func statusPayload(rootDirectory root: URL) throws -> Data {
+        let loadedHealth = HistoryLocalStoreReader(rootDirectory: root).loadCaptureHealth()
+        let assessment = loadedHealth.snapshot.map { CaptureHealthEvaluator.assess($0) }
+        let computerHistoryConsent = capabilityConsentEnabled(
+            rootDirectory: root,
+            capability: "localComputerHistory"
+        )
+        let screenTimeConsent = capabilityConsentEnabled(
+            rootDirectory: root,
+            capability: "appleScreenTime"
+        )
+        let conversationConsent = capabilityConsentEnabled(
+            rootDirectory: root,
+            capability: "aiConversations"
+        )
+        let analysisConsent = capabilityConsentEnabled(
+            rootDirectory: root,
+            capability: "chatGPTAnalysis"
+        )
+
+        let eventDays = filenames(
+            in: root.appendingPathComponent("events", isDirectory: true),
+            suffix: ".jsonl"
+        )
+        let computerHistoryDays = filenames(
+            in: root.appendingPathComponent("computer-history", isDirectory: true),
+            suffix: ".computer-history.json"
+        )
+        let combinedComputerDays = Array(Set(eventDays + computerHistoryDays)).sorted(by: >)
+        let computerHistory = computerHistoryDiagnostic(
+            consentEnabled: computerHistoryConsent,
+            days: combinedComputerDays,
+            snapshot: loadedHealth.snapshot,
+            assessment: assessment
+        )
+
+        let screenTimeDaysDirectory = root
+            .appendingPathComponent("apple-screen-time", isDirectory: true)
+            .appendingPathComponent("days", isDirectory: true)
+        let screenTimeDays = screenTimeConsent
+            ? filenames(in: screenTimeDaysDirectory, suffix: ".json")
+            : []
+        let brokerRunning = screenTimeConsent
+            && GoalongReadOnlyQueryBroker.isRunning(rootDirectory: root)
+        let screenTime = screenTimeDiagnostic(
+            consentEnabled: screenTimeConsent,
+            days: screenTimeDays,
+            latestObservedAt: latestRegularFileModificationDate(
+                in: screenTimeDaysDirectory,
+                suffix: ".json"
+            ),
+            brokerRunning: brokerRunning
+        )
+
+        let aiConversations = agentActivityDiagnostic(
+            root: root,
+            consentEnabled: conversationConsent
+        )
+        let recapDirectory = root
+            .appendingPathComponent("chatgpt", isDirectory: true)
+            .appendingPathComponent("recaps", isDirectory: true)
+        let recapDays = filenames(in: recapDirectory, suffix: ".chatgpt-recap.json")
+        let dailyRecaps = GoalongSourceDiagnostic(
+            state: recapDays.isEmpty ? "noData" : "ready",
+            consentEnabled: nil,
+            configuredSourceCount: nil,
+            itemCount: recapDays.count,
+            availableItemCount: recapDays.count,
+            missingItemCount: 0,
+            inaccessibleItemCount: 0,
+            storedMetadataBytes: nil,
+            maximumItemCount: nil,
+            latestObservedAt: latestRegularFileModificationDate(
+                in: recapDirectory,
+                suffix: ".chatgpt-recap.json"
+            ),
+            dates: boundedStatusDates(recapDays),
+            providers: [],
+            detail: recapDays.isEmpty
+                ? "No saved daily recap is currently available."
+                : "Saved bounded daily recaps are readable locally.",
+            limitations: recapDays.count > 32
+                ? ["Only the newest 32 recap dates are listed in status; use `goalong recaps` for all dates."]
+                : []
+        )
+        let chatGPTAnalysis = GoalongAnalysisDiagnostic(
+            state: analysisConsent ? "connectionNotProbed" : "disabled",
+            consentEnabled: analysisConsent,
+            savedRecapCount: recapDays.count,
+            latestSavedRecapDay: recapDays.first,
+            connectionProbe: "notPerformed",
+            detail: analysisConsent
+                ? "ChatGPT analysis consent is enabled. The headless status command does not start Codex or inspect credentials; confirm the live account state in Goalong before generating a recap."
+                : "ChatGPT analysis is disabled. Existing saved recaps remain readable."
+        )
+        let runtime = GoalongRuntimeDiagnostic(
+            appRunningForActiveScreenTime: brokerRunning,
+            brokerState: brokerRunning ? "ready" : (screenTimeConsent ? "unavailable" : "disabled"),
+            detail: brokerRunning
+                ? "The already-running Goalong app answered a metadata-only owner-local socket probe; no Apple data was read."
+                : (screenTimeConsent
+                    ? "The active-day Screen Time broker did not answer. Stored completed days remain locally readable."
+                    : "The Screen Time broker is intentionally off because Goalong consent is disabled.")
+        )
+        let sourceStates = [computerHistory.state, screenTime.state, aiConversations.state]
+        let overallState: String
+        if sourceStates.contains(where: { ["inaccessibleOrInvalid", "permissionRequired", "unavailable"].contains($0) }) {
+            overallState = "attentionRequired"
+        } else if sourceStates.contains(where: { ["ready", "queryReady", "storedOnly", "availableHistorical"].contains($0) }) {
+            overallState = "ready"
+        } else {
+            overallState = "setupRequired"
+        }
+
+        return try encodedJSON(
+            HealthEnvelope(
+                generatedAt: Date(),
+                rootDirectory: root.path,
+                overallState: overallState,
+                snapshot: loadedHealth.snapshot,
+                assessment: assessment,
+                runtime: runtime,
+                sources: GoalongStatusSources(
+                    computerHistory: computerHistory,
+                    screenTime: screenTime,
+                    aiConversations: aiConversations,
+                    dailyRecaps: dailyRecaps,
+                    chatGPTAnalysis: chatGPTAnalysis
+                ),
+                loadIssues: loadedHealth.issues,
+                limitations: [
+                    "Status reads only bounded Goalong metadata and never opens provider conversation bodies or Apple data stores.",
+                    "Computer History health requires an observed real callback; a created event tap alone is not proof.",
+                    "ChatGPT account connectivity is intentionally not probed by the headless CLI because that would start the Codex bridge.",
+                ]
+            )
+        )
+    }
+
+    private static func versionEnvelope() -> GoalongCLIVersionEnvelope {
+        let info = executableBundleInfoDictionary() ?? Bundle.main.infoDictionary ?? [:]
+        return GoalongCLIVersionEnvelope(
+            appVersion: (info["CFBundleShortVersionString"] as? String) ?? "development",
+            buildNumber: (info["CFBundleVersion"] as? String) ?? "development",
+            cliContractSchemaVersion: GoalongCLIContract.schemaVersion,
+            commandDataSchemaVersion: 1
+        )
+    }
+
+    /// SwiftPM executables launched through the stable CLI symlink do not reliably populate
+    /// `Bundle.main`. Resolve the physical executable first so the app and its embedded CLI both
+    /// report the version from their signed enclosing bundle instead of a misleading development
+    /// fallback.
+    private static func executableBundleInfoDictionary() -> [String: Any]? {
+        guard let argument = CommandLine.arguments.first, !argument.isEmpty else { return nil }
+        let executable = URL(fileURLWithPath: argument, isDirectory: false)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+        let infoPlist = executable
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Info.plist", isDirectory: false)
+        guard
+            let values = try? infoPlist.resourceValues(forKeys: [
+                .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey,
+            ]),
+            values.isRegularFile == true,
+            values.isSymbolicLink != true,
+            let size = values.fileSize,
+            size > 0,
+            size <= 1_048_576,
+            let data = try? Data(contentsOf: infoPlist, options: [.mappedIfSafe]),
+            let object = try? PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+            ),
+            let dictionary = object as? [String: Any]
+        else { return nil }
+        return dictionary
+    }
+
+    private static func computerHistoryDiagnostic(
+        consentEnabled: Bool,
+        days: [String],
+        snapshot: CaptureHealthSnapshot?,
+        assessment: CaptureHealthAssessment?
+    ) -> GoalongSourceDiagnostic {
+        guard consentEnabled else {
+            return GoalongSourceDiagnostic(
+                state: "disabled",
+                consentEnabled: false,
+                configuredSourceCount: nil,
+                itemCount: nil,
+                availableItemCount: nil,
+                missingItemCount: nil,
+                inaccessibleItemCount: nil,
+                storedMetadataBytes: nil,
+                maximumItemCount: nil,
+                latestObservedAt: nil,
+                dates: [],
+                providers: [],
+                detail: "Computer History consent is disabled. Existing data remains locally stored but is hidden from this status summary.",
+                limitations: []
+            )
+        }
+        let state: String
+        if let assessment {
+            state = assessment.state.rawValue
+        } else if days.isEmpty {
+            state = "noData"
+        } else {
+            state = "availableHistorical"
+        }
+        var limitations = assessment?.limitations ?? []
+        if days.count > 32 {
+            limitations.append("Only the newest 32 Computer History dates are listed; use `goalong days` for all dates.")
+        }
+        return GoalongSourceDiagnostic(
+            state: state,
+            consentEnabled: true,
+            configuredSourceCount: 1,
+            itemCount: days.count,
+            availableItemCount: days.count,
+            missingItemCount: 0,
+            inaccessibleItemCount: 0,
+            storedMetadataBytes: nil,
+            maximumItemCount: nil,
+            latestObservedAt: snapshot?.lastInputEventAt ?? snapshot?.generatedAt,
+            dates: boundedStatusDates(days),
+            providers: ["Goalong local recorder"],
+            detail: assessment?.detail
+                ?? (days.isEmpty
+                    ? "No Computer History day is currently available."
+                    : "Historical Computer History days are readable; current capture health is unavailable."),
+            limitations: limitations
+        )
+    }
+
+    private static func screenTimeDiagnostic(
+        consentEnabled: Bool,
+        days: [String],
+        latestObservedAt: Date?,
+        brokerRunning: Bool
+    ) -> GoalongSourceDiagnostic {
+        guard consentEnabled else {
+            return GoalongSourceDiagnostic(
+                state: "disabled",
+                consentEnabled: false,
+                configuredSourceCount: nil,
+                itemCount: nil,
+                availableItemCount: nil,
+                missingItemCount: nil,
+                inaccessibleItemCount: nil,
+                storedMetadataBytes: nil,
+                maximumItemCount: nil,
+                latestObservedAt: nil,
+                dates: [],
+                providers: [],
+                detail: "Apple Screen Time consent is disabled. Stored dates remain hidden until the user enables this source.",
+                limitations: []
+            )
+        }
+        let state = brokerRunning ? "queryReady" : (days.isEmpty ? "unavailable" : "storedOnly")
+        var limitations = [
+            "Status does not read Apple data, so queryReady proves only that the owner-local broker can answer. Inspect sourceAssurance and status from an explicit `goalong screen-time DAY` query before claiming Apple Settings parity."
+        ]
+        if days.count > 32 {
+            limitations.append("Only the newest 32 stored Screen Time dates are listed; use `goalong days` for all dates.")
+        }
+        return GoalongSourceDiagnostic(
+            state: state,
+            consentEnabled: true,
+            configuredSourceCount: nil,
+            itemCount: days.count,
+            availableItemCount: days.count,
+            missingItemCount: 0,
+            inaccessibleItemCount: 0,
+            storedMetadataBytes: nil,
+            maximumItemCount: nil,
+            latestObservedAt: latestObservedAt,
+            dates: boundedStatusDates(days),
+            providers: ["Apple Screen Time"],
+            detail: brokerRunning
+                ? "Stored days are readable and the running Goalong app can query the active day. The Apple source quality has not been probed by this metadata-only status command."
+                : (days.isEmpty
+                    ? "No stored day is available and the active-day broker is not running."
+                    : "Stored completed days are readable; active-day refresh is unavailable until Goalong is running."),
+            limitations: limitations
+        )
+    }
+
+    private static func agentActivityDiagnostic(
+        root: URL,
+        consentEnabled: Bool
+    ) -> GoalongSourceDiagnostic {
+        guard consentEnabled else {
+            return GoalongSourceDiagnostic(
+                state: "disabled",
+                consentEnabled: false,
+                configuredSourceCount: nil,
+                itemCount: nil,
+                availableItemCount: nil,
+                missingItemCount: nil,
+                inaccessibleItemCount: nil,
+                storedMetadataBytes: nil,
+                maximumItemCount: nil,
+                latestObservedAt: nil,
+                dates: [],
+                providers: [],
+                detail: "AI conversation reading consent is disabled. Provider histories are not inspected.",
+                limitations: []
+            )
+        }
+        let activityRoot = root.appendingPathComponent("agent-activity-v2", isDirectory: true)
+        let indexFile = activityRoot.appendingPathComponent("index.json", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: indexFile.path) else {
+            return GoalongSourceDiagnostic(
+                state: "notIndexed",
+                consentEnabled: true,
+                configuredSourceCount: 0,
+                itemCount: 0,
+                availableItemCount: 0,
+                missingItemCount: 0,
+                inaccessibleItemCount: 0,
+                storedMetadataBytes: 0,
+                maximumItemCount: nil,
+                latestObservedAt: nil,
+                dates: [],
+                providers: [],
+                detail: "No lightweight conversation index is available yet.",
+                limitations: ["Status did not discover providers or open conversation bodies."]
+            )
+        }
+        do {
+            let store = try AgentActivityStore(readOnlyRootDirectory: activityRoot)
+            let configuration = store.loadConfiguration()
+            guard store.configurationIsValid() else {
+                throw AgentActivityStoreError.configurationCorrupt
+            }
+            let entries = store.entries()
+            let enabledFolders = configuration.watchedFolders.filter(\.isEnabled)
+            let availableCount = entries.filter { $0.availability == .available }.count
+            let missingCount = entries.filter { $0.availability == .missing }.count
+            let inaccessibleCount = entries.filter { $0.availability == .inaccessible }.count
+            let providers = Set(
+                enabledFolders.map { $0.provider.displayName }
+                    + entries.map { $0.provider.displayName }
+            ).sorted()
+            let state: String
+            if entries.isEmpty {
+                state = enabledFolders.isEmpty ? "notConfigured" : "noData"
+            } else if missingCount > 0 || inaccessibleCount > 0 {
+                state = "partial"
+            } else {
+                state = "ready"
+            }
+            return GoalongSourceDiagnostic(
+                state: state,
+                consentEnabled: true,
+                configuredSourceCount: enabledFolders.count,
+                itemCount: entries.count,
+                availableItemCount: availableCount,
+                missingItemCount: missingCount,
+                inaccessibleItemCount: inaccessibleCount,
+                storedMetadataBytes: regularFileSize(indexFile),
+                maximumItemCount: configuration.maximumIndexEntries,
+                latestObservedAt: entries.map(\.lastObservedAt).max(),
+                dates: [],
+                providers: providers,
+                detail: entries.isEmpty
+                    ? "The bounded metadata index contains no conversation candidates."
+                    : "The bounded metadata index is readable; provider bodies were not opened.",
+                limitations: [
+                    "Conversation dates remain authoritative only after `goalong ai-conversations DAY` directly checks original sources.",
+                    "Use `goalong days` for bounded candidate dates; status intentionally avoids expanding every multi-day conversation.",
+                ]
+            )
+        } catch {
+            return GoalongSourceDiagnostic(
+                state: "inaccessibleOrInvalid",
+                consentEnabled: true,
+                configuredSourceCount: nil,
+                itemCount: nil,
+                availableItemCount: nil,
+                missingItemCount: nil,
+                inaccessibleItemCount: nil,
+                storedMetadataBytes: regularFileSize(indexFile),
+                maximumItemCount: nil,
+                latestObservedAt: nil,
+                dates: [],
+                providers: [],
+                detail: "The lightweight conversation index or its configuration is inaccessible or invalid.",
+                limitations: ["Status did not open provider conversation bodies."]
+            )
+        }
+    }
+
+    private static func boundedStatusDates(_ dates: [String]) -> [String] {
+        Array(dates.prefix(32))
+    }
+
+    private static func regularFileSize(_ url: URL) -> Int64? {
+        guard
+            let values = try? url.resourceValues(forKeys: [
+                .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey,
+            ]),
+            values.isRegularFile == true,
+            values.isSymbolicLink != true,
+            let size = values.fileSize
+        else { return nil }
+        return Int64(size)
+    }
+
+    private static func latestRegularFileModificationDate(
+        in directory: URL,
+        suffix: String
+    ) -> Date? {
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [
+                .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey,
+            ],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+        return urls.compactMap { url -> Date? in
+            guard url.lastPathComponent.hasSuffix(suffix),
+                let values = try? url.resourceValues(forKeys: [
+                    .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey,
+                ]),
+                values.isRegularFile == true,
+                values.isSymbolicLink != true
+            else { return nil }
+            return values.contentModificationDate
+        }.max()
+    }
+
     private static func agentEntry(
         _ entry: AgentSourceIndexEntry,
         overlaps dayStart: Date,
@@ -3069,72 +3584,5 @@ public enum GoalongQueryCLI {
         return formatter
     }()
 
-    private static let usage = """
-        Usage: goalong [--root PATH] COMMAND
-
-          help
-          version
-          status
-          recent [--minutes N] [--actions-only] [--gaps-only] [--semantic-only]
-          day [today|yesterday|YYYY-MM-DD]
-          summary [today|yesterday|YYYY-MM-DD]
-          computer-history [today|yesterday|YYYY-MM-DD] [--start-utc ISO-8601Z --end-utc ISO-8601Z]
-          computer-history-context [today|yesterday|YYYY-MM-DD] [--tokens N] [--start-utc ISO-8601Z --end-utc ISO-8601Z]
-          activities [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
-          activity ACTIVITY_ID [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
-          screen-time [today|yesterday|YYYY-MM-DD] [--mac-only | --devices <id,id>]
-          websites [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]
-          ai-conversations [today|yesterday|YYYY-MM-DD] [--tokens N] [--limit N] [--offset N]
-          recap [today|yesterday|YYYY-MM-DD]
-          recaps
-          verify-recap PATH_TO_SIGNED_RECAP_JSON
-          export-proof [today|yesterday|YYYY-MM-DD] [--output PATH.goalong-proof]
-          verify-proof PATH_TO_GOALONG_PROOF
-          verify-share PATH_TO_SIGNED_SHARE_JSON
-          days
-          ask [--days N] NATURAL_LANGUAGE_QUESTION
-          search TEXT
-          app NAME_OR_BUNDLE_ID
-          site HOST
-          gaps [--start ISO_OR_DAY] [--end ISO_OR_DAY]
-          memories
-          sources MEMORY_ID
-
-        All commands are read-only and return JSON with coverage, provenance and clear missing-data states.
-        `computer-history` analyzes the complete causal action sequence and returns exact
-        coverage totals plus a bounded representative projection. Its optional UTC
-        interval reads and analyzes only that bounded portion of the original journals;
-        it never writes a clipped source or derived snapshot. `ask` uses those
-        projections and a bounded transient source-keyword pass when useful; it supports
-        questions about recent work, resources, status, standups and repeatable workflows.
-        When a question depends on Screen Time, `ask` reads completed days from Goalong's
-        compact daily records and asks the running app to refresh only the active day.
-        `computer-history-context` emits a deterministic, token-bounded evidence pack for
-        an agent without persisting another copy. `activities` enumerates every reconstructed
-        activity as a lightweight pageable index; `activity` reopens one exact source activity
-        and pages its ordered interactions without storing them. `ai-conversations` directly reads only
-        user prompts and final assistant answers from the existing lightweight source index;
-        it never scans providers, updates the index or copies a transcript. `screen-time` asks the running,
-        identically signed Goalong app through an owner-only local socket, so Goalong consent cannot be
-        bypassed; only the app then reads Apple's stores for the active day. Completed days are
-        served from one immutable local record and never reopen Apple history. Response payloads
-        are not cached separately. `websites` streams one original local
-        day journal and returns a bounded, paginated domain-only ranking with exact per-browser
-        seconds; it never exposes full URLs or stores another copy. `recap` reads only the bounded
-        canonical daily recap JSON; `days` lists the dates currently queryable from
-        Goalong's existing stores. `verify-recap` is fully offline and verifies
-        the local P-256 signature plus the complete saved result (both scores and
-        all five lines), prompt hash, source-count hash and context digest.
-        `export-proof` creates a strict standalone store-only ZIP containing the
-        signed run, signed immutable definition, context/source commitments,
-        request/response descriptors, parsed result and public key. It never
-        exports the complete prompt, source conversation bodies or the private
-        encrypted response capsule. `verify-proof` rejects duplicate paths,
-        traversal, symlinks, ZIP64, compression and unlisted entries before
-        verifying canonical JSON, artifact hashes, source Merkle root and ES256 JWS.
-        `verify-share` is fully offline: it recomputes
-        commitments, Merkle roots, minute and boundary chains, device identities and
-        every embedded P-256 signature. A receipt ID remains only a reference unless a
-        future proof format includes a signed receipt payload and its verifier key.
-        """
+    private static var usage: String { GoalongCLIContract.usageText }
 }

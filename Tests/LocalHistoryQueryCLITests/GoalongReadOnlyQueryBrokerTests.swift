@@ -790,6 +790,24 @@
             XCTAssertEqual(buildCount, 2)
         }
 
+        func testBrokerStatusProbeDoesNotReadScreenTime() throws {
+            let root = try temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            var screenTimeBuildCount = 0
+            let server = GoalongReadOnlyQueryServer(
+                rootDirectory: root,
+                screenTimeHandler: { _, _, _ in
+                    screenTimeBuildCount += 1
+                    return Data("{}".utf8)
+                }
+            )
+            try server.start()
+            defer { server.stop() }
+
+            XCTAssertTrue(GoalongReadOnlyQueryBroker.isRunning(rootDirectory: root))
+            XCTAssertEqual(screenTimeBuildCount, 0)
+        }
+
         func testBrokerUsesOneHandlerInvocationForMultiDayScreenTimeRange() throws {
             let root = try temporaryRoot()
             defer { try? FileManager.default.removeItem(at: root) }

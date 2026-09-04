@@ -34,8 +34,18 @@ trap '/bin/rm -rf -- "$TEST_ROOT"' EXIT
   > "$TEST_ROOT/events/2026-08-27.jsonl"
 
 before="$(find "$TEST_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
+"$CLI" help --json \
+  | jq -e '.schemaVersion == 2 and (.commands | length) >= 28 and .errorOutput == "sorted JSON on stderr with a nonzero exit status" and ([.commands[] | select(.name == "screen-time" and .effect == "mayRefreshActiveScreenTimeRecord")] | length) == 1 and ([.commands[] | select(.name == "export-proof" and .effect == "writesExplicitOutputFile")] | length) == 1' >/dev/null
+"$CLI" version \
+  | jq -e '.name == "goalong" and .cliContractSchemaVersion == 2 and .appVersion != "development" and .buildNumber != "development"' >/dev/null
+set +e
+unknown_error="$("$CLI" definitely-not-a-command 2>&1)"
+unknown_status=$?
+set -e
+[[ "$unknown_status" -ne 0 ]]
+jq -e '.status == "error" and .usage == "goalong help" and (.error | contains("Unknown command"))' <<<"$unknown_error" >/dev/null
 "$CLI" --root "$TEST_ROOT" status \
-  | jq -e '.snapshot == null and .assessment == null and .loadIssues == []' >/dev/null
+  | jq -e '.schemaVersion == 2 and .overallState == "setupRequired" and .snapshot == null and .assessment == null and .loadIssues == [] and (.sources | keys | sort) == ["aiConversations", "chatGPTAnalysis", "computerHistory", "dailyRecaps", "screenTime"]' >/dev/null
 "$CLI" --root "$TEST_ROOT" days \
   | jq -e '.recaps == ["2026-08-27"] and .aiConversationCandidateDays == [] and .agentActivityIndexStatus == "notIndexed"' >/dev/null
 "$CLI" --root "$TEST_ROOT" recap 2026-08-27 \
@@ -82,4 +92,4 @@ fi
 after="$(find "$TEST_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
 [[ "$before" == "$after" ]]
 
-echo "Goalong CLI tests passed: lightweight status, day discovery, recap integrity states, offline recap/share verification, fail-closed Screen Time access without the consented app broker, ranked daily websites, default-off AI consent, and zero source writes."
+echo "Goalong CLI tests passed: canonical machine contract, JSON error semantics, lightweight all-source status, day discovery, recap integrity states, offline recap/share verification, fail-closed Screen Time access without the consented app broker, ranked daily websites, default-off AI consent, and zero source writes."

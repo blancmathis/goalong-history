@@ -53,7 +53,9 @@
             case .privacy:
                 PrivacyPage(model: model)
             case .cli:
-                CLIHelpPage()
+                CLIHelpPage {
+                    model.selectSection(.settings)
+                }
             case .settings:
                 SettingsPage(model: model)
             }

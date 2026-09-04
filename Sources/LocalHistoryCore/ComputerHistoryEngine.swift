@@ -43,9 +43,11 @@ public enum ComputerHistoryEngine {
             dayEvents.allSatisfy(\.isComputerHistoryEvidence)
             ? dayEvents
             : dayEvents.filter(\.isComputerHistoryEvidence)
-        let captured = evidence.filter {
-            $0.suppressionReason == nil && !$0.isObservationContinuityBoundary
-        }
+        let captured = ComputerHistorySupport.filteringTransientLoginWindowArtifacts(
+            evidence.filter {
+                $0.suppressionReason == nil && !$0.isObservationContinuityBoundary
+            }
+        )
 
         var resolution = ComputerHistoryResourceResolver.resolve(
             events: captured,
@@ -277,9 +279,11 @@ public enum ComputerHistoryEngine {
             .filter { $0.timestamp >= dayStart && $0.timestamp < dayEnd }
             .sorted(by: ComputerHistorySupport.eventOrder)
         let evidence = dayEvents.filter(\.isComputerHistoryEvidence)
-        let captured = evidence.filter {
-            $0.suppressionReason == nil && !$0.isObservationContinuityBoundary
-        }
+        let captured = ComputerHistorySupport.filteringTransientLoginWindowArtifacts(
+            evidence.filter {
+                $0.suppressionReason == nil && !$0.isObservationContinuityBoundary
+            }
+        )
         var resolution = ComputerHistoryResourceResolver.resolve(
             events: captured,
             semanticSnapshots: semanticSnapshots

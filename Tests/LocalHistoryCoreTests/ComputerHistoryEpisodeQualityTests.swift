@@ -3,6 +3,98 @@ import XCTest
 @testable import LocalHistoryCore
 
 final class ComputerHistoryEpisodeQualityTests: XCTestCase {
+    func testBriefStaleLoginWindowRecoveryDoesNotBecomeUserActivity() {
+        let loginWindow = AppSnapshot(
+            name: "loginwindow",
+            bundleIdentifier: "com.apple.loginwindow",
+            processIdentifier: 406
+        )
+        let hermes = AppSnapshot(
+            name: "Hermes",
+            bundleIdentifier: "com.nousresearch.hermes",
+            processIdentifier: 12_529
+        )
+        let events = [
+            fixtureEvent(
+                id: "stale-login-window",
+                sequence: 1,
+                offset: 0,
+                kind: .applicationActivated,
+                app: loginWindow,
+                windowTitle: "Login",
+                host: nil
+            ),
+            fixtureEvent(
+                id: "stale-login-heartbeat",
+                sequence: 2,
+                offset: 0.1,
+                kind: .heartbeat,
+                app: loginWindow,
+                windowTitle: "Login",
+                host: nil,
+                metadata: ["idle_seconds": "1033121.7"]
+            ),
+            fixtureEvent(
+                id: "real-foreground-app",
+                sequence: 3,
+                offset: 1,
+                kind: .applicationActivated,
+                app: hermes,
+                windowTitle: "Hermes",
+                host: nil
+            ),
+        ]
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        XCTAssertEqual(memory.coverage.sourceEventCount, 3)
+        XCTAssertEqual(memory.coverage.actionEventCount, 1)
+        XCTAssertEqual(memory.episodes.flatMap(\.applications), ["Hermes"])
+        XCTAssertEqual(memory.resources.map(\.application), ["Hermes"])
+        XCTAssertFalse(memory.markdown.contains("loginwindow"))
+    }
+
+    func testSustainedLoginWindowIntervalRemainsExplicitEvidence() {
+        let loginWindow = AppSnapshot(
+            name: "loginwindow",
+            bundleIdentifier: "com.apple.loginwindow",
+            processIdentifier: 406
+        )
+        let finder = fixtureApp("Finder")
+        let memory = ComputerHistoryEngine.analyze(
+            events: [
+                fixtureEvent(
+                    id: "real-login-window",
+                    sequence: 1,
+                    offset: 0,
+                    kind: .applicationActivated,
+                    app: loginWindow,
+                    windowTitle: "Login",
+                    host: nil
+                ),
+                fixtureEvent(
+                    id: "later-finder",
+                    sequence: 2,
+                    offset: 30,
+                    kind: .applicationActivated,
+                    app: finder,
+                    windowTitle: "Finder",
+                    host: nil
+                ),
+            ],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        XCTAssertEqual(memory.coverage.actionEventCount, 2)
+        XCTAssertTrue(memory.episodes.flatMap(\.applications).contains("loginwindow"))
+        XCTAssertTrue(memory.resources.contains { $0.bundleIdentifier == "com.apple.loginwindow" })
+    }
+
     func testDifferentBrowserHostsBecomeSeparateEpisodes() {
         let safari = fixtureApp("Safari")
         let events = [

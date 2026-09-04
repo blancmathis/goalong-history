@@ -16,10 +16,38 @@
         let brokerError: String
     }
 
+    private struct GoalongBrokerStatus: Codable {
+        let schemaVersion: Int
+        let status: String
+    }
+
     public enum GoalongReadOnlyQueryBroker {
         static let maximumRequestBytes = 4 * 1_024
         static let maximumResponseBytes = 64 * 1_024 * 1_024
         static let maximumScreenTimeRangeResponseBytes = 2 * 1_024 * 1_024
+
+        /// Checks that the owner-only local broker is actively answering without reading Apple
+        /// data or changing Goalong's active-day record.
+        public static func isRunning(rootDirectory: URL) -> Bool {
+            do {
+                let response = try request(
+                    rootDirectory: rootDirectory,
+                    request: GoalongBrokerRequest(
+                        schemaVersion: 1,
+                        command: "status",
+                        day: nil,
+                        days: nil,
+                        macOnly: nil,
+                        selectedDeviceIDs: nil
+                    ),
+                    maximumResponseBytes: 4 * 1_024
+                )
+                let status = try JSONDecoder().decode(GoalongBrokerStatus.self, from: response)
+                return status.schemaVersion == 1 && status.status == "ready"
+            } catch {
+                return false
+            }
+        }
 
         public static func requestScreenTime(
             rootDirectory: URL,
@@ -182,6 +210,38 @@
                 result.append(contentsOf: buffer.prefix(count))
             }
         }
+
+        private static func request(
+            rootDirectory: URL,
+            request: GoalongBrokerRequest,
+            maximumResponseBytes: Int
+        ) throws -> Data {
+            let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+            guard descriptor >= 0 else { throw BrokerFailure.system("socket", errno) }
+            defer { Darwin.close(descriptor) }
+            setNoSigPipe(descriptor)
+
+            var address = try unixAddress(for: socketURL(rootDirectory: rootDirectory).path)
+            let result = withUnsafePointer(to: &address.value) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    Darwin.connect(descriptor, $0, address.length)
+                }
+            }
+            guard result == 0 else { throw BrokerFailure.system("connect", errno) }
+
+            var encoded = try JSONEncoder().encode(request)
+            encoded.append(0x0A)
+            try writeAll(encoded, to: descriptor)
+            Darwin.shutdown(descriptor, SHUT_WR)
+
+            let response = try readAll(from: descriptor, maximumBytes: maximumResponseBytes)
+            guard !response.isEmpty else { throw BrokerFailure.emptyResponse }
+            if let failure = try? JSONDecoder().decode(GoalongBrokerError.self, from: response) {
+                throw BrokerFailure.remote(failure.brokerError)
+            }
+            _ = try JSONSerialization.jsonObject(with: response)
+            return response
+        }
     }
 
     public final class GoalongReadOnlyQueryServer {
@@ -308,6 +368,10 @@
                 guard request.schemaVersion == 1 else { throw BrokerFailure.unsupportedRequest }
                 let payload: Data
                 switch request.command {
+                case "status":
+                    payload = try JSONEncoder().encode(
+                        GoalongBrokerStatus(schemaVersion: 1, status: "ready")
+                    )
                 case "screen-time":
                     guard let day = request.day, let macOnly = request.macOnly else {
                         throw BrokerFailure.unsupportedRequest

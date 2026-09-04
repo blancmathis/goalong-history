@@ -32,6 +32,51 @@ enum ComputerHistorySupport {
         }
     }
 
+    /// Drops only a brief stale login-window sample that can surface when macOS accessibility
+    /// focus recovers after secure input. The original journal remains untouched. A sustained
+    /// login-window interval, or any user action attributed to it, is retained as real evidence.
+    static func filteringTransientLoginWindowArtifacts(
+        _ events: [HistoryEvent],
+        maximumDuration: TimeInterval = 3
+    ) -> [HistoryEvent] {
+        let loginWindowBundleIdentifier = "com.apple.loginwindow"
+        let skippableKinds: Set<EventKind> = [
+            .applicationActivated, .windowChanged, .focusChanged, .heartbeat,
+        ]
+        var filtered: [HistoryEvent] = []
+        filtered.reserveCapacity(events.count)
+        var index = 0
+
+        while index < events.count {
+            guard events[index].app?.bundleIdentifier == loginWindowBundleIdentifier else {
+                filtered.append(events[index])
+                index += 1
+                continue
+            }
+
+            let runStart = index
+            var runEnd = index
+            while runEnd + 1 < events.count,
+                events[runEnd + 1].app?.bundleIdentifier == loginWindowBundleIdentifier
+            {
+                runEnd += 1
+            }
+            let nextIndex = runEnd + 1
+            let canDrop = nextIndex < events.count
+                && events[nextIndex].app?.bundleIdentifier != nil
+                && events[nextIndex].app?.bundleIdentifier != loginWindowBundleIdentifier
+                && events[nextIndex].timestamp.timeIntervalSince(events[runStart].timestamp)
+                    <= maximumDuration
+                && events[runStart...runEnd].allSatisfy { skippableKinds.contains($0.kind) }
+
+            if !canDrop {
+                filtered.append(contentsOf: events[runStart...runEnd])
+            }
+            index = nextIndex
+        }
+        return filtered
+    }
+
     static func actionKind(for event: HistoryEvent) -> ComputerHistoryActionKind {
         switch event.kind {
         case .mouseClick:

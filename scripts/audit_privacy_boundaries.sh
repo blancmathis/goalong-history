@@ -19,6 +19,10 @@ CONTENT_FORBIDDEN='NSPasteboard|UIPasteboard|CGWindowListCreateImage|ScreenCaptu
 SHELL_EXECUTION_FORBIDDEN='NSAppleScript|osascript|NSTask|/bin/sh|/bin/bash'
 CODEX_BRIDGE="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/CodexAppServerClient.swift"
 CLIPBOARD_WRITER="$ROOT_DIR/Sources/LocalHistoryApp/GoalongClipboardWriter.swift"
+CLI_CONTRACT="$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongCLIContract.swift"
+CLI_IMPLEMENTATION="$ROOT_DIR/Sources/LocalHistoryQueryCLI/LocalHistoryQueryCLI.swift"
+CLI_HELP_PAGE="$ROOT_DIR/Sources/LocalHistoryApp/CLIHelpPage.swift"
+CLI_DOCS="$ROOT_DIR/docs/CLI.md"
 
 failed=false
 
@@ -47,6 +51,37 @@ if [[ -f "$CLIPBOARD_WRITER" ]]; then
     echo "The reviewed clipboard helper contains a clipboard read-capable API." >&2
     failed=true
   fi
+fi
+
+# The public agent contract must remain honest about formats and the two explicit local writes:
+# active-day Screen Time replaces one compact Goalong record, and export-proof creates a file.
+for contract_surface in "$CLI_CONTRACT" "$CLI_HELP_PAGE" "$CLI_DOCS"; do
+  if grep -nE 'Every result is structured JSON|Every command emits sorted JSON|All commands are read-only|identically signed Goalong app' "$contract_surface"; then
+    echo "Misleading CLI format, mutation or client-signature claim found in $contract_surface." >&2
+    failed=true
+  fi
+done
+for required_fragment in \
+  'help --json' \
+  'nonzero exit' \
+  'active-day' \
+  'export-proof' \
+  'Foreground' \
+  'unknown coverage'; do
+  if ! grep -Fq "$required_fragment" "$CLI_CONTRACT"; then
+    echo "Canonical CLI safety contract is missing: $required_fragment" >&2
+    failed=true
+  fi
+done
+if ! grep -Fq 'GoalongCLIContract.usageText' "$CLI_IMPLEMENTATION" \
+  || ! grep -Fq 'GoalongCLIContract.agentInstructions' "$CLI_HELP_PAGE"; then
+  echo "CLI parser help and in-app agent brief no longer share the canonical contract." >&2
+  failed=true
+fi
+status_block="$(awk '/public static func statusPayload\(/{flag=1} flag{print} /private static func versionEnvelope\(/{if(flag){exit}}' "$CLI_IMPLEMENTATION")"
+if echo "$status_block" | grep -nE 'directRead\(|requestScreenTime\(|Data\(contentsOf:.*(codex|claude|opencode)'; then
+  echo "Metadata-only CLI status appears to read a conversation body or Apple Screen Time payload." >&2
+  failed=true
 fi
 
 # The event callback may classify a key transiently, but raw key codes, exact

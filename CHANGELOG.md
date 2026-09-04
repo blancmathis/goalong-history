@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Made the Goalong CLI self-describing through a canonical machine-readable command catalog,
+  structured nonzero errors and explicit per-command write effects. Its metadata-only `status`
+  now diagnoses Computer History, Screen Time, AI-conversation indexing, saved recaps and optional
+  ChatGPT analysis without opening Apple stores or provider conversation bodies, and distinguishes
+  a ready Screen Time broker from independently proven Apple-source quality.
+- Improved the Settings CLI guide with exact installed-link verification, a back path, copyable
+  quick commands, an optional full-instruction preview and accessibility announcements. The shared
+  agent brief now requires the exact executable, pagination, least disclosure and honest limits on
+  foreground, missing and privacy-filtered evidence.
+- Prevented a sub-three-second stale `loginwindow` accessibility sample after secure-input recovery
+  from becoming a false user activity, while retaining sustained lock/login intervals and the
+  untouched raw source evidence.
 - Added a dedicated CLI guide from Settings with quick-start commands, live link status and one
   complete copy-ready instruction block for safe, coverage-aware local agent use.
 - Removed the Screen Time presentation oracle that could activate System Settings and synthesize

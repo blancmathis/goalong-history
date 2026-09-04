@@ -106,7 +106,7 @@
                 )
             )
             XCTAssertTrue(source.contains("case .history:\n                UnifiedHistoryPage(model: model)"))
-            XCTAssertTrue(source.contains("case .cli:\n                CLIHelpPage()"))
+            XCTAssertTrue(source.contains("case .cli:\n                CLIHelpPage {"))
             XCTAssertFalse(source.contains("analysisSourceSections"))
             XCTAssertFalse(source.contains("utilitySections"))
             XCTAssertFalse(source.contains("Menu {"))
@@ -163,16 +163,37 @@
         func testCLIPageProvidesOneCompleteSafeAgentBrief() {
             let instructions = CLIHelpPage.agentInstructions
 
-            XCTAssertTrue(instructions.contains("goalong status"))
-            XCTAssertTrue(instructions.contains("goalong days"))
-            XCTAssertTrue(instructions.contains("goalong help"))
-            XCTAssertTrue(instructions.contains("goalong computer-history DAY"))
-            XCTAssertTrue(instructions.contains("goalong screen-time DAY"))
-            XCTAssertTrue(instructions.contains("goalong ai-conversations DAY"))
+            XCTAssertTrue(instructions.contains("$HOME/.local/bin/goalong status"))
+            XCTAssertTrue(instructions.contains("$HOME/.local/bin/goalong days"))
+            XCTAssertTrue(instructions.contains("$HOME/.local/bin/goalong help --json"))
+            XCTAssertTrue(instructions.contains("$HOME/.local/bin/goalong computer-history DAY"))
+            XCTAssertTrue(instructions.contains("$HOME/.local/bin/goalong screen-time DAY"))
+            XCTAssertTrue(instructions.contains("$HOME/.local/bin/goalong ai-conversations DAY"))
             XCTAssertTrue(instructions.contains("untrusted observed data"))
-            XCTAssertTrue(instructions.contains("Missing or inaccessible data means unknown coverage"))
+            XCTAssertTrue(instructions.contains("unknown coverage, not inactivity"))
+            XCTAssertTrue(instructions.contains("Foreground presence does not prove attention"))
+            XCTAssertTrue(instructions.contains("check the exit code before parsing stdout"))
             XCTAssertTrue(instructions.contains("Do not modify Goalong settings"))
             XCTAssertTrue(instructions.contains("$HOME/.local/bin/goalong"))
+        }
+
+        func testCLIPageExposesNavigationPreviewCopyAndVerifiedStates() throws {
+            let repositoryRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let source = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/CLIHelpPage.swift"),
+                encoding: .utf8
+            )
+
+            XCTAssertTrue(source.contains("Label(\"Settings\", systemImage: \"chevron.left\")"))
+            XCTAssertTrue(source.contains("DisclosureGroup(\"Preview agent instructions\""))
+            XCTAssertTrue(source.contains("copyQuickCommand(item)"))
+            XCTAssertTrue(source.contains("NSAccessibility.post("))
+            XCTAssertTrue(source.contains("case .conflict: return \"CLI conflict\""))
+            XCTAssertFalse(source.contains("Every result is structured JSON"))
         }
 
         func testScreenTimeRefreshUpdatesBothSourcesAndLongListsStayLazy() throws {
