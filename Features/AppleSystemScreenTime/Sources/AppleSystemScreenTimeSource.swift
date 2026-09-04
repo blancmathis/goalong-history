@@ -391,7 +391,39 @@
 
             let now = nowProvider()
             let effectiveEnd = calendar.isDateInToday(day) ? min(dayInterval.end, now) : dayInterval.end
-            let requestedInterval = DateInterval(start: dayInterval.start, end: max(dayInterval.start, effectiveEnd))
+            let requestedInterval = DateInterval(
+                start: dayInterval.start,
+                end: max(dayInterval.start, effectiveEnd)
+            )
+            return collect(
+                requestedInterval: requestedInterval,
+                envelopeInterval: dayInterval,
+                now: now
+            )
+        }
+
+        /// Reads one bounded multi-day interval in a single pass. Agent queries use this to
+        /// avoid reopening and revalidating the same Apple databases once per requested day.
+        /// The returned reports retain their original segments so callers can derive exact
+        /// per-day summaries transiently without another source read or persisted snapshot.
+        public func collect(for interval: DateInterval) -> AppleSystemScreenTimeCollection {
+            let now = nowProvider()
+            let start = calendar.startOfDay(for: interval.start)
+            let requestedEnd = max(start, interval.end)
+            let effectiveEnd = min(requestedEnd, now)
+            let boundedEnd = max(start, effectiveEnd)
+            return collect(
+                requestedInterval: DateInterval(start: start, end: boundedEnd),
+                envelopeInterval: DateInterval(start: start, end: requestedEnd),
+                now: now
+            )
+        }
+
+        private func collect(
+            requestedInterval: DateInterval,
+            envelopeInterval: DateInterval,
+            now: Date
+        ) -> AppleSystemScreenTimeCollection {
             let accountDevices = readAppleAccountDeviceCatalog()
             let adminRead = readScreenTimeAdminStores(interval: requestedInterval)
             if adminRead.readableStoreCount > 0 {
@@ -433,8 +465,8 @@
                         importedAt: now,
                         verification: .appleSystemStore,
                         envelope: AppleScreenTimeExportEnvelope(
-                            requestedStart: dayInterval.start,
-                            requestedEnd: dayInterval.end,
+                            requestedStart: envelopeInterval.start,
+                            requestedEnd: envelopeInterval.end,
                             requestedScope: .allDevices,
                             provenance: provenance,
                             reports: reports
@@ -580,8 +612,8 @@
                 euCustomerRequirementAcknowledged: false
             )
             let envelope = AppleScreenTimeExportEnvelope(
-                requestedStart: dayInterval.start,
-                requestedEnd: dayInterval.end,
+                requestedStart: envelopeInterval.start,
+                requestedEnd: envelopeInterval.end,
                 requestedScope: .allDevices,
                 provenance: provenance,
                 reports: reports

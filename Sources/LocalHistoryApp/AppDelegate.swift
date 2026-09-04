@@ -822,6 +822,13 @@
                         collectionProvider: { appleSource.collect(for: $0) },
                         currentMacProvider: { appleSource.currentMacDevice }
                     )
+                },
+                screenTimeRangeHandler: { days in
+                    try GoalongQueryCLI.screenTimeRangePayload(
+                        days: days,
+                        collectionProvider: { appleSource.collect(for: $0) },
+                        currentMacProvider: { appleSource.currentMacDevice }
+                    )
                 }
             )
             do {

@@ -231,13 +231,13 @@ struct ScreenTimeEnvelope: Codable {
     let limitation: String
 }
 
-struct ScreenTimeAskUsage: Encodable {
+struct ScreenTimeAskUsage: Codable {
     let name: String
     let bundleIdentifier: String?
     let duration: TimeInterval
 }
 
-struct ScreenTimeAskDevice: Encodable {
+struct ScreenTimeAskDevice: Codable {
     let id: String
     let name: String
     let kind: String
@@ -245,26 +245,36 @@ struct ScreenTimeAskDevice: Encodable {
     let lastUpdatedAt: Date
 }
 
-struct ScreenTimeAskDay: Encodable {
+struct ScreenTimeAskDay: Codable {
     let day: String
-    let generatedAt: Date
-    let sourceAssurance: String?
-    let status: ScreenTimeStatusEnvelope
     let totalScreenOnDuration: TimeInterval?
     let devices: [ScreenTimeAskDevice]
     let applicationCount: Int
     let applications: [ScreenTimeAskUsage]
     let omittedApplicationCount: Int
     let latestAppleUpdate: Date?
-    let limitation: String
 }
 
 struct ScreenTimeAskContext: Encodable {
     let requested: Bool
     let refreshPolicy: String
+    let generatedAt: Date?
+    let sourceAssurance: String?
+    let status: ScreenTimeStatusEnvelope?
     let days: [ScreenTimeAskDay]
     let issues: [String]
+    let limitation: String?
     let nextStep: String?
+}
+
+struct ScreenTimeRangeEnvelope: Codable {
+    let schemaVersion: Int
+    let generatedAt: Date
+    let freshness: String
+    let sourceAssurance: String?
+    let status: ScreenTimeStatusEnvelope
+    let days: [ScreenTimeAskDay]
+    let limitation: String
 }
 
 private struct DailyWebsitesStatusEnvelope: Encodable {
@@ -1524,6 +1534,71 @@ public enum GoalongQueryCLI {
         )
     }
 
+    public static func screenTimeRangePayload(
+        days rawDays: [String],
+        collectionProvider: ((DateInterval) -> AppleSystemScreenTimeCollection)? = nil,
+        currentMacProvider: (() -> AppleScreenTimeDevice)? = nil
+    ) throws -> Data {
+        guard (1...31).contains(rawDays.count) else {
+            throw CLIError.usage("Screen Time range requires between 1 and 31 days")
+        }
+
+        let calendar = Calendar.current
+        let requestedDays = try rawDays
+            .map(day)
+            .map { calendar.startOfDay(for: $0) }
+        let uniqueDays = Array(Set(requestedDays)).sorted()
+        guard let firstDay = uniqueDays.first,
+            let lastDay = uniqueDays.last,
+            let lastInterval = calendar.dateInterval(of: .day, for: lastDay),
+            let exclusiveLimit = calendar.date(byAdding: .day, value: 31, to: firstDay),
+            lastInterval.end <= exclusiveLimit
+        else {
+            throw CLIError.usage("Screen Time range must stay within 31 consecutive days")
+        }
+
+        let requestedInterval = DateInterval(start: firstDay, end: lastInterval.end)
+        let rawCollection: AppleSystemScreenTimeCollection
+        let currentMac: AppleScreenTimeDevice
+        if let collectionProvider, let currentMacProvider {
+            rawCollection = collectionProvider(requestedInterval)
+            currentMac = currentMacProvider()
+        } else {
+            let source = AppleSystemScreenTimeSource(deviceID: "goalong-cli-current-mac")
+            rawCollection = source.collect(for: requestedInterval)
+            currentMac = source.currentMacDevice
+        }
+        let collection = AppleScreenTimeDeviceNormalizer.normalize(
+            rawCollection,
+            currentMac: currentMac
+        )
+        let generatedAt = Date()
+        let compactDays = try uniqueDays.map {
+            try compactScreenTimeDay(
+                day: $0,
+                collection: collection
+            )
+        }
+        return try encodedJSON(
+            ScreenTimeRangeEnvelope(
+                schemaVersion: 1,
+                generatedAt: generatedAt,
+                freshness: "singleOnDemandAppleRangeReadForThisRequest",
+                sourceAssurance: collection.storedExport?.envelope.provenance
+                    .sourceAssurance.rawValue,
+                status: ScreenTimeStatusEnvelope(
+                    kind: collection.status.kind.rawValue,
+                    title: collection.status.title,
+                    message: collection.status.message
+                ),
+                days: compactDays,
+                limitation: screenTimeLimitation(
+                    provenance: collection.storedExport?.envelope.provenance
+                )
+            )
+        )
+    }
+
     static func questionRequiresFreshScreenTime(_ question: String) -> Bool {
         let normalized = question
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
@@ -1561,13 +1636,10 @@ public enum GoalongQueryCLI {
         firstDay: Date,
         endExclusive: Date,
         maximumDays: Int,
-        requestProvider: (URL, String, Bool, [String]) throws -> Data = {
-            root, day, macOnly, selectedDeviceIDs in
-            try GoalongReadOnlyQueryBroker.requestScreenTime(
+        requestProvider: (URL, [String]) throws -> Data = { root, days in
+            try GoalongReadOnlyQueryBroker.requestScreenTimeRange(
                 rootDirectory: root,
-                day: day,
-                macOnly: macOnly,
-                selectedDeviceIDs: selectedDeviceIDs
+                days: days
             )
         }
     ) -> ScreenTimeAskContext {
@@ -1575,8 +1647,12 @@ public enum GoalongQueryCLI {
             return ScreenTimeAskContext(
                 requested: false,
                 refreshPolicy: "notNeededForThisQuestion",
+                generatedAt: nil,
+                sourceAssurance: nil,
+                status: nil,
                 days: [],
                 issues: [],
+                limitation: nil,
                 nextStep: nil
             )
         }
@@ -1603,63 +1679,60 @@ public enum GoalongQueryCLI {
         decoder.dateDecodingStrategy = .iso8601
         var days: [ScreenTimeAskDay] = []
         var issues: [String] = []
+        var generatedAt: Date?
+        var sourceAssurance: String?
+        var status: ScreenTimeStatusEnvelope?
+        var limitation: String?
         if omittedDayCount > 0 {
             issues.append(
                 "The indirect Screen Time context is limited to the latest \(maximumFreshDays) requested days; \(omittedDayCount) older days were omitted to bound CPU and output size."
             )
         }
 
-        for day in requestedDays {
-            let dayString = localDayString(day)
-            do {
-                let payload = try requestProvider(root, dayString, false, [])
-                let envelope = try decoder.decode(ScreenTimeEnvelope.self, from: payload)
-                let applications = envelope.summary?.topApplications ?? []
-                let includedApplications = applications.prefix(24).map {
-                    ScreenTimeAskUsage(
-                        name: $0.resolvedName,
-                        bundleIdentifier: $0.bundleIdentifier,
-                        duration: $0.duration
-                    )
-                }
-                days.append(
-                    ScreenTimeAskDay(
-                        day: envelope.day,
-                        generatedAt: envelope.generatedAt,
-                        sourceAssurance: envelope.sourceAssurance,
-                        status: envelope.status,
-                        totalScreenOnDuration: envelope.summary?.totalScreenOnDuration,
-                        devices: envelope.summary?.deviceSummaries.map {
-                            ScreenTimeAskDevice(
-                                id: $0.device.id,
-                                name: $0.device.displayName,
-                                kind: $0.device.kind.rawValue,
-                                screenOnDuration: $0.screenOnDuration,
-                                lastUpdatedAt: $0.lastUpdatedAt
-                            )
-                        } ?? [],
-                        applicationCount: applications.count,
-                        applications: includedApplications,
-                        omittedApplicationCount: max(
-                            0,
-                            applications.count - includedApplications.count
-                        ),
-                        latestAppleUpdate: envelope.latestAppleUpdate,
-                        limitation: envelope.limitation
-                    )
-                )
-            } catch {
-                issues.append("\(dayString): fresh Apple Screen Time read failed: \(error)")
+        let requestedDayStrings = requestedDays.map(localDayString)
+        do {
+            let payload = try requestProvider(root, requestedDayStrings)
+            let envelope = try decoder.decode(ScreenTimeRangeEnvelope.self, from: payload)
+            guard envelope.schemaVersion == 1,
+                envelope.freshness == "singleOnDemandAppleRangeReadForThisRequest"
+            else {
+                throw CLIError.unsafeSource("The Screen Time broker returned an unsupported range response.")
             }
+            generatedAt = envelope.generatedAt
+            sourceAssurance = envelope.sourceAssurance
+            status = envelope.status
+            limitation = envelope.limitation
+            let returnedDays = Dictionary(grouping: envelope.days, by: \.day)
+            for dayString in requestedDayStrings {
+                guard let matches = returnedDays[dayString], matches.count == 1,
+                    let day = matches.first
+                else {
+                    issues.append("\(dayString): fresh Apple Screen Time range omitted or duplicated this day.")
+                    continue
+                }
+                days.append(day)
+            }
+            let unexpectedDays = Set(returnedDays.keys).subtracting(requestedDayStrings)
+            if !unexpectedDays.isEmpty {
+                issues.append(
+                    "The Screen Time broker returned unexpected days: \(unexpectedDays.sorted().joined(separator: ", "))."
+                )
+            }
+        } catch {
+            issues.append("Fresh Apple Screen Time range read failed: \(error)")
         }
 
         let needsDirectDetail = days.contains { $0.omittedApplicationCount > 0 }
             || omittedDayCount > 0
         return ScreenTimeAskContext(
             requested: true,
-            refreshPolicy: "freshOnDemandAppleReadForEveryIncludedDay",
+            refreshPolicy: "singleFreshOnDemandAppleRangeReadForIncludedDays",
+            generatedAt: generatedAt,
+            sourceAssurance: sourceAssurance,
+            status: status,
             days: days,
             issues: issues,
+            limitation: limitation,
             nextStep: needsDirectDetail
                 ? "Run goalong screen-time DAY for every application and source detail omitted from this compact indirect context."
                 : nil
@@ -1731,14 +1804,7 @@ public enum GoalongQueryCLI {
         let summary = collection.storedExport.flatMap {
             AppleScreenTimeAnalyzer.summary(from: $0, interval: dayInterval, scope: scope)
         }
-        let limitation: String
-        if summary?.provenance.usesAppleSettingsObservablePresentation == true {
-            limitation = "This legacy payload records an older observable Apple Settings presentation. Current Goalong versions no longer control System Settings. Durations do not prove attention or productivity."
-        } else if summary?.provenance.usesScreenTimeAgentAggregateStore == true {
-            limitation = "Read-only snapshot of a private Apple ScreenTimeAgent aggregate. Apple does not publish this format as the Settings presentation contract, so exact parity is not certified. Durations do not prove attention or productivity."
-        } else {
-            limitation = "Partial reconstruction from Apple ScreenTime.AppUsage, knowledgeC, or Biome. Apple’s private DeviceActivity aggregate was unavailable, so totals can differ from Settings. Durations do not prove attention or productivity."
-        }
+        let limitation = screenTimeLimitation(summary: summary)
         return try encodedJSON(
             ScreenTimeEnvelope(
                 schemaVersion: 1,
@@ -1763,6 +1829,65 @@ public enum GoalongQueryCLI {
                 limitation: limitation
             )
         )
+    }
+
+    private static func compactScreenTimeDay(
+        day: Date,
+        collection: AppleSystemScreenTimeCollection
+    ) throws -> ScreenTimeAskDay {
+        guard let dayInterval = Calendar.current.dateInterval(of: .day, for: day) else {
+            throw CLIError.invalidDate(localDayString(day))
+        }
+        let summary = collection.storedExport.flatMap {
+            AppleScreenTimeAnalyzer.summary(
+                from: $0,
+                interval: dayInterval,
+                scope: .allDevices
+            )
+        }
+        let applications = summary?.topApplications ?? []
+        let includedApplications = applications.prefix(24).map {
+            ScreenTimeAskUsage(
+                name: $0.resolvedName,
+                bundleIdentifier: $0.bundleIdentifier,
+                duration: $0.duration
+            )
+        }
+        return ScreenTimeAskDay(
+            day: localDayString(day),
+            totalScreenOnDuration: summary?.totalScreenOnDuration,
+            devices: summary?.deviceSummaries.map {
+                ScreenTimeAskDevice(
+                    id: $0.device.id,
+                    name: $0.device.displayName,
+                    kind: $0.device.kind.rawValue,
+                    screenOnDuration: $0.screenOnDuration,
+                    lastUpdatedAt: $0.lastUpdatedAt
+                )
+            } ?? [],
+            applicationCount: applications.count,
+            applications: includedApplications,
+            omittedApplicationCount: max(0, applications.count - includedApplications.count),
+            latestAppleUpdate: summary?.latestDataUpdate ?? collection.latestAppleUpdate
+        )
+    }
+
+    private static func screenTimeLimitation(
+        summary: AppleScreenTimeDaySummary?
+    ) -> String {
+        screenTimeLimitation(provenance: summary?.provenance)
+    }
+
+    private static func screenTimeLimitation(
+        provenance: AppleScreenTimeProvenance?
+    ) -> String {
+        if provenance?.usesAppleSettingsObservablePresentation == true {
+            return "This legacy payload records an older observable Apple Settings presentation. Current Goalong versions no longer control System Settings. Durations do not prove attention or productivity."
+        }
+        if provenance?.usesScreenTimeAgentAggregateStore == true {
+            return "Read-only snapshot of a private Apple ScreenTimeAgent aggregate. Apple does not publish this format as the Settings presentation contract, so exact parity is not certified. Durations do not prove attention or productivity."
+        }
+        return "Partial reconstruction from Apple ScreenTime.AppUsage, knowledgeC, or Biome. Apple’s private DeviceActivity aggregate was unavailable, so totals can differ from Settings. Durations do not prove attention or productivity."
     }
 
     private static func printDailyWebsites(
@@ -2682,8 +2807,8 @@ public enum GoalongQueryCLI {
         it never writes a clipped source or derived snapshot. `ask` uses those
         projections and a bounded transient source-keyword pass when useful; it supports
         questions about recent work, resources, status, standups and repeatable workflows.
-        When a question depends on Screen Time, `ask` requests a fresh Apple read for each
-        included day and returns a compact, explicitly bounded Screen Time context.
+        When a question depends on Screen Time, `ask` requests one fresh, bounded Apple range
+        read and derives each included day transiently into a compact Screen Time context.
         `computer-history-context` emits a deterministic, token-bounded evidence pack for
         an agent without persisting another copy. `activities` enumerates every reconstructed
         activity as a lightweight pageable index; `activity` reopens one exact source activity

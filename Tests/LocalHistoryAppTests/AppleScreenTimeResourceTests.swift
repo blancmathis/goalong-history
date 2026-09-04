@@ -418,6 +418,96 @@
             )
         }
 
+        func testSystemSourceCollectsTwoDayRangeOnceAndPreservesDailySegments() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-range-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+
+            let calendar = Calendar(identifier: .gregorian)
+            let firstDay = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 8, day: 29))
+            )
+            let secondDay = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: firstDay))
+            let rangeEnd = try XCTUnwrap(calendar.date(byAdding: .day, value: 2, to: firstDay))
+            let minute: TimeInterval = 60
+            let hour: TimeInterval = 3_600
+            let database = root.appendingPathComponent("RMAdminStore-Local.sqlite")
+            try createScreenTimeAdminDatabase(
+                at: database,
+                day: firstDay,
+                devices: [
+                    (
+                        id: "LOCAL-MAC",
+                        name: "MacBook Pro",
+                        platform: 3,
+                        blocks: [
+                            (
+                                start: 9 * hour,
+                                screenOn: 10 * minute,
+                                applications: [("com.example.first", nil, 10 * minute)]
+                            ),
+                            (
+                                start: 25 * hour,
+                                screenOn: 15 * minute,
+                                applications: [("com.example.second", nil, 15 * minute)]
+                            ),
+                        ]
+                    )
+                ]
+            )
+            let before = try Data(contentsOf: database)
+            let beforeAttributes = try FileManager.default.attributesOfItem(atPath: database.path)
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: missing.appendingPathComponent("knowledgeC.db"),
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db"),
+                    screenTimeAdminLocalDatabase: database
+                ),
+                calendar: calendar,
+                nowProvider: { rangeEnd }
+            )
+
+            let collection = source.collect(
+                for: DateInterval(start: firstDay, end: rangeEnd)
+            )
+            let stored = try XCTUnwrap(collection.storedExport)
+            let firstSummary = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(
+                    from: stored,
+                    interval: DateInterval(start: firstDay, end: secondDay),
+                    scope: .allDevices
+                )
+            )
+            let secondSummary = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(
+                    from: stored,
+                    interval: DateInterval(start: secondDay, end: rangeEnd),
+                    scope: .allDevices
+                )
+            )
+
+            XCTAssertEqual(stored.envelope.requestedStart, firstDay)
+            XCTAssertEqual(stored.envelope.requestedEnd, rangeEnd)
+            XCTAssertEqual(firstSummary.totalScreenOnDuration, 10 * minute, accuracy: 0.001)
+            XCTAssertEqual(secondSummary.totalScreenOnDuration, 15 * minute, accuracy: 0.001)
+            XCTAssertEqual(firstSummary.topApplications.map(\.resolvedName), ["com.example.first"])
+            XCTAssertEqual(secondSummary.topApplications.map(\.resolvedName), ["com.example.second"])
+            let after = try Data(contentsOf: database)
+            let afterAttributes = try FileManager.default.attributesOfItem(atPath: database.path)
+            XCTAssertEqual(after, before)
+            XCTAssertEqual(afterAttributes[.size] as? NSNumber, beforeAttributes[.size] as? NSNumber)
+            XCTAssertEqual(
+                afterAttributes[.modificationDate] as? Date,
+                beforeAttributes[.modificationDate] as? Date
+            )
+        }
+
         func testAppleAggregateStoreMatchesPerDeviceAndEverySelectedCombinationWithoutFallbackInflation() throws {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("apple-screen-time-admin-store-\(UUID().uuidString)", isDirectory: true)

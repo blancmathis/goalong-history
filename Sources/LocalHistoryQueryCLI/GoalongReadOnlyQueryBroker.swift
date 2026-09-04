@@ -6,8 +6,9 @@
     private struct GoalongBrokerRequest: Codable {
         let schemaVersion: Int
         let command: String
-        let day: String
-        let macOnly: Bool
+        let day: String?
+        let days: [String]?
+        let macOnly: Bool?
         let selectedDeviceIDs: [String]?
     }
 
@@ -18,6 +19,7 @@
     public enum GoalongReadOnlyQueryBroker {
         static let maximumRequestBytes = 4 * 1_024
         static let maximumResponseBytes = 64 * 1_024 * 1_024
+        static let maximumScreenTimeRangeResponseBytes = 2 * 1_024 * 1_024
 
         public static func requestScreenTime(
             rootDirectory: URL,
@@ -43,6 +45,7 @@
                     schemaVersion: 1,
                     command: "screen-time",
                     day: day,
+                    days: nil,
                     macOnly: macOnly,
                     selectedDeviceIDs: selectedDeviceIDs.isEmpty ? nil : selectedDeviceIDs
                 )
@@ -54,6 +57,52 @@
             let response = try readAll(
                 from: descriptor,
                 maximumBytes: maximumResponseBytes
+            )
+            guard !response.isEmpty else { throw BrokerFailure.emptyResponse }
+            if let failure = try? JSONDecoder().decode(GoalongBrokerError.self, from: response) {
+                throw BrokerFailure.remote(failure.brokerError)
+            }
+            _ = try JSONSerialization.jsonObject(with: response)
+            return response
+        }
+
+        public static func requestScreenTimeRange(
+            rootDirectory: URL,
+            days: [String]
+        ) throws -> Data {
+            guard (1...31).contains(days.count) else {
+                throw BrokerFailure.invalidDayCount
+            }
+            let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+            guard descriptor >= 0 else { throw BrokerFailure.system("socket", errno) }
+            defer { Darwin.close(descriptor) }
+            setNoSigPipe(descriptor)
+
+            var address = try unixAddress(for: socketURL(rootDirectory: rootDirectory).path)
+            let result = withUnsafePointer(to: &address.value) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    Darwin.connect(descriptor, $0, address.length)
+                }
+            }
+            guard result == 0 else { throw BrokerFailure.system("connect", errno) }
+
+            var request = try JSONEncoder().encode(
+                GoalongBrokerRequest(
+                    schemaVersion: 1,
+                    command: "screen-time-range",
+                    day: nil,
+                    days: days,
+                    macOnly: nil,
+                    selectedDeviceIDs: nil
+                )
+            )
+            request.append(0x0A)
+            try writeAll(request, to: descriptor)
+            Darwin.shutdown(descriptor, SHUT_WR)
+
+            let response = try readAll(
+                from: descriptor,
+                maximumBytes: maximumScreenTimeRangeResponseBytes
             )
             guard !response.isEmpty else { throw BrokerFailure.emptyResponse }
             if let failure = try? JSONDecoder().decode(GoalongBrokerError.self, from: response) {
@@ -137,9 +186,11 @@
 
     public final class GoalongReadOnlyQueryServer {
         public typealias ScreenTimeHandler = (String, Bool, [String]) throws -> Data
+        public typealias ScreenTimeRangeHandler = ([String]) throws -> Data
 
         private let rootDirectory: URL
         private let screenTimeHandler: ScreenTimeHandler
+        private let screenTimeRangeHandler: ScreenTimeRangeHandler
         private let queue = DispatchQueue(
             label: "ai.goalong.localhistory.readonly-query-broker",
             qos: .utility
@@ -156,13 +207,23 @@
                         macOnly: macOnly,
                         selectedDeviceIDs: selectedDeviceIDs
                     )
+                },
+                screenTimeRangeHandler: { days in
+                    try GoalongQueryCLI.screenTimeRangePayload(days: days)
                 }
             )
         }
 
-        public init(rootDirectory: URL, screenTimeHandler: @escaping ScreenTimeHandler) {
+        public init(
+            rootDirectory: URL,
+            screenTimeHandler: @escaping ScreenTimeHandler,
+            screenTimeRangeHandler: ScreenTimeRangeHandler? = nil
+        ) {
             self.rootDirectory = rootDirectory
             self.screenTimeHandler = screenTimeHandler
+            self.screenTimeRangeHandler = screenTimeRangeHandler ?? { days in
+                try GoalongQueryCLI.screenTimeRangePayload(days: days)
+            }
         }
 
         deinit {
@@ -244,14 +305,26 @@
             do {
                 let requestData = try readRequest(from: client)
                 let request = try JSONDecoder().decode(GoalongBrokerRequest.self, from: requestData)
-                guard request.schemaVersion == 1, request.command == "screen-time" else {
+                guard request.schemaVersion == 1 else { throw BrokerFailure.unsupportedRequest }
+                let payload: Data
+                switch request.command {
+                case "screen-time":
+                    guard let day = request.day, let macOnly = request.macOnly else {
+                        throw BrokerFailure.unsupportedRequest
+                    }
+                    payload = try screenTimeHandler(
+                        day,
+                        macOnly,
+                        request.selectedDeviceIDs ?? []
+                    )
+                case "screen-time-range":
+                    guard let days = request.days, (1...31).contains(days.count) else {
+                        throw BrokerFailure.invalidDayCount
+                    }
+                    payload = try screenTimeRangeHandler(days)
+                default:
                     throw BrokerFailure.unsupportedRequest
                 }
-                let payload = try screenTimeHandler(
-                    request.day,
-                    request.macOnly,
-                    request.selectedDeviceIDs ?? []
-                )
                 try GoalongReadOnlyQueryBroker.writeAll(payload, to: client)
             } catch {
                 let payload = (try? JSONEncoder().encode(
@@ -292,6 +365,7 @@
 
     private enum BrokerFailure: Error, CustomStringConvertible {
         case emptyResponse
+        case invalidDayCount
         case remote(String)
         case requestTooLarge
         case responseTooLarge
@@ -303,6 +377,7 @@
         var description: String {
             switch self {
             case .emptyResponse: return "The Goalong query broker returned no data."
+            case .invalidDayCount: return "A Screen Time range requires between 1 and 31 days."
             case .remote(let message): return message
             case .requestTooLarge: return "The Goalong query broker request exceeded its limit."
             case .responseTooLarge: return "The Goalong query broker response exceeded its limit."

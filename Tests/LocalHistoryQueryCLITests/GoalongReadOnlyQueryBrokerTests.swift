@@ -108,13 +108,14 @@
             )
         }
 
-        func testIndirectScreenTimeContextPerformsFreshRequestForEveryIncludedDay() throws {
+        func testIndirectScreenTimeContextUsesOneFreshRangeRequestForAllIncludedDays() throws {
             let calendar = Calendar(identifier: .gregorian)
             let firstDay = try XCTUnwrap(
                 calendar.date(from: DateComponents(year: 2026, month: 9, day: 2))
             )
             let end = try XCTUnwrap(calendar.date(byAdding: .day, value: 2, to: firstDay))
             var requestedDays: [String] = []
+            var requestCount = 0
 
             let context = GoalongQueryCLI.freshScreenTimeContext(
                 root: URL(fileURLWithPath: "/unused", isDirectory: true),
@@ -122,39 +123,258 @@
                 firstDay: firstDay,
                 endExclusive: end,
                 maximumDays: 2,
-                requestProvider: { _, day, macOnly, selectedDeviceIDs in
-                    requestedDays.append(day)
-                    XCTAssertFalse(macOnly)
-                    XCTAssertTrue(selectedDeviceIDs.isEmpty)
-                    return Data(
-                        """
-                        {
-                          "schemaVersion": 1,
-                          "day": "\(day)",
-                          "generatedAt": "2026-09-03T12:00:00Z",
-                          "freshness": "collectedOnDemandForThisRequest",
-                          "scope": "allDevices",
-                          "status": {"kind":"ready","title":"Ready","message":"Fresh"},
-                          "summary": null,
-                          "reports": [],
-                          "availableDevices": [],
-                          "deviceSourceLabels": {},
-                          "latestAppleUpdate": null,
-                          "screenTimeAppUsageIntervalCount": 0,
-                          "knowledgeIntervalCount": 0,
-                          "biomeIntervalCount": 0,
-                          "limitation": "Test fixture"
-                        }
-                        """.utf8
+                requestProvider: { _, days in
+                    requestCount += 1
+                    requestedDays = days
+                    let generatedAt = Date(timeIntervalSince1970: 1_788_436_800)
+                    let payload = ScreenTimeRangeEnvelope(
+                        schemaVersion: 1,
+                        generatedAt: generatedAt,
+                        freshness: "singleOnDemandAppleRangeReadForThisRequest",
+                        sourceAssurance: nil,
+                        status: ScreenTimeStatusEnvelope(
+                            kind: "ready",
+                            title: "Ready",
+                            message: "Fresh"
+                        ),
+                        days: days.map {
+                            ScreenTimeAskDay(
+                                day: $0,
+                                totalScreenOnDuration: nil,
+                                devices: [],
+                                applicationCount: 0,
+                                applications: [],
+                                omittedApplicationCount: 0,
+                                latestAppleUpdate: nil
+                            )
+                        },
+                        limitation: "Test fixture"
                     )
+                    let encoder = JSONEncoder()
+                    encoder.dateEncodingStrategy = .iso8601
+                    return try encoder.encode(payload)
                 }
             )
 
             XCTAssertTrue(context.requested)
-            XCTAssertEqual(context.refreshPolicy, "freshOnDemandAppleReadForEveryIncludedDay")
+            XCTAssertEqual(
+                context.refreshPolicy,
+                "singleFreshOnDemandAppleRangeReadForIncludedDays"
+            )
             XCTAssertEqual(context.days.map(\.day), requestedDays)
+            XCTAssertEqual(requestCount, 1)
             XCTAssertEqual(requestedDays.count, 2)
+            XCTAssertEqual(context.status?.kind, "ready")
+            XCTAssertEqual(context.limitation, "Test fixture")
             XCTAssertTrue(context.issues.isEmpty)
+        }
+
+        func testScreenTimeRangePayloadReadsSourceOnceAndSplitsExactDailyTotals() throws {
+            let calendar = Calendar(identifier: .gregorian)
+            let firstDay = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 9, day: 1))
+            )
+            let secondDay = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: firstDay))
+            let rangeEnd = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: secondDay))
+            let mac = AppleScreenTimeDevice(id: "mac", name: "Mac", kind: .mac)
+            let provenance = AppleScreenTimeProvenance(
+                api: AppleScreenTimeProvenance.screenTimeAgentAggregateAPI,
+                collectorBundleIdentifier: "ai.goalong.localhistory",
+                collectorVersion: "test",
+                collectorPlatform: "macOS test",
+                authorization: .unknown,
+                fetchPolicy: .live,
+                euCustomerRequirementAcknowledged: false
+            )
+            let stored = AppleScreenTimeStoredExport(
+                verification: .unsigned,
+                envelope: AppleScreenTimeExportEnvelope(
+                    requestedStart: firstDay,
+                    requestedEnd: rangeEnd,
+                    requestedScope: .allDevices,
+                    provenance: provenance,
+                    reports: [
+                        AppleScreenTimeDeviceReport(
+                            device: mac,
+                            lastUpdatedAt: rangeEnd,
+                            segments: [
+                                AppleScreenTimeSegment(
+                                    start: firstDay,
+                                    end: secondDay,
+                                    totalScreenOnDuration: 600,
+                                    applications: [
+                                        AppleScreenTimeApplicationUsage(
+                                            bundleIdentifier: "com.example.first",
+                                            displayName: "First",
+                                            duration: 600
+                                        )
+                                    ]
+                                ),
+                                AppleScreenTimeSegment(
+                                    start: secondDay,
+                                    end: rangeEnd,
+                                    totalScreenOnDuration: 900,
+                                    applications: [
+                                        AppleScreenTimeApplicationUsage(
+                                            bundleIdentifier: "com.example.second",
+                                            displayName: "Second",
+                                            duration: 900
+                                        )
+                                    ]
+                                ),
+                            ]
+                        )
+                    ]
+                )
+            )
+            let collection = AppleSystemScreenTimeCollection(
+                storedExport: stored,
+                availableDevices: [mac],
+                status: AppleSystemScreenTimeStatus(
+                    kind: .localOnly,
+                    title: "Apple Screen Time aggregate for this Mac",
+                    message: "Private aggregate; parity is not certified."
+                ),
+                deviceSourceLabels: [mac.id: "Apple Screen Time aggregate (private format)"],
+                latestAppleUpdate: rangeEnd,
+                knowledgeIntervalCount: 0,
+                biomeIntervalCount: 0
+            )
+            var collectionCount = 0
+            var collectedInterval: DateInterval?
+
+            let payload = try GoalongQueryCLI.screenTimeRangePayload(
+                days: ["2026-09-01", "2026-09-02"],
+                collectionProvider: { interval in
+                    collectionCount += 1
+                    collectedInterval = interval
+                    return collection
+                },
+                currentMacProvider: { mac }
+            )
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let envelope = try decoder.decode(ScreenTimeRangeEnvelope.self, from: payload)
+
+            XCTAssertEqual(collectionCount, 1)
+            XCTAssertEqual(collectedInterval?.start, firstDay)
+            XCTAssertEqual(collectedInterval?.end, rangeEnd)
+            XCTAssertEqual(envelope.days.map(\.day), ["2026-09-01", "2026-09-02"])
+            XCTAssertEqual(envelope.days.map(\.totalScreenOnDuration), [600, 900])
+            XCTAssertEqual(envelope.days[0].applications.map(\.name), ["First"])
+            XCTAssertEqual(envelope.days[1].applications.map(\.name), ["Second"])
+            XCTAssertEqual(envelope.sourceAssurance, "privateAppleAggregateStore")
+            XCTAssertEqual(envelope.status.kind, "localOnly")
+        }
+
+        func testScreenTimeRangePayloadRejectsSparseUnboundedIntervalsBeforeReadingSource() throws {
+            var collectionCount = 0
+
+            XCTAssertThrowsError(
+                try GoalongQueryCLI.screenTimeRangePayload(
+                    days: ["2026-01-01", "2026-09-01"],
+                    collectionProvider: { _ in
+                        collectionCount += 1
+                        fatalError("An unbounded range must be rejected before source access")
+                    },
+                    currentMacProvider: {
+                        AppleScreenTimeDevice(id: "mac", name: "Mac", kind: .mac)
+                    }
+                )
+            )
+            XCTAssertEqual(collectionCount, 0)
+        }
+
+        func testScreenTimeRangePayloadBoundsAgentRowsAndEncodedBytesAtThirtyOneDays() throws {
+            let calendar = Calendar(identifier: .gregorian)
+            let firstDay = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 8, day: 1))
+            )
+            let rangeEnd = try XCTUnwrap(calendar.date(byAdding: .day, value: 31, to: firstDay))
+            let mac = AppleScreenTimeDevice(id: "mac", name: "Mac", kind: .mac)
+            let provenance = AppleScreenTimeProvenance(
+                api: AppleScreenTimeProvenance.screenTimeAgentAggregateAPI,
+                collectorBundleIdentifier: "ai.goalong.localhistory",
+                collectorVersion: "test",
+                collectorPlatform: "macOS test",
+                authorization: .unknown,
+                fetchPolicy: .live,
+                euCustomerRequirementAcknowledged: false
+            )
+            let formatter = DateFormatter()
+            formatter.calendar = calendar
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = calendar.timeZone
+            formatter.dateFormat = "yyyy-MM-dd"
+            let days = try (0..<31).map { offset -> String in
+                formatter.string(
+                    from: try XCTUnwrap(calendar.date(byAdding: .day, value: offset, to: firstDay))
+                )
+            }
+            let segments = try (0..<31).map { dayOffset -> AppleScreenTimeSegment in
+                let start = try XCTUnwrap(
+                    calendar.date(byAdding: .day, value: dayOffset, to: firstDay)
+                )
+                return AppleScreenTimeSegment(
+                    start: start,
+                    end: start.addingTimeInterval(15 * 60),
+                    totalScreenOnDuration: 15 * 60,
+                    applications: (0..<100).map { applicationIndex in
+                        AppleScreenTimeApplicationUsage(
+                            bundleIdentifier: "com.example.day\(dayOffset).app\(applicationIndex)",
+                            displayName: "Application \(applicationIndex)",
+                            duration: 1
+                        )
+                    }
+                )
+            }
+            let stored = AppleScreenTimeStoredExport(
+                verification: .unsigned,
+                envelope: AppleScreenTimeExportEnvelope(
+                    requestedStart: firstDay,
+                    requestedEnd: rangeEnd,
+                    requestedScope: .allDevices,
+                    provenance: provenance,
+                    reports: [
+                        AppleScreenTimeDeviceReport(
+                            device: mac,
+                            lastUpdatedAt: rangeEnd,
+                            segments: segments
+                        )
+                    ]
+                )
+            )
+            let collection = AppleSystemScreenTimeCollection(
+                storedExport: stored,
+                availableDevices: [mac],
+                status: AppleSystemScreenTimeStatus(
+                    kind: .localOnly,
+                    title: "Apple Screen Time aggregate for this Mac",
+                    message: "Private aggregate; parity is not certified."
+                ),
+                deviceSourceLabels: [:],
+                latestAppleUpdate: rangeEnd,
+                knowledgeIntervalCount: 0,
+                biomeIntervalCount: 0
+            )
+
+            let payload = try GoalongQueryCLI.screenTimeRangePayload(
+                days: days,
+                collectionProvider: { _ in collection },
+                currentMacProvider: { mac }
+            )
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let envelope = try decoder.decode(ScreenTimeRangeEnvelope.self, from: payload)
+            XCTAssertEqual(envelope.days.count, 31)
+            XCTAssertTrue(envelope.days.allSatisfy { $0.applicationCount == 100 })
+            XCTAssertTrue(envelope.days.allSatisfy { $0.applications.count == 24 })
+            XCTAssertTrue(envelope.days.allSatisfy { $0.omittedApplicationCount == 76 })
+            XCTAssertLessThan(payload.count, 256 * 1_024)
+            XCTAssertLessThan(
+                payload.count,
+                GoalongReadOnlyQueryBroker.maximumScreenTimeRangeResponseBytes
+            )
         }
 
         func testScreenTimeCLIUsesAppleAggregateWhenEveryPhysicalDeviceIsSelected() throws {
@@ -379,6 +599,34 @@
             XCTAssertEqual(first, Data("{\"generation\":1}".utf8))
             XCTAssertEqual(second, Data("{\"generation\":2}".utf8))
             XCTAssertEqual(buildCount, 2)
+        }
+
+        func testBrokerUsesOneHandlerInvocationForMultiDayScreenTimeRange() throws {
+            let root = try temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let expected = Data("{\"schemaVersion\":1,\"days\":[]}".utf8)
+            var rangeBuildCount = 0
+            var receivedDays: [String] = []
+            let server = GoalongReadOnlyQueryServer(
+                rootDirectory: root,
+                screenTimeHandler: { _, _, _ in Data() },
+                screenTimeRangeHandler: { days in
+                    rangeBuildCount += 1
+                    receivedDays = days
+                    return expected
+                }
+            )
+            try server.start()
+            defer { server.stop() }
+
+            let actual = try GoalongReadOnlyQueryBroker.requestScreenTimeRange(
+                rootDirectory: root,
+                days: ["2026-09-01", "2026-09-02", "2026-09-03"]
+            )
+
+            XCTAssertEqual(actual, expected)
+            XCTAssertEqual(rangeBuildCount, 1)
+            XCTAssertEqual(receivedDays, ["2026-09-01", "2026-09-02", "2026-09-03"])
         }
 
         private func temporaryRoot() throws -> URL {
