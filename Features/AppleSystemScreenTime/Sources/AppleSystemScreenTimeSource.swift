@@ -5,7 +5,7 @@
     import Foundation
     import SQLite3
 
-    public enum AppleSystemScreenTimeStatusKind: String, Equatable, Sendable {
+    public enum AppleSystemScreenTimeStatusKind: String, Codable, Equatable, Sendable {
         case ready
         case localOnly
         case fullDiskAccessRequired
@@ -13,7 +13,7 @@
         case partial
     }
 
-    public struct AppleSystemScreenTimeStatus: Equatable, Sendable {
+    public struct AppleSystemScreenTimeStatus: Codable, Equatable, Sendable {
         public let kind: AppleSystemScreenTimeStatusKind
         public let title: String
         public let message: String
@@ -31,7 +31,15 @@
         )
     }
 
-    public struct AppleSystemScreenTimeCollection: Sendable {
+    public enum AppleSystemScreenTimeStorageState: String, Codable, Equatable, Sendable {
+        case directAppleRead
+        case liveCurrentDayStored
+        case activeDayStoredFallback
+        case completedDayStored
+        case missingCompletedDay
+    }
+
+    public struct AppleSystemScreenTimeCollection: Codable, Equatable, Sendable {
         public let storedExport: AppleScreenTimeStoredExport?
         public let availableDevices: [AppleScreenTimeDevice]
         public let status: AppleSystemScreenTimeStatus
@@ -40,6 +48,7 @@
         public let knowledgeIntervalCount: Int
         public let biomeIntervalCount: Int
         public let screenTimeAppUsageIntervalCount: Int
+        public let storageState: AppleSystemScreenTimeStorageState
 
         public init(
             storedExport: AppleScreenTimeStoredExport?,
@@ -49,7 +58,8 @@
             latestAppleUpdate: Date?,
             knowledgeIntervalCount: Int,
             biomeIntervalCount: Int,
-            screenTimeAppUsageIntervalCount: Int = 0
+            screenTimeAppUsageIntervalCount: Int = 0,
+            storageState: AppleSystemScreenTimeStorageState = .directAppleRead
         ) {
             self.storedExport = storedExport
             self.availableDevices = availableDevices
@@ -59,6 +69,23 @@
             self.knowledgeIntervalCount = knowledgeIntervalCount
             self.biomeIntervalCount = biomeIntervalCount
             self.screenTimeAppUsageIntervalCount = screenTimeAppUsageIntervalCount
+            self.storageState = storageState
+        }
+
+        public func replacingStorageState(
+            _ storageState: AppleSystemScreenTimeStorageState
+        ) -> AppleSystemScreenTimeCollection {
+            AppleSystemScreenTimeCollection(
+                storedExport: storedExport,
+                availableDevices: availableDevices,
+                status: status,
+                deviceSourceLabels: deviceSourceLabels,
+                latestAppleUpdate: latestAppleUpdate,
+                knowledgeIntervalCount: knowledgeIntervalCount,
+                biomeIntervalCount: biomeIntervalCount,
+                screenTimeAppUsageIntervalCount: screenTimeAppUsageIntervalCount,
+                storageState: storageState
+            )
         }
     }
 

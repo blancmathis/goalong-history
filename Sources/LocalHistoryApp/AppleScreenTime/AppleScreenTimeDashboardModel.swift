@@ -25,6 +25,7 @@
         @Published private(set) var knowledgeIntervalCount = 0
         @Published private(set) var biomeIntervalCount = 0
         @Published private(set) var screenTimeAppUsageIntervalCount = 0
+        @Published private(set) var storageState: AppleSystemScreenTimeStorageState = .directAppleRead
         @Published var alert: AppleScreenTimeDashboardAlert?
         @Published private(set) var accessEnabled: Bool
 
@@ -55,7 +56,22 @@
         ) {
             let source = AppleSystemScreenTimeSource(deviceID: deviceID)
             self.appleSource = source
-            self.collectionProvider = collectionProvider ?? { source.collect(for: $0) }
+            if let collectionProvider {
+                self.collectionProvider = collectionProvider
+            } else {
+                do {
+                    let repository = try GoalongScreenTimeRepositoryProvider.repository(
+                        rootDirectory: rootDirectory,
+                        deviceID: deviceID
+                    )
+                    self.collectionProvider = { repository.collect(for: $0) }
+                } catch {
+                    let message = String(describing: error)
+                    self.collectionProvider = { _ in
+                        Self.storageUnavailableCollection(message: message)
+                    }
+                }
+            }
             self.includesUnfilteredSummary = includesUnfilteredSummary
             self.refreshInterval = max(1, refreshInterval)
             self.accessEnabled = accessEnabled
@@ -94,6 +110,26 @@
         var selectedDayIsToday: Bool { Calendar.current.isDateInToday(selectedDay) }
         var needsFullDiskAccess: Bool { status.kind == .fullDiskAccessRequired }
 
+        private static func storageUnavailableCollection(
+            message: String
+        ) -> AppleSystemScreenTimeCollection {
+            AppleSystemScreenTimeCollection(
+                storedExport: nil,
+                availableDevices: [],
+                status: AppleSystemScreenTimeStatus(
+                    kind: .noAppleData,
+                    title: "Screen Time daily storage is unavailable",
+                    message: "Goalong did not read Apple Screen Time because today's local record could not be opened: \(message)"
+                ),
+                deviceSourceLabels: [:],
+                latestAppleUpdate: nil,
+                knowledgeIntervalCount: 0,
+                biomeIntervalCount: 0,
+                screenTimeAppUsageIntervalCount: 0,
+                storageState: .directAppleRead
+            )
+        }
+
         var currentMacIsIncluded: Bool {
             switch configuration.scope.mode {
             case .allDevices, .macOnly:
@@ -110,6 +146,7 @@
 
         func selectDay(_ date: Date) {
             selectedDay = Calendar.current.startOfDay(for: date)
+            updateRefreshTimerForSelectedDay()
             refresh()
         }
 
@@ -121,7 +158,9 @@
             lifecycleGeneration &+= 1
             if active, accessEnabled {
                 refresh()
-                startRefreshTimer()
+                if selectedDayIsToday {
+                    startRefreshTimer()
+                }
             } else {
                 stopRefreshTimer()
                 isBusy = false
@@ -202,6 +241,7 @@
                     self.knowledgeIntervalCount = collection.knowledgeIntervalCount
                     self.biomeIntervalCount = collection.biomeIntervalCount
                     self.screenTimeAppUsageIntervalCount = collection.screenTimeAppUsageIntervalCount
+                    self.storageState = collection.storageState
                     self.lastRefreshAt = Date()
                     self.isBusy = false
                 }
@@ -217,7 +257,9 @@
             if enabled {
                 if isActive {
                     refresh()
-                    startRefreshTimer()
+                    if selectedDayIsToday {
+                        startRefreshTimer()
+                    }
                 }
             } else {
                 stopRefreshTimer()
@@ -231,6 +273,7 @@
                     title: "Apple Screen Time is off",
                     message: "Enable this source before Goalong reads Apple’s protected local stores."
                 )
+                storageState = .directAppleRead
             }
         }
 
@@ -364,17 +407,31 @@
 
         private func saveConfigurationAndRefresh(refreshSummary: Bool = true) {
             guard let store else {
-                if refreshSummary { refresh() }
+                if refreshSummary {
+                    updateRefreshTimerForSelectedDay()
+                    refresh()
+                }
                 return
             }
             do {
                 try store.saveConfiguration(configuration)
-                if refreshSummary { refresh() }
+                if refreshSummary {
+                    updateRefreshTimerForSelectedDay()
+                    refresh()
+                }
             } catch {
                 alert = AppleScreenTimeDashboardAlert(
                     title: "Screen Time settings could not be saved",
                     message: String(describing: error)
                 )
+            }
+        }
+
+        private func updateRefreshTimerForSelectedDay() {
+            if selectedDayIsToday, isActive {
+                startRefreshTimer()
+            } else {
+                stopRefreshTimer()
             }
         }
 

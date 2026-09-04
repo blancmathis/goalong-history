@@ -330,8 +330,11 @@
 
         private static func loadScreenTime(for day: Date, deviceID: String) -> AppleScreenTimeDaySummary? {
             guard !deviceID.isEmpty else { return nil }
-            let source = AppleSystemScreenTimeSource(deviceID: deviceID)
-            let collection = source.collect(for: day)
+            guard let repository = try? GoalongScreenTimeRepositoryProvider.repository(
+                rootDirectory: AppPaths.screenTimeDirectory,
+                deviceID: deviceID
+            ) else { return nil }
+            let collection = repository.collect(for: day)
             guard let stored = collection.storedExport,
                 let interval = Calendar.current.dateInterval(of: .day, for: day)
             else { return nil }
@@ -343,7 +346,7 @@
                 let scoped = scopedExport(
                     stored,
                     scope: configuredScope,
-                    currentMacID: source.currentMacDevice.id
+                    currentMacID: repository.currentMacDevice.id
                 )
             else { return nil }
             return AppleScreenTimeAnalyzer.summary(

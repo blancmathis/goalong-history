@@ -152,6 +152,7 @@ private struct AvailableDaysEnvelope: Encodable {
     let aiConversationCandidateDays: [String]
     let agentActivityIndexStatus: String
     let recaps: [String]
+    let screenTimeDays: [String]
     let screenTime: String
 }
 
@@ -247,12 +248,36 @@ struct ScreenTimeAskDevice: Codable {
 
 struct ScreenTimeAskDay: Codable {
     let day: String
+    let freshness: String?
+    let sourceAssurance: String?
     let totalScreenOnDuration: TimeInterval?
     let devices: [ScreenTimeAskDevice]
     let applicationCount: Int
     let applications: [ScreenTimeAskUsage]
     let omittedApplicationCount: Int
     let latestAppleUpdate: Date?
+
+    init(
+        day: String,
+        freshness: String? = nil,
+        sourceAssurance: String? = nil,
+        totalScreenOnDuration: TimeInterval?,
+        devices: [ScreenTimeAskDevice],
+        applicationCount: Int,
+        applications: [ScreenTimeAskUsage],
+        omittedApplicationCount: Int,
+        latestAppleUpdate: Date?
+    ) {
+        self.day = day
+        self.freshness = freshness
+        self.sourceAssurance = sourceAssurance
+        self.totalScreenOnDuration = totalScreenOnDuration
+        self.devices = devices
+        self.applicationCount = applicationCount
+        self.applications = applications
+        self.omittedApplicationCount = omittedApplicationCount
+        self.latestAppleUpdate = latestAppleUpdate
+    }
 }
 
 struct ScreenTimeAskContext: Encodable {
@@ -1079,8 +1104,8 @@ public enum GoalongQueryCLI {
                             query: question,
                             generatedAt: now,
                             answer: screenTime.days.isEmpty
-                                ? "Fresh Apple Screen Time was requested, but no daily result was available. Inspect screenTime.status and screenTime.issues."
-                                : "Fresh Apple Screen Time is returned in screenTime. Computer History was not read because this question asks only for Screen Time.",
+                                ? "Screen Time was requested, but no daily result was available. Inspect screenTime.status and screenTime.issues."
+                                : "Stored completed-day and/or refreshed active-day Screen Time is returned in screenTime. Computer History was not read because this question asks only for Screen Time.",
                             hits: [],
                             limitations: [
                                 "This direct Screen Time route deliberately skips unrelated Computer History journals to minimize latency, CPU and memory.",
@@ -1561,6 +1586,7 @@ public enum GoalongQueryCLI {
     public static func screenTimeRangePayload(
         days rawDays: [String],
         collectionProvider: ((DateInterval) -> AppleSystemScreenTimeCollection)? = nil,
+        dailyCollectionProvider: ((Date) -> AppleSystemScreenTimeCollection)? = nil,
         currentMacProvider: (() -> AppleScreenTimeDevice)? = nil
     ) throws -> Data {
         guard (1...31).contains(rawDays.count) else {
@@ -1582,42 +1608,57 @@ public enum GoalongQueryCLI {
         }
 
         let requestedInterval = DateInterval(start: firstDay, end: lastInterval.end)
-        let rawCollection: AppleSystemScreenTimeCollection
-        let currentMac: AppleScreenTimeDevice
-        if let collectionProvider, let currentMacProvider {
-            rawCollection = collectionProvider(requestedInterval)
-            currentMac = currentMacProvider()
-        } else {
-            let source = AppleSystemScreenTimeSource(deviceID: "goalong-cli-current-mac")
-            rawCollection = source.collect(for: requestedInterval)
-            currentMac = source.currentMacDevice
-        }
-        let collection = AppleScreenTimeDeviceNormalizer.normalize(
-            rawCollection,
-            currentMac: currentMac
-        )
         let generatedAt = Date()
-        let compactDays = try uniqueDays.map {
-            try compactScreenTimeDay(
-                day: $0,
-                collection: collection
+        let collections: [AppleSystemScreenTimeCollection]
+        let freshness: String
+        if let dailyCollectionProvider, let currentMacProvider {
+            let currentMac = currentMacProvider()
+            collections = uniqueDays.map {
+                AppleScreenTimeDeviceNormalizer.normalize(
+                    dailyCollectionProvider($0),
+                    currentMac: currentMac
+                )
+            }
+            freshness = rangeFreshness(for: collections)
+        } else {
+            let rawCollection: AppleSystemScreenTimeCollection
+            let currentMac: AppleScreenTimeDevice
+            if let collectionProvider, let currentMacProvider {
+                rawCollection = collectionProvider(requestedInterval)
+                currentMac = currentMacProvider()
+            } else {
+                throw CLIError.unsafeSource(
+                    "Screen Time range reads require Goalong's daily repository; direct Apple access from the CLI is disabled."
+                )
+            }
+            let collection = AppleScreenTimeDeviceNormalizer.normalize(
+                rawCollection,
+                currentMac: currentMac
             )
+            collections = Array(repeating: collection, count: uniqueDays.count)
+            freshness = "singleOnDemandAppleRangeReadForThisRequest"
         }
+        let compactDays = try zip(uniqueDays, collections).map {
+            try compactScreenTimeDay(day: $0.0, collection: $0.1)
+        }
+        let status = aggregateScreenTimeStatus(collections)
+        let assurances = Set(collections.compactMap {
+            $0.storedExport?.envelope.provenance.sourceAssurance.rawValue
+        })
         return try encodedJSON(
             ScreenTimeRangeEnvelope(
                 schemaVersion: 1,
                 generatedAt: generatedAt,
-                freshness: "singleOnDemandAppleRangeReadForThisRequest",
-                sourceAssurance: collection.storedExport?.envelope.provenance
-                    .sourceAssurance.rawValue,
+                freshness: freshness,
+                sourceAssurance: assurances.count == 1 ? assurances.first : nil,
                 status: ScreenTimeStatusEnvelope(
-                    kind: collection.status.kind.rawValue,
-                    title: collection.status.title,
-                    message: collection.status.message
+                    kind: status.kind.rawValue,
+                    title: status.title,
+                    message: status.message
                 ),
                 days: compactDays,
                 limitation: screenTimeLimitation(
-                    provenance: collection.storedExport?.envelope.provenance
+                    provenance: collections.compactMap(\.storedExport).last?.envelope.provenance
                 )
             )
         )
@@ -1689,7 +1730,12 @@ public enum GoalongQueryCLI {
         endExclusive: Date,
         maximumDays: Int,
         requestProvider: (URL, [String]) throws -> Data = { root, days in
-            try GoalongReadOnlyQueryBroker.requestScreenTimeRange(
+            let parsedDays = try days.map(day)
+            let today = Calendar.current.startOfDay(for: Date())
+            if parsedDays.allSatisfy({ Calendar.current.startOfDay(for: $0) < today }) {
+                return try storedScreenTimeRangePayload(root: root, days: days)
+            }
+            return try GoalongReadOnlyQueryBroker.requestScreenTimeRange(
                 rootDirectory: root,
                 days: days
             )
@@ -1746,7 +1792,7 @@ public enum GoalongQueryCLI {
             let payload = try requestProvider(root, requestedDayStrings)
             let envelope = try decoder.decode(ScreenTimeRangeEnvelope.self, from: payload)
             guard envelope.schemaVersion == 1,
-                envelope.freshness == "singleOnDemandAppleRangeReadForThisRequest"
+                supportedScreenTimeRangeFreshness.contains(envelope.freshness)
             else {
                 throw CLIError.unsafeSource("The Screen Time broker returned an unsupported range response.")
             }
@@ -1759,7 +1805,7 @@ public enum GoalongQueryCLI {
                 guard let matches = returnedDays[dayString], matches.count == 1,
                     let day = matches.first
                 else {
-                    issues.append("\(dayString): fresh Apple Screen Time range omitted or duplicated this day.")
+                    issues.append("\(dayString): stored/live Screen Time range omitted or duplicated this day.")
                     continue
                 }
                 days.append(day)
@@ -1771,14 +1817,14 @@ public enum GoalongQueryCLI {
                 )
             }
         } catch {
-            issues.append("Fresh Apple Screen Time range read failed: \(error)")
+            issues.append("Stored/live Screen Time range read failed: \(error)")
         }
 
         let needsDirectDetail = days.contains { $0.omittedApplicationCount > 0 }
             || omittedDayCount > 0
         return ScreenTimeAskContext(
             requested: true,
-            refreshPolicy: "singleFreshOnDemandAppleRangeReadForIncludedDays",
+            refreshPolicy: "completedDaysFromLocalStoreCurrentDayFromApple",
             generatedAt: generatedAt,
             sourceAssurance: sourceAssurance,
             status: status,
@@ -1797,6 +1843,27 @@ public enum GoalongQueryCLI {
         macOnly: Bool,
         selectedDeviceIDs: [String]
     ) throws {
+        guard capabilityConsentEnabled(
+            rootDirectory: root,
+            capability: "appleScreenTime"
+        ) else {
+            throw CLIError.unsafeSource(
+                "Apple Screen Time is off in Goalong. Enable that source explicitly before the CLI reads active or stored daily records."
+            )
+        }
+        let requestedDay = Calendar.current.startOfDay(for: day)
+        let today = Calendar.current.startOfDay(for: Date())
+        if requestedDay < today {
+            FileHandle.standardOutput.write(
+                try storedScreenTimePayload(
+                    root: root,
+                    day: requestedDay,
+                    macOnly: macOnly,
+                    selectedDeviceIDs: selectedDeviceIDs
+                )
+            )
+            return
+        }
         do {
             let payload = try GoalongReadOnlyQueryBroker.requestScreenTime(
                 rootDirectory: root,
@@ -1810,6 +1877,106 @@ public enum GoalongQueryCLI {
                 "Apple Screen Time is unavailable. Open Goalong History and explicitly enable Screen Time; the CLI never reads Apple's protected stores directly. Broker error: \(error)"
             )
         }
+    }
+
+    static func storedScreenTimeRangePayload(
+        root: URL,
+        days rawDays: [String],
+        now: Date = Date()
+    ) throws -> Data {
+        guard capabilityConsentEnabled(
+            rootDirectory: root,
+            capability: "appleScreenTime"
+        ) else {
+            throw CLIError.unsafeSource(
+                "Apple Screen Time is off in Goalong. Stored daily records remain inaccessible until the source is enabled again."
+            )
+        }
+        let calendar = Calendar.current
+        let requestedDays = Array(
+            Set(try rawDays.map(day).map { calendar.startOfDay(for: $0) })
+        ).sorted()
+        let today = calendar.startOfDay(for: now)
+        guard requestedDays.allSatisfy({ $0 < today }) else {
+            throw CLIError.usage("Stored Screen Time ranges can contain completed days only")
+        }
+        let archive = try AppleSystemScreenTimeDailyArchive(
+            rootDirectory: root.appendingPathComponent("apple-screen-time", isDirectory: true),
+            calendar: calendar,
+            createIfMissing: false
+        )
+        let collections = Dictionary(uniqueKeysWithValues: requestedDays.map { requestedDay in
+            (
+                localDayString(requestedDay),
+                archive.storedCollection(for: requestedDay, now: now)
+                    ?? missingStoredScreenTimeCollection(for: requestedDay)
+            )
+        })
+        let currentMac = currentMacDevice(in: Array(collections.values))
+        return try screenTimeRangePayload(
+            days: rawDays,
+            dailyCollectionProvider: {
+                collections[localDayString($0)] ?? missingStoredScreenTimeCollection(for: $0)
+            },
+            currentMacProvider: { currentMac }
+        )
+    }
+
+    private static func storedScreenTimePayload(
+        root: URL,
+        day: Date,
+        macOnly: Bool,
+        selectedDeviceIDs: [String]
+    ) throws -> Data {
+        let archive = try AppleSystemScreenTimeDailyArchive(
+            rootDirectory: root.appendingPathComponent("apple-screen-time", isDirectory: true),
+            createIfMissing: false
+        )
+        let collection = archive.storedCollection(for: day)
+            ?? missingStoredScreenTimeCollection(for: day)
+        let currentMac = currentMacDevice(in: [collection])
+        return try encodedScreenTime(
+            day: day,
+            macOnly: macOnly,
+            selectedDeviceIDs: selectedDeviceIDs,
+            collectionProvider: { _ in collection },
+            currentMacProvider: { currentMac }
+        )
+    }
+
+    private static func currentMacDevice(
+        in collections: [AppleSystemScreenTimeCollection]
+    ) -> AppleScreenTimeDevice {
+        let devices = collections.flatMap(\.availableDevices)
+        return devices.first(where: {
+            $0.kind == .mac && $0.id.hasPrefix("apple-system-current-mac:")
+        })
+            ?? devices.first(where: { $0.kind == .mac })
+            ?? AppleScreenTimeDevice(
+                id: "goalong-cli-current-mac",
+                name: "This Mac",
+                kind: .mac
+            )
+    }
+
+    private static func missingStoredScreenTimeCollection(
+        for _: Date
+    ) -> AppleSystemScreenTimeCollection {
+        AppleSystemScreenTimeCollection(
+            storedExport: nil,
+            availableDevices: [],
+            status: AppleSystemScreenTimeStatus(
+                kind: .noAppleData,
+                title: "No stored Screen Time for this completed day",
+                message: "Goalong only reads Apple Screen Time while a day is active. No local daily record exists for this completed day."
+            ),
+            deviceSourceLabels: [:],
+            latestAppleUpdate: nil,
+            knowledgeIntervalCount: 0,
+            biomeIntervalCount: 0,
+            screenTimeAppUsageIntervalCount: 0,
+            storageState: .missingCompletedDay
+        )
     }
 
     private static func encodedScreenTime(
@@ -1828,9 +1995,9 @@ public enum GoalongQueryCLI {
             rawCollection = collectionProvider(day)
             currentMac = currentMacProvider()
         } else {
-            let source = AppleSystemScreenTimeSource(deviceID: "goalong-cli-current-mac")
-            rawCollection = source.collect(for: day)
-            currentMac = source.currentMacDevice
+            throw CLIError.unsafeSource(
+                "Screen Time reads require Goalong's daily repository; direct Apple access from the CLI is disabled."
+            )
         }
         let collection = AppleScreenTimeDeviceNormalizer.normalize(
             rawCollection,
@@ -1862,7 +2029,7 @@ public enum GoalongQueryCLI {
                 schemaVersion: 1,
                 day: localDayString(day),
                 generatedAt: Date(),
-                freshness: "collectedOnDemandForThisRequest",
+                freshness: screenTimeFreshness(for: collection.storageState),
                 scope: scope.mode.rawValue,
                 sourceAssurance: summary?.provenance.sourceAssurance.rawValue,
                 status: ScreenTimeStatusEnvelope(
@@ -1907,6 +2074,8 @@ public enum GoalongQueryCLI {
         }
         return ScreenTimeAskDay(
             day: localDayString(day),
+            freshness: screenTimeFreshness(for: collection.storageState),
+            sourceAssurance: summary?.provenance.sourceAssurance.rawValue,
             totalScreenOnDuration: summary?.totalScreenOnDuration,
             devices: summary?.deviceSummaries.map {
                 ScreenTimeAskDevice(
@@ -1921,6 +2090,71 @@ public enum GoalongQueryCLI {
             applications: includedApplications,
             omittedApplicationCount: max(0, applications.count - includedApplications.count),
             latestAppleUpdate: summary?.latestDataUpdate ?? collection.latestAppleUpdate
+        )
+    }
+
+    private static let supportedScreenTimeRangeFreshness: Set<String> = [
+        "singleOnDemandAppleRangeReadForThisRequest",
+        "storedCompletedDaysOnly",
+        "storedCompletedDaysPlusLiveCurrentDay",
+        "liveCurrentDayOnly",
+        "storedDayCoverageIncomplete",
+    ]
+
+    private static func screenTimeFreshness(
+        for state: AppleSystemScreenTimeStorageState
+    ) -> String {
+        switch state {
+        case .directAppleRead:
+            return "collectedOnDemandForThisRequest"
+        case .liveCurrentDayStored:
+            return "liveCurrentDayReadAndStored"
+        case .activeDayStoredFallback:
+            return "storedActiveDayFallback"
+        case .completedDayStored:
+            return "storedCompletedDayNoAppleHistoryRead"
+        case .missingCompletedDay:
+            return "missingCompletedDayNoAppleHistoryRead"
+        }
+    }
+
+    private static func rangeFreshness(
+        for collections: [AppleSystemScreenTimeCollection]
+    ) -> String {
+        let states = Set(collections.map(\.storageState))
+        if states == [.completedDayStored] { return "storedCompletedDaysOnly" }
+        if states.isSubset(of: [.liveCurrentDayStored, .activeDayStoredFallback]) {
+            return "liveCurrentDayOnly"
+        }
+        if states.contains(.missingCompletedDay) { return "storedDayCoverageIncomplete" }
+        if states.contains(.completedDayStored),
+           !states.isDisjoint(with: [.liveCurrentDayStored, .activeDayStoredFallback])
+        {
+            return "storedCompletedDaysPlusLiveCurrentDay"
+        }
+        return "singleOnDemandAppleRangeReadForThisRequest"
+    }
+
+    private static func aggregateScreenTimeStatus(
+        _ collections: [AppleSystemScreenTimeCollection]
+    ) -> AppleSystemScreenTimeStatus {
+        guard let first = collections.first else {
+            return AppleSystemScreenTimeStatus(
+                kind: .noAppleData,
+                title: "No Screen Time day requested",
+                message: "No stored or active Screen Time day was requested."
+            )
+        }
+        if collections.allSatisfy({ $0.status == first.status }) {
+            return first.status
+        }
+        let unavailable = collections.filter { $0.storedExport == nil }.count
+        return AppleSystemScreenTimeStatus(
+            kind: unavailable == collections.count ? .noAppleData : .partial,
+            title: unavailable == 0 ? "Screen Time loaded with source warnings" : "Screen Time coverage is incomplete",
+            message: unavailable == 0
+                ? "Every requested day was loaded; at least one day retained a source warning."
+                : "\(unavailable) requested completed day(s) had no local Goalong Screen Time record; Apple history was not reopened."
         )
     }
 
@@ -2582,6 +2816,10 @@ public enum GoalongQueryCLI {
 
     private static func availableDays(root: URL) -> AvailableDaysEnvelope {
         let agentDays = agentConversationDays(root: root)
+        let screenTimeEnabled = capabilityConsentEnabled(
+            rootDirectory: root,
+            capability: "appleScreenTime"
+        )
         return AvailableDaysEnvelope(
             rootDirectory: root.path,
             computerHistory: filenames(
@@ -2600,7 +2838,17 @@ public enum GoalongQueryCLI {
                     .appendingPathComponent("recaps", isDirectory: true),
                 suffix: ".chatgpt-recap.json"
             ),
-            screenTime: "queried read-only on demand; Apple retention and permissions determine availability"
+            screenTimeDays: screenTimeEnabled
+                ? filenames(
+                    in: root
+                        .appendingPathComponent("apple-screen-time", isDirectory: true)
+                        .appendingPathComponent("days", isDirectory: true),
+                    suffix: ".json"
+                )
+                : [],
+            screenTime: screenTimeEnabled
+                ? "completed days come from Goalong's local daily records; only the active day is refreshed from Apple"
+                : "consent required; stored Screen Time dates remain hidden while the capability is off"
         )
     }
 
@@ -2859,8 +3107,8 @@ public enum GoalongQueryCLI {
         it never writes a clipped source or derived snapshot. `ask` uses those
         projections and a bounded transient source-keyword pass when useful; it supports
         questions about recent work, resources, status, standups and repeatable workflows.
-        When a question depends on Screen Time, `ask` requests one fresh, bounded Apple range
-        read and derives each included day transiently into a compact Screen Time context.
+        When a question depends on Screen Time, `ask` reads completed days from Goalong's
+        compact daily records and asks the running app to refresh only the active day.
         `computer-history-context` emits a deterministic, token-bounded evidence pack for
         an agent without persisting another copy. `activities` enumerates every reconstructed
         activity as a lightweight pageable index; `activity` reopens one exact source activity
@@ -2868,9 +3116,9 @@ public enum GoalongQueryCLI {
         user prompts and final assistant answers from the existing lightweight source index;
         it never scans providers, updates the index or copies a transcript. `screen-time` asks the running,
         identically signed Goalong app through an owner-only local socket, so Goalong consent cannot be
-        bypassed; only the app then reads Apple's stores transiently. Every direct or indirect
-        Screen Time request rebuilds its response after rechecking Apple's source fingerprints;
-        response payloads are never cached. `websites` streams one original local
+        bypassed; only the app then reads Apple's stores for the active day. Completed days are
+        served from one immutable local record and never reopen Apple history. Response payloads
+        are not cached separately. `websites` streams one original local
         day journal and returns a bounded, paginated domain-only ranking with exact per-browser
         seconds; it never exposes full URLs or stores another copy. `recap` reads only the bounded
         canonical daily recap JSON; `days` lists the dates currently queryable from

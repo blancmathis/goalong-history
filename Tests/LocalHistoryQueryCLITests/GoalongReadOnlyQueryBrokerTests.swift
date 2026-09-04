@@ -128,7 +128,7 @@
             )
         }
 
-        func testIndirectScreenTimeContextUsesOneFreshRangeRequestForAllIncludedDays() throws {
+        func testIndirectScreenTimeContextUsesOneBrokerRequestForStoredAndActiveDays() throws {
             let calendar = Calendar(identifier: .gregorian)
             let firstDay = try XCTUnwrap(
                 calendar.date(from: DateComponents(year: 2026, month: 9, day: 2))
@@ -179,7 +179,7 @@
             XCTAssertTrue(context.requested)
             XCTAssertEqual(
                 context.refreshPolicy,
-                "singleFreshOnDemandAppleRangeReadForIncludedDays"
+                "completedDaysFromLocalStoreCurrentDayFromApple"
             )
             XCTAssertEqual(context.days.map(\.day), requestedDays)
             XCTAssertEqual(requestCount, 1)
@@ -285,6 +285,175 @@
             XCTAssertEqual(envelope.days[1].applications.map(\.name), ["Second"])
             XCTAssertEqual(envelope.sourceAssurance, "privateAppleAggregateStore")
             XCTAssertEqual(envelope.status.kind, "localOnly")
+        }
+
+        func testScreenTimeRangePayloadLabelsStoredCompletedDaysAndLiveCurrentDay() throws {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+            let mac = AppleScreenTimeDevice(id: "mac", name: "Mac", kind: .mac)
+            let provenance = AppleScreenTimeProvenance(
+                collectorBundleIdentifier: "test",
+                collectorVersion: "1",
+                collectorPlatform: "test",
+                authorization: .unknown,
+                fetchPolicy: .live,
+                euCustomerRequirementAcknowledged: false
+            )
+            func collection(
+                for day: Date,
+                state: AppleSystemScreenTimeStorageState
+            ) -> AppleSystemScreenTimeCollection {
+                let end = calendar.date(byAdding: .day, value: 1, to: day)!
+                let stored = AppleScreenTimeStoredExport(
+                    verification: .unsigned,
+                    envelope: AppleScreenTimeExportEnvelope(
+                        requestedStart: day,
+                        requestedEnd: end,
+                        requestedScope: .allDevices,
+                        provenance: provenance,
+                        reports: [
+                            AppleScreenTimeDeviceReport(
+                                device: mac,
+                                lastUpdatedAt: end,
+                                segments: [
+                                    AppleScreenTimeSegment(
+                                        start: day,
+                                        end: day.addingTimeInterval(60),
+                                        totalScreenOnDuration: 60
+                                    )
+                                ]
+                            )
+                        ]
+                    )
+                )
+                return AppleSystemScreenTimeCollection(
+                    storedExport: stored,
+                    availableDevices: [mac],
+                    status: AppleSystemScreenTimeStatus(kind: .ready, title: "Ready", message: "Ready"),
+                    deviceSourceLabels: [mac.id: "Test"],
+                    latestAppleUpdate: end,
+                    knowledgeIntervalCount: 1,
+                    biomeIntervalCount: 0,
+                    storageState: state
+                )
+            }
+            let dailyStates: [AppleSystemScreenTimeStorageState] = [
+                .completedDayStored,
+                .liveCurrentDayStored,
+            ]
+            var requestedDays: [Date] = []
+
+            let payload = try GoalongQueryCLI.screenTimeRangePayload(
+                days: ["2026-09-03", "2026-09-04"],
+                dailyCollectionProvider: { day in
+                    requestedDays.append(day)
+                    return collection(for: day, state: dailyStates[requestedDays.count - 1])
+                },
+                currentMacProvider: { mac }
+            )
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let envelope = try decoder.decode(ScreenTimeRangeEnvelope.self, from: payload)
+
+            XCTAssertEqual(requestedDays.count, 2)
+            XCTAssertEqual(envelope.freshness, "storedCompletedDaysPlusLiveCurrentDay")
+            XCTAssertEqual(envelope.days[0].freshness, "storedCompletedDayNoAppleHistoryRead")
+            XCTAssertEqual(envelope.days[1].freshness, "liveCurrentDayReadAndStored")
+            XCTAssertEqual(envelope.days.map(\.totalScreenOnDuration), [60, 60])
+        }
+
+        func testStoredScreenTimeRangeReadsCompletedDayWithoutBrokerOrArchiveWrite() throws {
+            let root = try temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            try Data(
+                """
+                {"schemaVersion":1,"policyVersion":1,"capabilities":{"appleScreenTime":{"enabled":true}}}
+                """.utf8
+            ).write(to: root.appendingPathComponent("capability-consent.json"))
+            let calendar = Calendar.current
+            let today = calendar.startOfDay(for: Date())
+            let completedDay = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+            let end = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: completedDay))
+            let mac = AppleScreenTimeDevice(
+                id: "apple-system-current-mac:test",
+                name: "Mac",
+                kind: .mac
+            )
+            let stored = AppleScreenTimeStoredExport(
+                verification: .unsigned,
+                envelope: AppleScreenTimeExportEnvelope(
+                    requestedStart: completedDay,
+                    requestedEnd: end,
+                    requestedScope: .allDevices,
+                    provenance: AppleScreenTimeProvenance(
+                        collectorBundleIdentifier: "test",
+                        collectorVersion: "1",
+                        collectorPlatform: "test",
+                        authorization: .unknown,
+                        fetchPolicy: .live,
+                        euCustomerRequirementAcknowledged: false
+                    ),
+                    reports: [
+                        AppleScreenTimeDeviceReport(
+                            device: mac,
+                            lastUpdatedAt: end,
+                            segments: [
+                                AppleScreenTimeSegment(
+                                    start: completedDay,
+                                    end: completedDay.addingTimeInterval(480),
+                                    totalScreenOnDuration: 480,
+                                    applications: [
+                                        AppleScreenTimeApplicationUsage(
+                                            bundleIdentifier: "com.example.work",
+                                            displayName: "Work",
+                                            duration: 480
+                                        )
+                                    ]
+                                )
+                            ]
+                        )
+                    ]
+                )
+            )
+            let archive = try AppleSystemScreenTimeDailyArchive(
+                rootDirectory: root.appendingPathComponent("apple-screen-time", isDirectory: true)
+            )
+            _ = try archive.storeActiveDay(
+                AppleSystemScreenTimeCollection(
+                    storedExport: stored,
+                    availableDevices: [mac],
+                    status: AppleSystemScreenTimeStatus(kind: .ready, title: "Ready", message: "Ready"),
+                    deviceSourceLabels: [mac.id: "Test"],
+                    latestAppleUpdate: end,
+                    knowledgeIntervalCount: 1,
+                    biomeIntervalCount: 0
+                ),
+                for: completedDay,
+                storedAt: completedDay.addingTimeInterval(600)
+            )
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .current
+            formatter.dateFormat = "yyyy-MM-dd"
+            let dayString = formatter.string(from: completedDay)
+            let record = archive.daysDirectory.appendingPathComponent("\(dayString).json")
+            let before = try FileManager.default.attributesOfItem(atPath: record.path)[.modificationDate] as? Date
+
+            let payload = try GoalongQueryCLI.storedScreenTimeRangePayload(
+                root: root,
+                days: [dayString],
+                now: today
+            )
+            let after = try FileManager.default.attributesOfItem(atPath: record.path)[.modificationDate] as? Date
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let envelope = try decoder.decode(ScreenTimeRangeEnvelope.self, from: payload)
+
+            XCTAssertEqual(before, after, "A completed-day CLI read must not rewrite its archive record")
+            XCTAssertEqual(envelope.freshness, "storedCompletedDaysOnly")
+            XCTAssertEqual(envelope.days.first?.freshness, "storedCompletedDayNoAppleHistoryRead")
+            XCTAssertEqual(envelope.days.first?.totalScreenOnDuration, 480)
         }
 
         func testScreenTimeRangePayloadRejectsSparseUnboundedIntervalsBeforeReadingSource() throws {

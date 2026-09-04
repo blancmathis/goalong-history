@@ -280,7 +280,7 @@
                 protectedSourceToggle(
                     .appleScreenTime,
                     symbol: "macbook.and.iphone",
-                    detail: "Reads Apple’s local Screen Time and iCloud-synced device stores in place. Databases are never copied into Goalong storage."
+                    detail: "Reads Apple’s local Screen Time and iCloud-synced device stores only for the active day, then keeps one compact local daily record. Apple databases themselves are never copied."
                 )
                 protectedSourceToggle(
                     .aiConversations,

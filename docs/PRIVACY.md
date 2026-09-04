@@ -18,7 +18,7 @@ mode `0600`. A missing, unreadable or future-version file fails closed to everyt
 - cleaned website address when exposed by the browser and allowed by the user;
 - clicks, grouped scrolling, coarse shortcut/navigation activity, typing count and duration;
 - lock, sleep, focus, pause and suppression transitions;
-- local seals, memories, Screen Time projections, bounded Computer History and daily recap output;
+- local seals, memories, one normalized record per observed Screen Time day, bounded Computer History and daily recap output;
 - for AI conversations only: provider, stable ID, original source reference, timestamps, size,
   fingerprint, status and bounded offsets.
 

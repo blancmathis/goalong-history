@@ -41,7 +41,7 @@ The first launch guides the user through focused, skippable screens. Every sensi
 macOS permission state never counts as Goalong consent. A previously granted Full Disk Access,
 Accessibility or Input Monitoring switch cannot silently reactivate a Goalong source.
 
-The installed app also provides a read-only `goalong` terminal command for users and local agents. It exposes Computer History, detailed Apple Screen Time, direct-source AI conversations, available dates, daily recaps, and bounded agent context as JSON without creating a second history store or background process. See [`docs/CLI.md`](docs/CLI.md).
+The installed app also provides a read-only `goalong` terminal command for users and local agents. It exposes Computer History, detailed Apple Screen Time, direct-source AI conversations, available dates, daily recaps, and bounded agent context as JSON without creating query copies or another background process. See [`docs/CLI.md`](docs/CLI.md).
 
 Permission state updates live. Every step includes a direct System Settings route and a safe “set up later” path, so the user is never stranded.
 
@@ -85,6 +85,7 @@ This abridged tree includes the principal preserved data stores:
 ├── memories/
 ├── computer-history/
 ├── apple-screen-time/
+│   └── days/                # one compact normalized record per Screen Time day
 ├── agent-activity-v2/
 ├── chatgpt/
 │   ├── recaps/

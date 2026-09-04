@@ -17,10 +17,12 @@ pass, the project supports these claims:
   framework/feed or automatic updater;
 - Apple Screen Time and provider-owned conversation stores are opened through bounded,
   read-only adapters;
+- Goalong stores one normalized owner-only Screen Time record per observed day; only the active
+  day is updated from Apple, and completed-day UI, recap and CLI reads never reopen Apple history;
 - AI conversation bodies remain in provider storage; Goalong persists only a bounded metadata
   index and never a transcript body, snapshot, version or second conversation vault;
-- the Screen Time CLI asks the running, consented app through a user-only Unix socket and never
-  opens Apple’s protected stores itself;
+- the Screen Time CLI asks the running, consented app through a user-only Unix socket only for the
+  active day; completed days are read from Goalong's daily archive without opening Apple stores;
 - optional ChatGPT analysis launches only the reviewed Codex executable with the fixed
   `app-server` argument after a separate consent.
 

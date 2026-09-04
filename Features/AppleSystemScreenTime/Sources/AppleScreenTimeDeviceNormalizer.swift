@@ -26,7 +26,8 @@
                     latestAppleUpdate: collection.latestAppleUpdate,
                     knowledgeIntervalCount: collection.knowledgeIntervalCount,
                     biomeIntervalCount: collection.biomeIntervalCount,
-                    screenTimeAppUsageIntervalCount: collection.screenTimeAppUsageIntervalCount
+                    screenTimeAppUsageIntervalCount: collection.screenTimeAppUsageIntervalCount,
+                    storageState: collection.storageState
                 )
             }
 
@@ -66,7 +67,8 @@
                     latestAppleUpdate: collection.latestAppleUpdate,
                     knowledgeIntervalCount: 0,
                     biomeIntervalCount: 0,
-                    screenTimeAppUsageIntervalCount: 0
+                    screenTimeAppUsageIntervalCount: 0,
+                    storageState: collection.storageState
                 )
             }
 
@@ -116,7 +118,8 @@
                 latestAppleUpdate: collection.latestAppleUpdate,
                 knowledgeIntervalCount: collection.knowledgeIntervalCount,
                 biomeIntervalCount: collection.biomeIntervalCount,
-                screenTimeAppUsageIntervalCount: collection.screenTimeAppUsageIntervalCount
+                screenTimeAppUsageIntervalCount: collection.screenTimeAppUsageIntervalCount,
+                storageState: collection.storageState
             )
         }
 

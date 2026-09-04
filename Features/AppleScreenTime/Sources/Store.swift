@@ -17,7 +17,13 @@ public enum AppleScreenTimeStoreError: Error, CustomStringConvertible {
 public enum AppleScreenTimeJSON {
     public static func encoder(prettyPrinted: Bool = true) -> JSONEncoder {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(formatter.string(from: date))
+        }
         var formatting: JSONEncoder.OutputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         if prettyPrinted { formatting.insert(.prettyPrinted) }
         encoder.outputFormatting = formatting
@@ -26,7 +32,21 @@ public enum AppleScreenTimeJSON {
 
     public static func decoder() -> JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let fractionalFormatter = ISO8601DateFormatter()
+        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let legacyFormatter = ISO8601DateFormatter()
+        legacyFormatter.formatOptions = [.withInternetDateTime]
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+            guard let date = fractionalFormatter.date(from: value) ?? legacyFormatter.date(from: value) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Expected an ISO 8601 date."
+                )
+            }
+            return date
+        }
         return decoder
     }
 
@@ -58,7 +78,7 @@ public final class AppleScreenTimeStore {
     public func loadConfiguration() -> AppleScreenTimeConfiguration {
         queue.sync {
             guard let data = try? Data(contentsOf: configurationFile),
-                  let value = try? AppleScreenTimeJSON.decode(AppleScreenTimeConfiguration.self, from: data)
+                let value = try? AppleScreenTimeJSON.decode(AppleScreenTimeConfiguration.self, from: data)
             else {
                 return .default
             }
@@ -110,18 +130,21 @@ public final class AppleScreenTimeStore {
 
     public func storedExports() -> [AppleScreenTimeStoredExport] {
         queue.sync {
-            guard let files = try? fileManager.contentsOfDirectory(
-                at: snapshotsDirectory,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            ) else { return [] }
+            guard
+                let files = try? fileManager.contentsOfDirectory(
+                    at: snapshotsDirectory,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                )
+            else { return [] }
 
-            return files
+            return
+                files
                 .filter { $0.pathExtension.lowercased() == "json" }
                 .compactMap { file -> AppleScreenTimeStoredExport? in
                     guard let data = try? Data(contentsOf: file),
-                          let stored = try? AppleScreenTimeJSON.decode(AppleScreenTimeStoredExport.self, from: data),
-                          (try? AppleScreenTimeValidator.validate(stored.envelope)) != nil
+                        let stored = try? AppleScreenTimeJSON.decode(AppleScreenTimeStoredExport.self, from: data),
+                        (try? AppleScreenTimeValidator.validate(stored.envelope)) != nil
                     else { return nil }
                     return stored
                 }
@@ -145,7 +168,7 @@ public final class AppleScreenTimeStore {
         calendar: Calendar = .current
     ) -> AppleScreenTimeDaySummary? {
         guard let interval = calendar.dateInterval(of: .day, for: day),
-              let stored = newestExport(overlapping: interval)
+            let stored = newestExport(overlapping: interval)
         else { return nil }
         return AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: scope)
     }

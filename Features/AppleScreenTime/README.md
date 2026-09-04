@@ -19,9 +19,11 @@ Features/AppleScreenTime/
 Features/AppleSystemScreenTime/Sources/
 ├── AppleSystemScreenTimeSource.swift    # shared read-only Apple aggregate + knowledgeC + Biome collector
 ├── AppleScreenTimeDeviceNormalizer.swift
+└── AppleSystemScreenTimeDailyArchive.swift # one active-day record; local-only completed-day reads
 
 Sources/LocalHistoryApp/AppleScreenTime/
 ├── AppleScreenTimeDashboardModel.swift
+├── GoalongScreenTimeRepositoryProvider.swift
 └── ScreenTimePage.swift
 ```
 
@@ -52,7 +54,7 @@ All SQLite connections are `SQLITE_OPEN_READONLY`. The feature never writes to, 
 
 Apple protects these locations with TCC, so the signed Goalong History app needs **Full Disk Access** for the Screen Time feature. Accessibility is not used by Screen Time; it remains a separate, optional permission for Computer History.
 
-The visible page refreshes every 30 seconds, and the refresh button still re-reads immediately. This avoids repeatedly enumerating Apple stores while keeping the UI current; iPhone/iPad freshness is controlled by Apple's iCloud/Biome synchronization. “Real time” therefore means automatic and continuously re-read as Apple syncs—not a guaranteed zero-latency push channel.
+Goalong stores exactly one compact normalized record for the active day. The existing app process updates it every ten minutes, on wake/unlock and on an active-day CLI request; today's visible page refreshes at most every 30 seconds. The same file is atomically replaced only when normalized content changes. When the date changes, the record is closed: all later UI, recap and CLI reads use it locally and never reopen Apple history. Missing completed days are explicit and are not backfilled. iPhone/iPad freshness remains controlled by Apple's iCloud/Biome synchronization.
 
 ## Device-scope semantics
 

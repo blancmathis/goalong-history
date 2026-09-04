@@ -5,6 +5,11 @@
 - Removed the Screen Time presentation oracle that could activate System Settings and synthesize
   menu, mouse or keyboard input. Screen Time now uses only read-only Apple stores in the
   background, with an explicit private-aggregate or reconstructed provenance state.
+- Added one compact normalized Screen Time record per observed day. Only the active day is
+  refreshed from Apple; completed-day UI, recap and CLI reads stay local and never reopen Apple
+  history or create query-specific copies.
+- Preserved subsecond Apple activity timestamps in stored JSON and atomically repairs a malformed
+  active-day record from an earlier build without modifying completed days.
 
 ## 0.6.0
 

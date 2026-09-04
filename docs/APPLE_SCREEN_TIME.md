@@ -27,11 +27,13 @@ The source code is isolated under `Sources/LocalHistoryApp/AppleScreenTime/` and
 
 Accessibility is not required by Screen Time. Goalong requests it separately only when the user enables Computer History.
 
-No daily export, manual file selection, companion snapshot or Goalong server is required for the data already synchronized to the Mac.
+No manual export, file selection, companion snapshot or Goalong server is required for the data already synchronized to the Mac.
 
 ## Automatic updates
 
-The dashboard refreshes at most every 30 seconds while the page is visible. Aggregate-store queries are bounded to the selected day. Unchanged Biome files are served from an in-memory fingerprint cache; only newly created or modified SEGB files are decoded again. No helper, watcher or persistent Screen Time process is added.
+Goalong maintains exactly one compact normalized file for the active day under `apple-screen-time/days/`. It atomically replaces that file only when Apple-derived content changes. The existing app process updates the active day every ten minutes, on wake/unlock, on an explicit CLI request, and at most every 30 seconds while today's page is visible. Aggregate-store queries are bounded to that active day. Unchanged Biome files are served from an in-memory fingerprint cache; only newly created or modified SEGB files are decoded again. No helper, watcher or additional persistent Screen Time process is added.
+
+When the local date changes, Goalong closes the previous day's record. Every later UI, recap and CLI read for that completed day uses only this Goalong-owned daily record; it never reopens Apple history. A missing completed-day record remains an explicit missing-data state rather than triggering a retrospective Apple scan. Goalong does not backfill older days during upgrade.
 
 The Mac-side refresh cadence is deterministic. Cross-device latency is not: Apple controls when iCloud/Biome delivers iPhone and iPad transitions. The page displays the latest Apple file/event update so a user can distinguish a live Mac refresh from a stale remote sync.
 
@@ -79,7 +81,7 @@ On this Mac, a healthy `ScreenTime.AppUsage` stream is used by itself for applic
 
 Goalong preserves Apple's complete merged report in memory, including explicit operating-system inactivity surfaces. Default summaries then hide those rows and subtract their durations. On Mac this means `com.apple.loginwindow` and Apple's `com.apple.ScreenSaver.*` bundle family; on iPhone, iPad and iPod it means `com.apple.SleepLockScreen`. Keeping those markers through the merge prevents a stale Biome foreground app from refilling a period Apple already identified as locked. The filter uses exact Apple bundle namespaces, not display names or broad “system app” guesses.
 
-The Overview page shows every active-use application by default. Its **Include login and lock-screen time** switch adds Apple-reported login-window, lock-screen, and screen-saver rows and updates the Screen Time total from the same already-read report. The switch does not hide or reveal ordinary apps. This is a presentation choice: it does not re-scan Apple stores and does not create a second stored copy. CLI reports retain the complete per-device rows while their aggregate summary uses the filtered default; daily AI recaps and share summaries also use the filtered default so known lock-screen time does not consume tokens or appear as active use.
+The Overview page shows every active-use application by default. Its **Include login and lock-screen time** switch adds Apple-reported login-window, lock-screen, and screen-saver rows and updates the Screen Time total from the same already-read report. The switch does not hide or reveal ordinary apps. This is a presentation choice: it does not re-scan Apple stores and does not create another stored copy. CLI reports retain the complete per-device rows while their aggregate summary uses the filtered default; daily AI recaps and share summaries also use the filtered default so known lock-screen time does not consume tokens or appear as active use.
 
 This boundary removes known locked and screen-saver periods. It does not claim proof of attention: an unlocked application left visible while someone walks away cannot be distinguished safely from legitimate passive use such as reading, video or a call, especially across remote Apple devices. Goalong therefore does not impose an arbitrary idle timeout.
 
@@ -88,8 +90,8 @@ This boundary removes known locked and screen-saver periods. It does not claim p
 - Screen Time contains no Accessibility navigation, synthetic input or System Settings activation code.
 - Apple fallback databases are opened with SQLite `READONLY`, `NOFOLLOW`, `query_only`, an allow-list authorizer, no mmap and an inode check after canonical path resolution.
 - Device-name enrichment reads only the account catalogue fields `name`, `model`, `os`, `trusted` and `last_updated_date`; serial numbers, account identifiers and service metadata are never selected.
-- Apple files are never modified, vacuumed, migrated or copied into Goalong storage.
-- Goalong History stores only its scope/share configuration and explicit share exports.
+- Apple files and databases are never modified, vacuumed, migrated or copied into Goalong storage.
+- Goalong stores one normalized, owner-only (`0600`) record per observed Screen Time day, plus its scope/share configuration and explicit share exports. The active file is updated in place; completed files are read locally and never versioned or refreshed from Apple.
 - The small device-name catalogue is cached only in memory and re-read only when its SQLite file or write-ahead log fingerprint changes.
 - ScreenTimeAgent’s aggregate store is inside an Apple Data Vault and can remain inaccessible to third-party apps even with Full Disk Access. Full Disk Access is still required for the fallback knowledgeC and Biome stores.
 - The private formats can change after an OS update; failures remain isolated to this optional feature.

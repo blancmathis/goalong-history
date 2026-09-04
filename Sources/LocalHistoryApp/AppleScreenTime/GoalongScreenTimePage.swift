@@ -680,14 +680,18 @@
                         Text("Data sources")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "Goalong reads Apple-owned ScreenTimeAgent, ScreenTime.AppUsage, knowledgeC and Biome data directly in the background. It never opens or controls System Settings, sends mouse or keyboard events, or stores a copy of Apple usage data. Private aggregates and reconstructed fallbacks stay clearly labelled."
+                            "Goalong reads Apple-owned ScreenTimeAgent, ScreenTime.AppUsage, knowledgeC and Biome data directly in the background only for the active day. It keeps one compact local day record, then reads that record forever after the day closes without reopening Apple history. It never opens or controls System Settings or sends mouse or keyboard events."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    if usesAppleAggregateStore {
+                    if screenTime.storageState == .completedDayStored {
+                        Text("Stored completed day · Apple not re-read")
+                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .foregroundStyle(LHTheme.success)
+                    } else if usesAppleAggregateStore {
                         Text(aggregateSourceLabel)
                             .font(.system(size: 8, weight: .semibold, design: .rounded))
                             .foregroundStyle(LHTheme.success)

@@ -42,6 +42,9 @@
         private var dashboardViewModel: DashboardViewModel!
         private var sharingRulesStore: SharingRulesStore!
         private var agentActivityRuntime: AgentActivityRuntime!
+        private var screenTimeRepository: AppleSystemScreenTimeRepository?
+        private var screenTimeArchiveTimer: Timer?
+        private var screenTimeArchiveRefreshInFlight = false
         private var readOnlyQueryServer: GoalongReadOnlyQueryServer?
         private var dashboardWindowController: DashboardWindowController!
         private var applicationMenuController: ApplicationMenuController!
@@ -96,6 +99,10 @@
                 store = try JSONLStore(retentionDays: configManager.config.retentionDays)
                 integrityStateStore = IntegrityStateStore()
                 deviceIdentity = try DeviceIdentity()
+                screenTimeRepository = try GoalongScreenTimeRepositoryProvider.repository(
+                    rootDirectory: AppPaths.screenTimeDirectory,
+                    deviceID: deviceIdentity.info.deviceID
+                )
                 integrityJournal = IntegrityJournal(stateStore: integrityStateStore)
                 minuteSealer = MinuteSealer(stateStore: integrityStateStore, identity: deviceIdentity)
                 minuteSealer.setUploader(nil)
@@ -216,6 +223,8 @@
 
         func applicationWillTerminate(_ notification: Notification) {
             permissionTimer?.invalidate()
+            screenTimeArchiveTimer?.invalidate()
+            screenTimeArchiveTimer = nil
             if let capabilityConsentObserver {
                 NotificationCenter.default.removeObserver(capabilityConsentObserver)
             }
@@ -775,6 +784,7 @@
                 agentActivityRuntime.stop()
             }
 
+            configureScreenTimeDailyArchive()
             configureReadOnlyQueryServer()
 
             let analysisEnabled = GoalongBuildCapabilities.permitsRemoteAnalysis
@@ -806,12 +816,10 @@
             }
             guard readOnlyQueryServer == nil else { return }
 
-            // The broker serves requests on one serial utility queue. Reuse one bounded Apple
-            // reader so unchanged source files can reuse decoded segments, but build a new
-            // response for every request after rechecking Apple's current file fingerprints.
-            let appleSource = AppleSystemScreenTimeSource(
-                deviceID: "goalong-cli-current-mac"
-            )
+            guard let screenTimeRepository else {
+                Diagnostics.write("Screen Time CLI broker stayed off because daily storage is unavailable.")
+                return
+            }
             let server = GoalongReadOnlyQueryServer(
                 rootDirectory: AppPaths.applicationSupportDirectory,
                 screenTimeHandler: { day, macOnly, selectedDeviceIDs in
@@ -819,15 +827,15 @@
                         day: day,
                         macOnly: macOnly,
                         selectedDeviceIDs: selectedDeviceIDs,
-                        collectionProvider: { appleSource.collect(for: $0) },
-                        currentMacProvider: { appleSource.currentMacDevice }
+                        collectionProvider: { screenTimeRepository.collect(for: $0) },
+                        currentMacProvider: { screenTimeRepository.currentMacDevice }
                     )
                 },
                 screenTimeRangeHandler: { days in
                     try GoalongQueryCLI.screenTimeRangePayload(
                         days: days,
-                        collectionProvider: { appleSource.collect(for: $0) },
-                        currentMacProvider: { appleSource.currentMacDevice }
+                        dailyCollectionProvider: { screenTimeRepository.collect(for: $0) },
+                        currentMacProvider: { screenTimeRepository.currentMacDevice }
                     )
                 }
             )
@@ -839,6 +847,39 @@
                 Diagnostics.write(
                     "Screen Time CLI broker stayed off because it could not start safely: \(error)"
                 )
+            }
+        }
+
+        /// Uses the existing Goalong process to maintain one local file for the active day.
+        /// Historical Apple stores are never opened by this timer or by subsequent readers.
+        private func configureScreenTimeDailyArchive() {
+            screenTimeArchiveTimer?.invalidate()
+            screenTimeArchiveTimer = nil
+            guard capabilityConsents.isEnabled(.appleScreenTime), screenTimeRepository != nil else {
+                return
+            }
+
+            refreshCurrentScreenTimeDay()
+            let interval: TimeInterval = 10 * 60
+            let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+                self?.refreshCurrentScreenTimeDay()
+            }
+            timer.tolerance = 60
+            RunLoop.main.add(timer, forMode: .common)
+            screenTimeArchiveTimer = timer
+        }
+
+        private func refreshCurrentScreenTimeDay() {
+            guard capabilityConsents.isEnabled(.appleScreenTime),
+                  let screenTimeRepository,
+                  !screenTimeArchiveRefreshInFlight
+            else { return }
+            screenTimeArchiveRefreshInFlight = true
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                _ = screenTimeRepository.collect(for: Date())
+                DispatchQueue.main.async {
+                    self?.screenTimeArchiveRefreshInFlight = false
+                }
             }
         }
 
@@ -885,6 +926,7 @@
                     self.recorder.record(kind: .sessionUnlocked, message: "macOS user session became active")
                     self.contextMonitor.resetAndSample()
                     self.checkPermissionsAndStartTap(forceRefresh: true)
+                    self.refreshCurrentScreenTimeDay()
                 }
             )
 
@@ -912,6 +954,7 @@
                     self.recorder.record(kind: .systemWake, message: "Mac woke from sleep")
                     self.contextMonitor.resetAndSample()
                     self.checkPermissionsAndStartTap(forceRefresh: true)
+                    self.refreshCurrentScreenTimeDay()
                 }
             )
 
