@@ -64,7 +64,7 @@
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var updates = SoftwareUpdateManager.shared
 
-        private let primarySections: [DashboardSection] = [.overview, .history, .cli, .settings]
+        private let primarySections: [DashboardSection] = [.overview, .history, .settings]
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
@@ -285,10 +285,8 @@
                 return .overview
             case .history, .activity, .screenTime:
                 return .history
-            case .agentActivity, .privacy, .settings:
+            case .agentActivity, .privacy, .cli, .settings:
                 return .settings
-            case .cli:
-                return .cli
             }
         }
     }

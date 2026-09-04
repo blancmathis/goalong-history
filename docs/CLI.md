@@ -2,7 +2,7 @@
 
 The app bundle includes a read-only `goalong` command for users and local agents. The installer creates the stable link `~/.local/bin/goalong` when that directory is safe and writable. It never replaces an unrelated command already present there.
 
-The app's **CLI** page, immediately before **Settings** in the sidebar, provides a short human guide and one complete agent brief that can be copied to the clipboard and pasted as-is into a local agent.
+The **Goalong CLI** card in **Settings** opens a short human guide and one complete agent brief that can be copied to the clipboard and pasted as-is into a local agent.
 
 ```bash
 goalong help

@@ -89,7 +89,7 @@
             XCTAssertTrue(dashboardModel.contains("activateFileViewerSelecting([file])"))
         }
 
-        func testSidebarKeepsFourPrimaryDestinationsWithCLIImmediatelyBeforeSettings() throws {
+        func testSidebarKeepsThreePrimaryDestinationsAndOpensCLIFromSettings() throws {
             let repositoryRoot = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -102,7 +102,7 @@
 
             XCTAssertTrue(
                 source.contains(
-                    "private let primarySections: [DashboardSection] = [.overview, .history, .cli, .settings]"
+                    "private let primarySections: [DashboardSection] = [.overview, .history, .settings]"
                 )
             )
             XCTAssertTrue(source.contains("case .history:\n                UnifiedHistoryPage(model: model)"))
@@ -131,6 +131,8 @@
                 encoding: .utf8
             )
             XCTAssertTrue(settings.contains("case .home:"))
+            XCTAssertTrue(settings.contains("title: \"Goalong CLI\""))
+            XCTAssertTrue(settings.contains("model.selectSection(.cli)"))
             XCTAssertTrue(settings.contains("title: \"Recording\""))
             XCTAssertTrue(settings.contains("title: \"Sources\""))
             XCTAssertTrue(settings.contains("model.selectSection(.agentActivity)"))

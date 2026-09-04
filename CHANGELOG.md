@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added a dedicated CLI page before Settings with quick-start commands, live link status and one
+- Added a dedicated CLI guide from Settings with quick-start commands, live link status and one
   complete copy-ready instruction block for safe, coverage-aware local agent use.
 - Removed the Screen Time presentation oracle that could activate System Settings and synthesize
   menu, mouse or keyboard input. Screen Time now uses only read-only Apple stores in the

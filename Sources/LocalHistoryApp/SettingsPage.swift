@@ -173,6 +173,14 @@
             LHCard(padding: 0) {
                 VStack(spacing: 0) {
                     settingsNavigationRow(
+                        title: "Goalong CLI",
+                        detail: "Use your local history from Terminal or give an agent one complete guide.",
+                        symbol: "terminal"
+                    ) {
+                        model.selectSection(.cli)
+                    }
+                    Divider().padding(.leading, 62)
+                    settingsNavigationRow(
                         title: "Recording",
                         detail: "Choose the local signals Goalong may record.",
                         symbol: "dot.radiowaves.left.and.right"
