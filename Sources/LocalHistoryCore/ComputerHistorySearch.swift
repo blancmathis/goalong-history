@@ -589,6 +589,18 @@ public struct ComputerHistorySearchService {
     ) -> DateInterval? {
         let query = SearchText.PreparedQuery(rawQuery)
         let today = calendar.startOfDay(for: now)
+        if let recentDayCount = explicitRecentDayCount(in: rawQuery),
+            let start = calendar.date(
+                byAdding: .day,
+                value: -(recentDayCount - 1),
+                to: today
+            )
+        {
+            return DateInterval(
+                start: start,
+                end: max(start.addingTimeInterval(0.001), now.addingTimeInterval(0.001))
+            )
+        }
         let requestedDayStart: Date?
         let requestedDayEnd: Date?
         if SearchText.containsAny(query.normalized, ["yesterday", "hier"]),
@@ -655,6 +667,31 @@ public struct ComputerHistorySearchService {
                 start: week.start,
                 end: max(week.start.addingTimeInterval(0.001), now.addingTimeInterval(0.001))
             )
+        }
+        return nil
+    }
+
+    private static func explicitRecentDayCount(in rawQuery: String) -> Int? {
+        let value = ComputerHistoryNaturalLanguage.canonicalize(rawQuery)
+            .folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: Locale(identifier: "en_US_POSIX")
+            )
+            .lowercased()
+        let patterns = [
+            #"(?:last|past|previous)\s+([1-9][0-9]{0,2})\s+days?\b"#,
+            #"([1-9][0-9]{0,2})\s+derniers?\s+jours?\b"#,
+        ]
+        let fullRange = NSRange(value.startIndex..<value.endIndex, in: value)
+        for pattern in patterns {
+            guard let expression = try? NSRegularExpression(pattern: pattern),
+                let match = expression.firstMatch(in: value, range: fullRange),
+                match.numberOfRanges > 1,
+                let range = Range(match.range(at: 1), in: value),
+                let count = Int(value[range]),
+                (1...365).contains(count)
+            else { continue }
+            return count
         }
         return nil
     }

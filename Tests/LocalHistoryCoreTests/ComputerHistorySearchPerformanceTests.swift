@@ -249,6 +249,41 @@ final class ComputerHistorySearchPerformanceTests: XCTestCase {
         XCTAssertEqual(calendar.component(.minute, from: interval.end), 0)
     }
 
+    func testExplicitRecentDayRangesUseCalendarDayBoundariesInEnglishAndFrench() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = try XCTUnwrap(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 8,
+                    day: 30,
+                    hour: 18
+                )
+            )
+        )
+
+        for query in [
+            "What was my screen time during the last 30 days?",
+            "Quel a ete mon temps d'ecran pendant les 30 derniers jours ?",
+        ] {
+            let interval = try XCTUnwrap(
+                ComputerHistorySearchService.explicitTemporalInterval(
+                    for: query,
+                    now: now,
+                    calendar: calendar
+                )
+            )
+            XCTAssertEqual(
+                interval.start,
+                calendar.date(
+                    from: DateComponents(year: 2026, month: 8, day: 1)
+                )
+            )
+            XCTAssertEqual(interval.end, now.addingTimeInterval(0.001))
+        }
+    }
+
     func testRawSourceFallbackRunsOnlyForAnUnansweredLexicalIntent() {
         XCTAssertFalse(
             ComputerHistorySearchService.requiresRawSourceFallback(

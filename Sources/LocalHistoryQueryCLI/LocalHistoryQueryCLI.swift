@@ -1064,6 +1064,37 @@ public enum GoalongQueryCLI {
                 for: question,
                 now: now
             )
+            let screenTime = freshScreenTimeContext(
+                root: root,
+                question: question,
+                firstDay: explicitInterval?.start ?? today,
+                endExclusive: explicitInterval?.end ?? now,
+                maximumDays: maximumDays
+            )
+            if questionUsesOnlyFreshScreenTime(question) {
+                try printJSON(
+                    ComputerHistoryAnswerEnvelope(
+                        rootDirectory: root.path,
+                        answer: ComputerHistoryAnswer(
+                            query: question,
+                            generatedAt: now,
+                            answer: screenTime.days.isEmpty
+                                ? "Fresh Apple Screen Time was requested, but no daily result was available. Inspect screenTime.status and screenTime.issues."
+                                : "Fresh Apple Screen Time is returned in screenTime. Computer History was not read because this question asks only for Screen Time.",
+                            hits: [],
+                            limitations: [
+                                "This direct Screen Time route deliberately skips unrelated Computer History journals to minimize latency, CPU and memory.",
+                                "Screen Time durations do not by themselves prove attention, productivity or intent.",
+                            ]
+                        ),
+                        reconstructedDays: 0,
+                        retainedProjectionBytes: 0,
+                        screenTime: screenTime,
+                        loadIssues: []
+                    )
+                )
+                return
+            }
             let firstDay = explicitInterval?.start ?? requestedFirstDay
             let reconstructionEnd = explicitInterval?.end ?? now
             let reconstruction = reconstructComputerHistory(
@@ -1086,13 +1117,6 @@ public enum GoalongQueryCLI {
                 answer: baseAnswer.answer,
                 hits: baseAnswer.hits,
                 limitations: baseAnswer.limitations + reconstruction.limitations
-            )
-            let screenTime = freshScreenTimeContext(
-                root: root,
-                question: question,
-                firstDay: explicitInterval?.start ?? today,
-                endExclusive: explicitInterval?.end ?? now,
-                maximumDays: maximumDays
             )
             try printJSON(
                 ComputerHistoryAnswerEnvelope(
@@ -1600,11 +1624,7 @@ public enum GoalongQueryCLI {
     }
 
     static func questionRequiresFreshScreenTime(_ question: String) -> Bool {
-        let normalized = question
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        let normalized = normalizedScreenTimeQuestion(question)
 
         let directPhrases = [
             "screen time", "screentime", "temps d ecran", "temps ecran",
@@ -1628,6 +1648,38 @@ public enum GoalongQueryCLI {
         let padded = " \(normalized) "
         return rankingPhrases.contains(where: normalized.contains)
             && usageSubjects.contains(where: padded.contains)
+    }
+
+    static func questionUsesOnlyFreshScreenTime(_ question: String) -> Bool {
+        guard questionRequiresFreshScreenTime(question) else { return false }
+        let normalized = normalizedScreenTimeQuestion(question)
+        let hybridPhrases = [
+            "productivite", "productive", "productivity", "efficacite", "efficiency",
+            "temps perdu", "wasted time", "worked", "work on", "travaille", "travail",
+            "summary", "summarize", "recap", "bilan", "resume ma journee",
+            "analyse ma journee", "conversation", "agent",
+        ]
+        guard !hybridPhrases.contains(where: normalized.contains) else { return false }
+
+        let directPhrases = [
+            "screen time", "screentime", "temps d ecran", "temps ecran",
+            "all devices", "tous les appareils", "iphone", "ipad", "apple watch",
+        ]
+        if directPhrases.contains(where: normalized.contains) { return true }
+
+        let usageSubjects = [
+            " app ", "application", "site", "browser", "navigateur", "mac",
+            "ordinateur", "telephone", "device", "appareil",
+        ]
+        return usageSubjects.contains(where: " \(normalized) ".contains)
+    }
+
+    private static func normalizedScreenTimeQuestion(_ question: String) -> String {
+        question
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     static func freshScreenTimeContext(

@@ -9,6 +9,63 @@
     @testable import LocalHistoryApp
 
     final class AppleScreenTimeResourceTests: XCTestCase {
+        func testOptimizedFallbackIntervalMergeMatchesLegacySemanticsOnDenseOverlap() {
+            let source = AppleSystemScreenTimeSource(deviceID: "merge-test-mac")
+            let base = Date(timeIntervalSince1970: 1_800_000_000)
+            let devices = [
+                AppleScreenTimeDevice(id: "merge-test-mac", name: "Mac", kind: .mac),
+                AppleScreenTimeDevice(id: "merge-test-phone", name: "Phone", kind: .iPhone),
+            ]
+
+            var mixed: [AppleSystemScreenTimeSource.UsageInterval] = []
+            for index in 0 ..< 720 {
+                let start = base.addingTimeInterval(
+                    TimeInterval((index % 120) * 29 + (index / 120) * 7)
+                )
+                let duration = TimeInterval(45 + (index % 9) * 13)
+                let sourceKind: AppleSystemScreenTimeSource.UsageSource = switch index % 3 {
+                case 0: .screenTimeAppUsage
+                case 1: .knowledgeC
+                default: .biome
+                }
+                mixed.append(
+                    AppleSystemScreenTimeSource.UsageInterval(
+                        device: devices[index % devices.count],
+                        bundleIdentifier: "example.app.\(index % 11)",
+                        displayName: "App \(index % 11)",
+                        start: start,
+                        end: start.addingTimeInterval(duration),
+                        source: sourceKind
+                    )
+                )
+            }
+
+            let preferred = mixed.filter { $0.source == .knowledgeC }
+            let supplemental = mixed.filter { $0.source == .biome }
+            XCTAssertEqual(
+                source.makeReports(
+                    from: source.mergeAdjacent(source.normalizeIntervals(mixed))
+                ),
+                source.makeReports(
+                    from: legacyMergeAdjacent(legacyNormalizeIntervals(mixed))
+                )
+            )
+            XCTAssertEqual(
+                source.makeReports(
+                    from: source.mergeIntervals(
+                        preferred: preferred,
+                        supplemental: supplemental
+                    )
+                ),
+                source.makeReports(
+                    from: legacyMergeIntervals(
+                        preferred: preferred,
+                        supplemental: supplemental
+                    )
+                )
+            )
+        }
+
         func testAppleScreenTimeCollectorContainsNoForegroundAutomation() throws {
             let sourceDirectory = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
@@ -41,6 +98,111 @@
                 }
             }
         }
+
+        private func legacyMergeIntervals(
+            preferred: [AppleSystemScreenTimeSource.UsageInterval],
+            supplemental: [AppleSystemScreenTimeSource.UsageInterval]
+        ) -> [AppleSystemScreenTimeSource.UsageInterval] {
+            let preferredNormalized = legacyNormalizeIntervals(preferred)
+            var accepted = preferredNormalized
+            for candidate in supplemental.sorted(by: legacyIntervalOrder) {
+                var fragments = [candidate]
+                for existing in preferredNormalized
+                    where existing.device.id == candidate.device.id
+                {
+                    fragments = fragments.flatMap {
+                        legacySubtract($0, occupiedBy: existing)
+                    }
+                    if fragments.isEmpty { break }
+                }
+                accepted.append(contentsOf: fragments)
+            }
+            return legacyMergeAdjacent(legacyNormalizeIntervals(accepted))
+        }
+
+        private func legacyNormalizeIntervals(
+            _ intervals: [AppleSystemScreenTimeSource.UsageInterval]
+        ) -> [AppleSystemScreenTimeSource.UsageInterval] {
+            var accepted: [AppleSystemScreenTimeSource.UsageInterval] = []
+            let ordered = intervals.sorted {
+                if $0.source.rawValue != $1.source.rawValue {
+                    return $0.source.rawValue > $1.source.rawValue
+                }
+                return legacyIntervalOrder($0, $1)
+            }
+            for candidate in ordered where candidate.duration > 0 {
+                var fragments = [candidate]
+                for existing in accepted
+                    where existing.device.id == candidate.device.id
+                        && existing.bundleIdentifier.lowercased()
+                            == candidate.bundleIdentifier.lowercased()
+                {
+                    fragments = fragments.flatMap {
+                        legacySubtract($0, occupiedBy: existing)
+                    }
+                    if fragments.isEmpty { break }
+                }
+                accepted.append(contentsOf: fragments)
+            }
+            return accepted.sorted(by: legacyIntervalOrder)
+        }
+
+        private func legacySubtract(
+            _ candidate: AppleSystemScreenTimeSource.UsageInterval,
+            occupiedBy existing: AppleSystemScreenTimeSource.UsageInterval
+        ) -> [AppleSystemScreenTimeSource.UsageInterval] {
+            guard candidate.device.id == existing.device.id,
+                candidate.start < existing.end,
+                existing.start < candidate.end
+            else { return [candidate] }
+
+            var output: [AppleSystemScreenTimeSource.UsageInterval] = []
+            if candidate.start < existing.start {
+                output.append(
+                    candidate.replacing(start: candidate.start, end: existing.start)
+                )
+            }
+            if existing.end < candidate.end {
+                output.append(
+                    candidate.replacing(start: existing.end, end: candidate.end)
+                )
+            }
+            return output.filter { $0.duration > 0 }
+        }
+
+        private func legacyMergeAdjacent(
+            _ intervals: [AppleSystemScreenTimeSource.UsageInterval]
+        ) -> [AppleSystemScreenTimeSource.UsageInterval] {
+            var output: [AppleSystemScreenTimeSource.UsageInterval] = []
+            for interval in intervals.sorted(by: legacyIntervalOrder) {
+                if let last = output.last,
+                    last.device.id == interval.device.id,
+                    last.bundleIdentifier == interval.bundleIdentifier,
+                    last.source == interval.source,
+                    interval.start.timeIntervalSince(last.end) <= 1,
+                    interval.start >= last.end.addingTimeInterval(-1)
+                {
+                    output[output.count - 1] = last.replacing(
+                        start: last.start,
+                        end: max(last.end, interval.end)
+                    )
+                } else {
+                    output.append(interval)
+                }
+            }
+            return output
+        }
+
+        private func legacyIntervalOrder(
+            _ lhs: AppleSystemScreenTimeSource.UsageInterval,
+            _ rhs: AppleSystemScreenTimeSource.UsageInterval
+        ) -> Bool {
+            if lhs.device.id != rhs.device.id { return lhs.device.id < rhs.device.id }
+            if lhs.start != rhs.start { return lhs.start < rhs.start }
+            if lhs.end != rhs.end { return lhs.end < rhs.end }
+            return lhs.bundleIdentifier < rhs.bundleIdentifier
+        }
+
 
         func testUserFacingScreenTimeCopyMatchesBackgroundOnlyCollector() throws {
             let repositoryRoot = URL(fileURLWithPath: #filePath)

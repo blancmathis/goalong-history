@@ -1912,13 +1912,13 @@
 
         // MARK: - Merge and report construction
 
-        private enum UsageSource: Int {
+        enum UsageSource: Int {
             case biome = 1
             case knowledgeC = 2
             case screenTimeAppUsage = 3
         }
 
-        private struct UsageInterval {
+        struct UsageInterval {
             let device: AppleScreenTimeDevice
             let bundleIdentifier: String
             let displayName: String?
@@ -1956,67 +1956,165 @@
             }
         }
 
-        private func mergeIntervals(
+        private struct UsageIntervalKey: Hashable {
+            let deviceID: String
+            let applicationID: String
+        }
+
+        private struct OccupiedInterval {
+            let start: Date
+            let end: Date
+        }
+
+        func mergeIntervals(
             preferred: [UsageInterval],
             supplemental: [UsageInterval]
         ) -> [UsageInterval] {
             let preferredNormalized = normalizeIntervals(preferred)
             var accepted = preferredNormalized
+            let preferredCoverageByDevice = Dictionary(
+                grouping: preferredNormalized,
+                by: { $0.device.id }
+            ).mapValues { intervals in
+                mergeOccupiedIntervals(
+                    intervals.map { OccupiedInterval(start: $0.start, end: $0.end) }
+                )
+            }
 
             for candidate in supplemental.sorted(by: intervalOrder) {
-                var fragments = [candidate]
                 // The caller supplies the more authoritative Apple source first. Supplemental
                 // rows fill only physical coverage gaps, so a lower-priority source cannot add
                 // conflicting attribution for time the preferred source already explains.
-                for existing in preferredNormalized where existing.device.id == candidate.device.id {
-                    fragments = fragments.flatMap { subtract($0, occupiedBy: existing) }
-                    if fragments.isEmpty { break }
-                }
-                accepted.append(contentsOf: fragments)
+                accepted.append(
+                    contentsOf: subtract(
+                        candidate,
+                        occupiedBy: preferredCoverageByDevice[candidate.device.id] ?? []
+                    )
+                )
             }
             return mergeAdjacent(normalizeIntervals(accepted))
         }
 
-        private func normalizeIntervals(_ intervals: [UsageInterval]) -> [UsageInterval] {
+        func normalizeIntervals(_ intervals: [UsageInterval]) -> [UsageInterval] {
+            let groups = Dictionary(
+                grouping: intervals.filter { $0.duration > 0 },
+                by: {
+                    UsageIntervalKey(
+                        deviceID: $0.device.id,
+                        applicationID: applicationKey($0)
+                    )
+                }
+            )
             var accepted: [UsageInterval] = []
-            let ordered = intervals.sorted {
-                if $0.source.rawValue != $1.source.rawValue {
-                    return $0.source.rawValue > $1.source.rawValue
-                }
-                return intervalOrder($0, $1)
-            }
+            accepted.reserveCapacity(intervals.count)
 
-            for candidate in ordered where candidate.duration > 0 {
-                var fragments = [candidate]
-                for existing in accepted
-                    where existing.device.id == candidate.device.id
-                        && sameApplication(existing, candidate)
-                {
-                    fragments = fragments.flatMap { subtract($0, occupiedBy: existing) }
-                    if fragments.isEmpty { break }
+            for group in groups.values {
+                let rowsBySource = Dictionary(grouping: group, by: { $0.source.rawValue })
+                var occupied: [OccupiedInterval] = []
+                for sourceValue in rowsBySource.keys.sorted(by: >) {
+                    guard let sourceRows = rowsBySource[sourceValue] else { continue }
+                    let sourceUnion = mergeOverlappingUsageIntervals(
+                        sourceRows.sorted(by: intervalOrder)
+                    )
+                    for candidate in sourceUnion {
+                        accepted.append(contentsOf: subtract(candidate, occupiedBy: occupied))
+                    }
+                    occupied = mergeOccupiedIntervals(
+                        occupied
+                            + sourceUnion.map {
+                                OccupiedInterval(start: $0.start, end: $0.end)
+                            }
+                    )
                 }
-                accepted.append(contentsOf: fragments)
             }
             return accepted.sorted(by: intervalOrder)
         }
 
-        private func subtract(_ candidate: UsageInterval, occupiedBy existing: UsageInterval) -> [UsageInterval] {
-            guard candidate.device.id == existing.device.id,
-                  candidate.start < existing.end,
-                  existing.start < candidate.end
-            else { return [candidate] }
-
+        private func mergeOverlappingUsageIntervals(
+            _ intervals: [UsageInterval]
+        ) -> [UsageInterval] {
             var output: [UsageInterval] = []
-            if candidate.start < existing.start {
-                output.append(candidate.replacing(start: candidate.start, end: existing.start))
+            output.reserveCapacity(intervals.count)
+            for interval in intervals {
+                guard let last = output.last, interval.start <= last.end else {
+                    output.append(interval)
+                    continue
+                }
+                if interval.end > last.end {
+                    output[output.count - 1] = last.replacing(
+                        start: last.start,
+                        end: interval.end
+                    )
+                }
             }
-            if existing.end < candidate.end {
-                output.append(candidate.replacing(start: existing.end, end: candidate.end))
-            }
-            return output.filter { $0.duration > 0 }
+            return output
         }
 
-        private func mergeAdjacent(_ intervals: [UsageInterval]) -> [UsageInterval] {
+        private func mergeOccupiedIntervals(
+            _ intervals: [OccupiedInterval]
+        ) -> [OccupiedInterval] {
+            let ordered = intervals
+                .filter { $0.end > $0.start }
+                .sorted {
+                    if $0.start != $1.start { return $0.start < $1.start }
+                    return $0.end < $1.end
+                }
+            var occupied: [OccupiedInterval] = []
+            occupied.reserveCapacity(ordered.count)
+            for interval in ordered {
+                guard let last = occupied.last, interval.start <= last.end else {
+                    occupied.append(interval)
+                    continue
+                }
+                if interval.end > last.end {
+                    occupied[occupied.count - 1] = OccupiedInterval(
+                        start: last.start,
+                        end: interval.end
+                    )
+                }
+            }
+            return occupied
+        }
+
+        private func subtract(
+            _ candidate: UsageInterval,
+            occupiedBy occupied: [OccupiedInterval]
+        ) -> [UsageInterval] {
+            guard candidate.duration > 0, !occupied.isEmpty else { return [candidate] }
+
+            var lower = 0
+            var upper = occupied.count
+            while lower < upper {
+                let middle = lower + (upper - lower) / 2
+                if occupied[middle].end <= candidate.start {
+                    lower = middle + 1
+                } else {
+                    upper = middle
+                }
+            }
+
+            var cursor = candidate.start
+            var output: [UsageInterval] = []
+            for existing in occupied[lower...] {
+                if existing.start >= candidate.end { break }
+                if existing.start > cursor {
+                    output.append(
+                        candidate.replacing(
+                            start: cursor,
+                            end: min(existing.start, candidate.end)
+                        )
+                    )
+                }
+                cursor = max(cursor, existing.end)
+                if cursor >= candidate.end { break }
+            }
+            if cursor < candidate.end {
+                output.append(candidate.replacing(start: cursor, end: candidate.end))
+            }
+            return output
+        }
+
+        func mergeAdjacent(_ intervals: [UsageInterval]) -> [UsageInterval] {
             var output: [UsageInterval] = []
             for interval in intervals.sorted(by: intervalOrder) {
                 if let last = output.last,
@@ -2044,7 +2142,7 @@
             return lhs.bundleIdentifier < rhs.bundleIdentifier
         }
 
-        private func makeReports(from intervals: [UsageInterval]) -> [AppleScreenTimeDeviceReport] {
+        func makeReports(from intervals: [UsageInterval]) -> [AppleScreenTimeDeviceReport] {
             Dictionary(grouping: intervals, by: { $0.device.id })
                 .values
                 .compactMap { deviceRows -> AppleScreenTimeDeviceReport? in
@@ -2145,10 +2243,6 @@
                 }
             }
             return segments
-        }
-
-        private func sameApplication(_ lhs: UsageInterval, _ rhs: UsageInterval) -> Bool {
-            applicationKey(lhs) == applicationKey(rhs)
         }
 
         private func applicationKey(_ interval: UsageInterval) -> String {

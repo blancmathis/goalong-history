@@ -106,6 +106,26 @@
                     "Sur quoi ai-je travaillé hier ?"
                 )
             )
+            XCTAssertTrue(
+                GoalongQueryCLI.questionUsesOnlyFreshScreenTime(
+                    "What was my Screen Time across all devices during the last 30 days?"
+                )
+            )
+            XCTAssertTrue(
+                GoalongQueryCLI.questionUsesOnlyFreshScreenTime(
+                    "Combien de temps ai-je passe sur mes applications hier ?"
+                )
+            )
+            XCTAssertFalse(
+                GoalongQueryCLI.questionUsesOnlyFreshScreenTime(
+                    "Combien d'heures productives et perdues ai-je eues hier ?"
+                )
+            )
+            XCTAssertFalse(
+                GoalongQueryCLI.questionUsesOnlyFreshScreenTime(
+                    "Resume ma journee avec Screen Time et mes conversations agent"
+                )
+            )
         }
 
         func testIndirectScreenTimeContextUsesOneFreshRangeRequestForAllIncludedDays() throws {
