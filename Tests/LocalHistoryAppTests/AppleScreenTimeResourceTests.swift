@@ -42,6 +42,27 @@
             }
         }
 
+        func testUserFacingScreenTimeCopyMatchesBackgroundOnlyCollector() throws {
+            let repositoryRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let files = [
+                "scripts/build_app.sh",
+                "scripts/build_app_core.sh",
+                "Sources/LocalHistoryApp/PrivacyPage.swift",
+            ]
+
+            for relativePath in files {
+                let source = try String(
+                    contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+                    encoding: .utf8
+                )
+                XCTAssertFalse(source.contains("navigate Apple's visible Screen Time page"))
+                XCTAssertTrue(source.contains("Screen Time is read directly from Apple-owned files"))
+            }
+        }
+
         func testRemoteAppleApplicationsUseReadableNamesWithoutBeingInstalledOnThisMac() {
             XCTAssertEqual(
                 AppleSystemScreenTimeSource.applicationDisplayName("com.google.ios.youtube"),

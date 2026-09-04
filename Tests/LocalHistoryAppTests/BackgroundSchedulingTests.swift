@@ -491,6 +491,8 @@
 
             coordinator.update(state)
             coordinator.update(state)
+            state.windowIsKey = true
+            coordinator.update(state)
             state.windowIsMiniaturized = true
             coordinator.update(state)
             coordinator.update(state)
@@ -504,11 +506,32 @@
             coordinator.update(state)
             state.windowIsOccluded = false
             coordinator.update(state)
+            state.windowIsKey = false
+            coordinator.update(state)
             state.windowIsVisible = false
             coordinator.update(state)
 
-            XCTAssertEqual(changes, [true, false, true, false, true, false, true, false])
+            XCTAssertEqual(changes, [true, false, true, false, true, false])
             XCTAssertFalse(coordinator.permitsRefresh)
+        }
+
+        func testDashboardVisibilityDoesNotRefreshWhileAnotherApplicationHasTheKeyboard() {
+            var changes: [Bool] = []
+            let coordinator = DashboardVisibilityCoordinator {
+                changes.append($0)
+            }
+            let state = DashboardVisibilityState(
+                windowIsVisible: true,
+                windowIsMiniaturized: false,
+                applicationIsHidden: false,
+                windowIsOccluded: false,
+                windowIsKey: false
+            )
+
+            coordinator.update(state)
+
+            XCTAssertFalse(coordinator.permitsRefresh)
+            XCTAssertTrue(changes.isEmpty)
         }
 
         func testDashboardVisibilityTreatsAKeyWindowAsVisibleDuringOcclusionStateLag() {
@@ -574,8 +597,11 @@
             XCTAssertTrue(windowController.contains("windowDidMiniaturize"))
             XCTAssertTrue(windowController.contains("windowDidDeminiaturize"))
             XCTAssertTrue(windowController.contains("windowDidChangeOcclusionState"))
+            XCTAssertTrue(windowController.contains("windowDidResignKey"))
             XCTAssertTrue(windowController.contains("NSApplication.didHideNotification"))
             XCTAssertTrue(windowController.contains("NSApplication.didUnhideNotification"))
+            XCTAssertTrue(windowController.contains("NSApplication.didResignActiveNotification"))
+            XCTAssertFalse(windowController.contains("NSApplication.didBecomeActiveNotification"))
             XCTAssertTrue(hidden.contains("refreshScheduler.deactivate()"))
             XCTAssertTrue(hidden.contains("snapshot = .empty(day: selectedDay)"))
         }

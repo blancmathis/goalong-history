@@ -215,7 +215,7 @@
                     HStack(spacing: 12) {
                         permissionRow(
                             title: "Accessibility",
-                            message: "Reads the active app, window and accessible UI context. When you request Screen Time, Goalong briefly navigates Apple's visible Screen Time page, reads its values in memory and restores your previous app.",
+                            message: "Reads the active app, window and accessible UI context for Computer History. Screen Time is read directly from Apple-owned files in the background; Goalong never opens or controls System Settings or sends input.",
                             granted: model.runtime.accessibilityGranted,
                             grantedLabel: "Granted",
                             buttonTitle: "Guided setup",

@@ -10,9 +10,12 @@
         var windowIsOccluded: Bool
         var windowIsKey: Bool
 
+        /// Dashboard readers can touch large or protected local stores. They run only
+        /// while Goalong owns the keyboard, never merely because a background window
+        /// remains visible beside the application the user is actually using.
         var permitsRefresh: Bool {
             windowIsVisible && !windowIsMiniaturized && !applicationIsHidden
-                && (windowIsKey || !windowIsOccluded)
+                && windowIsKey
         }
 
         static let hidden = DashboardVisibilityState(
@@ -45,7 +48,6 @@
 
         private static let frameAutosaveName = "GoalongHistory.MainWindow.v4"
         private static let legacyFrameAutosaveName = "LocalHistory.MainWindow.v3"
-        private var activationObserver: NSObjectProtocol?
         private var applicationVisibilityObservers: [NSObjectProtocol] = []
         private lazy var visibilityCoordinator = DashboardVisibilityCoordinator {
             [weak self] isVisible in
@@ -61,17 +63,10 @@
             self.viewModel = viewModel
             super.init(window: nil)
 
-            activationObserver = NotificationCenter.default.addObserver(
-                forName: NSApplication.didBecomeActiveNotification,
-                object: NSApplication.shared,
-                queue: .main
-            ) { [weak self] _ in
-                guard let self, self.window == nil else { return }
-                self.show(section: self.viewModel.selectedSection)
-            }
             for name in [
                 NSApplication.didHideNotification,
                 NSApplication.didUnhideNotification,
+                NSApplication.didResignActiveNotification,
             ] {
                 applicationVisibilityObservers.append(
                     NotificationCenter.default.addObserver(
@@ -95,9 +90,6 @@
         required init?(coder: NSCoder) { nil }
 
         deinit {
-            if let activationObserver {
-                NotificationCenter.default.removeObserver(activationObserver)
-            }
             for observer in applicationVisibilityObservers {
                 NotificationCenter.default.removeObserver(observer)
             }
@@ -162,6 +154,10 @@
             updateDashboardVisibility()
             viewModel.refreshEverything()
             SoftwareUpdateManager.shared.refreshAvailableUpdate()
+        }
+
+        func windowDidResignKey(_ notification: Notification) {
+            updateDashboardVisibility()
         }
 
         func windowDidMiniaturize(_ notification: Notification) {

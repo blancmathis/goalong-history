@@ -245,9 +245,12 @@
             workspaceObservers.removeAll()
         }
 
-        func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        func applicationShouldHandleReopen(
+            _ sender: NSApplication,
+            hasVisibleWindows flag: Bool
+        ) -> Bool {
             dashboardWindowController?.show(section: dashboardViewModel?.selectedSection ?? .overview)
-            return true
+            return false
         }
 
         private func toggleManualPause() {
