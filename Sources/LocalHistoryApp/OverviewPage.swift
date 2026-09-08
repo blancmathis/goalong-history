@@ -5,6 +5,7 @@
 
     struct OverviewPage: View {
         @ObservedObject var model: DashboardViewModel
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @StateObject private var screenTime: AppleScreenTimeDashboardModel
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
         @State private var includesInactiveSystemTime = false
@@ -27,40 +28,25 @@
         }
 
         var body: some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    PageHeader(
-                        eyebrow: Calendar.current.isDateInToday(model.selectedDay) ? "Today" : "History",
-                        title: DashboardFormatters.dayTitle.string(from: model.selectedDay),
-                        subtitle: "One clear view of your day."
-                    ) {
-                        HStack(spacing: 10) {
-                            DateSelectionControl(date: model.selectedDay, onChange: selectDay)
-                            captureControl
-                            Button {
-                                model.selectSection(.share)
-                            } label: {
-                                Label("Share day", systemImage: "square.and.arrow.up")
-                            }
-                            .buttonStyle(.bordered)
-                            Button {
-                                refreshAll()
-                            } label: {
-                                Image(systemName: "arrow.clockwise")
-                                    .frame(width: 28, height: 28)
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(model.isRefreshing || screenTime.isBusy)
-                            .help("Refresh")
-                        }
+            VStack(spacing: 0) {
+                DayNavigationHeader(
+                    title: "Today", day: model.selectedDay,
+                    isRefreshing: model.isRefreshing || screenTime.isBusy,
+                    onSelectDay: selectDay,
+                    onShare: { model.selectSection(.share) },
+                    onRefresh: refreshAll
+                )
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        dayCard
+                        LHCard { topUsageSection }
+                        aiRecapCard
                     }
-
-                    dayCard
-                    aiRecapCard
+                    .padding(.horizontal, LHTheme.pageInset)
+                    .padding(.top, 24)
+                    .padding(.bottom, 36)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 28)
-                .padding(.bottom, 40)
             }
             .background(LHTheme.pageBackground)
             .onAppear {
@@ -68,6 +54,18 @@
                 synchronizeSecondarySources(with: model.selectedDay)
             }
             .onDisappear { screenTime.setActive(false) }
+            .onChange(of: screenTime.needsFullDiskAccess) { denied in
+                guard denied else { return }
+                let saved = consents.set(.appleScreenTime, enabled: false, surface: .settings)
+                screenTime.setAccessEnabled(false)
+                if !saved {
+                    model.alert = DashboardAlert(
+                        kind: .error,
+                        title: "Screen Time access unavailable",
+                        message: "Reading has stopped, but the disabled setting could not be saved. Review Screen Time in Settings."
+                    )
+                }
+            }
             .onChange(of: model.dashboardIsVisible) { screenTime.setActive($0) }
             .onReceive(
                 NotificationCenter.default.publisher(for: .goalongCapabilityConsentDidChange)
@@ -91,6 +89,12 @@
         }
 
         @ViewBuilder private var captureControl: some View {
+            if !consents.isEnabled(.localComputerHistory) {
+                SourceActivationToggle(capability: .localComputerHistory,
+                    prepare: { try model.configureCaptureForOnboarding(enabled: true) }) {
+                    Text("Record activity").font(.system(size: 12))
+                }.fixedSize()
+            } else {
             switch model.runtime.state {
             case .permissionsMissing:
                 Button("Finish setup") {
@@ -116,91 +120,56 @@
                     tint: model.runtime.displayTint
                 )
             }
+            }
         }
 
         private var dayCard: some View {
-            LHCard(padding: 0) {
-                VStack(spacing: 0) {
-                    HStack(alignment: .firstTextBaseline, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Your day")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
-                            Text("Apple Screen Time and Goalong observations shown side by side, never added together.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Your day")
+                        .font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    if screenTime.isBusy { ProgressView().controlSize(.small) }
+                    captureControl
+                }
+                LHCard(padding: 0) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(alignment: .top, spacing: 20) {
+                            dayMetric(title: screenTimeMetricTitle, value: screenTimeValue, detail: screenTimeDetail)
+                            Divider().frame(height: 62)
+                            dayMetric(
+                                title: "Active on this Mac",
+                                value: model.snapshot.eventCount == 0 ? "—" : DashboardFormatters.duration(minutes: model.snapshot.activeMinutes),
+                                detail: model.snapshot.eventCount == 0 ? "No recorded activity" : "Observed by Goalong"
+                            )
+                            Divider().frame(height: 62)
+                            dayMetric(
+                                title: "Work",
+                                value: model.snapshot.eventCount == 0 ? "—" : DashboardFormatters.duration(minutes: model.snapshot.workMinutes),
+                                detail: "Conservative local classification"
+                            )
                         }
-                        Spacer()
-                        if screenTime.isBusy {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
-                    .padding(20)
-
-                    Divider()
-
-                    HStack(alignment: .top, spacing: 18) {
-                        dayMetric(
-                            title: screenTimeMetricTitle,
-                            value: screenTimeValue,
-                            detail: screenTimeDetail
-                        )
-                        Divider().frame(height: 48)
-                        dayMetric(
-                            title: "ACTIVE ON THIS MAC",
-                            value: DashboardFormatters.duration(minutes: model.snapshot.activeMinutes),
-                            detail: "Observed by Goalong"
-                        )
-                        Divider().frame(height: 48)
-                        dayMetric(
-                            title: "WORK",
-                            value: DashboardFormatters.duration(minutes: model.snapshot.workMinutes),
-                            detail: "Conservative local classification"
-                        )
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 18)
-
-                    if screenTime.needsFullDiskAccess {
-                        Divider()
-                        HStack(spacing: 10) {
-                            Image(systemName: "macbook.and.iphone")
-                                .foregroundStyle(LHTheme.warning)
-                            Text("Enable Apple Screen Time to complete this view across your devices.")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Enable") {
-                                screenTime.openFullDiskAccessSettings()
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                    }
-
-                    Divider()
-                    topUsageSection
                         .padding(20)
-
-                    Divider()
-                    timelineSection
-                        .padding(20)
-
-                    Divider()
-                    HStack {
-                        Button("Open History") {
-                            model.selectSection(.history)
-                        }
-                        .buttonStyle(.link)
-                        Spacer()
-                        Text("Computer activity, Screen Time and AI conversations")
-                            .font(.system(size: 10))
+                        Text("Apple Screen Time and Goalong observations shown side by side, never added together.")
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 16)
+                        if screenTime.needsFullDiskAccess {
+                            Divider()
+                            HStack(spacing: 10) {
+                                Image(systemName: "macbook.and.iphone").foregroundStyle(LHTheme.warning)
+                                Text("Enable Apple Screen Time to complete this view across your devices.")
+                                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Review access") { model.selectSection(.screenTime) }
+                                    .buttonStyle(.bordered)
+                            }
+                            .padding(20)
+                        }
+                        Divider()
+                        timelineSection.padding(20)
                     }
-                    .font(.system(size: 11, weight: .semibold))
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 14)
                 }
             }
         }
@@ -208,16 +177,15 @@
         private func dayMetric(title: String, value: String, detail: String) -> some View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .tracking(0.5)
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Text(value)
-                    .font(.system(size: 23, weight: .bold, design: .rounded))
+                    .font(.system(size: 26, weight: .semibold))
                     .monospacedDigit()
                 Text(detail)
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -243,56 +211,62 @@
             return VStack(alignment: .leading, spacing: 13) {
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Where your screen time went")
+                        Text("Apps & websites")
                             .font(.system(size: 15, weight: .semibold))
                         Text(
                             usageMode == .websites
                                 ? "Apps and sites share one ranking. Browser rows stay hidden."
                                 : "The same usage is grouped by browser. Expand a browser to see its sites."
                         )
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 8) {
-                        Toggle("Group sites by browser", isOn: groupsSitesByBrowser)
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                            .accessibilityHint(
-                                "Changes only how the same usage is grouped. Off lists sites beside apps. On lists browsers that expand into sites."
-                            )
-                            .help(
-                                "Show the same Screen Time grouped into expandable browser rows instead of individual website rows."
-                            )
+                    DisclosureGroup("Display options") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle("Group sites by browser", isOn: groupsSitesByBrowser)
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                                .accessibilityHint(
+                                    "Changes only how the same usage is grouped. Off lists sites beside apps. On lists browsers that expand into sites."
+                                )
+                                .help(
+                                    "Show the same Screen Time grouped into expandable browser rows instead of individual website rows."
+                                )
 
-                        Text("Same usage and total; only the grouping changes.")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 300, alignment: .trailing)
-
-                        if hasHiddenInactiveSystemTime {
-                            Toggle(
-                                "Include login and lock-screen time",
-                                isOn: $includesInactiveSystemTime
-                            )
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                            .accessibilityHint(
-                                "Adds login screen, lock screen, and screen saver time Apple may report while the device is not actively being used."
-                            )
-                            .help(
-                                "Include Apple-reported login screen, lock screen, and screen saver time. This can increase Screen Time even when you were not actively using the device."
-                            )
-                            Text("Apple may record these periods while the device is not actively being used.")
-                                .font(.system(size: 9))
+                            Text("Same usage and total; only the grouping changes.")
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.trailing)
                                 .frame(maxWidth: 300, alignment: .trailing)
-                                .fixedSize(horizontal: false, vertical: true)
+
+                            if hasHiddenInactiveSystemTime {
+                                Toggle(
+                                    "Include login and lock-screen time",
+                                    isOn: $includesInactiveSystemTime
+                                )
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                                .accessibilityHint(
+                                    "Adds login screen, lock screen, and screen saver time Apple may report while the device is not actively being used."
+                                )
+                                .help(
+                                    "Include Apple-reported login screen, lock screen, and screen saver time. This can increase Screen Time even when you were not actively using the device."
+                                )
+                                Text("Apple may record these periods while the device is not actively being used.")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(maxWidth: 300, alignment: .trailing)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
+                        .padding(.top, 10)
                     }
+                    .font(.system(size: 12))
+                    .frame(width: 280, alignment: .trailing)
+                    .accessibilityLabel("Display options")
                 }
 
                 breakdownRows(items, hasHiddenUsage: hiddenCount > 0)
@@ -328,7 +302,7 @@
                                 .accessibilityValue(showsAllUsage ? "Expanded" : "Collapsed")
                             }
                         }
-                        .font(.system(size: 9, design: .rounded))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
 
                         Text(
@@ -336,7 +310,7 @@
                                 ? "Apple total across the selected devices. Simultaneous use on different devices may overlap. Website details currently cover this Mac only."
                                 : "Goalong-observed foreground time on this Mac. Website rows replace browser time; they are not added to it."
                         )
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -396,16 +370,16 @@
                 breakdownIcon(item)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.name)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
                     Text(breakdownDetail(item))
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 Spacer()
                 Text(formattedDuration(item.seconds))
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 13, weight: .semibold))
                     .monospacedDigit()
             }
             .accessibilityElement(children: .combine)
@@ -469,11 +443,11 @@
                                 .frame(width: 24, height: 24)
                         }
                         Text(child.name)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .lineLimit(1)
                         Spacer()
                         Text(formattedDuration(child.seconds))
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .font(.system(size: 12, weight: .semibold))
                             .monospacedDigit()
                     }
                     .padding(.leading, 46)
@@ -486,18 +460,18 @@
             VStack(alignment: .leading, spacing: 13) {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Day activity")
+                        Text("Activity timeline")
                             .font(.system(size: 15, weight: .semibold))
                         Text("Goalong's local coverage through the day.")
-                            .font(.system(size: 10))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    HStack(spacing: 12) {
-                        timelineLegend(label: "Work", color: LHTheme.success)
-                        timelineLegend(label: "Active", color: LHTheme.teal)
-                        timelineLegend(label: "Private", color: LHTheme.privateTint)
+                    Button { model.selectSection(.history) } label: {
+                        Label("Explore History", systemImage: "arrow.right")
                     }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12, weight: .medium))
                 }
 
                 if model.snapshot.timeline.isEmpty {
@@ -507,6 +481,11 @@
                         .frame(maxWidth: .infinity, minHeight: 54, alignment: .center)
                 } else {
                     TimelineStrip(buckets: model.snapshot.timeline)
+                    HStack(spacing: 12) {
+                        timelineLegend(label: "Work", color: LHTheme.success)
+                        timelineLegend(label: "Active", color: LHTheme.teal)
+                        timelineLegend(label: "Private", color: LHTheme.privateTint)
+                    }
                 }
             }
         }
@@ -517,7 +496,7 @@
                     HStack(alignment: .center, spacing: 16) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Daily Activity")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .font(.system(size: 15, weight: .semibold))
                             Text(aiRecapSubtitle)
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
@@ -541,7 +520,7 @@
                         Text(
                             "Uses Computer History, Apple Screen Time and AI conversations read from their original local sources."
                         )
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         Spacer(minLength: 16)
@@ -558,7 +537,10 @@
         }
 
         @ViewBuilder private var recapAction: some View {
-            if recapRuntime.isGenerating {
+            if !consents.isEnabled(.chatGPTAnalysis) {
+                Button("Set up analysis") { model.selectSection(.chatGPTRecap) }
+                    .buttonStyle(.bordered)
+            } else if recapRuntime.isGenerating {
                 ProgressView()
                     .controlSize(.small)
             } else if aiRecapIsConnected {
@@ -587,7 +569,7 @@
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: 60, alignment: .center)
                 } else {
                     markdownPreview(recapRuntime.streamedMarkdown)
                 }
@@ -606,7 +588,7 @@
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
             }
         }
 
@@ -616,7 +598,7 @@
                 .lineSpacing(4)
                 .lineLimit(16)
                 .textSelection(.enabled)
-                .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
         }
 
         private var aiRecapSubtitle: String {
@@ -642,12 +624,14 @@
         }
 
         private var screenTimeMetricTitle: String {
-            (displayedScreenTimeSummary?.provenance.usesScreenTimeAgentAggregateStore == true)
-                ? "APPLE SCREEN TIME"
-                : "SCREEN TIME FALLBACK"
+            guard screenTime.unfilteredSummary != nil else { return "Apple Screen Time" }
+            return (displayedScreenTimeSummary?.provenance.usesScreenTimeAgentAggregateStore == true)
+                ? "Apple Screen Time"
+                : "Screen Time fallback"
         }
 
         private var screenTimeDetail: String {
+            if !consents.isEnabled(.appleScreenTime) { return "Screen Time is off" }
             guard screenTime.unfilteredSummary != nil else { return "Apple data not available" }
             guard let summary = displayedScreenTimeSummary else { return "No active Apple device" }
             let count = summary.deviceSummaries.count
@@ -702,7 +686,7 @@
             HStack(spacing: 5) {
                 Circle().fill(color).frame(width: 7, height: 7)
                 Text(label)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
         }
@@ -985,7 +969,7 @@
                     Spacer()
                     Text("24:00")
                 }
-                .font(.system(size: 9, design: .rounded))
+                .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
             }
         }

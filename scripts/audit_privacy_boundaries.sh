@@ -148,11 +148,16 @@ if [[ -f "$CODEX_BRIDGE" ]]; then
     'started["cwd"]' \
     'Self.workspaceRootsAreConfined(roots, to: workingDirectory)' \
     'rawPaths.isEmpty || pathsMatchExactly(rawPaths, expected: [workingDirectory])' \
-    'default_permissions = "\(Self.recapPermissionProfile)"' \
-    '[permissions.goalong-recap.filesystem]' \
+    'let profile = siteAnalysisOnly ? Self.siteAnalysisPermissionProfile : Self.recapPermissionProfile' \
+    'static let recapPermissionProfile = "goalong-recap"' \
+    'static let siteAnalysisPermissionProfile = "goalong-site-analysis"' \
+    'default_permissions = "\(profile)"' \
+    '[permissions.\(profile).filesystem]' \
     '":minimal" = "read"' \
     '":workspace_roots" = "read"' \
-    '[permissions.goalong-recap.network]' \
+    '[permissions.\(profile).network]' \
+    '[agents]' \
+    '[features.code_mode]' \
     'web_search = "disabled"' \
     '[features]' \
     'plugins = false' \
@@ -175,15 +180,19 @@ if [[ -f "$CODEX_BRIDGE" ]]; then
   fi
 fi
 
-# Goalong contains no first-party network client. Optional ChatGPT analysis delegates transport
-# to the reviewed local Codex app-server process after a separate Goalong consent.
+# The single reviewed website sender is an explicit action only. The retired commitment
+# uploader stays physically excluded; every other first-party networking surface is rejected.
+SITE_SUBMISSION="$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSiteSubmission.swift"
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != *"/CommitmentUploader.swift" ]]; then
-    echo "Unexpected first-party network API outside CommitmentUploader.swift: $match" >&2
+  if [[ "$file" != "$SITE_SUBMISSION" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/CommitmentUploader.swift" ]]; then
+    echo "Unexpected first-party network API outside the reviewed explicit website sender: $match" >&2
     failed=true
   fi
 done < <(grep -R -nE 'URLSession|HTTPURLResponse|URLRequest' "${CODE_ROOTS[@]}" || true)
+if ! /usr/bin/python3 "$ROOT_DIR/scripts/audit_site_submission.py" --source-root "$ROOT_DIR"; then
+  failed=true
+fi
 if ! grep -Fq '"CommitmentUploader.swift"' "$ROOT_DIR/Package.swift" \
   || ! grep -Fq '"SoftwareUpdateManager.swift"' "$ROOT_DIR/Package.swift" \
   || ! grep -Fq '"AppAttestManager.swift"' "$ROOT_DIR/Package.swift"; then
@@ -224,7 +233,7 @@ if [[ -f "$APPLE_SYSTEM_SOURCE" ]]; then
 fi
 
 # LaunchServices is a network-capable escape hatch when handed an HTTP URL. Every app-side open
-# must pass through the reviewed policy, which rejects HTTP(S) entirely in the Local edition.
+# must pass through the reviewed policy. Website Sources has its own explicit safe-origin purpose.
 WORKSPACE_OPEN_POLICY="$ROOT_DIR/Sources/LocalHistoryApp/WorkspaceOpenPolicy.swift"
 if [[ ! -f "$WORKSPACE_OPEN_POLICY" ]] \
   || ! grep -Fq 'GoalongBuildCapabilities.permitsHTTPWorkspaceOpening' "$WORKSPACE_OPEN_POLICY" \
@@ -511,4 +520,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is isolated to the fixed Codex app-server bridge; first-party networking, Sparkle and remote Swift dependencies are absent from the single app target."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is isolated to the fixed Codex app-server bridge; first-party networking is confined to explicit reviewed website sends; retired uploaders, Sparkle and remote Swift dependencies remain absent."

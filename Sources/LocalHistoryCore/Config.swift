@@ -12,6 +12,12 @@ public struct RecorderConfig: Codable, Equatable {
     public var captureWindowTitles: Bool
     public var captureElementLabels: Bool
     public var captureURLs: Bool
+    /// Explicit opt-in; missing values in existing configurations keep private windows suppressed.
+    public var capturePrivateBrowsing: Bool? = false
+
+    public func suppressesPrivateWindow(detected: Bool) -> Bool {
+        detected && capturePrivateBrowsing != true
+    }
 
     public var redactAllURLQueryValues: Bool
     public var maxStringLength: Int
@@ -27,7 +33,7 @@ public struct RecorderConfig: Codable, Equatable {
     /// Exclusions still take priority. Optional for backwards-compatible config decoding.
     public var includedBundleIdentifiers: [String]?
     /// When non-empty, only these website domains may contribute future browser events.
-    /// Exclusions and private browsing still take priority. Optional for backwards-compatible decoding.
+    /// Exclusions and the private browsing preference still apply. Optional for backwards-compatible decoding.
     public var includedDomains: [String]?
     public var browserBundleIdentifiers: [String]
     public var privateWindowMarkers: [String]

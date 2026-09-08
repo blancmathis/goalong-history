@@ -805,6 +805,38 @@ public enum GoalongQueryCLI {
                 selectedDeviceIDs: selectedDeviceIDs
             )
 
+        case "export-site", "send-site":
+            let selectedDeviceIDs = (arguments.removeOption("--devices") ?? "")
+                .split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let options = GoalongSiteExportOptions(
+                deviceIDs: selectedDeviceIDs,
+                includeApplications: arguments.removeFlag("--include-apps"),
+                includeHourly: arguments.removeFlag("--include-hourly"),
+                includeWebsites: arguments.removeFlag("--include-websites"),
+                includeRecap: arguments.removeFlag("--include-recap")
+            )
+            let origin = command == "send-site" ? arguments.removeOption("--url") : nil
+            let tokenPath = command == "send-site" ? arguments.removeOption("--token-file") : nil
+            let raw = arguments.popFirst() ?? "yesterday"
+            guard arguments.values.isEmpty, selectedDeviceIDs.count <= 12 else {
+                throw CLIError.usage("Use \(command) DAY [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap]; send-site also requires --url and --token-file.")
+            }
+            if command == "send-site" {
+                guard let origin, let tokenPath else {
+                    throw CLIError.usage("send-site requires --url and --token-file. Tokens must never be passed directly on the command line.")
+                }
+                _ = try GoalongSiteSubmission.endpoint(origin: origin)
+                _ = try GoalongSiteSubmission.readToken(file: expandedFileURL(tokenPath))
+            }
+            let payload = try siteExportPayload(rootDirectory: root, day: raw, options: options)
+            if command == "send-site", let origin, let tokenPath {
+                FileHandle.standardOutput.write(try GoalongSiteSubmission.send(
+                    payload: payload, origin: origin, tokenFile: expandedFileURL(tokenPath)
+                ))
+            } else {
+                FileHandle.standardOutput.write(payload)
+            }
+
         case "websites":
             let limit = try integer(arguments.removeOption("--limit") ?? "100")
             let offset = try integer(arguments.removeOption("--offset") ?? "0")
@@ -1635,6 +1667,66 @@ public enum GoalongQueryCLI {
             memories: loaded.memories,
             semanticSnapshots: loaded.semanticSnapshots
         )
+    }
+
+    public static func siteExportPayload(
+        rootDirectory root: URL,
+        day rawDay: String,
+        options: GoalongSiteExportOptions = .init(),
+        now: Date = Date()
+    ) throws -> Data {
+        guard capabilityConsentEnabled(rootDirectory: root, capability: "appleScreenTime") else {
+            throw CLIError.unsafeSource("Apple Screen Time is off in Goalong. Enable the source before exporting its saved data.")
+        }
+        let requestedDay = try day(rawDay)
+        let archive = try AppleSystemScreenTimeDailyArchive(
+            rootDirectory: root.appendingPathComponent("apple-screen-time", isDirectory: true),
+            createIfMissing: false
+        )
+        guard let record = try archive.storedRecord(for: requestedDay) else {
+            throw CLIError.unsafeSource("No saved Screen Time record exists for this day. Open Goalong History to collect it; export-site never reads Apple's stores or starts a refresh.")
+        }
+        let sourceDate = DateFormatter()
+        sourceDate.calendar = Calendar(identifier: .gregorian)
+        sourceDate.locale = Locale(identifier: "en_US_POSIX")
+        sourceDate.timeZone = TimeZone(identifier: record.timeZoneIdentifier)
+        sourceDate.dateFormat = "yyyy-MM-dd"
+        guard sourceDate.string(from: record.dayStart) == localDayString(requestedDay) else {
+            throw CLIError.unsafeSource("The saved record does not match the requested calendar day.")
+        }
+        var websites: [DailyWebsiteUsage]?
+        if options.includeWebsites {
+            guard capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory") else {
+                throw CLIError.unsafeSource("Computer History is off in Goalong. Enable it before exporting website details.")
+            }
+            guard record.timeZoneIdentifier == Calendar.current.timeZone.identifier else {
+                throw CLIError.unsafeSource("The saved day uses a different timezone. Export without websites to avoid mixing different day boundaries.")
+            }
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).loadDailyWebsiteUsage(day: requestedDay)
+            guard loaded.state == .ready else {
+                throw CLIError.unsafeSource("Website details are unavailable or their bounded source read was incomplete. Export without --include-websites or inspect goalong websites DAY.")
+            }
+            websites = loaded.websites
+        }
+        var recapText: String?
+        if options.includeRecap {
+            guard capabilityConsentEnabled(rootDirectory: root, capability: "chatGPTAnalysis") else {
+                throw CLIError.unsafeSource("Saved ChatGPT analysis access is off. Enable it before including a saved recap.")
+            }
+            let url = root.appendingPathComponent("chatgpt/recaps/\(localDayString(requestedDay)).chatgpt-recap.json")
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw CLIError.unsafeSource("No saved recap exists for this day. Export without --include-recap.")
+            }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let recap = try decoder.decode(DailyRecap.self, from: readStableRegularFile(url, maximumBytes: 64 * 1024))
+            guard recap.day >= record.dayStart && recap.day < record.dayEnd else {
+                throw CLIError.unsafeSource("The saved recap belongs to another calendar day.")
+            }
+            recapText = recap.summaryLines?.joined(separator: "\n") ?? recap.markdown
+        }
+        return try GoalongSiteExport.payload(record: record, options: options, websites: websites,
+                                            recap: recapText, now: now)
     }
 
     public static func screenTimePayload(

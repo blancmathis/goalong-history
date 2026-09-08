@@ -24,10 +24,18 @@ Package.swift
 Sources/LocalHistoryApp/CapabilityConsentStore.swift
 Sources/LocalHistoryApp/AppDelegate.swift
 Sources/LocalHistoryQueryCLI/GoalongReadOnlyQueryBroker.swift
+Sources/LocalHistoryQueryCLI/GoalongSiteExport.swift
+Sources/LocalHistoryQueryCLI/GoalongSiteSubmission.swift
+Sources/LocalHistoryApp/GoalongWebsiteConnectionCard.swift
 Sources/LocalHistoryApp/ChatGPT/CodexAppServerClient.swift
 scripts/audit_privacy_boundaries.sh
 scripts/verify_security_capabilities.py
 ```
+
+For the website connector, review the explicit offline/export/send split against
+[`NETWORK.md`](NETWORK.md) and [`PRIVACY.md`](PRIVACY.md#website-disclosure). The presence of its
+reviewed HTTP client is intentional; the retired commitment transport must remain excluded.
+Native source checks do not validate the website's deployed authorization or sharing rules.
 
 ## Build and inspect the exact app
 

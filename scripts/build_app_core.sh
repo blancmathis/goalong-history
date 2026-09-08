@@ -78,6 +78,7 @@ export LOCALHISTORY_CLI_INFO_PLIST="$CLI_INFO_PLIST"
 if [[ "$RUN_TESTS" == "1" ]]; then
   echo "Testing Goalong History…"
   (cd "$ROOT_DIR" && xcrun swift test)
+  /usr/bin/python3 "$ROOT_DIR/scripts/test_site_submission_policy.py"
 fi
 
 build_arch() {
@@ -272,5 +273,6 @@ echo
 printf 'Built %s %s (%s)\n' "$APP_NAME" "$VERSION" "$ARCHS"
 printf 'Output: %s\n' "$OUTPUT_DIR/$APP_NAME.app"
 printf 'Edition: %s\n' "$BUILD_EDITION"
-echo "Sparkle, first-party HTTP uploader and App Attest transport: physically absent"
+echo "Sparkle, retired commitment uploader and App Attest transport: physically absent"
+echo "Website transport: explicit reviewed sends only; no automatic sync"
 echo "Optional ChatGPT analysis: delegated to Codex after explicit consent"

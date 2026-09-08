@@ -82,7 +82,7 @@
             // A direct Finder/Spotlight/Launchpad launch makes the app active. A login-item
             // launch stays in accessory mode, so it can keep recording without opening UI.
             DispatchQueue.main.async { [weak self] in
-                guard let self, NSApplication.shared.isActive, self.window == nil else { return }
+                guard let self, NSApplication.shared.isActive, !self.isWindowLoaded else { return }
                 self.show(section: self.viewModel.selectedSection)
             }
         }
@@ -177,7 +177,7 @@
             let closingWindow = notification.object as? NSWindow
             closingWindow?.contentViewController = nil
             DispatchQueue.main.async { [weak self, weak closingWindow] in
-                if let self, let closingWindow, self.window === closingWindow {
+                if let self, self.isWindowLoaded, let closingWindow, self.window === closingWindow {
                     self.window = nil
                 }
                 let application = NSApplication.shared
@@ -197,7 +197,9 @@
         }
 
         private func updateDashboardVisibility() {
-            guard let window else {
+            // NSWindowController.window lazily calls loadWindow(). Visibility
+            // notifications after closing must never recreate the dashboard.
+            guard isWindowLoaded, let window else {
                 visibilityCoordinator.update(.hidden)
                 return
             }

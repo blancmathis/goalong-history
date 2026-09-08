@@ -213,7 +213,7 @@
         }
 
         func chooseFolder() {
-            guard started else { return }
+            // Folder selection is configuration; scanNow remains gated by started.
             let panel = NSOpenPanel()
             panel.canChooseFiles = false
             panel.canChooseDirectories = true

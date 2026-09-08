@@ -58,51 +58,41 @@
         @State private var providerFilter: AgentProvider?
         @State private var editingFolder: AgentWatchedFolder?
         private let presentation: AgentActivityPresentation
+        private let onManageSources: (() -> Void)?
 
         init(
             agents: AgentActivityRuntime,
-            presentation: AgentActivityPresentation = .management
+            presentation: AgentActivityPresentation = .management,
+            onManageSources: (() -> Void)? = nil
         ) {
             self.agents = agents
             self.presentation = presentation
+            self.onManageSources = onManageSources
         }
 
         var body: some View {
+            SourceAccessGate(capability: .aiConversations, automaticallyEnable: presentation == .history) { pageBody }
+        }
+
+        private var pageBody: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    sourceConsentCard
+                    if presentation == .management {
+                        managementHeader
+                    }
+                    if presentation == .management || !consents.isEnabled(.aiConversations) {
+                        sourceConsentCard
+                    }
                     if !consents.isEnabled(.aiConversations) {
                         disabledSourceExplanation
+                        if presentation == .management { watchedFoldersCard }
                     } else if presentation == .history {
                         conversationHistoryList
-                    } else {
-                        PageHeader(
-                            eyebrow: "Sources",
-                            title: "AI conversation sources",
-                            subtitle:
-                                "Choose the original local sources Goalong may read. Conversation bodies are never copied into Goalong storage."
-                        ) {
-                            HStack(spacing: 9) {
-                                DateSelectionControl(date: agents.selectedDay, onChange: agents.selectDay)
-                                Button {
-                                    agents.scanNow(
-                                        forceFullDiscovery: true,
-                                        analyzeSelectedDay: true
-                                    )
-                                } label: {
-                                    Label(agents.isScanning ? "Scanning…" : "Scan now", systemImage: "arrow.clockwise")
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(agents.isScanning)
-
-                                Button {
-                                    agents.chooseFolder()
-                                } label: {
-                                    Label("Add folder", systemImage: "folder.badge.plus")
-                                }
-                                .buttonStyle(.borderedProminent)
-                            }
+                        DisclosureGroup("Source & privacy") {
+                            sourceConsentCard.padding(.top, 12)
                         }
+                        .font(.system(size: 12))
+                    } else {
                         localStatusBanner
                         metrics
                         integrationCard
@@ -111,7 +101,7 @@
                         storageAndPrivacyCard
                     }
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, LHTheme.pageInset)
                 .padding(.top, presentation == .management ? 28 : 18)
                 .padding(.bottom, 50)
             }
@@ -146,6 +136,38 @@
             }
         }
 
+        private var managementHeader: some View {
+            PageHeader(
+                eyebrow: "Sources",
+                title: "AI conversation sources",
+                subtitle:
+                    "Choose the original local sources Goalong may read. Conversation bodies are never copied into Goalong storage."
+            ) {
+                if consents.isEnabled(.aiConversations) {
+                    HStack(spacing: 9) {
+                        DateSelectionControl(date: agents.selectedDay, onChange: agents.selectDay)
+                        Button {
+                            agents.scanNow(
+                                forceFullDiscovery: true,
+                                analyzeSelectedDay: true
+                            )
+                        } label: {
+                            Label(agents.isScanning ? "Scanning…" : "Scan now", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(agents.isScanning)
+
+                        Button {
+                            agents.chooseFolder()
+                        } label: {
+                            Label("Add folder", systemImage: "folder.badge.plus")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+        }
+
         private var sourceConsentCard: some View {
             LHCard {
                 HStack(alignment: .top, spacing: 14) {
@@ -163,22 +185,15 @@
                         Text(
                             "Goalong reads only sources you authorize, directly at their original location. It keeps a bounded metadata index and never stores a second copy of transcript bodies."
                         )
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 14)
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { consents.isEnabled(.aiConversations) },
-                            set: {
-                                _ = consents.set(.aiConversations, enabled: $0, surface: .settings)
-                            }
-                        )
-                    )
+                    SourceActivationToggle(capability: .aiConversations) { Text("aiConversations") }
                     .labelsHidden()
                     .toggleStyle(.switch)
+                    .accessibilityLabel("Read local AI conversations")
                 }
             }
         }
@@ -191,11 +206,17 @@
                     Text(
                         "Existing Goalong events and proofs stay available. Turn this source on only if you want the app to inspect Codex, Claude, OpenCode or another folder you explicitly add."
                     )
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+
+        private var hasSourceIssue: Bool {
+            !agents.indexIsValid || agents.overview.errorCount > 0
+                || agents.lastScanResult.analysisIncomplete
+                || agents.lastScanResult.capacityLimitedFolderCount > 0
         }
 
         private var conversationHistoryList: some View {
@@ -206,7 +227,7 @@
                         Text(
                             "\(agents.overview.captures.count) conversation\(agents.overview.captures.count == 1 ? "" : "s")"
                         )
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .font(.system(size: 20, weight: .semibold))
                         HStack(spacing: 7) {
                             Text(conversationSummaryDetail)
                             Text("·")
@@ -218,7 +239,7 @@
                                 Label("Original sources", systemImage: "internaldrive")
                             }
                         }
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -237,18 +258,47 @@
                         .frame(width: 240)
                 }
 
+                if hasSourceIssue {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "exclamationmark.circle").foregroundStyle(LHTheme.warning)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Some conversations could not be loaded").font(.system(size: 13, weight: .semibold))
+                            Text("Results may be incomplete. Retry, or review your source folders and their access.")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Retry") { agents.scanNow(analyzeSelectedDay: true) }.disabled(agents.isScanning)
+                        if let onManageSources { Button("Review sources", action: onManageSources) }
+                    }.padding(14)
+                    .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 12))
+                }
+
                 LHCard(padding: 0) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if captures.isEmpty {
                             EmptyStateView(
                                 symbol: agents.isScanning
                                     ? "arrow.triangle.2.circlepath" : "bubble.left.and.bubble.right",
-                                title: agents.isScanning ? "Reading conversations" : "No conversations for this day",
+                                title: agents.isScanning ? "Reading conversations"
+                                    : (!search.isEmpty || providerFilter != nil) ? "No matching conversations"
+                                    : hasSourceIssue ? "Conversations unavailable" : "No conversations for this day",
                                 message: agents.isScanning
                                     ? "Goalong is checking changed original sources."
-                                    : "Try another day or review AI conversation sources in Settings."
+                                    : (!search.isEmpty || providerFilter != nil)
+                                        ? "Clear the search or choose another provider."
+                                        : hasSourceIssue ? "Review the source status above to restore access." : "Try another day or review your conversation folders."
                             )
-                            .frame(minHeight: 230)
+                            .frame(minHeight: 190)
+                            if search.isEmpty, providerFilter == nil, !hasSourceIssue, let onManageSources {
+                                Button("Review sources", action: onManageSources)
+                                    .buttonStyle(.bordered).frame(maxWidth: .infinity).padding(.bottom, 20)
+                            }
+                            if !search.isEmpty || providerFilter != nil {
+                                Button("Clear filters") { search = ""; providerFilter = nil }
+                                    .buttonStyle(.bordered)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.bottom, 20)
+                            }
                         } else {
                             ForEach(Array(captures.prefix(120).enumerated()), id: \.element.id) { index, record in
                                 conversationRow(record)
@@ -258,7 +308,7 @@
                             }
                             if captures.count > 120 {
                                 Text("Showing the 120 newest matching conversations")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
@@ -285,7 +335,7 @@
                         Text("·")
                         Text(conversationDetail(record))
                     }
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 }
@@ -294,11 +344,11 @@
 
                 if record.availability != .available {
                     Label(record.availability.displayName, systemImage: statusSymbol(record.availability))
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)
                 } else if !record.projectionIsComplete {
                     Label("Partial day", systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)
                         .help("The selected day exceeded the bounded direct-read limit; older messages from that day may be absent.")
                 }
@@ -374,19 +424,19 @@
                     Text(
                         "Conversation bodies are read in place from Codex, Claude Code, OpenCode and configured folders. The local index contains only provider, stable ID, source reference, timestamps, size, offsets and SHA-256."
                     )
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     Text(
                         "No blob, snapshot, materialized copy or hook payload is stored by Goalong History."
                     )
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(LHTheme.privateTint)
                     if agents.lastScanResult.capacityLimitedFolderCount > 0 {
                         Text(
                             "A source exceeded the lightweight index ceiling; Goalong retained its newest bounded metadata projection without retrying an eviction loop."
                         )
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(LHTheme.warning)
                     }
                 }
@@ -481,7 +531,7 @@
                     Text(
                         "Goalong monitors Codex sessions, history and logs under `~/.codex` when that directory exists."
                     )
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -549,7 +599,7 @@
                         sectionHeader(
                             symbol: "folder.badge.gearshape",
                             tint: LHTheme.teal,
-                            title: "Folders monitored",
+                            title: "Conversation folders",
                             subtitle:
                                 "Stopped default sources stay stopped after relaunch. Detect or add one explicitly to allow it again. Goalong stores only lightweight references."
                         )
@@ -558,6 +608,7 @@
                             agents.detectCommonSources()
                         }
                         .buttonStyle(.bordered)
+                        .disabled(!consents.isEnabled(.aiConversations))
                         Button {
                             agents.chooseFolder()
                         } label: {
@@ -571,9 +622,9 @@
                             symbol: "folder.badge.plus",
                             title: "No agent folders are monitored yet",
                             message:
-                                "Detect the standard Codex, Claude Code, Cursor and OpenCode folders, or choose any directory manually.",
-                            buttonTitle: "Detect common folders",
-                            action: agents.detectCommonSources
+                                "Choose a folder containing local conversations. Reading starts only after AI conversations is enabled.",
+                            buttonTitle: "Choose folder",
+                            action: agents.chooseFolder
                         )
                         .frame(minHeight: 190)
                     } else {
@@ -683,7 +734,7 @@
                         }
                         if filteredCaptures.count > 120 {
                             Text("Showing the 120 newest matching source references.")
-                                .font(.system(size: 9))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .padding(.top, 5)
@@ -707,7 +758,7 @@
                         .truncationMode(.middle)
                     if let excerpt = record.summary.excerpt, !excerpt.isEmpty {
                         Text(excerpt)
-                            .font(.system(size: 9))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
@@ -822,22 +873,22 @@
         private func detailLine(_ title: String, value: String) -> some View {
             HStack {
                 Text(title)
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(value)
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .font(.system(size: 11, weight: .semibold))
             }
         }
 
         private func privacyBullet(_ text: String) -> some View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(LHTheme.success)
                     .padding(.top, 1)
                 Text(text)
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -854,7 +905,7 @@
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
                     Text(subtitle)
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -917,9 +968,9 @@
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Edit monitored folder")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .font(.system(size: 20, weight: .bold))
                     Text(draft.path)
-                        .font(.system(size: 9, design: .monospaced))
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .truncationMode(.middle)
@@ -947,7 +998,7 @@
                         ? "Every supported regular file is indexed in place except common credential stores, cookies, private keys and caches."
                         : "Goalong directly reads common transcript, chat, log, trace and state formats without copying them."
                 )
-                .font(.system(size: 9))
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 

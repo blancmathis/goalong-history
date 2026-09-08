@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-04T19:23:34.466221+00:00",
+  "title": "Design System: Goalong History",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Blue action accent",
+        "tonalRamp": [
+          "#071d3f",
+          "#0e3670",
+          "#174f9f",
+          "#246bcc",
+          "#3380f5",
+          "#71a6fa",
+          "#abcafd",
+          "#e6effe"
+        ]
+      },
+      "sidebar-dark": {
+        "role": "neutral",
+        "displayName": "Charcoal sidebar",
+        "tonalRamp": [
+          "#202020",
+          "#383838",
+          "#505050",
+          "#686868",
+          "#888888",
+          "#aaaaaa",
+          "#cccccc",
+          "#eeeeee"
+        ]
+      },
+      "page-dark": {
+        "role": "neutral",
+        "displayName": "Charcoal canvas",
+        "tonalRamp": [
+          "#202020",
+          "#383838",
+          "#505050",
+          "#686868",
+          "#888888",
+          "#aaaaaa",
+          "#cccccc",
+          "#eeeeee"
+        ]
+      },
+      "card-dark": {
+        "role": "neutral",
+        "displayName": "Raised charcoal surface",
+        "tonalRamp": [
+          "#202020",
+          "#383838",
+          "#505050",
+          "#686868",
+          "#888888",
+          "#aaaaaa",
+          "#cccccc",
+          "#eeeeee"
+        ]
+      },
+      "sidebar-light": {
+        "role": "neutral",
+        "displayName": "Light sidebar",
+        "tonalRamp": [
+          "#202020",
+          "#383838",
+          "#505050",
+          "#686868",
+          "#888888",
+          "#aaaaaa",
+          "#cccccc",
+          "#eeeeee"
+        ]
+      },
+      "page-light": {
+        "role": "neutral",
+        "displayName": "Light canvas",
+        "tonalRamp": [
+          "#202020",
+          "#383838",
+          "#505050",
+          "#686868",
+          "#888888",
+          "#aaaaaa",
+          "#cccccc",
+          "#eeeeee"
+        ]
+      },
+      "card-light": {
+        "role": "neutral",
+        "displayName": "Light group",
+        "tonalRamp": [
+          "#202020",
+          "#383838",
+          "#505050",
+          "#686868",
+          "#888888",
+          "#aaaaaa",
+          "#cccccc",
+          "#eeeeee"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Native heading",
+        "purpose": "Primary page titles."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "hover",
+        "value": "120ms ease-out",
+        "purpose": "Whole-row hover only; none under Reduce Motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "minimum-window",
+        "value": "1080px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "description": "Portable documentation specimen; actual rendering is owned by SwiftUI/AppKit.",
+      "html": "<button class=\"ds-primary\">Save settings</button>",
+      "css": ".ds-primary{font:12px system-ui;color:#ededed;background:#252525;border:1px solid #3b3b3b;border-radius:7px;background:#337af5;border:0;padding:6px 12px}.ds-primary:hover{filter:brightness(1.08)}.ds-primary:active{filter:brightness(.9)}.ds-primary:focus-visible{outline:2px solid #3380f5;outline-offset:2px}"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "description": "Portable documentation specimen; actual rendering is owned by SwiftUI/AppKit.",
+      "html": "<button class=\"ds-secondary\">Disconnect</button>",
+      "css": ".ds-secondary{font:12px system-ui;color:#ededed;background:#252525;border:1px solid #3b3b3b;border-radius:7px;padding:5px 10px}.ds-secondary:hover{background:#303030}.ds-secondary:active{background:#3b3b3b}.ds-secondary:focus-visible{outline:2px solid #3380f5;outline-offset:2px}"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "description": "Portable documentation specimen; actual rendering is owned by SwiftUI/AppKit.",
+      "html": "<button class=\"ds-nav\" aria-current=\"page\">Settings</button>",
+      "css": ".ds-nav{font:12px system-ui;color:#ededed;background:#252525;border:1px solid #3b3b3b;border-radius:7px;border:0;background:#303030;width:188px;height:34px;text-align:left;padding:0 12px;font-size:13px}.ds-nav:hover{background:#343434}.ds-nav:active{background:#404040}.ds-nav:focus-visible{outline:2px solid #3380f5;outline-offset:2px}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "description": "Portable documentation specimen; actual rendering is owned by SwiftUI/AppKit.",
+      "html": "<input class=\"ds-input\" aria-label=\"Example filter\" placeholder=\"Filter activity\">",
+      "css": ".ds-input{font:12px system-ui;color:#ededed;background:#252525;border:1px solid #3b3b3b;border-radius:7px;padding:7px 10px}.ds-input:hover{border-color:#686868}.ds-input:focus-visible{outline:2px solid #3380f5;outline-offset:2px}"
+    },
+    {
+      "name": "Status",
+      "kind": "chip",
+      "description": "Portable documentation specimen; actual rendering is owned by SwiftUI/AppKit.",
+      "html": "<span class=\"ds-status\">\u25cf Recording locally</span>",
+      "css": ".ds-status{display:inline-block;font:11px system-ui;color:#70c992;background:#233229;padding:5px 10px;border-radius:6px}"
+    },
+    {
+      "name": "Grouped surface",
+      "kind": "card",
+      "description": "Portable documentation specimen; actual rendering is owned by SwiftUI/AppKit.",
+      "html": "<div class=\"ds-group\">Settings content</div>",
+      "css": ".ds-group{font:12px system-ui;color:#ededed;background:#252525;border:1px solid #3b3b3b;border-radius:7px;border-radius:12px;padding:18px;min-width:240px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Native macOS workspace",
+    "overview": "A working dark macOS workspace, with the native interaction detail of Apple and Codex.",
+    "keyCharacteristics": [
+      "Three primary destinations",
+      "Readable explanatory text",
+      "Restrained adaptive surfaces",
+      "Native controls"
+    ],
+    "rules": [],
+    "dos": [
+      "Preserve routes and functional actions."
+    ],
+    "donts": [
+      "Do not claim source builds update the installed app."
+    ]
+  }
+}

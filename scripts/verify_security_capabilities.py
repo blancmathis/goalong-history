@@ -25,11 +25,15 @@ def main() -> int:
     value = json.loads(args.manifest.read_text(encoding="utf-8"))
     with (args.app / "Contents" / "Info.plist").open("rb") as stream:
         info = plistlib.load(stream)
+    return verify_manifest(value, info, args.edition)
+
+
+def verify_manifest(value: dict, info: dict, edition: str) -> int:
     if value.get("schemaVersion") != 1:
         fail("unsupported schemaVersion")
-    if value.get("product", {}).get("edition") != args.edition:
+    if value.get("product", {}).get("edition") != edition:
         fail("manifest edition does not match the requested edition")
-    if info.get("GoalongBuildEdition") != args.edition:
+    if info.get("GoalongBuildEdition") != edition:
         fail("Info.plist edition does not match the requested edition")
     if value.get("product", {}).get("bundleIdentifier") != info.get("CFBundleIdentifier"):
         fail("bundle identifier mismatch")
@@ -38,10 +42,12 @@ def main() -> int:
     if any(not item.get("sha256") for item in value["codeObjects"]):
         fail("an executable has no SHA-256 digest")
 
-    expected_absent = ("firstPartyNetworkTransport", "automaticUpdater")
+    expected_absent = ("automaticUpdater",)
     for capability in expected_absent:
         if value.get("capabilities", {}).get(capability) != "absent":
             fail(f"single-app capability is not absent: {capability}")
+    if value.get("capabilities", {}).get("firstPartyNetworkTransport") != "explicit-site-submission-only":
+        fail("first-party transport is not confined to explicit website submission")
     if value.get("capabilities", {}).get("singlePublicApplication") != "present":
         fail("single public application invariant is missing")
     if value.get("capabilities", {}).get("defaultCapabilityState") != "all-off":
@@ -65,16 +71,35 @@ def main() -> int:
     if not markers.get("codexAppServer") or not markers.get("managedOAuth"):
         fail("explicit-consent Codex bridge markers are missing")
     if markers.get("commitmentUploader") or markers.get("sparkleUpdater"):
-        fail("first-party network or updater marker is present")
+        fail("retired commitment uploader or updater marker is present")
+    if markers.get("siteSubmission") is not True:
+        fail("explicit website submission marker is missing")
     if value.get("bundle", {}).get("infoPlistNetworkAndUpdateKeys"):
         fail("single app contains an update or network Info.plist key")
     if value.get("network", {}).get("osEnforcedDeny") is not False:
         fail("network sandbox state is not reported honestly")
+    expected_submission = {
+        "triggers": ["send-site", "native-reviewed-send-button"], "automaticSync": False,
+        "method": "POST", "path": "/api/goalong/v1/import", "transport": "HTTPS-or-development-loopback",
+        "authentication": "user-owned-0600-upload-token-file", "redirects": "refused",
+        "requestMaximumBytes": 2 * 1024 * 1024, "responseMaximumBytes": 64 * 1024,
+        "resourceTimeoutSeconds": 30, "automaticRetry": False, "rawConversationBodies": False,
+        "localPathsInPayload": False, "verification": "unverified", "sharing": "managed-on-site",
+    }
+    if value.get("network", {}).get("siteSubmission") != expected_submission:
+        fail("explicit website submission constraints differ from the reviewed contract")
+    destinations = value.get("network", {}).get("declaredDestinations", [])
+    if len(destinations) != 2 or {item.get("purpose") for item in destinations} != {
+        "managed-ChatGPT-analysis-after-explicit-consent", "explicit-selected-website-import"
+    }:
+        fail("declared network emission paths differ from the two reviewed optional features")
     if value.get("ipc", {}).get("authenticatedSensitiveReader") != "not-shipped":
         fail("reader isolation state is not reported honestly")
     defaults = value.get("dataAccess", {}).get("newInstallDefaults", {})
     if not defaults or any(defaults.values()):
         fail("new-install capability defaults are not all false")
+    if defaults.get("websiteSubmission") is not False:
+        fail("website submission must be off until an explicit user action")
     expected_ipc = {
             "protocolVersion": "goalong-readonly-unix-v1",
             "transport": "unix-domain-socket",
