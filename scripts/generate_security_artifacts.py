@@ -94,9 +94,16 @@ def parse_codesign_metadata(path: Path) -> dict[str, Any]:
             fields[key] = value
 
     requirement_result = run("/usr/bin/codesign", "-d", "-r-", str(path))
-    requirement = requirement_result.stderr.decode("utf-8", "replace").strip()
-    if requirement.startswith("designated => "):
-        requirement = requirement.removeprefix("designated => ")
+    requirement = None
+    if requirement_result.returncode == 0:
+        # codesign prints the requirement to stdout and diagnostics to stderr.
+        # Accept either stream, but never mistake Executable=... for a requirement.
+        requirement = next((
+            line.removeprefix("designated => ")
+            for stream in (requirement_result.stdout, requirement_result.stderr)
+            for line in stream.decode("utf-8", "replace").splitlines()
+            if line.startswith("designated => ")
+        ), None)
 
     entitlement_result = run("/usr/bin/codesign", "-d", "--entitlements", ":-", str(path))
     entitlements: dict[str, Any] = {}

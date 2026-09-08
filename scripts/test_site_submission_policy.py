@@ -4,6 +4,7 @@ import contextlib
 import copy
 import io
 import plistlib
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -117,6 +118,34 @@ class CapabilityManifestTests(unittest.TestCase):
     def test_new_sender_marker_is_distinct_from_retired_transport(self):
         self.assertNotEqual(generator.TRANSPORT_MARKERS["siteSubmission"], generator.TRANSPORT_MARKERS["commitmentUploader"])
         self.assertNotIn(b"URLSessionConfiguration.ephemeral", [generator.TRANSPORT_MARKERS["commitmentUploader"]])
+
+
+class CodeSignatureMetadataTests(unittest.TestCase):
+    def metadata(self, requirement_stdout=b"", requirement_stderr=b"", returncode=0):
+        responses = [
+            subprocess.CompletedProcess([], 0, b"", b"Identifier=example.synthetic\n"),
+            subprocess.CompletedProcess([], returncode, requirement_stdout, requirement_stderr),
+            subprocess.CompletedProcess([], 0, b"", b""),
+        ]
+        with patch.object(generator, "run", side_effect=responses):
+            return generator.parse_codesign_metadata(Path("/fixture/Synthetic.app"))
+
+    def test_requirement_stdout_is_separate_from_executable_diagnostic(self):
+        value = self.metadata(b'designated => identifier "example.synthetic" and anchor apple generic\n',
+                              b"Executable=/fixture/Synthetic.app/Contents/MacOS/Synthetic\n")
+        self.assertEqual(value["designatedRequirement"], 'identifier "example.synthetic" and anchor apple generic')
+
+    def test_explicit_requirement_on_stderr_is_supported(self):
+        value = self.metadata(requirement_stderr=b'Executable=/fixture/Synthetic\ndesignated => identifier "example.synthetic"\n')
+        self.assertEqual(value["designatedRequirement"], 'identifier "example.synthetic"')
+
+    def test_executable_path_is_never_reported_as_requirement(self):
+        value = self.metadata(requirement_stderr=b"Executable=/fixture/Synthetic\n")
+        self.assertIsNone(value["designatedRequirement"])
+
+    def test_failed_inspection_cannot_report_a_requirement(self):
+        value = self.metadata(b'designated => identifier "example.synthetic"\n', returncode=1)
+        self.assertIsNone(value["designatedRequirement"])
 
 
 if __name__ == "__main__":
