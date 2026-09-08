@@ -107,6 +107,8 @@ La connexion facultative au site permet de choisir une journée, ses appareils e
 
 Depuis **Confidentialité et sécurité**, vous pouvez ouvrir le dossier local, examiner les protections et supprimer les détails. La suppression des détails conserve les sceaux cryptographiques ; la période devient alors privée et ne peut plus être révélée en détail.
 
+Pour analyser une demande téléchargée depuis le site, ouvrez **Settings → Goalong website → Analyser une demande du site**. Choisissez le JSON, relisez son contenu et autorisez cette analyse avec votre connexion ChatGPT locale. Vous pourrez modifier le brouillon et l’exporter avant de l’importer volontairement sur le site. Ce parcours utilise uniquement le fichier choisi, avec un profil de connexion séparé ; il ne consulte pas votre historique natif. Voir le [parcours et ses limites](docs/SITE-ANALYSIS.md).
+
 ## Lancement à la connexion
 
 La dernière étape propose :

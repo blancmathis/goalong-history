@@ -103,6 +103,9 @@ selected saved data offline and sends it only through **Send reviewed data** or 
 using a chosen owner-only upload-token file. There is no passive website synchronization;
 submissions are unverified and existing site sharing rules apply. See the
 [website connection contract](docs/CLI.md#website-export-and-account-submission).
+The separate **Analyse a website request** flow reads one selected JSON file and uses
+an isolated local ChatGPT login. Its result is an editable text draft, exported only
+when requested; it never uploads itself. See [selected website analysis](docs/SITE-ANALYSIS.md).
 Full Disk Access readers still share the main app process, which is documented as a
 remaining limitation rather than hidden behind an “offline” label. See
 [`docs/GUARANTEES.md`](docs/GUARANTEES.md).

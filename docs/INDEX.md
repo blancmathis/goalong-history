@@ -37,6 +37,7 @@ Product behavior, security guarantees or implementation contracts.
 - [Computer History parity](COMPUTER_HISTORY_PARITY.md)
 - [Apple Screen Time](APPLE_SCREEN_TIME.md)
 - [AI conversations](../Features/AgentActivity/README.md)
+- [Selected website analysis](SITE-ANALYSIS.md)
 - [CLI](CLI.md)
 - [Releasing](RELEASING.md)
 

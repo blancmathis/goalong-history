@@ -18,6 +18,10 @@ binary with the fixed `app-server` argument. Codex owns its authenticated ChatGP
 Goalong passes a bounded daily context and does not expose arbitrary commands, executables,
 workspace roots or inherited cloud/API credentials to that child process.
 
+For [selected website analysis](SITE-ANALYSIS.md), the context is only the selected
+JSON request. A separate local login profile and restricted temporary workspace are
+required; the exported draft is never automatically sent to the website.
+
 The optional website connector is a separate first-party HTTP path. Only an explicit
 `goalong send-site` command or **Send reviewed data** in the native connection sheet sends
 selected saved data. `export-site` and the native preview stay offline; enabling a source or

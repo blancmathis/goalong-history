@@ -43,6 +43,11 @@ stops the runtime but does not delete an already generated recap; deletion remai
 The retired commitment uploader and automatic update client remain excluded. The optional website
 sender is an explicit disclosure path, described below and in [`NETWORK.md`](NETWORK.md).
 
+The [selected website analysis](SITE-ANALYSIS.md) is separate from daily analysis: it
+uses only the reviewed JSON file and an isolated ChatGPT login, without reading native
+archives or provider conversations. Its editable text draft stays transient until an
+explicit protected file export; website import remains a separate user action.
+
 ### Website disclosure
 
 `export-site` reads an existing normalized Screen Time archive without refreshing Apple data,
