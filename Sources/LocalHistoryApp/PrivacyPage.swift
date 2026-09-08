@@ -100,7 +100,7 @@
                         spacing: 10
                     ) {
                         capabilityRow(
-                            "First-party network transport",
+                            "Website submission after review",
                             present: capabilities.permitsFirstPartyNetworking
                         )
                         capabilityRow(

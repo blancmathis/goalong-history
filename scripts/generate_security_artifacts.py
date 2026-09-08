@@ -26,7 +26,8 @@ FORBIDDEN_LOCAL_ENTITLEMENTS = {
 TRANSPORT_MARKERS = {
     "codexAppServer": b"app-server",
     "managedOAuth": b"account/login/start",
-    "commitmentUploader": b"URLSessionConfiguration.ephemeral",
+    "commitmentUploader": b"The commitment endpoint URL is invalid.",
+    "siteSubmission": b"/api/goalong/v1/import",
     "sparkleUpdater": b"SPUStandardUpdaterController",
 }
 
@@ -230,7 +231,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "singlePublicApplication": "present",
         "defaultCapabilityState": "all-off",
         "explicitConsentRegistry": "present",
-        "firstPartyNetworkTransport": "absent",
+        "firstPartyNetworkTransport": "explicit-site-submission-only",
         "automaticUpdater": "absent",
         "managedChatGPTBridge": "explicit-consent-only",
         "directProviderSourceReaders": "present",
@@ -242,8 +243,13 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         {
             "purpose": "managed-ChatGPT-analysis-after-explicit-consent",
             "destination": "Codex app-server managed account transport",
-            "source": "separately installed Codex executable; no URLSession in Goalong",
-        }
+            "source": "separately installed Codex executable",
+        },
+        {
+            "purpose": "explicit-selected-website-import",
+            "destination": "user-configured HTTPS origin; HTTP loopback for development only",
+            "source": "GoalongSiteSubmission after send-site or native Send reviewed data action",
+        },
     ]
     return {
         "schemaVersion": SCHEMA_VERSION,
@@ -299,6 +305,23 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "network": {
             "declaredDestinations": declared_network_destinations,
             "osEnforcedDeny": False,
+            "siteSubmission": {
+                "triggers": ["send-site", "native-reviewed-send-button"],
+                "automaticSync": False,
+                "method": "POST",
+                "path": "/api/goalong/v1/import",
+                "transport": "HTTPS-or-development-loopback",
+                "authentication": "user-owned-0600-upload-token-file",
+                "redirects": "refused",
+                "requestMaximumBytes": 2 * 1024 * 1024,
+                "responseMaximumBytes": 64 * 1024,
+                "resourceTimeoutSeconds": 30,
+                "automaticRetry": False,
+                "rawConversationBodies": False,
+                "localPathsInPayload": False,
+                "verification": "unverified",
+                "sharing": "managed-on-site",
+            },
         },
         "dataAccess": {
             "readOnlyProviderRoots": [
@@ -320,6 +343,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
                 "appleScreenTime": False,
                 "aiConversations": False,
                 "chatGPTAnalysis": False,
+                "websiteSubmission": False,
                 "remoteVerification": False,
                 "automaticUpdates": False,
                 "launchAtLogin": False,
@@ -347,6 +371,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "Absence of reviewed transport markers does not create an OS network sandbox.",
             "Full Disk Access readers still run in the main process; a separately sandboxed reader is not shipped.",
             "The explicit-consent Codex process bridge is an emission path and remains part of the review surface.",
+            "Explicit website sends emit only the selected bounded exchange fields; existing server-side sharing rules may disclose authorized dates and fields. This is not an authenticity verification system.",
         ],
     }
 

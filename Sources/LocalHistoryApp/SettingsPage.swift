@@ -76,6 +76,7 @@
             switch pane {
             case .home:
                 capabilityConsentCard
+                GoalongWebsiteConnectionCard()
                 if GoalongBuildCapabilities.permitsRemoteAnalysis,
                     consents.isEnabled(.chatGPTAnalysis)
                 {

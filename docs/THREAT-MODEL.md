@@ -9,7 +9,7 @@ context_room:
 
 ## Summary
 
-The highest current risk is broad Full Disk Access in the main process. The single app removes Goalong’s first-party uploader, App Attest transport and updater at compile time, gates every protected source behind separate consent, and confines optional process execution to the fixed Codex bridge; a separately sandboxed reader is not yet shipped.
+The highest current risk is broad Full Disk Access in the main process. The single app excludes the retired commitment uploader, App Attest transport and updater, gates protected sources behind separate consent, and confines optional process execution to the fixed Codex bridge. A separate explicit website sender discloses selected saved fields; a separately sandboxed reader is not yet shipped.
 
 ## Defines
 
@@ -24,6 +24,7 @@ Detailed cryptographic encodings or incident-response procedure.
 - provider-owned AI histories and Apple Screen Time databases;
 - Goalong detailed events, semantic context, derived history, proofs and keys;
 - user identity, browsing metadata, device names and daily routines;
+- website upload tokens and the selected fields submitted to a site account;
 - source-to-build-to-release integrity.
 
 ## Adversaries and failures
@@ -36,7 +37,9 @@ The model includes a malicious future update, compromised dependency or CI actio
 | --- | --- | --- |
 | Transcript duplication | Metadata-only Agent Activity index; direct provider reads | Transient in-memory text is still visible to the app process |
 | Source mutation | `READONLY`, `NOFOLLOW`, inode validation, `query_only`, SQL authorizer | Apple stores may change concurrently and must fail clearly |
-| Silent first-party transport | Compile-time exclusions, zero remote Swift dependencies, binary marker/framework/entitlement audit | No App Sandbox network deny is enabled; explicit Codex analysis remains an external path |
+| Silent first-party transport | Retired transport exclusions; website send requires a separate explicit action; no scheduled sync | No App Sandbox network deny is enabled; website submission and Codex analysis are external paths |
+| Website credential or destination substitution | Chosen owner-only regular token file, descriptor checks, HTTPS origin validation, redirect refusal and no ambient credentials | The chosen endpoint receives the bearer token; same-user compromise and a malicious endpoint remain risks |
+| Unintended website audience or authenticity claim | Preview selected fields; omit transcripts/event bodies; native sender cannot grant audiences; receipt remains unverified | Existing site rules can share a new submission; server authorization and revocation need independent validation |
 | Dependency drift | No remote Swift package dependency plus immutable GitHub Action commits | Independent action provenance verification is not yet automated |
 | Release substitution | Exact commit manifest, artifact hashes and GitHub/Sigstore provenance | No Apple notarization or byte-for-byte independent reproduction |
 | Data tampering | Salted commitments, chains and device signatures | Provider authorship and human identity are not proven |
@@ -45,4 +48,4 @@ The model includes a malicious future update, compromised dependency or CI actio
 
 ## Release decision
 
-The single app is the only supported artifact. It removes known first-party emission/update paths but is not the final FDA architecture. Public claims must stay within [GUARANTEES.md](GUARANTEES.md), and the reader-isolation target must satisfy its own acceptance matrix before being promoted to current truth.
+The single app is the only supported artifact. It excludes retired emission/update paths and adds only the reviewed explicit website path described in [NETWORK.md](NETWORK.md); it is not the final FDA architecture. Public claims must stay within [GUARANTEES.md](GUARANTEES.md), and the reader-isolation target must satisfy its own acceptance matrix before being promoted to current truth.

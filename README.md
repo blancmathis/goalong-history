@@ -96,10 +96,14 @@ This abridged tree includes the principal preserved data stores:
 Directories use mode `0700`; detailed files use mode `0600`.
 
 There is exactly one public application: **Goalong History**, bundle identifier
-`ai.goalong.localhistory`. Its compiled target contains no Goalong first-party HTTP uploader,
-App Attest transport or in-app updater. Optional ChatGPT analysis starts the fixed local Codex
-`app-server` process only after its own consent; this is the sole intentional external-analysis
-path. Full Disk Access readers still share the main app process, which is documented as a
+`ai.goalong.localhistory`. Its compiled target excludes the retired commitment uploader,
+App Attest transport and in-app updater. Optional ChatGPT analysis starts the fixed local Codex
+`app-server` process only after its own consent. The optional website connector separately exports
+selected saved data offline and sends it only through **Send reviewed data** or `goalong send-site`,
+using a chosen owner-only upload-token file. There is no passive website synchronization;
+submissions are unverified and existing site sharing rules apply. See the
+[website connection contract](docs/CLI.md#website-export-and-account-submission).
+Full Disk Access readers still share the main app process, which is documented as a
 remaining limitation rather than hidden behind an “offline” label. See
 [`docs/GUARANTEES.md`](docs/GUARANTEES.md).
 
@@ -226,7 +230,8 @@ uvicorn app:app --host 127.0.0.1 --port 8787
 ```
 
 The repository retains a reference server for protocol research, but the single public app does
-not contain its uploader and cannot send data to it. Reintroducing any remote verification path
+not contain its commitment uploader or App Attest transport. The explicit website sender uses a
+different v2 import contract and does not submit anchors or authenticity proofs. Reintroducing any remote verification path
 requires a new explicit design review, consent surface, manifest entry and release gate.
 
 ## Honest trust boundary

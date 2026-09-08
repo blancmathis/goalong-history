@@ -40,4 +40,31 @@ Optional ChatGPT analysis is a separate consent: Goalong prepares a bounded cont
 fixed local Codex `app-server`, and keeps only the bounded derived recap/proof. Disabling analysis
 stops the runtime but does not delete an already generated recap; deletion remains explicit.
 
-The shipped app contains no Goalong first-party HTTP uploader or automatic update client.
+The retired commitment uploader and automatic update client remain excluded. The optional website
+sender is an explicit disclosure path, described below and in [`NETWORK.md`](NETWORK.md).
+
+### Website disclosure
+
+`export-site` reads an existing normalized Screen Time archive without refreshing Apple data,
+opening provider conversations, modifying source history or contacting a server. Its default v2
+payload contains the saved day's device names, kinds, source totals, timezone and provenance.
+The user can narrow the devices and explicitly include application durations, measured hourly
+usage, domains observed on this Mac, or the saved bounded recap. Missing hourly evidence stays
+unknown. Website durations explain browser time and are not added to Screen Time totals.
+
+The website payload contains no conversation transcripts, prompts, captured event bodies, raw
+typed text, full URLs, local paths or source fingerprints. Optional recap text is a derived summary
+and may still disclose personal information; review the exact preview before sending. Source
+consent remains required for every requested detail. Full options and limits belong to
+[`CLI.md`](CLI.md#website-export-and-account-submission).
+
+Only **Send reviewed data** or `send-site` sends this selection, using the specifically chosen
+upload-token file. The native sheet remembers the origin and token-file path, not the token value,
+and does not perform background synchronization. Disabling a native source stops later access; it
+does not retract data already submitted to the site. Manage website copies and sharing there.
+
+The native sender cannot grant a sharing audience. Existing website rules for circles, friends,
+lists or public sharing can apply to newly submitted dates and fields, so an upload is not a
+promise that the data remains private. The receipt states `sharing: "managed-on-site"` and
+`verification: "unverified"`. Local signatures and source descriptions do not mint a verified
+website badge. Website authenticity verification remains a separate future feature.

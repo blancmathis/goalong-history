@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppKit
     import Foundation
+    import LocalHistoryQueryCLI
 
     enum GoalongWorkspaceOpenPurpose: Equatable {
         case localFile
@@ -9,11 +10,12 @@
         case accountAuthorization
         case updatePage
         case documentation
+        case goalongWebsite
     }
 
     /// Single reviewed LaunchServices boundary. The unified app accepts only
-    /// local files and Apple's System Settings scheme; HTTP(S) is rejected before
-    /// it reaches NSWorkspace.
+    /// local files, Apple's System Settings scheme, reviewed HTTPS purposes and the
+    /// explicitly configured Goalong website (HTTPS or development loopback only).
     enum GoalongWorkspaceOpenPolicy {
         private static let systemSettingsScheme = "x-apple.systempreferences"
         private static let reviewedDocumentationHosts: Set<String> = [
@@ -35,6 +37,16 @@
             let scheme = url.scheme?.lowercased()
             if scheme == systemSettingsScheme { return purpose == .systemSettings }
 
+            if purpose == .goalongWebsite {
+                guard GoalongBuildCapabilities.permitsHTTPWorkspaceOpening,
+                      var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                      parts.path == "/goalong.dc.html", parts.fragment == "sources", parts.query == nil else { return false }
+                parts.path = ""
+                parts.fragment = nil
+                guard let origin = parts.string else { return false }
+                return (try? GoalongSiteSubmission.endpoint(origin: origin)) != nil
+            }
+
             guard GoalongBuildCapabilities.permitsHTTPWorkspaceOpening,
                 scheme == "https",
                 url.user == nil,
@@ -53,7 +65,7 @@
                 return host == "github.com"
             case .documentation:
                 return reviewedDocumentationHosts.contains(host)
-            case .localFile, .systemSettings:
+            case .localFile, .systemSettings, .goalongWebsite:
                 return false
             }
         }
