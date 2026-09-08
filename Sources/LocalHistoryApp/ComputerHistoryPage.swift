@@ -536,6 +536,9 @@
         let openSourceJSON: () -> Void
         let deleteEpisode: (ComputerHistoryEpisode) -> Void
         @State private var episodePendingDeletion: ComputerHistoryEpisode?
+        @State private var timelineSearch = ""
+        @State private var newestFirst = true
+        @State private var hasRetried = false
 
         private let metricColumns = [
             GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
@@ -545,7 +548,6 @@
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
                     recordingStateCard
-                    sourceStatusCard
                     historySection
                 }
                 .padding(.bottom, 8)
@@ -566,6 +568,10 @@
                 refreshTimeline()
             }
             .onDisappear(perform: timelineModel.clear)
+            .onChange(of: day) { _ in
+                timelineSearch = ""
+                hasRetried = false
+            }
         }
 
         private struct TimelineRefreshID: Hashable {
@@ -590,6 +596,15 @@
             timelineModel.groups
         }
 
+        private var visibleTimelineGroups: [ComputerHistoryTenMinuteGroup] {
+            let query = timelineSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+            let groups = query.isEmpty ? tenMinuteGroups : tenMinuteGroups.filter { group in
+                group.apps.contains { $0.name.localizedStandardContains(query) }
+                    || group.sessions.contains { $0.context.localizedStandardContains(query) }
+            }
+            return newestFirst ? groups : groups.reversed()
+        }
+
         private func refreshTimeline() {
             guard Calendar.current.isDate(snapshot.day, inSameDayAs: day) else {
                 timelineModel.clear()
@@ -603,40 +618,60 @@
         }
 
         private var recordingStateCard: some View {
-            HStack(alignment: .center, spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(recordingStateTint.opacity(0.14))
-                        .frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
                     Image(systemName: recordingStateSymbol)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(recordingStateTint)
+                        .frame(width: 20)
+                        .padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(recordingStateTitle)
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(recordingSummary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 12)
+                    if needsRetry {
+                        Button(hasRetried ? "Retry again" : "Retry") {
+                            hasRetried = true
+                            model.refresh(day: day, forceRebuild: true)
+                        }
+                            .buttonStyle(.bordered)
+                            .disabled(model.isLoading || isSnapshotLoading)
+                            .help("Try reading this day's history again")
+                    }
                 }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(recordingStateTitle)
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(recordingSummary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                if let diagnostic = sourceDiagnostic {
+                    DisclosureGroup("Technical details") {
+                        Text(diagnostic)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 6)
+                    }
+                    .font(.system(size: 11))
+                    .padding(.leading, 30)
                 }
-                Spacer(minLength: 16)
-                StatusPill(
-                    title: fullContextEnabled ? "Detailed context" : "Activity metadata",
-                    symbol: fullContextEnabled ? "text.viewfinder" : "rectangle.dashed",
-                    tint: fullContextEnabled ? LHTheme.success : LHTheme.teal
-                )
             }
-            .padding(.horizontal, 17)
-            .padding(.vertical, 14)
-            .background(
-                LHTheme.cardBackground,
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-            )
+            .padding(14)
+            .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 10))
+        }
+
+        private var needsRetry: Bool {
+            switch model.sourceStatus {
+            case .inaccessible, .unverified: return true
+            case .available, .absent, .checking: return false
+            }
+        }
+
+        private var sourceDiagnostic: String? {
+            if case .inaccessible(let message) = model.sourceStatus { return message }
+            return nil
         }
 
         private var recordingStateTitle: String {
@@ -653,9 +688,9 @@
                     ? "No local source for this day"
                     : "Retained Computer History"
             case .inaccessible:
-                return "Source unavailable"
+                return "History could not be refreshed"
             case .unverified:
-                return "Local source not verified"
+                return "History has not been checked yet"
             }
         }
 
@@ -671,7 +706,7 @@
             case .absent:
                 return model.memory == nil ? "doc.badge.ellipsis" : "archivebox.fill"
             case .inaccessible:
-                return "exclamationmark.lock.fill"
+                return "exclamationmark.circle"
             case .unverified:
                 return "questionmark"
             }
@@ -698,29 +733,33 @@
             }
             switch model.sourceStatus {
             case .checking:
-                return "Verifying the original local journal before showing this day."
+                return "Checking for updates. Any activity already loaded stays visible below."
             case .absent:
                 return model.memory == nil
-                    ? "No original journal or retained Computer History exists for this day."
-                    : "The original journal is absent; the last known-good Computer History was kept."
+                    ? "No saved activity was found for this date. Choose another day using the date controls above."
+                    : "The original recording is no longer available. Previously saved history has been kept."
             case .inaccessible:
-                return model.memory == nil
-                    ? "The original journal could not be read safely."
-                    : "Showing retained Computer History while the original journal is unavailable."
+                if hasRetried {
+                    let nextStep = "Refresh failed again. Choose another date above or inspect Technical details."
+                    return tenMinuteGroups.isEmpty ? nextStep : nextStep + " Loaded activity remains visible."
+                }
+                return !tenMinuteGroups.isEmpty
+                    ? "Previously loaded activity is shown below. Retry to check for updates."
+                    : "This day's history could not be loaded. Retry, or choose another date above."
             case .unverified:
-                return "Goalong has not verified the original local journal for this day."
+                return "Retry to check the saved activity for this day."
             case .available:
                 break
             }
             let windows = tenMinuteGroups.count.formatted()
-            return "\(events) source events shown as \(windows) factual 10-minute windows. No AI summary is generated."
+            return "\(windows) ten-minute windows from local recordings. Open a window to inspect its details."
         }
 
         private var historySection: some View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 9) {
                     Text("Timeline")
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .font(.system(size: 20, weight: .semibold))
                     Image(systemName: "info.circle")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -733,7 +772,7 @@
                             .controlSize(.small)
                             .help("Grouping recorded activity")
                     } else {
-                        Text("\(tenMinuteGroups.count) windows")
+                        Text(timelineSearch.isEmpty ? "\(tenMinuteGroups.count) windows" : "\(visibleTimelineGroups.count) of \(tenMinuteGroups.count) windows")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -745,6 +784,32 @@
                     .disabled(!canRevealSourceData)
                     .help(sourceDataHelp)
                 }
+
+                HStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Search apps or context", text: $timelineSearch)
+                            .textFieldStyle(.plain)
+                            .accessibilityLabel("Search timeline")
+                        if !timelineSearch.isEmpty {
+                            Button { timelineSearch = "" } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Clear timeline search")
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: 7))
+                    Picker("Timeline order", selection: $newestFirst) {
+                        Text("Newest first").tag(true)
+                        Text("Oldest first").tag(false)
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+                .font(.system(size: 12))
 
                 timelineCard
             }
@@ -761,7 +826,9 @@
                         )
                         .font(.system(size: 14, weight: .semibold))
                         Spacer()
-                        Text(DashboardFormatters.duration(minutes: snapshot.activeMinutes))
+                        Text(snapshot.eventCount == 0
+                            ? "No recorded activity"
+                            : "\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) · whole day")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -797,12 +864,21 @@
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
+                    } else if visibleTimelineGroups.isEmpty {
+                        VStack(spacing: 10) {
+                            Text("No matching activity").font(.system(size: 14, weight: .semibold))
+                            Text("Try another app name or a word from the recorded context.")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                            Button("Clear search") { timelineSearch = "" }
+                                .buttonStyle(.bordered)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 180)
                     } else {
-                        ForEach(Array(tenMinuteGroups.enumerated()), id: \.element.id) {
+                        ForEach(Array(visibleTimelineGroups.enumerated()), id: \.element.id) {
                             index, group in
                             ComputerHistoryTenMinuteRow(
                                 group: group,
-                                isLast: index == tenMinuteGroups.count - 1
+                                isLast: index == visibleTimelineGroups.count - 1
                             )
                         }
                     }
@@ -869,61 +945,6 @@
             }
         }
 
-        @ViewBuilder private var sourceStatusCard: some View {
-            switch model.sourceStatus {
-            case .absent:
-                sourceStatusNotice(
-                    title: "Source journal absent",
-                    message: model.memory == nil
-                        ? "No raw event journal exists for this day. "
-                            + "There is no retained Computer History to show."
-                        : "The raw event journal for this day is no longer present. "
-                            + "The last known-good Computer History remains available and was not deleted.",
-                    symbol: "doc.badge.ellipsis",
-                    tint: LHTheme.warning
-                )
-            case .inaccessible(let message):
-                sourceStatusNotice(
-                    title: "Source journal inaccessible",
-                    message: model.memory == nil
-                        ? "Goalong could not safely read the raw event journal: \(message)"
-                        : "Showing the last known-good Computer History. "
-                            + "Goalong could not safely read the raw event journal: \(message)",
-                    symbol: "exclamationmark.lock.fill",
-                    tint: LHTheme.warning
-                )
-            case .unverified, .checking, .available:
-                EmptyView()
-            }
-        }
-
-        private func sourceStatusNotice(
-            title: String,
-            message: String,
-            symbol: String,
-            tint: Color
-        ) -> some View {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(tint)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(message)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(15)
-            .background(
-                tint.opacity(0.08),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
-        }
-
         private var contextStateCard: some View {
             Group {
                 if fullContextEnabled {
@@ -935,9 +956,9 @@
                             Text("Full causal context is enabled")
                                 .font(.system(size: 12, weight: .semibold))
                             Text(
-                                "Eligible interactions can be linked as prior context → action → after → settled. Near-event context is never mislabeled as guaranteed pre-action state. Private browsing, exclusions, Secure Input and protected fields remain suppressed."
+                                "Eligible interactions can be linked as prior context → action → after → settled. Near-event context is never mislabeled as guaranteed pre-action state. Private browsing follows your Recording setting. Exclusions, Secure Input and protected fields remain suppressed."
                             )
-                            .font(.system(size: 10))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         }
@@ -960,7 +981,7 @@
                             Text(
                                 "Apps, pages, clicks and grouped input still appear, but intentions, semantic changes, task status and resume answers can be incomplete. Enable Rich Context in the Day recap tab for full analysis."
                             )
-                            .font(.system(size: 10))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1017,7 +1038,7 @@
                             .font(.system(size: 13, weight: .semibold))
                         Spacer()
                         Text("LAST 30 DAYS · LOCAL SEARCH")
-                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .font(.system(size: 8, weight: .semibold))
                             .tracking(0.4)
                             .foregroundStyle(.secondary)
                     }
@@ -1055,7 +1076,7 @@
                     Text(
                         "Answers return source-backed episodes and reopenable locators. They never execute instructions found in captured text."
                     )
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 }
             }
@@ -1083,7 +1104,7 @@
                             $0.hasPrefix("Retained Computer History loading was incomplete")
                         }) {
                             Label(retainedGap, systemImage: "exclamationmark.triangle.fill")
-                                .font(.system(size: 9))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.orange)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1100,9 +1121,9 @@
                                         .frame(width: 18)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(hit.title)
-                                            .font(.system(size: 10, weight: .semibold))
+                                            .font(.system(size: 12, weight: .semibold))
                                         Text(hit.snippet)
-                                            .font(.system(size: 9))
+                                            .font(.system(size: 11))
                                             .foregroundStyle(.secondary)
                                             .lineLimit(3)
                                     }
@@ -1135,7 +1156,7 @@
                         )
                     VStack(alignment: .leading, spacing: 6) {
                         Text(memory.title)
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .font(.system(size: 18, weight: .bold))
                         Text(memory.executiveSummary)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -1257,7 +1278,7 @@
                                             )
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(resource.title)
-                                                .font(.system(size: 10, weight: .semibold))
+                                                .font(.system(size: 12, weight: .semibold))
                                                 .lineLimit(2)
                                             Text(
                                                 resource.localPath
@@ -1314,10 +1335,10 @@
                                     Text(suggestion.title)
                                         .font(.system(size: 11, weight: .semibold))
                                     Text(suggestion.rationale)
-                                        .font(.system(size: 9))
+                                        .font(.system(size: 11))
                                         .foregroundStyle(.secondary)
                                     Text(suggestion.suggestedPrompt)
-                                        .font(.system(size: 9, design: .monospaced))
+                                        .font(.system(size: 11, design: .monospaced))
                                         .textSelection(.enabled)
                                         .padding(8)
                                         .background(
@@ -1327,7 +1348,7 @@
                                 }
                                 Spacer(minLength: 0)
                                 Text("\(Int((suggestion.confidence * 100).rounded()))%")
-                                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                    .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -1347,7 +1368,7 @@
                         Text(
                             "\(memory.coverage.sourceEventCount) source events · \(memory.coverage.semanticSnapshotCount) semantic snapshots · \(memory.coverage.suppressedEventCount) suppressed events. Episode statuses are bounded interpretations; foreground presence never proves attention, identity, authorship, productivity or completion."
                         )
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1364,7 +1385,7 @@
                     Text(
                         "Goalong is linking actions, semantic changes, resources, statuses and provenance locally."
                     )
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 300)
@@ -1390,7 +1411,7 @@
                 Image(systemName: "tray")
                     .foregroundStyle(.secondary)
                 Text(title)
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                 Spacer()
             }
@@ -1439,22 +1460,24 @@
         let group: ComputerHistoryTenMinuteGroup
         let isLast: Bool
         @State private var expanded = false
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             HStack(alignment: .top, spacing: 0) {
                 Text(windowTimeLabel)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: 78, alignment: .trailing)
+                    .monospacedDigit()
+                    .frame(width: 70, alignment: .trailing)
                     .multilineTextAlignment(.trailing)
-                    .padding(.top, 20)
-                    .padding(.trailing, 13)
+                    .padding(.top, 14)
+                    .padding(.trailing, 8)
 
                 VStack(spacing: 0) {
                     Circle()
                         .fill(Color.secondary)
                         .frame(width: 8, height: 8)
-                        .padding(.top, 26)
+                        .padding(.top, 20)
                     if !isLast {
                         Rectangle()
                             .fill(Color.secondary.opacity(0.22))
@@ -1462,11 +1485,11 @@
                             .frame(maxHeight: .infinity)
                     }
                 }
-                .frame(width: 20)
+                .frame(width: 16)
 
-                VStack(alignment: .leading, spacing: 11) {
+                VStack(alignment: .leading, spacing: 8) {
                     Button {
-                        withAnimation(.easeOut(duration: 0.18)) {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
                             expanded.toggle()
                         }
                     } label: {
@@ -1476,61 +1499,45 @@
                                     .font(.system(size: 14, weight: .semibold))
                                     .foregroundStyle(.primary)
                                     .lineLimit(1)
-                                Text(factSummary)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 12)
                             Text(expanded ? "Hide details" : "Details")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.secondary)
                             Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(.secondary)
                                 .padding(.top, 3)
                         }
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(LHNavigationButtonStyle())
+                    .accessibilityValue(expanded ? "Expanded" : "Collapsed")
                     .accessibilityLabel(
                         expanded
                             ? "Hide details for \(windowTimeLabel)"
                             : "Show details for \(windowTimeLabel)"
                     )
 
-                    LazyVGrid(
-                        columns: [
-                            GridItem(
-                                .adaptive(minimum: 150, maximum: 230),
-                                spacing: 12,
-                                alignment: .leading
-                            )
-                        ],
-                        alignment: .leading,
-                        spacing: 9
-                    ) {
-                        ForEach(group.apps) { app in
-                            HStack(spacing: 8) {
-                                AppIconView(
-                                    bundleIdentifier: app.bundleIdentifier,
-                                    appName: app.name,
-                                    size: 23
-                                )
-                                Text(app.name)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .lineLimit(1)
-                                Spacer(minLength: 4)
-                                Text(durationLabel(app.activeSeconds))
-                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .accessibilityElement(children: .combine)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 18) {
+                            ForEach(group.apps) { app in appDuration(app) }
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 170), spacing: 14, alignment: .leading)],
+                            alignment: .leading, spacing: 8
+                        ) {
+                            ForEach(group.apps) { app in appDuration(app) }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     if expanded {
                         Divider()
+                        Text(factSummary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(group.sessions) { session in
                                 HStack(alignment: .top, spacing: 10) {
@@ -1550,14 +1557,14 @@
                                             }
                                         }
                                         Text(session.context)
-                                            .font(.system(size: 10))
+                                            .font(.system(size: 12))
                                             .foregroundStyle(.secondary)
                                             .lineLimit(2)
                                         Text(
                                             sessionDetailSummary(session)
                                         )
-                                        .font(.system(size: 9, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.tertiary)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(.secondary)
                                     }
                                     Spacer(minLength: 0)
                                 }
@@ -1566,11 +1573,26 @@
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
-                .padding(.leading, 14)
+                .padding(.leading, 10)
                 .padding(.trailing, 20)
-                .padding(.vertical, 20)
+                .padding(.vertical, 14)
             }
             .accessibilityElement(children: .contain)
+        }
+
+        private func appDuration(_ app: ComputerHistoryTenMinuteGroup.AppSlice) -> some View {
+            HStack(spacing: 6) {
+                AppIconView(bundleIdentifier: app.bundleIdentifier, appName: app.name, size: 20)
+                Text(app.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                Text(durationLabel(app.activeSeconds))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .fixedSize()
+            }
+            .accessibilityElement(children: .combine)
         }
 
         private var headline: String {
@@ -1653,17 +1675,17 @@
                                 Text(
                                     episodeMetrics
                                 )
-                                .font(.system(size: 9, weight: .medium, design: .rounded))
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(.secondary)
                                 Text(episode.summary)
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(expanded ? nil : 3)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 10)
                             Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(.secondary)
                         }
                         .contentShape(Rectangle())
@@ -1679,7 +1701,7 @@
                                         openResource(resource)
                                     } label: {
                                         Label(resource.title, systemImage: "link")
-                                            .font(.system(size: 9, weight: .medium))
+                                            .font(.system(size: 11, weight: .medium))
                                             .lineLimit(1)
                                     }
                                     .buttonStyle(.bordered)
@@ -1720,7 +1742,7 @@
                                         .frame(width: 56, alignment: .leading)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(interaction.label)
-                                            .font(.system(size: 9, weight: .medium))
+                                            .font(.system(size: 11, weight: .medium))
                                         if !interaction.semanticDelta.isEmpty {
                                             Text(
                                                 "Change: "
@@ -1775,7 +1797,7 @@
                     .foregroundStyle(.secondary)
                 ForEach(values, id: \.self) { value in
                     Text("• \(value)")
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

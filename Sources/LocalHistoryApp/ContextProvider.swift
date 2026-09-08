@@ -159,7 +159,7 @@
                     lastPrivacyProbe = Date()
                 }
 
-                if cachedPrivateWindow {
+                if config.suppressesPrivateWindow(detected: cachedPrivateWindow) {
                     clearCachedURL()
                     return ContextSnapshot(
                         app: app,
@@ -289,7 +289,7 @@
                 }
             }
 
-            if canUsePrivateWindows {
+            if canUsePrivateWindows && config.capturePrivateBrowsing != true {
                 let signals: [String?] = [
                     AXReader.string(windowElement, attribute: "AXTitle" as CFString),
                     AXReader.string(windowElement, attribute: "AXDescription" as CFString),

@@ -43,9 +43,11 @@
 
                     deletionCard
                 }
-                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, LHTheme.pageInset)
                 .padding(.top, 28)
                 .padding(.bottom, 30)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .background(LHTheme.pageBackground)
             .alert(item: $deletionScope) { scope in
@@ -82,7 +84,7 @@
                             Text("Goalong History · one public app")
                                 .font(.system(size: 13, weight: .semibold))
                             Text(capabilities.summary)
-                                .font(.system(size: 9))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -120,7 +122,7 @@
                         Text(
                             "Full Disk Access remains a broad macOS permission. Provider readers are read-only and audited, but they still run inside the main app process; a separately sandboxed reader service has not yet been proven or shipped."
                         )
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -138,7 +140,7 @@
                 Image(systemName: present ? "checkmark.circle.fill" : "minus.circle.fill")
                     .foregroundStyle(present ? LHTheme.accent : LHTheme.success)
                 Text("\(title): \(present ? "present" : "absent")")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
         }
@@ -191,7 +193,7 @@
                                 ? "An opaque commitment does not contain the application, URL, window title, clicks or category. Your server necessarily sees connection metadata such as arrival time and IP when commitments are enabled."
                                 : "Local commitments verify integrity without exposing the detailed record or contacting a server. This Local build contains no commitment transport."
                         )
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -237,7 +239,7 @@
                     {
                         HStack {
                             Label(health.detail, systemImage: "exclamationmark.triangle.fill")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(LHTheme.warning)
                             Spacer()
                             Button("Open guided setup") { model.requestPermissions() }
@@ -249,7 +251,7 @@
                                 "The switches or tap object may exist, but this process has not received a real input callback yet.",
                                 systemImage: "waveform.path.ecg"
                             )
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(LHTheme.warning)
                             Spacer()
                             Button("Validate input") { model.beginCaptureValidation() }
@@ -260,7 +262,7 @@
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(LHTheme.success)
                             Text("A real input callback and Accessibility context have been observed for this running process.")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -279,7 +281,7 @@
                         Text(assessment?.state.title ?? "Capture health unavailable")
                             .font(.system(size: 12, weight: .semibold))
                         Text(assessment?.detail ?? "No persisted capture-health evidence is available yet.")
-                            .font(.system(size: 9))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -315,7 +317,7 @@
                     .textSelection(.enabled)
                     if snapshot.build.signatureKind == .adHoc {
                         Text("Ad-hoc updates can change the app identity recognized by TCC and may require approval again. Existing history remains readable.")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(LHTheme.warning)
                     }
                 }
@@ -334,7 +336,7 @@
                     symbol: "person.fill.questionmark",
                     title: "Private browsing",
                     message:
-                        "No URL, title, click detail or keyboard activity is stored from detected private windows.",
+                        "Private windows are excluded by default. You can include them in Settings → Recording; secure fields and exclusions still apply.",
                     tint: LHTheme.privateTint
                 )
                 protectionCard(
@@ -464,7 +466,7 @@
                         Text(
                             "Deleting activity also removes its local semantic context, Activity Analysis, Activity Memory and Computer History projections. Agent Activity's source index, Screen Time, minute commitments and server receipts remain."
                         )
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -515,7 +517,7 @@
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
                 Text(message)
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -546,14 +548,14 @@
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
                     Text(message)
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 if granted {
                     Text(grantedLabel)
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(LHTheme.success)
                 } else {
                     Button(buttonTitle, action: action)
@@ -578,7 +580,7 @@
                         Text(title)
                             .font(.system(size: 11, weight: .semibold))
                         Text(message)
-                            .font(.system(size: 9))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -593,11 +595,11 @@
                     .foregroundStyle(LHTheme.accent)
                     .frame(width: 22)
                 Text(title)
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(value)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.system(size: 12, weight: .semibold))
             }
         }
     }

@@ -123,7 +123,13 @@
             XCTAssertTrue(history.contains("case conversations"))
             XCTAssertTrue(history.contains("@State private var source: HistorySource = .computer"))
             XCTAssertTrue(history.contains("presentation: .history"))
-            XCTAssertTrue(history.contains("Label(\"Share day\", systemImage: \"square.and.arrow.up\")"))
+            XCTAssertTrue(history.contains("DayNavigationHeader("))
+            XCTAssertTrue(history.contains("onShare: { model.selectSection(.share) }"))
+            let dayHeader = try String(
+                contentsOf: repositoryRoot.appendingPathComponent("Sources/LocalHistoryApp/DayNavigationHeader.swift"),
+                encoding: .utf8
+            )
+            XCTAssertTrue(dayHeader.contains("Label(\"Share day\", systemImage: \"square.and.arrow.up\")"))
 
             let settings = try String(
                 contentsOf: repositoryRoot
@@ -188,7 +194,13 @@
                 encoding: .utf8
             )
 
-            XCTAssertTrue(source.contains("Label(\"Settings\", systemImage: \"chevron.left\")"))
+            XCTAssertTrue(source.contains("SettingsBackBar(onBack: onBack)"))
+            let components = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/DashboardComponents.swift"),
+                encoding: .utf8
+            )
+            XCTAssertTrue(components.contains("Label(\"Back to Settings\", systemImage: \"chevron.left\")"))
             XCTAssertTrue(source.contains("DisclosureGroup(\"Preview agent instructions\""))
             XCTAssertTrue(source.contains("copyQuickCommand(item)"))
             XCTAssertTrue(source.contains("NSAccessibility.post("))
@@ -239,7 +251,7 @@
             XCTAssertFalse(screenTime.contains("Inside browser apps · This Mac only · never added"))
             XCTAssertFalse(screenTime.contains("with input"))
             XCTAssertFalse(overview.contains("with input"))
-            XCTAssertTrue(overview.contains("Where your screen time went"))
+            XCTAssertTrue(overview.contains("Apps & websites"))
             XCTAssertTrue(overview.contains("Group sites by browser"))
             XCTAssertTrue(overview.contains("Same usage and total; only the grouping changes."))
             XCTAssertTrue(overview.contains("isOn: groupsSitesByBrowser"))
