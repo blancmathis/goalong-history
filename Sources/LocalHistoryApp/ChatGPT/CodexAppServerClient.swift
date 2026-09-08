@@ -682,12 +682,14 @@
     /// streamed agent output. Each operation gets a fresh process and closes it afterwards.
     final class CodexAppServerSession {
         static let recapPermissionProfile = "goalong-recap"
+        static let siteAnalysisPermissionProfile = "goalong-site-analysis"
 
         private let process = Process()
         private let inputPipe = Pipe()
         private let outputPipe = Pipe()
         private let errorPipe = Pipe()
         private let limits: CodexAppServerLimits
+        private let siteAnalysisOnly: Bool
         private var stdoutDecoder: CodexAppServerMessageDecoder
         private var deferredMessages: CodexAppServerDeferredMessageQueue
         private var nextRequestID = 1
@@ -699,15 +701,17 @@
         init(
             executableURL: URL,
             codexHomeURL: URL = AppPaths.chatGPTCodexHomeDirectory,
-            limits: CodexAppServerLimits = .production
+            limits: CodexAppServerLimits = .production,
+            siteAnalysisOnly: Bool = false
         ) throws {
             self.limits = limits
+            self.siteAnalysisOnly = siteAnalysisOnly
             stdoutDecoder = CodexAppServerMessageDecoder(limits: limits)
             deferredMessages = CodexAppServerDeferredMessageQueue(limits: limits)
             guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
                 throw CodexAppServerError.executableUnavailable
             }
-            try Self.prepareCodexHome(at: codexHomeURL)
+            try Self.prepareCodexHome(at: codexHomeURL, siteAnalysisOnly: siteAnalysisOnly)
 
             process.executableURL = executableURL
             process.arguments = ["app-server"]
@@ -857,6 +861,158 @@
                 timeout: 20,
                 operation: "disconnecting ChatGPT"
             )
+        }
+
+        /// The website flow accepts an already validated, immutable selection only.
+        /// It never builds native history context or offers a tool to this thread.
+        func generateSiteAnalysis(
+            request selected: GoalongSiteAnalysisRequest,
+            workingDirectory: URL
+        ) throws -> GoalongSiteAnalysisDraft {
+            guard siteAnalysisOnly else {
+                throw CodexAppServerError.generationFailed("Site analysis requires its isolated Codex connection.")
+            }
+            guard try FileManager.default.contentsOfDirectory(atPath: workingDirectory.path).isEmpty else {
+                throw CodexAppServerError.generationFailed("The isolated analysis workspace must be empty.")
+            }
+            guard let account = try readAccount(refreshToken: true), account.isManagedChatGPT else {
+                throw CodexAppServerError.accountNotChatGPT("non-ChatGPT")
+            }
+            try requireDailyAssessmentModel()
+            let started = try request(
+                method: "thread/start",
+                params: [
+                    "cwd": workingDirectory.path,
+                    "runtimeWorkspaceRoots": [workingDirectory.path],
+                    "approvalPolicy": "never",
+                    "permissions": Self.siteAnalysisPermissionProfile,
+                    "ephemeral": true,
+                    "environments": [] as [Any],
+                    "dynamicTools": [] as [Any],
+                    "personality": "pragmatic",
+                    "serviceName": "goalong_history",
+                    "model": CodexDailyAssessmentContract.model,
+                    "config": ["model_reasoning_effort": CodexDailyAssessmentContract.reasoningEffort],
+                ],
+                timeout: CodexDailyAssessmentContract.threadStartTimeout,
+                operation: "starting the selected-data analysis"
+            )
+            guard let thread = started["thread"] as? [String: Any],
+                let threadID = thread["id"] as? String, !threadID.isEmpty
+            else {
+                throw CodexAppServerError.malformedResponse("thread.id is missing")
+            }
+            guard thread["ephemeral"] as? Bool == true else {
+                _ = try? request(method: "thread/delete", params: ["threadId": threadID],
+                                 timeout: 15, operation: "removing the unexpected persistent analysis")
+                throw CodexAppServerError.generationFailed("Codex did not create a temporary analysis thread.")
+            }
+            guard started["model"] as? String == CodexDailyAssessmentContract.model,
+                started["reasoningEffort"] as? String == CodexDailyAssessmentContract.reasoningEffort,
+                (started["activePermissionProfile"] as? [String: Any])?["id"] as? String
+                    == Self.siteAnalysisPermissionProfile,
+                let cwd = started["cwd"] as? String,
+                Self.pathsMatchExactly([cwd], expected: [workingDirectory]),
+                let roots = started["runtimeWorkspaceRoots"] as? [String],
+                Self.workspaceRootsAreConfined(roots, to: workingDirectory)
+            else {
+                throw CodexAppServerError.generationFailed("Codex did not confirm the restricted analysis settings. Update Codex before trying again.")
+            }
+            let schema: [String: Any] = [
+                "type": "object",
+                "properties": [
+                    "title": ["type": "string", "minLength": 1, "maxLength": 160],
+                    "summary": ["type": "string", "maxLength": 3000],
+                    "outcomes": ["type": "array", "maxItems": 12,
+                                 "items": ["type": "string", "minLength": 1, "maxLength": 300]],
+                ],
+                "required": ["title", "summary", "outcomes"],
+                "additionalProperties": false,
+            ]
+            let turnResponse = try request(
+                method: "turn/start",
+                params: [
+                    "threadId": threadID,
+                    "input": [["type": "text", "text": selected.analysisPrompt]],
+                    "cwd": workingDirectory.path,
+                    "runtimeWorkspaceRoots": [workingDirectory.path],
+                    "approvalPolicy": "never",
+                    "permissions": Self.siteAnalysisPermissionProfile,
+                    "environments": [] as [Any],
+                    "outputSchema": schema,
+                ],
+                timeout: CodexDailyAssessmentContract.turnStartTimeout,
+                operation: "sending the reviewed selection to ChatGPT"
+            )
+            guard let initialTurn = turnResponse["turn"] as? [String: Any],
+                let turnID = initialTurn["id"] as? String, !turnID.isEmpty
+            else {
+                throw CodexAppServerError.malformedResponse("The analysis turn identifier is missing.")
+            }
+            try Self.validateSiteAnalysisItems(in: initialTurn)
+            let deadline = Date().addingTimeInterval(CodexDailyAssessmentContract.generationTimeout)
+            var finalText: String?
+            var streamedBytes = 0
+            while Date() < deadline {
+                let message = try nextDeferredOrMessage(deadline: deadline, operation: "analyzing the reviewed selection")
+                let method = try CodexAppServerMessageRouter.notificationMethod(in: message)
+                let params = message["params"] as? [String: Any] ?? [:]
+                if let eventThread = params["threadId"] as? String, eventThread != threadID {
+                    throw CodexAppServerError.malformedResponse("An event belonged to another analysis thread.")
+                }
+                if let eventTurn = params["turnId"] as? String, eventTurn != turnID {
+                    throw CodexAppServerError.malformedResponse("An event belonged to another analysis turn.")
+                }
+                switch method {
+                case "item/started", "item/completed":
+                    guard let item = params["item"] as? [String: Any],
+                        let type = item["type"] as? String,
+                        ["agentMessage", "reasoning", "userMessage"].contains(type)
+                    else {
+                        throw CodexAppServerError.generationFailed("An unexpected tool or activity was requested. The analysis was stopped; no draft was saved.")
+                    }
+                    if method == "item/completed", type == "agentMessage",
+                        let content = item["text"] as? String,
+                        item["phase"] == nil || item["phase"] as? String == "final_answer"
+                    {
+                        guard content.utf8.count <= 32 * 1024 else {
+                            throw CodexAppServerError.protocolLimitExceeded("The analysis response exceeded 32 KiB.")
+                        }
+                        finalText = content
+                    }
+                case "item/agentMessage/delta":
+                    streamedBytes += (params["delta"] as? String)?.utf8.count ?? 0
+                    guard streamedBytes <= 64 * 1024 else {
+                        throw CodexAppServerError.protocolLimitExceeded("The analysis stream exceeded 64 KiB.")
+                    }
+                case "error":
+                    throw CodexAppServerError.generationFailed("ChatGPT could not complete the analysis. Check the connection and account usage, then try again.")
+                case "turn/completed":
+                    guard let turn = params["turn"] as? [String: Any],
+                        turn["id"] as? String == turnID,
+                        turn["status"] as? String == "completed", let finalText
+                    else {
+                        throw CodexAppServerError.generationFailed("The analysis did not produce a complete draft.")
+                    }
+                    try Self.validateSiteAnalysisItems(in: turn)
+                    return try GoalongSiteAnalysisDraft.parse(Data(finalText.utf8))
+                default:
+                    if method.hasPrefix("item/") && !method.hasPrefix("item/reasoning/") {
+                        throw CodexAppServerError.generationFailed("An unexpected analysis capability was used. The analysis was stopped.")
+                    }
+                }
+            }
+            throw CodexAppServerError.timeout("analyzing the reviewed selection")
+        }
+
+        private static func validateSiteAnalysisItems(in turn: [String: Any]) throws {
+            guard let rawItems = turn["items"] else { return }
+            guard let items = rawItems as? [[String: Any]], items.allSatisfy({
+                guard let type = $0["type"] as? String else { return false }
+                return ["agentMessage", "reasoning", "userMessage"].contains(type)
+            }) else {
+                throw CodexAppServerError.generationFailed("An unexpected tool or activity was requested. The analysis was stopped; no draft was saved.")
+            }
         }
 
         func generateRecap(
@@ -1237,9 +1393,18 @@
             return result
         }
 
-        static func prepareCodexHome(at directory: URL) throws {
+        static func prepareCodexHome(at directory: URL, siteAnalysisOnly: Bool = false) throws {
             try ChatGPTSecureStorage.prepareDirectory(directory)
             try pruneEphemeralCodexArtifacts(at: directory)
+            let profile = siteAnalysisOnly ? Self.siteAnalysisPermissionProfile : Self.recapPermissionProfile
+            let siteRestrictions = siteAnalysisOnly ? """
+
+                [agents]
+                enabled = false
+
+                [features.code_mode]
+                enabled = false
+                """ : ""
 
             // This file is app-managed and intentionally rewritten at every launch. Authentication
             // remains in Codex-owned files inside this isolated directory; stale or user-modified
@@ -1251,7 +1416,7 @@
                 # Evidence is provided inline. Tools may read only platform-minimal files and
                 # Goalong's empty per-run workspace; they cannot write or use network access.
                 web_search = "disabled"
-                default_permissions = "\(Self.recapPermissionProfile)"
+                default_permissions = "\(profile)"
                 approval_policy = "never"
                 allow_login_shell = false
                 include_environment_context = false
@@ -1282,15 +1447,17 @@
                 [orchestrator.mcp]
                 enabled = false
 
-                [permissions.goalong-recap]
+                [permissions.\(profile)]
                 description = "Goalong recap: minimal runtime plus read-only access to the isolated run workspace"
 
-                [permissions.goalong-recap.filesystem]
+                [permissions.\(profile).filesystem]
+                \(siteAnalysisOnly ? "\":root\" = \"deny\"" : "")
                 ":minimal" = "read"
                 ":workspace_roots" = "read"
 
-                [permissions.goalong-recap.network]
+                [permissions.\(profile).network]
                 enabled = false
+                \(siteRestrictions)
                 """.utf8
             )
             try ChatGPTSecureStorage.writeFileAtomically(config, to: configURL)

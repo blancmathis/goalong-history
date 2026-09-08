@@ -7,6 +7,7 @@ import SwiftUI
 /// Explicit user-driven export. No background sync or remote auth tokens enter Goalong settings.
 struct GoalongWebsiteConnectionCard: View {
     @State private var showsConnection = false
+    @State private var showsSiteAnalysis = false
 
     var body: some View {
         LHCard {
@@ -22,11 +23,16 @@ struct GoalongWebsiteConnectionCard: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                Button("Connect website") { showsConnection = true }
-                    .buttonStyle(.bordered)
+                VStack(alignment: .trailing, spacing: 10) {
+                    Button("Connect website") { showsConnection = true }
+                        .buttonStyle(.bordered)
+                    Button("Analyser une demande du site") { showsSiteAnalysis = true }
+                        .buttonStyle(.bordered)
+                }
             }
         }
         .sheet(isPresented: $showsConnection) { GoalongWebsiteConnectionSheet() }
+        .sheet(isPresented: $showsSiteAnalysis) { GoalongSiteAnalysisSheet() }
     }
 }
 
@@ -326,11 +332,11 @@ private struct GoalongWebsiteConnectionSheet: View {
 
 /// SwiftUI sheets do not reliably appear as NSApp.keyWindow/mainWindow. Capture the
 /// NSWindow that actually owns this sheet's view, without retaining the window or view.
-private final class GoalongWebsiteWindowHost: ObservableObject {
+final class GoalongWebsiteWindowHost: ObservableObject {
     weak var window: NSWindow?
 }
 
-private struct GoalongWebsiteWindowReader: NSViewRepresentable {
+struct GoalongWebsiteWindowReader: NSViewRepresentable {
     let host: GoalongWebsiteWindowHost
 
     final class ProbeView: NSView {

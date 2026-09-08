@@ -148,11 +148,16 @@ if [[ -f "$CODEX_BRIDGE" ]]; then
     'started["cwd"]' \
     'Self.workspaceRootsAreConfined(roots, to: workingDirectory)' \
     'rawPaths.isEmpty || pathsMatchExactly(rawPaths, expected: [workingDirectory])' \
-    'default_permissions = "\(Self.recapPermissionProfile)"' \
-    '[permissions.goalong-recap.filesystem]' \
+    'let profile = siteAnalysisOnly ? Self.siteAnalysisPermissionProfile : Self.recapPermissionProfile' \
+    'static let recapPermissionProfile = "goalong-recap"' \
+    'static let siteAnalysisPermissionProfile = "goalong-site-analysis"' \
+    'default_permissions = "\(profile)"' \
+    '[permissions.\(profile).filesystem]' \
     '":minimal" = "read"' \
     '":workspace_roots" = "read"' \
-    '[permissions.goalong-recap.network]' \
+    '[permissions.\(profile).network]' \
+    '[agents]' \
+    '[features.code_mode]' \
     'web_search = "disabled"' \
     '[features]' \
     'plugins = false' \

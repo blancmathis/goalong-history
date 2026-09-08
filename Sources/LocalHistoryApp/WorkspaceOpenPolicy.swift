@@ -60,7 +60,7 @@
             case .observedWebsite:
                 return true
             case .accountAuthorization:
-                return host == "auth.openai.com" || host.hasSuffix(".openai.com")
+                return host == "auth.openai.com" || host.hasSuffix(".openai.com") || host == "chatgpt.com"
             case .updatePage:
                 return host == "github.com"
             case .documentation:
