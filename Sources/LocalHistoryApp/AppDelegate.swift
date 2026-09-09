@@ -24,14 +24,40 @@
 
     final class AppDelegate: NSObject, NSApplicationDelegate {
         @MainActor private lazy var websitePairing = GoalongWebsitePairingCoordinator()
+        @MainActor private var pendingWebsiteURL: URL?
+        @MainActor private var activeWebsiteURL: URL?
+        @MainActor private var websitePairingTask: Task<Void, Never>?
 
         func application(_ application: NSApplication, open urls: [URL]) {
             guard urls.count == 1, let url = urls.first, url.scheme == "goalong-history" else { return }
             Task { @MainActor in
-                if await websitePairing.connect(url: url) {
-                    UserDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
-                    dashboardWindowController?.show(section: .settings)
-                    NotificationCenter.default.post(name: .goalongWebsiteConnected, object: nil)
+                // Reopening the same link brings its existing confirmation forward.
+                // A newer link replaces an unanswered prompt, never an in-flight send.
+                if activeWebsiteURL != url { pendingWebsiteURL = url }
+                presentWebsitePairingIfReady()
+            }
+        }
+
+        @MainActor private func presentWebsitePairingIfReady() {
+            guard pendingWebsiteURL != nil || activeWebsiteURL != nil,
+                  let controller = dashboardWindowController else { return }
+            controller.showForWebsitePairing()
+            guard websitePairingTask == nil else {
+                if pendingWebsiteURL != nil { websitePairing.cancelPendingPrompt() }
+                return
+            }
+            websitePairingTask = Task { @MainActor in
+                defer { activeWebsiteURL = nil; websitePairingTask = nil }
+                while let url = pendingWebsiteURL {
+                    pendingWebsiteURL = nil
+                    activeWebsiteURL = url
+                    guard let window = controller.window else { return }
+                    let connected = await websitePairing.connect(url: url, window: window)
+                    if connected && pendingWebsiteURL == nil {
+                        UserDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
+                        controller.show(section: .settings)
+                        NotificationCenter.default.post(name: .goalongWebsiteConnected, object: nil)
+                    }
                 }
             }
         }
@@ -231,6 +257,8 @@
 
             installWorkspaceObservers()
             showDashboardOnFirstConsentLaunch()
+            // A URL can arrive before the dashboard exists on a cold launch.
+            Task { @MainActor in presentWebsitePairingIfReady() }
         }
 
         func applicationWillTerminate(_ notification: Notification) {

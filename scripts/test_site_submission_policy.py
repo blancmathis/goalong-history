@@ -47,12 +47,16 @@ class WebsiteBoundaryTests(unittest.TestCase):
         self.assertEqual(boundary.audit(self.root), [])
 
     def test_pairing_confirmation_is_required(self):
-        self.change(FILES[8], 'guard confirmation.runModal() == .alertFirstButtonReturn else { return false }', '// confirmation removed')
+        self.change(FILES[8], 'guard await present(confirmation, on: window) == .alertFirstButtonReturn else { return false }', '// confirmation removed')
         self.assertTrue(boundary.audit(self.root))
 
     def test_pairing_ambient_session_is_rejected(self):
         with (self.root / FILES[7]).open("a") as stream:
             stream.write("\nlet unexpected = URLSession.shared\n")
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_pairing_cannot_regress_to_a_detached_alert(self):
+        self.change(FILES[8], 'alert.beginSheetModal(for: window)', 'alert.beginUnattachedModal()')
         self.assertTrue(boundary.audit(self.root))
 
     def test_passive_caller_is_rejected(self):

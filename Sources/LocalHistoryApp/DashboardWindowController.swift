@@ -150,6 +150,22 @@
             SoftwareUpdateManager.shared.refreshAvailableUpdate()
         }
 
+        /// An explicit website link must reveal the real app window before asking
+        /// for consent, including when the recorder was only in the menu bar.
+        func showForWebsitePairing() {
+            show(section: .settings)
+            guard let window else { return }
+            let application = NSApplication.shared
+            application.unhide(nil)
+            window.collectionBehavior.insert(.moveToActiveSpace)
+            if !window.styleMask.contains(.fullScreen), let screen = window.screen ?? NSScreen.main {
+                window.setFrame(screen.visibleFrame.insetBy(dx: 16, dy: 16), display: true)
+            }
+            application.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.attachedSheet?.makeKeyAndOrderFront(nil)
+        }
+
         func windowDidBecomeKey(_ notification: Notification) {
             updateDashboardVisibility()
             viewModel.refreshEverything()
