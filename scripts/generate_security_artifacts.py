@@ -313,7 +313,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "declaredDestinations": declared_network_destinations,
             "osEnforcedDeny": False,
             "siteSubmission": {
-                "triggers": ["send-site", "native-reviewed-send-button"],
+                "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button"],
                 "automaticSync": False,
                 "method": "POST",
                 "path": "/api/goalong/v1/import",
@@ -340,9 +340,16 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
                 "~/.gemini/tmp",
                 "VS Code/Cursor workspace storage",
                 "explicitly enabled custom provider folders",
+                "explicitly selected Apple Health export.xml",
             ],
             "goalongOwnedWriteRoot": "~/Library/Application Support/LocalHistory",
             "userSelectedExportDestinations": True,
+            "appleHealthImport": {
+                "discovery": False, "sourceMutation": False, "rawXMLRetention": False,
+                "archive": "health/YYYY-MM-DD.json", "directoryMode": "0700", "fileMode": "0600",
+                "retention": "until-explicit-user-removal", "groups": ["sleep", "heart", "activity", "workouts"],
+                "clinicalRecords": False, "gpsRoutes": False, "automaticSync": False,
+            },
             "consentRegistry": "~/Library/Application Support/LocalHistory/capability-consent.json",
             "consentRegistryMode": "0600",
             "newInstallDefaults": {

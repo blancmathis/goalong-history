@@ -837,6 +837,36 @@ public enum GoalongQueryCLI {
                 FileHandle.standardOutput.write(payload)
             }
 
+        case "export-health", "import-health":
+            let path = arguments.removeOption("--file")
+            let from = arguments.removeOption("--from")
+            let through = arguments.removeOption("--to")
+            let zoneName = arguments.removeOption("--timezone") ?? TimeZone.current.identifier
+            let groupNames = (arguments.removeOption("--groups") ?? "sleep,heart,activity,workouts").split(separator: ",").map(String.init)
+            let groups = Set(groupNames.compactMap(GoalongHealthGroup.init(rawValue:)))
+            guard arguments.values.isEmpty, let path, let from, let through,
+                  groups.count == groupNames.count, !groups.isEmpty,
+                  let zone = TimeZone(identifier: zoneName) else {
+                throw CLIError.usage("Use \(command) --file PATH --from YYYY-MM-DD --to YYYY-MM-DD [--groups sleep,heart,activity,workouts] [--timezone IANA].")
+            }
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = Calendar(identifier: .gregorian); formatter.timeZone = zone
+            formatter.dateFormat = "yyyy-MM-dd"; formatter.isLenient = false
+            guard let first = formatter.date(from: from), let last = formatter.date(from: through),
+                  formatter.string(from: first) == from, formatter.string(from: last) == through else {
+                throw CLIError.usage("Health dates must use YYYY-MM-DD.")
+            }
+            let result = try GoalongHealthImport.read(file: expandedFileURL(path), options: .init(from: first, through: last, timezone: zone, groups: groups))
+            if command == "import-health" { try GoalongHealthArchive.save(result, root: root) }
+            FileHandle.standardOutput.write(result.payload)
+
+        case "health":
+            let raw = arguments.popFirst() ?? "yesterday"
+            guard arguments.values.isEmpty else { throw CLIError.usage("Use health [today|yesterday|YYYY-MM-DD].") }
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyy-MM-dd"
+            FileHandle.standardOutput.write(try GoalongHealthArchive.read(day: formatter.string(from: day(raw)), root: root))
+
         case "websites":
             let limit = try integer(arguments.removeOption("--limit") ?? "100")
             let offset = try integer(arguments.removeOption("--offset") ?? "0")

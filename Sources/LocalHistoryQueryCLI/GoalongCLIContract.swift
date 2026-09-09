@@ -10,6 +10,7 @@ public enum GoalongCLIEffect: String, Codable, Sendable {
     case mayRefreshActiveScreenTimeRecord
     case writesExplicitOutputFile
     case sendsExplicitSiteImport
+    case writesExplicitHealthArchive
 }
 
 public struct GoalongCLICommandDefinition: Codable, Equatable, Identifiable, Sendable {
@@ -116,6 +117,22 @@ public enum GoalongCLIContract {
             effect: .sendsExplicitSiteImport
         ),
         .init(
+            name: "health",
+            syntax: "health [today|yesterday|YYYY-MM-DD]",
+            summary: "Read one explicitly imported Apple Health day from the protected local archive."
+        ),
+        .init(
+            name: "export-health",
+            syntax: "export-health --file PATH --from YYYY-MM-DD --to YYYY-MM-DD [--groups sleep,heart,activity,workouts] [--timezone IANA]",
+            summary: "Read the selected Apple Health XML locally and emit only selected daily measurements as website JSON. No network or archive write."
+        ),
+        .init(
+            name: "import-health",
+            syntax: "import-health --file PATH --from YYYY-MM-DD --to YYYY-MM-DD [--groups sleep,heart,activity,workouts] [--timezone IANA]",
+            summary: "Explicitly save the selected compact Apple Health days in Goalong's protected local archive. Never copy the full XML.",
+            effect: .writesExplicitHealthArchive
+        ),
+        .init(
             name: "websites",
             syntax: "websites [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]",
             summary: "Return a bounded domain-only breakdown of observed browser time."
@@ -180,7 +197,7 @@ public enum GoalongCLIContract {
             dataCommandOutput: "sorted JSON on stdout",
             helpOutput: "human text on stdout; `help --json` returns this JSON contract",
             errorOutput: "sorted JSON on stderr with a nonzero exit status",
-            sourceMutationPolicy: "Original Computer History, Apple and provider sources are read-only. Active-day Screen Time may replace Goalong's one compact daily record. Only export-proof writes a user-requested output file. Only send-site sends an explicitly requested unverified website import; configured website sharing rules apply.",
+            sourceMutationPolicy: "Original Computer History, Apple and provider sources are read-only. Active-day Screen Time may replace Goalong's one compact daily record. Only export-proof writes a user-requested output file. import-health explicitly writes selected compact Apple Health days to the local archive; its source XML stays read-only. Only send-site sends an explicitly requested unverified website import; configured website sharing rules apply.",
             commands: commands
         )
     }
@@ -203,6 +220,9 @@ public enum GoalongCLIContract {
         Goalong app through its owner-only local socket to replace Goalong's single compact
         record for today. Completed days never reopen Apple history. `export-proof` is the
         only command that writes a user-requested output file; it refuses to overwrite one.
+        `import-health` explicitly saves selected compact Health days in Goalong's protected
+        local archive. `export-health` reads the selected XML without retaining or sending it;
+        `health DAY` reads one saved Health day. The original XML is never changed or copied.
 
         `export-site` reads saved daily data offline and emits only selected website fields.
         `send-site` is the explicit network exception: it uploads those fields using
