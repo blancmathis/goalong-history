@@ -2046,6 +2046,11 @@ public final class AgentActivityStore: @unchecked Sendable {
         add(summary.touchedFiles)
         add(summary.commands)
         for message in summary.visibleMessages { add(message.text) }
+        for event in summary.tokenUsage.events {
+            add(event.id)
+            add(event.model)
+            total += 192
+        }
         return total
     }
 

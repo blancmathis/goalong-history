@@ -2761,6 +2761,18 @@ enum AgentDirectSourceReader {
             analysisInterval: analysisInterval,
             startsAtSourceBeginning: alignedStart == 0
         )
+        if alignedStart > 0, provider == .codex {
+            // Fork identity lives at the beginning even when the day projection starts near EOF.
+            let count = Int(min(64 * 1_024, bodyReadBudget.remainingBytes))
+            guard count > 0 else { throw AgentSourceBodyReadInterrupted(reason: .byteLimit) }
+            var header = [UInt8](repeating: 0, count: count)
+            let readCount = header.withUnsafeMutableBytes { pread(descriptor, $0.baseAddress, count, 0) }
+            guard readCount > 0, bodyReadBudget.consume(Int64(readCount)) else {
+                throw AgentSourceBodyReadInterrupted(reason: .byteLimit)
+            }
+            let bytes = header.prefix(readCount)
+            parser.consumeUsageMetadata(Data(bytes.prefix { $0 != 10 }))
+        }
         var hasher = CryptoKit.SHA256()
         var cursor = alignedStart
         var readBuffer = [UInt8](repeating: 0, count: 128 * 1_024)

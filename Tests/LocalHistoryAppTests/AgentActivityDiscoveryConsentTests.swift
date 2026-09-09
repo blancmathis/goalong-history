@@ -404,6 +404,36 @@
             }
         }
 
+        func testNumericSnapshotSurvivesTranscriptDiscardAndClearsOnDayChange() throws {
+            let fixture = try makeFixture("usage-snapshot")
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let sourceRoot = fixture.container.appendingPathComponent("Source", isDirectory: true)
+            try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let object: [String: Any] = ["timestamp": timestamp, "type": "event_msg", "payload": ["type": "token_count", "info": ["last_token_usage": ["input_tokens": 100, "output_tokens": 10, "total_tokens": 110], "total_token_usage": ["input_tokens": 100, "output_tokens": 10, "total_tokens": 110]]]]
+            var sourceData = try JSONSerialization.data(withJSONObject: object)
+            sourceData.append(10)
+            let sessions = sourceRoot.appendingPathComponent("sessions", isDirectory: true)
+            try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+            try sourceData.write(to: sessions.appendingPathComponent("rollout-usage.jsonl"))
+            let store = try AgentActivityStore(rootDirectory: fixture.metadata)
+            _ = try store.saveConfiguration(AgentActivityConfiguration(watchedFolders: [AgentWatchedFolder(id: "usage", displayName: "Codex", path: sourceRoot.path, provider: .codex)]))
+            let runtime = try AgentActivityRuntime(rootDirectory: fixture.metadata, executableURL: URL(fileURLWithPath: "/usr/bin/true"), sourceDiscovery: { [] }, onCaptured: { _ in })
+            defer { runtime.stop() }
+            runtime.start()
+            runtime.scanNow(forceFullDiscovery: true, analyzeSelectedDay: true)
+            runtime.waitForPendingScansForTesting()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            XCTAssertEqual(runtime.tokenUsageSnapshot?.observedTotal, 110)
+            runtime.dashboardDidBecomeHidden()
+            XCTAssertTrue(runtime.overview.captures.allSatisfy { $0.summary.tokenUsage.events.isEmpty })
+            XCTAssertEqual(runtime.tokenUsageSnapshot?.observedTotal, 110)
+            XCTAssertNotNil(runtime.tokenUsageAnalyzedAt)
+            runtime.selectDay(Calendar.current.date(byAdding: .day, value: -1, to: runtime.selectedDay)!)
+            XCTAssertNil(runtime.tokenUsageSnapshot)
+            XCTAssertNil(runtime.tokenUsageAnalyzedAt)
+        }
+
         func testPollingUsesThirtySecondFloorWithoutChangingConfiguredValue() {
             XCTAssertEqual(AgentActivityRuntime.effectivePollingInterval(configuredInterval: 8), 30)
             XCTAssertEqual(AgentActivityRuntime.effectivePollingInterval(configuredInterval: 20), 30)

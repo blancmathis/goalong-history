@@ -87,6 +87,7 @@
                         disabledSourceExplanation
                         if presentation == .management { watchedFoldersCard }
                     } else if presentation == .history {
+                        AgentTokenUsageCard(usage: agents.tokenUsageSnapshot ?? AgentDailyTokenUsage(records: [], day: agents.selectedDay), scanning: agents.isScanning, analyzedAt: agents.tokenUsageAnalyzedAt)
                         conversationHistoryList
                         DisclosureGroup("Source & privacy") {
                             sourceConsentCard.padding(.top, 12)
