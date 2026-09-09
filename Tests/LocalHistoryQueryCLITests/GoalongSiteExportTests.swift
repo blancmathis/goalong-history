@@ -7,6 +7,32 @@ import XCTest
 @testable import LocalHistoryQueryCLI
 
 final class GoalongSiteExportTests: XCTestCase {
+    func testStructuredReportUsesSelectedBudgetsWithoutInventingProductivityOrHours() throws {
+        let payload = try GoalongSiteExport.payload(record: fixture(), options: .init(deviceIDs: ["mac"], includeApplications: true, structuredReport: true))
+        let json = try object(payload), day = try firstDay(json)
+        XCTAssertEqual(json["version"] as? Int, 3)
+        let budgets = try XCTUnwrap(day["duration_budgets"] as? [[String: Any]])
+        let activities = try XCTUnwrap(day["activities"] as? [[String: Any]])
+        XCTAssertEqual(budgets.count, 1)
+        XCTAssertEqual(budgets[0]["seconds"] as? Int, 800)
+        XCTAssertEqual(budgets[0]["basis"] as? String, "application_usage")
+        XCTAssertEqual(budgets[0]["device_ref"] as? String, "apple-screen-time:mac")
+        XCTAssertNil(budgets[0]["start"])
+        XCTAssertTrue(activities[0]["category"] is NSNull)
+        XCTAssertEqual(activities[0]["productive_proposal"] as? String, "unknown")
+        XCTAssertNil(activities[0]["start"])
+        XCTAssertNotNil(day["telemetry"])
+    }
+
+    func testStructuredTotalsOnlyDoesNotLeakAppNamesOrStoredSummary() throws {
+        let payload = try GoalongSiteExport.payload(record: fixture(), options: .init(structuredReport: true), recap: "private-title")
+        let text = String(decoding: payload, as: UTF8.self)
+        XCTAssertFalse(text.contains("secret.app"))
+        XCTAssertFalse(text.contains("private-title"))
+        let day = try firstDay(object(payload))
+        XCTAssertEqual((day["duration_budgets"] as? [[String: Any]])?.count, 2)
+        XCTAssertEqual((day["coverage"] as? [String: String])?["day_accounting"], "complete")
+    }
     func testTotalsOnlyDefaultsOmitAllSensitiveDetailsAndKeepSourceTotal() throws {
         let record = try fixture()
         let payload = try GoalongSiteExport.payload(record: record)

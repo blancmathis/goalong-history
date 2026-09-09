@@ -9,15 +9,17 @@ public struct GoalongSiteExportOptions {
     public var includeHourly: Bool
     public var includeWebsites: Bool
     public var includeRecap: Bool
+    public var structuredReport: Bool
 
     public init(deviceIDs: [String] = [], includeApplications: Bool = false,
                 includeHourly: Bool = false, includeWebsites: Bool = false,
-                includeRecap: Bool = false) {
+                includeRecap: Bool = false, structuredReport: Bool = false) {
         self.deviceIDs = deviceIDs
         self.includeApplications = includeApplications
         self.includeHourly = includeHourly
         self.includeWebsites = includeWebsites
         self.includeRecap = includeRecap
+        self.structuredReport = structuredReport
     }
 }
 
@@ -134,6 +136,7 @@ public enum GoalongSiteExport {
             ]
         ]]]
         var data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes])
+        if options.structuredReport { return try GoalongProductivityExport.payload(fromSelectedSiteExport: data) }
         guard data.count <= 2 * 1024 * 1024 else { throw GoalongSiteExportError.invalid("The website export exceeds 2 MiB.") }
         data.append(0x0A)
         return data

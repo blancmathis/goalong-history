@@ -107,12 +107,12 @@ public enum GoalongCLIContract {
         ),
         .init(
             name: "export-site",
-            syntax: "export-site [yesterday|today|YYYY-MM-DD] [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap]",
-            summary: "Prepare an offline website v2 import on stdout from saved data; totals only unless details are explicitly included."
+            syntax: "export-site [yesterday|today|YYYY-MM-DD] [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap] [--structured]",
+            summary: "Prepare an offline website import (v2, or v3 with --structured); totals only unless details are explicitly included."
         ),
         .init(
             name: "send-site",
-            syntax: "send-site [yesterday|today|YYYY-MM-DD] --url HTTPS_ORIGIN --token-file PATH [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap]",
+            syntax: "send-site [yesterday|today|YYYY-MM-DD] --url HTTPS_ORIGIN --token-file PATH [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap] [--structured]",
             summary: "Explicitly send selected saved data unverified with an upload-only token; configured website sharing rules apply.",
             effect: .sendsExplicitSiteImport
         ),
