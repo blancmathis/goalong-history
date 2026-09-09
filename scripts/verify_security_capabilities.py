@@ -79,7 +79,7 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     if value.get("network", {}).get("osEnforcedDeny") is not False:
         fail("network sandbox state is not reported honestly")
     expected_submission = {
-        "triggers": ["send-site", "native-reviewed-send-button"], "automaticSync": False,
+        "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button"], "automaticSync": False,
         "method": "POST", "path": "/api/goalong/v1/import", "transport": "HTTPS-or-development-loopback",
         "authentication": "user-owned-0600-upload-token-file", "redirects": "refused",
         "requestMaximumBytes": 2 * 1024 * 1024, "responseMaximumBytes": 64 * 1024,
@@ -100,6 +100,14 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
         fail("new-install capability defaults are not all false")
     if defaults.get("websiteSubmission") is not False:
         fail("website submission must be off until an explicit user action")
+    expected_health = {
+        "discovery": False, "sourceMutation": False, "rawXMLRetention": False,
+        "archive": "health/YYYY-MM-DD.json", "directoryMode": "0700", "fileMode": "0600",
+        "retention": "until-explicit-user-removal", "groups": ["sleep", "heart", "activity", "workouts"],
+        "clinicalRecords": False, "gpsRoutes": False, "automaticSync": False,
+    }
+    if value.get("dataAccess", {}).get("appleHealthImport") != expected_health:
+        fail("explicit Apple Health import differs from the reviewed local-data contract")
     expected_ipc = {
             "protocolVersion": "goalong-readonly-unix-v1",
             "transport": "unix-domain-socket",

@@ -8,6 +8,7 @@ import SwiftUI
 struct GoalongWebsiteConnectionCard: View {
     @State private var showsConnection = false
     @State private var showsSiteAnalysis = false
+    @State private var showsHealthImport = false
 
     var body: some View {
         LHCard {
@@ -28,11 +29,14 @@ struct GoalongWebsiteConnectionCard: View {
                         .buttonStyle(.bordered)
                     Button("Analyser une demande du site") { showsSiteAnalysis = true }
                         .buttonStyle(.bordered)
+                    Button("Importer Apple Santé…") { showsHealthImport = true }
+                        .buttonStyle(.bordered)
                 }
             }
         }
         .sheet(isPresented: $showsConnection) { GoalongWebsiteConnectionSheet() }
         .sheet(isPresented: $showsSiteAnalysis) { GoalongSiteAnalysisSheet() }
+        .sheet(isPresented: $showsHealthImport) { GoalongHealthImportSheet() }
     }
 }
 

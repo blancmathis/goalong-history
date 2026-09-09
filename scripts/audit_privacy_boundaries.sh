@@ -53,8 +53,8 @@ if [[ -f "$CLIPBOARD_WRITER" ]]; then
   fi
 fi
 
-# The public agent contract must remain honest about formats and the two explicit local writes:
-# active-day Screen Time replaces one compact Goalong record, and export-proof creates a file.
+# The public agent contract must remain honest about formats and explicit local writes:
+# active-day Screen Time, a requested proof export and selected compact Health imports.
 for contract_surface in "$CLI_CONTRACT" "$CLI_HELP_PAGE" "$CLI_DOCS"; do
   if grep -nE 'Every result is structured JSON|Every command emits sorted JSON|All commands are read-only|identically signed Goalong app' "$contract_surface"; then
     echo "Misleading CLI format, mutation or client-signature claim found in $contract_surface." >&2

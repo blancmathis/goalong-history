@@ -14,6 +14,8 @@ def audit(root: Path) -> list[str]:
         "export": "Sources/LocalHistoryQueryCLI/GoalongSiteExport.swift",
         "cli": "Sources/LocalHistoryQueryCLI/LocalHistoryQueryCLI.swift",
         "ui": "Sources/LocalHistoryApp/GoalongWebsiteConnectionCard.swift",
+        "health_ui": "Sources/LocalHistoryApp/GoalongHealthImportSheet.swift",
+        "health_import": "Sources/LocalHistoryQueryCLI/GoalongHealthImport.swift",
         "contract": "Sources/LocalHistoryQueryCLI/GoalongCLIContract.swift",
     }
     sources = {}
@@ -62,6 +64,11 @@ def audit(root: Path) -> list[str]:
         ],
         "contract": ['case sendsExplicitSiteImport', 'name: "export-site"', 'name: "send-site"',
                      'effect: .sendsExplicitSiteImport', 'configured website sharing rules apply'],
+        "health_ui": ['action: sendReviewedHealth', 'guard let payload, consent else { return }',
+                      'consent = false', '.disabled(!consent || origin.isEmpty || tokenFilePath.isEmpty)',
+                      'GoalongHealthArchive.read(', 'GoalongHealthImport.read('],
+        "health_import": ['parser.shouldResolveExternalEntities = false', 'O_NOFOLLOW',
+                          '"source": "apple-health"', 'payload.count <= 2 * 1024 * 1024'],
     }
     for key, fragments in required.items():
         for fragment in fragments:
@@ -75,10 +82,14 @@ def audit(root: Path) -> list[str]:
             text = path.read_text()
             calls = re.findall(r"GoalongSiteSubmission\s*\.\s*send\s*\(", text)
             callers.extend([path.relative_to(root).as_posix()] * len(calls))
-    if sorted(callers) != sorted([paths["cli"], paths["ui"]]):
-        errors.append("Website sending may be called only once from explicit CLI dispatch and once from the reviewed native button")
+    if sorted(callers) != sorted([paths["cli"], paths["ui"], paths["health_ui"]]):
+        errors.append("Website sending requires exactly the reviewed CLI, Screen Time button and consented Health button")
     if len(re.findall(r"\bsendReviewedData\b", sources["ui"])) != 2:
         errors.append("The native send action has an additional caller; passive/lifecycle sending is prohibited")
+    if len(re.findall(r"\bsendReviewedHealth\b", sources["health_ui"])) != 2:
+        errors.append("The Health send action has an additional caller; passive/lifecycle sending is prohibited")
+    if re.search(r"URLSession|URLRequest|HTTPURLResponse|GoalongSiteSubmission", sources["health_import"]):
+        errors.append("The local Health parser must not contain a transport")
     if len(re.findall(r"\.dataTask\s*\(", sources["transport"])) != 1:
         errors.append("Website transport must create exactly one explicit data task, without an automatic retry")
     if re.search(r"\.\s*(?:uploadTask|downloadTask|webSocketTask|streamTask)\s*\(|URLSession\.shared", sources["transport"]):

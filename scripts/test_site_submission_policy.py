@@ -21,6 +21,8 @@ FILES = [
     "Sources/LocalHistoryQueryCLI/LocalHistoryQueryCLI.swift",
     "Sources/LocalHistoryQueryCLI/GoalongCLIContract.swift",
     "Sources/LocalHistoryApp/GoalongWebsiteConnectionCard.swift",
+    "Sources/LocalHistoryApp/GoalongHealthImportSheet.swift",
+    "Sources/LocalHistoryQueryCLI/GoalongHealthImport.swift",
 ]
 
 
@@ -52,6 +54,20 @@ class WebsiteBoundaryTests(unittest.TestCase):
 
     def test_redirect_permission_change_is_rejected(self):
         self.change(FILES[0], 'completionHandler(nil)', 'completionHandler(request)')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_health_requires_consent_and_rejects_passive_send(self):
+        self.change(FILES[5], 'guard let payload, consent else { return }', 'guard let payload else { return }')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_health_lifecycle_send_is_rejected(self):
+        with (self.root / FILES[5]).open("a") as stream:
+            stream.write("\nfunc passiveRefresh() { sendReviewedHealth() }\n")
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_health_local_parser_rejects_network_dependency(self):
+        with (self.root / FILES[6]).open("a") as stream:
+            stream.write("\nlet unsafe = URLSession.shared\n")
         self.assertTrue(boundary.audit(self.root))
 
     def test_raw_body_field_is_rejected(self):
@@ -96,6 +112,12 @@ class CapabilityManifestTests(unittest.TestCase):
 
     def test_stale_absent_transport_claim_is_rejected(self):
         self.fails(lambda value: value["capabilities"].update(firstPartyNetworkTransport="absent"))
+
+    def test_health_raw_retention_auto_sync_and_missing_contract_are_rejected(self):
+        self.fails(lambda value: value["dataAccess"].pop("appleHealthImport"))
+        for key in ["rawXMLRetention", "automaticSync", "clinicalRecords", "gpsRoutes", "discovery"]:
+            with self.subTest(field=key):
+                self.fails(lambda value: value["dataAccess"]["appleHealthImport"].update({key: True}))
 
     def test_every_submission_limit_is_checked(self):
         for key in self.value["network"]["siteSubmission"]:
