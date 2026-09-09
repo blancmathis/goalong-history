@@ -112,8 +112,10 @@ def audit(root: Path) -> list[str]:
             if marker not in pairing: errors.append("Pairing constraint missing: " + marker)
         if len(re.findall(r"\.dataTask\s*\(", pairing)) != 1 or "URLSession.shared" in pairing:
             errors.append("Pairing must use one bounded explicit request")
-        if 'guard confirmation.runModal() == .alertFirstButtonReturn else { return false }' not in coordinator:
+        if 'guard await present(confirmation, on: window) == .alertFirstButtonReturn else { return false }' not in coordinator:
             errors.append("Native pairing requires explicit confirmation")
+        if 'alert.beginSheetModal(for: window)' not in coordinator or '.runModal()' in coordinator:
+            errors.append("Native pairing confirmation must belong to the visible app window")
         if coordinator.count('pairing.exchange()') != 1:
             errors.append("Pairing must not retry automatically")
         callers = [p for p in (root / "Sources").rglob("*.swift") if 'pairing.exchange()' in p.read_text()]
