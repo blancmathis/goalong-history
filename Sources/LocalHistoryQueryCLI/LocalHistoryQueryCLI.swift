@@ -813,7 +813,8 @@ public enum GoalongQueryCLI {
                 includeApplications: arguments.removeFlag("--include-apps"),
                 includeHourly: arguments.removeFlag("--include-hourly"),
                 includeWebsites: arguments.removeFlag("--include-websites"),
-                includeRecap: arguments.removeFlag("--include-recap")
+                includeRecap: arguments.removeFlag("--include-recap"),
+                structuredReport: arguments.removeFlag("--structured")
             )
             let origin = command == "send-site" ? arguments.removeOption("--url") : nil
             let tokenPath = command == "send-site" ? arguments.removeOption("--token-file") : nil

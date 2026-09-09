@@ -68,6 +68,7 @@ private struct GoalongWebsiteConnectionSheet: View {
     @State private var includeHourly = false
     @State private var includeWebsites = false
     @State private var includeRecap = false
+    @State private var structuredReport = false
     @State private var payload: Data?
     @State private var devices: [(id: String, name: String)] = []
     @State private var excludedDevices: Set<String> = []
@@ -155,6 +156,12 @@ private struct GoalongWebsiteConnectionSheet: View {
                         Toggle("Hourly breakdown, when recorded", isOn: $includeHourly)
                         Toggle("Website domains observed on this Mac", isOn: $includeWebsites)
                         Toggle("Saved analysis summary", isOn: $includeRecap)
+                        Toggle("Structured report for productivity", isOn: $structuredReport)
+                        if structuredReport {
+                            Text("The same selected durations become an editable report. Applications are not automatically considered productive: qualify their context on the website, or let your chosen agent prepare the report before importing it. Raw events and conversations stay outside this export.")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         if !devices.isEmpty {
                             VStack(alignment: .leading, spacing: 7) {
                                 Text("Devices from the saved day").font(.subheadline.weight(.medium))
@@ -225,6 +232,7 @@ private struct GoalongWebsiteConnectionSheet: View {
         .onChange(of: includeHourly) { _ in invalidatePreview() }
         .onChange(of: includeWebsites) { _ in invalidatePreview() }
         .onChange(of: includeRecap) { _ in invalidatePreview() }
+        .onChange(of: structuredReport) { _ in invalidatePreview() }
         .onChange(of: origin) { _ in status = nil }
     }
 
@@ -320,7 +328,7 @@ private struct GoalongWebsiteConnectionSheet: View {
         let day = formatter.string(from: date)
         let root = AppPaths.applicationSupportDirectory
         let options = GoalongSiteExportOptions(deviceIDs: selected, includeApplications: includeApps,
-            includeHourly: includeHourly, includeWebsites: includeWebsites, includeRecap: includeRecap)
+            includeHourly: includeHourly, includeWebsites: includeWebsites, includeRecap: includeRecap, structuredReport: structuredReport)
         busy = true
         invalidatePreview()
         Task { @MainActor in
