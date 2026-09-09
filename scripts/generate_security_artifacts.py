@@ -238,7 +238,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "singlePublicApplication": "present",
         "defaultCapabilityState": "all-off",
         "explicitConsentRegistry": "present",
-        "firstPartyNetworkTransport": "explicit-site-submission-only",
+        "firstPartyNetworkTransport": "explicit-site-pairing-and-submission-only",
         "automaticUpdater": "absent",
         "managedChatGPTBridge": "explicit-consent-only",
         "directProviderSourceReaders": "present",
@@ -247,6 +247,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "osEnforcedNetworkSandbox": "not-enabled",
     }
     declared_network_destinations: list[dict[str, str]] = [
+        {"purpose": "explicit-website-pairing", "destination": "user-confirmed website origin", "source": "GoalongSitePairing after native confirmation"},
         {
             "purpose": "managed-ChatGPT-analysis-after-explicit-consent",
             "destination": "Codex app-server managed account transport",
@@ -312,6 +313,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "network": {
             "declaredDestinations": declared_network_destinations,
             "osEnforcedDeny": False,
+            "sitePairing": {"trigger": "native-confirmed-goalong-history-link", "path": "/api/goalong/v1/native/pairing/claim", "method": "POST", "codeLifetimeSeconds": 300, "singleUse": True, "redirects": "refused", "responseMaximumBytes": 8192, "tokenStorage": "user-owned-0600-file", "activityDataSent": False},
             "siteSubmission": {
                 "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button"],
                 "automaticSync": False,

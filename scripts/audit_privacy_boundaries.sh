@@ -185,7 +185,7 @@ fi
 SITE_SUBMISSION="$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSiteSubmission.swift"
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$SITE_SUBMISSION" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/CommitmentUploader.swift" ]]; then
+  if [[ "$file" != "$SITE_SUBMISSION" && "$file" != "$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/CommitmentUploader.swift" ]]; then
     echo "Unexpected first-party network API outside the reviewed explicit website sender: $match" >&2
     failed=true
   fi
@@ -520,4 +520,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is isolated to the fixed Codex app-server bridge; first-party networking is confined to explicit reviewed website sends; retired uploaders, Sparkle and remote Swift dependencies remain absent."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is isolated to the fixed Codex app-server bridge; first-party networking is confined to confirmed website pairing and explicit reviewed sends; retired uploaders, Sparkle and remote Swift dependencies remain absent."

@@ -101,6 +101,23 @@ def audit(root: Path) -> list[str]:
         errors.append("Website export contains a forbidden raw body or local-path field")
     if re.search(r"URLSession|URLRequest|HTTPURLResponse|GoalongSiteSubmission", sources["export"]):
         errors.append("The offline website projector must not contain a transport")
+    pairing_path = root / "Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift"
+    coordinator_path = root / "Sources/LocalHistoryApp/GoalongWebsitePairingCoordinator.swift"
+    if not pairing_path.exists() or not coordinator_path.exists():
+        errors.append("Explicit pairing sources are missing")
+    else:
+        pairing = pairing_path.read_text()
+        coordinator = coordinator_path.read_text()
+        for marker in ['GoalongSiteSubmission.endpoint(origin: site)', 'parts.scheme == "goalong-history"', 'parts.host == "connect"', 'parts.queryItems?.count == 1', 'completionHandler(nil)', 'URLSessionConfiguration.ephemeral', 'configuration.httpShouldSetCookies = false', 'configuration.httpCookieStorage = nil', 'configuration.urlCredentialStorage = nil', 'configuration.urlCache = nil', 'configuration.timeoutIntervalForResource = 30', 'data.count + chunk.count <= 8192', 'O_EXCL | O_NOFOLLOW', '0o600', '0o700']:
+            if marker not in pairing: errors.append("Pairing constraint missing: " + marker)
+        if len(re.findall(r"\.dataTask\s*\(", pairing)) != 1 or "URLSession.shared" in pairing:
+            errors.append("Pairing must use one bounded explicit request")
+        if 'guard confirmation.runModal() == .alertFirstButtonReturn else { return false }' not in coordinator:
+            errors.append("Native pairing requires explicit confirmation")
+        if coordinator.count('pairing.exchange()') != 1:
+            errors.append("Pairing must not retry automatically")
+        callers = [p for p in (root / "Sources").rglob("*.swift") if 'pairing.exchange()' in p.read_text()]
+        if callers != [coordinator_path]: errors.append("Pairing has an unexpected caller")
     return errors
 
 

@@ -23,6 +23,8 @@ FILES = [
     "Sources/LocalHistoryApp/GoalongWebsiteConnectionCard.swift",
     "Sources/LocalHistoryApp/GoalongHealthImportSheet.swift",
     "Sources/LocalHistoryQueryCLI/GoalongHealthImport.swift",
+    "Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift",
+    "Sources/LocalHistoryApp/GoalongWebsitePairingCoordinator.swift",
 ]
 
 
@@ -43,6 +45,15 @@ class WebsiteBoundaryTests(unittest.TestCase):
 
     def test_reviewed_boundary_passes(self):
         self.assertEqual(boundary.audit(self.root), [])
+
+    def test_pairing_confirmation_is_required(self):
+        self.change(FILES[8], 'guard confirmation.runModal() == .alertFirstButtonReturn else { return false }', '// confirmation removed')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_pairing_ambient_session_is_rejected(self):
+        with (self.root / FILES[7]).open("a") as stream:
+            stream.write("\nlet unexpected = URLSession.shared\n")
+        self.assertTrue(boundary.audit(self.root))
 
     def test_passive_caller_is_rejected(self):
         (self.root / "Sources/Passive.swift").write_text("func refresh() { GoalongSiteSubmission.send(payload: data, origin: origin, tokenFile: token) }")
@@ -93,6 +104,7 @@ class CapabilityManifestTests(unittest.TestCase):
         (self.app / "Contents").mkdir(parents=True)
         self.info = {"GoalongBuildEdition": "unified", "CFBundleIdentifier": "example.synthetic",
                      "CFBundleDisplayName": "Synthetic", "CFBundleShortVersionString": "0", "CFBundleVersion": "0"}
+        self.info["CFBundleURLTypes"] = [{"CFBundleURLName": "ai.goalong.website-connection", "CFBundleURLSchemes": ["goalong-history"], "CFBundleTypeRole": "Viewer"}]
         (self.app / "Contents/Info.plist").write_bytes(plistlib.dumps(self.info))
         markers = {"codexAppServer": True, "managedOAuth": True, "siteSubmission": True,
                    "commitmentUploader": False, "sparkleUpdater": False}
