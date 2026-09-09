@@ -46,7 +46,7 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     for capability in expected_absent:
         if value.get("capabilities", {}).get(capability) != "absent":
             fail(f"single-app capability is not absent: {capability}")
-    if value.get("capabilities", {}).get("firstPartyNetworkTransport") != "explicit-site-submission-only":
+    if value.get("capabilities", {}).get("firstPartyNetworkTransport") != "explicit-site-pairing-and-submission-only":
         fail("first-party transport is not confined to explicit website submission")
     if value.get("capabilities", {}).get("singlePublicApplication") != "present":
         fail("single public application invariant is missing")
@@ -78,6 +78,11 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
         fail("single app contains an update or network Info.plist key")
     if value.get("network", {}).get("osEnforcedDeny") is not False:
         fail("network sandbox state is not reported honestly")
+    expected_pairing = {"trigger": "native-confirmed-goalong-history-link", "path": "/api/goalong/v1/native/pairing/claim", "method": "POST", "codeLifetimeSeconds": 300, "singleUse": True, "redirects": "refused", "responseMaximumBytes": 8192, "tokenStorage": "user-owned-0600-file", "activityDataSent": False}
+    if value.get("network", {}).get("sitePairing") != expected_pairing:
+        fail("explicit pairing differs from the reviewed contract")
+    if info.get("CFBundleURLTypes") != [{"CFBundleURLName": "ai.goalong.website-connection", "CFBundleURLSchemes": ["goalong-history"], "CFBundleTypeRole": "Viewer"}]:
+        fail("unexpected website pairing URL handler")
     expected_submission = {
         "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button"], "automaticSync": False,
         "method": "POST", "path": "/api/goalong/v1/import", "transport": "HTTPS-or-development-loopback",
@@ -89,8 +94,8 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     if value.get("network", {}).get("siteSubmission") != expected_submission:
         fail("explicit website submission constraints differ from the reviewed contract")
     destinations = value.get("network", {}).get("declaredDestinations", [])
-    if len(destinations) != 2 or {item.get("purpose") for item in destinations} != {
-        "managed-ChatGPT-analysis-after-explicit-consent", "explicit-selected-website-import"
+    if len(destinations) != 3 or {item.get("purpose") for item in destinations} != {
+        "managed-ChatGPT-analysis-after-explicit-consent", "explicit-selected-website-import", "explicit-website-pairing"
     }:
         fail("declared network emission paths differ from the two reviewed optional features")
     if value.get("ipc", {}).get("authenticatedSensitiveReader") != "not-shipped":

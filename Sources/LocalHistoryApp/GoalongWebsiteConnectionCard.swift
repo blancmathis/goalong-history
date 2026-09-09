@@ -4,8 +4,11 @@ import Foundation
 import LocalHistoryQueryCLI
 import SwiftUI
 
-/// Explicit user-driven export. No background sync or remote auth tokens enter Goalong settings.
+extension Notification.Name { static let goalongWebsiteConnected = Notification.Name("goalong.website.connected") }
+
+/// Explicit pairing and reviewed export. Credentials stay in private files, outside preferences.
 struct GoalongWebsiteConnectionCard: View {
+    @AppStorage("goalong.website.tokenFilePath") private var savedTokenPath = ""
     @State private var showsConnection = false
     @State private var showsSiteAnalysis = false
     @State private var showsHealthImport = false
@@ -25,7 +28,11 @@ struct GoalongWebsiteConnectionCard: View {
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 10) {
-                    Button("Connect website") { showsConnection = true }
+                    Button(savedTokenPath.isEmpty ? "Relier mon compte" : "Choisir mes données") {
+                        if savedTokenPath.isEmpty {
+                            _ = GoalongWorkspaceOpenPolicy.open(URL(string: "https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#sources")!, purpose: .goalongWebsite)
+                        } else { showsConnection = true }
+                    }
                         .buttonStyle(.bordered)
                     Button("Analyser une demande du site") { showsSiteAnalysis = true }
                         .buttonStyle(.bordered)
@@ -33,6 +40,16 @@ struct GoalongWebsiteConnectionCard: View {
                         .buttonStyle(.bordered)
                 }
             }
+        }
+        .onAppear {
+            if UserDefaults.standard.bool(forKey: "goalong.website.openAfterPairing") {
+                UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing")
+                showsConnection = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)) { _ in
+            UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing")
+            showsConnection = true
         }
         .sheet(isPresented: $showsConnection) { GoalongWebsiteConnectionSheet() }
         .sheet(isPresented: $showsSiteAnalysis) { GoalongSiteAnalysisSheet() }
@@ -79,7 +96,21 @@ private struct GoalongWebsiteConnectionSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("1. Your website account").font(.headline)
+                        Text("1. Votre compte Goalong").font(.headline)
+                        if !tokenFilePath.isEmpty && !origin.isEmpty {
+                            Label("Accès enregistré sur ce Mac", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(LHTheme.success)
+                            Text(origin).font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("Depuis le site, ouvrez Sources et connexions puis Relier mon Mac. L’app reçoit votre accès automatiquement.")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Button("Relier depuis le site") {
+                                _ = GoalongWorkspaceOpenPolicy.open(URL(string: "https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#sources")!, purpose: .goalongWebsite)
+                            }
+                        }
+                        DisclosureGroup("Connexion manuelle et options avancées") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Adresse et accès enregistrés").font(.headline)
                         TextField("Website origin, for example https://your-goalong-host", text: $origin)
                             .textFieldStyle(.roundedBorder)
                             .accessibilityLabel("Goalong website HTTPS origin")
@@ -110,6 +141,8 @@ private struct GoalongWebsiteConnectionSheet: View {
                         }
                         Button("Open website Sources", action: openWebsite)
                             .buttonStyle(.borderless)
+                    }
+                        }
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: 10) {

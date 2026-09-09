@@ -73,7 +73,7 @@ cat <<'EOF'
 Goalong source security verification passed.
 - one public app identity
 - sensitive capabilities off by default
-- first-party HTTP limited to explicit reviewed website sends; no passive sync, in-app updater or remote Swift dependency
+- first-party HTTP limited to confirmed website pairing and explicit reviewed sends; no passive sync, in-app updater or remote Swift dependency
 - Screen Time CLI access brokered through the consented app
 - Agent Activity direct-source readers remain read-only and metadata-only on disk
 

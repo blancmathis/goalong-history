@@ -23,6 +23,18 @@
     }
 
     final class AppDelegate: NSObject, NSApplicationDelegate {
+        @MainActor private lazy var websitePairing = GoalongWebsitePairingCoordinator()
+
+        func application(_ application: NSApplication, open urls: [URL]) {
+            guard urls.count == 1, let url = urls.first, url.scheme == "goalong-history" else { return }
+            Task { @MainActor in
+                if await websitePairing.connect(url: url) {
+                    UserDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
+                    dashboardWindowController?.show(section: .settings)
+                    NotificationCenter.default.post(name: .goalongWebsiteConnected, object: nil)
+                }
+            }
+        }
         private var configManager: ConfigManager!
         private var permissions: PermissionManager!
         private var captureHealthStore: CaptureHealthStore!

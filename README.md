@@ -17,6 +17,12 @@ A native menu-bar app that turns foreground activity into a clear local timeline
 
 > Goalong History is for a Mac you own and use yourself. Never use it to monitor another person without their prior, explicit consent.
 
+## Connect to the Goalong website
+
+On the [Goalong website](https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#sources), open **Sources et connexions → Relier mon Mac**. The button opens Goalong History; confirm the displayed website in the app. No token download, file selection or address copying is needed. A five-minute, single-use link creates a private upload-only access valid for 90 days. It is stored in an owner-only local file and can be revoked from the website. Linking never sends activity or enables local collection; choose a day and review the data separately.
+
+The old file-based setup remains available under **Connexion manuelle et options avancées**. Install the latest Community Build to register the `goalong-history` link handler.
+
 ## A Mac installation that feels like a product
 
 Download the universal Community DMG from the latest GitHub release, drag **Goalong History** to
