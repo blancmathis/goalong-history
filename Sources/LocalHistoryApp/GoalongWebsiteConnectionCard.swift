@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import LocalHistoryCore
 import LocalHistoryQueryCLI
 import SwiftUI
 
@@ -71,6 +72,14 @@ private struct GoalongWebsiteConnectionSheet: View {
     @State private var structuredReport = false
     @State private var maskedApps = ""
     @State private var recapExcerpt = ""
+    @State private var recapSections: [String] = []
+    @State private var selectedRecapSections = Set<Int>()
+    @State private var recapNotice = ""
+    @ObservedObject private var recapRuntime = ChatGPTRecapRuntime.shared
+    @State private var showsRhythmStudio = false
+    @State private var contextualRhythm: GoalongContextualRhythm.Rhythm?
+    @State private var rhythmContext = false
+    @State private var automaticHour = 9
     @State private var includeRhythm = false
     @State private var rhythmProject = ""
     @State private var rhythmApps = ""
@@ -165,9 +174,7 @@ private struct GoalongWebsiteConnectionSheet: View {
                         Toggle("Website domains observed on this Mac", isOn: $includeWebsites)
                         Toggle("Saved analysis summary", isOn: $includeRecap)
                         if includeRecap {
-                            Text("Choisissez un extrait à envoyer. Seul ce texte sera inclus.").font(.caption)
-                            TextEditor(text: $recapExcerpt).frame(height: 80)
-                                .accessibilityLabel("Extrait du récap à envoyer")
+                            recapSelection
                         }
                         TextField("Applications à masquer avant envoi (noms séparés par des virgules)", text: $maskedApps)
                         if !maskedApps.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -176,11 +183,21 @@ private struct GoalongWebsiteConnectionSheet: View {
                         Toggle("Structured report for productivity", isOn: $structuredReport)
                         Toggle("Calculer le rythme à partir de Computer History", isOn: $includeRhythm)
                         if includeRhythm {
-                            TextField("Nom du projet", text: $rhythmProject)
-                            TextField("Applications liées au projet, séparées par des virgules", text: $rhythmApps)
+                            Button(contextualRhythm == nil ? "Analyser le contexte d'une session…" : "Choisir une autre session…") { showsRhythmStudio = true }
+                            if let rhythm = contextualRhythm {
+                                Text("\(rhythm.project) · \(rhythm.episodes?.count ?? 0) épisodes relus").font(.subheadline)
+                                if let interpretation = rhythm.interpretation { Text(interpretation).font(.caption) }
+                                Button("Retirer cette analyse") { contextualRhythm = nil; invalidatePreview() }
+                            } else {
+                                DisclosureGroup("Association simple par application, sans analyse du contexte") {
+                                    TextField("Nom du projet", text: $rhythmProject)
+                                    TextField("Applications liées au projet, séparées par des virgules", text: $rhythmApps)
+                                }
+                            }
                             Toggle("Inclure les épisodes simplifiés", isOn: $rhythmTimeline)
-                            Toggle("Inclure l’heure de début précise", isOn: $rhythmTimes)
-                            Text("Les changements d’outil entre ces applications restent liés au même projet. Les zones non observées restent inconnues. Les agrégats seuls sont envoyés par défaut.").font(.caption)
+                            if contextualRhythm != nil && rhythmTimeline { Toggle("Inclure les sujets, explications et éléments de contexte relus", isOn: $rhythmContext) }
+                            Toggle("Inclure l'heure de début précise", isOn: $rhythmTimes)
+                            Text("Agrégats, épisodes, contexte et horaires sont des choix distincts. Relisez l'aperçu final avant de transmettre.").font(.caption)
                         }
                         if structuredReport {
                             Text("The same selected durations become an editable report. Applications are not automatically considered productive: qualify their context on the website, or let your chosen agent prepare the report before importing it. Raw events and conversations stay outside this export.")
@@ -206,12 +223,13 @@ private struct GoalongWebsiteConnectionSheet: View {
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Envoi automatique facultatif").font(.headline)
-                        Text("Envoie la veille après 9 h lorsque l’app est ouverte, avec les appareils, applications masquées et réglages de rythme de l’aperçu. Aucun récap ni domaine n’est inclus. Une erreur arrête l’automatisation.").font(.caption)
+                        Text("Envoie la veille lorsque l'app est ouverte, avec les appareils et champs choisis. Les mêmes parties des prochains récaps déjà produits peuvent être incluses. Les commentaires saisis et l'analyse d'une session particulière ne sont jamais répétés. Avec un masquage, les récaps et domaines restent exclus. Une erreur arrête l'automatisation.").font(.caption)
+                        Stepper("À partir de \(automaticHour) h", value: $automaticHour, in: 0...23)
                         Text(autoSender.status).font(.subheadline).accessibilityLabel(autoSender.status)
                         if autoSender.enabled { Button("Arrêter l’envoi automatique") { autoSender.stop() } }
                         else {
                             Button("Activer avec les choix de l’aperçu") {
-                                do { try autoSender.enable(origin: origin, tokenPath: tokenFilePath, options: selectedOptions()) }
+                                do { try autoSender.enable(origin: origin, tokenPath: tokenFilePath, options: selectedOptions(), hour: automaticHour) }
                                 catch { self.error = String(describing: error) }
                             }.disabled(payload == nil || busy)
                         }
@@ -232,7 +250,7 @@ private struct GoalongWebsiteConnectionSheet: View {
                                 .frame(height: 230)
                                 .background(LHTheme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
                             }
-                            Text("No raw conversations, captured text, local paths or verification badge are sent. Device/app totals and observed website time are separate measures.")
+                            Text("Seuls les champs affichés sont transmis, y compris les extraits de contexte si vous les avez sélectionnés. Relisez-les : les conversations et journaux complets restent hors de cet export. Les données restent déclaratives.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         if let status {
@@ -265,13 +283,18 @@ private struct GoalongWebsiteConnectionSheet: View {
         .frame(width: 660, height: 760)
         .background(GoalongWebsiteWindowReader(host: windowHost).frame(width: 0, height: 0))
         .interactiveDismissDisabled(busy)
-        .onChange(of: date) { _ in devices = []; excludedDevices = []; invalidatePreview() }
+        .onChange(of: date) { _ in devices = []; excludedDevices = []; recapSections = []; selectedRecapSections = []; contextualRhythm = nil; invalidatePreview() }
         .onChange(of: includeApps) { _ in invalidatePreview() }
         .onChange(of: includeHourly) { _ in invalidatePreview() }
         .onChange(of: includeWebsites) { _ in invalidatePreview() }
         .onChange(of: includeRecap) { _ in invalidatePreview() }
         .onChange(of: structuredReport) { _ in invalidatePreview() }
         .onChange(of: maskedApps) { _ in invalidatePreview() }
+        .onChange(of: selectedRecapSections) { _ in invalidatePreview() }
+        .onChange(of: recapSections) { _ in invalidatePreview() }
+        .onChange(of: rhythmContext) { _ in invalidatePreview() }
+        .onChange(of: recapRuntime.recap?.generatedAt) { _ in if includeRecap { loadSavedRecap() } }
+        .sheet(isPresented: $showsRhythmStudio) { GoalongRhythmStudio(day: date, masks: splitNames(maskedApps)) { rhythm in contextualRhythm = rhythm; invalidatePreview() } }
         .onChange(of: recapExcerpt) { _ in invalidatePreview() }
         .onChange(of: includeRhythm) { _ in invalidatePreview() }
         .onChange(of: rhythmProject) { _ in invalidatePreview() }
@@ -363,14 +386,49 @@ private struct GoalongWebsiteConnectionSheet: View {
         } catch { self.error = String(describing: error) }
     }
 
+    private func splitNames(_ text: String) -> [String] { text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
+    private var recapSelection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Choisissez les parties du récap produit par votre agent. Seuls les éléments cochés seront transmis.").font(.caption)
+            HStack {
+                Button("Charger le récap de cette journée", action: loadSavedRecap)
+                Button("Produire ou actualiser avec mon agent") { recapRuntime.selectDay(date); recapRuntime.generateRecap() }
+                    .disabled(recapRuntime.isGenerating || !GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis))
+            }
+            if recapRuntime.isGenerating { ProgressView("L'agent prépare le récap dans Goalong History…") }
+            if case .connected = recapRuntime.connectionState {} else { ChatGPTAccountConnectionCard(runtime: recapRuntime) }
+            ForEach(recapSections.indices, id: \.self) { index in
+                Toggle(isOn: Binding(get: { selectedRecapSections.contains(index) }, set: { include in
+                    if include { selectedRecapSections.insert(index) } else { selectedRecapSections.remove(index) }
+                })) { Text(recapSections[index]).font(.caption).textSelection(.enabled) }
+            }
+            if !recapNotice.isEmpty { Text(recapNotice).font(.caption).foregroundStyle(.secondary) }
+            DisclosureGroup("Ajouter un commentaire personnel") {
+                TextEditor(text: $recapExcerpt).frame(height: 70).accessibilityLabel("Commentaire personnel du récap")
+            }
+            Text("L'analyse utilise les sources autorisées dans l'app. La génération et l'envoi au site sont deux actions distinctes.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private func loadSavedRecap() {
+        guard GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { recapNotice = "Activez l'accès aux analyses dans les réglages."; return }
+        let selectedDay = date
+        Task { @MainActor in
+            let saved = await Task.detached { ChatGPTRecapPersistence.load(for: selectedDay, from: AppPaths.chatGPTRecapsDirectory) }.value
+            guard Calendar.current.isDate(selectedDay, inSameDayAs: date), GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { return }
+            recapSections = saved.map { $0.summaryLines ?? $0.markdown.components(separatedBy: "\n\n").filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } } ?? []
+            selectedRecapSections = []
+            recapNotice = saved == nil ? "Aucun récap enregistré pour cette journée. Produisez-le avec votre agent, puis choisissez ses éléments." : "Récap chargé. Aucune partie n'est sélectionnée par défaut."
+            invalidatePreview()
+        }
+    }
     private func selectedOptions() -> GoalongSiteExportOptions {
         let split: (String) -> [String] = { $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
         return GoalongSiteExportOptions(deviceIDs: devices.filter { !excludedDevices.contains($0.id) }.map(\.id),
             includeApplications: includeApps, includeHourly: includeHourly, includeWebsites: includeWebsites,
             includeRecap: includeRecap, structuredReport: structuredReport || includeRhythm,
-            maskedApplications: split(maskedApps), recapText: includeRecap ? recapExcerpt : nil,
-            rhythmProject: includeRhythm ? rhythmProject : nil, rhythmApplications: split(rhythmApps),
-            includeRhythmTimeline: rhythmTimeline, includeRhythmTimes: rhythmTimes)
+            maskedApplications: split(maskedApps), recapText: includeRecap ? (recapSections.enumerated().filter { selectedRecapSections.contains($0.offset) }.map(\.element) + (recapExcerpt.isEmpty ? [] : [recapExcerpt])).joined(separator: "\n\n") : nil, recapSectionIndices: selectedRecapSections.isEmpty ? nil : selectedRecapSections.sorted(),
+            rhythmProject: includeRhythm && contextualRhythm == nil ? rhythmProject : nil, rhythmApplications: split(rhythmApps),
+            includeRhythmTimeline: rhythmTimeline, includeRhythmTimes: rhythmTimes, includeRhythmContext: rhythmContext, contextualRhythm: includeRhythm ? contextualRhythm : nil)
     }
 
     private func preparePreview() {

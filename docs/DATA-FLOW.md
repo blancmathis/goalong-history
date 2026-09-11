@@ -29,9 +29,10 @@ details. It has a separate explicit send boundary:
 
 ```mermaid
 flowchart LR
-  archive["Saved Screen Time day"] --> export["Selected v2 fields · offline preview"]
+  archive["Saved Screen Time day"] --> export["Selected v2/v3 fields · offline preview"]
   domains["Observed Mac domains"] -. "only when included" .-> export
-  recap["Saved bounded recap"] -. "only when included" .-> export
+  recap["Selected parts of saved recap"] -. "only when included" .-> export
+  rhythm["Reviewed session · optional selected context"] -. "separate field choices" .-> export
   export -. "explicit send plus chosen token file" .-> website["Selected website origin"]
   website --> sharing["Site account sharing rules · unverified data"]
 ```
@@ -45,7 +46,7 @@ response file. If Screen Time consent is off, active-day refresh is unavailable.
 
 The Codex edge is the optional external-analysis boundary; the website edge submits selected data
 without starting a new analysis. Neither the offline preview nor continuous capture triggers a
-website send. Provider transcripts and captured event bodies are not website payload inputs.
+website send. Full provider transcripts and event journals are not website payload inputs. A contextual session may include explicitly selected bounded excerpts of captured context; those excerpts can contain personal text and have their own transmission control.
 [`PRIVACY.md`](PRIVACY.md#website-disclosure) owns the disclosure rules and
 [`NETWORK.md`](NETWORK.md) owns transport controls. The retired commitment uploader, App Attest
 transport and updater remain excluded. Full Disk Access reader isolation remains not shipped.

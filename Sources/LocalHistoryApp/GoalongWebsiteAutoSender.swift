@@ -22,32 +22,38 @@ import LocalHistoryQueryCLI
         var tokenPath: String
         var options: GoalongSiteExportOptions
         var lastAttempt: String?
+        var hour: Int?
     }
     init(defaults: UserDefaults = .standard, root: URL = AppPaths.applicationSupportDirectory,
          exporter: @escaping (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) },
          sender: @escaping (Data, String, URL) throws -> Data = { try GoalongSiteSubmission.send(payload: $0, origin: $1, tokenFile: $2) },
          sourceConsent: @escaping (GoalongSiteExportOptions) -> Bool = { options in
-             GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime) && (options.rhythmProject == nil || GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory))
+             GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime) && ((options.rhythmProject == nil && !options.includeWebsites) || GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)) && (!options.includeRecap || GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis))
          }) {
         self.defaults = defaults; self.root = root; self.exporter = exporter; self.sender = sender
         self.sourceConsent = sourceConsent
-        enabled = configuration() != nil
-        status = enabled ? "Activé : la veille après 9 h, lorsque Goalong est ouvert" : "Envoi automatique désactivé"
+        let saved = configuration()
+        enabled = saved != nil
+        status = enabled ? "Activé : la veille après \(saved?.hour ?? 9) h, lorsque Goalong est ouvert" : "Envoi automatique désactivé"
     }
     private func configuration() -> Configuration? {
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(Configuration.self, from: data)
     }
     private func store(_ value: Configuration) throws { defaults.set(try JSONEncoder().encode(value), forKey: key) }
-    func enable(origin: String, tokenPath: String, options: GoalongSiteExportOptions) throws {
+    func enable(origin: String, tokenPath: String, options: GoalongSiteExportOptions, hour: Int = 9) throws {
         guard !busy, !options.deviceIDs.isEmpty else { throw GoalongSiteExportError.invalid("Préparez d’abord l’aperçu et choisissez vos appareils.") }
         _ = try GoalongSiteSubmission.endpoint(origin: origin)
         _ = try GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))
+        guard (0...23).contains(hour) else { throw GoalongSiteExportError.invalid("Choisissez une heure entre 0 et 23.") }
         var selected = options
-        selected.includeRecap = false; selected.recapText = nil; selected.includeWebsites = false
-        try store(Configuration(origin: origin, tokenPath: tokenPath, options: selected))
+        selected.contextualRhythm = nil
+        selected.recapText = nil
+        if selected.recapSectionIndices?.isEmpty != false { selected.includeRecap = false }
+        if !selected.maskedApplications.isEmpty { selected.includeRecap = false; selected.includeWebsites = false }
+        try store(Configuration(origin: origin, tokenPath: tokenPath, options: selected, hour: hour))
         enabled = true
-        status = "Activé : la veille après 9 h, app ouverte. Aucun récap ni domaine."
+        status = "Activé : la veille après \(hour) h, app ouverte, avec les champs et parties de récap choisis. Les commentaires et interprétations de session ne sont jamais répétés."
         start()
     }
     func stop() {
@@ -62,7 +68,7 @@ import LocalHistoryQueryCLI
         }
     }
     func tick(now: Date = Date()) async {
-        guard !busy, var configuration = configuration(), Calendar.current.component(.hour, from: now) >= 9,
+        guard !busy, var configuration = configuration(), Calendar.current.component(.hour, from: now) >= (configuration.hour ?? 9),
               let previous = Calendar.current.date(byAdding: .day, value: -1, to: now) else { return }
         let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian); formatter.timeZone = .current
@@ -80,7 +86,7 @@ import LocalHistoryQueryCLI
             guard sourceConsent(configuration.options) else { stop(); busy = false; status = "Automatisation arrêtée : une source est désactivée."; return }
             status = "Envoi de la journée du \(day)…"
             _ = try await Task.detached { try sender(payload, configuration.origin, URL(fileURLWithPath: configuration.tokenPath)) }.value
-            if enabled { status = "Journée du \(day) reçue. Prochain envoi demain après 9 h." }
+            if enabled { status = "Journée du \(day) reçue. Prochain envoi demain après \(configuration.hour ?? 9) h." }
         } catch {
             stop()
             status = "Automatisation arrêtée : \(error). Vérifiez les imports du site avant de la réactiver."

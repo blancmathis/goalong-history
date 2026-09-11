@@ -150,6 +150,28 @@ final class SelectedSiteAnalysisTests: XCTestCase {
         XCTAssertNil(day["verified"])
     }
 
+    func testContextualRhythmUsesSelectedEvidenceAndImmutableProviderContract() throws {
+        let day = Calendar.current.startOfDay(for: Date())
+        let events = [0.0, 30.0, 60.0].map { HistoryEvent(sessionID: "fixture", timestamp: day.addingTimeInterval(36000 + $0), kind: .applicationActivated, app: .init(name: "Safari", bundleIdentifier: nil, processIdentifier: 0), window: .init(title: "SELECTED_PROJECT_EVIDENCE", role: nil, subrole: nil)) }
+        let selected = try GoalongContextualRhythm.build(events: events, day: day, project: "Test", intent: "Review selected source", device: "Synthetic Mac")
+        let output: [String: Any] = ["request_id": selected.request_id, "evidence_digest": selected.digest, "episodes": selected.rhythm.episodes!.map { ["id": $0.id, "relation": "project", "subject": "Test", "explanation": "Supported by the selected title", "evidence_refs": $0.evidence!.map(\.id)] }, "interpretation": "A continuous observed interval.", "interpretation_refs": selected.rhythm.episodes!.map(\.id)]
+        let fixture = try Fixture(root: directory(), events: finalEvents(output: output))
+        try Data("UNSELECTED_CONTEXT_CANARY".utf8).write(to: fixture.root.appendingPathComponent("private.txt"))
+        let session = try fixture.session(); defer { session.close() }
+        let annotation = try session.generateRhythmAnalysis(request: selected, workingDirectory: fixture.workspace)
+        let result = try GoalongContextualRhythm.apply(annotation, to: selected)
+        XCTAssertEqual(result.project_ms, 60000)
+        XCTAssertEqual(result.episodes!.map(\.duration_ms), selected.rhythm.episodes!.map(\.duration_ms))
+        let requests = try fixture.requests()
+        let turn = try XCTUnwrap(requests.first { $0["method"] as? String == "turn/start" }?["params"] as? [String: Any])
+        XCTAssertEqual((turn["input"] as? [[String: Any]])?.first?["text"] as? String, selected.prompt)
+        XCTAssertEqual(turn["permissions"] as? String, "goalong-site-analysis")
+        XCTAssertEqual((turn["outputSchema"] as? [String: Any])?["additionalProperties"] as? Bool, false)
+        let wire = String(decoding: try Data(contentsOf: fixture.transcript), as: UTF8.self)
+        XCTAssertTrue(wire.contains("SELECTED_PROJECT_EVIDENCE"))
+        XCTAssertFalse(wire.contains("UNSELECTED_CONTEXT_CANARY"))
+    }
+
     func testNonChatGPTAccountRefusesBeforeModelThreadOrTurn() throws {
         let fixture = try Fixture(root: directory(), account: "apiKey", events: [])
         let session = try fixture.session()

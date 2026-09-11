@@ -869,6 +869,17 @@
             request selected: GoalongSiteAnalysisRequest,
             workingDirectory: URL
         ) throws -> GoalongSiteAnalysisDraft {
+            try GoalongSiteAnalysisDraft.parse(generateSelectedAnalysisJSON(prompt: selected.analysisPrompt,
+                schema: Self.siteAnalysisOutputSchema, workingDirectory: workingDirectory))
+        }
+
+        func generateRhythmAnalysis(request selected: GoalongContextualRhythm.Request, workingDirectory: URL) throws -> GoalongContextualRhythm.Annotation {
+            try GoalongContextualRhythm.parseAnnotation(generateSelectedAnalysisJSON(prompt: selected.prompt,
+                schema: Self.rhythmAnalysisOutputSchema, workingDirectory: workingDirectory, maximumResponseBytes: 256 * 1024))
+        }
+
+        private func generateSelectedAnalysisJSON(prompt: String, schema: [String: Any], workingDirectory: URL,
+                                                  maximumResponseBytes: Int = 32 * 1024) throws -> Data {
             guard siteAnalysisOnly else {
                 throw CodexAppServerError.generationFailed("Site analysis requires its isolated Codex connection.")
             }
@@ -918,22 +929,11 @@
             else {
                 throw CodexAppServerError.generationFailed("Codex did not confirm the restricted analysis settings. Update Codex before trying again.")
             }
-            let schema: [String: Any] = [
-                "type": "object",
-                "properties": [
-                    "title": ["type": "string", "minLength": 1, "maxLength": 160],
-                    "summary": ["type": "string", "maxLength": 3000],
-                    "outcomes": ["type": "array", "maxItems": 12,
-                                 "items": ["type": "string", "minLength": 1, "maxLength": 300]],
-                ],
-                "required": ["title", "summary", "outcomes"],
-                "additionalProperties": false,
-            ]
             let turnResponse = try request(
                 method: "turn/start",
                 params: [
                     "threadId": threadID,
-                    "input": [["type": "text", "text": selected.analysisPrompt]],
+                    "input": [["type": "text", "text": prompt]],
                     "cwd": workingDirectory.path,
                     "runtimeWorkspaceRoots": [workingDirectory.path],
                     "approvalPolicy": "never",
@@ -975,14 +975,14 @@
                         let content = item["text"] as? String,
                         item["phase"] == nil || item["phase"] as? String == "final_answer"
                     {
-                        guard content.utf8.count <= 32 * 1024 else {
+                        guard content.utf8.count <= maximumResponseBytes else {
                             throw CodexAppServerError.protocolLimitExceeded("The analysis response exceeded 32 KiB.")
                         }
                         finalText = content
                     }
                 case "item/agentMessage/delta":
                     streamedBytes += (params["delta"] as? String)?.utf8.count ?? 0
-                    guard streamedBytes <= 64 * 1024 else {
+                    guard streamedBytes <= maximumResponseBytes * 2 else {
                         throw CodexAppServerError.protocolLimitExceeded("The analysis stream exceeded 64 KiB.")
                     }
                 case "error":
@@ -995,7 +995,7 @@
                         throw CodexAppServerError.generationFailed("The analysis did not produce a complete draft.")
                     }
                     try Self.validateSiteAnalysisItems(in: turn)
-                    return try GoalongSiteAnalysisDraft.parse(Data(finalText.utf8))
+                    return Data(finalText.utf8)
                 default:
                     if method.hasPrefix("item/") && !method.hasPrefix("item/reasoning/") {
                         throw CodexAppServerError.generationFailed("An unexpected analysis capability was used. The analysis was stopped.")
@@ -1004,6 +1004,37 @@
             }
             throw CodexAppServerError.timeout("analyzing the reviewed selection")
         }
+
+        private static let siteAnalysisOutputSchema: [String: Any] = [
+                "type": "object",
+                "properties": [
+                    "title": ["type": "string", "minLength": 1, "maxLength": 160],
+                    "summary": ["type": "string", "maxLength": 3000],
+                    "outcomes": ["type": "array", "maxItems": 12,
+                                 "items": ["type": "string", "minLength": 1, "maxLength": 300]],
+                ],
+                "required": ["title", "summary", "outcomes"],
+                "additionalProperties": false,
+            ]
+
+        private static let rhythmAnalysisOutputSchema: [String: Any] = [
+            "type": "object", "additionalProperties": false,
+            "required": ["request_id", "evidence_digest", "episodes", "interpretation", "interpretation_refs"],
+            "properties": [
+                "request_id": ["type": "string"], "evidence_digest": ["type": "string"],
+                "interpretation": ["type": "string", "maxLength": 1200],
+                "interpretation_refs": ["type": "array", "items": ["type": "string"]],
+                "episodes": ["type": "array", "maxItems": 1500, "items": [
+                    "type": "object", "additionalProperties": false,
+                    "required": ["id", "relation", "subject", "explanation", "evidence_refs"],
+                    "properties": [
+                        "id": ["type": "string"], "relation": ["type": "string", "enum": ["project", "other", "unclassified", "unknown"]],
+                        "subject": ["type": "string", "maxLength": 120], "explanation": ["type": "string", "maxLength": 400],
+                        "evidence_refs": ["type": "array", "items": ["type": "string"], "maxItems": 4],
+                    ],
+                ]],
+            ],
+        ]
 
         private static func validateSiteAnalysisItems(in turn: [String: Any]) throws {
             guard let rawItems = turn["items"] else { return }

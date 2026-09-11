@@ -36,6 +36,33 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         XCTAssertEqual(sent, 1); XCTAssertFalse(sender.enabled)
     }
 
+    @MainActor func testSelectedRecapPartsAndDomainsFollowConfiguredHour() async throws {
+        let suite = "goalong-auto-fields-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-auto-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let token = root.appendingPathComponent("token")
+        try Data("synthetic-upload-token-for-test".utf8).write(to: token)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: token.path)
+        var sent = 0
+        let sender = GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { _, date, options in
+            XCTAssertEqual(date, "2026-09-10")
+            XCTAssertTrue(options.includeRecap); XCTAssertTrue(options.includeWebsites)
+            XCTAssertEqual(options.recapSectionIndices, [0, 2]); XCTAssertNil(options.recapText)
+            XCTAssertNil(options.contextualRhythm)
+            return Data()
+        }, sender: { _, _, _ in sent += 1; return Data() }, sourceConsent: { _ in true })
+        try sender.enable(origin: "https://goalong.example", tokenPath: token.path, options: .init(deviceIDs: ["mac"], includeWebsites: true, includeRecap: true, recapText: "One-off comment", recapSectionIndices: [0, 2]), hour: 15)
+        let early = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 14))!
+        await sender.tick(now: early); XCTAssertEqual(sent, 0)
+        await sender.tick(now: early.addingTimeInterval(3600)); XCTAssertEqual(sent, 1)
+        await sender.tick(now: early.addingTimeInterval(7200)); XCTAssertEqual(sent, 1)
+        let restarted = GoalongWebsiteAutoSender(defaults: defaults)
+        XCTAssertTrue(restarted.status.contains("15 h"))
+    }
+
     @MainActor func testFailureDisablesAutomaticRetriesIncludingAfterRestart() async throws {
         let suite = "goalong-auto-failure-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

@@ -170,8 +170,13 @@ public struct GoalongSiteAnalysisRequest: Equatable, Sendable {
         try readSelectedFile(url, afterRead: {})
     }
 
+    public static func readSelectedBytes(_ url: URL) throws -> Data { try readSelectedBytes(url, afterRead: {}) }
+
     // Internal seam makes change-during-read checks deterministic in tests.
     static func readSelectedFile(_ url: URL, afterRead: () throws -> Void) throws -> Self {
+        try parse(readSelectedBytes(url, afterRead: afterRead))
+    }
+    private static func readSelectedBytes(_ url: URL, afterRead: () throws -> Void) throws -> Data {
         guard url.isFileURL, url.host == nil || url.host == "" || url.host == "localhost",
             !url.path.utf8.contains(0)
         else { throw GoalongSiteAnalysisError.unsafeFile }
@@ -200,7 +205,7 @@ public struct GoalongSiteAnalysisRequest: Equatable, Sendable {
             url.path.withCString({ lstat($0, &named) }) == 0,
             sameFile(before, after), sameFile(after, named)
         else { throw GoalongSiteAnalysisError.fileChanged }
-        return try parse(Data(bytes))
+        return Data(bytes)
     }
 
     private static func sameFile(_ a: stat, _ b: stat) -> Bool {

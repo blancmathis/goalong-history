@@ -57,15 +57,13 @@ The user can narrow the devices and explicitly include application durations, me
 usage, domains observed on this Mac, or the saved bounded recap. Missing hourly evidence stays
 unknown. Website durations explain browser time and are not added to Screen Time totals.
 
-The website payload contains no conversation transcripts, prompts, captured event bodies, raw
-typed text, full URLs, local paths or source fingerprints. Optional recap text is a derived summary
-and may still disclose personal information; review the exact preview before sending. Source
+The default website payload contains no transcripts, captured event bodies, typed characters, full URLs, local paths or source fingerprints. Optional recap text and explicitly selected contextual-rhythm excerpts can contain personal information, including a title, URL or path mentioned within that text. Rich context stays optional and requires its existing local consent. Review the exact preview before sending; selected text is not guaranteed anonymous. Source
 consent remains required for every requested detail. Full options and limits belong to
 [`CLI.md`](CLI.md#website-export-and-account-submission).
 
 **Send reviewed data**, `send-site`, or the explicitly enabled website schedule sends the selected fields, using the specifically chosen
 upload-token file. The native sheet remembers the origin and token-file path, not the token value,
-and keeps scheduling off until the reviewed-preview activation button is used. The schedule runs only while the app is open, excludes recaps and domains, sends yesterday after 09:00, and stops on errors. Disabling a native source stops later access; it
+and keeps scheduling off until the reviewed-preview activation button is used. The schedule runs only while the app is open, sends yesterday after the chosen hour, and stops on errors. It can reuse the selected devices, fields, domains and numbered parts of an already saved recap. It never repeats a one-off comment or a past contextual-session interpretation, and any active mask excludes recaps and domains. Disabling a native source stops later access; it
 does not retract data already submitted to the site. Manage website copies and sharing there.
 
 The native sender cannot grant a sharing audience. Existing website rules for circles, friends,
@@ -78,4 +76,4 @@ website badge. Website authenticity verification remains a separate future featu
 
 The native mask list matches application names or identifiers exactly, ignoring case. Matching names and IDs are replaced by neutral entries while each source duration remains intact. Any active mask excludes website domains and recap free text from the payload. Source files remain unchanged. The recipient-side mask on the site is a different control.
 
-The native sheet accepts a chosen recap excerpt instead of automatically loading the entire saved recap. Rhythm reads the compact app/timestamp journal stream only after Computer History consent. Project app associations are explicit, timelines and clock times are opt-in, and missing observations remain unknown. This data never certifies attention. See [CLI](CLI.md#session-rhythm-and-pre-transmission-choices).
+The native sheet loads a saved recap for local review; no part is selected by default. A separate action can generate that recap through the existing agent flow. The session studio reads an explicitly chosen interval after Computer History consent, preserves unknown boundaries, and lets the user select context excerpts before analysis. An isolated ChatGPT connection or another chosen agent may annotate those fixed episodes. Evidence references and the request fingerprint are checked. Associations and interpretation remain editable; timelines, source context and clock times have separate opt-ins. Any mask removes all session narrative and evidence before upload. This data never certifies attention. See [CLI](CLI.md#session-rhythm-and-pre-transmission-choices).

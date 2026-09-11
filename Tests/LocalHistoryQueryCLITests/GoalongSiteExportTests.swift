@@ -37,6 +37,40 @@ final class GoalongSiteExportTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: file), journal)
         if let path = ProcessInfo.processInfo.environment["GOALONG_TEST_SITE_EXPORT"] { try payload.write(to: URL(fileURLWithPath: path)) }
     }
+    func testContextualSourceToWebsiteProjectionKeepsSelectedEvidenceAndMasksBeforeSending() throws {
+        let root = temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let record = try fixture(), archive = root.appendingPathComponent("apple-screen-time/days"), eventsRoot = root.appendingPathComponent("events")
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: eventsRoot, withIntermediateDirectories: true)
+        try AppleScreenTimeJSON.encode(record).write(to: archive.appendingPathComponent("2026-09-02.json"))
+        try Data(#"{"schemaVersion":1,"policyVersion":1,"capabilities":{"appleScreenTime":{"enabled":true},"localComputerHistory":{"enabled":true}}}"#.utf8).write(to: root.appendingPathComponent("capability-consent.json"))
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        var journal = Data()
+        for (seconds,title) in [(10,"Goalong documentation"),(60,"Personal conversation"),(61,"Goalong documentation"),(120,"Goalong documentation")] {
+            let event = HistoryEvent(sessionID: "fixture", timestamp: record.dayStart.addingTimeInterval(Double(36000 + seconds)), kind: .applicationActivated, app: .init(name: "Safari", bundleIdentifier: "test.Safari", processIdentifier: 0), window: .init(title: title, role: nil, subrole: nil))
+            journal.append(try encoder.encode(event)); journal.append(10)
+        }
+        try journal.write(to: eventsRoot.appendingPathComponent("2026-09-02.jsonl"))
+        let request = try GoalongContextualRhythm.load(root: root, start: record.dayStart.addingTimeInterval(36000), end: record.dayStart.addingTimeInterval(36130), project: "Goalong", intent: "Documentation", device: "Synthetic Mac")
+        XCTAssertEqual(request.rhythm.episodes?.first?.relation, "unknown")
+        XCTAssertEqual(request.rhythm.episodes?.last?.relation, "unknown")
+        XCTAssertEqual(request.rhythm.window_ms, 130000)
+        var options = GoalongSiteExportOptions(deviceIDs: ["mac"], includeApplications: true, includeRhythmTimeline: true, includeRhythmTimes: true, includeRhythmContext: true, contextualRhythm: request.rhythm)
+        let data = try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: "2026-09-02", options: options)
+        let rhythm = try XCTUnwrap(firstDay(object(data))["rhythm"] as? [String: Any])
+        XCTAssertEqual(rhythm["version"] as? Int, 2); XCTAssertEqual(rhythm["context_included"] as? Bool, true)
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("Goalong documentation"))
+        if let path = ProcessInfo.processInfo.environment["GOALONG_TEST_CONTEXT_EXPORT"] { try data.write(to: URL(fileURLWithPath: path)) }
+        options.maskedApplications = ["test.Safari"]
+        let masked = try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: "2026-09-02", options: options)
+        XCTAssertFalse(String(decoding: masked, as: UTF8.self).contains("Personal conversation"))
+        XCTAssertFalse(String(decoding: masked, as: UTF8.self).contains("Safari"))
+        options.maskedApplications = []; options.includeRhythmTimeline = false
+        let aggregate = try XCTUnwrap(firstDay(object(GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: "2026-09-02", options: options)))["rhythm"] as? [String: Any])
+        XCTAssertNil(aggregate["episodes"]); XCTAssertEqual(aggregate["context_included"] as? Bool, false)
+        XCTAssertEqual(aggregate["observed_ms"] as? Int, rhythm["observed_ms"] as? Int)
+    }
+
     func testMaskingBeforeTransmissionRemovesNameIDAndFreeTextButKeepsDurations() throws {
         for structured in [false, true] {
             let data = try GoalongSiteExport.payload(record: fixture(), options: .init(includeApplications: true,

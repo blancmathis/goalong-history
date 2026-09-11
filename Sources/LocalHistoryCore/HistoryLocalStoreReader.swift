@@ -1437,13 +1437,14 @@ public struct HistoryLocalStoreReader {
     package func loadComputerHistoryEvidence(
         start: Date,
         endExclusive: Date,
+        includeSemanticText: Bool = true,
         limits rawLimits: ComputerHistoryEvidenceLoadLimits = .production,
         shouldContinue: () -> Bool = { true }
     ) -> ComputerHistoryEvidenceLoad {
         loadBoundedDerivedEvidence(
             start: start,
             endExclusive: endExclusive,
-            projection: .computerHistory,
+            projection: includeSemanticText ? .computerHistory : .rhythmWithoutRich,
             limits: rawLimits,
             shouldContinue: shouldContinue
         )
@@ -1616,6 +1617,7 @@ public struct HistoryLocalStoreReader {
 
     private enum BoundedDerivedEvidenceProjection {
         case computerHistory
+        case rhythmWithoutRich
         case activityMemory
 
         func project(_ event: HistoryEvent) -> HistoryEvent? {
@@ -1623,6 +1625,12 @@ public struct HistoryLocalStoreReader {
             case .computerHistory:
                 guard event.isComputerHistoryEvidence else { return nil }
                 return event.compactedForComputerHistoryAnalysis
+            case .rhythmWithoutRich:
+                guard event.isDerivedAnalysisEvidence else { return nil }
+                return HistoryEvent(schemaVersion: event.schemaVersion, id: event.id, sessionID: "",
+                    timestamp: event.timestamp, kind: event.kind, app: event.app, window: event.window,
+                    element: event.element, url: event.url, suppressionReason: event.suppressionReason,
+                    metadata: event.metadata?["observation_gap"].map { ["observation_gap": $0] }, integrity: event.integrity)
             case .activityMemory:
                 guard event.isDerivedAnalysisEvidence else { return nil }
                 return event.compactedForDerivedAnalysis

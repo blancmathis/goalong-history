@@ -1759,12 +1759,48 @@ public enum GoalongQueryCLI {
             guard recap.day >= record.dayStart && recap.day < record.dayEnd else {
                 throw CLIError.unsafeSource("The saved recap belongs to another calendar day.")
             }
-            recapText = recap.summaryLines?.joined(separator: "\n") ?? recap.markdown
+            if let indices = options.recapSectionIndices {
+                guard let lines = recap.summaryLines, !indices.isEmpty, Set(indices).count == indices.count,
+                      indices.allSatisfy({ lines.indices.contains($0) }) else { throw CLIError.unsafeSource("Les parties de ce récap ont changé. Relisez-le avant l'envoi.") }
+                recapText = indices.sorted().map { lines[$0] }.joined(separator: "\n\n")
+            } else { recapText = recap.summaryLines?.joined(separator: "\n") ?? recap.markdown }
         }
         var selectedOptions = options
-        if options.rhythmProject != nil { selectedOptions.structuredReport = true }
+        if options.rhythmProject != nil || options.contextualRhythm != nil { selectedOptions.structuredReport = true }
         let payload = try GoalongSiteExport.payload(record: record, options: selectedOptions, websites: websites,
                                                     recap: recapText, now: now)
+        if var rhythm = options.contextualRhythm {
+            guard capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory"),
+                  rhythm.timezone == record.timeZoneIdentifier,
+                  let rawStart = rhythm.start else { throw CLIError.unsafeSource("La session choisie n'est plus disponible sur ce périmètre.") }
+            let parser = ISO8601DateFormatter(); parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let start = parser.date(from: rawStart), sourceDate.string(from: start) == rawDay,
+                  sourceDate.string(from: start.addingTimeInterval(Double(rhythm.window_ms) / 1000 - 0.001)) == rawDay else {
+                throw CLIError.unsafeSource("Choisissez une session correspondant à la journée exportée.")
+            }
+            let hideContext = !options.includeRhythmContext || !options.includeRhythmTimeline || !options.maskedApplications.isEmpty
+            rhythm.context_included = !hideContext
+            if !options.includeRhythmTimes { rhythm.start = nil }
+            if !options.includeRhythmTimeline { rhythm.episodes = nil }
+            else { rhythm.episodes = rhythm.episodes?.map { row in
+                var row = row
+                if !options.includeApplications || !options.maskedApplications.isEmpty { row.application = nil }
+                if hideContext { row.subject = nil; row.explanation = nil; row.evidence = nil }
+                return row
+            } }
+            if !options.maskedApplications.isEmpty {
+                rhythm.project = "Projet choisi"
+                rhythm.device = "Appareil choisi"
+                rhythm.interpretation = nil; rhythm.interpretation_origin = nil; rhythm.interpretation_refs = nil
+            }
+            var object = try JSONSerialization.jsonObject(with: payload) as! [String: Any]
+            var days = object["days"] as! [[String: Any]]
+            days[0]["rhythm"] = try JSONSerialization.jsonObject(with: GoalongContextualRhythm.encode(rhythm))
+            object["days"] = days
+            let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes])
+            guard data.count <= 2 * 1024 * 1024 else { throw CLIError.unsafeSource("La sélection dépasse 2 Mio.") }
+            return data
+        }
         guard let project = options.rhythmProject else { return payload }
         guard capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory"),
               record.timeZoneIdentifier == Calendar.current.timeZone.identifier else {

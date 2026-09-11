@@ -12,17 +12,21 @@ public struct GoalongSiteExportOptions: Codable {
     public var structuredReport: Bool
     public var maskedApplications: [String]
     public var recapText: String?
+    public var recapSectionIndices: [Int]?
     public var rhythmProject: String?
     public var rhythmApplications: [String]
     public var includeRhythmTimeline: Bool
     public var includeRhythmTimes: Bool
+    public var includeRhythmContext: Bool
+    public var contextualRhythm: GoalongContextualRhythm.Rhythm?
 
     public init(deviceIDs: [String] = [], includeApplications: Bool = false,
                 includeHourly: Bool = false, includeWebsites: Bool = false,
                 includeRecap: Bool = false, structuredReport: Bool = false,
-                maskedApplications: [String] = [], recapText: String? = nil,
+                maskedApplications: [String] = [], recapText: String? = nil, recapSectionIndices: [Int]? = nil,
                 rhythmProject: String? = nil, rhythmApplications: [String] = [],
-                includeRhythmTimeline: Bool = false, includeRhythmTimes: Bool = false) {
+                includeRhythmTimeline: Bool = false, includeRhythmTimes: Bool = false, includeRhythmContext: Bool = false,
+                contextualRhythm: GoalongContextualRhythm.Rhythm? = nil) {
         self.deviceIDs = deviceIDs
         self.includeApplications = includeApplications
         self.includeHourly = includeHourly
@@ -31,10 +35,13 @@ public struct GoalongSiteExportOptions: Codable {
         self.structuredReport = structuredReport
         self.maskedApplications = maskedApplications
         self.recapText = recapText
+        self.recapSectionIndices = recapSectionIndices
         self.rhythmProject = rhythmProject
         self.rhythmApplications = rhythmApplications
         self.includeRhythmTimeline = includeRhythmTimeline
         self.includeRhythmTimes = includeRhythmTimes
+        self.includeRhythmContext = includeRhythmContext
+        self.contextualRhythm = contextualRhythm
     }
 }
 

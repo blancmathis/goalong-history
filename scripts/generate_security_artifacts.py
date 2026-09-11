@@ -316,7 +316,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "sitePairing": {"trigger": "native-confirmed-goalong-history-link", "path": "/api/goalong/v1/native/pairing/claim", "method": "POST", "codeLifetimeSeconds": 300, "singleUse": True, "redirects": "refused", "responseMaximumBytes": 8192, "tokenStorage": "user-owned-0600-file", "activityDataSent": False},
             "siteSubmission": {
                 "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button", "native-reviewed-opt-in-schedule"],
-                "automaticSync": "opt-in-previous-day-after-9-app-open",
+                "automaticSync": "opt-in-previous-day-selected-hour-and-fields-app-open",
                 "method": "POST",
                 "path": "/api/goalong/v1/import",
                 "transport": "HTTPS-or-development-loopback",
@@ -327,7 +327,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
                 "resourceTimeoutSeconds": 30,
                 "automaticRetry": False,
                 "rawConversationBodies": False,
-                "localPathsInPayload": False,
+                "selectedContextExcerpts": "explicit-reviewed-bounded-opt-in", "localPathsInPayload": "possible-in-selected-context-or-owner-text",
                 "verification": "unverified",
                 "sharing": "managed-on-site",
             },
