@@ -256,7 +256,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         {
             "purpose": "explicit-selected-website-import",
             "destination": "user-configured HTTPS origin; HTTP loopback for development only",
-            "source": "GoalongSiteSubmission after send-site or native Send reviewed data action",
+            "source": "GoalongSiteSubmission after explicit send, consented Health send, or reviewed opt-in schedule",
         },
     ]
     return {
@@ -315,8 +315,8 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "osEnforcedDeny": False,
             "sitePairing": {"trigger": "native-confirmed-goalong-history-link", "path": "/api/goalong/v1/native/pairing/claim", "method": "POST", "codeLifetimeSeconds": 300, "singleUse": True, "redirects": "refused", "responseMaximumBytes": 8192, "tokenStorage": "user-owned-0600-file", "activityDataSent": False},
             "siteSubmission": {
-                "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button"],
-                "automaticSync": False,
+                "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button", "native-reviewed-opt-in-schedule"],
+                "automaticSync": "opt-in-previous-day-after-9-app-open",
                 "method": "POST",
                 "path": "/api/goalong/v1/import",
                 "transport": "HTTPS-or-development-loopback",

@@ -22,10 +22,8 @@ For [selected website analysis](SITE-ANALYSIS.md), the context is only the selec
 JSON request. A separate local login profile and restricted temporary workspace are
 required; the exported draft is never automatically sent to the website.
 
-The optional website connector is a separate first-party HTTP path. Only an explicit
-`goalong send-site` command or **Send reviewed data** in the native connection sheet sends
-selected saved data. `export-site` and the native preview stay offline; enabling a source or
-remembering a website does not schedule synchronization. The exact command contract is in
+The optional website connector is a separate first-party HTTP path. Explicit `goalong send-site`, reviewed native send buttons, and the separately enabled schedule send selected saved data. `export-site` and the native preview stay offline; enabling a source or
+remembering a website does not enable scheduling. The opt-in schedule sends the previous day after 09:00 only while the app runs, using the reviewed device/field/mask selection and one destination; recap text and domains are excluded. A failed or uncertain attempt stops scheduling and is never retried automatically. Source consent is checked again immediately before sending. The exact command contract is in
 [`CLI.md`](CLI.md#website-export-and-account-submission); the field and audience boundary is in
 [`PRIVACY.md`](PRIVACY.md#website-disclosure).
 

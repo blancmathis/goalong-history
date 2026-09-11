@@ -105,8 +105,8 @@ There is exactly one public application: **Goalong History**, bundle identifier
 `ai.goalong.localhistory`. Its compiled target excludes the retired commitment uploader,
 App Attest transport and in-app updater. Optional ChatGPT analysis starts the fixed local Codex
 `app-server` process only after its own consent. The optional website connector separately exports
-selected saved data offline and sends it only through **Send reviewed data** or `goalong send-site`,
-using a chosen owner-only upload-token file. There is no passive website synchronization;
+selected saved data offline and sends it through explicit actions or a separately enabled schedule,
+using a chosen owner-only upload-token file. Scheduling is off by default, runs only while the app is open, and stops on error;
 submissions are unverified and existing site sharing rules apply. See the
 [website connection contract](docs/CLI.md#website-export-and-account-submission).
 The separate **Analyse a website request** flow reads one selected JSON file and uses

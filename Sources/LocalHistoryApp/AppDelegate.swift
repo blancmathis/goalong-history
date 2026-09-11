@@ -104,6 +104,7 @@
             }
 
             NSApplication.shared.setActivationPolicy(.accessory)
+            GoalongWebsiteAutoSender.shared.start()
 
             do {
                 try AppPaths.prepare()

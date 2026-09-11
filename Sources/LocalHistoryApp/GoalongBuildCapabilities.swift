@@ -23,7 +23,7 @@
         static let permitsHTTPWorkspaceOpening = true
 
         static var summary: String {
-            "One Goalong app · local collection off by default · explicit website sends · no automatic sync or Sparkle"
+            "One Goalong app · local collection off by default · website sends and opt-in scheduling · no Sparkle"
         }
     }
 #endif

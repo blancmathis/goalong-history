@@ -814,7 +814,12 @@ public enum GoalongQueryCLI {
                 includeHourly: arguments.removeFlag("--include-hourly"),
                 includeWebsites: arguments.removeFlag("--include-websites"),
                 includeRecap: arguments.removeFlag("--include-recap"),
-                structuredReport: arguments.removeFlag("--structured")
+                structuredReport: arguments.removeFlag("--structured"),
+                maskedApplications: (arguments.removeOption("--mask-apps") ?? "").split(separator: ",").map(String.init),
+                rhythmProject: arguments.removeOption("--rhythm-project"),
+                rhythmApplications: (arguments.removeOption("--rhythm-apps") ?? "").split(separator: ",").map(String.init),
+                includeRhythmTimeline: arguments.removeFlag("--rhythm-timeline"),
+                includeRhythmTimes: arguments.removeFlag("--rhythm-times")
             )
             let origin = command == "send-site" ? arguments.removeOption("--url") : nil
             let tokenPath = command == "send-site" ? arguments.removeOption("--token-file") : nil
@@ -1726,7 +1731,7 @@ public enum GoalongQueryCLI {
             throw CLIError.unsafeSource("The saved record does not match the requested calendar day.")
         }
         var websites: [DailyWebsiteUsage]?
-        if options.includeWebsites {
+        if options.includeWebsites && options.maskedApplications.isEmpty {
             guard capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory") else {
                 throw CLIError.unsafeSource("Computer History is off in Goalong. Enable it before exporting website details.")
             }
@@ -1740,7 +1745,7 @@ public enum GoalongQueryCLI {
             websites = loaded.websites
         }
         var recapText: String?
-        if options.includeRecap {
+        if options.includeRecap && options.maskedApplications.isEmpty && options.recapText == nil {
             guard capabilityConsentEnabled(rootDirectory: root, capability: "chatGPTAnalysis") else {
                 throw CLIError.unsafeSource("Saved ChatGPT analysis access is off. Enable it before including a saved recap.")
             }
@@ -1756,8 +1761,51 @@ public enum GoalongQueryCLI {
             }
             recapText = recap.summaryLines?.joined(separator: "\n") ?? recap.markdown
         }
-        return try GoalongSiteExport.payload(record: record, options: options, websites: websites,
-                                            recap: recapText, now: now)
+        var selectedOptions = options
+        if options.rhythmProject != nil { selectedOptions.structuredReport = true }
+        let payload = try GoalongSiteExport.payload(record: record, options: selectedOptions, websites: websites,
+                                                    recap: recapText, now: now)
+        guard let project = options.rhythmProject else { return payload }
+        guard capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory"),
+              record.timeZoneIdentifier == Calendar.current.timeZone.identifier else {
+            throw CLIError.unsafeSource("Enable Computer History and use its current timezone before exporting rhythm.")
+        }
+        var accumulator = GoalongSessionRhythm(project: project, applications: options.rhythmApplications)
+        var hiddenNames = Set(options.maskedApplications.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty })
+        hiddenNames.formUnion(hiddenNames.map { String($0.prefix(100)) })
+        let load = HistoryLocalStoreReader(rootDirectory: root).loadDailyWebsiteUsage(day: requestedDay, currentTime: now,
+            onObservedEvent: { event in
+                if let app = event.app, let bundle = app.bundleIdentifier, hiddenNames.contains(bundle.lowercased()) {
+                    hiddenNames.insert(app.name.lowercased())
+                    hiddenNames.insert(String(app.name.prefix(100)).lowercased())
+                }
+                accumulator.ingest(event)
+            })
+        guard load.state == .ready, var rhythm = accumulator.result(includeTimeline: options.includeRhythmTimeline,
+                                                                 includeTimes: options.includeRhythmTimes) else {
+            throw CLIError.unsafeSource("Rhythm is not calculable from the complete available journal. Select project applications, or export without rhythm.")
+        }
+        if !options.maskedApplications.isEmpty {
+            let hidden = hiddenNames
+            rhythm.episodes = rhythm.episodes?.map { row in
+                var output = row
+                if let name = row.application, hidden.contains(name.lowercased()) { output.application = "Activité masquée" }
+                return output
+            }
+            // The project is user-authored free text; it must not reintroduce a masked name.
+            if hidden.contains(where: { project.lowercased().contains($0) }) {
+                throw CLIError.unsafeSource("Rename the project before exporting: its label contains a masked application.")
+            }
+        }
+        if !options.includeApplications { rhythm.episodes = rhythm.episodes?.map { row in var output = row; output.application = nil; return output } }
+        let encoder = JSONEncoder()
+        var object = try JSONSerialization.jsonObject(with: payload) as! [String: Any]
+        var days = object["days"] as! [[String: Any]]
+        days[0]["rhythm"] = try JSONSerialization.jsonObject(with: encoder.encode(rhythm))
+        object["days"] = days
+        let output = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes])
+        guard output.count <= 2 * 1024 * 1024 else { throw CLIError.unsafeSource("Select fewer details; the export exceeds 2 MiB.") }
+        return output
     }
 
     public static func screenTimePayload(

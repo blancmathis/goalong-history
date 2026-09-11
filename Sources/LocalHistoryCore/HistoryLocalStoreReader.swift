@@ -1094,7 +1094,8 @@ public struct HistoryLocalStoreReader {
         day: Date,
         currentTime: Date = Date(),
         limits: DailyWebsiteUsageLimits = .production,
-        shouldContinue: () -> Bool = { true }
+        shouldContinue: () -> Bool = { true },
+        onObservedEvent: ((HistoryEvent) -> Void)? = nil
     ) -> DailyWebsiteUsageLoadResult {
         let calendar = Calendar.current
         let dayStart = calendar.startOfDay(for: day)
@@ -1211,6 +1212,7 @@ public struct HistoryLocalStoreReader {
                                     return
                                 }
                                 guard event.isDerivedAnalysisEvidence else { return }
+                                onObservedEvent?(event)
                                 accumulator.ingest(event)
                             } catch {
                                 sourceUnavailable = true

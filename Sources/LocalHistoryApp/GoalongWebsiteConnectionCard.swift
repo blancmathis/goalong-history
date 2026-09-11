@@ -69,6 +69,14 @@ private struct GoalongWebsiteConnectionSheet: View {
     @State private var includeWebsites = false
     @State private var includeRecap = false
     @State private var structuredReport = false
+    @State private var maskedApps = ""
+    @State private var recapExcerpt = ""
+    @State private var includeRhythm = false
+    @State private var rhythmProject = ""
+    @State private var rhythmApps = ""
+    @State private var rhythmTimeline = false
+    @State private var rhythmTimes = false
+    @ObservedObject private var autoSender = GoalongWebsiteAutoSender.shared
     @State private var payload: Data?
     @State private var devices: [(id: String, name: String)] = []
     @State private var excludedDevices: Set<String> = []
@@ -156,7 +164,24 @@ private struct GoalongWebsiteConnectionSheet: View {
                         Toggle("Hourly breakdown, when recorded", isOn: $includeHourly)
                         Toggle("Website domains observed on this Mac", isOn: $includeWebsites)
                         Toggle("Saved analysis summary", isOn: $includeRecap)
+                        if includeRecap {
+                            Text("Choisissez un extrait à envoyer. Seul ce texte sera inclus.").font(.caption)
+                            TextEditor(text: $recapExcerpt).frame(height: 80)
+                                .accessibilityLabel("Extrait du récap à envoyer")
+                        }
+                        TextField("Applications à masquer avant envoi (noms séparés par des virgules)", text: $maskedApps)
+                        if !maskedApps.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text("Leurs noms et identifiants sont neutralisés ; leurs durées sont conservées. Les domaines et le récap sont exclus pour éviter de réintroduire ces noms.").font(.caption)
+                        }
                         Toggle("Structured report for productivity", isOn: $structuredReport)
+                        Toggle("Calculer le rythme à partir de Computer History", isOn: $includeRhythm)
+                        if includeRhythm {
+                            TextField("Nom du projet", text: $rhythmProject)
+                            TextField("Applications liées au projet, séparées par des virgules", text: $rhythmApps)
+                            Toggle("Inclure les épisodes simplifiés", isOn: $rhythmTimeline)
+                            Toggle("Inclure l’heure de début précise", isOn: $rhythmTimes)
+                            Text("Les changements d’outil entre ces applications restent liés au même projet. Les zones non observées restent inconnues. Les agrégats seuls sont envoyés par défaut.").font(.caption)
+                        }
                         if structuredReport {
                             Text("The same selected durations become an editable report. Applications are not automatically considered productive: qualify their context on the website, or let your chosen agent prepare the report before importing it. Raw events and conversations stay outside this export.")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -176,6 +201,19 @@ private struct GoalongWebsiteConnectionSheet: View {
                                     ))
                                 }
                             }
+                        }
+                    }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Envoi automatique facultatif").font(.headline)
+                        Text("Envoie la veille après 9 h lorsque l’app est ouverte, avec les appareils, applications masquées et réglages de rythme de l’aperçu. Aucun récap ni domaine n’est inclus. Une erreur arrête l’automatisation.").font(.caption)
+                        Text(autoSender.status).font(.subheadline).accessibilityLabel(autoSender.status)
+                        if autoSender.enabled { Button("Arrêter l’envoi automatique") { autoSender.stop() } }
+                        else {
+                            Button("Activer avec les choix de l’aperçu") {
+                                do { try autoSender.enable(origin: origin, tokenPath: tokenFilePath, options: selectedOptions()) }
+                                catch { self.error = String(describing: error) }
+                            }.disabled(payload == nil || busy)
                         }
                     }
                     Divider()
@@ -233,7 +271,15 @@ private struct GoalongWebsiteConnectionSheet: View {
         .onChange(of: includeWebsites) { _ in invalidatePreview() }
         .onChange(of: includeRecap) { _ in invalidatePreview() }
         .onChange(of: structuredReport) { _ in invalidatePreview() }
-        .onChange(of: origin) { _ in status = nil }
+        .onChange(of: maskedApps) { _ in invalidatePreview() }
+        .onChange(of: recapExcerpt) { _ in invalidatePreview() }
+        .onChange(of: includeRhythm) { _ in invalidatePreview() }
+        .onChange(of: rhythmProject) { _ in invalidatePreview() }
+        .onChange(of: rhythmApps) { _ in invalidatePreview() }
+        .onChange(of: rhythmTimeline) { _ in invalidatePreview() }
+        .onChange(of: rhythmTimes) { _ in invalidatePreview() }
+        .onChange(of: origin) { _ in status = nil; autoSender.stop() }
+        .onChange(of: tokenFilePath) { _ in autoSender.stop() }
     }
 
     private func invalidatePreview() { payload = nil; status = nil; error = nil }
@@ -317,6 +363,16 @@ private struct GoalongWebsiteConnectionSheet: View {
         } catch { self.error = String(describing: error) }
     }
 
+    private func selectedOptions() -> GoalongSiteExportOptions {
+        let split: (String) -> [String] = { $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
+        return GoalongSiteExportOptions(deviceIDs: devices.filter { !excludedDevices.contains($0.id) }.map(\.id),
+            includeApplications: includeApps, includeHourly: includeHourly, includeWebsites: includeWebsites,
+            includeRecap: includeRecap, structuredReport: structuredReport || includeRhythm,
+            maskedApplications: split(maskedApps), recapText: includeRecap ? recapExcerpt : nil,
+            rhythmProject: includeRhythm ? rhythmProject : nil, rhythmApplications: split(rhythmApps),
+            includeRhythmTimeline: rhythmTimeline, includeRhythmTimes: rhythmTimes)
+    }
+
     private func preparePreview() {
         let selected = devices.filter { !excludedDevices.contains($0.id) }.map(\.id)
         guard devices.isEmpty || !selected.isEmpty else { error = "Select at least one device."; return }
@@ -327,8 +383,7 @@ private struct GoalongWebsiteConnectionSheet: View {
         formatter.dateFormat = "yyyy-MM-dd"
         let day = formatter.string(from: date)
         let root = AppPaths.applicationSupportDirectory
-        let options = GoalongSiteExportOptions(deviceIDs: selected, includeApplications: includeApps,
-            includeHourly: includeHourly, includeWebsites: includeWebsites, includeRecap: includeRecap, structuredReport: structuredReport)
+        let options = selectedOptions()
         busy = true
         invalidatePreview()
         Task { @MainActor in

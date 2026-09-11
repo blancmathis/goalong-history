@@ -134,3 +134,16 @@ Workouts remain distinct from daily activity totals: their distance, calories an
 `goalong export-site DAY --structured` conserve les mêmes choix de confidentialité que l’export classique et produit le format Goalong version 3. Ajouter `--include-apps` donne les noms et budgets d’applications sélectionnés ; aucun contexte n’est inféré à partir du seul nom. Les catégories restent inconnues et les durées cumulatives ne reçoivent pas d’horaires inventés.
 
 Dans l’app, **Settings → Goalong website → Structured report for productivity** produit le même aperçu avant l’envoi. Un agent peut ensuite qualifier le fichier préparé en suivant le [guide du site](https://goalong.spry-crumb-3668.chatgpt.site/assets/productivity-agent-guide.md). La collecte brute et les conversations restent locales ; leur éventuelle analyse par un fournisseur externe demande son autorisation distincte. Les règles de partage du site restent applicables après un envoi explicitement autorisé.
+
+## Session rhythm and pre-transmission choices
+
+`export-site` and `send-site` additionally accept:
+
+- `--mask-apps NAME,ID`: neutralize matching app names and identifiers before serialization, preserving durations. Matches ignore case and otherwise are exact. With any mask, domains and recap text are excluded.
+- `--rhythm-project NAME --rhythm-apps NAME,NAME`: compute `foreground-project-v1` from the complete bounded journal pass and emit a v3 import. Names define the owner's project associations; they are not inferred. Source consent and compatible calendar boundaries are required.
+- `--rhythm-timeline`: include up to 1,500 simplified episodes. Omitted by default.
+- `--rhythm-times`: include the precise start timestamp. Omitted by default, independently of the timeline.
+
+The window spans the first through last observed journal event; no time is extrapolated after the last event. Project duration and longest project run use the chosen app associations. Other consultations at most 120 seconds long count only when bracketed by project runs. Gaps above 120 seconds and observation interruptions stay unknown. Millisecond offsets preserve the recorded timestamps without promising a particular sensor resolution. Raw text, URLs, paths and journal bodies have no field in this envelope. An incomplete, reordered or oversized source produces an error, not apparently complete aggregates.
+
+The native connection sheet exposes these choices, a manually selected recap excerpt and the exact resulting JSON before sending. Its optional reviewed schedule retains selected devices, fields and masks, but excludes all recaps and domains. It sends yesterday after 09:00 only while the app is running, persists the attempt before networking, checks current source consent, and stops on any failure. Stop controls remain available in the connection sheet. Disabling does not retract a request already sent or copies already received.

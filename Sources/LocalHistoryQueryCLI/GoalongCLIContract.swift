@@ -107,12 +107,12 @@ public enum GoalongCLIContract {
         ),
         .init(
             name: "export-site",
-            syntax: "export-site [yesterday|today|YYYY-MM-DD] [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap] [--structured]",
+            syntax: "export-site [yesterday|today|YYYY-MM-DD] [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap] [--structured] [--mask-apps NAME,ID] [--rhythm-project NAME --rhythm-apps NAME,NAME] [--rhythm-timeline] [--rhythm-times]",
             summary: "Prepare an offline website import (v2, or v3 with --structured); totals only unless details are explicitly included."
         ),
         .init(
             name: "send-site",
-            syntax: "send-site [yesterday|today|YYYY-MM-DD] --url HTTPS_ORIGIN --token-file PATH [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap] [--structured]",
+            syntax: "send-site [yesterday|today|YYYY-MM-DD] --url HTTPS_ORIGIN --token-file PATH [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap] [--structured] [--mask-apps NAME,ID] [--rhythm-project NAME --rhythm-apps NAME,NAME] [--rhythm-timeline] [--rhythm-times]",
             summary: "Explicitly send selected saved data unverified with an upload-only token; configured website sharing rules apply.",
             effect: .sendsExplicitSiteImport
         ),

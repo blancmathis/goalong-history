@@ -25,6 +25,7 @@ FILES = [
     "Sources/LocalHistoryQueryCLI/GoalongHealthImport.swift",
     "Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift",
     "Sources/LocalHistoryApp/GoalongWebsitePairingCoordinator.swift",
+    "Sources/LocalHistoryApp/GoalongWebsiteAutoSender.swift",
 ]
 
 
@@ -64,7 +65,15 @@ class WebsiteBoundaryTests(unittest.TestCase):
         self.assertTrue(boundary.audit(self.root))
 
     def test_native_lifecycle_send_is_rejected(self):
-        self.change(FILES[4], '.onChange(of: origin) { _ in status = nil }', '.onChange(of: origin) { _ in sendReviewedData() }')
+        self.change(FILES[4], '.onChange(of: origin) { _ in status = nil; autoSender.stop() }', '.onChange(of: origin) { _ in sendReviewedData() }')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_scheduler_requires_persisted_opt_in_and_live_source_consent(self):
+        self.change(FILES[9], 'guard sourceConsent(configuration.options)', 'guard true')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_scheduler_never_retries_an_uncertain_daily_attempt(self):
+        self.change(FILES[9], 'configuration.lastAttempt != day', 'true')
         self.assertTrue(boundary.audit(self.root))
 
     def test_redirect_permission_change_is_rejected(self):

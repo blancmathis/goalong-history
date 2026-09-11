@@ -35,7 +35,7 @@ produce explicit bounded states.
 
 ## Disclosure and external processing
 
-Exports are created only by an explicit user action and contain only the selected disclosure.
+Exports contain only selected disclosure. Manual exports require an explicit action; the separately enabled website schedule uses its saved reviewed selection.
 Optional ChatGPT analysis is a separate consent: Goalong prepares a bounded context, starts the
 fixed local Codex `app-server`, and keeps only the bounded derived recap/proof. Disabling analysis
 stops the runtime but does not delete an already generated recap; deletion remains explicit.
@@ -63,9 +63,9 @@ and may still disclose personal information; review the exact preview before sen
 consent remains required for every requested detail. Full options and limits belong to
 [`CLI.md`](CLI.md#website-export-and-account-submission).
 
-Only **Send reviewed data** or `send-site` sends this selection, using the specifically chosen
+**Send reviewed data**, `send-site`, or the explicitly enabled website schedule sends the selected fields, using the specifically chosen
 upload-token file. The native sheet remembers the origin and token-file path, not the token value,
-and does not perform background synchronization. Disabling a native source stops later access; it
+and keeps scheduling off until the reviewed-preview activation button is used. The schedule runs only while the app is open, excludes recaps and domains, sends yesterday after 09:00, and stops on errors. Disabling a native source stops later access; it
 does not retract data already submitted to the site. Manage website copies and sharing there.
 
 The native sender cannot grant a sharing audience. Existing website rules for circles, friends,
@@ -73,3 +73,9 @@ lists or public sharing can apply to newly submitted dates and fields, so an upl
 promise that the data remains private. The receipt states `sharing: "managed-on-site"` and
 `verification: "unverified"`. Local signatures and source descriptions do not mint a verified
 website badge. Website authenticity verification remains a separate future feature.
+
+### Pre-transmission masking and rhythm
+
+The native mask list matches application names or identifiers exactly, ignoring case. Matching names and IDs are replaced by neutral entries while each source duration remains intact. Any active mask excludes website domains and recap free text from the payload. Source files remain unchanged. The recipient-side mask on the site is a different control.
+
+The native sheet accepts a chosen recap excerpt instead of automatically loading the entire saved recap. Rhythm reads the compact app/timestamp journal stream only after Computer History consent. Project app associations are explicit, timelines and clock times are opt-in, and missing observations remain unknown. This data never certifies attention. See [CLI](CLI.md#session-rhythm-and-pre-transmission-choices).

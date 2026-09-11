@@ -84,7 +84,7 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     if info.get("CFBundleURLTypes") != [{"CFBundleURLName": "ai.goalong.website-connection", "CFBundleURLSchemes": ["goalong-history"], "CFBundleTypeRole": "Viewer"}]:
         fail("unexpected website pairing URL handler")
     expected_submission = {
-        "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button"], "automaticSync": False,
+        "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button", "native-reviewed-opt-in-schedule"], "automaticSync": "opt-in-previous-day-after-9-app-open",
         "method": "POST", "path": "/api/goalong/v1/import", "transport": "HTTPS-or-development-loopback",
         "authentication": "user-owned-0600-upload-token-file", "redirects": "refused",
         "requestMaximumBytes": 2 * 1024 * 1024, "responseMaximumBytes": 64 * 1024,

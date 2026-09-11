@@ -3,23 +3,38 @@ import AppleSystemScreenTime
 import Foundation
 import LocalHistoryCore
 
-public struct GoalongSiteExportOptions {
+public struct GoalongSiteExportOptions: Codable {
     public var deviceIDs: [String]
     public var includeApplications: Bool
     public var includeHourly: Bool
     public var includeWebsites: Bool
     public var includeRecap: Bool
     public var structuredReport: Bool
+    public var maskedApplications: [String]
+    public var recapText: String?
+    public var rhythmProject: String?
+    public var rhythmApplications: [String]
+    public var includeRhythmTimeline: Bool
+    public var includeRhythmTimes: Bool
 
     public init(deviceIDs: [String] = [], includeApplications: Bool = false,
                 includeHourly: Bool = false, includeWebsites: Bool = false,
-                includeRecap: Bool = false, structuredReport: Bool = false) {
+                includeRecap: Bool = false, structuredReport: Bool = false,
+                maskedApplications: [String] = [], recapText: String? = nil,
+                rhythmProject: String? = nil, rhythmApplications: [String] = [],
+                includeRhythmTimeline: Bool = false, includeRhythmTimes: Bool = false) {
         self.deviceIDs = deviceIDs
         self.includeApplications = includeApplications
         self.includeHourly = includeHourly
         self.includeWebsites = includeWebsites
         self.includeRecap = includeRecap
         self.structuredReport = structuredReport
+        self.maskedApplications = maskedApplications
+        self.recapText = recapText
+        self.rhythmProject = rhythmProject
+        self.rhythmApplications = rhythmApplications
+        self.includeRhythmTimeline = includeRhythmTimeline
+        self.includeRhythmTimes = includeRhythmTimes
     }
 }
 
@@ -72,6 +87,7 @@ public enum GoalongSiteExport {
         }
         let sourceReady = [.ready, .localOnly].contains(record.collection.status.kind)
         let coverage = completed && sourceReady && provenance != "apple-reconstructed" ? "complete" : "partial"
+        let masks = Set(options.maskedApplications.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty })
         let devices: [[String: Any]] = try selected.map { report in
             let item = summary?.deviceSummaries.first { $0.device.id == report.device.id }
             // The analyzer intentionally omits a known zero row; a present zero segment still
@@ -103,7 +119,7 @@ public enum GoalongSiteExport {
             return result
         }
         var websiteValue: Any = NSNull()
-        if options.includeWebsites, let websites {
+        if options.includeWebsites, masks.isEmpty, let websites {
             guard websites.count <= 200 else { throw GoalongSiteExportError.invalid("This day exceeds 200 domains; export without website details.") }
             let rows: [[String: Any]] = try websites.map { website in
                 guard website.host.range(of: #"^[a-z0-9](?:[a-z0-9.-]{0,249}[a-z0-9])?\.[a-z]{2,63}$"#,
@@ -117,7 +133,7 @@ public enum GoalongSiteExport {
             websiteValue = ["source": "goalong-computer-history", "coverage": "partial",
                             "includedInApplicationTotals": true, "rows": rows]
         }
-        let summaryText = options.includeRecap ? recap ?? "" : ""
+        let summaryText = options.includeRecap && masks.isEmpty ? options.recapText ?? recap ?? "" : ""
         guard summaryText.utf16.count <= 3000 else {
             throw GoalongSiteExportError.invalid("The saved recap exceeds the 3000-character site limit; prepare a shorter explicit analysis or omit --include-recap.")
         }
@@ -131,7 +147,16 @@ public enum GoalongSiteExport {
             "date": day, "title": "Activité du \(day)", "summary": summaryText,
             "outcomes": [], "activities": [], "telemetry": [
                 "timezone": zone.identifier, "receivedAt": ISO8601DateFormatter().string(from: record.storedAt),
-                "state": completed ? "completed" : "in-progress", "devices": devices,
+                "state": completed ? "completed" : "in-progress", "devices": devices.map { device in
+                    var output = device
+                    let rows = device["apps"] as? [[String: Any]] ?? []
+                    let visible = rows.enumerated().map { index, app -> [String: Any] in
+                        let hide = [app["name"] as? String, app["id"] as? String].compactMap { $0?.lowercased() }.contains { masks.contains($0) }
+                        return hide ? ["id": "masked-application-\(index)", "name": "Activité masquée", "seconds": app["seconds"] ?? 0, "category": "other"] : app
+                    }
+                    output["apps"] = visible
+                    return output
+                },
                 "websites": websiteValue, "agent": NSNull()
             ]
         ]]]

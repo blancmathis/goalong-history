@@ -7,6 +7,54 @@ import XCTest
 @testable import LocalHistoryQueryCLI
 
 final class GoalongSiteExportTests: XCTestCase {
+    func testNativeJournalRhythmProducesACompleteSelectedSiteImport() throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let record = try fixture()
+        let archive = root.appendingPathComponent("apple-screen-time/days")
+        let events = root.appendingPathComponent("events")
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+        try AppleScreenTimeJSON.encode(record).write(to: archive.appendingPathComponent("2026-09-02.json"))
+        try Data(#"{"schemaVersion":1,"policyVersion":1,"capabilities":{"appleScreenTime":{"enabled":true},"localComputerHistory":{"enabled":true}}}"#.utf8).write(to: root.appendingPathComponent("capability-consent.json"))
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        var journal = Data()
+        for (seconds, app) in [(0, "Codex"), (60, "Safari"), (120, "WhatsApp"), (150, "Codex"), (210, "Codex")] {
+            let event = HistoryEvent(sessionID: "fixture", timestamp: record.dayStart.addingTimeInterval(Double(36000 + seconds)),
+                kind: .applicationActivated, app: .init(name: app, bundleIdentifier: "test.\(app)", processIdentifier: 0))
+            journal.append(try encoder.encode(event)); journal.append(10)
+        }
+        let file = events.appendingPathComponent("2026-09-02.jsonl")
+        try journal.write(to: file)
+        let payload = try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: "2026-09-02", options: .init(includeApplications: true,
+            maskedApplications: ["secret.app", "  test.WhatsApp "], rhythmProject: "Goalong", rhythmApplications: ["Codex", "Safari"], includeRhythmTimeline: true))
+        let day = try firstDay(object(payload)), rhythm = try XCTUnwrap(day["rhythm"] as? [String: Any])
+        XCTAssertEqual(rhythm["project_ms"] as? Int, 180000)
+        XCTAssertEqual(rhythm["brief_consultations"] as? Int, 1)
+        XCTAssertNil(rhythm["start"])
+        XCTAssertFalse(String(decoding: payload, as: UTF8.self).contains("WhatsApp"))
+        XCTAssertFalse(String(decoding: payload, as: UTF8.self).contains("secret.app"))
+        XCTAssertEqual(try Data(contentsOf: file), journal)
+        if let path = ProcessInfo.processInfo.environment["GOALONG_TEST_SITE_EXPORT"] { try payload.write(to: URL(fileURLWithPath: path)) }
+    }
+    func testMaskingBeforeTransmissionRemovesNameIDAndFreeTextButKeepsDurations() throws {
+        for structured in [false, true] {
+            let data = try GoalongSiteExport.payload(record: fixture(), options: .init(includeApplications: true,
+                includeRecap: true, structuredReport: structured, maskedApplications: ["secret.app"], recapText: "Private application detail"))
+            let text = String(decoding: data, as: UTF8.self)
+            XCTAssertFalse(text.contains("secret.app"))
+            XCTAssertFalse(text.contains("Private application"))
+            XCTAssertTrue(text.contains("Activité masquée"))
+            let rows = try deviceRows(data)
+            XCTAssertEqual(rows[0]["screenSeconds"] as? Int, 600)
+            XCTAssertEqual((rows[0]["apps"] as? [[String: Any]])?.first?["seconds"] as? Int, 800)
+        }
+    }
+    func testRecapExcerptReplacesSavedText() throws {
+        let data = try GoalongSiteExport.payload(record: fixture(), options: .init(includeRecap: true, recapText: "Selected excerpt"), recap: "Private original")
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("Selected excerpt"))
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("Private original"))
+    }
     func testStructuredReportUsesSelectedBudgetsWithoutInventingProductivityOrHours() throws {
         let payload = try GoalongSiteExport.payload(record: fixture(), options: .init(deviceIDs: ["mac"], includeApplications: true, structuredReport: true))
         let json = try object(payload), day = try firstDay(json)

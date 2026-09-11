@@ -26,8 +26,8 @@ pass, the project supports these claims:
 - optional ChatGPT analysis launches only the reviewed Codex executable with the fixed
   `app-server` argument after a separate consent;
 - the optional website connector exports selected saved fields offline and sends only after an
-  explicit native **Send reviewed data** action or `send-site` command, using a specifically chosen
-  owner-only token file; it does not schedule background synchronization or upload provider
+  explicit native **Send reviewed data** action, `send-site` command, or separately activated reviewed schedule, using a specifically chosen
+  owner-only token file; the schedule is off by default and never uploads provider
   transcripts or captured event bodies. See the [disclosure boundary](PRIVACY.md#website-disclosure)
   and [network controls](NETWORK.md).
 

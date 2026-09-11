@@ -17,6 +17,7 @@ def audit(root: Path) -> list[str]:
         "health_ui": "Sources/LocalHistoryApp/GoalongHealthImportSheet.swift",
         "health_import": "Sources/LocalHistoryQueryCLI/GoalongHealthImport.swift",
         "contract": "Sources/LocalHistoryQueryCLI/GoalongCLIContract.swift",
+        "schedule": "Sources/LocalHistoryApp/GoalongWebsiteAutoSender.swift",
     }
     sources = {}
     for key, path in paths.items():
@@ -62,6 +63,15 @@ def audit(root: Path) -> list[str]:
             'guard let reviewedPayload = payload else { return }',
             'payload: reviewedPayload, origin: target, tokenFile: tokenFile',
         ],
+        "schedule": [
+            'guard !busy, var configuration = configuration()',
+            'configuration.lastAttempt != day', 'configuration.lastAttempt = day',
+            'guard enabled, self.configuration()?.origin == configuration.origin',
+            'self.configuration()?.tokenPath == configuration.tokenPath',
+            'guard sourceConsent(configuration.options)',
+            'selected.includeRecap = false; selected.recapText = nil; selected.includeWebsites = false',
+            'defaults.removeObject(forKey: key)', 'enabled = false',
+        ],
         "contract": ['case sendsExplicitSiteImport', 'name: "export-site"', 'name: "send-site"',
                      'effect: .sendsExplicitSiteImport', 'configured website sharing rules apply'],
         "health_ui": ['action: sendReviewedHealth', 'guard let payload, consent else { return }',
@@ -82,8 +92,12 @@ def audit(root: Path) -> list[str]:
             text = path.read_text()
             calls = re.findall(r"GoalongSiteSubmission\s*\.\s*send\s*\(", text)
             callers.extend([path.relative_to(root).as_posix()] * len(calls))
-    if sorted(callers) != sorted([paths["cli"], paths["ui"], paths["health_ui"]]):
-        errors.append("Website sending requires exactly the reviewed CLI, Screen Time button and consented Health button")
+    if sorted(callers) != sorted([paths["cli"], paths["ui"], paths["health_ui"], paths["schedule"]]):
+        errors.append("Website sending requires exactly the reviewed CLI, buttons and opt-in scheduler")
+    if re.search(r"URLSession|URLRequest|HTTPURLResponse", sources["schedule"]):
+        errors.append("The opt-in scheduler must use only the existing bounded website transport")
+    if sources["ui"].count('autoSender.enable(') != 1 or 'Activer avec les choix de l’aperçu' not in sources["ui"]:
+        errors.append("Scheduling requires the explicit reviewed-preview activation button")
     if len(re.findall(r"\bsendReviewedData\b", sources["ui"])) != 2:
         errors.append("The native send action has an additional caller; passive/lifecycle sending is prohibited")
     if len(re.findall(r"\bsendReviewedHealth\b", sources["health_ui"])) != 2:
@@ -131,7 +145,7 @@ def main() -> int:
     for error in errors:
         print(error)
     if not errors:
-        print("Explicit website boundary passed: selected v2 fields, owner-only token, safe origin, no redirects, bounded one-shot request, no passive caller.")
+        print("Website boundary passed: selected fields, protected token, safe origin, bounded requests, reviewed opt-in scheduling, no unapproved caller.")
     return bool(errors)
 
 
