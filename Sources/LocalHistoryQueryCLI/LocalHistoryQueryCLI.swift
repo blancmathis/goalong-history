@@ -809,14 +809,22 @@ public enum GoalongQueryCLI {
             let rawStart = arguments.removeOption("--start-utc")
             let rawEnd = arguments.removeOption("--end-utc")
             let rich = arguments.removeFlag("--include-rich-context")
+            let conversations = arguments.removeFlag("--include-conversations")
+            let onlyConversations = arguments.removeFlag("--conversations-only")
+            let from = arguments.removeOption("--conversations-from")
             guard let rawStart, let rawEnd, rawStart.hasSuffix("Z"), rawEnd.hasSuffix("Z"), arguments.values.isEmpty else {
-                throw CLIError.usage("analysis-evidence --start-utc ISO-8601Z --end-utc ISO-8601Z [--include-rich-context]")
+                throw CLIError.usage("analysis-evidence --start-utc ISO-8601Z --end-utc ISO-8601Z [--include-rich-context] [--include-conversations --conversations-from YYYY-MM-DD] [--conversations-only]")
             }
-            guard capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory"), !rich || UserDefaults(suiteName: "ai.goalong.localhistory")?.bool(forKey: "activityAnalysis.richContextEnabled") == true else {
+            guard (!onlyConversations || !rich), (conversations || onlyConversations || from == nil) else { throw CLIError.usage("--conversations-from requires --include-conversations or --conversations-only; rich context requires Computer History.") }
+            guard onlyConversations || (capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory") && (!rich || UserDefaults(suiteName: "ai.goalong.localhistory")?.bool(forKey: "activityAnalysis.richContextEnabled") == true)) else {
                 throw CLIError.unsafeSource("Enable the explicitly selected Computer History sources before reading their evidence.")
             }
             let start = try parseTimestamp(rawStart), end = try parseTimestamp(rawEnd)
-            let evidence = try GoalongProfileAnalysis.load(root: root, start: start, end: end, rich: rich)
+            var evidence = onlyConversations ? [] : try GoalongProfileAnalysis.load(root: root, start: start, end: end, rich: rich)
+            if conversations || onlyConversations {
+                evidence += try GoalongConversationEvidence.load(root: root, start: from.map { try day($0) } ?? start, end: end).evidence
+            }
+            evidence = evidence.enumerated().map { index, row in var row = row; row.id = "e\(index + 1)"; return row }
             let object: [String: Any] = ["date": localDayString(end.addingTimeInterval(-0.001)), "timezone": Calendar.current.timeZone.identifier,
                 "evidence": try JSONSerialization.jsonObject(with: GoalongContextualRhythm.encode(evidence))]
             FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted]))
@@ -2559,12 +2567,14 @@ public enum GoalongQueryCLI {
         )
     }
 
-    private static func printAgentConversations(
+    static func printAgentConversations(
         root: URL,
         day: Date,
         tokenBudget: Int,
         conversationLimit: Int,
-        candidateOffset: Int
+        candidateOffset: Int,
+        authorizedOnly: Bool = false,
+        emit: (Data) -> Void = { FileHandle.standardOutput.write($0) }
     ) throws {
         let dayStart = Calendar.current.startOfDay(for: day)
         let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)!
@@ -2574,7 +2584,7 @@ public enum GoalongQueryCLI {
             rootDirectory: root,
             capability: "aiConversations"
         ) else {
-            try printJSON(
+            emit(try encodedJSON(
                 AgentConversationsEnvelope(
                     rootDirectory: root.path,
                     requestedDay: requestedDay,
@@ -2597,12 +2607,12 @@ public enum GoalongQueryCLI {
                     ],
                     limitation: agentConversationLimitation
                 )
-            )
+            ))
             return
         }
         let activityRoot = root.appendingPathComponent("agent-activity-v2", isDirectory: true)
         guard FileManager.default.fileExists(atPath: activityRoot.path) else {
-            try printJSON(
+            emit(try encodedJSON(
                 AgentConversationsEnvelope(
                     rootDirectory: root.path,
                     requestedDay: requestedDay,
@@ -2623,7 +2633,7 @@ public enum GoalongQueryCLI {
                     issues: ["The lightweight Agent Activity index is not present."],
                     limitation: agentConversationLimitation
                 )
-            )
+            ))
             return
         }
 
@@ -2631,7 +2641,7 @@ public enum GoalongQueryCLI {
         do {
             store = try AgentActivityStore(readOnlyRootDirectory: activityRoot)
         } catch {
-            try printJSON(
+            emit(try encodedJSON(
                 AgentConversationsEnvelope(
                     rootDirectory: root.path,
                     requestedDay: requestedDay,
@@ -2652,11 +2662,12 @@ public enum GoalongQueryCLI {
                     issues: ["The lightweight Agent Activity index could not be opened read-only."],
                     limitation: agentConversationLimitation
                 )
-            )
+            ))
             return
         }
 
-        let allEntries = store.entries()
+        let authorizedConfiguration = store.loadConfiguration()
+        let allEntries = store.entries().filter { !authorizedOnly || AgentSourceAccessAuthority.allows($0, configuration: authorizedConfiguration) }
         let liveModifiedAtByID = Dictionary(
             uniqueKeysWithValues: allEntries.map { entry in
                 (entry.id, agentEntryLiveModifiedAt(entry))
@@ -2725,6 +2736,12 @@ public enum GoalongQueryCLI {
                 break
             }
             visitedConversationCandidateCount += 1
+            if authorizedOnly {
+                guard capabilityConsentEnabled(rootDirectory: root, capability: "aiConversations"),
+                      AgentSourceAccessAuthority.allows(entry, configuration: store.loadConfiguration()) else {
+                    throw CLIError.unsafeSource("Conversation source authorization changed during the read.")
+                }
+            }
             let indexedSource = agentSourceEnvelope(entry: entry)
             let liveModifiedAt = liveModifiedAtByID[entry.id] ?? nil
             guard
@@ -2870,7 +2887,14 @@ public enum GoalongQueryCLI {
             )
             let data = try encodedJSON(envelope)
             if data.count <= outputByteBudget || conversations.isEmpty {
-                FileHandle.standardOutput.write(data)
+                if authorizedOnly {
+                    let current = store.loadConfiguration()
+                    guard capabilityConsentEnabled(rootDirectory: root, capability: "aiConversations"), conversations.allSatisfy({ conversation in
+                        guard let entry = store.entry(id: conversation.id) else { return false }
+                        return AgentSourceAccessAuthority.allows(entry, configuration: current)
+                    }) else { throw CLIError.unsafeSource("Conversation source authorization changed during the read.") }
+                }
+                emit(data)
                 return
             }
             let droppedCandidateOffset = conversationCandidateOffsets.removeLast()

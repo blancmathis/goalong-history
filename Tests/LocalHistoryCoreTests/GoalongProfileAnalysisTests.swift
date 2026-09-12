@@ -51,6 +51,28 @@ final class GoalongProfileAnalysisTests: XCTestCase {
         XCTAssertThrowsError(try A.parseResult(Data("{\"items\":[],\"items\":[]}".utf8)))
         XCTAssertEqual(try A.parseRequest(r.encoded()), r)
     }
+    func testConversationContextIsIndependentFromAIRubricAndLegacyArchivesStillOpen() throws {
+        let e = A.Evidence(id: "old", start: "2026-09-07T08:00:00Z", end: "2026-09-07T09:00:00Z", kind: "ai", application: "Agent", text: "Décision antérieure Atlas")
+        let policy = A.Policy(replacements: [.init(term: "Atlas", replacement: "Projet secret")])
+        let r = try A.prepare(date: "2026-09-08", timezone: "Europe/Paris", evidence: [e], policy: policy, selected: ["projects"], includeConversations: true)
+        XCTAssertEqual(try r.context().include_conversations, true)
+        XCTAssertEqual(try r.context().evidence.first?.start, e.start)
+        XCTAssertTrue(try r.prompt().contains("Projet secret"))
+        XCTAssertFalse(try r.prompt().contains("Atlas"))
+        XCTAssertThrowsError(try A.prepare(date: "2026-09-08", timezone: "Europe/Paris", evidence: [e], policy: policy, selected: ["ai"]))
+        var forged = r
+        var changed = try JSONSerialization.jsonObject(with: Data(forged.context_json.utf8)) as! [String: Any]
+        changed["include_conversations"] = false
+        forged.context_json = String(decoding: try JSONSerialization.data(withJSONObject: changed), as: UTF8.self)
+        XCTAssertThrowsError(try forged.context())
+        var legacy = try A.prepare(date: "2026-09-08", timezone: "Europe/Paris", evidence: [e], policy: policy, selected: ["ai"], includeConversations: true)
+        legacy.schema = "goalong.profile-analysis.v1"
+        var c = try JSONSerialization.jsonObject(with: Data(legacy.context_json.utf8)) as! [String: Any]
+        c.removeValue(forKey: "include_conversations")
+        legacy.context_json = String(decoding: try JSONSerialization.data(withJSONObject: c), as: UTF8.self)
+        XCTAssertNil(try legacy.context().include_conversations)
+        XCTAssertEqual(try A.parseRequest(legacy.encoded()), legacy)
+    }
     func testSharedCrossLanguageFixture() throws {
         let (r, result) = try fixture()
         if let path = ProcessInfo.processInfo.environment["GOALONG_PROFILE_FIXTURE"] {

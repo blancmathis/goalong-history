@@ -22,30 +22,40 @@ import SwiftUI
     private var operation = UUID()
     private var nativeSource = false
     private var richSource = false
+    private var conversationSource = false
     var archive: GoalongProfileAnalysis.Archive? { guard let request, let result else { return nil }; return .init(request: request, result: result) }
     func invalidate() { cancel(); request = nil; result = nil; selectedItems = []; consent = false; reviewed = false }
     func cancel() { operation = UUID(); task?.cancel(); session?.close(); session = nil; busy = false }
-    private var sourcesEnabled: Bool { !nativeSource || (GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) && (!richSource || ActivityAnalysisPreferences.richContextEnabled)) }
-    func load(start: Date, end: Date, rich: Bool) {
-        invalidate(); evidence = []; selectedEvidence = []; nativeSource = true; richSource = rich
-        guard sourcesEnabled else { error = "Activez Computer History et les sources choisies dans les réglages."; return }
+    private var sourcesEnabled: Bool { (!nativeSource || (GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) && (!richSource || ActivityAnalysisPreferences.richContextEnabled))) && (!conversationSource || GoalongCapabilityConsentStore.shared.isEnabled(.aiConversations)) }
+    func load(start: Date, end: Date, rich: Bool, computer: Bool = true, conversations: Bool = false, conversationsFrom: Date? = nil) {
+        invalidate(); evidence = []; selectedEvidence = []; nativeSource = computer; richSource = computer && rich; conversationSource = conversations
+        guard computer || conversations, sourcesEnabled else { error = "Choisissez une source et activez-la dans les réglages."; return }
         busy = true; error = nil; status = "Lecture locale des événements horodatés…"; let id = operation
         task = Task {
             do {
-                let rows = try await Task.detached(priority: .userInitiated) { try GoalongProfileAnalysis.load(root: AppPaths.applicationSupportDirectory, start: start, end: end, rich: rich) }.value
+                let selection = try await Task.detached(priority: .userInitiated) {
+                    var rows = computer ? try GoalongProfileAnalysis.load(root: AppPaths.applicationSupportDirectory, start: start, end: end, rich: rich) : []
+                    var notice = ""
+                    if conversations {
+                        let selected = try GoalongConversationEvidence.load(root: AppPaths.applicationSupportDirectory, start: conversationsFrom ?? start, end: end)
+                        rows += selected.evidence; notice = selected.notice
+                    }
+                    return (rows.enumerated().map { index, row in var row = row; row.id = "e\(index + 1)"; return row }, notice)
+                }.value
+                let rows = selection.0
                 guard operation == id else { return }
                 guard sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Une source a été désactivée pendant la lecture.") }
-                evidence = rows; selectedEvidence = Set(rows.map(\.id)); busy = false; status = "\(rows.count) événements chargés localement. Préparez ensuite le prompt pour appliquer vos règles."
+                evidence = rows; selectedEvidence = Set(rows.map(\.id)); busy = false; status = "\(rows.count) événements chargés localement. Préparez ensuite le prompt pour appliquer vos règles. \(selection.1)"
             } catch { guard operation == id else { return }; self.error = error.localizedDescription; busy = false }
         }
     }
-    func prepare(day: Date, modules: Set<String>, policy: GoalongProfileAnalysis.Policy) {
+    func prepare(day: Date, modules: Set<String>, policy: GoalongProfileAnalysis.Policy, includeConversations: Bool = false) {
         invalidate(); error = nil
         do {
             guard sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Une source sélectionnée a été désactivée.") }
             let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
             request = try GoalongProfileAnalysis.prepare(date: formatter.string(from: day), timezone: TimeZone.current.identifier,
-                evidence: evidence.filter { selectedEvidence.contains($0.id) }, policy: policy, selected: GoalongProfileAnalysis.modules.filter { modules.contains($0) })
+                evidence: evidence.filter { selectedEvidence.contains($0.id) }, policy: policy, selected: GoalongProfileAnalysis.modules.filter { modules.contains($0) }, includeConversations: includeConversations)
             status = "Prompt préparé. Les termes exclus ont retiré les événements concernés ; les alias ont été appliqués."
         } catch { self.error = error.localizedDescription }
     }
@@ -95,7 +105,7 @@ import SwiftUI
             if let saved = try? GoalongProfileAnalysis.parseArchive(bytes) {
                 let checked = try GoalongProfileAnalysis.apply(saved.result, to: saved.request); request = saved.request; result = checked
             } else { let saved = try GoalongProfileAnalysis.parseRequest(bytes); _ = try saved.context(); request = saved }
-            nativeSource = false; richSource = false; evidence = []; selectedEvidence = []; status = "Dossier local rouvert. Relisez-le avant tout envoi."
+            nativeSource = false; richSource = false; conversationSource = false; evidence = []; selectedEvidence = []; status = "Dossier local rouvert. Relisez-le avant tout envoi."
         } catch { self.error = error.localizedDescription }
     }
     func correct(_ id: String, field: String, text: String) {
@@ -118,6 +128,9 @@ struct GoalongProfileStudio: View {
     @State private var start = Calendar.current.startOfDay(for: Date())
     @State private var end = Date()
     @State private var rich = false
+    @State private var computer = true
+    @State private var conversations = false
+    @State private var conversationsFrom = Calendar.current.date(byAdding: .day, value: -6, to: Calendar.current.startOfDay(for: Date()))!
     @State private var modules = Set(GoalongProfileAnalysis.modules.filter { $0 != "ai" })
     @State private var exclusions = ""
     @State private var aliases = ""
@@ -132,10 +145,16 @@ struct GoalongProfileStudio: View {
                     HStack { Button("Ouvrir une analyse ou une sélection enregistrée…") { openSaved() }; Spacer() }
                     GroupBox("1. Choisir les données") {
                         VStack(alignment: .leading, spacing: 10) {
-                            DatePicker("Début", selection: $start); DatePicker("Fin", selection: $end)
-                            Toggle("Inclure le contexte enrichi déjà autorisé", isOn: $rich)
+                            DatePicker("Journée analysée — jusqu’à", selection: $end)
+                            Toggle("Computer History — activité de l’ordinateur", isOn: $computer)
+                            if computer { DatePicker("Activité depuis", selection: $start); Toggle("Inclure le contexte enrichi déjà autorisé", isOn: $rich) }
+                            Toggle("Conversation History — utiliser les conversations IA comme contexte", isOn: $conversations)
+                            if conversations {
+                                DatePicker("Conversations actives depuis", selection: $conversationsFrom, displayedComponents: .date)
+                                Text("Journée analysée et jours précédents, jusqu’à 31 jours. Les échanges peuvent éclairer les projets, décisions et méthodes même si « Usage de l’IA » est décochée. Seules les sources déjà autorisées sont lues. Les dates sélectionnent les conversations ; selon la source, des messages antérieurs peuvent être inclus sans timestamp individuel.").font(.caption).foregroundStyle(.secondary)
+                            }
                             Text("Événements, applications, fenêtres, navigation, interactions et contexte disponibles avec leurs timestamps. Les champs protégés et les événements supprimés sont exclus. Les extraits sont bornés ; les absences restent inconnues.").font(.caption).foregroundStyle(.secondary)
-                            HStack { Button("Charger les événements locaux") { model.load(start: start, end: end, rich: rich) }; Button("Ajouter des preuves (mesures, IA, historique)…") { importEvidence() } }.disabled(model.busy)
+                            HStack { Button("Charger les sources choisies") { model.load(start: start, end: end, rich: rich, computer: computer, conversations: conversations, conversationsFrom: conversationsFrom) }; Button("Ajouter des preuves (mesures, IA, historique)…") { importEvidence() } }.disabled(model.busy)
                             if !model.evidence.isEmpty { DisclosureGroup("Choisir les événements (\(model.selectedEvidence.count)/\(model.evidence.count))") {
                                 HStack { Button("Tout sélectionner") { model.selectedEvidence = Set(model.evidence.map(\.id)); model.invalidate() }; Button("Tout décocher") { model.selectedEvidence = []; model.invalidate() } }
                                 LazyVStack(alignment: .leading) { ForEach(model.evidence, id: \.id) { e in Toggle(isOn: Binding(get: { model.selectedEvidence.contains(e.id) }, set: { yes in if yes { model.selectedEvidence.insert(e.id) } else { model.selectedEvidence.remove(e.id) }; model.invalidate() })) { Text("\(e.start) · \(e.application) · \(e.text)").font(.caption).lineLimit(3) } } }
@@ -147,7 +166,7 @@ struct GoalongProfileStudio: View {
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading) {
                                 ForEach(GoalongProfileAnalysis.modules, id: \.self) { key in Toggle(GoalongProfileAnalysis.labels[key] ?? key, isOn: Binding(get: { modules.contains(key) }, set: { yes in if yes { modules.insert(key) } else { modules.remove(key) }; settingsChanged() })) }
                             }
-                            Text("Décochez une rubrique pour que l’agent ne l’analyse pas. L’usage de l’IA est facultatif ; ses preuves doivent être choisies explicitement.").font(.caption)
+                            Text("Décochez une rubrique pour que l’agent ne l’analyse pas. La rubrique « Usage de l’IA » est indépendante de la source Conversation History choisie plus haut.").font(.caption)
                             Text("Exclure des applications, projets ou termes — un par ligne").font(.subheadline)
                             TextEditor(text: $exclusions).frame(height: 60).accessibilityLabel("Termes à exclure")
                             Text("Les événements contenant ces termes sont retirés avant analyse. Toute réapparition littérale dans un résultat est masquée.").font(.caption).foregroundStyle(.secondary)
@@ -161,7 +180,7 @@ struct GoalongProfileStudio: View {
                         }.padding(8)
                     }
                     if let request = model.request {
-                        Text("Période du dossier préparé : \((try? request.context().date) ?? ""). Les événements et leurs dates exactes figurent dans le prompt.").font(.caption)
+                        Text("Période du dossier préparé : \((try? request.context().date) ?? ""). Le prompt précise les timestamps disponibles et les fenêtres de sélection des conversations.").font(.caption)
                         GroupBox("3. Vérifier et analyser") {
                             VStack(alignment: .leading, spacing: 12) {
                                 DisclosureGroup("Voir le prompt exact — consigne principale fixe") { Text((try? request.prompt()) ?? "Sélection invalide").font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
@@ -207,7 +226,10 @@ struct GoalongProfileStudio: View {
         .background(GoalongWebsiteWindowReader(host: windowHost).frame(width: 0, height: 0))
         .onChange(of: start) { _ in model.invalidate(); model.evidence = []; model.selectedEvidence = [] }
         .onChange(of: end) { _ in model.invalidate(); model.evidence = []; model.selectedEvidence = [] }
-        .onChange(of: rich) { _ in model.invalidate(); model.evidence = []; model.selectedEvidence = [] }
+        .onChange(of: rich) { _ in resetSources() }
+        .onChange(of: computer) { _ in resetSources() }
+        .onChange(of: conversationsFrom) { _ in resetSources() }
+        .onChange(of: conversations) { _ in if model.request == nil { model.cancel() } else { settingsChanged() } }
         .onChange(of: exclusions) { _ in settingsChanged() }.onChange(of: aliases) { _ in settingsChanged() }.onChange(of: instructions) { _ in settingsChanged() }
         .onDisappear { model.cancel() }
     }
@@ -218,7 +240,7 @@ struct GoalongProfileStudio: View {
                 let parts = line.components(separatedBy: "=>"); guard parts.count == 2 else { throw GoalongProfileAnalysis.invalid("Chaque remplacement doit suivre : nom privé => alias.") }
                 return .init(term: parts[0].trimmingCharacters(in: .whitespaces), replacement: parts[1].trimmingCharacters(in: .whitespaces))
             }
-            model.prepare(day: end.addingTimeInterval(-0.001), modules: modules, policy: .init(excluded_terms: split(exclusions), replacements: replacements, additional_instructions: instructions))
+            model.prepare(day: end.addingTimeInterval(-0.001), modules: modules, policy: .init(excluded_terms: split(exclusions), replacements: replacements, additional_instructions: instructions), includeConversations: conversations)
         } catch { model.error = error.localizedDescription }
     }
     private func chooseFile(_ action: @escaping (URL) -> Void, directory: URL? = nil) {
@@ -240,13 +262,15 @@ struct GoalongProfileStudio: View {
             exclusions = request.policy.excluded_terms.joined(separator: "\n")
             aliases = request.policy.replacements.map { $0.term + " => " + $0.replacement }.joined(separator: "\n")
             instructions = request.policy.additional_instructions; modules = Set(c.modules)
+            conversations = c.include_conversations ?? c.modules.contains("ai")
         }
     }, directory: AppPaths.chatGPTDirectory.appendingPathComponent("profile-analyses")) }
     private func settingsChanged() {
         guard let request = model.request, let c = try? request.context() else { return }
         let expectedAliases = request.policy.replacements.map { $0.term + " => " + $0.replacement }.joined(separator: "\n")
-        if exclusions != request.policy.excluded_terms.joined(separator: "\n") || aliases != expectedAliases || instructions != request.policy.additional_instructions || modules != Set(c.modules) { model.invalidate() }
+        if exclusions != request.policy.excluded_terms.joined(separator: "\n") || aliases != expectedAliases || instructions != request.policy.additional_instructions || modules != Set(c.modules) || conversations != (c.include_conversations ?? c.modules.contains("ai")) { model.invalidate() }
     }
+    private func resetSources() { model.invalidate(); model.evidence = []; model.selectedEvidence = [] }
     private func importEvidence() {
         chooseFile { url in
             do {

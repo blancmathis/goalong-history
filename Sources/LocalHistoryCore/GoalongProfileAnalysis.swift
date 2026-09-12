@@ -36,10 +36,11 @@ public enum GoalongProfileAnalysis {
         }
     }
     public struct Context: Codable, Equatable, Sendable {
+        public var include_conversations: Bool?
         public var date: String; public var timezone: String; public var modules: [String]; public var instructions: String; public var evidence: [Evidence]
     }
     public struct Request: Codable, Equatable, Sendable {
-        public var schema = "goalong.profile-analysis.v1"
+        public var schema = "goalong.profile-analysis.v2"
         public var request_id: String
         public var policy: Policy
         public var context_json: String
@@ -58,6 +59,15 @@ public enum GoalongProfileAnalysis {
             pas le deep work. Un changement d’application peut servir le même projet. Les trous restent inconnus.
             Une activité visible ne prouve pas son achèvement. Compare seulement des périodes documentées comparables.
             Sans historique, evolution doit indiquer le manque de données. L’IA est facultative et exige des preuves.
+            Conversation History est une source distincte de la rubrique ai. Lorsqu’elle est autorisée, utilise ses
+            échanges pour éclairer toutes les rubriques choisies : projets, décisions, obstacles, apprentissages,
+            méthodes, suites et évolution, même si ai est décochée. Relie les jours sans confondre leurs dates.
+            Une demande de l’utilisateur n’est pas un travail accompli ; une suggestion de l’IA n’est pas une
+            décision adoptée. Distingue décision antérieure, intention, proposition, confirmation et réalisation
+            observée aujourd’hui. Signale contradictions, changements d’avis et limites de couverture.
+            Les bornes des extraits Conversation History sont une fenêtre de sélection, jamais des heures de
+            message ou une durée de travail. Sans timestamp de message, son jour exact reste inconnu ; un échange
+            ancien est du contexte, pas une avancée de la journée. Ne compte jamais deux fois un même échange.
             Rubriques : totals = bilan mesuré, apps = usages contextualisés, projects = projets transversaux,
             work = recherche/apprentissage/création/coordination/administration/vérification, rhythm = continuité
             et changements de sujets, progress = traces d’avancées et suites distinctes d’un achèvement déclaré,
@@ -98,7 +108,7 @@ public enum GoalongProfileAnalysis {
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f.date(from: text) ?? ISO8601DateFormatter().date(from: text)
     }
-    public static func prepare(date day: String, timezone: String, evidence: [Evidence], policy: Policy, selected: [String]) throws -> Request {
+    public static func prepare(date day: String, timezone: String, evidence: [Evidence], policy: Policy, selected: [String], includeConversations: Bool = false) throws -> Request {
         try policy.validate()
         let df = DateFormatter(); df.locale = Locale(identifier: "en_US_POSIX"); df.dateFormat = "yyyy-MM-dd"; df.isLenient = false
         guard let d = df.date(from: day), df.string(from: d) == day, TimeZone(identifier: timezone) != nil,
@@ -108,25 +118,29 @@ public enum GoalongProfileAnalysis {
             guard let start = date(e.start), let end = date(e.end), end >= start,
                   ["observation", "ai", "declared", "measurement"].contains(e.kind), validText(e.application, 160, empty: true), validText(e.text, 8000) else { throw invalid("Une preuve comporte des dates, un type ou un texte invalides.") }
         }
-        let rows = evidence.filter { ($0.kind != "ai" || selected.contains("ai")) && !policy.excludes($0.application + "\n" + $0.text) }.enumerated().map { index, e in
+        let rows = evidence.filter { ($0.kind != "ai" || includeConversations) && !policy.excludes($0.application + "\n" + $0.text) }.enumerated().map { index, e in
             var e = e; e.id = "e\(index + 1)"; e.application = policy.protect(e.application); e.text = policy.protect(e.text); return e
         }
         guard !rows.isEmpty else { throw invalid("La sélection ne contient plus de preuve autorisée.") }
-        let c = Context(date: day, timezone: timezone, modules: selected, instructions: policy.protect(policy.additional_instructions), evidence: rows)
+        let c = Context(include_conversations: includeConversations, date: day, timezone: timezone, modules: selected, instructions: policy.protect(policy.additional_instructions), evidence: rows)
         let data = try GoalongContextualRhythm.encode(c)
         let request = Request(request_id: UUID().uuidString.lowercased(), policy: policy, context_json: String(decoding: data, as: UTF8.self))
         _ = try request.encoded(); return request
     }
     public static func validate(_ request: Request) throws -> Context {
-        guard request.schema == "goalong.profile-analysis.v1", UUID(uuidString: request.request_id) != nil else { throw invalid("Demande invalide.") }
+        let legacy = request.schema == "goalong.profile-analysis.v1"
+        guard legacy || request.schema == "goalong.profile-analysis.v2" else { throw invalid("Version de demande inconnue.") }
+        guard UUID(uuidString: request.request_id) != nil else { throw invalid("Demande invalide.") }
         let data = Data(request.context_json.utf8)
         _ = try GoalongCanonicalJSONValue.parse(data, maximumBytes: 256*1024, maximumDepth: 8)
-        try keys(data, ["date", "timezone", "modules", "instructions", "evidence"])
+        try keys(data, Set(["date", "timezone", "modules", "instructions", "evidence"] + (legacy ? [] : ["include_conversations"])))
         let c = try JSONDecoder().decode(Context.self, from: data)
+        guard legacy || c.include_conversations != nil else { throw invalid("Choisissez explicitement la source Conversation History.") }
         var policy = request.policy; policy.additional_instructions = c.instructions
-        let candidate = try prepare(date: c.date, timezone: c.timezone, evidence: c.evidence, policy: policy, selected: c.modules)
-        let cleaned = try JSONDecoder().decode(Context.self, from: Data(candidate.context_json.utf8))
-        guard cleaned == c, try GoalongCanonicalJSONValue.parse(data) == GoalongCanonicalJSONValue.parse(Data(candidate.context_json.utf8)) else { throw invalid("Préparez à nouveau la sélection après modification des règles.") }
+        let candidate = try prepare(date: c.date, timezone: c.timezone, evidence: c.evidence, policy: policy, selected: c.modules, includeConversations: legacy ? c.modules.contains("ai") : c.include_conversations == true)
+        var cleaned = try JSONDecoder().decode(Context.self, from: Data(candidate.context_json.utf8))
+        if legacy { cleaned.include_conversations = nil }
+        guard cleaned == c, try GoalongCanonicalJSONValue.parse(data) == GoalongCanonicalJSONValue.parse(GoalongContextualRhythm.encode(cleaned)) else { throw invalid("Préparez à nouveau la sélection après modification des règles.") }
         _ = try request.encoded(); return c
     }
     private static func keys(_ bytes: Data, _ allowed: Set<String>) throws {

@@ -32,6 +32,18 @@ import LocalHistoryCore
         XCTAssertFalse(String(decoding: try model.projection(), as: UTF8.self).contains("Atlas"))
         XCTAssertEqual(model.result?.items.first?.status, "declared")
     }
+    func testImportedConversationCanInformProjectsOnlyWhenItsSourceIsSelected() throws {
+        let model = GoalongProfileStudioModel()
+        model.evidence = [.init(id: "c1", start: "2026-09-07T08:00:00Z", end: "2026-09-07T09:00:00Z", kind: "ai", application: "Agent", text: "Décision passée")]
+        model.selectedEvidence = ["c1"]
+        model.prepare(day: Date(), modules: ["projects"], policy: .init(), includeConversations: true)
+        XCTAssertEqual(try model.request?.context().modules, ["projects"])
+        XCTAssertEqual(try model.request?.context().include_conversations, true)
+        model.consent = true
+        model.prepare(day: Date(), modules: ["ai"], policy: .init(), includeConversations: false)
+        XCTAssertNil(model.request)
+        XCTAssertFalse(model.consent)
+    }
     func testChangingSelectionRevokesAgentConsentAndDiscardsStaleResult() throws {
         let model = try populated(); model.consent = true; model.selectedItems = ["i1"]; model.reviewed = true
         model.invalidate()
