@@ -65,14 +65,20 @@ public enum GoalongProfileAnalysis {
             Une demande de l’utilisateur n’est pas un travail accompli ; une suggestion de l’IA n’est pas une
             décision adoptée. Distingue décision antérieure, intention, proposition, confirmation et réalisation
             observée aujourd’hui. Signale contradictions, changements d’avis et limites de couverture.
-            Les bornes des extraits Conversation History sont une fenêtre de sélection, jamais des heures de
-            message ou une durée de travail. Sans timestamp de message, son jour exact reste inconnu ; un échange
+            Un message Conversation History horodaté conserve son timestamp source (start = end), jamais une durée
+            de travail. Sinon les bornes sont une fenêtre de sélection et son jour exact reste inconnu ; un échange
             ancien est du contexte, pas une avancée de la journée. Ne compte jamais deux fois un même échange.
             Rubriques : totals = bilan mesuré, apps = usages contextualisés, projects = projets transversaux,
             work = recherche/apprentissage/création/coordination/administration/vérification, rhythm = continuité
             et changements de sujets, progress = traces d’avancées et suites distinctes d’un achèvement déclaré,
             methods = pratiques observables et conditions, evolution = changements sur périodes comparables,
             recap = synthèse utile, ai = usages de l’IA documentés.
+            Pour progress, propose aussi un point « Reprendre ici » : dernier état établi, décision explicite,
+            prochaine action ou vérification, et intention exprimée comparée aux traces. Pour methods, examine
+            boucles à débloquer, recettes observables, passage de recherche à pratique et une expérience à essayer,
+            uniquement si les preuves le permettent. Pour ai, distingue délégation, échanges et vérification du
+            résultat ; ne confonds pas temps machine et temps humain. Une méthode destinée aux amis doit préciser
+            son contexte d’utilisation et ses limites, sans prétendre prouver son efficacité.
             Chaque élément comprend un titre concret, une synthèse utile, ses limites et des evidence_refs existants.
             Statuts : observed (fait visible), inferred (interprétation), declared (déclaré), unknown (insuffisant).
             Aucune citation brute confidentielle ni URL complète. Ne recalcule pas les durées à partir du texte ;

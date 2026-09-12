@@ -119,8 +119,35 @@ import SwiftUI
     }
 }
 
+/// A document-sized window keeps the long, scrollable review usable on smaller displays.
+@MainActor final class GoalongProfileWindow: NSObject, ObservableObject, NSWindowDelegate {
+    private var studioWindow: NSWindow?
+    func show(onSend: @escaping (Data) -> Void) {
+        if let studioWindow { studioWindow.makeKeyAndOrderFront(nil); return }
+        let view = GoalongProfileStudio(onSend: { [weak self] data in
+            self?.studioWindow?.close()
+            onSend(data)
+        }, onClose: { [weak self] in self?.studioWindow?.close() })
+        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+        window.title = "Comprendre mon travail — Goalong History"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.minSize = NSSize(width: 700, height: 540)
+        let screen = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1100, height: 800)
+        window.setContentSize(NSSize(width: min(830, screen.width - 40), height: min(760, screen.height - 80)))
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        studioWindow = window
+        window.center(); window.makeKeyAndOrderFront(nil)
+    }
+    func windowWillClose(_ notification: Notification) {
+        studioWindow?.contentViewController = nil
+        studioWindow = nil
+    }
+}
+
 struct GoalongProfileStudio: View {
     let onSend: (Data) -> Void
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = GoalongProfileStudioModel()
     @StateObject private var connection = GoalongSiteAnalysisModel()
@@ -137,13 +164,13 @@ struct GoalongProfileStudio: View {
     @State private var instructions = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack { Text("Comprendre mon travail").font(.title2.weight(.semibold)); Spacer(); Button("Fermer") { model.cancel(); dismiss() } }.padding(22)
+            HStack { Text("Comprendre mon travail").font(.title2.weight(.semibold)); Spacer(); Button("Fermer") { model.cancel(); closeStudio() } }.padding(22)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Analysez votre activité pour vous-même. Vous pourrez conserver le résultat ici, puis choisir séparément ce qui part dans votre compte Goalong.").foregroundStyle(.secondary)
                     HStack { Button("Ouvrir une analyse ou une sélection enregistrée…") { openSaved() }; Spacer() }
-                    GroupBox("1. Choisir les données") {
+                    GoalongProfileSection("1. Choisir les données") {
                         VStack(alignment: .leading, spacing: 10) {
                             DatePicker("Journée analysée — jusqu’à", selection: $end)
                             Toggle("Computer History — activité de l’ordinateur", isOn: $computer)
@@ -151,7 +178,7 @@ struct GoalongProfileStudio: View {
                             Toggle("Conversation History — utiliser les conversations IA comme contexte", isOn: $conversations)
                             if conversations {
                                 DatePicker("Conversations actives depuis", selection: $conversationsFrom, displayedComponents: .date)
-                                Text("Journée analysée et jours précédents, jusqu’à 31 jours. Les échanges peuvent éclairer les projets, décisions et méthodes même si « Usage de l’IA » est décochée. Seules les sources déjà autorisées sont lues. Les dates sélectionnent les conversations ; selon la source, des messages antérieurs peuvent être inclus sans timestamp individuel.").font(.caption).foregroundStyle(.secondary)
+                                Text("Journée analysée et jours précédents, jusqu’à 31 jours. Les échanges peuvent éclairer les projets, décisions et méthodes même si « Usage de l’IA » est décochée. Seules les sources déjà autorisées sont lues. Les dates sélectionnent les conversations ; selon la source, des messages antérieurs peuvent être inclus sans timestamp individuel. Les timestamps fournis par la source sont conservés.").font(.caption).foregroundStyle(.secondary)
                             }
                             Text("Événements, applications, fenêtres, navigation, interactions et contexte disponibles avec leurs timestamps. Les champs protégés et les événements supprimés sont exclus. Les extraits sont bornés ; les absences restent inconnues.").font(.caption).foregroundStyle(.secondary)
                             HStack { Button("Charger les sources choisies") { model.load(start: start, end: end, rich: rich, computer: computer, conversations: conversations, conversationsFrom: conversationsFrom) }; Button("Ajouter des preuves (mesures, IA, historique)…") { importEvidence() } }.disabled(model.busy)
@@ -161,7 +188,7 @@ struct GoalongProfileStudio: View {
                             } }
                         }.padding(8)
                     }
-                    GroupBox("2. Choisir les analyses et protéger le contexte") {
+                    GoalongProfileSection("2. Choisir les analyses et protéger le contexte") {
                         VStack(alignment: .leading, spacing: 12) {
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading) {
                                 ForEach(GoalongProfileAnalysis.modules, id: \.self) { key in Toggle(GoalongProfileAnalysis.labels[key] ?? key, isOn: Binding(get: { modules.contains(key) }, set: { yes in if yes { modules.insert(key) } else { modules.remove(key) }; settingsChanged() })) }
@@ -181,7 +208,7 @@ struct GoalongProfileStudio: View {
                     }
                     if let request = model.request {
                         Text("Période du dossier préparé : \((try? request.context().date) ?? ""). Le prompt précise les timestamps disponibles et les fenêtres de sélection des conversations.").font(.caption)
-                        GroupBox("3. Vérifier et analyser") {
+                        GoalongProfileSection("3. Vérifier et analyser") {
                             VStack(alignment: .leading, spacing: 12) {
                                 DisclosureGroup("Voir le prompt exact — consigne principale fixe") { Text((try? request.prompt()) ?? "Sélection invalide").font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                                 HStack { Text(connection.accountLabel).font(.caption); Spacer(); Button(connection.connected ? "Déconnecter ChatGPT" : "Connecter ChatGPT") { if connection.connected { connection.disconnect() } else { connection.connect() } }.disabled(model.busy || connection.busy) }
@@ -193,7 +220,7 @@ struct GoalongProfileStudio: View {
                         }
                     }
                     if let result = model.result {
-                        GroupBox("4. Relire et choisir les résultats à transmettre") {
+                        GoalongProfileSection("4. Relire et choisir les résultats à transmettre") {
                             VStack(alignment: .leading, spacing: 14) {
                                 Text("Aucun résultat n’est sélectionné par défaut. Les preuves, leurs timestamps et vos règles privées restent dans Goalong History.").font(.caption)
                                 ForEach(result.items, id: \.id) { item in
@@ -212,7 +239,7 @@ struct GoalongProfileStudio: View {
                                 if let archive = model.archive, let projection = try? GoalongProfileAnalysis.project(archive, selectedIDs: model.selectedItems), let bytes = try? GoalongContextualRhythm.encode(projection) {
                                     DisclosureGroup("Voir exactement les cartes sélectionnées") { Text(String(decoding: bytes, as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                                 }
-                                HStack { Button("Exporter les cartes sélectionnées…") { exportCards() }; Button("Préparer l’envoi à mon compte Goalong") { do { let bytes = try model.projection(); onSend(bytes); dismiss() } catch { model.error = error.localizedDescription } } }.disabled(!model.reviewed || model.selectedItems.isEmpty || model.busy)
+                                HStack { Button("Exporter les cartes sélectionnées…") { exportCards() }; Button("Préparer l’envoi à mon compte Goalong") { do { let bytes = try model.projection(); onSend(bytes); closeStudio() } catch { model.error = error.localizedDescription } } }.disabled(!model.reviewed || model.selectedItems.isEmpty || model.busy)
                                 Text("Le partage avec les autres se règle ensuite sur le site, rubrique par rubrique et selon le public choisi.").font(.caption).foregroundStyle(.secondary)
                             }.padding(8)
                         }
@@ -222,7 +249,7 @@ struct GoalongProfileStudio: View {
                     if let error = model.error ?? connection.error { Text(error).foregroundStyle(.red) }
                 }.padding(22)
             }
-        }.frame(width: 830, height: 850)
+        }.frame(minWidth: 700, idealWidth: 830, minHeight: 540, idealHeight: 760)
         .background(GoalongWebsiteWindowReader(host: windowHost).frame(width: 0, height: 0))
         .onChange(of: start) { _ in model.invalidate(); model.evidence = []; model.selectedEvidence = [] }
         .onChange(of: end) { _ in model.invalidate(); model.evidence = []; model.selectedEvidence = [] }
@@ -233,6 +260,7 @@ struct GoalongProfileStudio: View {
         .onChange(of: exclusions) { _ in settingsChanged() }.onChange(of: aliases) { _ in settingsChanged() }.onChange(of: instructions) { _ in settingsChanged() }
         .onDisappear { model.cancel() }
     }
+    private func closeStudio() { if let onClose { onClose() } else { dismiss() } }
     private func prepare() {
         do {
             let split: (String) -> [String] = { $0.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
@@ -284,4 +312,24 @@ struct GoalongProfileStudio: View {
         }
     }
 }
+
+/// Explicit headings and ordinary containers keep the review readable by accessibility clients.
+private struct GoalongProfileSection<Content: View>: View {
+    let title: String
+    let content: Content
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.headline).accessibilityAddTraits(.isHeader)
+            content.frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.18)))
+    }
+}
+
 #endif

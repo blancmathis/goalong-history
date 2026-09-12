@@ -293,9 +293,12 @@ public struct AgentVisibleMessage: Equatable, Sendable {
     public var role: Role
     public var text: String
 
-    public init(role: Role, text: String) {
+    public var timestamp: Date?
+
+    public init(role: Role, text: String, timestamp: Date? = nil) {
         self.role = role
         self.text = text
+        self.timestamp = timestamp
     }
 }
 
@@ -437,7 +440,7 @@ public struct AgentDocumentSummary: Equatable, Sendable {
             let text = AgentUTF8Bound.string(trimmed, maximumBytes: maximumVisibleMessageBytes)
             let byteCount = text.utf8.count
             guard byteCount > 0 else { continue }
-            bounded.append(AgentVisibleMessage(role: value.role, text: text))
+            bounded.append(AgentVisibleMessage(role: value.role, text: text, timestamp: value.timestamp))
             retainedBytes += byteCount
             while bounded.count > maximumVisibleMessageCount
                 || retainedBytes > maximumVisibleConversationBytes

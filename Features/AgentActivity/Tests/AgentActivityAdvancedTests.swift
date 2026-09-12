@@ -234,8 +234,8 @@ final class AgentActivityAdvancedTests: XCTestCase {
         XCTAssertEqual(
             summary.visibleMessages,
             [
-                AgentVisibleMessage(role: .user, text: "Selected-day request"),
-                AgentVisibleMessage(role: .assistantFinal, text: "Selected-day final response"),
+                AgentVisibleMessage(role: .user, text: "Selected-day request", timestamp: isoDate("2026-08-27T08:00:00.100Z")),
+                AgentVisibleMessage(role: .assistantFinal, text: "Selected-day final response", timestamp: isoDate("2026-08-27T08:00:01Z")),
             ]
         )
         let visibleText = summary.visibleMessages.map(\.text).joined(separator: "\n")
@@ -324,8 +324,8 @@ final class AgentActivityAdvancedTests: XCTestCase {
         XCTAssertEqual(
             record.summary.visibleMessages,
             [
-                AgentVisibleMessage(role: .user, text: "Old conversation reused today"),
-                AgentVisibleMessage(role: .assistantFinal, text: "Selected-day answer"),
+                AgentVisibleMessage(role: .user, text: "Old conversation reused today", timestamp: isoDate("2026-08-29T08:00:00Z")),
+                AgentVisibleMessage(role: .assistantFinal, text: "Selected-day answer", timestamp: isoDate("2026-08-29T08:00:01Z")),
             ]
         )
         XCTAssertEqual(try snapshot(of: source), original)
@@ -415,8 +415,8 @@ final class AgentActivityAdvancedTests: XCTestCase {
         XCTAssertEqual(
             record.summary.visibleMessages,
             [
-                AgentVisibleMessage(role: .user, text: "Large conversation reused today"),
-                AgentVisibleMessage(role: .assistantFinal, text: "Large selected-day answer"),
+                AgentVisibleMessage(role: .user, text: "Large conversation reused today", timestamp: isoDate("2026-08-29T08:00:00Z")),
+                AgentVisibleMessage(role: .assistantFinal, text: "Large selected-day answer", timestamp: isoDate("2026-08-29T08:00:01Z")),
             ]
         )
         XCTAssertEqual(try snapshot(of: source), original)
@@ -448,8 +448,8 @@ final class AgentActivityAdvancedTests: XCTestCase {
         XCTAssertEqual(
             summary.visibleMessages,
             [
-                AgentVisibleMessage(role: .user, text: "Delegated user request"),
-                AgentVisibleMessage(role: .assistantFinal, text: "Visible final reply"),
+                AgentVisibleMessage(role: .user, text: "Delegated user request", timestamp: isoDate("2026-08-27T10:00:04Z")),
+                AgentVisibleMessage(role: .assistantFinal, text: "Visible final reply", timestamp: isoDate("2026-08-27T10:00:05Z")),
             ]
         )
         let visibleText = summary.visibleMessages.map(\.text).joined(separator: "\n")
@@ -512,10 +512,10 @@ final class AgentActivityAdvancedTests: XCTestCase {
         XCTAssertEqual(
             summary.visibleMessages,
             [
-                AgentVisibleMessage(role: .user, text: "Claude user request"),
-                AgentVisibleMessage(role: .assistantFinal, text: "Claude final response"),
-                AgentVisibleMessage(role: .user, text: "Second Claude request"),
-                AgentVisibleMessage(role: .assistantFinal, text: "Second Claude final"),
+                AgentVisibleMessage(role: .user, text: "Claude user request", timestamp: isoDate("2026-08-27T09:01:00Z")),
+                AgentVisibleMessage(role: .assistantFinal, text: "Claude final response", timestamp: isoDate("2026-08-27T09:03:00Z")),
+                AgentVisibleMessage(role: .user, text: "Second Claude request", timestamp: isoDate("2026-08-27T09:04:00Z")),
+                AgentVisibleMessage(role: .assistantFinal, text: "Second Claude final", timestamp: isoDate("2026-08-27T09:05:00Z")),
             ]
         )
         let visibleText = summary.visibleMessages.map(\.text).joined(separator: "\n")
@@ -1112,7 +1112,9 @@ final class AgentActivityAdvancedTests: XCTestCase {
     }
 
     private func isoDate(_ value: String) -> Date? {
-        ISO8601DateFormatter().date(from: value)
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 
     private func deterministicUUID(_ index: Int) -> String {

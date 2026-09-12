@@ -10,7 +10,7 @@ public enum GoalongConversationEvidence {
     }
     struct Page: Decodable {
         struct Conversation: Decodable {
-            struct Message: Decodable { var role: String; var text: String }
+            struct Message: Decodable { var role: String; var text: String; var timestamp: String? }
             var id: String; var providerName: String; var title: String
             var readStatus: String; var messages: [Message]; var messagesTruncated: Bool
         }
@@ -56,10 +56,10 @@ public enum GoalongConversationEvidence {
                     partial = partial || conversation.messagesTruncated
                     for message in conversation.messages {
                         guard ["user", "assistantFinal"].contains(message.role) else { throw GoalongProfileAnalysis.invalid("Rôle inattendu dans une conversation.") }
-                        let key = conversation.id + "\n" + message.role + "\n" + message.text
+                        let key = conversation.id + "\n" + message.role + "\n" + (message.timestamp ?? "unknown") + "\n" + message.text
                         guard !message.text.isEmpty, seen.insert(key).inserted else { continue }
                         let role = message.role == "user" ? "Utilisateur (déclaration ou demande)" : "Réponse finale de l’IA (proposition, pas une décision utilisateur)"
-                        let note = "Conversation repérée pour le \(dayFormat.string(from: day)). Fenêtre de sélection uniquement : timestamp individuel indisponible ; du contexte antérieur peut être inclus."
+                        let note = message.timestamp.map { "Message horodaté dans la source : \($0). Événement ponctuel, pas une durée de travail." } ?? "Conversation repérée pour le \(dayFormat.string(from: day)). Fenêtre de sélection uniquement : timestamp individuel indisponible ; du contexte antérieur peut être inclus."
                         let title = String(conversation.title.prefix(240))
                         // Split complete selected messages instead of silently dropping their tail.
                         var remaining = message.text[...]
@@ -68,7 +68,7 @@ public enum GoalongConversationEvidence {
                             let text = "\(note)\nConversation : \(title)\n\(role)\nExtrait borné : \(conversation.messagesTruncated ? "oui" : "non")\n\(chunk)"
                             bytes += text.utf8.count
                             guard rows.count < 1400, bytes <= 160 * 1024 else { throw GoalongProfileAnalysis.invalid("Trop de contexte conversationnel. Choisissez moins de jours ou une sélection via ai-conversations et la CLI.") }
-                            rows.append(.init(id: "c\(rows.count + 1)", start: iso.string(from: day), end: iso.string(from: nextDay),
+                            rows.append(.init(id: "c\(rows.count + 1)", start: message.timestamp ?? iso.string(from: day), end: message.timestamp ?? iso.string(from: nextDay),
                                 kind: "ai", application: String(conversation.providerName.prefix(80)), text: text))
                         }
                     }
@@ -79,7 +79,7 @@ public enum GoalongConversationEvidence {
             } while true
             day = nextDay
         }
-        let notice = "Conversation History : \(rows.count) extraits sélectionnables. " + (partial ? "Lecture partielle : certains échanges sont tronqués ou indisponibles. " : "") + "Les dates sont des fenêtres de sélection, pas des timestamps de messages. Aucune durée ni exhaustivité de la journée n’est déduite."
+        let notice = "Conversation History : \(rows.count) extraits sélectionnables. " + (partial ? "Lecture partielle : certains échanges sont tronqués ou indisponibles. " : "") + "Les messages horodatés conservent leur timestamp ; les autres portent explicitement une fenêtre de sélection. Aucune durée ni exhaustivité de la journée n’est déduite."
         rows.insert(.init(id: "c0", start: iso.string(from: first), end: iso.string(from: end), kind: "ai", application: "Conversation History", text: notice), at: 0)
         return Selection(evidence: rows, notice: notice)
     }

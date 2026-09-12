@@ -29,6 +29,20 @@ final class GoalongConversationEvidenceTests: XCTestCase {
             policy: .init(replacements: [.init(term: "Atlas", replacement: "Projet secret")]), selected: ["projects"], includeConversations: true)
         XCTAssertFalse(try request.prompt().contains("Atlas"))
     }
+    func testMessageTimestampIsPreservedAndRepeatedTextAtDifferentTimesRemainsDistinct() throws {
+        let end = start.addingTimeInterval(3600)
+        let selected = try GoalongConversationEvidence.collect(start: start, end: end) { _, _ in
+            var object = try JSONSerialization.jsonObject(with: page()) as! [String: Any]
+            var conversations = object["conversations"] as! [[String: Any]]
+            conversations[0]["messages"] = ["2026-09-11T08:01:02.345Z", "2026-09-11T09:01:02.789Z"].map { ["role":"user", "text":"Même question", "timestamp":$0] }
+            object["conversations"] = conversations
+            return try JSONSerialization.data(withJSONObject: object)
+        }
+        XCTAssertEqual(selected.evidence.count, 3)
+        XCTAssertEqual(selected.evidence[1].start, "2026-09-11T08:01:02.345Z")
+        XCTAssertEqual(selected.evidence[1].start, selected.evidence[1].end)
+        XCTAssertTrue(selected.evidence[1].text.contains("Message horodaté"))
+    }
     func testUnavailableSourceUnexpectedRolesAndBrokenPaginationFailBeforeAnalysis() throws {
         let end = start.addingTimeInterval(3600)
         XCTAssertThrowsError(try GoalongConversationEvidence.collect(start: start, end: end) { _, _ in try page(status: "consentRequired") })

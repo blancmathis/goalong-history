@@ -11,7 +11,7 @@ extension Notification.Name { static let goalongWebsiteConnected = Notification.
 struct GoalongWebsiteConnectionCard: View {
     @AppStorage("goalong.website.tokenFilePath") private var savedTokenPath = ""
     @State private var showsConnection = false
-    @State private var showsProfileStudio = false
+    @StateObject private var profileWindow = GoalongProfileWindow()
     @State private var preparedAnalysis: Data?
     @State private var showsSiteAnalysis = false
     @State private var showsHealthImport = false
@@ -37,7 +37,7 @@ struct GoalongWebsiteConnectionCard: View {
                         } else { preparedAnalysis = nil; showsConnection = true }
                     }
                         .buttonStyle(.bordered)
-                    Button("Comprendre mon travail") { preparedAnalysis = nil; showsProfileStudio = true }
+                    Button("Comprendre mon travail") { preparedAnalysis = nil; profileWindow.show { preparedAnalysis = $0; showsConnection = true } }
                         .buttonStyle(.bordered)
                     Button("Analyser une demande du site") { showsSiteAnalysis = true }
                         .buttonStyle(.bordered)
@@ -57,7 +57,6 @@ struct GoalongWebsiteConnectionCard: View {
             showsConnection = true
         }
         .sheet(isPresented: $showsConnection) { GoalongWebsiteConnectionSheet(preparedAnalysis: preparedAnalysis) }
-        .sheet(isPresented: $showsProfileStudio, onDismiss: { if preparedAnalysis != nil { showsConnection = true } }) { GoalongProfileStudio { preparedAnalysis = $0 } }
         .sheet(isPresented: $showsSiteAnalysis) { GoalongSiteAnalysisSheet() }
         .sheet(isPresented: $showsHealthImport) { GoalongHealthImportSheet() }
     }

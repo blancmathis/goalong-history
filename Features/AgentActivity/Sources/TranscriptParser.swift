@@ -615,14 +615,18 @@ public enum AgentTranscriptParser {
         var touchedFiles = OrderedSet(limit: 160)
         var commands = OrderedSet(limit: 80)
         var visibleMessages: [AgentVisibleMessage] = []
-        var pendingAssistantMessage: (sourceID: String?, text: String)?
+        var pendingAssistantMessage: (sourceID: String?, text: String, timestamp: Date?)?
         var openCodeRoleByMessageID: [String: AgentVisibleMessage.Role] = [:]
+        var openCodeTimestampByMessageID: [String: Date] = [:]
         var lastVisibleSourceID: String?
 
-        mutating func walk(_ value: Any, currentKey: String?) {
+        mutating func walk(_ value: Any, currentKey: String?, inheritedMessageTimestamp: Date? = nil) {
             if let dictionary = value as? [String: Any] {
                 let orderedKeys = stableDictionaryKeys(dictionary)
-                inspect(dictionary, currentKey: currentKey, orderedKeys: orderedKeys)
+                let type = (dictionary["type"] as? String)?.lowercased()
+                let envelope = ["response_item", "event_msg", "user", "assistant"].contains(type ?? "")
+                let envelopeTimestamp = envelope ? dictionary["timestamp"].flatMap(parseDate) : nil
+                inspect(dictionary, currentKey: currentKey, orderedKeys: orderedKeys, inheritedMessageTimestamp: inheritedMessageTimestamp)
                 let serializedCopilotKey =
                     provider == .copilot
                     ? copilotSerializedStorageKey(from: dictionary)
@@ -633,7 +637,7 @@ public enum AgentTranscriptParser {
                         normalizeKey(key) == "v"
                         ? (serializedCopilotKey ?? key)
                         : key
-                    walk(child, currentKey: childKey)
+                    walk(child, currentKey: childKey, inheritedMessageTimestamp: envelopeTimestamp)
                 }
             } else if let array = value as? [Any] {
                 for child in array { walk(child, currentKey: currentKey) }
@@ -645,7 +649,8 @@ public enum AgentTranscriptParser {
         mutating func inspect(
             _ dictionary: [String: Any],
             currentKey: String?,
-            orderedKeys: [String]
+            orderedKeys: [String],
+            inheritedMessageTimestamp: Date? = nil
         ) {
             var normalized: [String: Any] = [:]
             normalized.reserveCapacity(dictionary.count)
@@ -655,6 +660,8 @@ public enum AgentTranscriptParser {
                 guard !normalizedKey.isEmpty, normalized[normalizedKey] == nil else { continue }
                 normalized[normalizedKey] = value
             }
+
+            let messageTimestamp = ["timestamp", "createdat", "createtime", "date", "time"].compactMap { key in normalized[key].flatMap(parseDate) }.first ?? inheritedMessageTimestamp
 
             if sessionID == nil {
                 sessionID = firstString(
@@ -712,13 +719,13 @@ public enum AgentTranscriptParser {
                 let phase = firstString(normalized, keys: ["phase"])?.lowercased() ?? ""
                 switch role {
                 case "user", "human":
-                    appendVisibleUser(content, sourceID: nil)
+                    appendVisibleUser(content, sourceID: nil, timestamp: messageTimestamp)
                 case "assistant", "agent":
                     if phase != "commentary" {
                         appendVisibleAssistant(
                             content,
                             sourceID: nil,
-                            explicitlyFinal: phase == "final_answer"
+                            explicitlyFinal: phase == "final_answer", timestamp: messageTimestamp
                         )
                     }
                 default:
@@ -805,10 +812,13 @@ public enum AgentTranscriptParser {
                 guard !normalizedKey.isEmpty, normalized[normalizedKey] == nil else { continue }
                 normalized[normalizedKey] = dictionary[key]
             }
+            let times = normalized["time"] as? [String: Any]
+            let rowTimestamp = normalized["timestamp"].flatMap(parseDate) ?? normalized["createdat"].flatMap(parseDate) ?? times?["created"].flatMap(parseDate)
             if kind == "message",
                 openCodeRoleByMessageID.count < 4_096,
                 let role = normalizedRole(from: normalized)
             {
+                if let rowTimestamp { openCodeTimestampByMessageID[identifier] = rowTimestamp }
                 switch role {
                 case "user", "human":
                     openCodeRoleByMessageID[identifier] = .user
@@ -829,32 +839,32 @@ public enum AgentTranscriptParser {
             else { return }
             switch role {
             case .user:
-                appendVisibleUser(content, sourceID: relatedMessageID)
+                appendVisibleUser(content, sourceID: relatedMessageID, timestamp: openCodeTimestampByMessageID[relatedMessageID] ?? rowTimestamp)
             case .assistantFinal:
                 appendVisibleAssistant(
                     content,
                     sourceID: relatedMessageID,
-                    explicitlyFinal: false
+                    explicitlyFinal: false, timestamp: openCodeTimestampByMessageID[relatedMessageID] ?? rowTimestamp
                 )
             }
         }
 
-        mutating func appendVisibleUser(_ raw: String, sourceID: String?) {
+        mutating func appendVisibleUser(_ raw: String, sourceID: String?, timestamp: Date? = nil) {
             guard let text = normalizedVisibleUserText(raw) else { return }
             flushPendingAssistant()
-            appendVisible(.user, text: text, sourceID: sourceID)
+            appendVisible(.user, text: text, sourceID: sourceID, timestamp: timestamp)
         }
 
         mutating func appendVisibleAssistant(
             _ raw: String,
             sourceID: String?,
-            explicitlyFinal: Bool
+            explicitlyFinal: Bool, timestamp: Date? = nil
         ) {
             let text = normalizedVisibleAssistantText(raw)
             guard !text.isEmpty else { return }
             if explicitlyFinal {
                 pendingAssistantMessage = nil
-                appendVisible(.assistantFinal, text: text, sourceID: sourceID)
+                appendVisible(.assistantFinal, text: text, sourceID: sourceID, timestamp: timestamp)
                 return
             }
             if pendingAssistantMessage?.sourceID == sourceID, sourceID != nil {
@@ -864,23 +874,24 @@ public enum AgentTranscriptParser {
                     AgentUTF8Bound.string(
                         combined,
                         maximumBytes: AgentDocumentSummary.maximumVisibleMessageBytes
-                    )
+                    ),
+                    pendingAssistantMessage?.timestamp ?? timestamp
                 )
             } else {
-                pendingAssistantMessage = (sourceID, text)
+                pendingAssistantMessage = (sourceID, text, timestamp)
             }
         }
 
         mutating func flushPendingAssistant() {
             guard let pending = pendingAssistantMessage else { return }
             pendingAssistantMessage = nil
-            appendVisible(.assistantFinal, text: pending.text, sourceID: pending.sourceID)
+            appendVisible(.assistantFinal, text: pending.text, sourceID: pending.sourceID, timestamp: pending.timestamp)
         }
 
         mutating func appendVisible(
             _ role: AgentVisibleMessage.Role,
             text raw: String,
-            sourceID: String?
+            sourceID: String?, timestamp: Date? = nil
         ) {
             let text = AgentUTF8Bound.string(
                 raw,
@@ -898,7 +909,7 @@ public enum AgentTranscriptParser {
                 )
                 return
             }
-            visibleMessages.append(AgentVisibleMessage(role: role, text: text))
+            visibleMessages.append(AgentVisibleMessage(role: role, text: text, timestamp: timestamp))
             lastVisibleSourceID = sourceID
             while visibleMessages.count > AgentDocumentSummary.maximumVisibleMessageCount
                 || visibleMessages.reduce(0, { $0 + $1.text.utf8.count })
@@ -988,7 +999,7 @@ public enum AgentTranscriptParser {
             if !visibleText.isEmpty {
                 switch role {
                 case "user", "human":
-                    appendVisibleUser(visibleText, sourceID: nil)
+                    appendVisibleUser(visibleText, sourceID: nil, timestamp: timestamp.flatMap(parseDate))
                 case "assistant", "agent":
                     let phase = jsonStringValues(forKey: codexPhaseKey, in: bytes)
                         .first?.lowercased() ?? ""
@@ -996,7 +1007,7 @@ public enum AgentTranscriptParser {
                         appendVisibleAssistant(
                             visibleText,
                             sourceID: nil,
-                            explicitlyFinal: phase == "final_answer"
+                            explicitlyFinal: phase == "final_answer", timestamp: timestamp.flatMap(parseDate)
                         )
                     }
                 default:

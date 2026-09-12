@@ -400,6 +400,7 @@ private struct DailyWebsitesEnvelope: Encodable {
 private struct AgentConversationMessageEnvelope: Encodable {
     let role: String
     let text: String
+    let timestamp: String?
 }
 
 private struct AgentConversationSourceEnvelope: Encodable {
@@ -3548,7 +3549,10 @@ public enum GoalongQueryCLI {
             let text = utf8Prefix(message.text, maximumBytes: allowed)
             truncated = truncated || text.utf8.count < message.text.utf8.count
             retained.append(
-                AgentConversationMessageEnvelope(role: message.role.rawValue, text: text)
+                AgentConversationMessageEnvelope(role: message.role.rawValue, text: text, timestamp: message.timestamp.map { date in
+                    let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    return formatter.string(from: date)
+                })
             )
             usedBytes += text.utf8.count + 32
         }

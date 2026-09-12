@@ -1360,8 +1360,8 @@ final class AgentActivityScannerLoadTests: XCTestCase {
         XCTAssertEqual(
             projection.summary.visibleMessages,
             [
-                AgentVisibleMessage(role: .user, text: "Continued old conversation today"),
-                AgentVisibleMessage(role: .assistantFinal, text: "Today final answer"),
+                AgentVisibleMessage(role: .user, text: "Continued old conversation today", timestamp: ISO8601DateFormatter().date(from: "2026-08-29T08:00:00Z")),
+                AgentVisibleMessage(role: .assistantFinal, text: "Today final answer", timestamp: ISO8601DateFormatter().date(from: "2026-08-29T08:00:01Z")),
             ]
         )
         XCTAssertNotEqual(projection.sha256, indexedBefore.sha256)
