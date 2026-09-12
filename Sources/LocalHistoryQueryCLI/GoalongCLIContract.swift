@@ -63,6 +63,10 @@ public enum GoalongCLIContract {
     public static let stableExecutablePath = "$HOME/.local/bin/goalong"
 
     public static let commands: [GoalongCLICommandDefinition] = [
+        .init(name: "analysis-evidence", syntax: "analysis-evidence --start-utc ISO-8601Z --end-utc ISO-8601Z [--include-rich-context]", summary: "Export selected timestamped local evidence for the universal analysis CLI. No agent or website send."),
+        .init(name: "analysis-prompt", syntax: "analysis-prompt --request FILE", summary: "Render the fixed analysis prompt from a private prepared request.", outputFormat: .text),
+        .init(name: "analysis-review", syntax: "analysis-review --request FILE --file RESPONSE", summary: "Validate and redact the agent response locally."),
+        .init(name: "analysis-export", syntax: "analysis-export --request FILE --file RESPONSE --items i1,i3", summary: "Export only selected cards, without local evidence or privacy rules."),
         .init(
             name: "help",
             syntax: "help [--json]",

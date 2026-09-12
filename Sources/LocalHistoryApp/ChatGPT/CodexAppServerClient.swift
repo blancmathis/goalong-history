@@ -878,6 +878,19 @@
                 schema: Self.rhythmAnalysisOutputSchema, workingDirectory: workingDirectory, maximumResponseBytes: 256 * 1024))
         }
 
+        func generateProfileAnalysis(request selected: GoalongProfileAnalysis.Request, workingDirectory: URL) throws -> GoalongProfileAnalysis.Result {
+            let string: [String: Any] = ["type": "string"]
+            let item: [String: Any] = ["type": "object", "additionalProperties": false,
+                "properties": ["id": string, "module": string, "title": string, "summary": string, "status": string, "caveat": string,
+                    "evidence_refs": ["type": "array", "items": string]],
+                "required": ["id", "module", "title", "summary", "status", "caveat", "evidence_refs"]]
+            let schema: [String: Any] = ["type": "object", "additionalProperties": false,
+                "properties": ["request_id": string, "evidence_digest": string, "items": ["type": "array", "items": item]],
+                "required": ["request_id", "evidence_digest", "items"]]
+            return try GoalongProfileAnalysis.parseResult(generateSelectedAnalysisJSON(prompt: selected.prompt(),
+                schema: schema, workingDirectory: workingDirectory, maximumResponseBytes: 256 * 1024))
+        }
+
         private func generateSelectedAnalysisJSON(prompt: String, schema: [String: Any], workingDirectory: URL,
                                                   maximumResponseBytes: Int = 32 * 1024) throws -> Data {
             guard siteAnalysisOnly else {

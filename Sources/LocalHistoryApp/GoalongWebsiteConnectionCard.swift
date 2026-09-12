@@ -11,6 +11,8 @@ extension Notification.Name { static let goalongWebsiteConnected = Notification.
 struct GoalongWebsiteConnectionCard: View {
     @AppStorage("goalong.website.tokenFilePath") private var savedTokenPath = ""
     @State private var showsConnection = false
+    @State private var showsProfileStudio = false
+    @State private var preparedAnalysis: Data?
     @State private var showsSiteAnalysis = false
     @State private var showsHealthImport = false
 
@@ -32,8 +34,10 @@ struct GoalongWebsiteConnectionCard: View {
                     Button(savedTokenPath.isEmpty ? "Relier mon compte" : "Choisir mes données") {
                         if savedTokenPath.isEmpty {
                             _ = GoalongWorkspaceOpenPolicy.open(URL(string: "https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#sources")!, purpose: .goalongWebsite)
-                        } else { showsConnection = true }
+                        } else { preparedAnalysis = nil; showsConnection = true }
                     }
+                        .buttonStyle(.bordered)
+                    Button("Comprendre mon travail") { preparedAnalysis = nil; showsProfileStudio = true }
                         .buttonStyle(.bordered)
                     Button("Analyser une demande du site") { showsSiteAnalysis = true }
                         .buttonStyle(.bordered)
@@ -52,13 +56,20 @@ struct GoalongWebsiteConnectionCard: View {
             UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing")
             showsConnection = true
         }
-        .sheet(isPresented: $showsConnection) { GoalongWebsiteConnectionSheet() }
+        .sheet(isPresented: $showsConnection) { GoalongWebsiteConnectionSheet(preparedAnalysis: preparedAnalysis) }
+        .sheet(isPresented: $showsProfileStudio, onDismiss: { if preparedAnalysis != nil { showsConnection = true } }) { GoalongProfileStudio { preparedAnalysis = $0 } }
         .sheet(isPresented: $showsSiteAnalysis) { GoalongSiteAnalysisSheet() }
         .sheet(isPresented: $showsHealthImport) { GoalongHealthImportSheet() }
     }
 }
 
 private struct GoalongWebsiteConnectionSheet: View {
+    private let preparedAnalysis: Data?
+    init(preparedAnalysis: Data? = nil) {
+        self.preparedAnalysis = preparedAnalysis
+        _payload = State(initialValue: preparedAnalysis)
+        _previewSummary = State(initialValue: preparedAnalysis == nil ? "" : "Cartes relues et sélectionnées. Les preuves et règles privées restent locales.")
+    }
     @Environment(\.dismiss) private var dismiss
     @StateObject private var windowHost = GoalongWebsiteWindowHost()
     @AppStorage("goalong.website.origin") private var origin = ""
@@ -163,6 +174,7 @@ private struct GoalongWebsiteConnectionSheet: View {
                         }
                     }
                     Divider()
+                    if preparedAnalysis == nil {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("2. Choose your data").font(.headline)
                         DatePicker("Saved day", selection: $date, in: ...Date(), displayedComponents: .date)
@@ -235,10 +247,11 @@ private struct GoalongWebsiteConnectionSheet: View {
                         }
                     }
                     Divider()
+                    }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("3. Review before sending").font(.headline)
-                        Button(payload == nil ? "Prepare offline preview" : "Refresh offline preview", action: preparePreview)
-                            .buttonStyle(.bordered)
+                        if preparedAnalysis == nil { Button(payload == nil ? "Prepare offline preview" : "Refresh offline preview", action: preparePreview)
+                            .buttonStyle(.bordered) }
                         if let payload {
                             Text(previewSummary).font(.subheadline)
                             DisclosureGroup("Review exact data", isExpanded: $showsExactData) {

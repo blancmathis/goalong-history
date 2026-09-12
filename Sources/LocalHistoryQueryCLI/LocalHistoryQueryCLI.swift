@@ -805,6 +805,43 @@ public enum GoalongQueryCLI {
                 selectedDeviceIDs: selectedDeviceIDs
             )
 
+        case "analysis-evidence":
+            let rawStart = arguments.removeOption("--start-utc")
+            let rawEnd = arguments.removeOption("--end-utc")
+            let rich = arguments.removeFlag("--include-rich-context")
+            guard let rawStart, let rawEnd, rawStart.hasSuffix("Z"), rawEnd.hasSuffix("Z"), arguments.values.isEmpty else {
+                throw CLIError.usage("analysis-evidence --start-utc ISO-8601Z --end-utc ISO-8601Z [--include-rich-context]")
+            }
+            guard capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory"), !rich || UserDefaults(suiteName: "ai.goalong.localhistory")?.bool(forKey: "activityAnalysis.richContextEnabled") == true else {
+                throw CLIError.unsafeSource("Enable the explicitly selected Computer History sources before reading their evidence.")
+            }
+            let start = try parseTimestamp(rawStart), end = try parseTimestamp(rawEnd)
+            let evidence = try GoalongProfileAnalysis.load(root: root, start: start, end: end, rich: rich)
+            let object: [String: Any] = ["date": localDayString(end.addingTimeInterval(-0.001)), "timezone": Calendar.current.timeZone.identifier,
+                "evidence": try JSONSerialization.jsonObject(with: GoalongContextualRhythm.encode(evidence))]
+            FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted]))
+            FileHandle.standardOutput.write(Data("\n".utf8))
+        case "analysis-prompt", "analysis-review", "analysis-export":
+            let requestPath = arguments.removeOption("--request")
+            let responsePath = arguments.removeOption("--file")
+            let selected = (arguments.removeOption("--items") ?? "").split(separator: ",").map(String.init)
+            guard let requestPath, arguments.values.isEmpty, command == "analysis-export" || selected.isEmpty else {
+                throw CLIError.usage("\(command) --request LOCAL_REQUEST.json [--file RESPONSE.json] [--items i1,i3]")
+            }
+            let request = try GoalongProfileAnalysis.parseRequest(readStableRegularFile(expandedFileURL(requestPath), maximumBytes: 256*1024))
+            let bytes: Data
+            if command == "analysis-prompt" {
+                guard responsePath == nil else { throw CLIError.usage("analysis-prompt accepts only --request.") }
+                bytes = Data(try request.prompt().utf8)
+            } else {
+                guard let responsePath else { throw CLIError.usage("--file RESPONSE.json is required.") }
+                let response = try GoalongProfileAnalysis.parseResult(readStableRegularFile(expandedFileURL(responsePath), maximumBytes: 256*1024))
+                let result = try GoalongProfileAnalysis.apply(response, to: request)
+                if command == "analysis-review" { bytes = try GoalongContextualRhythm.encode(result) }
+                else { guard selected.count == Set(selected).count else { throw CLIError.usage("Duplicate result selections.") }
+                    bytes = try GoalongProfileAnalysis.siteImport(.init(request: request, result: result), selectedIDs: Set(selected)) }
+            }
+            FileHandle.standardOutput.write(bytes); FileHandle.standardOutput.write(Data("\n".utf8))
         case "export-site", "send-site":
             let selectedDeviceIDs = (arguments.removeOption("--devices") ?? "")
                 .split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

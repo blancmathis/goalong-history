@@ -151,3 +151,15 @@ The native connection sheet exposes these choices and the exact resulting JSON b
 **Charger le récap de cette journée** offers saved recap sections with none selected by default; a separate button starts the existing recap-generation flow. Selected parts and an optional personal comment appear in the exact preview. Any active mask removes recap text, domains and session context before serialization.
 
 The optional reviewed schedule retains selected devices, fields, masks and a chosen hour. It can reuse selected numbered sections of an already saved recap on later days; missing sections cause refusal and require review. It never repeats a one-off comment or an old contextual session. Masks exclude recaps and domains. It sends yesterday only while the app is running, persists the attempt before networking, rechecks source consent, and stops on any failure. Disabling does not retract an in-flight request or copies already received. No new model call is scheduled by the connector.
+
+## Private profile analyses
+
+`analysis-evidence` exports explicitly selected timestamped Computer History events without starting an agent or sending to Goalong. Use `goalong analysis-evidence --start-utc 2026-09-08T08:00:00Z --end-utc 2026-09-08T09:00:00Z`. `--include-rich-context` additionally requires the app’s rich-context setting. Suppressed and secure observations are excluded; incomplete or over-budget reads fail. This is a private source file, not a website import.
+
+Prepare the request with the universal website CLI’s `analysis-prepare --file --policy --modules --output`, or with Settings → Goalong website → Comprendre mon travail. The [agent guide](../../site/assets/productivity-agent-guide.md#analyses-du-profil-avec-choix-privés) owns the interoperable selection, privacy and export workflow.
+
+- `goalong analysis-prompt --request FILE` renders only the protected context and fixed instructions. Keep the private request file locally; give the generated prompt to the external agent.
+- `goalong analysis-review --request FILE --file RESPONSE` validates request binding, evidence references, selected modules, lengths and status, then reapplies literal privacy rules.
+- `goalong analysis-export --request FILE --file RESPONSE --items i1,i3` emits only the selected cards in website format v3. It includes no evidence, request, policy or provider token and performs no network call.
+
+Use a private output directory and `umask 077` before shell redirections. The native commands emit data to stdout. A website send remains a separate explicit action. The app can keep requests and analyses under its private `chatgpt/profile-analyses` directory, reopen them, and correct cards before selecting anything to transmit. Free-text privacy instructions guide the agent; literal names belong in exclusion/replacement rules and results still require review.
