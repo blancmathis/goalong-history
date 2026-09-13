@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: goalong-history-latest-main
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   publish-latest-main:
@@ -25,10 +25,24 @@ jobs:
       DISPLAY_NAME: Goalong History
       BUNDLE_ID: ai.goalong.localhistory
       ROLLING_TAG: latest-main
+      IMMUTABLE_TAG: main-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+
+      - name: Require update signing credentials
+        env:
+          SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY || vars.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          for name in SPARKLE_PUBLIC_ED_KEY SPARKLE_PRIVATE_ED_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required update signing value: $name" >&2
+              exit 1
+            fi
+          done
 
       - name: Resolve rolling version
         id: version
@@ -45,10 +59,12 @@ jobs:
           LOCALHISTORY_ARCHS: arm64 x86_64
           LOCALHISTORY_RUN_TESTS: 1
           LOCALHISTORY_CODESIGN_IDENTITY: '-'
+          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY || vars.SPARKLE_PUBLIC_ED_KEY }}
         run: ./scripts/build_app.sh
 
       - name: Verify architecture, ad-hoc signature, identity, and privacy policy
         env:
+          LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
           EXPECTED_VERSION: ${{ steps.version.outputs.value }}
           EXPECTED_BUILD: ${{ steps.version.outputs.build }}
           LOCALHISTORY_REQUIRE_LOCALIZED_NAME: 1
@@ -88,6 +104,17 @@ jobs:
           brew install create-dmg
           LOCALHISTORY_CODESIGN_IDENTITY=- ./scripts/package_release.sh
 
+      - name: Generate authenticated Community appcast
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          ./scripts/generate_sparkle_appcast.sh \
+            "${{ steps.version.outputs.value }}" \
+            dist/Goalong-History-macOS-universal.zip \
+            dist/community-appcast.xml "$IMMUTABLE_TAG"
+          grep -Fq "<sparkle:version>${{ steps.version.outputs.build }}</sparkle:version>" dist/community-appcast.xml
+
       - name: Generate auditable release inventory
         run: |
           python3 scripts/generate_security_artifacts.py \
@@ -104,6 +131,7 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
+            dist/community-appcast.xml
             dist/Goalong-History-macOS-universal.dmg
             dist/Goalong-History-macOS-universal.dmg.sha256
             dist/Goalong-History-macOS-universal.zip
@@ -112,13 +140,30 @@ jobs:
             dist/sbom.spdx.json
             dist/release-manifest.json
 
-      - name: Move rolling tag to this merge
+      - name: Refuse to publish a superseded or non-main commit
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          REMOTE_MAIN="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [[ "$REMOTE_MAIN" != "$GITHUB_SHA" ]]; then
+            echo "This run has been superseded by another main commit; refusing to replace the update feed." >&2
+            exit 1
+          fi
+
+      - name: Publish immutable update archive
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git tag --force "$ROLLING_TAG" "$GITHUB_SHA"
-          git push origin "refs/tags/$ROLLING_TAG" --force
+          # An old feed must remain usable while latest-main assets are being replaced.
+          # Never clobber these archives or use latest-main ZIP URLs in the appcast.
+          gh release create "$IMMUTABLE_TAG" \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "Goalong History ${{ steps.version.outputs.value }} — build ${{ steps.version.outputs.build }}" \
+            --notes "Authenticated Community update archive for $GITHUB_SHA. Not Apple-notarized; macOS permissions may need renewal." \
+            dist/Goalong-History-macOS-universal.zip \
+            dist/Goalong-History-macOS-universal.zip.sha256 \
+            dist/security-capabilities.json dist/sbom.spdx.json dist/release-manifest.json
 
       - name: Remove retired rolling-release assets
         env:
@@ -150,7 +195,9 @@ jobs:
 
             Verify the downloaded SHA-256 file and `release-manifest.json`. GitHub also publishes a Sigstore-backed build-provenance attestation; with GitHub CLI, run `gh attestation verify <downloaded-file> --repo blancmathis/goalong-history`.
 
-            Updates are manual. Because a free ad-hoc signature has no stable Apple-issued identity, macOS may ask for Goalong permissions again after replacement. Existing history and settings remain in place.
+            Updates are offered in the app through an Ed25519-authenticated Sparkle feed and archive. Click **Update available** or **Check for Updates…**, then approve installation. The first replacement of an older build without an updater must be installed once manually. Automatic installation is disabled.
+
+            Because a free ad-hoc signature has no stable Apple-issued identity, macOS may ask for Goalong permissions again after replacement. Existing history and settings remain in place. No activity contents or system profile are sent by the updater.
           draft: false
           prerelease: true
           make_latest: false
@@ -164,3 +211,13 @@ jobs:
             dist/security-capabilities.json
             dist/sbom.spdx.json
             dist/release-manifest.json
+
+      - name: Publish authenticated feed last
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$ROLLING_TAG" dist/community-appcast.xml --clobber
+          git tag --force "$ROLLING_TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$ROLLING_TAG" --force
+          echo "Published signed update ${{ steps.version.outputs.value }} (${{ steps.version.outputs.build }}) from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

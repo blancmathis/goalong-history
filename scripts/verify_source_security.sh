@@ -11,23 +11,15 @@ fail() {
 
 grep -Fq '.define("GOALONG_UNIFIED_APP")' Package.swift \
   || fail "the unified app compile marker is missing"
-for excluded in AppAttestManager.swift CommitmentUploader.swift SoftwareUpdateManager.swift LocalOnlyCodexAppServerClient.swift; do
+for excluded in AppAttestManager.swift CommitmentUploader.swift LocalOnlySoftwareUpdateManager.swift LocalOnlyCodexAppServerClient.swift; do
   grep -Fq "\"$excluded\"" Package.swift \
     || fail "$excluded is not physically excluded from the public app target"
 done
 
-if grep -Eq '\.package[[:space:]]*\(' Package.swift; then
-  fail "a remote Swift package dependency is present"
-fi
+python3 scripts/audit_update_dependency.py || fail "the pinned updater supply chain is invalid"
 
-for retired_tool in \
-  scripts/fetch_sparkle_tools.sh \
-  scripts/generate_sparkle_appcast.sh \
-  scripts/setup_sparkle_keys.sh \
-  scripts/sparkle_release.env \
-  scripts/verify_sparkle_bundle.sh; do
-  [[ ! -e "$retired_tool" && ! -L "$retired_tool" ]] \
-    || fail "retired updater tooling is still present: $retired_tool"
+for required_tool in scripts/fetch_sparkle_tools.sh scripts/generate_sparkle_appcast.sh scripts/update_policy.py; do
+  [[ -f "$required_tool" ]] || fail "authenticated updater tooling is missing: $required_tool"
 done
 
 for required in \
@@ -73,7 +65,7 @@ cat <<'EOF'
 Goalong source security verification passed.
 - one public app identity
 - sensitive capabilities off by default
-- first-party HTTP limited to confirmed website pairing and explicit reviewed sends; no passive sync, in-app updater or remote Swift dependency
+- first-party HTTP limited to confirmed website pairing and explicit reviewed sends; no unapproved sync; the sole remote dependency is pinned Sparkle for authenticated, user-approved updates
 - Screen Time CLI access brokered through the consented app
 - Agent Activity direct-source readers remain read-only and metadata-only on disk
 

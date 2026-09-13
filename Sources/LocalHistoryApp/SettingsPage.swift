@@ -4,6 +4,7 @@
     struct SettingsPage: View {
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
+        @ObservedObject private var updates = SoftwareUpdateManager.shared
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @State private var pane: SettingsPane = .home
 
@@ -79,6 +80,7 @@
                 {
                     ChatGPTAccountConnectionCard(runtime: recapRuntime)
                 }
+                softwareUpdatesCard
                 capabilityConsentCard
                 GoalongWebsiteConnectionCard()
                 settingsNavigation
@@ -91,6 +93,38 @@
                 verificationCard
                 monitoringScopeCard
                 advancedCard
+            }
+        }
+
+        private var softwareUpdatesCard: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionTitle(title: "Software updates", subtitle: "New releases appear here and in the sidebar. Installation always requires your approval.")
+                LHCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Goalong History \(updates.currentVersion)").font(.system(size: 14, weight: .semibold))
+                                Text(updates.statusMessage).font(.system(size: 12)).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 12)
+                            if updates.isChecking { ProgressView().controlSize(.small) }
+                            Button(updates.availableVersion == nil ? "Check for Updates…" : "Update available…") {
+                                updates.showAvailableUpdate()
+                            }.buttonStyle(LHPrimaryButtonStyle())
+                        }
+                        if updates.isConfigured {
+                            Divider()
+                            Toggle("Automatically check for updates", isOn: Binding(
+                                get: { updates.automaticallyChecksForUpdates },
+                                set: { updates.setAutomaticallyChecksForUpdates($0) }
+                            )).toggleStyle(.switch).controlSize(.small)
+                            Text("Signed feed and downloads only; no activity or conversation contents are sent. Community builds may require macOS permissions again after replacement.")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
             }
         }
 
@@ -128,13 +162,7 @@
                                 message: "Allow opaque signed commitments—not activity contents—to reach the configured verifier."
                             )
                         }
-                        if GoalongBuildCapabilities.permitsAutomaticUpdates {
-                            Divider()
-                            capabilityToggle(
-                                .automaticUpdates,
-                                message: "Allow the signed updater to check the published release feed."
-                            )
-                        }
+
                     }
                 }
             }

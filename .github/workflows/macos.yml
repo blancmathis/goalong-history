@@ -38,6 +38,9 @@ jobs:
           bash scripts/test_install_from_source_safety.sh
           bash scripts/test_install_cli_link.sh
           bash scripts/test_release_signing_policy.sh
+          xcrun swiftc -typecheck scripts/verify_update_archive.swift
+          python3 scripts/test_update_policy.py
+          python3 scripts/test_site_submission_policy.py
           bash scripts/test_validate_computer_history_upgrade_safety.sh
           bash scripts/validate_computer_history_parity.sh --help >/dev/null
 
@@ -60,6 +63,12 @@ jobs:
               exit "$STATUS"
             fi
           fi
+
+      - name: Timezone regression checks
+        run: |
+          for timezone in UTC America/Chicago Europe/Paris; do
+            TZ="$timezone" xcrun swift test --skip-build --filter GoalongSiteExportTests
+          done
 
       - name: Build installable app bundle
         env:

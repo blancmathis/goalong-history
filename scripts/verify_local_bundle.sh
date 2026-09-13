@@ -31,19 +31,20 @@ if ! /usr/bin/grep -Fq "Identifier=$EXPECTED_BUNDLE_ID" <<<"$CLI_SIGNATURE_DETAI
   exit 1
 fi
 
-for forbidden_key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks; do
-  if /usr/libexec/PlistBuddy -c "Print :$forbidden_key" "$INFO" >/dev/null 2>&1; then
-    echo "The single app contains forbidden update key: $forbidden_key" >&2
-    exit 1
-  fi
-done
-
-if [[ -e "$APP_PATH/Contents/Frameworks/Sparkle.framework" ]]; then
-  echo "The single app contains Sparkle.framework." >&2
+UPDATE_ARGS=(--verify-info "$INFO")
+if [[ "${LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED:-0}" == "1" ]]; then
+  UPDATE_ARGS+=(--require-configured)
+fi
+/usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" "${UPDATE_ARGS[@]}"
+FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+test -d "$FRAMEWORK"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$FRAMEWORK/Resources/Info.plist")" = "2.9.6"
+if [[ -e "$FRAMEWORK/XPCServices" || -e "$FRAMEWORK/Versions/B/XPCServices" ]]; then
+  echo "Unexpected optional Sparkle XPC services in the non-sandboxed app." >&2
   exit 1
 fi
-if /usr/bin/otool -L "$BINARY" | /usr/bin/grep -q 'Sparkle.framework'; then
-  echo "The single app links Sparkle.framework." >&2
+if ! /usr/bin/otool -L "$BINARY" | /usr/bin/grep -q '@rpath/Sparkle.framework'; then
+  echo "The real updater is not linked." >&2
   exit 1
 fi
 
@@ -67,8 +68,6 @@ done
 
 /usr/bin/strings "$BINARY" >"$STRINGS"
 for forbidden_marker in \
-  'SUFeedURL' \
-  'SPUStandardUpdaterController' \
   'The commitment endpoint URL is invalid.'; do
   if /usr/bin/grep -Fq "$forbidden_marker" "$STRINGS"; then
     echo "The single app contains forbidden transport/process marker: $forbidden_marker" >&2
@@ -91,4 +90,4 @@ if ! /usr/bin/grep -Fq '/api/goalong/v1/import' "$STRINGS"; then
   exit 1
 fi
 
-echo "Single-app verification passed: reviewed explicit website transport present; no Sparkle framework/feed, retired commitment uploader or network entitlement; the Codex bridge remains visible for explicit-consent analysis."
+echo "Single-app verification passed: reviewed explicit website transport present; pinned authenticated Sparkle updates; no retired commitment uploader or network entitlement; the Codex bridge remains visible for explicit-consent analysis."

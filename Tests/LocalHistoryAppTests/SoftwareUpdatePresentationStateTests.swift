@@ -1,8 +1,52 @@
 #if os(macOS)
     import XCTest
+    import Sparkle
     @testable import LocalHistoryApp
 
     final class SoftwareUpdatePresentationStateTests: XCTestCase {
+        func testSparkleComparatorRecognizesMigrationAndEveryNextBuild() {
+            let comparator = SUStandardVersionComparator()
+            let first = "20260913.3476827.178501"
+            XCTAssertEqual(comparator.compareVersion(first, toVersion: "20260912.4"), .orderedDescending)
+            XCTAssertEqual(comparator.compareVersion(first, toVersion: "5000.0.66"), .orderedDescending)
+            XCTAssertEqual(comparator.compareVersion("20260913.3476827.178502", toVersion: first), .orderedDescending)
+            XCTAssertEqual(comparator.compareVersion("20260913.3476828.101", toVersion: first), .orderedDescending)
+        }
+
+        @MainActor
+        func testNoUpdateIsASuccessfulResultNotANetworkFailure() {
+            XCTAssertTrue(SoftwareUpdateManager.isNoUpdateResult(NSError(domain: SUSparkleErrorDomain, code: Int(SUError.noUpdateError.rawValue))))
+            XCTAssertFalse(SoftwareUpdateManager.isNoUpdateResult(NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)))
+            XCTAssertFalse(SoftwareUpdateManager.isNoUpdateResult(NSError(domain: SUSparkleErrorDomain, code: Int(SUError.signatureError.rawValue))))
+        }
+
+        @MainActor
+        func testSourceBuildAndUntrustedFeedFailClosed() {
+            XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: [:], isApp: true))
+            var info: [String: Any] = [
+                "SUFeedURL": SoftwareUpdateManager.releaseFeedURL,
+                "SUPublicEDKey": Data(repeating: 1, count: 32).base64EncodedString(),
+                "SURequireSignedFeed": true, "SUVerifyUpdateBeforeExtraction": true,
+                "SUAllowsAutomaticUpdates": false, "SUEnableSystemProfiling": false,
+            ]
+            XCTAssertTrue(SoftwareUpdateManager.hasValidSparkleConfiguration(info: info, isApp: true))
+            XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: info, isApp: false))
+            info["SUFeedURL"] = "https://example.com/appcast.xml"
+            XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: info, isApp: true))
+            info["SUFeedURL"] = SoftwareUpdateManager.releaseFeedURL
+            info["SURequireSignedFeed"] = false
+            XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: info, isApp: true))
+        }
+
+        @MainActor
+        func testWindowActivationDoesNotRepeatedlyHitFeed() {
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            XCTAssertTrue(SoftwareUpdateManager.shouldCheckInBackground(lastCheck: nil, now: now))
+            XCTAssertFalse(SoftwareUpdateManager.shouldCheckInBackground(lastCheck: now, now: now.addingTimeInterval(30)))
+            XCTAssertFalse(SoftwareUpdateManager.shouldCheckInBackground(lastCheck: now, now: now.addingTimeInterval(-5)))
+            XCTAssertTrue(SoftwareUpdateManager.shouldCheckInBackground(lastCheck: now, now: now.addingTimeInterval(3600)))
+        }
+
         func testDetectedUpdateIsNotClickableUntilSparkleAlertIsReady() {
             var state = SoftwareUpdatePresentationState()
 

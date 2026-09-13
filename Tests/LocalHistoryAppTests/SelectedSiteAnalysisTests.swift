@@ -298,7 +298,9 @@ final class SelectedSiteAnalysisTests: XCTestCase {
     }
 
     @MainActor
-    private func waitFor(_ condition: () -> Bool, timeout: TimeInterval = 4) async throws {
+    // These are consent/lifecycle assertions, not throughput benchmarks. Allow a busy
+    // developer Mac to schedule the isolated fixture without racing its completion.
+    private func waitFor(_ condition: () -> Bool, timeout: TimeInterval = 20) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition(), Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertTrue(condition(), "The isolated asynchronous operation did not complete.")

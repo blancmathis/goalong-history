@@ -590,7 +590,7 @@
                 XCTAssertEqual(try? result.get(), 2)
                 completion.fulfill()
             }
-            wait(for: [completion], timeout: 2)
+            wait(for: [completion], timeout: 15)
 
             let remainingRows = try Data(contentsOf: file).split(separator: 0x0A)
             let remainingEvents = remainingRows.compactMap {

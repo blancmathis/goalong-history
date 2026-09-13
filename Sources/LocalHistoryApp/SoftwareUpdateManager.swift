@@ -101,6 +101,7 @@
 
         private var updaterController: SPUStandardUpdaterController?
         private var hasStarted = false
+        private var lastBackgroundCheck: Date?
         private var userAttendedCurrentUpdate = false
 
         var availableVersion: String? {
@@ -117,7 +118,9 @@
         }
 
         var canCheckForUpdates: Bool {
-            isConfigured && (updaterController?.updater.canCheckForUpdates ?? false)
+            // A click during a background session must be queued, never discarded.
+            // Unconfigured source builds show an explanation instead of an inert menu.
+            true
         }
 
         private override init() {
@@ -130,7 +133,7 @@
 
             guard Self.hasValidSparkleConfiguration(in: .main) else {
                 requiresSignedBuild = true
-                statusMessage = "In-app updates are disabled in this privacy-audited source build."
+                statusMessage = "This source build has no release signing key. Install the Community release to enable in-app updates."
                 return
             }
 
@@ -140,7 +143,16 @@
                 userDriverDelegate: self
             )
             updaterController = controller
-            controller.startUpdater()
+            // Do not send Sparkle's optional system profile. The feed contains no activity data.
+            controller.updater.sendsSystemProfile = false
+            controller.updater.automaticallyDownloadsUpdates = false
+            do {
+                try controller.updater.start()
+            } catch {
+                updaterController = nil
+                statusMessage = "The updater could not start: \(error.localizedDescription)"
+                return
+            }
 
             isConfigured = true
             requiresSignedBuild = false
@@ -151,7 +163,7 @@
 
             // Sparkle's scheduled interval may not be due yet, especially on a freshly installed
             // build. Start one quiet update session now so the dashboard button reflects the
-            // current Git release without waiting up to a day. Keeping Sparkle's scheduled session
+            // current Git release without waiting for the hourly interval. Keeping Sparkle's scheduled session
             // alive also lets a click on that button reveal the already-found update immediately,
             // instead of performing a second user-visible feed check.
             DispatchQueue.main.async { [weak self] in
@@ -163,6 +175,7 @@
             guard hasStarted else { return }
             updaterController = nil
             hasStarted = false
+            lastBackgroundCheck = nil
             isConfigured = false
             isChecking = false
             automaticallyChecksForUpdates = false
@@ -171,9 +184,21 @@
         }
 
         func refreshAvailableUpdate() {
+            guard automaticallyChecksForUpdates else { return }
+            guard Self.shouldCheckInBackground(lastCheck: lastBackgroundCheck, now: Date()) else { return }
+            beginBackgroundCheck()
+        }
+
+        static func shouldCheckInBackground(lastCheck: Date?, now: Date) -> Bool {
+            guard let lastCheck else { return true }
+            return now.timeIntervalSince(lastCheck) >= 3600
+        }
+
+        private func beginBackgroundCheck() {
             guard let updater = updaterController?.updater, updater.canCheckForUpdates else { return }
             guard !updater.sessionInProgress else { return }
             guard !isChecking else { return }
+            lastBackgroundCheck = Date()
             isChecking = true
             statusMessage = presentationState.availableVersion == nil
                 ? "Checking for updates…"
@@ -182,7 +207,17 @@
         }
 
         func checkForUpdates() {
-            guard let updater = updaterController?.updater else { return }
+            if !hasStarted { start() }
+            guard let updater = updaterController?.updater, isConfigured else {
+                let alert = NSAlert()
+                alert.messageText = "In-app updates are unavailable in this build"
+                alert.informativeText = statusMessage
+                alert.addButton(withTitle: "Open releases")
+                alert.addButton(withTitle: "Cancel")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                if alert.runModal() == .alertFirstButtonReturn { openRollingReleasePage() }
+                return
+            }
 
             switch presentationState.requestUpdateCheck(hasActiveSession: updater.sessionInProgress) {
             case .present:
@@ -230,10 +265,12 @@
         func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
             guard let updater = updaterController?.updater else { return }
             updater.automaticallyChecksForUpdates = enabled
+            lastBackgroundCheck = nil
             automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
             statusMessage = automaticallyChecksForUpdates
                 ? "Verified update checks run automatically."
                 : "Automatic update checks are off."
+            if automaticallyChecksForUpdates { refreshAvailableUpdate() }
         }
 
         private func markDetected(_ item: SUAppcastItem) {
@@ -285,7 +322,8 @@
                     presentationState.cancelPendingRequest()
                     return
                 }
-                refreshAvailableUpdate()
+                // This is a user click, not an automatic check; honor it even when checks are off.
+                beginBackgroundCheck()
             case .checkForUpdates:
                 startUserInitiatedCheck()
             }
@@ -313,24 +351,36 @@
             statusMessage = "\(ProductIdentity.displayName) is up to date."
         }
 
+        static func isNoUpdateResult(_ error: any Error) -> Bool {
+            let error = error as NSError
+            return error.domain == SUSparkleErrorDomain && error.code == Int(SUError.noUpdateError.rawValue)
+        }
+
+        static let releaseFeedURL = "https://github.com/blancmathis/goalong-history/releases/download/latest-main/community-appcast.xml"
+
         private static func hasValidSparkleConfiguration(in bundle: Bundle) -> Bool {
-            guard bundle.bundleURL.pathExtension == "app" else { return false }
-            guard
-                let feedString = bundle.object(forInfoDictionaryKey: "SUFeedURL") as? String,
-                let feedURL = URL(string: feedString),
-                feedURL.scheme?.lowercased() == "https"
-            else { return false }
+            hasValidSparkleConfiguration(info: bundle.infoDictionary ?? [:], isApp: bundle.bundleURL.pathExtension == "app")
+        }
 
-            guard
-                let publicKey = bundle.object(forInfoDictionaryKey: "SUPublicEDKey") as? String,
-                Data(base64Encoded: publicKey)?.count == 32
-            else { return false }
-
+        static func hasValidSparkleConfiguration(info: [String: Any], isApp: Bool) -> Bool {
+            guard isApp, info["SUFeedURL"] as? String == releaseFeedURL,
+                  let key = info["SUPublicEDKey"] as? String,
+                  Data(base64Encoded: key)?.count == 32,
+                  info["SURequireSignedFeed"] as? Bool == true,
+                  info["SUVerifyUpdateBeforeExtraction"] as? Bool == true,
+                  info["SUAllowsAutomaticUpdates"] as? Bool == false,
+                  info["SUEnableSystemProfiling"] as? Bool == false else { return false }
             return true
         }
+
     }
 
     extension SoftwareUpdateManager: SPUUpdaterDelegate {
+        func feedURLString(for updater: SPUUpdater) -> String? {
+            // Ignore any obsolete user-default feed override from pre-Community builds.
+            Self.releaseFeedURL
+        }
+
         func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
             // Sparkle finds the appcast item before its standard user driver has prepared the
             // install alert. Remember the version here, but do not expose a clickable badge yet.
@@ -361,11 +411,24 @@
             error: (any Error)?
         ) {
             isChecking = false
-            if error != nil {
+            lastBackgroundCheck = Date()
+            if let error, !Self.isNoUpdateResult(error) {
                 let hadPendingRequest = presentationState.hasPendingRequest
                 presentationState.cancelPendingRequest()
-                if hadPendingRequest || presentationState.availableVersion == nil {
-                    statusMessage = "The update check could not be completed. Try again later."
+                statusMessage = "The update check could not be completed: \(error.localizedDescription)"
+                if hadPendingRequest && updateCheck != .updates {
+                    // A click that was queued behind a background check must still get a visible
+                    // result on a network/signature failure, without interrupting passive checks.
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        let alert = NSAlert()
+                        alert.messageText = "Unable to check for updates"
+                        alert.informativeText = self.statusMessage
+                        alert.addButton(withTitle: "Try again")
+                        alert.addButton(withTitle: "Cancel")
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                        if alert.runModal() == .alertFirstButtonReturn { self.checkForUpdates() }
+                    }
                 }
                 return
             }

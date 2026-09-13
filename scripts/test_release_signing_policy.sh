@@ -25,9 +25,11 @@ fi
 /usr/bin/grep -Fq 'Never disable Gatekeeper globally' "$INSTALLER"
 /usr/bin/grep -Fq 'This free Community update has a new ad-hoc identity' "$INSTALLER"
 
-if /usr/bin/grep -Eq 'SUFeedURL|SUPublicEDKey|SPARKLE_' "$WORKFLOW"; then
-  echo "The public release workflow still contains an automatic-update trust path." >&2
-  exit 1
-fi
+# Authenticated updates are mandatory now; an unsigned fallback must never be published.
+/usr/bin/grep -Fq 'SPARKLE_PRIVATE_ED_KEY:' "$WORKFLOW"
+/usr/bin/grep -Fq 'LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY:' "$WORKFLOW"
+/usr/bin/grep -Fq 'LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1' "$WORKFLOW"
+/usr/bin/grep -Fq 'Publish immutable update archive' "$WORKFLOW"
+/usr/bin/grep -Fq 'Publish authenticated feed last' "$WORKFLOW"
 
-echo "Release policy tests passed: one free ad-hoc Community Build, pinned GitHub provenance attestation, explicit Gatekeeper/permission limits, and no in-app updater."
+echo "Release policy tests passed: free Community Build; authenticated updates; explicit Gatekeeper/permission limits."

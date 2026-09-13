@@ -10,7 +10,7 @@
     }
 
     /// Compile-time capability inventory for the single public application.
-    /// Sparkle and the retired commitment uploader are physically absent. The only
+    /// Sparkle authenticates release feeds and archives; the retired commitment uploader is absent. The only
     /// first-party HTTP transport is the explicitly requested website submission. The
     /// optional ChatGPT feature delegates transport and credentials to the user's
     /// separately installed Codex runtime after an explicit Goalong consent.
@@ -19,11 +19,11 @@
         static let permitsFirstPartyNetworking = true
         static let permitsRemoteVerification = false
         static let permitsRemoteAnalysis = true
-        static let permitsAutomaticUpdates = false
+        static let permitsAutomaticUpdates = true
         static let permitsHTTPWorkspaceOpening = true
 
         static var summary: String {
-            "One Goalong app · local collection off by default · website sends and opt-in scheduling · no Sparkle"
+            "One Goalong app · local collection off by default · website sends and opt-in scheduling · signed, user-approved updates"
         }
     }
 #endif

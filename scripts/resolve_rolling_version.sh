@@ -96,12 +96,17 @@ else
   NEXT_VERSION="$AUTOMATIC_VERSION"
 fi
 
-# Apple requires numeric bundle versions. Encode the monotonic GitHub workflow run number in the
-# established 5000.x.y rolling-build range.
-BUILD_MAJOR=$((5000 + RUN_SEQUENCE / 10000))
-BUILD_MINOR=$(((RUN_SEQUENCE / 100) % 100))
-BUILD_PATCH=$((RUN_SEQUENCE % 100))
-BUILD_NUMBER="${BUILD_MAJOR}.${BUILD_MINOR}.${BUILD_PATCH}"
+# Migration high-water mark: public 20260912.4 installs must compare older.
+# GitHub run IDs are shared across workflows, unlike run_number. Partition the ID into
+# bounded numeric components; reserve two digits for retries. Tagged installers and
+# rolling releases therefore share the same monotonic update version space.
+PUBLISH_RUN_ID="${GITHUB_RUN_ID:-$RUN_SEQUENCE}"
+ATTEMPT="${GITHUB_RUN_ATTEMPT:-1}"
+if [[ ! "$PUBLISH_RUN_ID" =~ ^[1-9][0-9]*$ || ! "$ATTEMPT" =~ ^[1-9][0-9]?$ ]]; then
+  echo "A positive numeric run ID and attempt in 1...99 are required." >&2
+  exit 1
+fi
+BUILD_NUMBER="20260913.$((PUBLISH_RUN_ID / 10000)).$(((PUBLISH_RUN_ID % 10000) * 100 + ATTEMPT))"
 
 printf 'value=%s\n' "$NEXT_VERSION"
 printf 'build=%s\n' "$BUILD_NUMBER"

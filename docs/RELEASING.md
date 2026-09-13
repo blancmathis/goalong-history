@@ -1,33 +1,33 @@
 # Releasing the single Goalong app
 
-Goalong’s public installation path is one universal free Community Build inside a DMG/ZIP. It is
-ad-hoc code signed for bundle-integrity validation, but it is not Apple-notarized. Users are not
-asked to install Xcode or pay for Apple Developer Program membership.
+The public app is one universal Community Build (ad-hoc signed, not Apple-notarized). Every
+successful `main` push runs tests, builds arm64/x86_64 and publishes an authenticated update.
 
-Required GitHub configuration:
+Required GitHub secrets are `SPARKLE_PRIVATE_ED_KEY` and `SPARKLE_PUBLIC_ED_KEY` (the public
+key may alternatively be a repository variable for compatibility). No Apple credential is required.
+The repository remains public; Actions need contents, id-token, attestations and artifact-metadata
+write permissions. Private keys must never be logged, committed, or passed on command lines.
 
-- Actions must have `contents: write`, `id-token: write`, `attestations: write` and
-  `artifact-metadata: write` permissions;
-- the repository must remain public for GitHub Free artifact attestations;
-- no Apple signing or notarization credential is used.
+The rolling workflow runs the full test suite, audits the bundle and capabilities, creates ZIP/DMG,
+signs the archive and appcast, checks the signature against the embedded key, then generates
+inventories and GitHub provenance attestations. It uploads the ZIP to an immutable `main-RUN_ID-ATTEMPT`
+release. Manual-download assets follow; the authenticated `community-appcast.xml` is uploaded last,
+then `latest-main` moves to the commit. Do not overwrite immutable archives or reorder these steps.
+Publication is not cancelled midway when a new commit arrives.
 
-The rolling and stable workflows:
+Build numbers use migration epoch `20260913`, followed by `RUN_ID / 10000` and
+`(RUN_ID % 10000) * 100 + ATTEMPT`. GitHub run IDs order both tagged installers and rolling
+releases; workflow-local run numbers cannot safely order two workflows. Attempts must be 1–99.
+Do not revert to `5000.x.y`: public `20260912.4` installs compare newer than that old range.
+Marketing versions alone cannot fix detection. Superseded or non-main runs cannot replace the feed.
 
-1. run tests, privacy/source audits and script validation;
-2. build `Goalong History.app` for arm64 and x86_64;
-3. require the expected ad-hoc trust mode and verify bundle identity, signatures, entitlements and
-   the all-off capability manifest;
-4. create the DMG/ZIP and their SHA-256 files;
-5. generate a Sigstore-backed GitHub build-provenance attestation;
-6. publish DMG, ZIP, SHA-256 files, SBOM, capability manifest and release manifest.
+Before publication run `swift test`, `python3 scripts/test_update_policy.py`,
+`python3 scripts/test_site_submission_policy.py`, `scripts/verify_source_security.sh` and the
+release/signing script checks. Export integration tests run under UTC, America/Chicago and Europe/Paris;
+their synthetic fixtures must use the runtime timezone, while DST-specific fixtures remain fixed.
+Never weaken the production timezone/privacy checks or skip failing tests to publish an update.
 
-There is no Sparkle key, appcast or automatic update channel. Release notes and installation docs
-must say that Gatekeeper can require **Privacy & Security → Open Anyway** and that a changed ad-hoc
-identity can make macOS request Goalong permissions again. Never recommend disabling Gatekeeper
-globally. Preserve the stable bundle identifier, exact-source manifest and GitHub provenance, and
-test a real replacement before broad publication.
-
-The trust boundary is explicit: SHA-256 files on the same release protect against accidental
-corruption but do not independently authenticate GitHub. The GitHub/Sigstore attestation binds each
-artifact digest to the repository workflow and commit; it still does not make the build notarized or
-byte-for-byte reproducible.
+Release notes must disclose initial bootstrap installation for old no-updater builds, user-approved
+installation, configurable hourly checks, and the ad-hoc macOS permission limitation. Preserve
+bundle identity and application data. Never claim Apple notarization or guaranteed permission continuity.
+See `UPDATE-SECURITY.md` for authentication and remaining publisher trust.

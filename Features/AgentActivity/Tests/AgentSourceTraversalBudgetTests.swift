@@ -646,7 +646,16 @@ final class AgentSourceTraversalBudgetTests: XCTestCase {
             maximumIndexEntries: 128
         )
         let store = try AgentActivityStore(rootDirectory: storeRoot)
-        let scanner = AgentActivityScanner(store: store)
+        // This verifies catalog-cache behavior, not scheduler speed. Real-time traversal/body
+        // deadlines can defer the initial 500-session inventory on a busy developer Mac,
+        // making the following supposedly cold poll resume discovery instead. Keep production
+        // visit/byte limits, but freeze only this fixture's clocks; deadline tests remain separate.
+        let scanner = AgentActivityScanner(
+            store: store,
+            sourceTraversalLimits: .production,
+            sourceTraversalUptimeNanoseconds: { 0 },
+            sourceBodyReadUptimeNanoseconds: { 0 }
+        )
         let initialDate = Date(timeIntervalSince1970: 1_787_471_500)
         let initial = scanner.scan(
             configuration: configuration,
@@ -724,7 +733,14 @@ final class AgentSourceTraversalBudgetTests: XCTestCase {
             )
         }
         let store = try AgentActivityStore(rootDirectory: storeRoot)
-        let scanner = AgentActivityScanner(store: store)
+        // Eight 32-root cycles exercise the root/cache bounds, not wall-clock speed.
+        // A busy Mac may otherwise legitimately stop a cycle before its 32nd root.
+        let scanner = AgentActivityScanner(
+            store: store,
+            sourceTraversalLimits: .production,
+            sourceTraversalUptimeNanoseconds: { 0 },
+            sourceBodyReadUptimeNanoseconds: { 0 }
+        )
         let configuration = AgentActivityConfiguration(watchedFolders: folders)
 
         var discoveryFailures: [String] = []

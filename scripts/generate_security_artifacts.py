@@ -13,6 +13,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from update_policy import manifest_policy
 
 
 SCHEMA_VERSION = 1
@@ -236,17 +237,18 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
     ) if (app / "Contents" / "Frameworks").exists() else []
     capability_states = {
         "singlePublicApplication": "present",
-        "defaultCapabilityState": "all-off",
+        "defaultCapabilityState": "data-access-off-update-checks-configurable",
         "explicitConsentRegistry": "present",
         "firstPartyNetworkTransport": "explicit-site-pairing-and-submission-only",
-        "automaticUpdater": "absent",
+        "automaticUpdater": "sparkle-signed-user-approved-install",
         "managedChatGPTBridge": "explicit-consent-only",
         "directProviderSourceReaders": "present",
-        "processExecution": "fixed-codex-app-server-only",
+        "processExecution": "fixed-codex-app-server-and-sparkle-installer-only",
         "fullDiskAccessIsolationService": "not-shipped",
         "osEnforcedNetworkSandbox": "not-enabled",
     }
     declared_network_destinations: list[dict[str, str]] = [
+        {"purpose": "signed-software-updates", "destination": "fixed Community feed and immutable release archives on GitHub/CDN", "source": "pinned Sparkle; no activity data or system profile"},
         {"purpose": "explicit-website-pairing", "destination": "user-confirmed website origin", "source": "GoalongSitePairing after native confirmation"},
         {
             "purpose": "managed-ChatGPT-analysis-after-explicit-consent",
@@ -312,6 +314,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         },
         "network": {
             "declaredDestinations": declared_network_destinations,
+            "softwareUpdates": manifest_policy(info),
             "osEnforcedDeny": False,
             "sitePairing": {"trigger": "native-confirmed-goalong-history-link", "path": "/api/goalong/v1/native/pairing/claim", "method": "POST", "codeLifetimeSeconds": 300, "singleUse": True, "redirects": "refused", "responseMaximumBytes": 8192, "tokenStorage": "user-owned-0600-file", "activityDataSent": False},
             "siteSubmission": {
@@ -361,7 +364,6 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
                 "chatGPTAnalysis": False,
                 "websiteSubmission": False,
                 "remoteVerification": False,
-                "automaticUpdates": False,
                 "launchAtLogin": False,
             },
             "enforcement": "reviewed source policy and runtime validation; not an App Sandbox path allowlist",
@@ -385,6 +387,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "limitations": [
             "This manifest inventories the built artifact; the separately published GitHub/Sigstore attestation binds artifact digests to CI provenance but does not prove source-to-binary reproducibility.",
             "Absence of reviewed transport markers does not create an OS network sandbox.",
+            "Sparkle authenticates feeds and archives, not an Apple identity. Community updates may require renewed macOS permissions. User approval is required for installation.",
             "Full Disk Access readers still run in the main process; a separately sandboxed reader is not shipped.",
             "The explicit-consent Codex process bridge is an emission path and remains part of the review surface.",
             "Explicit website sends emit only the selected bounded exchange fields; existing server-side sharing rules may disclose authorized dates and fields. This is not an authenticity verification system.",
@@ -465,7 +468,7 @@ def release_manifest(
         }
     ]
     release_prefix = "Goalong-History-"
-    always_included = {"security-capabilities.json", "sbom.spdx.json"}
+    always_included = {"security-capabilities.json", "sbom.spdx.json", "community-appcast.xml"}
     for path in sorted(output.iterdir(), key=lambda value: value.name):
         if path.name == "release-manifest.json":
             continue

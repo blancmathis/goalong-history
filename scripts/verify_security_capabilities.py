@@ -8,6 +8,7 @@ import json
 import plistlib
 import sys
 from pathlib import Path
+from update_policy import manifest_policy, validate_info
 
 
 def fail(message: str) -> None:
@@ -42,22 +43,20 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     if any(not item.get("sha256") for item in value["codeObjects"]):
         fail("an executable has no SHA-256 digest")
 
-    expected_absent = ("automaticUpdater",)
-    for capability in expected_absent:
-        if value.get("capabilities", {}).get(capability) != "absent":
-            fail(f"single-app capability is not absent: {capability}")
+    if value.get("capabilities", {}).get("automaticUpdater") != "sparkle-signed-user-approved-install":
+        fail("signed user-approved updater capability is missing")
     if value.get("capabilities", {}).get("firstPartyNetworkTransport") != "explicit-site-pairing-and-submission-only":
         fail("first-party transport is not confined to explicit website submission")
     if value.get("capabilities", {}).get("singlePublicApplication") != "present":
         fail("single public application invariant is missing")
-    if value.get("capabilities", {}).get("defaultCapabilityState") != "all-off":
-        fail("new-install capability defaults are not all off")
+    if value.get("capabilities", {}).get("defaultCapabilityState") != "data-access-off-update-checks-configurable":
+        fail("new-install data-access defaults are not off")
     if value.get("capabilities", {}).get("managedChatGPTBridge") != "explicit-consent-only":
         fail("Codex bridge consent state is not explicit")
-    if value.get("capabilities", {}).get("processExecution") != "fixed-codex-app-server-only":
+    if value.get("capabilities", {}).get("processExecution") != "fixed-codex-app-server-and-sparkle-installer-only":
         fail("process execution is broader than the fixed Codex bridge")
-    if value.get("bundle", {}).get("frameworks"):
-        fail("single app embeds a framework")
+    if value.get("bundle", {}).get("frameworks") != ["Sparkle.framework"]:
+        fail("only the pinned Sparkle framework may be embedded")
     if value.get("bundle", {}).get("appGroups"):
         fail("single app contains an app-group channel")
     mach_services = value.get("bundle", {}).get("machServices", {})
@@ -70,12 +69,19 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     markers = value.get("detectedBinaryMarkers", {})
     if not markers.get("codexAppServer") or not markers.get("managedOAuth"):
         fail("explicit-consent Codex bridge markers are missing")
-    if markers.get("commitmentUploader") or markers.get("sparkleUpdater"):
-        fail("retired commitment uploader or updater marker is present")
+    if markers.get("commitmentUploader") or markers.get("sparkleUpdater") is not True:
+        fail("retired uploader present or signed updater missing")
     if markers.get("siteSubmission") is not True:
         fail("explicit website submission marker is missing")
-    if value.get("bundle", {}).get("infoPlistNetworkAndUpdateKeys"):
-        fail("single app contains an update or network Info.plist key")
+    try:
+        validate_info(info)
+        if value.get("network", {}).get("softwareUpdates") != manifest_policy(info):
+            fail("update transport does not match the signed, user-approved contract")
+    except ValueError as error:
+        fail(str(error))
+    actual_keys = sorted(key for key in info if key.startswith("SU") or key == "NSAppTransportSecurity")
+    if value.get("bundle", {}).get("infoPlistNetworkAndUpdateKeys") != actual_keys:
+        fail("update/network key inventory does not match the app")
     if value.get("network", {}).get("osEnforcedDeny") is not False:
         fail("network sandbox state is not reported honestly")
     expected_pairing = {"trigger": "native-confirmed-goalong-history-link", "path": "/api/goalong/v1/native/pairing/claim", "method": "POST", "codeLifetimeSeconds": 300, "singleUse": True, "redirects": "refused", "responseMaximumBytes": 8192, "tokenStorage": "user-owned-0600-file", "activityDataSent": False}
@@ -94,10 +100,10 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     if value.get("network", {}).get("siteSubmission") != expected_submission:
         fail("explicit website submission constraints differ from the reviewed contract")
     destinations = value.get("network", {}).get("declaredDestinations", [])
-    if len(destinations) != 3 or {item.get("purpose") for item in destinations} != {
-        "managed-ChatGPT-analysis-after-explicit-consent", "explicit-selected-website-import", "explicit-website-pairing"
+    if len(destinations) != 4 or {item.get("purpose") for item in destinations} != {
+        "managed-ChatGPT-analysis-after-explicit-consent", "explicit-selected-website-import", "explicit-website-pairing", "signed-software-updates"
     }:
-        fail("declared network emission paths differ from the two reviewed optional features")
+        fail("declared network emission paths differ from the reviewed optional features and signed updater")
     if value.get("ipc", {}).get("authenticatedSensitiveReader") != "not-shipped":
         fail("reader isolation state is not reported honestly")
     defaults = value.get("dataAccess", {}).get("newInstallDefaults", {})
