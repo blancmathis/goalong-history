@@ -281,7 +281,8 @@
 
         private static func canReadFocusedApplication() -> Bool {
             let systemWide = AXUIElementCreateSystemWide()
-            AXUIElementSetMessagingTimeout(systemWide, 0.12)
+            // Setting a timeout on the system-wide element would change the
+            // default for every AX client in this process, not just this probe.
             var focusedApplication: CFTypeRef?
             let result = AXUIElementCopyAttributeValue(
                 systemWide,
