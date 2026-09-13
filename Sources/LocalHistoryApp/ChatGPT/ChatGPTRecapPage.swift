@@ -251,7 +251,7 @@
                             systemImage: "sparkles"
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(!canGenerate || recapRuntime.isGenerating)
                 }
             }

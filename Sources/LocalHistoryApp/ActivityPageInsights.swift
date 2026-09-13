@@ -193,7 +193,7 @@
                         Button("Open Markdown") {
                             analysisModel.openAgentBrief(for: model.selectedDay)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(LHPrimaryButtonStyle())
 
                         Button("Reveal files") {
                             analysisModel.revealAnalysisFiles(for: model.selectedDay)

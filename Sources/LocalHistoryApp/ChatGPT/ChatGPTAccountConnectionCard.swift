@@ -56,7 +56,7 @@
                 Button("Install Codex") {
                     runtime.openCodexInstallGuide()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(LHPrimaryButtonStyle())
             case .connected:
                 HStack(spacing: 8) {
                     Button {
@@ -93,7 +93,7 @@
                     Button(runtime.isConnecting ? "Connecting…" : "Connect ChatGPT") {
                         runtime.connectChatGPT()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(runtime.isConnecting)
                 }
             }

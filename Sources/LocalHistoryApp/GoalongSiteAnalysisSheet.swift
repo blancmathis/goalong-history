@@ -295,7 +295,7 @@ struct GoalongSiteAnalysisSheet: View {
                             .font(.caption).foregroundStyle(.secondary)
                         HStack {
                             Button("Analyser avec ChatGPT", action: model.analyze)
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(LHPrimaryButtonStyle())
                                 .disabled(model.busy || !model.reviewed || !model.connected || !consents.isEnabled(.chatGPTAnalysis))
                         }
                     }
@@ -310,7 +310,7 @@ struct GoalongSiteAnalysisSheet: View {
                             .accessibilityLabel("Résultats du brouillon")
                         Text("Le fichier exporté contiendra uniquement votre récap. Aucune mesure ni vérification n’est créée. Importez-le ensuite sur le site ; vos règles de partage s’y appliqueront.")
                             .font(.caption).foregroundStyle(.secondary)
-                        Button("Exporter le brouillon…", action: exportDraft).buttonStyle(.borderedProminent)
+                        Button("Exporter le brouillon…", action: exportDraft).buttonStyle(LHPrimaryButtonStyle())
                     }
                     if let error = model.error {
                         Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(LHTheme.warning)

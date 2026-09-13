@@ -192,7 +192,7 @@
                     Button("Open Full Disk Access") {
                         screenTime.openFullDiskAccessSettings()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(LHPrimaryButtonStyle())
                 } else if screenTime.status.kind == .localOnly || screenTime.status.kind == .noAppleData {
                     Button("Screen Time settings") {
                         screenTime.openScreenTimeSettings()
@@ -693,7 +693,7 @@
                     Button("Export…") {
                         screenTime.exportSharePayload()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(screenTime.summary == nil || screenTime.isBusy)
                 }
             }

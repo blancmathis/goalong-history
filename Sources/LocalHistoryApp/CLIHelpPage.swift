@@ -117,7 +117,7 @@
                             Label(copyButtonTitle, systemImage: copyButtonSymbol)
                                 .frame(minWidth: 172, minHeight: 32)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(LHPrimaryButtonStyle())
                         .controlSize(.large)
                         .accessibilityHint("Copies all Goalong CLI instructions for a local agent")
                     }

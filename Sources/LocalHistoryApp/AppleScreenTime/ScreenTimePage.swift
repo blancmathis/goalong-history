@@ -116,7 +116,7 @@
                 Button("Open Full Disk Access") {
                     screenTime.openFullDiskAccessSettings()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(LHPrimaryButtonStyle())
             case .localOnly, .noAppleData:
                 Button("Open Screen Time settings") {
                     screenTime.openScreenTimeSettings()
@@ -347,7 +347,7 @@
                     } label: {
                         Label("Export source data", systemImage: "square.and.arrow.up")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(screenTime.isBusy || summary.deviceSummaries.isEmpty)
                 }
             }
@@ -369,7 +369,7 @@
                         } label: {
                             Label("Open Full Disk Access", systemImage: "lock.open.display")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(LHPrimaryButtonStyle())
                     } else {
                         Button {
                             screenTime.openScreenTimeSettings()

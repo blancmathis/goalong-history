@@ -1,24 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
   <title id="title">Goalong History icon</title>
-  <desc id="desc">A blue and violet rounded square containing a clock with a green verified check.</desc>
+  <desc id="desc">The Goalong mark in lime on a forest-green macOS tile.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#3478f6"/>
-      <stop offset="1" stop-color="#6843e6"/>
-    </linearGradient>
-    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="24" stdDeviation="34" flood-color="#07132f" flood-opacity=".45"/>
-    </filter>
+    <linearGradient id="forest" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1b251e"/><stop offset="1" stop-color="#0b100d"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dy="12" stdDeviation="16" flood-color="#0b100d" flood-opacity=".3"/></filter>
   </defs>
-  <rect x="90" y="80" width="844" height="844" rx="220" fill="url(#bg)" filter="url(#shadow)"/>
-  <rect x="106" y="96" width="812" height="812" rx="204" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="5"/>
-  <circle cx="484" cy="500" r="245" fill="#0b1e4b" stroke="#fff" stroke-width="24"/>
-  <g stroke="#fff" stroke-linecap="round">
-    <path d="M484 292v34M588 320l-17 29M664 396l-29 17M692 500h-34M664 604l-29-17M588 680l-17-29M484 708v-34M380 680l17-29M304 604l29-17M276 500h34M304 396l29 17M380 320l17 29" stroke-width="10" opacity=".78"/>
-    <path d="M484 500V365M484 500l112 62" stroke-width="25"/>
+  <rect x="90" y="80" width="844" height="844" rx="220" fill="url(#forest)" filter="url(#shadow)"/>
+  <rect x="90" y="80" width="844" height="844" rx="220" fill="none" stroke="#506455" stroke-opacity=".55" stroke-width="3"/>
+  <g transform="translate(200 286) scale(24)" fill="none" stroke="#d3f35f" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2.08 9 C2.08 1.8 9.62 1.44 13.26 9 C16.64 16.56 23.92 16.2 23.92 9 C23.92 1.8 16.64 1.44 13.26 9 C9.62 16.56 2.08 16.2 2.08 9 M2.08 9 H10.14 C11.44 9 12.74 9.72 12.74 10.62"/>
   </g>
-  <circle cx="484" cy="500" r="24" fill="#fff"/>
-  <circle cx="710" cy="690" r="116" fill="#f7f9ff"/>
-  <circle cx="710" cy="690" r="92" fill="#23b977"/>
-  <path d="M660 690l38 42 74-85" fill="none" stroke="#fff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

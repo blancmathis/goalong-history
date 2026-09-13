@@ -163,7 +163,7 @@
                         } label: {
                             Label("Add folder", systemImage: "folder.badge.plus")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(LHPrimaryButtonStyle())
                     }
                 }
             }
@@ -588,7 +588,7 @@
                     Button("Install") {
                         agents.installIntegration(kind)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(LHPrimaryButtonStyle())
                 }
             }
         }
@@ -615,7 +615,7 @@
                         } label: {
                             Label("Add folder", systemImage: "plus")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(LHPrimaryButtonStyle())
                     }
 
                     if agents.userWatchedFolders.isEmpty {
@@ -1010,7 +1010,7 @@
                     Button("Save") {
                         onSave(draft)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(LHPrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .disabled(draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }

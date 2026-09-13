@@ -87,7 +87,7 @@ struct GoalongHealthImportSheet: View {
             Text("Dans Santé : Résumé → votre profil → Exporter toutes les données de santé. Envoyez le fichier au Mac par AirDrop, décompressez-le puis sélectionnez export.xml.")
                 .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("Choisir export.xml…", action: chooseFile).buttonStyle(.borderedProminent)
+                Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle())
                 if let file { Text(file.lastPathComponent).font(.caption); Button("Oublier ce fichier") { self.file = nil; sourceChoices = [:]; preferred = [:]; invalidate() } }
             }
             Text("Le fichier complet est lu sur ce Mac. Les dossiers médicaux, médicaments, trajets GPS et autres données non proposées ici sont exclus.")
@@ -177,7 +177,7 @@ struct GoalongHealthImportSheet: View {
                 Text("Créez cet accès depuis Sources et connexions sur le site. Seules les mesures de cet aperçu seront transmises ; vos autorisations Santé explicites sur le site détermineront leur visibilité.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Toggle("J’autorise l’envoi de ces données Santé au site indiqué.", isOn: $consent)
-                Button("Envoyer les données relues", action: sendReviewedHealth).buttonStyle(.borderedProminent)
+                Button("Envoyer les données relues", action: sendReviewedHealth).buttonStyle(LHPrimaryButtonStyle())
                     .disabled(!consent || origin.isEmpty || tokenFilePath.isEmpty)
             }
         }

@@ -287,7 +287,7 @@ private struct GoalongWebsiteConnectionSheet: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Send reviewed data", action: sendReviewedData)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(busy || payload == nil || tokenFilePath.isEmpty || origin.isEmpty)
             }
             .padding(20)

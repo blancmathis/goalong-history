@@ -19,7 +19,7 @@
                         settingsHeader
                         paneContent
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
                     .padding(.horizontal, LHTheme.pageInset)
                     .padding(.top, 28)
                     .padding(.bottom, 36)
@@ -64,7 +64,7 @@
                         Button("Save settings") {
                             model.saveSettings()
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(LHPrimaryButtonStyle())
                         .keyboardShortcut("s", modifiers: [.command])
                     }
                 }
@@ -210,7 +210,7 @@
                             pane = .advanced
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous))
                 }
             }
         }
@@ -246,6 +246,8 @@
                 .contentShape(Rectangle())
             }
             .buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
+            .accessibilityLabel(title)
+            .accessibilityHint(detail)
             .help("Open \(title)")
         }
 
@@ -499,7 +501,7 @@
                     Button("Save settings") {
                         model.saveSettings()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(LHPrimaryButtonStyle())
                 }
             }
             .padding(.horizontal, 24)

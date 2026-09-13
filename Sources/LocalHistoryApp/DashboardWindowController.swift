@@ -102,7 +102,8 @@
             window.title = ProductIdentity.displayName
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.titleVisibility = .visible
-            window.titlebarAppearsTransparent = false
+            window.titlebarAppearsTransparent = true
+            window.backgroundColor = NSColor(LHTheme.pageBackground)
             window.isMovableByWindowBackground = false
             window.minSize = NSSize(width: 1080, height: 680)
             window.setContentSize(NSSize(width: 1240, height: 790))

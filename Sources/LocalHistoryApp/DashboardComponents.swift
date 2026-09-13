@@ -3,33 +3,12 @@
     import SwiftUI
     import LocalHistoryCore
 
-    enum LHTheme {
-        static let accent = Color(red: 0.20, green: 0.48, blue: 0.96)
-        static let success = Color(red: 0.16, green: 0.66, blue: 0.42)
-        static let warning = Color(red: 0.94, green: 0.58, blue: 0.16)
-        static let danger = Color(red: 0.91, green: 0.30, blue: 0.32)
-        static let privateTint = Color(red: 0.48, green: 0.35, blue: 0.86)
-        static let teal = Color(red: 0.12, green: 0.65, blue: 0.67)
-        static let sidebarBackground = surface(light: 0.96, dark: 0.10)
-        static let pageBackground = surface(light: 0.985, dark: 0.125)
-        static let cardBackground = surface(light: 1.0, dark: 0.145)
-        static let elevatedBackground = Color(nsColor: .textBackgroundColor)
-        static let separator = Color(nsColor: .separatorColor)
-        static let pageInset: CGFloat = 28
-
-        private static func surface(light: CGFloat, dark: CGFloat) -> Color {
-            Color(nsColor: NSColor(name: nil) { appearance in
-                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                return NSColor(white: isDark ? dark : light, alpha: 1)
-            })
-        }
-    }
-
     struct LHCard<Content: View>: View {
+        @Environment(\.colorSchemeContrast) private var contrast
         private let padding: CGFloat
         private let content: Content
 
-        init(padding: CGFloat = 18, @ViewBuilder content: () -> Content) {
+        init(padding: CGFloat = LHTheme.cardInset, @ViewBuilder content: () -> Content) {
             self.padding = padding
             self.content = content()
         }
@@ -38,20 +17,20 @@
             content
                 .padding(padding)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous)
                         .fill(LHTheme.cardBackground)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous)
+                                .strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.separator, lineWidth: 1)
                         )
                 )
         }
     }
 
-    /// Shared whole-row feedback for sidebar and Settings destinations.
+    /// Whole-row feedback; selection also has a shape cue, not just color.
     struct LHNavigationButtonStyle: ButtonStyle {
         var selected = false
-        var cornerRadius: CGFloat = 7
+        var cornerRadius: CGFloat = LHTheme.controlRadius
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.isFocused) private var isFocused
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -60,20 +39,26 @@
         func makeBody(configuration: Configuration) -> some View {
             configuration.label
                 .background(
-                    Color.primary.opacity(
-                        !isEnabled ? 0 : configuration.isPressed ? 0.12
-                            : selected ? 0.085 : isHovered ? 0.045 : 0
-                    ),
+                    !isEnabled ? Color.clear : configuration.isPressed ? LHTheme.pressedBackground
+                        : selected ? LHTheme.selectionBackground : isHovered ? LHTheme.hoverBackground : .clear,
                     in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 )
-                .overlay(
+                .overlay(alignment: .leading) {
+                    if selected {
+                        Capsule().fill(LHTheme.accent)
+                            .frame(width: 3, height: 16).padding(.leading, 4)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .overlay {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2)
-                )
+                }
                 .opacity(isEnabled ? 1 : 0.45)
                 .contentShape(Rectangle())
                 .onHover { isHovered = $0 }
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovered)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: configuration.isPressed)
         }
     }
 
@@ -135,15 +120,18 @@
         private var heading: some View {
             VStack(alignment: .leading, spacing: 6) {
                 if let eyebrow {
-                    Text(eyebrow)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    Text(eyebrow.uppercased())
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
                 Text(title)
-                    .font(.system(size: 24, weight: .semibold))
-                    .fixedSize(horizontal: true, vertical: false)
+                    .font(LHTheme.pageTitleFont)
+                    .tracking(-0.5)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -181,9 +169,9 @@
                         .font(.system(size: 25, weight: .semibold))
                         .monospacedDigit()
                     Text(detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -292,7 +280,7 @@
                     .frame(maxWidth: 360)
                 if let buttonTitle, let action {
                     Button(buttonTitle, action: action)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(LHPrimaryButtonStyle())
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -301,6 +289,7 @@
     }
 
     struct DateSelectionControl: View {
+        @Environment(\.colorSchemeContrast) private var contrast
         let date: Date
         let onChange: (Date) -> Void
         @State private var showsCalendar = false
@@ -313,7 +302,7 @@
                         onChange(previous)
                     }
                 } label: {
-                    Image(systemName: "chevron.left")
+                    Image(systemName: "chevron.left").frame(width: 24, height: 24)
                 }
                 .buttonStyle(.borderless)
                 .help("Previous day")
@@ -342,7 +331,7 @@
                             onChange(Calendar.current.startOfDay(for: calendarDate))
                             showsCalendar = false
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(LHPrimaryButtonStyle())
                         .keyboardShortcut(.defaultAction)
                     }
                     .padding(12)
@@ -362,7 +351,7 @@
                         onChange(next)
                     }
                 } label: {
-                    Image(systemName: "chevron.right")
+                    Image(systemName: "chevron.right").frame(width: 24, height: 24)
                 }
                 .buttonStyle(.borderless)
                 .disabled(Calendar.current.isDateInToday(date))
@@ -370,8 +359,9 @@
                 .accessibilityLabel("Next day")
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.vertical, 4)
+            .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius).strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.separator))
         }
     }
 

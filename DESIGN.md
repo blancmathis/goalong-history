@@ -1,18 +1,18 @@
 ---
 name: Goalong History
-description: Native macOS workspace with restrained dark surfaces and readable activity data.
+description: Native Goalong workspace: forest surfaces, lime actions and readable activity data.
 colors:
-  accent: "rgb(20% 48% 96%)"
-  sidebar-dark: "rgb(10% 10% 10%)"
-  page-dark: "rgb(12.5% 12.5% 12.5%)"
-  card-dark: "rgb(14.5% 14.5% 14.5%)"
-  sidebar-light: "rgb(96% 96% 96%)"
-  page-light: "rgb(98.5% 98.5% 98.5%)"
-  card-light: "#ffffff"
+  accent: "#d3f35f"
+  sidebar-dark: "#0b100d"
+  page-dark: "#101712"
+  card-dark: "#131b16"
+  sidebar-light: "#eae7dc"
+  page-light: "#f4f2ea"
+  card-light: "#faf9f4"
 typography:
   headline:
     fontFamily: "system-ui"
-    fontSize: "24px"
+    fontSize: "26px"
     fontWeight: 600
   title:
     fontFamily: "system-ui"
@@ -27,8 +27,8 @@ typography:
     fontSize: "13px"
     fontWeight: 500
 rounded:
-  navigation: "7px"
-  group: "12px"
+  navigation: "8px"
+  group: "14px"
 spacing:
   section: "24px"
   page-inset: "28px"
@@ -36,10 +36,10 @@ components:
   navigation:
     rounded: "{rounded.navigation}"
     typography: "{typography.label}"
-    height: "34px"
+    height: "38px"
   group:
     rounded: "{rounded.group}"
-    padding: "18px"
+    padding: "20px"
     backgroundColor: "{colors.card-dark}"
 ---
 
@@ -53,11 +53,13 @@ A working dark macOS workspace, with the native interaction detail of Apple and 
 
 ## Colors
 
-Design and validate the primary composition in dark mode: matte charcoal sidebar, slightly lighter content and controls, subtle neutral separators, high-contrast primary text and readable secondary labels. Retain adaptive native surfaces for light appearance during implementation. Keep the existing recognizable blue accent for actions and selection. Green, amber and red communicate actual states alongside a label or symbol. Do not use color as the only state cue. LHTheme in DashboardComponents.swift owns these adaptive surfaces; labels retain macOS semantic text colors. Dark and light Settings rendering was visually inspected; formal contrast measurements remain unperformed.
+Use the actual Goalong website as the visual authority: `goalong-website` commit `428fd13`, `styles/landing/shared.css`. Dark surfaces move from forest ink (#0b100d) to green-black content (#101712), cards (#131b16) and raised controls (#1b251e). Lime (#d3f35f) identifies primary actions and selection; it is not a success indicator. Primary button text is dark ink (#18210d), never white on lime. The light appearance translates the site's paper palette, with a darker olive tint for readable links and controls. Preserve separate green, amber, coral and violet semantic colors and visible labels/symbols.
+
+`LHTheme` in `GoalongTheme.swift` owns all shared adaptive tokens, including increased-contrast appearances. Body controls remain native SwiftUI/AppKit. `LHPrimaryButtonStyle` changes presentation without replacing Button actions, roles or keyboard shortcuts. Token contrast is covered by `GoalongBrandThemeTests`; this is not a claim that every native control or text pixel has been measured.
 
 ## Typography
 
-Use the macOS system family (San Francisco), standard rather than rounded for general UI. Establish a compact hierarchy: page title, section heading, row label, body and metadata. Raise the current 9–10 point explanatory copy to a comfortable reading size. Reserve monospaced typography for commands and identifiers, and tabular digits for metrics. The headline, title, body and label roles use the frontmatter scale. Dense metadata is 11 points; compact chart-specific labels may remain smaller. Native rendering was inspected at 1080 × 680 and 1240 × 860.
+Use the macOS system family (San Francisco), standard rather than rounded for general UI. Establish a compact hierarchy: page title, section heading, row label, body and metadata. Raise the current 9–10 point explanatory copy to a comfortable reading size. Reserve monospaced typography for commands and identifiers, and tabular digits for metrics. The headline, title, body and label roles use the frontmatter scale. Dense metadata is 11 points; compact chart-specific labels may remain smaller. The preceding UI pass inspected 1080 × 680 and 1240 × 860. The September brand audit renders 1080 × 680, 1240 × 790 and 1600 × 1000; see its report for the narrower visual-validation limits.
 
 ## Layout
 
@@ -73,7 +75,7 @@ Use restrained continuous corners on grouped surfaces and system control shapes.
 
 ## Components
 
-Keep native buttons, switches, date pickers and segmented controls. Primary actions remain clear; secondary actions stay quiet but visible. Navigation rows have whole-row targets, visibly distinct hover and pressed feedback, keyboard focus and accessible names. Back navigation, selection, switches and copy feedback must be exercised in the actual built app; a screenshot cannot validate interaction. Preserve the account Refresh and Disconnect controls; do not replace them with a new Manage route. Preserve save behavior, permissions, confirmations, data access and background processing. Hover uses a 120 ms ease-out transition, disabled with Reduce Motion. The shared navigation style uses primary-color opacity 4.5% on hover, 8.5% when selected, and 12% while pressed; the focus stroke uses the accent. Accessibility-target activation, selection and return navigation were exercised. Pointer hover/pressed states and Tab focus remain unverified under the current automation and macOS keyboard-navigation settings.
+Keep native buttons, switches, date pickers and segmented controls. Primary actions remain clear; secondary actions stay quiet but visible. Navigation rows have whole-row targets, visibly distinct hover and pressed feedback, keyboard focus and accessible names. Back navigation, selection, switches and copy feedback must be exercised in the actual built app; a screenshot cannot validate interaction. Preserve the account Refresh and Disconnect controls; do not replace them with a new Manage route. Preserve save behavior, permissions, confirmations, data access and background processing. Hover uses a 120 ms ease-out transition and press feedback 100 ms; both are disabled with Reduce Motion. Shared navigation uses adaptive hover, pressed and selected forest/olive surfaces, a visible 3-point selected marker, and a focus outline. Explicit accessible names identify navigation destinations. Native accessibility activation could not be validated in the September brand audit because the XCTest host did not expose SwiftUI descendants. Rendered views and model transaction checks are separate evidence; neither proves pointer or keyboard behavior.
 
 ## Do's and Don'ts
 
@@ -84,7 +86,7 @@ Keep native buttons, switches, date pickers and segmented controls. Primary acti
 - Do not add decorative imagery, promotional copy or new configuration.
 - Do not imply that mockups or source builds update the installed app.
 
-## Verification evidence
+## Historical verification evidence — preceding UI pass
 
 The app builds and all 18 ComputerHistoryPublicControlParityTests pass. Native preview QA covered the three main routes, all five Settings destinations, Back while scrolling, Command-[ from an editor, CLI copy feedback, edit/discard, and save with isolated JSON persistence (retention changed from 30 to 31 and restored to 30). Dark rendering was inspected across these pages at minimum and comfortable sizes; light Settings was inspected at minimum size. An independent source review found no routing/binding/save/account regression, and a separate visual review inspected the exported native Settings render.
 
@@ -93,3 +95,7 @@ The preview uses isolated test storage and does not run capture or source discov
 ## Today and History refinement
 
 The accepted Settings design remains unchanged. Today and History share a stable day-navigation header. Today presents distinct source totals and local timeline before app usage; absent local observations are labelled rather than rendered as zero. History keeps its native three-source selector, local timeline search, chronological order and expandable details. The timeline total explicitly describes the whole day when results are filtered. Source-management controls use disclosures while unavailable-source errors stay visible. See the Overview surface brief for scoped runtime evidence and remaining verification limits.
+
+## Website brand alignment — September 2026
+
+The new pass preserves the route hierarchy and underlying capture, storage, consent and sharing behavior. It aligns the main window, onboarding, shared cards/actions, day controls and standalone Profile Studio window. Settings prose remains capped at 920 points; the native sidebar remains 208 points. See `docs/BRAND_ALIGNMENT_AUDIT.md` for current verification evidence and its limitations. Historical verification above refers to the previous UI pass, not this build.

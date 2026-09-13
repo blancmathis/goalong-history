@@ -128,8 +128,14 @@ import SwiftUI
             self?.studioWindow?.close()
             onSend(data)
         }, onClose: { [weak self] in self?.studioWindow?.close() })
-        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+        let window = NSWindow(contentViewController: NSHostingController(rootView: view
+            .background(LHTheme.pageBackground)
+            .foregroundStyle(LHTheme.text)
+            .tint(LHTheme.accent)
+            .accentColor(LHTheme.accent)))
         window.title = "Comprendre mon travail — Goalong History"
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = NSColor(LHTheme.pageBackground)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.minSize = NSSize(width: 700, height: 540)
         let screen = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1100, height: 800)

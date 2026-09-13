@@ -243,7 +243,7 @@
                                 .foregroundStyle(LHTheme.warning)
                             Spacer()
                             Button("Open guided setup") { model.requestPermissions() }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(LHPrimaryButtonStyle())
                         }
                     } else if model.runtime.captureHealth?.captureProven != true {
                         HStack {
@@ -255,7 +255,7 @@
                             .foregroundStyle(LHTheme.warning)
                             Spacer()
                             Button("Validate input") { model.beginCaptureValidation() }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(LHPrimaryButtonStyle())
                         }
                     } else {
                         HStack(spacing: 8) {

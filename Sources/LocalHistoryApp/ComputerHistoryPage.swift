@@ -1066,7 +1066,7 @@
                                 Label("Ask", systemImage: "arrow.right.circle.fill")
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(LHPrimaryButtonStyle())
                         .controlSize(.large)
                         .disabled(
                             model.question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

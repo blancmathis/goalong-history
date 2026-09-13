@@ -194,7 +194,7 @@ struct GoalongRhythmStudio: View {
             Divider()
             HStack { Text("Vous choisirez ensuite les champs transmis au site.").font(.caption); Spacer(); Button("Utiliser cette session relue") {
                 if let value = model.reviewedResult() { onAccept(value); dismiss() }
-            }.disabled(model.result == nil || model.busy).buttonStyle(.borderedProminent) }.padding(20)
+            }.disabled(model.result == nil || model.busy).buttonStyle(LHPrimaryButtonStyle()) }.padding(20)
         }.frame(width: 760, height: 820)
         .background(GoalongWebsiteWindowReader(host: windowHost).frame(width: 0, height: 0))
         .onChange(of: start) { _ in model.invalidate() }.onChange(of: end) { _ in model.invalidate() }

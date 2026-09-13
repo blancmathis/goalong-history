@@ -2,6 +2,7 @@
     import SwiftUI
 
     struct LocalHistoryOnboardingView: View {
+        @Environment(\.colorSchemeContrast) var contrast
         @ObservedObject var model: DashboardViewModel
         @StateObject var launchAtLogin = LaunchAtLoginManager()
         @ObservedObject var consents = GoalongCapabilityConsentStore.shared
@@ -43,8 +44,16 @@
 
         var sidebar: some View {
             VStack(alignment: .leading, spacing: 28) {
-                Label(ProductIdentity.displayName, systemImage: "clock.arrow.circlepath")
-                    .font(.system(size: 15, weight: .semibold))
+                HStack(spacing: 10) {
+                    GoalongMark()
+                        .stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round))
+                        .frame(width: 29, height: 21)
+                        .accessibilityHidden(true)
+                    Text("Goalong")
+                        .font(.system(size: 20, weight: .semibold))
+                        .tracking(-0.6)
+                }
+                .accessibilityLabel(ProductIdentity.displayName)
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(SetupStep.allCases) { item in
                         HStack(spacing: 10) {
@@ -83,7 +92,7 @@
                     if step == .ready { finishSetup() }
                     else { note = nil; step = SetupStep(rawValue: step.rawValue + 1)! }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(LHPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
                 .disabled(!checkingSources.isEmpty)
             }

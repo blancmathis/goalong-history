@@ -100,19 +100,19 @@
                 Button("Finish setup") {
                     model.requestPermissions()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(LHPrimaryButtonStyle())
             case .inputTapUnavailable:
                 Button("Check input") {
                     model.beginCaptureValidation()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(LHPrimaryButtonStyle())
             case .paused:
                 Button {
                     model.togglePause()
                 } label: {
                     Label("Resume", systemImage: "play.fill")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(LHPrimaryButtonStyle())
             default:
                 StatusPill(
                     title: model.runtime.displayTitle,
@@ -547,7 +547,7 @@
                 Button(recapRuntime.recap == nil ? "Analyze day" : "Analyze again") {
                     recapRuntime.generateRecap()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(LHPrimaryButtonStyle())
             } else if case .checking = recapRuntime.connectionState {
                 ProgressView()
                     .controlSize(.small)
@@ -555,7 +555,7 @@
                 Button("Connect ChatGPT") {
                     model.selectSection(.chatGPTRecap)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(LHPrimaryButtonStyle())
             }
         }
 

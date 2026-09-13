@@ -22,6 +22,9 @@
                 }
             }
             .background(LHTheme.pageBackground)
+            .foregroundStyle(LHTheme.text)
+            .tint(LHTheme.accent)
+            .accentColor(LHTheme.accent)
             .frame(minWidth: 1080, minHeight: 680)
             .alert(item: $model.alert) { item in
                 Alert(
@@ -117,18 +120,19 @@
             HStack(spacing: 11) {
                 GoalongMark()
                     .stroke(
-                        Color.primary.opacity(0.9),
+                        LHTheme.accent,
                         style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round)
                     )
-                    .frame(width: 26, height: 18)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 30, height: 21)
+                    .frame(width: 32, height: 32)
                     .accessibilityLabel("Goalong logo")
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(ProductIdentity.displayName)
-                        .font(.system(size: 13, weight: .semibold))
+                    Text("Goalong")
+                        .font(.system(size: 20, weight: .semibold))
+                        .tracking(-0.6)
                     Text("Private activity history")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -145,6 +149,7 @@
                 )
             }
             .buttonStyle(LHNavigationButtonStyle(selected: model.selectedSection.sidebarParent == section))
+            .accessibilityLabel(section.simpleTitle)
             .accessibilityAddTraits(model.selectedSection.sidebarParent == section ? .isSelected : [])
         }
 
@@ -162,9 +167,9 @@
                     .lineLimit(1)
                 Spacer()
             }
-            .foregroundStyle(selected ? Color.primary : Color.secondary)
+            .foregroundStyle(selected ? LHTheme.text : LHTheme.secondaryText)
             .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 34)
+            .frame(maxWidth: .infinity, minHeight: 38)
             .contentShape(Rectangle())
         }
 
@@ -177,7 +182,7 @@
                         .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : Color.secondary)
                         .frame(width: 7, height: 7)
                     Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Recording off")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .lineLimit(1)
                     Spacer()
                     if model.runtime.state == .permissionsMissing || model.runtime.state == .inputTapUnavailable {
@@ -186,11 +191,11 @@
                             .foregroundStyle(.tertiary)
                     }
                 }
-                .foregroundStyle(Color.primary.opacity(0.72))
+                .foregroundStyle(LHTheme.secondaryText)
                 .padding(.horizontal, 12)
                 .frame(height: 34)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LHNavigationButtonStyle())
         }
 
         private func updateButton(version: String) -> some View {
@@ -207,9 +212,9 @@
                     }
                     VStack(alignment: .leading, spacing: 1) {
                         Text(updates.isPreparingAvailableUpdate ? "Preparing update…" : "Update available")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                         Text("\(ProductIdentity.displayName) \(version)")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .opacity(0.76)
                     }
                     Spacer()
@@ -231,7 +236,8 @@
 
         private var footer: some View {
             HStack {
-                Text(ProductIdentity.displayName)
+                Text("History")
+                    .help(ProductIdentity.displayName)
                 Spacer()
                 Button {
                     updates.checkForUpdates()
@@ -251,8 +257,8 @@
                         : "Updates are disabled in this privacy-audited source build"
                 )
             }
-            .font(.system(size: 9, weight: .medium))
-            .foregroundStyle(.tertiary)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(LHTheme.secondaryText)
         }
 
         private static var version: String {

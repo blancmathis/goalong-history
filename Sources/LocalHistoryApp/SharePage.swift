@@ -141,7 +141,7 @@
                     Label("Export signed package", systemImage: "square.and.arrow.up")
                         .frame(minWidth: 176)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(LHPrimaryButtonStyle())
                 .disabled(model.snapshot.sealedMinutes == 0 || model.isExportingShare)
             }
             .padding(.horizontal, 14)

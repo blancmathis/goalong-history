@@ -305,7 +305,7 @@
                             flow.requestMissingAccess()
                         } else { check() }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(flow.checking || flow.result == nil)
                     .keyboardShortcut(.defaultAction)
                 }
@@ -363,7 +363,7 @@
                                         openedSettings = true
                                         SourceAccessService.openAccess(status)
                                     } else { validate(allowAutomaticEnable: true) }
-                                }.buttonStyle(.borderedProminent)
+                                }.buttonStyle(LHPrimaryButtonStyle())
                                 if openedSettings { Button("Check access") { validate(allowAutomaticEnable: true) } }
                             }
                         }
