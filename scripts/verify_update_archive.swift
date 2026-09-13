@@ -2,7 +2,9 @@
 // This catches a stale/mismatched CI signing pair before any release becomes visible.
 import CryptoKit
 import Foundation
+#if canImport(FoundationXML)
 import FoundationXML
+#endif
 
 final class EnclosureParser: NSObject, XMLParserDelegate {
     var enclosures: [[String: String]] = []
