@@ -4,3 +4,7 @@
 dist/
 *.xcuserstate
 .sparkle-private-key*
+
+# Generated Python bytecode
+__pycache__/
+*.pyc

@@ -101,7 +101,9 @@ La navigation privée des navigateurs reconnus ou détectés par leurs capacité
 ~/Library/Application Support/LocalHistory/
 ```
 
-Les détails restent sur le Mac. L’application publique ne contient ni transport HTTP Goalong, ni téléverseur, ni système de mise à jour intégré. L’analyse ChatGPT est une frontière externe distincte : elle ne démarre qu’après un consentement séparé et utilise la connexion Codex locale avec un contexte quotidien borné.
+La collecte et les archives restent locales. L’analyse ChatGPT ne démarre qu’après un consentement séparé et utilise la connexion Codex locale avec un contexte quotidien borné. Le système de mise à jour intégré et l’ancien envoi de preuves restent exclus.
+
+La connexion facultative au site permet de choisir une journée, ses appareils et les détails à transmettre, puis d’examiner un aperçu hors ligne. Seul **Send reviewed data**, ou la commande `goalong send-site`, envoie cette sélection avec le fichier de jeton choisi. Aucun envoi automatique n’est programmé. Les conversations brutes et le contenu des événements capturés ne sont pas transmis. Les données envoyées restent non vérifiées et les règles de partage déjà définies sur le site peuvent s’appliquer. Voir le [parcours de connexion et ses limites](docs/CLI.md#website-export-and-account-submission).
 
 Depuis **Confidentialité et sécurité**, vous pouvez ouvrir le dossier local, examiner les protections et supprimer les détails. La suppression des détails conserve les sceaux cryptographiques ; la période devient alors privée et ne peut plus être révélée en détail.
 

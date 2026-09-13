@@ -10,11 +10,19 @@
         static let danger = Color(red: 0.91, green: 0.30, blue: 0.32)
         static let privateTint = Color(red: 0.48, green: 0.35, blue: 0.86)
         static let teal = Color(red: 0.12, green: 0.65, blue: 0.67)
-        static let sidebarBackground = Color(nsColor: .windowBackgroundColor)
-        static let pageBackground = Color(nsColor: .underPageBackgroundColor)
-        static let cardBackground = Color(nsColor: .controlBackgroundColor)
+        static let sidebarBackground = surface(light: 0.96, dark: 0.10)
+        static let pageBackground = surface(light: 0.985, dark: 0.125)
+        static let cardBackground = surface(light: 1.0, dark: 0.145)
         static let elevatedBackground = Color(nsColor: .textBackgroundColor)
         static let separator = Color(nsColor: .separatorColor)
+        static let pageInset: CGFloat = 28
+
+        private static func surface(light: CGFloat, dark: CGFloat) -> Color {
+            Color(nsColor: NSColor(name: nil) { appearance in
+                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                return NSColor(white: isDark ? dark : light, alpha: 1)
+            })
+        }
     }
 
     struct LHCard<Content: View>: View {
@@ -30,13 +38,64 @@
             content
                 .padding(padding)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(LHTheme.cardBackground)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)
                         )
                 )
+        }
+    }
+
+    /// Shared whole-row feedback for sidebar and Settings destinations.
+    struct LHNavigationButtonStyle: ButtonStyle {
+        var selected = false
+        var cornerRadius: CGFloat = 7
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.isFocused) private var isFocused
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var isHovered = false
+
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .background(
+                    Color.primary.opacity(
+                        !isEnabled ? 0 : configuration.isPressed ? 0.12
+                            : selected ? 0.085 : isHovered ? 0.045 : 0
+                    ),
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2)
+                )
+                .opacity(isEnabled ? 1 : 0.45)
+                .contentShape(Rectangle())
+                .onHover { isHovered = $0 }
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovered)
+        }
+    }
+
+    struct SettingsBackBar: View {
+        let onBack: () -> Void
+
+        var body: some View {
+            HStack {
+                Button(action: onBack) {
+                    Label("Back to Settings", systemImage: "chevron.left")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.regular)
+                .keyboardShortcut("[", modifiers: .command)
+                .accessibilityHint("Return to the Settings overview")
+                Spacer()
+            }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, LHTheme.pageInset)
+            .padding(.vertical, 12)
+            .background(LHTheme.pageBackground)
+            .overlay(alignment: .bottom) { Divider().opacity(0.5) }
         }
     }
 
@@ -59,23 +118,34 @@
         }
 
         var body: some View {
-            HStack(alignment: .center, spacing: 20) {
-                VStack(alignment: .leading, spacing: 5) {
-                    if let eyebrow {
-                        Text(eyebrow.uppercased())
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .tracking(0.7)
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(title)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                    Text(subtitle)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 24) {
+                    heading
+                    Spacer(minLength: 16)
+                    trailing.fixedSize(horizontal: true, vertical: false)
                 }
-                Spacer(minLength: 16)
-                trailing
+                VStack(alignment: .leading, spacing: 16) {
+                    heading
+                    trailing
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        private var heading: some View {
+            VStack(alignment: .leading, spacing: 6) {
+                if let eyebrow {
+                    Text(eyebrow)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Text(title)
+                    .font(.system(size: 24, weight: .semibold))
+                    .fixedSize(horizontal: true, vertical: false)
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -108,7 +178,7 @@
                             .foregroundStyle(.secondary)
                     }
                     Text(value)
-                        .font(.system(size: 25, weight: .bold, design: .rounded))
+                        .font(.system(size: 25, weight: .semibold))
                         .monospacedDigit()
                     Text(detail)
                         .font(.system(size: 11))
@@ -126,11 +196,11 @@
 
         var body: some View {
             Label(title, systemImage: symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(tint)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(tint.opacity(0.12), in: Capsule())
+                .padding(.vertical, 5)
+                .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
         }
     }
 
@@ -233,6 +303,8 @@
     struct DateSelectionControl: View {
         let date: Date
         let onChange: (Date) -> Void
+        @State private var showsCalendar = false
+        @State private var calendarDate = Date()
 
         var body: some View {
             HStack(spacing: 8) {
@@ -245,15 +317,36 @@
                 }
                 .buttonStyle(.borderless)
                 .help("Previous day")
+                .accessibilityLabel("Previous day")
 
-                DatePicker(
-                    "Day",
-                    selection: Binding(get: { date }, set: onChange),
-                    in: ...Date(),
-                    displayedComponents: .date
-                )
-                .labelsHidden()
-                .datePickerStyle(.field)
+                Button {
+                    calendarDate = date
+                    showsCalendar.toggle()
+                } label: {
+                    Text(date.formatted(.dateTime.day().month(.abbreviated).year()))
+                        .font(.system(size: 13, weight: .medium))
+                        .fixedSize()
+                        .padding(.horizontal, 4)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Choose day")
+                .accessibilityValue(date.formatted(date: .complete, time: .omitted))
+                .help("Choose a day from the calendar")
+                .popover(isPresented: $showsCalendar, arrowEdge: .bottom) {
+                    VStack(alignment: .trailing, spacing: 12) {
+                        DatePicker("Day", selection: $calendarDate, in: ...Date(), displayedComponents: .date)
+                            .labelsHidden()
+                            .datePickerStyle(.graphical)
+                            .fixedSize()
+                        Button("Show day") {
+                            onChange(Calendar.current.startOfDay(for: calendarDate))
+                            showsCalendar = false
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                    }
+                    .padding(12)
+                }
 
                 if !Calendar.current.isDateInToday(date) {
                     Button("Today") {
@@ -274,6 +367,7 @@
                 .buttonStyle(.borderless)
                 .disabled(Calendar.current.isDateInToday(date))
                 .help("Next day")
+                .accessibilityLabel("Next day")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -293,7 +387,7 @@
                         .font(.system(size: 15, weight: .semibold))
                     if let subtitle {
                         Text(subtitle)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
                 }

@@ -16,7 +16,8 @@
                 wrappedValue: AppleScreenTimeDashboardModel(
                     rootDirectory: AppPaths.screenTimeDirectory,
                     deviceID: model.deviceID,
-                    selectedDay: model.selectedDay
+                    selectedDay: model.selectedDay,
+                    accessEnabled: false
                 )
             )
         }
@@ -31,8 +32,9 @@
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 620)
-                .padding(.horizontal, 24)
+                .labelsHidden()
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, LHTheme.pageInset)
                 .padding(.bottom, 16)
 
                 Divider()
@@ -69,33 +71,13 @@
         }
 
         private var header: some View {
-            PageHeader(
-                eyebrow: Calendar.current.isDateInToday(model.selectedDay) ? "Today" : "Daily history",
-                title: "History",
-                subtitle: "Computer activity, Apple Screen Time and AI conversations in one place."
-            ) {
-                HStack(spacing: 10) {
-                    DateSelectionControl(date: model.selectedDay, onChange: selectDay)
-                    Button {
-                        model.selectSection(.share)
-                    } label: {
-                        Label("Share day", systemImage: "square.and.arrow.up")
-                    }
-                    .buttonStyle(.bordered)
-                    Button {
-                        refresh()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(model.isRefreshing || agents.isScanning || screenTime.isBusy)
-                    .help("Refresh the selected day")
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 28)
-            .padding(.bottom, 18)
+            DayNavigationHeader(
+                title: "History", day: model.selectedDay,
+                isRefreshing: model.isRefreshing || agents.isScanning || screenTime.isBusy,
+                onSelectDay: selectDay,
+                onShare: { model.selectSection(.share) },
+                onRefresh: refresh
+            )
         }
 
         @ViewBuilder private var sourceView: some View {
@@ -114,7 +96,8 @@
                     showsHeader: false
                 )
             case .conversations:
-                AgentActivityPage(agents: agents, presentation: .history)
+                AgentActivityPage(agents: agents, presentation: .history,
+                    onManageSources: { model.selectSection(.agentActivity) })
             }
         }
 

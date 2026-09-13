@@ -23,7 +23,7 @@ Product behavior, security guarantees or implementation contracts.
 - [Privacy](PRIVACY.md): collected data, local storage, retention and export.
 - [Guarantees](GUARANTEES.md): claims the current binaries do and do not support.
 - [Threat model](THREAT-MODEL.md): assets, adversaries, trust boundaries and residual risks.
-- [Network](NETWORK.md): the single-app network boundary and optional Codex path.
+- [Network](NETWORK.md): the single-app boundary, optional Codex analysis and explicit website sends.
 - [Permissions](PERMISSIONS.md): macOS permissions, degradation and revocation.
 - [Data flow](DATA-FLOW.md): current component and information flow.
 - [Security model](../SECURITY.md) and [cryptography](CRYPTOGRAPHY.md): integrity and selective-disclosure proof.

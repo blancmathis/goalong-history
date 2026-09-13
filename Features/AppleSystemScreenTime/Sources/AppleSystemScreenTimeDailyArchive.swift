@@ -156,6 +156,13 @@
         }
 
         /// Reads an existing Goalong day without touching Apple-owned stores or mutating the archive.
+        public func storedRecord(for day: Date) throws -> AppleSystemScreenTimeDailyArchiveRecord? {
+            try queue.sync {
+                try loadRecordLocked(for: day)
+            }
+        }
+
+        /// Reads an existing Goalong day without touching Apple-owned stores or mutating the archive.
         public func storedCollection(for day: Date, now: Date = Date()) -> AppleSystemScreenTimeCollection? {
             queue.sync {
                 guard let interval = try? dayInterval(for: day),

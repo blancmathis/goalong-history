@@ -44,10 +44,27 @@
 
         func testSingleAppCapabilityDeclarationIsSecurityFirst() {
             XCTAssertEqual(GoalongBuildCapabilities.edition, .unified)
-            XCTAssertFalse(GoalongBuildCapabilities.permitsFirstPartyNetworking)
+            XCTAssertTrue(GoalongBuildCapabilities.permitsFirstPartyNetworking)
             XCTAssertFalse(GoalongBuildCapabilities.permitsRemoteVerification)
             XCTAssertTrue(GoalongBuildCapabilities.permitsRemoteAnalysis)
             XCTAssertFalse(GoalongBuildCapabilities.permitsAutomaticUpdates)
+        }
+
+        func testConfiguredWebsiteUsesOnlyTheReviewedSourcesRouteAndSafeOrigin() throws {
+            for value in ["https://goalong.example/goalong.dc.html#sources",
+                          "https://goalong.example:8443/goalong.dc.html#sources",
+                          "http://127.0.0.1:4197/goalong.dc.html#sources"] {
+                XCTAssertTrue(GoalongWorkspaceOpenPolicy.permits(try XCTUnwrap(URL(string: value)), purpose: .goalongWebsite))
+            }
+            for value in ["http://goalong.example/goalong.dc.html#sources",
+                          "https://token@goalong.example/goalong.dc.html#sources",
+                          "https://goalong.example/elsewhere#sources",
+                          "https://goalong.example/goalong.dc.html?token=secret#sources",
+                          "https://goalong.example/goalong.dc.html#other"] {
+                XCTAssertFalse(GoalongWorkspaceOpenPolicy.permits(try XCTUnwrap(URL(string: value)), purpose: .goalongWebsite))
+            }
+            XCTAssertFalse(GoalongWorkspaceOpenPolicy.permits(
+                try XCTUnwrap(URL(string: "http://127.0.0.1:4197/goalong.dc.html#sources")), purpose: .observedWebsite))
         }
 
         func testCompatibilityBuildEntryPointCannotCreateSecondAppIdentity() throws {

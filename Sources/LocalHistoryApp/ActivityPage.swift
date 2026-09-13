@@ -4,6 +4,7 @@
 
     struct ActivityPage: View {
         @ObservedObject var model: DashboardViewModel
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @StateObject var analysisModel = ActivityAnalysisPageModel()
         @StateObject var computerHistoryModel = ComputerHistoryPageModel()
         @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey)
@@ -34,6 +35,12 @@
         }
 
         var body: some View {
+            if mode == .computerHistory {
+                SourceAccessGate(capability: .localComputerHistory) { pageBody }
+            } else { pageBody }
+        }
+
+        private var pageBody: some View {
             VStack(alignment: .leading, spacing: 16) {
                 if showsHeader {
                     header
@@ -54,6 +61,9 @@
                     case .appsAndSites:
                         MonitoringRulesList(model: model)
                     case .computerHistory:
+                        if !consents.isEnabled(.localComputerHistory) {
+                            ComputerHistoryActivationCard(model: model)
+                        } else {
                         ComputerHistoryPage(
                             model: computerHistoryModel,
                             day: model.selectedDay,
@@ -69,15 +79,16 @@
                                 )
                             }
                         )
+                        }
                     case .dayRecap:
                         recapBody
                     case .timeline:
                         ActivityTimelineExplorer(model: model)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, LHTheme.pageInset)
             .padding(.top, showsHeader ? 28 : 18)
             .padding(.bottom, 22)
             .background(LHTheme.pageBackground)
@@ -88,6 +99,9 @@
                 expandedBlockID = nil
                 computerHistoryModel.clearAnswer()
                 refreshVisibleAnalysis(day: day)
+            }
+            .onChange(of: consents.document) { _ in
+                refreshVisibleAnalysis(day: model.selectedDay)
             }
             .onChange(of: mode) { _ in
                 refreshVisibleAnalysis(day: model.selectedDay)
@@ -113,7 +127,7 @@
                 }
             } message: {
                 Text(
-                    "\(ProductIdentity.displayName) will store selected and visible text exposed by macOS Accessibility for eligible foreground windows. It will not decode keystrokes and will still suppress private browsing, exclusions and secure fields. Turning it off later stops future snapshots; existing snapshots follow your normal local retention and deletion controls."
+                    "\(ProductIdentity.displayName) will store selected and visible text exposed by macOS Accessibility for eligible foreground windows. It will not decode keystrokes and will still respect your private browsing setting, exclusions and secure fields. Turning it off later stops future snapshots; existing snapshots follow your normal local retention and deletion controls."
                 )
             }
         }
@@ -207,6 +221,7 @@
         private func refreshVisibleAnalysis(day: Date, forceRebuild: Bool = false) {
             switch mode {
             case .computerHistory:
+                guard consents.isEnabled(.localComputerHistory) else { return }
                 computerHistoryModel.refresh(day: day, forceRebuild: forceRebuild)
             case .dayRecap:
                 analysisModel.refresh(day: day, forceRebuild: forceRebuild)

@@ -28,13 +28,6 @@
         var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Button(action: onBack) {
-                        Label("Settings", systemImage: "chevron.left")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(LHTheme.accent)
-                    .accessibilityHint("Return to Settings")
-
                     PageHeader(
                         eyebrow: "Agent access",
                         title: "Goalong CLI",
@@ -53,11 +46,14 @@
                     quickCommandsCard
                     evidenceCard
                 }
-                .frame(maxWidth: 880, alignment: .leading)
-                .padding(.horizontal, 28)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, LHTheme.pageInset)
                 .padding(.top, 28)
                 .padding(.bottom, 32)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                SettingsBackBar(onBack: onBack)
             }
             .background(LHTheme.pageBackground)
         }
@@ -143,7 +139,7 @@
                 VStack(alignment: .leading, spacing: 0) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Start in Terminal")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .font(.system(size: 15, weight: .semibold))
                         Text("These four commands are enough to discover the CLI and ask a first question.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -168,7 +164,7 @@
                     Text(item.title)
                         .font(.system(size: 12, weight: .semibold))
                     Text(item.detail)
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 16)
@@ -198,7 +194,7 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 11) {
                     Text("What the agent receives")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.system(size: 15, weight: .semibold))
                     evidenceRow(
                         symbol: "curlybraces",
                         title: "Clear JSON",
@@ -231,7 +227,7 @@
                     Text(title)
                         .font(.system(size: 11, weight: .semibold))
                     Text(detail)
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

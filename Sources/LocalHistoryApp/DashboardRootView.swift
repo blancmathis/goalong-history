@@ -6,21 +6,23 @@
         @ObservedObject var model: DashboardViewModel
 
         var body: some View {
-            HStack(spacing: 0) {
-                DashboardSidebar(model: model)
-                    .frame(width: 220)
-                Rectangle()
-                    .fill(LHTheme.separator)
-                    .frame(width: 1)
-                page
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Group {
+                if model.showWelcome {
+                    LocalHistoryOnboardingView(model: model)
+                } else {
+                    HStack(spacing: 0) {
+                        DashboardSidebar(model: model)
+                            .frame(width: 208)
+                        Rectangle()
+                            .fill(LHTheme.separator)
+                            .frame(width: 1)
+                        page
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
             }
             .background(LHTheme.pageBackground)
             .frame(minWidth: 1080, minHeight: 680)
-            .sheet(isPresented: $model.showWelcome) {
-                LocalHistoryOnboardingView(model: model)
-                    .interactiveDismissDisabled()
-            }
             .alert(item: $model.alert) { item in
                 Alert(
                     title: Text(item.title),
@@ -46,12 +48,18 @@
                 GoalongScreenTimePage(model: model)
             case .agentActivity:
                 AgentActivityPage(agents: model.agentActivityRuntime)
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        SettingsBackBar { model.selectSection(.settings) }
+                    }
             case .chatGPTRecap:
                 ChatGPTRecapPage(model: model)
             case .share:
                 SharePage(model: model)
             case .privacy:
                 PrivacyPage(model: model)
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        SettingsBackBar { model.selectSection(.settings) }
+                    }
             case .cli:
                 CLIHelpPage {
                     model.selectSection(.settings)
@@ -65,6 +73,7 @@
     private struct DashboardSidebar: View {
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var updates = SoftwareUpdateManager.shared
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
         private let primarySections: [DashboardSection] = [.overview, .history, .settings]
 
@@ -106,30 +115,20 @@
 
         private var brand: some View {
             HStack(spacing: 11) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [LHTheme.accent, Color(red: 0.34, green: 0.34, blue: 0.94)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    GoalongMark()
-                        .stroke(
-                            Color.white,
-                            style: StrokeStyle(lineWidth: 2.35, lineCap: .round, lineJoin: .round)
-                        )
-                        .frame(width: 25, height: 17)
-                }
-                .frame(width: 38, height: 38)
-                .accessibilityLabel("Goalong logo")
+                GoalongMark()
+                    .stroke(
+                        Color.primary.opacity(0.9),
+                        style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round)
+                    )
+                    .frame(width: 26, height: 18)
+                    .frame(width: 30, height: 30)
+                    .accessibilityLabel("Goalong logo")
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(ProductIdentity.displayName)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.system(size: 13, weight: .semibold))
                     Text("Private activity history")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -145,7 +144,8 @@
                     selected: model.selectedSection.sidebarParent == section
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LHNavigationButtonStyle(selected: model.selectedSection.sidebarParent == section))
+            .accessibilityAddTraits(model.selectedSection.sidebarParent == section ? .isSelected : [])
         }
 
         private func navigationLabel(
@@ -155,32 +155,28 @@
         ) -> some View {
             HStack(spacing: 12) {
                 Image(systemName: symbol)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 14, weight: .regular))
                     .frame(width: 20)
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                 Spacer()
             }
-            .foregroundStyle(selected ? LHTheme.accent : Color.primary.opacity(0.78))
+            .foregroundStyle(selected ? Color.primary : Color.secondary)
             .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 38)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? LHTheme.accent.opacity(0.12) : Color.clear)
-            )
+            .frame(maxWidth: .infinity, minHeight: 34)
             .contentShape(Rectangle())
         }
 
         private var statusRow: some View {
             Button {
-                model.selectSection(model.runtime.state == .permissionsMissing ? .privacy : .overview)
+                model.selectSection(!consents.isEnabled(.localComputerHistory) ? .settings : model.runtime.state == .permissionsMissing ? .privacy : .overview)
             } label: {
                 HStack(spacing: 9) {
                     Circle()
-                        .fill(model.runtime.displayTint)
+                        .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : Color.secondary)
                         .frame(width: 7, height: 7)
-                    Text(model.runtime.displayTitle)
+                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Recording off")
                         .font(.system(size: 10, weight: .semibold))
                         .lineLimit(1)
                     Spacer()

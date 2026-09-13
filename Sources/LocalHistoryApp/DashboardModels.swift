@@ -256,6 +256,7 @@
         var captureWindowTitles: Bool
         var captureElementLabels: Bool
         var captureURLs: Bool
+        var capturePrivateBrowsing: Bool
         var redactAllURLQueryValues: Bool
         var retentionDays: Int
         var verificationEnabled: Bool
@@ -274,6 +275,7 @@
             captureWindowTitles = config.captureWindowTitles
             captureElementLabels = config.captureElementLabels
             captureURLs = config.captureURLs
+            capturePrivateBrowsing = config.capturePrivateBrowsing == true
             redactAllURLQueryValues = config.redactAllURLQueryValues
             retentionDays = config.retentionDays
             verificationEnabled = config.verificationEnabled == true
@@ -294,6 +296,7 @@
             output.captureWindowTitles = captureWindowTitles
             output.captureElementLabels = captureElementLabels
             output.captureURLs = captureURLs
+            output.capturePrivateBrowsing = capturePrivateBrowsing
             output.redactAllURLQueryValues = redactAllURLQueryValues
             output.retentionDays = retentionDays
             output.verificationEnabled = verificationEnabled

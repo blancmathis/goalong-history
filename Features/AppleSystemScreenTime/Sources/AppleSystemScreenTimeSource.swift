@@ -5,6 +5,10 @@
     import Foundation
     import SQLite3
 
+    public enum AppleScreenTimeActivationAccess: Equatable {
+        case available, permissionRequired, noData, unavailable
+    }
+
     public enum AppleSystemScreenTimeStatusKind: String, Codable, Equatable, Sendable {
         case ready
         case localOnly
@@ -403,6 +407,32 @@
                 name: Self.localHostName(),
                 kind: .mac
             )
+        }
+
+        /// Checks access to the real source locations without querying or copying usage data.
+        public func activationAccess() -> AppleScreenTimeActivationAccess {
+            let files = [paths.knowledgeDatabase, paths.biomeSyncDatabase]
+                + [paths.screenTimeAdminLocalDatabase, paths.screenTimeAdminCloudDatabase].compactMap { $0 }
+            let directories = [paths.biomeLocalDirectory, paths.biomeRemoteDirectory]
+                + [paths.biomeScreenTimeAppUsageDirectory, paths.biomeRemoteScreenTimeAppUsageDirectory].compactMap { $0 }
+            var readable = false
+            var denied = false
+            var unavailable = false
+            for url in files + directories {
+                let descriptor = url.path.withCString { Darwin.open($0, O_RDONLY | O_NOFOLLOW | O_CLOEXEC) }
+                if descriptor >= 0 {
+                    Darwin.close(descriptor)
+                    readable = true
+                } else if errno == EACCES || errno == EPERM {
+                    denied = true
+                } else if errno != ENOENT && errno != ENOTDIR {
+                    unavailable = true
+                }
+            }
+            // Apple stores are independent: private optional stores can stay blocked even with FDA.
+            if readable { return .available }
+            if denied { return .permissionRequired }
+            return unavailable ? .unavailable : .noData
         }
 
         public func collect(for day: Date) -> AppleSystemScreenTimeCollection {
@@ -2366,19 +2396,26 @@
 
         // MARK: - Status and helpers
 
-        private func makeStatus(
+        func makeStatus(
             hasData: Bool,
             permissionDenied: Bool,
             remoteDeviceCount: Int,
             warnings: [String],
             privateAggregateStore: Bool = false
         ) -> AppleSystemScreenTimeStatus {
-            if permissionDenied, !hasData {
+            if permissionDenied, !hasData, activationAccess() == .permissionRequired {
                 return AppleSystemScreenTimeStatus(
                     kind: .fullDiskAccessRequired,
                     title: "Full Disk Access required",
                     message:
                         "Apple protects its Screen Time aggregate, ScreenTime.AppUsage, knowledgeC and Biome stores. Grant Goalong History Full Disk Access once, then reopen or refresh the app."
+                )
+            }
+            if permissionDenied, !hasData {
+                return AppleSystemScreenTimeStatus(
+                    kind: .partial,
+                    title: "Some Apple sources are unavailable",
+                    message: "Goalong can access an Apple source, but other stores are unavailable and no usage was loaded for this day. Try another day or refresh. Full Disk Access does not guarantee access to every private Apple store."
                 )
             }
             if hasData, permissionDenied || !warnings.isEmpty {

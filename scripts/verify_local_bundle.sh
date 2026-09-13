@@ -69,7 +69,7 @@ done
 for forbidden_marker in \
   'SUFeedURL' \
   'SPUStandardUpdaterController' \
-  'URLSessionConfiguration.ephemeral'; do
+  'The commitment endpoint URL is invalid.'; do
   if /usr/bin/grep -Fq "$forbidden_marker" "$STRINGS"; then
     echo "The single app contains forbidden transport/process marker: $forbidden_marker" >&2
     exit 1
@@ -86,4 +86,9 @@ if ! /usr/bin/grep -Fq 'app-server' "$STRINGS"; then
   exit 1
 fi
 
-echo "Single-app verification passed: no Sparkle framework/feed, first-party HTTP uploader or network entitlement is present; the Codex bridge remains visible for explicit-consent analysis."
+if ! /usr/bin/grep -Fq '/api/goalong/v1/import' "$STRINGS"; then
+  echo "The single app is missing its reviewed explicit website import transport." >&2
+  exit 1
+fi
+
+echo "Single-app verification passed: reviewed explicit website transport present; no Sparkle framework/feed, retired commitment uploader or network entitlement; the Codex bridge remains visible for explicit-consent analysis."

@@ -9,6 +9,7 @@ public enum GoalongCLIEffect: String, Codable, Sendable {
     case none
     case mayRefreshActiveScreenTimeRecord
     case writesExplicitOutputFile
+    case sendsExplicitSiteImport
 }
 
 public struct GoalongCLICommandDefinition: Codable, Equatable, Identifiable, Sendable {
@@ -104,6 +105,17 @@ public enum GoalongCLIContract {
             effect: .mayRefreshActiveScreenTimeRecord
         ),
         .init(
+            name: "export-site",
+            syntax: "export-site [yesterday|today|YYYY-MM-DD] [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap] [--structured]",
+            summary: "Prepare an offline website import (v2, or v3 with --structured); totals only unless details are explicitly included."
+        ),
+        .init(
+            name: "send-site",
+            syntax: "send-site [yesterday|today|YYYY-MM-DD] --url HTTPS_ORIGIN --token-file PATH [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap] [--structured]",
+            summary: "Explicitly send selected saved data unverified with an upload-only token; configured website sharing rules apply.",
+            effect: .sendsExplicitSiteImport
+        ),
+        .init(
             name: "websites",
             syntax: "websites [today|yesterday|YYYY-MM-DD] [--limit N] [--offset N]",
             summary: "Return a bounded domain-only breakdown of observed browser time."
@@ -168,7 +180,7 @@ public enum GoalongCLIContract {
             dataCommandOutput: "sorted JSON on stdout",
             helpOutput: "human text on stdout; `help --json` returns this JSON contract",
             errorOutput: "sorted JSON on stderr with a nonzero exit status",
-            sourceMutationPolicy: "Original Computer History, Apple and provider sources are read-only. Active-day Screen Time may replace Goalong's one compact daily record. Only export-proof writes a user-requested output file.",
+            sourceMutationPolicy: "Original Computer History, Apple and provider sources are read-only. Active-day Screen Time may replace Goalong's one compact daily record. Only export-proof writes a user-requested output file. Only send-site sends an explicitly requested unverified website import; configured website sharing rules apply.",
             commands: commands
         )
     }
@@ -191,6 +203,12 @@ public enum GoalongCLIContract {
         Goalong app through its owner-only local socket to replace Goalong's single compact
         record for today. Completed days never reopen Apple history. `export-proof` is the
         only command that writes a user-requested output file; it refuses to overwrite one.
+
+        `export-site` reads saved daily data offline and emits only selected website fields.
+        `send-site` is the explicit network exception: it uploads those fields using
+        an upload-only token file owned by you with mode 0600. Preview the same options with
+        `export-site` first. Website sharing rules apply to the authorized dates and fields.
+        All site submissions remain unverified; source provenance is not an authenticity badge.
 
         Conversation bodies remain in provider storage. `ai-conversations` reads only user
         prompts and final assistant replies on demand through the bounded metadata index.
@@ -221,6 +239,8 @@ public enum GoalongCLIContract {
         - `$HOME/.local/bin/goalong websites DAY --limit N --offset N` returns domain-level browser usage.
         - `$HOME/.local/bin/goalong ai-conversations DAY --tokens N --limit N --offset N` reads only user prompts and final assistant answers from authorized original sources.
         - `$HOME/.local/bin/goalong recap DAY` returns a saved bounded recap when one exists.
+        - `$HOME/.local/bin/goalong export-site DAY` prepares a totals-only website v2 JSON import offline; add detail flags only for data the user wants to include.
+        - `$HOME/.local/bin/goalong send-site DAY --url HTTPS_ORIGIN --token-file PATH` explicitly uploads the same selected data unverified; configured website sharing rules apply. Do not run it without user authorization to upload the selected data; token values never belong in command arguments.
 
         Dates accept `today`, `yesterday`, or `YYYY-MM-DD`. Data commands return JSON on stdout. Human `help` returns text. Failures return JSON on stderr with a nonzero exit code: check the exit code before parsing stdout.
 

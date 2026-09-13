@@ -302,6 +302,7 @@ public struct AgentVisibleMessage: Equatable, Sendable {
 /// A transient analysis assembled from the provider's original storage.
 /// It is deliberately never encoded into Goalong History's Agent Activity index.
 public struct AgentDocumentSummary: Equatable, Sendable {
+    public var tokenUsage = AgentTokenUsage()
     static let maximumSessionIDBytes = 256
     static let maximumTitleBytes = 512
     static let maximumExcerptBytes = 2_048
@@ -397,7 +398,7 @@ public struct AgentDocumentSummary: Equatable, Sendable {
 
     /// Reapplies all limits after public mutable properties may have been changed by a caller.
     func boundedForTransientCache() -> AgentDocumentSummary {
-        AgentDocumentSummary(
+        var bounded = AgentDocumentSummary(
             format: format,
             sessionID: sessionID,
             title: title,
@@ -418,6 +419,10 @@ public struct AgentDocumentSummary: Equatable, Sendable {
             commands: commands,
             visibleMessages: visibleMessages
         )
+        bounded.tokenUsage = tokenUsage
+        bounded.tokenUsage.events = Array(tokenUsage.events.prefix(AgentUsageParser.maximumEvents))
+        bounded.tokenUsage.partial = tokenUsage.partial || tokenUsage.events.count > AgentUsageParser.maximumEvents
+        return bounded
     }
 
     private static func boundedVisibleMessages(

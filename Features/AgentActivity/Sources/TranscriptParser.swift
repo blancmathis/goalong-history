@@ -46,6 +46,7 @@ public enum AgentTranscriptParser {
     struct IncrementalJSONLines {
         private static let timestampKeyBytes = Array("\"timestamp\"".utf8)
         private var accumulator: Accumulator
+        private var usageParser: AgentUsageParser
         private let analysisTimestampBounds: (lower: String, upper: String)?
         private let usesCodexDailyProjection: Bool
         private var pendingLine = Data()
@@ -64,6 +65,7 @@ public enum AgentTranscriptParser {
             startsAtSourceBeginning: Bool = true
         ) {
             accumulator = Accumulator(fileURL: fileURL, provider: provider, format: .jsonLines)
+            usageParser = AgentUsageParser(provider: provider, interval: analysisInterval)
             examinedFirstLine = !startsAtSourceBeginning
             if [.codex, .claudeCode].contains(provider), let analysisInterval {
                 let formatter = ISO8601DateFormatter()
@@ -76,6 +78,15 @@ public enum AgentTranscriptParser {
                 analysisTimestampBounds = nil
             }
             usesCodexDailyProjection = provider == .codex && analysisInterval != nil
+        }
+
+        mutating func consumeUsageMetadata(_ data: Data) {
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                object["type"] as? String == "session_meta" else {
+                usageParser.usage.partial = true
+                return
+            }
+            usageParser.consume(object)
         }
 
         mutating func consume(_ chunk: Data) {
@@ -176,6 +187,7 @@ public enum AgentTranscriptParser {
                     let object = try? JSONSerialization.jsonObject(with: data)
                 else { return }
                 parsedAny = true
+                if kind == "message", let dictionary = object as? [String: Any] { usageParser.consume(dictionary, rowID: identifier) }
                 accumulator.inspectOpenCodeRow(
                     kind: kind,
                     identifier: identifier,
@@ -190,12 +202,14 @@ public enum AgentTranscriptParser {
             if !pendingLine.isEmpty || discardingOversizedLine {
                 completeLine()
             }
-            return parsedAny
+            var summary = parsedAny
                 ? accumulator.finish()
                 : AgentDocumentSummary(
                     format: .jsonLines,
                     title: accumulator.fileURL.deletingPathExtension().lastPathComponent
                 )
+            summary.tokenUsage = usageParser.usage
+            return summary
         }
 
         private mutating func append(_ fragment: Data.SubSequence) {
@@ -267,6 +281,13 @@ public enum AgentTranscriptParser {
         /// parser instead of being silently dropped.
         private mutating func shouldDecodeLine(bytes: UnsafeRawBufferPointer) -> Bool {
             guard !reachedAnalysisEnd else { return false }
+            // Decode only small usage/context records; keep the existing bounded conversation projection.
+            let text = String(decoding: bytes.prefix(1024), as: UTF8.self)
+            if text.contains("token_count") || text.contains("turn_context") || text.contains("session_meta") || (usageParser.provider == .claudeCode && text.contains("assistant")) {
+                if let object = try? JSONSerialization.jsonObject(with: Data(bytes)) as? [String: Any] {
+                    usageParser.consume(object)
+                }
+            }
             if !examinedFirstLine {
                 examinedFirstLine = true
                 return true

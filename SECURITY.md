@@ -7,7 +7,7 @@ context_room:
 
 ## Summary
 
-Goalong combines all-off capability defaults, direct read-only provider access and layered local integrity proofs. The single app contains no first-party uploader or updater. Current binary capabilities and Full Disk Access limitations are defined separately in [GUARANTEES.md](docs/GUARANTEES.md) and [THREAT-MODEL.md](docs/THREAT-MODEL.md).
+Goalong combines all-off capability defaults, direct read-only provider access and layered local integrity proofs. The retired commitment uploader and updater remain excluded; an optional explicit website sender submits selected saved fields as unverified data. The [network boundary](docs/NETWORK.md) defines that separate path. Current binary capabilities and Full Disk Access limitations are defined separately in [GUARANTEES.md](docs/GUARANTEES.md) and [THREAT-MODEL.md](docs/THREAT-MODEL.md).
 
 ## Defines
 
@@ -99,3 +99,8 @@ A `privateOnly` minute does not release the event-list root opening or event-cou
 `AnchorUploadRequest` remains as a reference protocol model, but the uploader and App Attest
 implementation are physically excluded from the single app target. Any future reintroduction must
 add a new explicit consent, threat-model update and artifact-level verification before release.
+
+The website v2 sender is not that proof protocol. It sends selected daily fields without anchors,
+source fingerprints or proof material and accepts only an unverified receipt. A local integrity
+signature does not confer a verified website badge. Audiences remain governed by the site's account
+rules, as described in the [website disclosure boundary](docs/PRIVACY.md#website-disclosure).

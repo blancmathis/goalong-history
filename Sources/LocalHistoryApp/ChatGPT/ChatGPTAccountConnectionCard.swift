@@ -20,19 +20,19 @@
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text("AI analysis with ChatGPT")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Text(connectionTitle)
                             .font(.system(size: 14, weight: .semibold))
                         Text(connectionMessage)
-                            .font(.system(size: 10))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(
                             "No API key is used. Goalong never reads or copies your sign-in tokens; the local Codex runtime stores and refreshes them in Goalong’s isolated private directory."
                         )
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -67,6 +67,7 @@
                     .buttonStyle(.bordered)
                     .disabled(runtime.isCheckingAccount)
                     .help("Refresh ChatGPT account status")
+                    .accessibilityLabel("Refresh ChatGPT account status")
 
                     Button("Disconnect") {
                         runtime.disconnectChatGPT()
@@ -87,6 +88,7 @@
                     .buttonStyle(.bordered)
                     .disabled(runtime.isCheckingAccount)
                     .help("Refresh ChatGPT account status")
+                    .accessibilityLabel("Refresh ChatGPT account status")
 
                     Button(runtime.isConnecting ? "Connecting…" : "Connect ChatGPT") {
                         runtime.connectChatGPT()

@@ -7,6 +7,7 @@
         @StateObject private var screenTime: AppleScreenTimeDashboardModel
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @State private var search = ""
+        @State private var accessRevoked = false
         @State private var showsAllUsage = false
         @State private var usageMode: UsageBreakdownMode = .websites
         @State private var expandedBrowserIDs = Set<String>()
@@ -31,6 +32,11 @@
         }
 
         var body: some View {
+            SourceAccessGate(capability: .appleScreenTime,
+                knownAccessIssue: accessRevoked ? .fullDiskAccess : nil) { pageBody }
+        }
+
+        private var pageBody: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if showsHeader {
@@ -55,28 +61,36 @@
                         }
                     }
 
-                    screenTimeConsentCard
+                    if !consents.isEnabled(.appleScreenTime) || accessRevoked { screenTimeConsentCard }
 
-                    if consents.isEnabled(.appleScreenTime) {
+                    if consents.isEnabled(.appleScreenTime), !accessRevoked {
                         statusBanner
+
+                        deviceScopeCard
 
                         if let summary = screenTime.summary {
                             dayOverview(summary)
                         }
 
                         usageCard
-                        deviceScopeCard
                         deviceUsageCard
-                        shareCard
-                        sourceCard
+                        DisclosureGroup("Sharing") { shareCard.padding(.top, 12) }
+                        DisclosureGroup("Source & privacy") {
+                            VStack(spacing: 16) {
+                                screenTimeConsentCard
+                                sourceCard
+                            }
+                            .padding(.top, 12)
+                        }
                     }
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, LHTheme.pageInset)
                 .padding(.top, showsHeader ? 28 : 18)
                 .padding(.bottom, 48)
             }
             .background(LHTheme.pageBackground)
             .onAppear {
+                accessRevoked = false
                 screenTime.setAccessEnabled(consents.isEnabled(.appleScreenTime))
                 screenTime.setActive(dashboard.dashboardIsVisible)
                 if screenTime.selectedDay != dashboard.selectedDay {
@@ -85,7 +99,12 @@
                 dashboard.refreshEverything()
             }
             .onDisappear { screenTime.setActive(false) }
-            .onChange(of: consents.document) { _ in
+            .onChange(of: screenTime.needsFullDiskAccess) { denied in
+                guard denied else { return }
+                stopForMissingAccess()
+            }
+            .onChange(of: consents.isEnabled(.appleScreenTime)) { enabled in
+                if enabled { accessRevoked = false }
                 screenTime.setAccessEnabled(consents.isEnabled(.appleScreenTime))
             }
             .onChange(of: dashboard.dashboardIsVisible) { screenTime.setActive($0) }
@@ -105,6 +124,18 @@
             }
         }
 
+        private func stopForMissingAccess() {
+            accessRevoked = true
+            let saved = consents.set(.appleScreenTime, enabled: false, surface: .settings)
+            screenTime.setAccessEnabled(false)
+            if !saved {
+                screenTime.alert = AppleScreenTimeDashboardAlert(
+                    title: "Screen Time access unavailable",
+                    message: "Reading has stopped, but the disabled setting could not be saved. Try turning the switch off again."
+                )
+            }
+        }
+
         private var screenTimeConsentCard: some View {
             LHCard {
                 HStack(alignment: .top, spacing: 14) {
@@ -120,24 +151,19 @@
                         Text(consents.isEnabled(.appleScreenTime) ? "Apple Screen Time enabled" : "Apple Screen Time is off")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
-                            "When enabled, Goalong reads Apple’s local Screen Time stores in place. It does not copy the databases or send their contents. Full Disk Access is broad and remains controlled separately by macOS."
+                            accessRevoked
+                                ? "macOS refused access to Screen Time while it was loading. Turn this switch on to review the required access and try again."
+                                : "See app usage across your Apple devices. We will explain and verify the required access before enabling this source."
                         )
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 14)
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { consents.isEnabled(.appleScreenTime) },
-                            set: {
-                                _ = consents.set(.appleScreenTime, enabled: $0, surface: .settings)
-                            }
-                        )
-                    )
+                    SourceActivationToggle(capability: .appleScreenTime) { Text("appleScreenTime") }
                     .labelsHidden()
                     .toggleStyle(.switch)
+                    .accessibilityLabel("Read Apple Screen Time")
                 }
             }
         }
@@ -154,7 +180,7 @@
                     Text(screenTime.status.title)
                         .font(.system(size: 12, weight: .semibold))
                     Text(screenTime.status.message)
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -219,7 +245,7 @@
                                         ? "Apps and sites share one ranking. Browser rows stay hidden."
                                         : "The same usage is grouped by browser. Expand a browser to see its sites."
                                 )
-                                .font(.system(size: 9))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             }
@@ -236,7 +262,7 @@
                                     )
 
                                 Text("Same usage and total; only the grouping changes.")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.trailing)
                                     .frame(maxWidth: 300, alignment: .trailing)
@@ -259,7 +285,7 @@
                                 .accessibilityLabel("Clear search")
                             }
                             Text("\(matchingItems.count) result\(matchingItems.count == 1 ? "" : "s")")
-                                .font(.system(size: 9, weight: .medium, design: .rounded))
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 10)
@@ -307,13 +333,13 @@
                                     .accessibilityValue(showsAllUsage ? "Expanded" : "Collapsed")
                                 }
                             }
-                            .font(.system(size: 9, design: .rounded))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
 
                             Text(
                                 "Apple total across the selected devices. Simultaneous use on different devices may overlap. Website details currently cover this Mac only."
                             )
-                            .font(.system(size: 9))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         }
@@ -339,7 +365,10 @@
             query: String,
             hasHiddenUsage: Bool
         ) -> some View {
-            if items.isEmpty {
+            if items.isEmpty, screenTime.isBusy {
+                ProgressView("Reading Apple Screen Time…")
+                    .frame(maxWidth: .infinity, minHeight: 140)
+            } else if items.isEmpty {
                 EmptyStateView(
                     symbol: query.isEmpty ? "clock" : "magnifyingglass",
                     title: query.isEmpty ? "No active use for this day" : "No matching activity",
@@ -381,13 +410,13 @@
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
                     Text(screenTimeBreakdownDetail(item))
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 Spacer()
                 Text(duration(item.seconds))
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .bold))
                     .monospacedDigit()
             }
             .accessibilityElement(children: .combine)
@@ -455,11 +484,11 @@
                                 .frame(width: 26, height: 26)
                         }
                         Text(child.name)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .lineLimit(1)
                         Spacer()
                         Text(duration(child.seconds))
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .font(.system(size: 12, weight: .semibold))
                             .monospacedDigit()
                     }
                     .padding(.leading, 50)
@@ -476,12 +505,12 @@
                             Text("Day overview")
                                 .font(.system(size: 14, weight: .semibold))
                             Text("Apple Screen Time for the selected day and device scope.")
-                                .font(.system(size: 10))
+                                .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Text(scopeDescription)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 18)
@@ -540,7 +569,7 @@
                             Text("Devices included")
                                 .font(.system(size: 14, weight: .semibold))
                             Text("Apple devices detected on this Mac stay selectable even when Apple reports no usage for the selected day.")
-                                .font(.system(size: 10))
+                                .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -574,7 +603,7 @@
                                                 .font(.system(size: 11, weight: .semibold))
                                                 .lineLimit(1)
                                             Text(deviceDetail(device))
-                                                .font(.system(size: 9))
+                                                .font(.system(size: 11))
                                                 .foregroundStyle(.secondary)
                                                 .lineLimit(1)
                                         }
@@ -597,8 +626,8 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 13) {
                     SectionTitle(
-                        title: "Usage by device",
-                        subtitle: "The raw Apple peer ID is kept internally; the UI shows a stable readable device label."
+                        title: "Time by device",
+                        subtitle: "Screen Time reported by each device in your selection."
                     )
 
                     if let summaries = screenTime.summary?.deviceSummaries, !summaries.isEmpty {
@@ -614,12 +643,12 @@
                                         Text(item.device.displayName)
                                             .font(.system(size: 11, weight: .semibold))
                                         Text(deviceDetail(item.device))
-                                            .font(.system(size: 9))
+                                            .font(.system(size: 11))
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                     Text(duration(item.screenOnDuration))
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                        .font(.system(size: 11, weight: .bold))
                                         .monospacedDigit()
                                 }
                                 .padding(.vertical, 8)
@@ -627,8 +656,8 @@
                             }
                         }
                     } else {
-                        Text("No device usage is available for the current scope.")
-                            .font(.system(size: 10))
+                        Text(screenTime.isBusy ? "Reading device activity…" : "No device activity for this day and selection. Try another day or include more devices.")
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -645,7 +674,7 @@
                         Text("Export Screen Time source data")
                             .font(.system(size: 12, weight: .semibold))
                         Text("Exports preserve the selected device scope and exact source provenance; private formats do not claim certified Settings parity.")
-                            .font(.system(size: 9))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -682,18 +711,18 @@
                         Text(
                             "Goalong reads Apple-owned ScreenTimeAgent, ScreenTime.AppUsage, knowledgeC and Biome data directly in the background only for the active day. It keeps one compact local day record, then reads that record forever after the day closes without reopening Apple history. It never opens or controls System Settings or sends mouse or keyboard events."
                         )
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
                     if screenTime.storageState == .completedDayStored {
                         Text("Stored completed day · Apple not re-read")
-                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(LHTheme.success)
                     } else if usesAppleAggregateStore {
                         Text(aggregateSourceLabel)
-                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(LHTheme.success)
                     } else {
                         VStack(alignment: .trailing, spacing: 3) {
@@ -701,7 +730,7 @@
                             Text("\(screenTime.knowledgeIntervalCount) knowledgeC intervals")
                             Text("\(screenTime.biomeIntervalCount) Biome intervals")
                         }
-                        .font(.system(size: 8, weight: .medium, design: .rounded))
+                        .font(.system(size: 8, weight: .medium))
                         .foregroundStyle(.secondary)
                     }
                 }
@@ -757,10 +786,10 @@
         ) -> some View {
             VStack(alignment: .leading, spacing: 6) {
                 Label(title, systemImage: symbol)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Text(value)
-                    .font(.system(size: isPrimary ? 23 : 19, weight: .bold, design: .rounded))
+                    .font(.system(size: isPrimary ? 23 : 19, weight: .bold))
                     .monospacedDigit()
                     .accessibilityIdentifier(accessibilityIdentifier)
                 Text(detail)

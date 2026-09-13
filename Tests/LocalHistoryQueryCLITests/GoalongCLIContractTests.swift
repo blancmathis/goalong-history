@@ -24,6 +24,8 @@
                 GoalongCLIContract.definition(named: "export-proof")?.effect,
                 .writesExplicitOutputFile
             )
+            XCTAssertEqual(GoalongCLIContract.definition(named: "export-site")?.effect, GoalongCLIEffect.none)
+            XCTAssertEqual(GoalongCLIContract.definition(named: "send-site")?.effect, .sendsExplicitSiteImport)
             XCTAssertTrue(GoalongCLIContract.usageText.contains("`help --json`"))
             XCTAssertTrue(GoalongCLIContract.usageText.contains("nonzero exit status"))
             XCTAssertTrue(GoalongCLIContract.agentInstructions.contains("Screen Time `queryReady`"))

@@ -25,6 +25,8 @@
     final class AgentActivityRuntime: ObservableObject {
         @Published private(set) var configuration: AgentActivityConfiguration
         @Published private(set) var overview: AgentActivityOverview
+        @Published private(set) var tokenUsageSnapshot: AgentDailyTokenUsage?
+        @Published private(set) var tokenUsageAnalyzedAt: Date?
         @Published private(set) var integrationStatuses: [AgentIntegrationStatus]
         @Published private(set) var isScanning = false
         @Published private(set) var lastScanResult = AgentScanResult()
@@ -181,6 +183,8 @@
             // Never show the previous day's rows under the new date while the direct-source
             // projection is being rebuilt. The complete snapshot is published atomically below.
             overview = AgentActivityOverview(day: normalized)
+            tokenUsageSnapshot = nil
+            tokenUsageAnalyzedAt = nil
             updateScanSnapshot(day: normalized, selectedDayRequiresAnalysis: true)
             if started {
                 enqueueScan(
@@ -213,7 +217,7 @@
         }
 
         func chooseFolder() {
-            guard started else { return }
+            // Folder selection is configuration; scanNow remains gated by started.
             let panel = NSOpenPanel()
             panel.canChooseFiles = false
             panel.canChooseDirectories = true
@@ -617,6 +621,17 @@
                 self.lastScanResult = publishedResult
                 if let nextOverview, self.selectedDay == selected {
                     self.overview = nextOverview
+                    // Numeric day snapshots outlive the transcript LRU, until an explicit
+                    // reanalysis replaces them or selecting another day clears them.
+                    if request.analyzeSelectedDay && !result.analysisIncomplete {
+                        self.tokenUsageSnapshot = AgentDailyTokenUsage(
+                            records: nextOverview.captures, day: selected,
+                            sourceCoverageIncomplete: result.capacityLimitedFolderCount > 0
+                                || !result.failures.isEmpty
+                                || nextOverview.sessionCount > nextOverview.captures.count
+                        )
+                        self.tokenUsageAnalyzedAt = Date()
+                    }
                 }
                 if let bytes { self.storageBytes = bytes }
                 if let validIndex { self.indexIsValid = validIndex }
