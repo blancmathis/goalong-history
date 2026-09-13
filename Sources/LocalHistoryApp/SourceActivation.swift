@@ -12,9 +12,9 @@
 
         var actionTitle: String {
             switch self {
-            case .accessibility: return "Allow Accessibility"
-            case .inputMonitoring: return "Allow Input Monitoring"
-            case .fullDiskAccess: return "Open System Settings"
+            case .accessibility: return "Open Accessibility"
+            case .inputMonitoring: return "Open Input Monitoring"
+            case .fullDiskAccess: return "Open Full Disk Access"
             case .screenTimeSetup: return "Open Screen Time"
             case .ready, .unavailable: return "Try again"
             }
@@ -30,10 +30,10 @@
         var message: String {
             switch self {
             case .ready: return "The required access is available."
-            case .accessibility: return "Allow Accessibility for Goalong in System Settings, then return here to verify access."
-            case .inputMonitoring: return "Allow Input Monitoring for Goalong in System Settings, then return here to verify access."
-            case .fullDiskAccess: return "Allow Full Disk Access for Goalong in System Settings, then return here. macOS may require you to quit and reopen Goalong before the change takes effect."
-            case .screenTimeSetup: return "No Apple Screen Time source is available yet. Turn on App & Website Activity in macOS Screen Time, then check again."
+            case .accessibility: return "macOS is not granting Accessibility to this running Goalong app. Enable it in System Settings. If Goalong is already enabled, use the recovery steps below instead of toggling it repeatedly."
+            case .inputMonitoring: return "The input access path is unavailable. Enable Input Monitoring for this Goalong app in System Settings. If it is already enabled, quit and reopen Goalong, then check again."
+            case .fullDiskAccess: return "macOS refused access to the selected source. Enable Full Disk Access for this Goalong app, then quit and reopen it. If it is already enabled, use the recovery steps below. Folder permissions can also prevent access."
+            case .screenTimeSetup: return "No Apple Screen Time source is available yet. Turn on App & Website Activity in macOS Screen Time, then check again. This is not evidence of a missing privacy permission."
             case .unavailable(let message): return message
             }
         }
@@ -121,6 +121,7 @@
         @Published private(set) var checking = false
         @Published private(set) var result: SourceAccessStatus?
         @Published private(set) var completed = false
+        @Published private(set) var recovery = SourceAccessRecoveryState()
         private var generation = 0
         private let store: GoalongCapabilityConsentStore
         private let checkAccess: SourceAccessService.Check
@@ -136,11 +137,12 @@
             generation += 1
             let request = generation
             checking = true
-            result = nil
+            completed = false
             checkAccess(capability) { [weak self] status in
                 guard let self, self.generation == request else { return }
                 self.checking = false
                 self.result = status
+                self.recovery.checked(status)
                 guard status == .ready else { return }
                 do { if !self.store.isEnabled(capability) { try prepare() } }
                 catch {
@@ -157,6 +159,7 @@
 
         func requestMissingAccess(using request: (SourceAccessStatus) -> Void = SourceAccessService.openAccess) {
             guard !checking, let result, result.hasSettingsAction else { return }
+            recovery.requested(result)
             request(result)
         }
 
@@ -287,30 +290,35 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Access for \(capability.title)").font(.system(size: 22, weight: .semibold))
-                Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let status = flow.result, status != .ready {
-                    Text(status.message).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
-                }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let status = flow.result, status != .ready {
+                            Text(status.message).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                            PermissionRecoveryPanel(status: status,
+                                afterSettingsCheck: flow.recovery.recoveryStatus == status,
+                                beforeQuit: { flow.cancel() })
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(maxHeight: 360)
                 HStack(spacing: 10) {
                     Button("Not now", role: .cancel) { flow.cancel(); dismiss() }
                         .keyboardShortcut(.cancelAction)
                     Spacer()
-                    if openedSettings {
-                        Button("Check access") { check() }.disabled(flow.checking)
-                    }
-                    Button(flow.checking ? "Checking access…" : flow.result?.actionTitle ?? "Checking access…") {
-                        if let status = flow.result, status.hasSettingsAction {
+                    if let status = flow.result, status.hasSettingsAction {
+                        Button(status.actionTitle) {
                             openedSettings = true
                             flow.requestMissingAccess()
-                        } else { check() }
+                        }.disabled(flow.checking)
                     }
-                    .buttonStyle(LHPrimaryButtonStyle())
-                    .disabled(flow.checking || flow.result == nil)
-                    .keyboardShortcut(.defaultAction)
+                    Button(flow.checking ? "Checking access…" : "Check access") { check() }
+                        .buttonStyle(LHPrimaryButtonStyle())
+                        .disabled(flow.checking)
+                        .keyboardShortcut(.defaultAction)
                 }
             }
-            .padding(28).frame(width: 520)
+            .padding(28).frame(width: 560)
             .background(LHTheme.pageBackground)
             .background(PermissionSheetWindowBehavior())
             .onAppear { if flow.result == nil { check() } }
@@ -338,6 +346,7 @@
         @State private var generation = UUID()
         @State private var requiredAccess: SourceAccessStatus?
         @State private var openedSettings = false
+        @State private var recovery = SourceAccessRecoveryState()
 
         var body: some View {
             ZStack(alignment: .topLeading) {
@@ -350,24 +359,31 @@
                 if checking {
                     ProgressView("Checking access…").controlSize(.small).padding(LHTheme.pageInset)
                 } else if let status = requiredAccess {
-                    LHCard {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text("Access for \(capability.title)").font(.system(size: 15, weight: .semibold))
-                            Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Text(status.message).font(.system(size: 12)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            HStack(spacing: 10) {
-                                Button(status.actionTitle) {
+                    ScrollView {
+                        LHCard {
+                            VStack(alignment: .leading, spacing: 14) {
+                                Text("Access for \(capability.title)").font(.system(size: 15, weight: .semibold))
+                                Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(status.message).font(.system(size: 12)).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                PermissionRecoveryPanel(status: status,
+                                    afterSettingsCheck: recovery.recoveryStatus == status,
+                                    beforeQuit: { generation = UUID() })
+                                HStack(spacing: 10) {
                                     if status.hasSettingsAction {
-                                        openedSettings = true
-                                        SourceAccessService.openAccess(status)
-                                    } else { validate(allowAutomaticEnable: true) }
-                                }.buttonStyle(LHPrimaryButtonStyle())
-                                if openedSettings { Button("Check access") { validate(allowAutomaticEnable: true) } }
+                                        Button(status.actionTitle) {
+                                            openedSettings = true
+                                            recovery.requested(status)
+                                            SourceAccessService.openAccess(status)
+                                        }
+                                    }
+                                    Button("Check access") { validate(allowAutomaticEnable: true) }
+                                        .buttonStyle(LHPrimaryButtonStyle())
+                                }
                             }
-                        }
-                    }.padding(.horizontal, LHTheme.pageInset).padding(.top, 18)
+                        }.padding(.horizontal, LHTheme.pageInset).padding(.top, 18)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -400,6 +416,7 @@
             checkAccess(capability) { status in
                 guard generation == request else { return }
                 checking = false
+                recovery.checked(status)
                 if status == .ready {
                     if !consents.isEnabled(capability) {
                         do { try prepare() }
