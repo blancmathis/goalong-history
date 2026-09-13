@@ -733,7 +733,14 @@ final class AgentSourceTraversalBudgetTests: XCTestCase {
             )
         }
         let store = try AgentActivityStore(rootDirectory: storeRoot)
-        let scanner = AgentActivityScanner(store: store)
+        // Eight 32-root cycles exercise the root/cache bounds, not wall-clock speed.
+        // A busy Mac may otherwise legitimately stop a cycle before its 32nd root.
+        let scanner = AgentActivityScanner(
+            store: store,
+            sourceTraversalLimits: .production,
+            sourceTraversalUptimeNanoseconds: { 0 },
+            sourceBodyReadUptimeNanoseconds: { 0 }
+        )
         let configuration = AgentActivityConfiguration(watchedFolders: folders)
 
         var discoveryFailures: [String] = []
