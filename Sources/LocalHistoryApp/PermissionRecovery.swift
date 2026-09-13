@@ -36,28 +36,6 @@ struct SourceAccessRecoveryState: Equatable {
     }
 }
 
-/// macOS access and the person's source choice are separate state. An unsuccessful
-/// access check may block a view, but must never revoke or rewrite saved consent.
-/// Only an explicitly requested activation may prepare and enable a new source.
-enum SourceAccessConsentPolicy {
-    static func apply(
-        _ status: SourceAccessStatus,
-        capability: GoalongCapability,
-        surface: GoalongConsentSurface,
-        allowEnable: Bool,
-        store: GoalongCapabilityConsentStore,
-        prepare: () throws -> Void
-    ) -> SourceAccessStatus {
-        guard status == .ready, allowEnable, !store.isEnabled(capability) else { return status }
-        do { try prepare() }
-        catch { return .unavailable("Settings could not be saved: \(error.localizedDescription)") }
-        guard store.set(capability, enabled: true, surface: surface) else {
-            return .unavailable("Your choice could not be saved. Nothing has been enabled. Try again.")
-        }
-        return .ready
-    }
-}
-
 extension GoalongWorkspaceOpenPolicy {
     /// Select only the bundle of this running process. Do not search by display
     /// name: an older copy, a mounted DMG or a development build may share it.
@@ -115,7 +93,7 @@ struct PermissionRecoveryPanel: View {
                     } else {
                         Text("Run the installed Goalong History.app from Applications, not a standalone executable, to grant access to the intended application.")
                     }
-                    Text("Your history and source choices are kept. Goalong will verify access again; this guide does not grant permission or disable any macOS protection.")
+                    Text("Local history is kept. Re-enable the source after reopening if needed. Goalong will verify access again; this guide does not grant permission or disable any macOS protection.")
                 }
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -138,7 +116,7 @@ struct PermissionRecoveryPanel: View {
                     NSApplication.shared.terminate(nil)
                 }
             } message: {
-                Text("Goalong will stop recording and close normally. Reopen the app selected in Finder, then check access again. Local history and settings are not deleted.")
+                Text("Goalong will stop recording and close normally. Reopen the app selected in Finder, then check access again. Local history is not deleted.")
             }
         }
     }
