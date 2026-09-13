@@ -50,7 +50,7 @@
 
         var allGranted: Bool { accessibility && inputMonitoring }
         var accessibilityUsable: Bool { accessibilityPreflight && accessibilityFunctionalProbe }
-        var canAttemptInputTap: Bool { accessibility || inputMonitoringDirectlyGranted }
+        var canAttemptInputTap: Bool { accessibilityPreflight || inputMonitoringDirectlyGranted }
 
         func isGranted(_ permission: MacPermissionKind) -> Bool {
             switch permission {
@@ -70,9 +70,12 @@
             accessibilityFunctionalProbe: Bool,
             inputMonitoringDirectlyGranted: Bool
         ) -> PermissionStatus {
-            let accessibility = accessibilityPreflight || accessibilityFunctionalProbe
+            // A read of our own AX window can succeed after a TCC revocation. It is
+            // health evidence, never an authorization grant. All UI and activation
+            // paths must agree with AXIsProcessTrusted for this running process.
+            let accessibility = accessibilityPreflight
             let inputMonitoringProvidedByAccessibility =
-                accessibility && !inputMonitoringDirectlyGranted
+                accessibilityPreflight && !inputMonitoringDirectlyGranted
             return PermissionStatus(
                 accessibility: accessibility,
                 inputMonitoring:
@@ -109,6 +112,7 @@
         private let statusLock = NSLock()
         private let statusProbe: StatusProbe
         private let clock: () -> Date
+        private let inputAccessRequest: () -> Bool
         private var cachedStatus: PermissionStatus
         private var lastRefreshAt: Date
         private var refreshInFlight = false
@@ -116,10 +120,12 @@
 
         init(
             statusProbe: @escaping StatusProbe = PermissionManager.liveStatus,
-            clock: @escaping () -> Date = Date.init
+            clock: @escaping () -> Date = Date.init,
+            inputAccessRequest: @escaping () -> Bool = { CGRequestListenEventAccess() }
         ) {
             self.statusProbe = statusProbe
             self.clock = clock
+            self.inputAccessRequest = inputAccessRequest
             let initial = statusProbe()
             cachedStatus = initial
             lastRefreshAt = clock()
@@ -166,7 +172,7 @@
 
         private static func liveStatus() -> PermissionStatus {
             let accessibilityPreflight = AXIsProcessTrusted()
-            let accessibilityFunctionalProbe = Self.canReadFocusedApplication()
+            let accessibilityFunctionalProbe = accessibilityPreflight && Self.canReadFocusedApplication()
             let directInputMonitoring = CGPreflightListenEventAccess()
             return .resolved(
                 accessibilityPreflight: accessibilityPreflight,
@@ -188,17 +194,18 @@
 
         @discardableResult
         func requestInputMonitoring() -> Bool {
-            // Input Monitoring preflight is reported independently from Accessibility.
-            // A successful callback remains the authoritative runtime proof.
-            if snapshot.inputMonitoring { return true }
-            let requested = CGRequestListenEventAccess()
+            // An explicit Input Monitoring request must consult its own preflight.
+            // Accessibility may permit trying a tap, but does not mean the separate
+            // Input Monitoring entry is registered or enabled in System Settings.
+            if refresh(force: true).inputMonitoringDirectlyGranted { return true }
+            let requested = inputAccessRequest()
             _ = refresh(force: true)
             return requested
         }
 
         func requestAll() {
             let status = refresh(force: true)
-            if !status.accessibility {
+            if !status.accessibilityPreflight {
                 _ = requestAccessibility()
             } else if !status.inputMonitoring {
                 _ = requestInputMonitoring()
@@ -213,9 +220,7 @@
         }
 
         func openInputMonitoringSettings() {
-            if !refresh(force: true).inputMonitoring {
-                _ = requestInputMonitoring()
-            }
+            _ = requestInputMonitoring()
             openSettingsDirectly(for: .inputMonitoring)
         }
 
@@ -276,6 +281,8 @@
 
         private static func canReadFocusedApplication() -> Bool {
             let systemWide = AXUIElementCreateSystemWide()
+            // Setting a timeout on the system-wide element would change the
+            // default for every AX client in this process, not just this probe.
             var focusedApplication: CFTypeRef?
             let result = AXUIElementCopyAttributeValue(
                 systemWide,
