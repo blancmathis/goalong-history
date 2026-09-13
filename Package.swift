@@ -5,24 +5,26 @@ import Foundation
 
 let cliInfoPlistPath = ProcessInfo.processInfo.environment["LOCALHISTORY_CLI_INFO_PLIST"]
 
-var packageDependencies: [Package.Dependency] = []
+var packageDependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6"),
+]
 var appDependencies: [Target.Dependency] = [
     "LocalHistoryCore",
     "AppleScreenTime",
     "AppleSystemScreenTime",
     "AgentActivity",
     "LocalHistoryQueryCLI",
+    .product(name: "Sparkle", package: "Sparkle"),
 ]
 let appExcludes: [String] = [
     "AppAttestManager.swift",
     "CommitmentUploader.swift",
-    "SoftwareUpdateManager.swift",
+    "LocalOnlySoftwareUpdateManager.swift",
     "LocalOnlyCodexAppServerClient.swift",
 ]
 let appSwiftSettings: [SwiftSetting] = [.define("GOALONG_UNIFIED_APP")]
 let appTestExcludes: [String] = [
     "CommitmentUploaderTests.swift",
-    "SoftwareUpdatePresentationStateTests.swift",
 ]
 
 let package = Package(

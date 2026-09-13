@@ -47,7 +47,7 @@
             XCTAssertTrue(GoalongBuildCapabilities.permitsFirstPartyNetworking)
             XCTAssertFalse(GoalongBuildCapabilities.permitsRemoteVerification)
             XCTAssertTrue(GoalongBuildCapabilities.permitsRemoteAnalysis)
-            XCTAssertFalse(GoalongBuildCapabilities.permitsAutomaticUpdates)
+            XCTAssertTrue(GoalongBuildCapabilities.permitsAutomaticUpdates)
         }
 
         func testConfiguredWebsiteUsesOnlyTheReviewedSourcesRouteAndSafeOrigin() throws {

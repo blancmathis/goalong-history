@@ -10,7 +10,7 @@ final class GoalongSiteExportTests: XCTestCase {
     func testNativeJournalRhythmProducesACompleteSelectedSiteImport() throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let record = try fixture()
+        let record = try fixture(timeZone: .current)
         let archive = root.appendingPathComponent("apple-screen-time/days")
         let events = root.appendingPathComponent("events")
         try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
@@ -39,7 +39,7 @@ final class GoalongSiteExportTests: XCTestCase {
     }
     func testContextualSourceToWebsiteProjectionKeepsSelectedEvidenceAndMasksBeforeSending() throws {
         let root = temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
-        let record = try fixture(), archive = root.appendingPathComponent("apple-screen-time/days"), eventsRoot = root.appendingPathComponent("events")
+        let record = try fixture(timeZone: .current), archive = root.appendingPathComponent("apple-screen-time/days"), eventsRoot = root.appendingPathComponent("events")
         try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: eventsRoot, withIntermediateDirectories: true)
         try AppleScreenTimeJSON.encode(record).write(to: archive.appendingPathComponent("2026-09-02.json"))
@@ -376,9 +376,9 @@ final class GoalongSiteExportTests: XCTestCase {
     }
 
     private func fixture(date: String = "2026-09-02", reconstructed: Bool = false,
-                         hourly: Bool = false) throws -> AppleSystemScreenTimeDailyArchiveRecord {
+                         hourly: Bool = false, timeZone: TimeZone = TimeZone(identifier: "Europe/Paris")!) throws -> AppleSystemScreenTimeDailyArchiveRecord {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Europe/Paris")!
+        calendar.timeZone = timeZone
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.timeZone = calendar.timeZone

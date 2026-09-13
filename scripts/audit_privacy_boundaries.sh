@@ -194,9 +194,9 @@ if ! /usr/bin/python3 "$ROOT_DIR/scripts/audit_site_submission.py" --source-root
   failed=true
 fi
 if ! grep -Fq '"CommitmentUploader.swift"' "$ROOT_DIR/Package.swift" \
-  || ! grep -Fq '"SoftwareUpdateManager.swift"' "$ROOT_DIR/Package.swift" \
+  || ! grep -Fq '"LocalOnlySoftwareUpdateManager.swift"' "$ROOT_DIR/Package.swift" \
   || ! grep -Fq '"AppAttestManager.swift"' "$ROOT_DIR/Package.swift"; then
-  echo "The retired network and updater implementations are not physically excluded from the app target." >&2
+  echo "The retired network and no-op updater implementations are not physically excluded from the app target." >&2
   failed=true
 fi
 
@@ -500,10 +500,8 @@ if [[ -n "${LOCALHISTORY_AUDIT_BINARY:-}" ]]; then
   fi
 fi
 
-# Supply-chain rule: the single public app has no remote Swift package dependency.
-REMOTE_DEPENDENCY_COUNT="$(grep -cE '\.package\s*\(' "$ROOT_DIR/Package.swift" || true)"
-if [[ "$REMOTE_DEPENDENCY_COUNT" != "0" ]]; then
-  echo "The single public app must not introduce a remote Swift package dependency." >&2
+# Only the reviewed, exact-version Sparkle dependency may enter the updater supply chain.
+if ! /usr/bin/python3 "$ROOT_DIR/scripts/audit_update_dependency.py"; then
   failed=true
 fi
 if ! grep -Fq 'capabilityConsents.isEnabled(.appleScreenTime)' "$ROOT_DIR/Sources/LocalHistoryApp/AppDelegate.swift" \
@@ -520,4 +518,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is isolated to the fixed Codex app-server bridge; first-party networking is confined to confirmed website pairing and explicit reviewed sends; retired uploaders, Sparkle and remote Swift dependencies remain absent."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is isolated to the fixed Codex app-server bridge; first-party networking is confined to confirmed website pairing and explicit reviewed sends; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."

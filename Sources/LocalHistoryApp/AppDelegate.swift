@@ -105,6 +105,7 @@
 
             NSApplication.shared.setActivationPolicy(.accessory)
             GoalongWebsiteAutoSender.shared.start()
+            SoftwareUpdateManager.shared.start()
 
             do {
                 try AppPaths.prepare()
@@ -263,6 +264,7 @@
         }
 
         func applicationWillTerminate(_ notification: Notification) {
+            SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()
             screenTimeArchiveTimer?.invalidate()
             screenTimeArchiveTimer = nil

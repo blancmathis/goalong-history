@@ -396,7 +396,7 @@ for argument in "$@"; do
 Usage: ./install.sh [--source] [--verbose]
 
 The normal path downloads the latest free Goalong History Community Build from GitHub.
-Use --source for an audited local developer build. All updates are manual replacements.
+Use --source for an audited local developer build. Community builds offer signed in-app updates; this installer also supports bootstrap/manual replacement.
 HELP
       exit 0
       ;;

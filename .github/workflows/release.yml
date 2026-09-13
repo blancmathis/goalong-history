@@ -48,17 +48,22 @@ jobs:
             exit 1
           fi
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          ./scripts/resolve_rolling_version.sh "$GITHUB_RUN_NUMBER" | grep '^build=' >> "$GITHUB_OUTPUT"
 
       - name: Build universal Community app
         env:
           LOCALHISTORY_VERSION: ${{ steps.version.outputs.value }}
-          LOCALHISTORY_BUILD_NUMBER: ${{ github.run_number }}
+          LOCALHISTORY_BUILD_NUMBER: ${{ steps.version.outputs.build }}
+          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY || vars.SPARKLE_PUBLIC_ED_KEY }}
+          LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
           LOCALHISTORY_ARCHS: arm64 x86_64
           LOCALHISTORY_RUN_TESTS: 1
           LOCALHISTORY_CODESIGN_IDENTITY: '-'
         run: ./scripts/build_app.sh
 
       - name: Verify Community bundle
+        env:
+          LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
         run: |
           set -euo pipefail
           APP="dist/Goalong History.app"
@@ -118,6 +123,8 @@ jobs:
             This build is ad-hoc code signed for bundle-integrity checks but is not Apple-notarized. On first launch, macOS may require **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper globally.
 
             Verify the SHA-256 file and `release-manifest.json`. GitHub also publishes a Sigstore-backed provenance attestation: `gh attestation verify <downloaded-file> --repo blancmathis/goalong-history`.
+
+            This installer uses the same signed Community main update channel. Installation is user-approved; automatic checks can be disabled in Settings.
 
             A free ad-hoc update can make macOS ask for Goalong permissions again. Existing history and settings are preserved.
           generate_release_notes: true

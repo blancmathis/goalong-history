@@ -119,8 +119,9 @@ class CapabilityManifestTests(unittest.TestCase):
                      "CFBundleDisplayName": "Synthetic", "CFBundleShortVersionString": "0", "CFBundleVersion": "0"}
         self.info["CFBundleURLTypes"] = [{"CFBundleURLName": "ai.goalong.website-connection", "CFBundleURLSchemes": ["goalong-history"], "CFBundleTypeRole": "Viewer"}]
         (self.app / "Contents/Info.plist").write_bytes(plistlib.dumps(self.info))
+        (self.app / "Contents/Frameworks/Sparkle.framework").mkdir(parents=True)
         markers = {"codexAppServer": True, "managedOAuth": True, "siteSubmission": True,
-                   "commitmentUploader": False, "sparkleUpdater": False}
+                   "commitmentUploader": False, "sparkleUpdater": True}
         with patch.object(generator, "inspect_code", return_value=([{"sha256": "synthetic"}], markers)), \
              patch.object(generator, "parse_codesign_metadata", return_value={}):
             self.value = generator.capability_manifest(self.app, "unified", ROOT)
@@ -158,7 +159,7 @@ class CapabilityManifestTests(unittest.TestCase):
     def test_missing_sender_and_retired_transport_are_rejected(self):
         self.fails(lambda value: value["detectedBinaryMarkers"].update(siteSubmission=False))
         self.fails(lambda value: value["detectedBinaryMarkers"].update(commitmentUploader=True))
-        self.fails(lambda value: value["detectedBinaryMarkers"].update(sparkleUpdater=True))
+        self.fails(lambda value: value["detectedBinaryMarkers"].update(sparkleUpdater=False))
         self.fails(lambda value: value["network"]["declaredDestinations"].append({"purpose": "passive-upload"}))
         self.fails(lambda value: value["dataAccess"]["newInstallDefaults"].update(websiteSubmission=True))
 

@@ -157,8 +157,19 @@ fi
 chmod 755 "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 chmod 755 "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
-if /usr/bin/otool -L "$CONTENTS/MacOS/$EXECUTABLE_NAME" | /usr/bin/grep -q 'Sparkle.framework'; then
-  echo "The single public app unexpectedly links Sparkle.framework." >&2
+# Embed the exact SwiftPM artifact. No replacement framework or unpinned download is used.
+SPARKLE_FRAMEWORK="$(find "$WORK_DIR" -type d -name Sparkle.framework -path '*/artifacts/sparkle/Sparkle/*' -print -quit)"
+if [[ -z "$SPARKLE_FRAMEWORK" ]]; then
+  echo "The pinned Sparkle.framework artifact is missing." >&2
+  exit 1
+fi
+/usr/bin/ditto "$SPARKLE_FRAMEWORK" "$CONTENTS/Frameworks/Sparkle.framework"
+# This app is not sandboxed. Sparkle's optional XPC downloader/installer are unnecessary;
+# omit them rather than adding Mach-service exceptions or network entitlements.
+rm -rf "$CONTENTS/Frameworks/Sparkle.framework/Versions/B/XPCServices"
+rm -f "$CONTENTS/Frameworks/Sparkle.framework/XPCServices"
+if ! /usr/bin/otool -L "$CONTENTS/MacOS/$EXECUTABLE_NAME" | /usr/bin/grep -q '@rpath/Sparkle.framework'; then
+  echo "The app did not link the real Sparkle updater." >&2
   exit 1
 fi
 
@@ -240,6 +251,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
+/usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" --configure-info "$CONTENTS/Info.plist"
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
@@ -252,6 +264,11 @@ else
   SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY" "$SIGN_TIMESTAMP_ARGUMENT")
 fi
 
+# Explicit inside-out signing; never use --deep to sign nested executable code.
+SPARKLE_VERSION_DIR="$CONTENTS/Frameworks/Sparkle.framework/Versions/B"
+codesign "${SIGN_ARGS[@]}" "$SPARKLE_VERSION_DIR/Autoupdate"
+codesign "${SIGN_ARGS[@]}" "$SPARKLE_VERSION_DIR/Updater.app"
+codesign "${SIGN_ARGS[@]}" "$CONTENTS/Frameworks/Sparkle.framework"
 codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID" "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
 APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
@@ -279,6 +296,7 @@ echo
 printf 'Built %s %s (%s)\n' "$APP_NAME" "$VERSION" "$ARCHS"
 printf 'Output: %s\n' "$OUTPUT_DIR/$APP_NAME.app"
 printf 'Edition: %s\n' "$BUILD_EDITION"
-echo "Sparkle, retired commitment uploader and App Attest transport: physically absent"
+echo "Sparkle: pinned framework; signed feed enabled only with a release public key"
+echo "Retired commitment uploader and App Attest transport: physically absent"
 echo "Website transport: reviewed manual sends and opt-in previous-day schedule; disabled by default"
 echo "Optional ChatGPT analysis: delegated to Codex after explicit consent"
