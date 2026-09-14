@@ -236,6 +236,16 @@
                         )
                     }
 
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Full Disk Access").font(.system(size: 13, weight: .semibold))
+                        Text("Screen Time is read directly from Apple-owned files. Full Disk Access is a broad macOS permission, not access to just one folder. You can leave Apple Screen Time off. If Goalong is missing from a permission list, use + to add Goalong History from Applications, then return and check access for the source.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Open Full Disk Access settings") {
+                            SourceAccessService.openAccess(.fullDiskAccess)
+                        }.buttonStyle(.bordered)
+                    }
+
                     if let health = model.runtime.captureHealth,
                         [.permissionRequired, .permissionAppearsEnabledButStaleForBuild,
                          .accessibilityContextUnavailable].contains(health.state)

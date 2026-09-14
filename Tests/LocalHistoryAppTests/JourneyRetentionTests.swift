@@ -84,5 +84,39 @@ final class JourneyRetentionTests: XCTestCase {
         store.applyCleanup()
         for file in files.values { XCTAssertTrue(FileManager.default.fileExists(atPath: file.path)) }
     }
+
+    func testCleanupDrainsWritersAndInvalidatesPreviouslyQueuedWork() throws {
+        let (store, _, files) = try fixture()
+        let barrier = DerivedHistoryWriteBarrier(label: "test.journey-retention-drain")
+        let admission = try XCTUnwrap(barrier.admission())
+        let permit = try XCTUnwrap(barrier.beginJob(admission: admission))
+        try store.activate(store.policy)
+        let completed = expectation(description: "cleanup after drain")
+        store.applyCleanupAfterDrainingDerivedWriters(barrier: barrier) { completed.fulfill() }
+        XCTAssertNil(barrier.admission())
+        XCTAssertFalse(barrier.isCurrent(permit))
+        for file in files.values { XCTAssertTrue(FileManager.default.fileExists(atPath: file.path)) }
+        barrier.endJob(permit)
+        wait(for: [completed], timeout: 5)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: files[.detailedEvents]!.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: files[.minuteSeals]!.path))
+        XCTAssertNil(barrier.beginJob(admission: admission))
+        XCTAssertNotNil(barrier.admission())
+    }
+
+    func testDisablingCleanupDuringDrainPreservesAllData() throws {
+        let (store, _, files) = try fixture()
+        let barrier = DerivedHistoryWriteBarrier(label: "test.journey-retention-cancel")
+        let permit = try XCTUnwrap(barrier.beginJob())
+        try store.activate(store.policy)
+        let completed = expectation(description: "cancelled cleanup after drain")
+        store.applyCleanupAfterDrainingDerivedWriters(barrier: barrier) { completed.fulfill() }
+        try store.save(store.policy)
+        barrier.endJob(permit)
+        wait(for: [completed], timeout: 5)
+        XCTAssertFalse(store.isAutomaticCleanupEnabled)
+        for file in files.values { XCTAssertTrue(FileManager.default.fileExists(atPath: file.path)) }
+        XCTAssertNotNil(barrier.admission())
+    }
 }
 #endif
