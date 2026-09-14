@@ -105,6 +105,7 @@
         ) -> Void
 
         @Published var selectedSection: DashboardSection = .overview
+        @Published var settingsPane: SettingsPane = .home
         @Published private(set) var runtime: RuntimePresentation = .unavailable
         @Published private(set) var snapshot: DashboardDaySnapshot
         @Published private(set) var snapshotGeneration: UInt64 = 0
@@ -326,6 +327,7 @@
 
         func selectSection(_ section: DashboardSection) {
             let previousSection = selectedSection
+            if section == .settings { settingsPane = .home }
             selectedSection = section
             if section == .share {
                 reloadShareSegments()
@@ -338,6 +340,11 @@
                     analyzeSelectedDay: true
                 )
             }
+        }
+
+        func openRecordingSettings() {
+            selectSection(.settings)
+            settingsPane = .recording
         }
 
         func refreshEverything() {
@@ -664,6 +671,7 @@
             }
 
             do {
+                try settingsDraft.validatePrivacyRules()
                 let requested = settingsDraft.applying(to: configManager.config)
                 let applied = try onSaveConfiguration(requested)
                 let refreshed = DashboardSettingsDraft(config: applied)
@@ -674,7 +682,7 @@
                     kind: .information,
                     title: "Settings saved",
                     message:
-                        "Capture and verification settings are active. Retention cleanup is also applied on the next launch."
+                        "Your recording choices are saved for future activity. Existing data is unchanged. Automatic deletion is managed separately in Privacy & permissions."
                 )
             } catch {
                 alert = DashboardAlert(
@@ -685,23 +693,22 @@
             }
         }
 
-        func configureCaptureForOnboarding(enabled: Bool) throws {
-            var draft = settingsDraft
-            draft.captureClicks = enabled
-            draft.captureScroll = enabled
-            draft.captureKeyboardActivity = enabled
-            draft.captureShortcuts = enabled
-            draft.captureWindowTitles = enabled
-            draft.captureElementLabels = enabled
-            draft.captureURLs = enabled
-            draft.verificationEnabled = false
-            draft.verificationServerURL = ""
-            draft.enableAppAttest = false
-            let applied = try onSaveConfiguration(draft.applying(to: configManager.config))
-            let refreshed = DashboardSettingsDraft(config: applied)
-            settingsDraft = refreshed
-            savedSettingsDraft = refreshed
-            refreshRuntime()
+        /// The Privacy screen reports persisted choices, never an unsaved editor draft.
+        var appliedSettings: DashboardSettingsDraft { savedSettingsDraft }
+
+        @discardableResult
+        func saveOnboardingRecordingChoices() -> Bool {
+            do {
+                try settingsDraft.validatePrivacyRules()
+                let applied = try onSaveConfiguration(settingsDraft.applying(to: configManager.config))
+                settingsDraft = DashboardSettingsDraft(config: applied)
+                savedSettingsDraft = settingsDraft
+                refreshRuntime()
+                return true
+            } catch {
+                alert = DashboardAlert(kind: .error, title: "Choices could not be saved", message: error.localizedDescription)
+                return false
+            }
         }
 
         func discardSettingsChanges() {

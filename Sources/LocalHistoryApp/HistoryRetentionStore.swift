@@ -178,6 +178,16 @@
             return value
         }
 
+        /// Activation is a distinct destructive authorization, never a side effect of
+        /// saving capture settings. The matching record remains the cleanup authority.
+        var isAutomaticCleanupEnabled: Bool { cleanupMayRun && activationMatchesCurrentPolicy() }
+
+        func activate(_ value: HistoryRetentionPolicy) throws {
+            _ = try save(value)
+            try writeMetadata(Self.encoder.encode(ActivationRecord(policy: value)), to: storage.activationFile)
+            cleanupMayRun = true
+        }
+
         /// Keeps the Settings value effective for the detailed layer. Zero,
         /// negative and otherwise invalid values conservatively mean "keep".
         func updateDetailedRetention(fromLegacyDays days: Int) throws {

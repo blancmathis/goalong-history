@@ -116,7 +116,9 @@
             statusMenuItem.toolTip = display.description
             permissionMenuItem.title =
                 "Accessibility: \(permissionStatus.accessibility ? "on" : "off")  •  Direct input: \(permissionStatus.inputMonitoringStatusLabel)  •  Tap object: \(eventTapStatus() ? "on" : "off")  •  Evidence: \(health.captureProven ? "yes" : "no")"
-            pauseMenuItem.title = state.isManuallyPaused ? "Resume recording" : "Pause recording"
+            pauseMenuItem.title = !GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
+                ? "Set up Computer History…"
+                : (state.isManuallyPaused ? "Resume recording" : "Pause recording")
 
             if let button = statusItem.button {
                 button.image = GoalongBrandAssets.menuBarImage

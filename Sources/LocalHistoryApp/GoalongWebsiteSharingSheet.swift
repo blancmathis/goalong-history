@@ -79,7 +79,7 @@ import LocalHistoryQueryCLI
                 .foregroundStyle(LHTheme.accent).frame(width: 48, height: 48)
                 .background(LHTheme.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
             VStack(alignment: .leading, spacing: 5) {
-                Text("GO LONG HISTORY").font(.system(size: 10, weight: .semibold)).tracking(1.6).foregroundStyle(.secondary)
+                Text("GOALONG HISTORY").font(.system(size: 10, weight: .semibold)).tracking(1.6).foregroundStyle(.secondary)
                 Text("Partager avec GoLong").font(.system(size: 24, weight: .semibold))
                 Text("Vos données. Vos choix. Aucun envoi sans votre accord.").font(.callout).foregroundStyle(.secondary)
             }

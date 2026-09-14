@@ -390,6 +390,8 @@
         }
 
         func richContextPreferenceDidChange() {
+            // A pending AX read cannot commit after its independent consent was revoked.
+            interactionCaptureGeneration &+= 1
             if ActivityAnalysisPreferences.richContextEnabled {
                 scheduleRichContextTimer()
             } else {
@@ -458,6 +460,8 @@
                         self.pendingSemanticCaptureCount - 1
                     )
                     guard captureGeneration == self.interactionCaptureGeneration,
+                        ActivityAnalysisPreferences.richContextEnabled,
+                        self.state?.isCapturing == true,
                         self.started,
                         let capture,
                         !IsSecureEventInputEnabled(),

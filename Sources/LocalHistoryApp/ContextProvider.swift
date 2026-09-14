@@ -170,9 +170,9 @@
                     )
                 }
 
-                // An include-only website scope must never fall back to recording a
+                // A website exclusion or include-only scope must never fall back to recording a
                 // browser without a host just because URL capture was disabled.
-                if config.includedDomains?.isEmpty == false, !config.captureURLs {
+                if !config.captureURLs, !config.allowsWebsite(host: nil) {
                     clearCachedURL()
                     return ContextSnapshot(
                         app: app,

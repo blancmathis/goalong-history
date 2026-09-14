@@ -5,6 +5,7 @@
         @ViewBuilder var page: some View {
             switch step {
             case .welcome: welcomePage
+            case .privacy: privacyPage
             case .sources: sourcesPage
             case .ready: readyPage
             }
@@ -22,16 +23,58 @@
                     .fixedSize(horizontal: false, vertical: true)
                 LHCard {
                     VStack(alignment: .leading, spacing: 16) {
-                        introduction("Your activity stays on this Mac", symbol: "internaldrive",
-                            detail: "Local history is stored on your Mac. Connecting ChatGPT analysis is a separate choice in Settings.")
+                        introduction("Local first. Sharing is a separate choice", symbol: "internaldrive",
+                            detail: "Recording stays on your Mac. ChatGPT analysis and sharing to the Goalong website require separate choices. You can use the app without either.")
                         Divider()
                         introduction("Only the access you need", symbol: "hand.raised",
                             detail: "Goalong checks existing permissions first. If a source needs access, you will see why and how to grant it.")
                         Divider()
-                        introduction("No screenshots or typed characters", symbol: "lock",
-                            detail: "Computer History uses foreground context and activity counts. Private browsing is excluded by default. Secure fields stay protected.")
+                        introduction("No screenshots or keystroke decoding", symbol: "lock",
+                            detail: "Computer History uses foreground context and activity counts. Optional visible-text capture has its own consent. Detected private windows are excluded by default.")
                     }
                 }
+            }
+        }
+
+        var privacyPage: some View {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Choose what stays on this Mac").font(.system(size: 24, weight: .semibold))
+                Text("Start with an app timeline or add specific details. Nothing is enabled by viewing this page. Changes apply only after Save choices below.")
+                    .font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                LHCard { RecordingChoicesView(draft: $model.settingsDraft) }
+                VisibleContextControl()
+                LHCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Toggle("Include private browsing", isOn: $model.settingsDraft.capturePrivateBrowsing).toggleStyle(.switch)
+                        Text("Off by default. Enabling can retain sensitive titles, URLs and visible context according to the choices above. Detection depends on the browser; use Pause for activity you do not want observed.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        Toggle("Redact every URL query value", isOn: $model.settingsDraft.redactAllURLQueryValues).toggleStyle(.switch)
+                        DisclosureGroup("Exclude apps or websites before recording") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                scopeInput("Excluded websites", text: $model.settingsDraft.excludedDomainsText)
+                                scopeInput("Excluded application bundle identifiers", text: $model.settingsDraft.excludedApplicationsText)
+                                scopeInput("Include only these websites (optional)", text: $model.settingsDraft.includedDomainsText)
+                                scopeInput("Include only these application bundle identifiers (optional)", text: $model.settingsDraft.includedApplicationsText)
+                                Text("One domain, website URL or bundle identifier per line. Website paths are discarded; subdomains are included. Exclusions take priority. Empty include-only lists allow all non-excluded apps or sites.")
+                                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                            }.padding(.top, 12)
+                        }
+                        Button("Choose how long to keep local data…") { showingRetention = true }.buttonStyle(.bordered)
+                        Text("Recording settings do not authorize deletion. Retention has its own confirmation and separate choices for details, derived memories and proofs.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }.fixedSize(horizontal: false, vertical: true)
+                }
+                if let note { Label(note, systemImage: "exclamationmark.triangle").foregroundStyle(LHTheme.warning) }
+            }
+            .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet() }
+        }
+
+        private func scopeInput(_ title: String, text: Binding<String>) -> some View {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title).font(.system(size: 13, weight: .medium))
+                TextEditor(text: text).font(.system(size: 12, design: .monospaced))
+                    .frame(height: 80).padding(6).background(Color.primary.opacity(0.035))
+                    .accessibilityLabel(title)
             }
         }
 
@@ -39,12 +82,11 @@
             VStack(alignment: .leading, spacing: 18) {
                 Text("What would you like to see in Goalong?")
                     .font(.system(size: 22, weight: .semibold))
-                Text("Choose what to include. If access is missing, Goalong explains why it is needed and helps you grant it.")
+                Text("Sources start when you enable them. macOS access alone is not consent; opening History never turns a source on. You can skip every source.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 sourceChoice(.localComputerHistory, symbol: "macwindow",
-                    detail: "Apps, windows and activity counts in one timeline. Requires Accessibility.",
-                    prepare: prepareComputerHistory)
+                    detail: "A local app timeline, with only the additional details you saved. Requires Accessibility.")
                 sourceChoice(.appleScreenTime, symbol: "macbook.and.iphone",
                     detail: "App usage from this Mac and synced devices. May require Full Disk Access.")
                 sourceChoice(.aiConversations, symbol: "bubble.left.and.bubble.right",
@@ -81,7 +123,7 @@
             VStack(alignment: .leading, spacing: 20) {
                 Text("Your setup, at a glance")
                     .font(.system(size: 24, weight: .semibold))
-                Text("Enabled sources are ready to use. New Computer History activity appears as you use your Mac; existing Apple and AI history loads when you open it.")
+                Text("Your choices are saved. Enabled is not a guarantee of available data: missing permission or history is shown separately. Computer History starts with new activity; it cannot reconstruct the past.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 LHCard {
@@ -97,6 +139,16 @@
                             }
                         }
                     }
+                }
+                LHCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Your saved recording scope").font(.system(size: 13, weight: .semibold))
+                        Text(model.appliedSettings.recordingSummary + (ActivityAnalysisPreferences.richContextEnabled ? " Visible-text capture is separately enabled." : " Visible-text capture is off.")).font(.system(size: 13)).foregroundStyle(.secondary)
+                        Text(model.appliedSettings.capturePrivateBrowsing ? "Private browsing included by your choice." : "Detected private windows excluded.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Cloud analysis and website sharing are managed separately in Settings. Turning a source off does not delete stored or previously shared data.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }.fixedSize(horizontal: false, vertical: true)
                 }
                 Toggle("Start Goalong when I log in", isOn: $launchAtLoginPreference)
                     .toggleStyle(.switch)

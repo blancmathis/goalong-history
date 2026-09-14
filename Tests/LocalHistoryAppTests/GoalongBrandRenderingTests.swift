@@ -102,7 +102,9 @@ final class GoalongBrandRenderingTests: XCTestCase {
         XCTAssertEqual(model.selectedSection, .history)
         model.selectSection(.overview)
         XCTAssertEqual(model.selectedSection, .overview)
-        for step in 0...2 {
+        UserDefaults.standard.set(true, forKey: "goalongOnboardingPrivacyReviewedV1")
+        for setupStep in SetupStep.allCases {
+            let step = setupStep.rawValue
             UserDefaults.standard.set(step, forKey: "goalongOnboardingStep")
             let onboarding = NSHostingController(rootView: LocalHistoryOnboardingView(model: model)
                 .foregroundStyle(LHTheme.text).tint(LHTheme.accent).accentColor(LHTheme.accent)
@@ -113,7 +115,46 @@ final class GoalongBrandRenderingTests: XCTestCase {
             XCTAssertEqual(onboarding.view.bounds.height, 680)
             try snapshot(onboarding.view, to: output.appendingPathComponent("onboarding-step-\(step)-dark-1080.png"))
         }
-        try String("20 actual native-view renders, isolated home, empty stores and disabled sources.\nModel save/discard and section selection assertions passed.\nPointer, keyboard and native accessibility activation were NOT verified.\n").write(to: output.appendingPathComponent("runtime-results.txt"), atomically: true, encoding: .utf8)
+        model.alert = nil
+        model.showWelcome = false
+        for dark in [true, false] {
+            app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.appearance = app.appearance
+            model.openRecordingSettings()
+            let recording = NSHostingController(rootView: LocalHistoryDashboardView(model: model)
+                .environment(\.sourceAccessCheck, { _, done in done(.fullDiskAccess) }))
+            window.contentViewController = recording
+            window.setContentSize(NSSize(width: 1080, height: 680)); pump()
+            try snapshot(recording.view, to: output.appendingPathComponent("journey-recording-\(dark ? "dark" : "light").png"))
+            let retention = NSHostingController(rootView: HistoryRetentionSettingsSheet())
+            window.contentViewController = retention
+            window.setContentSize(NSSize(width: 700, height: 670)); pump()
+            try snapshot(retention.view, to: output.appendingPathComponent("journey-retention-\(dark ? "dark" : "light").png"))
+            let sharing = NSHostingController(rootView: GoalongWebsiteSharingSheet())
+            window.contentViewController = sharing
+            window.setContentSize(NSSize(width: 740, height: 720)); pump()
+            try snapshot(sharing.view, to: output.appendingPathComponent("journey-sharing-\(dark ? "dark" : "light").png"))
+        }
+        if environment["GOALONG_JOURNEY_INTERACTIVE"] == "1" {
+            app.setActivationPolicy(.regular)
+            window.title = "Goalong Journey QA — synthetic data only"
+            UserDefaults.standard.set(0, forKey: "goalongOnboardingStep")
+            model.alert = nil; model.showWelcome = true
+            let interactive = NSHostingController(rootView: LocalHistoryDashboardView(model: model)
+                .environment(\.sourceAccessCheck, { _, done in done(.fullDiskAccess) }))
+            window.contentViewController = interactive
+            window.setContentSize(NSSize(width: 1080, height: 740))
+            window.makeKeyAndOrderFront(nil)
+            app.activate(ignoringOtherApps: true)
+            print("JOURNEY_INTERACTIVE_READY pid=\(ProcessInfo.processInfo.processIdentifier)")
+            let finishFile = output.appendingPathComponent("finish-interactive")
+            let deadline = Date().addingTimeInterval(1200)
+            while Date() < deadline && !FileManager.default.fileExists(atPath: finishFile.path) { pump() }
+            try snapshot(interactive.view, to: output.appendingPathComponent("journey-interactive-final.png"))
+        }
+        let count = try FileManager.default.contentsOfDirectory(atPath: output.path).filter { $0.hasSuffix(".png") }.count
+        try String("\(count) actual native-view renders, isolated home, empty stores and disabled sources.\nModel save/discard and section selection assertions passed.\nPhysical interaction results are reported separately; this render count is not a user-testing claim.\n").write(to: output.appendingPathComponent("runtime-results.txt"), atomically: true, encoding: .utf8)
+
     }
 
     @MainActor private func pump() {

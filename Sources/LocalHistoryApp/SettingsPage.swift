@@ -6,7 +6,12 @@
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
         @ObservedObject private var updates = SoftwareUpdateManager.shared
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
-        @State private var pane: SettingsPane = .home
+        private var pane: SettingsPane {
+            get { model.settingsPane }
+            nonmutating set { model.settingsPane = newValue }
+        }
+        @State private var showingRetention = false
+        @State private var confirmingSensitiveChanges = false
 
         init(model: DashboardViewModel) {
             self.model = model
@@ -45,6 +50,13 @@
                     recapRuntime.activate()
                 }
             }
+            .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet() }
+            .alert("Save these sensitive recording choices?", isPresented: $confirmingSensitiveChanges) {
+                Button("Cancel", role: .cancel) {}
+                Button("Save recording choices") { model.saveSettings() }
+            } message: {
+                Text("These choices include private browsing or reduce URL-query redaction. They can retain personal information in future activity. Existing files and remote copies are unchanged.")
+            }
             .alert(item: $recapRuntime.alert) { item in
                 Alert(
                     title: Text(item.title),
@@ -63,7 +75,7 @@
                 HStack(spacing: 10) {
                     if model.settingsHaveChanges {
                         Button("Save settings") {
-                            model.saveSettings()
+                            requestSave()
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
                         .keyboardShortcut("s", modifiers: [.command])
@@ -88,10 +100,11 @@
                     .buttonStyle(.bordered)
             case .recording:
                 captureCard
+                VisibleContextControl()
                 privacyCard
+                monitoringScopeCard
             case .advanced:
                 verificationCard
-                monitoringScopeCard
                 advancedCard
             }
         }
@@ -132,7 +145,7 @@
             VStack(alignment: .leading, spacing: 12) {
                 SectionTitle(
                     title: "Optional capabilities",
-                    subtitle: "Manage the sources Goalong uses. History checks existing access when you open a source and explains any missing permission."
+                    subtitle: "These switches apply immediately. A source starts only when you enable it; opening History never grants consent. Recording detail changes have a separate Save button."
                 )
                 LHCard {
                     VStack(alignment: .leading, spacing: 12) {
@@ -176,16 +189,17 @@
                     .fixedSize(horizontal: false, vertical: true)
             }.frame(maxWidth: .infinity, alignment: .leading)
             if [.localComputerHistory, .appleScreenTime, .aiConversations].contains(capability) {
-                SourceActivationToggle(capability: capability, prepare: {
-                    if capability == .localComputerHistory {
-                        try model.configureCaptureForOnboarding(enabled: true)
-                    }
-                }) { label }
+                SourceActivationToggle(capability: capability) { label }
                 .accessibilityHint(message).controlSize(.small)
             } else {
                 Toggle(isOn: Binding(
                     get: { consents.isEnabled(capability) },
-                    set: { _ = consents.set(capability, enabled: $0, surface: .settings) }
+                    set: { value in
+                        if !consents.set(capability, enabled: value, surface: .settings) {
+                            model.alert = DashboardAlert(kind: .error, title: "Choice could not be saved",
+                                message: "The previous setting is still active. Try again before relying on this change.")
+                        }
+                    }
                 )) { label }
                 .toggleStyle(.switch).accessibilityLabel(capability.title)
                 .accessibilityHint(message).controlSize(.small)
@@ -232,7 +246,7 @@
                         Divider().padding(.leading, 52)
                         settingsNavigationRow(
                             title: "Advanced",
-                            detail: "Verification, inclusion rules and config.json.",
+                            detail: "Verification and config.json. Recording scope is in Recording.",
                             symbol: "slider.horizontal.3"
                         ) {
                             pane = .advanced
@@ -280,49 +294,18 @@
         }
 
         private var captureCard: some View {
-            settingsCard(
-                symbol: "dot.radiowaves.left.and.right",
-                title: "Activity capture",
-                subtitle: "These signals help reconstruct understandable sessions without recording raw text"
-            ) {
-                settingsGrid {
-                    settingToggle(
-                        title: "Clicks",
-                        message: "Button, position and accessible target",
-                        isOn: $model.settingsDraft.captureClicks
-                    )
-                    settingToggle(
-                        title: "Scrolling",
-                        message: "Grouped scroll direction and event count",
-                        isOn: $model.settingsDraft.captureScroll
-                    )
-                    settingToggle(
-                        title: "Typing activity",
-                        message: "Counts and duration only — never characters",
-                        isOn: $model.settingsDraft.captureKeyboardActivity
-                    )
-                    settingToggle(
-                        title: "Keyboard shortcuts",
-                        message: "Command combinations such as ⌘C",
-                        isOn: $model.settingsDraft.captureShortcuts
-                    )
-                    settingToggle(
-                        title: "Window titles",
-                        message: "Useful context that stays local by default",
-                        isOn: $model.settingsDraft.captureWindowTitles
-                    )
-                    settingToggle(
-                        title: "Interface labels",
-                        message: "Accessible role and label of focused controls",
-                        isOn: $model.settingsDraft.captureElementLabels
-                    )
-                    settingToggle(
-                        title: "Browser URLs",
-                        message: "Sanitized URL when the browser exposes it",
-                        isOn: $model.settingsDraft.captureURLs
-                    )
-                }
+            settingsCard(symbol: "slider.horizontal.3", title: "Recording details",
+                         subtitle: "Choose optional fields. Changes apply after Save settings, not when you move a switch.") {
+                RecordingChoicesView(draft: $model.settingsDraft)
             }
+        }
+
+        private func requestSave() {
+            let saved = model.appliedSettings
+            if (model.settingsDraft.capturePrivateBrowsing && !saved.capturePrivateBrowsing)
+                || (!model.settingsDraft.redactAllURLQueryValues && saved.redactAllURLQueryValues) {
+                confirmingSensitiveChanges = true
+            } else { model.saveSettings() }
         }
 
         private var privacyCard: some View {
@@ -347,37 +330,12 @@
 
                     Divider()
 
-                    HStack(alignment: .center, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Detailed history retention")
-                                .font(.system(size: 13, weight: .medium))
-                            Text(
-                                model.settingsDraft.retentionDays == 0
-                                    ? "Detailed JSONL events are kept until you delete them."
-                                    : "Detailed JSONL events older than this are removed locally. Seals can remain."
-                            )
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Stepper(
-                            value: $model.settingsDraft.retentionDays,
-                            in: 0...3650,
-                            step: 1
-                        ) {
-                            Text(
-                                model.settingsDraft.retentionDays == 0
-                                    ? "Indefinitely"
-                                    : "\(model.settingsDraft.retentionDays) days"
-                            )
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .frame(minWidth: 84, alignment: .trailing)
-                        }
-                        .fixedSize()
-                    }
-                    .padding(13)
-                    .background(
-                        Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button("Choose retention separately…") { showingRetention = true }.buttonStyle(.bordered)
+                        Text("Choose how long to keep details, visible context, memories and proofs. Saving recording settings never activates deletion.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+
                 }
             }
         }
@@ -527,7 +485,7 @@
                     }
                     .buttonStyle(.bordered)
                     Button("Save settings") {
-                        model.saveSettings()
+                        requestSave()
                     }
                     .buttonStyle(LHPrimaryButtonStyle())
                 }
@@ -611,7 +569,7 @@
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: text)
                         .accessibilityLabel(title)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .scrollContentBackground(.hidden)
                         .padding(7)
                         .background(
@@ -623,7 +581,7 @@
                         )
                     if text.wrappedValue.isEmpty {
                         Text(placeholder)
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 13)
                             .padding(.vertical, 11)
@@ -640,7 +598,7 @@
         }
     }
 
-    private enum SettingsPane {
+    enum SettingsPane {
         case home
         case recording
         case advanced
@@ -658,7 +616,7 @@
             case .home:
                 return "Your account and the few controls that usually matter."
             case .recording:
-                return "Choose what Goalong observes locally. Safe defaults remain enabled."
+                return "Review optional details, website and app exclusions. Save applies only to future recording."
             case .advanced:
                 return "Verification and expert controls that rarely need changing."
             }
