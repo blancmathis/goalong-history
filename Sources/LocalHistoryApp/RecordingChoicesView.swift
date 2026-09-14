@@ -1,6 +1,8 @@
 #if os(macOS)
 import SwiftUI
 import Foundation
+import AppKit
+import UniformTypeIdentifiers
 
 /// One vocabulary and one binding for onboarding, settings and the applied summary.
 enum RecordingSignal: String, CaseIterable, Identifiable {
@@ -120,6 +122,44 @@ extension DashboardSettingsDraft {
     var recordingSummary: String {
         let enabled = RecordingSignal.allCases.filter { self[keyPath: $0.keyPath] }.map(\.title)
         return enabled.isEmpty ? "Baseline app activity; optional detail fields off." : "Baseline app activity, plus: " + enabled.joined(separator: ", ") + "."
+    }
+}
+/// Native app selection avoids requiring people to discover bundle identifiers.
+struct ApplicationScopePickerButton: View {
+    @Binding var text: String
+    @State private var error: String?
+    var body: some View {
+        Button("Choose apps…", action: chooseApplications)
+            .buttonStyle(.bordered)
+            .help("Choose applications without opening them. Their identifiers are added to this unsaved recording scope.")
+            .alert("Application could not be added", isPresented: Binding(
+                get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK", role: .cancel) { error = nil }
+            } message: { Text(error ?? "") }
+    }
+    private func chooseApplications() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose apps for this recording rule"
+        panel.prompt = "Add to rule"
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.applicationBundle]
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK else { return }
+            let identifiers = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
+            guard identifiers.count == panel.urls.count else {
+                error = "One selected app does not expose a bundle identifier. No rule was changed."
+                return
+            }
+            var lines = text.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            for identifier in identifiers where !lines.contains(identifier) { lines.append(identifier) }
+            text = lines.joined(separator: "\n")
+        }
+        if let window = NSApplication.shared.keyWindow { panel.beginSheetModal(for: window, completionHandler: completion) }
+        else { panel.begin(completionHandler: completion) }
     }
 }
 #endif

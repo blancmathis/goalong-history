@@ -682,7 +682,7 @@
                     kind: .information,
                     title: "Settings saved",
                     message:
-                        "Your recording choices are saved for future activity. Existing data is unchanged. Automatic deletion is managed separately in Privacy & permissions."
+                        "Your recording choices are saved for future activity. Existing data is unchanged. Automatic deletion is managed separately in Privacy & security."
                 )
             } catch {
                 alert = DashboardAlert(

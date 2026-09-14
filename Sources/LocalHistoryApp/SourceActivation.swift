@@ -348,7 +348,7 @@
         func report(_ status: SourceAccessStatus) { cancel(); result = status }
     }
 
-    struct SourceAccessGate<Content: View>: View {
+    @MainActor struct SourceAccessGate<Content: View>: View {
         let capability: GoalongCapability
         var knownAccessIssue: SourceAccessStatus? = nil
         @ViewBuilder var content: () -> Content

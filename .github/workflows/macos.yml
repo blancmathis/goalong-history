@@ -64,6 +64,21 @@ jobs:
             fi
           fi
 
+      - name: Render isolated native user journeys
+        run: bash scripts/verify_brand_ui.sh qa/journey-ci
+
+      - name: Upload native journey evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Goalong-Journey-UI-${{ github.sha }}
+          path: |
+            qa/journey-ci/*.png
+            qa/journey-ci/runtime-results.txt
+            qa/journey-ci/native-render.log
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Timezone regression checks
         run: |
           for timezone in UTC America/Chicago Europe/Paris; do

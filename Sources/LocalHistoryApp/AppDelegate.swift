@@ -262,8 +262,9 @@
             ) { [weak self] _ in
                 guard let self else { return }
                 self.retentionStore = HistoryRetentionStore(legacyRetentionDays: self.configManager.config.retentionDays)
-                self.retentionStore.applyCleanup()
-                self.dashboardViewModel.refreshEverything()
+                self.retentionStore.applyCleanupAfterDrainingDerivedWriters { [weak self] in
+                    self?.dashboardViewModel.refreshEverything()
+                }
             }
 
             installWorkspaceObservers()
@@ -923,7 +924,7 @@
 
         private func applyDailyRetentionCleanupIfNeeded(now: Date = Date()) {
             guard retentionCleanupGate.admit(now: now) else { return }
-            retentionStore.applyCleanup(now: now)
+            retentionStore.applyCleanupAfterDrainingDerivedWriters(now: now)
         }
 
         private func installWorkspaceObservers() {

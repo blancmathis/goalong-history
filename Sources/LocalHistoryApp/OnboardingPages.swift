@@ -39,7 +39,7 @@
         var privacyPage: some View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Choose what stays on this Mac").font(.system(size: 24, weight: .semibold))
-                Text("Start with an app timeline or add specific details. Nothing is enabled by viewing this page. Changes apply only after Save choices below.")
+                Text("Start with an app timeline or add specific details. Recording fields apply with Save choices below. Visible-text context and retention have their own confirmations.")
                     .font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 LHCard { RecordingChoicesView(draft: $model.settingsDraft) }
                 VisibleContextControl()
@@ -52,9 +52,9 @@
                         DisclosureGroup("Exclude apps or websites before recording") {
                             VStack(alignment: .leading, spacing: 10) {
                                 scopeInput("Excluded websites", text: $model.settingsDraft.excludedDomainsText)
-                                scopeInput("Excluded application bundle identifiers", text: $model.settingsDraft.excludedApplicationsText)
+                                scopeInput("Excluded apps", text: $model.settingsDraft.excludedApplicationsText, applications: true)
                                 scopeInput("Include only these websites (optional)", text: $model.settingsDraft.includedDomainsText)
-                                scopeInput("Include only these application bundle identifiers (optional)", text: $model.settingsDraft.includedApplicationsText)
+                                scopeInput("Include only these apps (optional)", text: $model.settingsDraft.includedApplicationsText, applications: true)
                                 Text("One domain, website URL or bundle identifier per line. Website paths are discarded; subdomains are included. Exclusions take priority. Empty include-only lists allow all non-excluded apps or sites.")
                                     .font(.system(size: 12)).foregroundStyle(.secondary)
                             }.padding(.top, 12)
@@ -69,12 +69,13 @@
             .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet() }
         }
 
-        private func scopeInput(_ title: String, text: Binding<String>) -> some View {
+        private func scopeInput(_ title: String, text: Binding<String>, applications: Bool = false) -> some View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title).font(.system(size: 13, weight: .medium))
                 TextEditor(text: text).font(.system(size: 12, design: .monospaced))
                     .frame(height: 80).padding(6).background(Color.primary.opacity(0.035))
                     .accessibilityLabel(title)
+                if applications { ApplicationScopePickerButton(text: text) }
             }
         }
 

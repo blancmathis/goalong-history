@@ -1,7 +1,7 @@
 #if os(macOS)
     import SwiftUI
 
-    struct SettingsPage: View {
+    @MainActor struct SettingsPage: View {
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
         @ObservedObject private var updates = SoftwareUpdateManager.shared
@@ -51,12 +51,6 @@
                 }
             }
             .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet() }
-            .alert("Save these sensitive recording choices?", isPresented: $confirmingSensitiveChanges) {
-                Button("Cancel", role: .cancel) {}
-                Button("Save recording choices") { model.saveSettings() }
-            } message: {
-                Text("These choices include private browsing or reduce URL-query redaction. They can retain personal information in future activity. Existing files and remote copies are unchanged.")
-            }
             .alert(item: $recapRuntime.alert) { item in
                 Alert(
                     title: Text(item.title),
@@ -413,13 +407,14 @@
                             placeholder: "example.com\nprivate.company.com",
                             text: $model.settingsDraft.excludedDomainsText,
                             help:
-                                "One host per line. Subdomains of a listed domain are also excluded by the recorder policy."
+                                "One domain or website URL per line. Paths and query values are discarded on save; subdomains are included."
                         )
                         exclusionEditor(
-                            title: "Excluded application bundle IDs",
+                            title: "Excluded apps",
                             placeholder: "com.example.privateapp",
                             text: $model.settingsDraft.excludedApplicationsText,
-                            help: "One bundle identifier per line. Password managers are excluded by default."
+                            help: "Choose apps below or enter one bundle identifier per line. Exclusions take priority.",
+                            applications: true
                         )
                     }
 
@@ -434,11 +429,12 @@
                                 "Leave empty to allow every non-excluded site. When populated, browser pages without a matching visible host fail closed."
                         )
                         exclusionEditor(
-                            title: "Include only application bundle IDs",
+                            title: "Include only these apps",
                             placeholder: "com.apple.TextEdit",
                             text: $model.settingsDraft.includedApplicationsText,
                             help:
-                                "Leave empty to allow every non-excluded app. When populated, apps without a matching bundle ID fail closed."
+                                "Leave empty to allow every non-excluded app. Choose apps below or enter bundle identifiers.",
+                            applications: true
                         )
                     }
                 }
@@ -495,6 +491,12 @@
             .background(.ultraThinMaterial)
             .overlay(alignment: .top) {
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
+            }
+            .alert("Save these sensitive recording choices?", isPresented: $confirmingSensitiveChanges) {
+                Button("Cancel", role: .cancel) {}
+                Button("Save recording choices") { model.saveSettings() }
+            } message: {
+                Text("These choices include private browsing or reduce URL-query redaction. They can retain personal information in future activity. Existing files and remote copies are unchanged.")
             }
         }
 
@@ -561,7 +563,8 @@
             title: String,
             placeholder: String,
             text: Binding<String>,
-            help: String
+            help: String,
+            applications: Bool = false
         ) -> some View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title)
@@ -589,6 +592,7 @@
                     }
                 }
                 .frame(minHeight: 125)
+                if applications { ApplicationScopePickerButton(text: text) }
                 Text(help)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)

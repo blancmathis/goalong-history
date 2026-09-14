@@ -203,6 +203,23 @@
             cleanupMayRun = true
         }
 
+        /// In-flight derived writers must finish before expiry removes their output.
+        /// Generation invalidation also prevents a pre-cleanup queued job recreating it.
+        func applyCleanupAfterDrainingDerivedWriters(
+            now: Date = Date(),
+            barrier: DerivedHistoryWriteBarrier = .shared,
+            completion: @escaping () -> Void = {}
+        ) {
+            guard isAutomaticCleanupEnabled else { completion(); return }
+            let suspension = barrier.suspend()
+            barrier.notifyWhenDrained(suspension) { [self] in
+                // Revalidates the activation record: a later stop or policy change wins.
+                applyCleanup(now: now)
+                barrier.resume(suspension)
+                completion()
+            }
+        }
+
         func applyCleanup(now: Date = Date()) {
             guard cleanupMayRun, activationMatchesCurrentPolicy() else {
                 diagnose(
