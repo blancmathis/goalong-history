@@ -1,0 +1,51 @@
+name: History sharing acceptance
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sharing-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-sharing:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build native acceptance tests
+        run: swift build --build-tests -j 4
+
+      - name: Render the actual sharing window with synthetic data only
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT="$PWD/qa/sharing-acceptance"
+          mkdir -p "$OUTPUT"
+          git rev-parse HEAD > "$OUTPUT/revision.txt"
+          SAFE_HOME="$(mktemp -d /tmp/goalong-sharing-home-XXXXXX)"
+          trap 'rm -rf "$SAFE_HOME"' EXIT
+          HOME="$SAFE_HOME" CFFIXED_USER_HOME="$SAFE_HOME" \
+          GOALONG_SHARING_TEST_HOME="$SAFE_HOME" \
+          GOALONG_SHARING_SNAPSHOTS="$OUTPUT" \
+            swift test --skip-build --filter GoalongWebsiteSharingRenderingTests \
+            2>&1 | tee "$OUTPUT/native-render.log"
+          for image in sharing-dark-740 sharing-dark-680 sharing-light-740 sharing-light-680 sharing-daily-dark sharing-preview-dark; do
+            test -s "$OUTPUT/$image.png"
+          done
+
+      - name: Retain native acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: history-sharing-acceptance-${{ github.sha }}
+          path: qa/sharing-acceptance/
+          if-no-files-found: error
+          retention-days: 7
