@@ -26,6 +26,10 @@ FILES = [
     "Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift",
     "Sources/LocalHistoryApp/GoalongWebsitePairingCoordinator.swift",
     "Sources/LocalHistoryApp/GoalongWebsiteAutoSender.swift",
+    "Sources/LocalHistoryApp/GoalongWebsiteSharingModel.swift",
+    "Sources/LocalHistoryApp/GoalongWebsiteSharingSheet.swift",
+    "Sources/LocalHistoryQueryCLI/GoalongSiteSharingLink.swift",
+    "Sources/LocalHistoryQueryCLI/GoalongSiteSelectionCatalog.swift",
 ]
 
 
@@ -65,15 +69,44 @@ class WebsiteBoundaryTests(unittest.TestCase):
         self.assertTrue(boundary.audit(self.root))
 
     def test_native_lifecycle_send_is_rejected(self):
-        self.change(FILES[4], '.onChange(of: origin) { _ in status = nil; autoSender.stop() }', '.onChange(of: origin) { _ in sendReviewedData() }')
+        self.change(FILES[4], '.onChange(of: origin) { _ in if preparedAnalysis == nil { invalidatePreview() }; autoSender.stop() }', '.onChange(of: origin) { _ in sendReviewedData() }')
         self.assertTrue(boundary.audit(self.root))
 
     def test_scheduler_requires_persisted_opt_in_and_live_source_consent(self):
-        self.change(FILES[9], 'guard sourceConsent(configuration.options)', 'guard true')
+        self.change(FILES[9], 'guard sourceConsent(current.options)', 'guard true')
         self.assertTrue(boundary.audit(self.root))
 
     def test_scheduler_never_retries_an_uncertain_daily_attempt(self):
-        self.change(FILES[9], 'configuration.lastAttempt != day', 'true')
+        self.change(FILES[9], 'current.lastAttempt != day', 'true')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_new_model_requires_reviewed_bytes_and_current_credential(self):
+        self.change(FILES[10], 'guard !busy, reviewed, let approved = preview', 'guard !busy, let approved = preview')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_credential_swap_cannot_reuse_preview(self):
+        self.change(FILES[10], 'SHA256Digest.hashHex(Data(token.utf8)) == approved.credentialFingerprint', 'true')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_picker_requires_matching_authenticated_account(self):
+        self.change(FILES[8], 'requested.accountID == savedAccount', 'true')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_daily_plan_cannot_reuse_future_recap_positions(self):
+        self.change(FILES[9], 'selected.recapSectionIndices = nil', '// do not clear future indices')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_daily_plan_cannot_remove_explicit_application_scope(self):
+        self.change(FILES[9], 'options.selectedApplicationIDs != nil', 'true')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_content_idempotency_is_bound_to_exact_bytes(self):
+        self.change(FILES[0], 'SHA256Digest.hashHex(payload)', 'UUID().uuidString')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_new_picker_cannot_confirm_from_a_lifecycle_hook(self):
+        with (self.root / FILES[11]).open("a") as stream:
+            stream.write('\n.onAppear { model.confirm(origin: origin, tokenPath: tokenPath) }\n')
         self.assertTrue(boundary.audit(self.root))
 
     def test_redirect_permission_change_is_rejected(self):

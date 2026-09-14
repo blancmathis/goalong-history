@@ -51,6 +51,18 @@ public struct GoalongSitePairing: Sendable {
         return try delegate.result()
     }
 
+    /// Older websites can still pair, but cannot use account-bound navigation until re-paired.
+    public static func accountID(response: Data) throws -> String? {
+        guard response.count <= 8192, let object = try JSONSerialization.jsonObject(with: response) as? [String: Any] else {
+            throw GoalongSiteExportError.invalid("Réponse de connexion invalide.")
+        }
+        guard let value = object["accountId"] else { return nil }
+        guard let text = value as? String, let id = UUID(uuidString: text) else {
+            throw GoalongSiteExportError.invalid("Le compte relié n’a pas pu être identifié. Relancez la connexion.")
+        }
+        return id.uuidString.lowercased()
+    }
+
     public func save(response: Data, directory: URL) throws -> URL {
         guard response.count <= 8192,
               let object = try JSONSerialization.jsonObject(with: response) as? [String: Any],

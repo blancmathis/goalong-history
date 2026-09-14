@@ -7,6 +7,72 @@ import XCTest
 @testable import LocalHistoryQueryCLI
 
 final class GoalongSiteExportTests: XCTestCase {
+    func testExplicitAllowlistNeverIncludesOtherAppsDevicesOrDomains() throws {
+        let sites = ["allowed.example", "private.example"].map {
+            DailyWebsiteUsage(host: $0, foregroundSeconds: 120, activeMinuteCount: 2, eventCount: 1,
+                sourceApplications: ["Safari"], primaryBundleIdentifier: nil, category: nil, identityProofAvailable: false)
+        }
+        for structured in [false, true] {
+            let data = try GoalongSiteExport.payload(record: fixture(), options: .init(deviceIDs: ["mac"], includeApplications: true,
+                includeWebsites: true, structuredReport: structured, selectedApplicationIDs: [], selectedWebsiteDomains: ["allowed.example"], includeDeviceNames: false), websites: sites)
+            let text = String(decoding: data, as: UTF8.self)
+            XCTAssertFalse(text.contains("secret.app")); XCTAssertFalse(text.contains("Private application"))
+            XCTAssertFalse(text.contains("private.example")); XCTAssertFalse(text.contains("iPhone"))
+            XCTAssertTrue(text.contains("allowed.example"))
+            let rows = try deviceRows(data)
+            XCTAssertEqual(rows.count, 1)
+            XCTAssertEqual(rows[0]["name"] as? String, "Ordinateur")
+            XCTAssertTrue((rows[0]["id"] as? String)?.hasPrefix("device-") == true)
+            XCTAssertEqual(rows[0]["screenSeconds"] as? Int, 600)
+            XCTAssertEqual(rows[0]["appsCoverage"] as? String, "partial")
+            XCTAssertTrue((rows[0]["apps"] as? [Any])?.isEmpty == true)
+            if !structured, let path = ProcessInfo.processInfo.environment["GOALONG_TEST_SELECTED_EXPORT"] {
+                try data.write(to: URL(fileURLWithPath: path))
+            }
+        }
+    }
+
+    func testEmptyWebsiteAllowlistAndLocalCatalogDoNotWidenDisclosure() throws {
+        let site = DailyWebsiteUsage(host: "private.example", foregroundSeconds: 120, activeMinuteCount: 2, eventCount: 1,
+            sourceApplications: ["Safari"], primaryBundleIdentifier: nil, category: nil, identityProofAvailable: false)
+        let data = try GoalongSiteExport.payload(record: fixture(), options: .init(includeApplications: true,
+            includeWebsites: true, selectedApplicationIDs: ["secret.app"], selectedWebsiteDomains: []), websites: [site])
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("private.example"))
+        let catalog = try GoalongSiteSelectionCatalog(payload: data)
+        XCTAssertEqual(catalog.devices.count, 2)
+        XCTAssertEqual(catalog.devices[0].applications[0].id, "secret.app")
+        XCTAssertTrue(catalog.websites.isEmpty)
+    }
+
+    func testSharingLinksOnlyNavigateAndCannotCarryConsentOrChangeOriginSilently() throws {
+        let link = URL(string: "goalong-history://share?site=https%3A%2F%2Fgoalong.example&account=11111111-1111-4111-8111-111111111111")!
+        XCTAssertEqual(try GoalongSiteSharingLink.origin(url: link), "https://goalong.example")
+        XCTAssertEqual(try GoalongSiteSharingLink.destination(url: link).accountID, "11111111-1111-4111-8111-111111111111")
+        XCTAssertEqual(try GoalongSitePairing.accountID(response: Data(#"{"accountId":"11111111-1111-4111-8111-111111111111"}"#.utf8)), "11111111-1111-4111-8111-111111111111")
+        XCTAssertNil(try GoalongSitePairing.accountID(response: Data("{}".utf8)))
+        XCTAssertThrowsError(try GoalongSitePairing.accountID(response: Data(#"{"accountId":"not-an-account"}"#.utf8)))
+        for value in ["goalong-history://share?site=https://goalong.example&send=true", "goalong-history://share?site=https://goalong.example#secret",
+                      "goalong-history://share/upload?site=https://goalong.example", "goalong-history://share?site=http://evil.example",
+                      "goalong-history://share?site=https://name:password@goalong.example"] {
+            XCTAssertThrowsError(try GoalongSiteSharingLink.origin(url: URL(string: value)!))
+        }
+    }
+
+    func testIdenticalReviewedBytesUseSameIdempotencyKeyAndCredentialChangeFailsBeforeNetwork() throws {
+        let url = try GoalongSiteSubmission.endpoint(origin: "https://example.invalid")
+        let a = GoalongSiteSubmission.request(payload: Data("one".utf8), endpoint: url, token: "synthetic-only")
+        let b = GoalongSiteSubmission.request(payload: Data("one".utf8), endpoint: url, token: "synthetic-only")
+        let c = GoalongSiteSubmission.request(payload: Data("two".utf8), endpoint: url, token: "synthetic-only")
+        XCTAssertEqual(a.value(forHTTPHeaderField: "Idempotency-Key"), b.value(forHTTPHeaderField: "Idempotency-Key"))
+        XCTAssertNotEqual(a.value(forHTTPHeaderField: "Idempotency-Key"), c.value(forHTTPHeaderField: "Idempotency-Key"))
+        let root = temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let token = root.appendingPathComponent("synthetic-token")
+        try Data("synthetic-token-never-sent".utf8).write(to: token)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: token.path)
+        XCTAssertThrowsError(try GoalongSiteSubmission.send(payload: Data("{}".utf8), origin: "https://example.invalid", tokenFile: token, expectedTokenFingerprint: "different"))
+    }
+
     func testNativeJournalRhythmProducesACompleteSelectedSiteImport() throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

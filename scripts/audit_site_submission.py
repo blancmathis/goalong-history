@@ -18,6 +18,10 @@ def audit(root: Path) -> list[str]:
         "health_import": "Sources/LocalHistoryQueryCLI/GoalongHealthImport.swift",
         "contract": "Sources/LocalHistoryQueryCLI/GoalongCLIContract.swift",
         "schedule": "Sources/LocalHistoryApp/GoalongWebsiteAutoSender.swift",
+        "sharing_model": "Sources/LocalHistoryApp/GoalongWebsiteSharingModel.swift",
+        "sharing_ui": "Sources/LocalHistoryApp/GoalongWebsiteSharingSheet.swift",
+        "sharing_link": "Sources/LocalHistoryQueryCLI/GoalongSiteSharingLink.swift",
+        "catalog": "Sources/LocalHistoryQueryCLI/GoalongSiteSelectionCatalog.swift",
     }
     sources = {}
     for key, path in paths.items():
@@ -35,7 +39,8 @@ def audit(root: Path) -> list[str]:
             'parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil',
             'O_NOFOLLOW', 'metadata.st_uid == getuid()', 'metadata.st_mode & 0o777 == 0o600',
             'request.httpMethod = "POST"', 'forHTTPHeaderField: "Authorization"',
-            'forHTTPHeaderField: "Idempotency-Key"', 'UUID().uuidString',
+            'forHTTPHeaderField: "Idempotency-Key"', 'SHA256Digest.hashHex(payload)',
+            'SHA256Digest.hashHex(Data(token.utf8)) != expectedTokenFingerprint',
             'URLSessionConfiguration.ephemeral', 'configuration.httpShouldSetCookies = false',
             'payload.count <= 2 * 1024 * 1024',
             'configuration.httpCookieStorage = nil', 'configuration.urlCredentialStorage = nil',
@@ -64,16 +69,38 @@ def audit(root: Path) -> list[str]:
             'payload: reviewedPayload, origin: target, tokenFile: tokenFile',
         ],
         "schedule": [
-            'guard !busy, var configuration = configuration()',
-            'configuration.lastAttempt != day', 'configuration.lastAttempt = day',
-            'guard enabled, self.configuration()?.origin == configuration.origin',
-            'self.configuration()?.tokenPath == configuration.tokenPath',
-            'guard sourceConsent(configuration.options)',
-            'selected.recapText = nil', 'selected.contextualRhythm = nil',
-            'if selected.recapSectionIndices?.isEmpty != false { selected.includeRecap = false }',
-            'if !selected.maskedApplications.isEmpty { selected.includeRecap = false; selected.includeWebsites = false }',
-            'defaults.removeObject(forKey: key)', 'enabled = false',
+            'guard !busy, enabled, var current = configuration()',
+            'current.policyVersion == 2', 'current.paused != true',
+            'current.lastAttempt != day', 'current.lastAttempt = day', 'try store(current)',
+            'configuration()?.identifier == snapshot.identifier',
+            'configuration()?.origin == snapshot.origin', 'configuration()?.tokenPath == snapshot.tokenPath',
+            'guard sourceConsent(current.options)', 'guard sourceConsent(snapshot.options)',
+            'selected.includeRecap = false', 'selected.recapText = nil', 'selected.recapSectionIndices = nil',
+            'selected.contextualRhythm = nil', 'selected.rhythmProject = nil',
+            'selected.includeRhythmContext = false', 'selected.includeRhythmTimeline = false',
+            'options.selectedApplicationIDs != nil', 'options.selectedWebsiteDomains != nil',
+            'if !selected.maskedApplications.isEmpty { selected.includeWebsites = false }',
+            'snapshot.credentialFingerprint', 'saved.paused = true', 'defaults.removeObject(forKey: key)', 'enabled = false',
         ],
+        "sharing_model": [
+            'guard !busy, reviewed, let approved = preview else { return }',
+            'approved.draft == draft', 'approved.origin == origin.trimmingCharacters',
+            'approved.tokenPath == tokenPath', 'Date().timeIntervalSince(approved.createdAt) <= 900',
+            'sourceConsent(approved.draft.options)',
+            'SHA256Digest.hashHex(Data(token.utf8)) == approved.credentialFingerprint',
+            'try sender(approved.payload, approved.origin', 'approved.credentialFingerprint)',
+            'autoSender.enable(origin: approved.origin', 'options: approved.draft.options',
+            'if autoSender.enabled { autoSender.stop()', 'func invalidate() { preview = nil; reviewed = false;',
+            'var deviceIDs = Set<String>()', 'var applicationIDs = Set<String>()', 'var websiteDomains = Set<String>()',
+        ],
+        "sharing_ui": [
+            'model.confirm(origin: origin, tokenPath: tokenPath)',
+            '.disabled(model.busy || !model.reviewed)',
+            'Toggle(isOn: $model.reviewed)',
+        ],
+        "sharing_link": ['items.count == 2', 'Set(items.map(\\.name)) == ["site", "account"]',
+                         'parts.fragment == nil', 'UUID(uuidString: account)',
+                         'GoalongSiteSubmission.endpoint(origin: site)'],
         "contract": ['case sendsExplicitSiteImport', 'name: "export-site"', 'name: "send-site"',
                      'effect: .sendsExplicitSiteImport', 'configured website sharing rules apply'],
         "health_ui": ['action: sendReviewedHealth', 'guard let payload, consent else { return }',
@@ -94,12 +121,19 @@ def audit(root: Path) -> list[str]:
             text = path.read_text()
             calls = re.findall(r"GoalongSiteSubmission\s*\.\s*send\s*\(", text)
             callers.extend([path.relative_to(root).as_posix()] * len(calls))
-    if sorted(callers) != sorted([paths["cli"], paths["ui"], paths["health_ui"], paths["schedule"]]):
+    if sorted(callers) != sorted([paths["cli"], paths["ui"], paths["health_ui"], paths["schedule"], paths["sharing_model"]]):
         errors.append("Website sending requires exactly the reviewed CLI, buttons and opt-in scheduler")
     if re.search(r"URLSession|URLRequest|HTTPURLResponse", sources["schedule"]):
         errors.append("The opt-in scheduler must use only the existing bounded website transport")
-    if sources["ui"].count('autoSender.enable(') != 1 or 'Activer avec les choix de l’aperçu' not in sources["ui"]:
-        errors.append("Scheduling requires the explicit reviewed-preview activation button")
+    if sources["sharing_model"].count('autoSender.enable(') != 1 or 'autoSender.enable(' in sources["ui"]:
+        errors.append("Scheduling requires the reviewed sharing model, never the legacy advanced window")
+    if sources["sharing_ui"].count('model.confirm(') != 1 or sources["sharing_model"].count('func confirm(') != 1:
+        errors.append("The sharing confirmation requires exactly one explicit UI caller")
+    for key in ["sharing_model", "sharing_ui", "catalog"]:
+        if re.search(r"URLSession|URLRequest|HTTPURLResponse", sources[key]):
+            errors.append(f"The {key} must not add an alternate website transport")
+    if re.search(r"GoalongSiteSubmission\.send|\.confirm\(|autoSender\.enable|URLSession", sources["sharing_link"]):
+        errors.append("A website sharing link may only describe navigation, never authorization or transmission")
     if len(re.findall(r"\bsendReviewedData\b", sources["ui"])) != 2:
         errors.append("The native send action has an additional caller; passive/lifecycle sending is prohibited")
     if len(re.findall(r"\bsendReviewedHealth\b", sources["health_ui"])) != 2:
@@ -132,6 +166,9 @@ def audit(root: Path) -> list[str]:
             errors.append("Native pairing requires explicit confirmation")
         if 'alert.beginSheetModal(for: window)' not in coordinator or '.runModal()' in coordinator:
             errors.append("Native pairing confirmation must belong to the visible app window")
+        for marker in ['requested.origin == savedOrigin', 'requested.accountID == savedAccount',
+                       'SHA256Digest.hashHex(Data(token.utf8)) == fingerprint', 'GoalongWebsiteAutoSender.shared.forget()']:
+            if marker not in coordinator: errors.append("Account-bound picker invariant missing: " + marker)
         if coordinator.count('pairing.exchange()') != 1:
             errors.append("Pairing must not retry automatically")
         callers = [p for p in (root / "Sources").rglob("*.swift") if 'pairing.exchange()' in p.read_text()]
