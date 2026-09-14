@@ -55,22 +55,33 @@ final class GoalongWebsiteSharingRenderingTests: XCTestCase {
         model.draft.applicationIDs = ["vscode", "figma"]
         model.draft.delivery = .daily; model.draft.timezone = "Europe/Paris"
         model.draft.hour = 9; model.draft.minute = 30
-        await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
-        XCTAssertNotNil(model.preview)
         app.appearance = NSAppearance(named: .darkAqua); window.appearance = app.appearance
         let host = NSHostingController(rootView: GoalongWebsiteSharingSheet(model: model))
         window.contentViewController = host
         window.setContentSize(NSSize(width: 740, height: 720)); pump()
+        // Replacing the previous host correctly cancels its preview on disappearance.
+        // Prepare only after mounting this host so the image proves the live consent UI.
+        await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
+        pump()
+        XCTAssertNotNil(model.preview)
+        XCTAssertFalse(model.reviewed)
         try snapshot(host.view, to: out.appendingPathComponent("sharing-daily-dark.png"))
         // Programmatic native scrolling, not a claim of physical input validation.
         func scrollViews(_ view: NSView) -> [NSScrollView] {
             (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
         }
-        if let scroll = scrollViews(host.view).first, let document = scroll.documentView {
-            document.scroll(NSPoint(x: 0, y: max(0, document.bounds.height - scroll.contentView.bounds.height)))
-            scroll.reflectScrolledClipView(scroll.contentView); pump()
-            try snapshot(host.view, to: out.appendingPathComponent("sharing-preview-dark.png"))
-        }
+        let scroll = try XCTUnwrap(scrollViews(host.view).first)
+        let document = try XCTUnwrap(scroll.documentView)
+        document.scroll(NSPoint(x: 0, y: max(0, document.bounds.height - scroll.contentView.bounds.height)))
+        scroll.reflectScrolledClipView(scroll.contentView); pump()
+        XCTAssertNotNil(model.preview, "The rendered preview must not have been cancelled by host replacement")
+        try snapshot(host.view, to: out.appendingPathComponent("sharing-preview-dark.png"))
+        model.reviewed = true
+        pump()
+        XCTAssertNotNil(model.preview)
+        XCTAssertTrue(model.reviewed)
+        XCTAssertFalse(scheduler.enabled, "A checked review alone must not activate the plan")
+        try snapshot(host.view, to: out.appendingPathComponent("sharing-approved-dark.png"))
     }
     @MainActor private func pump() { RunLoop.current.run(until: Date().addingTimeInterval(0.4)) }
     @MainActor private func snapshot(_ view: NSView, to url: URL) throws {
