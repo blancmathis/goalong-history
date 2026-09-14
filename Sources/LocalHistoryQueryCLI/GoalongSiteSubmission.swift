@@ -127,6 +127,8 @@ public enum GoalongSiteSubmission {
         return token
     }
 
+    /// Low-level request builder. Reuse an explicit key only when retrying the same
+    /// operation. New user-approved writes must use requestForNewSubmission below.
     public static func request(payload: Data, endpoint: URL, token: String,
                                idempotencyKey: String? = nil) -> URLRequest {
         var request = URLRequest(url: endpoint)
@@ -138,6 +140,15 @@ public enum GoalongSiteSubmission {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue(idempotencyKey ?? "goalong-history-" + SHA256Digest.hashHex(payload), forHTTPHeaderField: "Idempotency-Key")
         return request
+    }
+
+    /// A content hash alone is not an operation identity: approving A, then B,
+    /// then A again must reapply A, not replay the first A's historical receipt.
+    /// Each explicit submission has a fresh identity bound to its exact bytes.
+    /// The server still treats an unchanged source snapshot as a no-op.
+    public static func requestForNewSubmission(payload: Data, endpoint: URL, token: String) -> URLRequest {
+        let key = "goalong-history-" + UUID().uuidString + "-" + SHA256Digest.hashHex(payload)
+        return request(payload: payload, endpoint: endpoint, token: token, idempotencyKey: key)
     }
 
     public static func send(payload: Data, origin: String, tokenFile: URL, expectedTokenFingerprint: String? = nil) throws -> Data {
@@ -160,7 +171,7 @@ public enum GoalongSiteSubmission {
         configuration.timeoutIntervalForResource = 30
         let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
-        session.dataTask(with: request(payload: payload, endpoint: destination, token: token)).resume()
+        session.dataTask(with: requestForNewSubmission(payload: payload, endpoint: destination, token: token)).resume()
         guard delegate.finished.wait(timeout: .now() + 35) == .success else {
             throw GoalongSiteExportError.invalid("Upload timed out. Check the site's import history before retrying; receipt status is unknown.")
         }
