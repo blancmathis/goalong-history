@@ -22,18 +22,18 @@ struct GoalongWebsiteConnectionCard: View {
                 Image(systemName: "person.2.crop.square.stack")
                     .font(.title2).foregroundStyle(LHTheme.accent)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Goalong website").font(.headline)
+                    Text("Partager avec GoLong").font(.headline)
                     Text("Envoi dans votre compte. Les règles de partage configurées sur le site s’appliquent aux dates et champs autorisés.")
                         .font(.subheadline).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Optional · Explicit sends · Unverified submissions")
+                    Text("Une fois ou chaque jour · Sélection locale · Arrêt à tout moment")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 10) {
-                    Button(savedTokenPath.isEmpty ? "Relier mon compte" : "Choisir mes données") {
+                    Button(savedTokenPath.isEmpty ? "Relier mon compte" : "Choisir les données à partager") {
                         if savedTokenPath.isEmpty {
-                            _ = GoalongWorkspaceOpenPolicy.open(URL(string: "https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#sources")!, purpose: .goalongWebsite)
+                            _ = GoalongWorkspaceOpenPolicy.open(URL(string: "https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#settings")!, purpose: .goalongWebsite)
                         } else { preparedAnalysis = nil; showsConnection = true }
                     }
                         .buttonStyle(.bordered)
@@ -56,13 +56,16 @@ struct GoalongWebsiteConnectionCard: View {
             UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing")
             showsConnection = true
         }
-        .sheet(isPresented: $showsConnection) { GoalongWebsiteConnectionSheet(preparedAnalysis: preparedAnalysis) }
+        .sheet(isPresented: $showsConnection) {
+            if let preparedAnalysis { GoalongWebsiteConnectionSheet(preparedAnalysis: preparedAnalysis) }
+            else { GoalongWebsiteSharingSheet() }
+        }
         .sheet(isPresented: $showsSiteAnalysis) { GoalongSiteAnalysisSheet() }
         .sheet(isPresented: $showsHealthImport) { GoalongHealthImportSheet() }
     }
 }
 
-private struct GoalongWebsiteConnectionSheet: View {
+struct GoalongWebsiteConnectionSheet: View {
     private let preparedAnalysis: Data?
     init(preparedAnalysis: Data? = nil) {
         self.preparedAnalysis = preparedAnalysis
@@ -133,7 +136,7 @@ private struct GoalongWebsiteConnectionSheet: View {
                             Text("Depuis le site, ouvrez Sources et connexions puis Relier mon Mac. L’app reçoit votre accès automatiquement.")
                                 .font(.subheadline).foregroundStyle(.secondary)
                             Button("Relier depuis le site") {
-                                _ = GoalongWorkspaceOpenPolicy.open(URL(string: "https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#sources")!, purpose: .goalongWebsite)
+                                _ = GoalongWorkspaceOpenPolicy.open(URL(string: "https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#settings")!, purpose: .goalongWebsite)
                             }
                         }
                         DisclosureGroup("Connexion manuelle et options avancées") {
@@ -233,17 +236,9 @@ private struct GoalongWebsiteConnectionSheet: View {
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Envoi automatique facultatif").font(.headline)
-                        Text("Envoie la veille lorsque l'app est ouverte, avec les appareils et champs choisis. Les mêmes parties des prochains récaps déjà produits peuvent être incluses. Les commentaires saisis et l'analyse d'une session particulière ne sont jamais répétés. Avec un masquage, les récaps et domaines restent exclus. Une erreur arrête l'automatisation.").font(.caption)
-                        Stepper("À partir de \(automaticHour) h", value: $automaticHour, in: 0...23)
-                        Text(autoSender.status).font(.subheadline).accessibilityLabel(autoSender.status)
-                        if autoSender.enabled { Button("Arrêter l’envoi automatique") { autoSender.stop() } }
-                        else {
-                            Button("Activer avec les choix de l’aperçu") {
-                                do { try autoSender.enable(origin: origin, tokenPath: tokenFilePath, options: selectedOptions(), hour: automaticHour) }
-                                catch { self.error = String(describing: error) }
-                            }.disabled(payload == nil || busy)
-                        }
+                        Text("Partage ponctuel avancé").font(.headline)
+                        Text("Les récaps et analyses sont envoyés uniquement après votre relecture. Configurez l’envoi quotidien des données chiffrées dans la fenêtre principale « Partager avec GoLong ».").font(.caption)
+                        if autoSender.enabled { Button("Mettre la synchronisation en pause") { autoSender.stop() } }
                     }
                     Divider()
                     }
@@ -313,8 +308,8 @@ private struct GoalongWebsiteConnectionSheet: View {
         .onChange(of: rhythmApps) { _ in invalidatePreview() }
         .onChange(of: rhythmTimeline) { _ in invalidatePreview() }
         .onChange(of: rhythmTimes) { _ in invalidatePreview() }
-        .onChange(of: origin) { _ in status = nil; autoSender.stop() }
-        .onChange(of: tokenFilePath) { _ in autoSender.stop() }
+        .onChange(of: origin) { _ in if preparedAnalysis == nil { invalidatePreview() }; autoSender.stop() }
+        .onChange(of: tokenFilePath) { _ in if preparedAnalysis == nil { invalidatePreview() }; autoSender.stop() }
     }
 
     private func invalidatePreview() { payload = nil; status = nil; error = nil }
@@ -481,6 +476,9 @@ private struct GoalongWebsiteConnectionSheet: View {
 
     private func sendReviewedData() {
         guard let reviewedPayload = payload else { return }
+        if preparedAnalysis == nil && !GoalongWebsiteAutoSender.sourcesAllowed(selectedOptions()) {
+            invalidatePreview(); error = "Une source choisie a été désactivée. Préparez un nouvel aperçu."; return
+        }
         let target = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let tokenFile = URL(fileURLWithPath: tokenFilePath)
         busy = true

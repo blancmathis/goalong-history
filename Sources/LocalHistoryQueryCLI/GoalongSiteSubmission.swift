@@ -1,6 +1,7 @@
 import Darwin
 import CoreFoundation
 import Foundation
+import LocalHistoryCore
 
 public struct GoalongSiteTokenFileReview: Sendable {
     public let requiresProtection: Bool
@@ -127,7 +128,7 @@ public enum GoalongSiteSubmission {
     }
 
     public static func request(payload: Data, endpoint: URL, token: String,
-                               idempotencyKey: String = UUID().uuidString) -> URLRequest {
+                               idempotencyKey: String? = nil) -> URLRequest {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.httpBody = payload
@@ -135,11 +136,11 @@ public enum GoalongSiteSubmission {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key")
+        request.setValue(idempotencyKey ?? "goalong-history-" + SHA256Digest.hashHex(payload), forHTTPHeaderField: "Idempotency-Key")
         return request
     }
 
-    public static func send(payload: Data, origin: String, tokenFile: URL) throws -> Data {
+    public static func send(payload: Data, origin: String, tokenFile: URL, expectedTokenFingerprint: String? = nil) throws -> Data {
         guard !payload.isEmpty, payload.count <= 2 * 1024 * 1024 else {
             throw GoalongSiteExportError.invalid("The website import must be nonempty and at most 2 MiB.")
         }
@@ -147,6 +148,9 @@ public enum GoalongSiteSubmission {
         // ambient credentials, redirects or retries can expand the destination or action.
         let destination = try endpoint(origin: origin)
         let token = try readToken(file: tokenFile)
+        if let expectedTokenFingerprint, SHA256Digest.hashHex(Data(token.utf8)) != expectedTokenFingerprint {
+            throw GoalongSiteExportError.invalid("L’accès au compte a changé depuis votre confirmation. Aucun envoi n’a été effectué.")
+        }
         let delegate = SubmissionResponse()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = false

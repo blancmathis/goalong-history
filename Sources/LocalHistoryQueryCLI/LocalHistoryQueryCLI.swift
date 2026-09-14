@@ -1824,17 +1824,17 @@ public enum GoalongQueryCLI {
                   sourceDate.string(from: start.addingTimeInterval(Double(rhythm.window_ms) / 1000 - 0.001)) == rawDay else {
                 throw CLIError.unsafeSource("Choisissez une session correspondant à la journée exportée.")
             }
-            let hideContext = !options.includeRhythmContext || !options.includeRhythmTimeline || !options.maskedApplications.isEmpty
+            let hideContext = !options.includeRhythmContext || !options.includeRhythmTimeline || !options.maskedApplications.isEmpty || options.selectedApplicationIDs != nil
             rhythm.context_included = !hideContext
             if !options.includeRhythmTimes { rhythm.start = nil }
             if !options.includeRhythmTimeline { rhythm.episodes = nil }
             else { rhythm.episodes = rhythm.episodes?.map { row in
                 var row = row
-                if !options.includeApplications || !options.maskedApplications.isEmpty { row.application = nil }
+                if !options.includeApplications || !options.maskedApplications.isEmpty || options.selectedApplicationIDs != nil { row.application = nil }
                 if hideContext { row.subject = nil; row.explanation = nil; row.evidence = nil }
                 return row
             } }
-            if !options.maskedApplications.isEmpty {
+            if !options.maskedApplications.isEmpty || options.selectedApplicationIDs != nil {
                 rhythm.project = "Projet choisi"
                 rhythm.device = "Appareil choisi"
                 rhythm.interpretation = nil; rhythm.interpretation_origin = nil; rhythm.interpretation_refs = nil
@@ -1852,7 +1852,7 @@ public enum GoalongQueryCLI {
               record.timeZoneIdentifier == Calendar.current.timeZone.identifier else {
             throw CLIError.unsafeSource("Enable Computer History and use its current timezone before exporting rhythm.")
         }
-        var accumulator = GoalongSessionRhythm(project: project, applications: options.rhythmApplications)
+        var accumulator = GoalongSessionRhythm(project: options.selectedApplicationIDs == nil ? project : "Projet choisi", applications: options.rhythmApplications)
         var hiddenNames = Set(options.maskedApplications.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty })
         hiddenNames.formUnion(hiddenNames.map { String($0.prefix(100)) })
         let load = HistoryLocalStoreReader(rootDirectory: root).loadDailyWebsiteUsage(day: requestedDay, currentTime: now,
@@ -1879,7 +1879,9 @@ public enum GoalongQueryCLI {
                 throw CLIError.unsafeSource("Rename the project before exporting: its label contains a masked application.")
             }
         }
-        if !options.includeApplications { rhythm.episodes = rhythm.episodes?.map { row in var output = row; output.application = nil; return output } }
+        if !options.includeApplications || options.selectedApplicationIDs != nil {
+            rhythm.episodes = rhythm.episodes?.map { row in var output = row; output.application = nil; return output }
+        }
         let encoder = JSONEncoder()
         var object = try JSONSerialization.jsonObject(with: payload) as! [String: Any]
         var days = object["days"] as! [[String: Any]]

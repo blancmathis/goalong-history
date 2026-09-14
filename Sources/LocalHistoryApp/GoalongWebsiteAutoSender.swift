@@ -2,20 +2,22 @@
 import Foundation
 import Combine
 import LocalHistoryQueryCLI
+import LocalHistoryCore
 
-/// Opt-in schedule scoped to reviewed fields and one destination. No background
-/// service is installed: only the running application checks the previous day.
+/// A local, explicitly enabled schedule. No daemon, collection, audience change or
+/// backfill is performed. Future text is never authorized by a past paragraph index.
 @MainActor final class GoalongWebsiteAutoSender: ObservableObject {
     static let shared = GoalongWebsiteAutoSender()
     @Published private(set) var enabled = false
-    @Published private(set) var status = "Envoi automatique désactivé"
+    @Published private(set) var status = "Synchronisation quotidienne désactivée"
+    @Published private(set) var lastSuccess: String?
     private var timer: Timer?
     private var busy = false
     private let defaults: UserDefaults
     private let root: URL
     private let exporter: (URL, String, GoalongSiteExportOptions) throws -> Data
-    private let sender: (Data, String, URL) throws -> Data
-    private let sourceConsent: (GoalongSiteExportOptions) -> Bool
+    private let sender: (Data, String, URL, String?) throws -> Data
+    private let sourceConsent: @MainActor (GoalongSiteExportOptions) -> Bool
     private let key = "goalong.website.autoSend.v1"
     struct Configuration: Codable {
         var origin: String
@@ -23,43 +25,98 @@ import LocalHistoryQueryCLI
         var options: GoalongSiteExportOptions
         var lastAttempt: String?
         var hour: Int?
+        var minute: Int? = 0
+        var timeZoneIdentifier: String? = TimeZone.current.identifier
+        var policyVersion: Int? = 2
+        var identifier: String? = UUID().uuidString
+        var lastSuccess: String?
+        var paused: Bool? = false
+        var credentialFingerprint: String?
     }
+    var savedConfiguration: Configuration? { configuration() }
+
+    static func sourcesAllowed(_ options: GoalongSiteExportOptions) -> Bool {
+        GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)
+            && ((options.rhythmProject == nil && options.contextualRhythm == nil && !options.includeWebsites)
+                || GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory))
+            && (!options.includeRecap || GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis))
+    }
+
     init(defaults: UserDefaults = .standard, root: URL = AppPaths.applicationSupportDirectory,
          exporter: @escaping (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) },
-         sender: @escaping (Data, String, URL) throws -> Data = { try GoalongSiteSubmission.send(payload: $0, origin: $1, tokenFile: $2) },
-         sourceConsent: @escaping (GoalongSiteExportOptions) -> Bool = { options in
-             GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime) && ((options.rhythmProject == nil && !options.includeWebsites) || GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)) && (!options.includeRecap || GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis))
-         }) {
+         sender: @escaping (Data, String, URL, String?) throws -> Data = { try GoalongSiteSubmission.send(payload: $0, origin: $1, tokenFile: $2, expectedTokenFingerprint: $3) },
+         sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) }) {
         self.defaults = defaults; self.root = root; self.exporter = exporter; self.sender = sender
         self.sourceConsent = sourceConsent
         let saved = configuration()
-        enabled = saved != nil
-        status = enabled ? "Activé : la veille après \(saved?.hour ?? 9) h, lorsque Goalong est ouvert" : "Envoi automatique désactivé"
+        lastSuccess = saved?.lastSuccess
+        enabled = saved?.policyVersion == 2 && saved?.paused != true
+        if let saved {
+            if saved.policyVersion != 2 {
+                status = "Ancienne synchronisation suspendue : relisez la sélection avant de la réactiver."
+            } else if enabled {
+                status = "Activée · la veille à partir de \(Self.timeLabel(saved)), lorsque Goalong est ouvert."
+            } else { status = "Synchronisation en pause · vos choix sont conservés sur ce Mac." }
+        }
     }
     private func configuration() -> Configuration? {
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(Configuration.self, from: data)
     }
     private func store(_ value: Configuration) throws { defaults.set(try JSONEncoder().encode(value), forKey: key) }
-    func enable(origin: String, tokenPath: String, options: GoalongSiteExportOptions, hour: Int = 9) throws {
-        guard !busy, !options.deviceIDs.isEmpty else { throw GoalongSiteExportError.invalid("Préparez d’abord l’aperçu et choisissez vos appareils.") }
-        _ = try GoalongSiteSubmission.endpoint(origin: origin)
-        _ = try GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))
-        guard (0...23).contains(hour) else { throw GoalongSiteExportError.invalid("Choisissez une heure entre 0 et 23.") }
+    static func timeLabel(_ value: Configuration) -> String {
+        String(format: "%02d:%02d", value.hour ?? 9, value.minute ?? 0) + " · " + (value.timeZoneIdentifier ?? TimeZone.current.identifier)
+    }
+    static func dailyOptions(_ options: GoalongSiteExportOptions) throws -> GoalongSiteExportOptions {
+        guard !options.deviceIDs.isEmpty, options.deviceIDs.count <= 12,
+              Set(options.deviceIDs).count == options.deviceIDs.count else {
+            throw GoalongSiteExportError.invalid("Choisissez explicitement entre un et douze appareils.")
+        }
+        guard !options.includeApplications || options.selectedApplicationIDs != nil,
+              !options.includeWebsites || options.selectedWebsiteDomains != nil else {
+            throw GoalongSiteExportError.invalid("Choisissez les applications et domaines autorisés dans la nouvelle fenêtre de partage.")
+        }
         var selected = options
-        selected.contextualRhythm = nil
+        // Today's free text and positional recap indices cannot authorize tomorrow's text.
+        selected.includeRecap = false
         selected.recapText = nil
-        if selected.recapSectionIndices?.isEmpty != false { selected.includeRecap = false }
-        if !selected.maskedApplications.isEmpty { selected.includeRecap = false; selected.includeWebsites = false }
-        try store(Configuration(origin: origin, tokenPath: tokenPath, options: selected, hour: hour))
+        selected.recapSectionIndices = nil
+        selected.contextualRhythm = nil
+        selected.rhythmProject = nil
+        selected.rhythmApplications = []
+        selected.includeRhythmTimeline = false
+        selected.includeRhythmTimes = false
+        selected.includeRhythmContext = false
+        if !selected.maskedApplications.isEmpty { selected.includeWebsites = false }
+        return selected
+    }
+    func enable(origin: String, tokenPath: String, options: GoalongSiteExportOptions, hour: Int = 9,
+                minute: Int = 0, timeZoneIdentifier: String = TimeZone.current.identifier) throws {
+        guard !busy else { throw GoalongSiteExportError.invalid("Un envoi est déjà en cours.") }
+        _ = try GoalongSiteSubmission.endpoint(origin: origin)
+        let token = try GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))
+        guard (0...23).contains(hour), (0...59).contains(minute), TimeZone(identifier: timeZoneIdentifier) != nil else {
+            throw GoalongSiteExportError.invalid("Choisissez une heure et un fuseau horaire valides.")
+        }
+        let selected = try Self.dailyOptions(options)
+        guard sourceConsent(selected) else { throw GoalongSiteExportError.invalid("Une source sélectionnée est désactivée dans les réglages.") }
+        let value = Configuration(origin: origin, tokenPath: tokenPath, options: selected, hour: hour,
+                                  minute: minute, timeZoneIdentifier: timeZoneIdentifier, credentialFingerprint: SHA256Digest.hashHex(Data(token.utf8)))
+        try store(value)
+        lastSuccess = nil
         enabled = true
-        status = "Activé : la veille après \(hour) h, app ouverte, avec les champs et parties de récap choisis. Les commentaires et interprétations de session ne sont jamais répétés."
+        status = "Activée · la veille après \(Self.timeLabel(value)). Nouveaux appareils, apps, domaines et récaps exclus."
         start()
     }
     func stop() {
-        defaults.removeObject(forKey: key)
+        if var saved = configuration() { saved.paused = true; try? store(saved) }
         enabled = false
-        status = busy ? "Désactivé. L’envoi déjà commencé peut encore aboutir." : "Envoi automatique désactivé"
+        status = busy ? "En pause. Un envoi déjà commencé peut encore aboutir." : "Synchronisation en pause · vos choix sont conservés."
+    }
+    func forget() {
+        stop()
+        defaults.removeObject(forKey: key)
+        lastSuccess = nil
     }
     func start() {
         guard timer == nil else { return }
@@ -68,30 +125,45 @@ import LocalHistoryQueryCLI
         }
     }
     func tick(now: Date = Date()) async {
-        guard !busy, var configuration = configuration(), Calendar.current.component(.hour, from: now) >= (configuration.hour ?? 9),
-              let previous = Calendar.current.date(byAdding: .day, value: -1, to: now) else { return }
+        guard !busy, enabled, var current = configuration(), current.policyVersion == 2, current.paused != true,
+              let zone = TimeZone(identifier: current.timeZoneIdentifier ?? "") else { return }
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
+        let minutes = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
+        guard minutes >= (current.hour ?? 9) * 60 + (current.minute ?? 0),
+              let previous = calendar.date(byAdding: .day, value: -1, to: now) else { return }
         let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .gregorian); formatter.timeZone = .current
+        formatter.calendar = calendar; formatter.timeZone = zone
         let day = formatter.string(from: previous)
-        guard configuration.lastAttempt != day else { return }
-        // Persist the attempt before networking. Uncertain receipt never triggers an automatic retry.
-        configuration.lastAttempt = day
-        do { try store(configuration) } catch { stop(); status = "L’automatisation n’a pas pu enregistrer son état."; return }
-        busy = true; status = "Préparation de la journée du \(day)…"
-        let root = root, exporter = exporter, sender = sender
+        guard current.lastAttempt != day else { return }
         do {
-            let payload = try await Task.detached { try exporter(root, day, configuration.options) }.value
-            guard enabled, self.configuration()?.origin == configuration.origin,
-                  self.configuration()?.tokenPath == configuration.tokenPath else { busy = false; return }
-            guard sourceConsent(configuration.options) else { stop(); busy = false; status = "Automatisation arrêtée : une source est désactivée."; return }
-            status = "Envoi de la journée du \(day)…"
-            _ = try await Task.detached { try sender(payload, configuration.origin, URL(fileURLWithPath: configuration.tokenPath)) }.value
-            if enabled { status = "Journée du \(day) reçue. Prochain envoi demain après \(configuration.hour ?? 9) h." }
+            current.options = try Self.dailyOptions(current.options)
+            guard sourceConsent(current.options) else {
+                stop(); status = "Synchronisation arrêtée : une source est désactivée."; return
+            }
+            // Persist before networking. An uncertain receipt never silently retries.
+            current.lastAttempt = day
+            try store(current)
+            busy = true; status = "Préparation locale du \(day)…"
+            defer { busy = false }
+            let root = root, exporter = exporter, sender = sender, snapshot = current
+            let payload = try await Task.detached { try exporter(root, day, snapshot.options) }.value
+            guard enabled, configuration()?.identifier == snapshot.identifier,
+                  configuration()?.origin == snapshot.origin, configuration()?.tokenPath == snapshot.tokenPath else { return }
+            guard sourceConsent(snapshot.options) else {
+                stop(); status = "Synchronisation arrêtée : une source est désactivée."; return
+            }
+            status = "Envoi du \(day)…"
+            _ = try await Task.detached { try sender(payload, snapshot.origin, URL(fileURLWithPath: snapshot.tokenPath), snapshot.credentialFingerprint) }.value
+            guard enabled, configuration()?.identifier == snapshot.identifier else { return }
+            current.lastSuccess = day
+            try store(current)
+            lastSuccess = day
+            status = "Journée du \(day) reçue · prochain envoi après \(Self.timeLabel(current))."
         } catch {
             stop()
-            status = "Automatisation arrêtée : \(error). Vérifiez les imports du site avant de la réactiver."
+            status = "Synchronisation en pause : \(error). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre."
         }
-        busy = false
     }
+    deinit { timer?.invalidate() }
 }
 #endif

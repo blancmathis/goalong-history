@@ -19,6 +19,10 @@ public struct GoalongSiteExportOptions: Codable {
     public var includeRhythmTimes: Bool
     public var includeRhythmContext: Bool
     public var contextualRhythm: GoalongContextualRhythm.Rhythm?
+    /// nil preserves legacy CLI behavior. An empty list explicitly discloses no rows.
+    public var selectedApplicationIDs: [String]?
+    public var selectedWebsiteDomains: [String]?
+    public var includeDeviceNames: Bool?
 
     public init(deviceIDs: [String] = [], includeApplications: Bool = false,
                 includeHourly: Bool = false, includeWebsites: Bool = false,
@@ -26,7 +30,9 @@ public struct GoalongSiteExportOptions: Codable {
                 maskedApplications: [String] = [], recapText: String? = nil, recapSectionIndices: [Int]? = nil,
                 rhythmProject: String? = nil, rhythmApplications: [String] = [],
                 includeRhythmTimeline: Bool = false, includeRhythmTimes: Bool = false, includeRhythmContext: Bool = false,
-                contextualRhythm: GoalongContextualRhythm.Rhythm? = nil) {
+                contextualRhythm: GoalongContextualRhythm.Rhythm? = nil,
+                selectedApplicationIDs: [String]? = nil, selectedWebsiteDomains: [String]? = nil,
+                includeDeviceNames: Bool? = nil) {
         self.deviceIDs = deviceIDs
         self.includeApplications = includeApplications
         self.includeHourly = includeHourly
@@ -42,6 +48,9 @@ public struct GoalongSiteExportOptions: Codable {
         self.includeRhythmTimes = includeRhythmTimes
         self.includeRhythmContext = includeRhythmContext
         self.contextualRhythm = contextualRhythm
+        self.selectedApplicationIDs = selectedApplicationIDs
+        self.selectedWebsiteDomains = selectedWebsiteDomains
+        self.includeDeviceNames = includeDeviceNames
     }
 }
 
@@ -102,16 +111,23 @@ public enum GoalongSiteExport {
             let hasSegments = report.segments.contains { $0.start < interval.end && $0.end > interval.start }
             let total = try item.map { try seconds($0.screenOnDuration) }
                 ?? (hasSegments && report.segments.allSatisfy { $0.totalScreenOnDuration == 0 } ? 0 : nil)
-            let apps = options.includeApplications ? item?.applications ?? [] : []
+            let allApps = options.includeApplications ? item?.applications ?? [] : []
+            let allowedApps = options.selectedApplicationIDs.map(Set.init)
+            let apps = allApps.filter { allowedApps?.contains($0.id) ?? true }
             guard apps.count <= 200 else { throw GoalongSiteExportError.invalid("This device exceeds 200 applications; export totals or select fewer details.") }
             var result: [String: Any] = [
-                "id": try text(report.device.id, maximum: 160),
-                "name": try text(report.device.displayName, maximum: 100),
+                "id": options.includeDeviceNames == false
+                    ? "device-" + SHA256Digest.hashHex(Data(report.device.id.utf8))
+                    : try text(report.device.id, maximum: 160),
+                "name": options.includeDeviceNames == false
+                    ? anonymousDeviceName(report.device.kind)
+                    : try text(report.device.displayName, maximum: 100),
                 "kind": kind(report.device.kind), "source": "apple-screen-time",
                 "provenance": provenance, "coverage": total == nil ? "unknown" : coverage,
                 // Apple rows do not carry Goalong categories. Mark nonempty breakdowns
                 // partial so an unclassified social/work metric cannot become a false zero.
-                "appsCoverage": options.includeApplications && total != nil ? (apps.isEmpty ? coverage : "partial") : "unknown",
+                "appsCoverage": options.includeApplications && total != nil
+                    ? (options.selectedApplicationIDs != nil ? "partial" : (apps.isEmpty ? coverage : "partial")) : "unknown",
                 "screenSeconds": total as Any? ?? NSNull(), "hourly": NSNull(),
                 "apps": try apps.map { app -> [String: Any] in
                     ["id": try text(app.id, maximum: 160),
@@ -127,6 +143,8 @@ public enum GoalongSiteExport {
         }
         var websiteValue: Any = NSNull()
         if options.includeWebsites, masks.isEmpty, let websites {
+            let allowedDomains = options.selectedWebsiteDomains.map { Set($0.map { $0.lowercased() }) }
+            let websites = websites.filter { allowedDomains?.contains($0.host.lowercased()) ?? true }
             guard websites.count <= 200 else { throw GoalongSiteExportError.invalid("This day exceeds 200 domains; export without website details.") }
             let rows: [[String: Any]] = try websites.map { website in
                 guard website.host.range(of: #"^[a-z0-9](?:[a-z0-9.-]{0,249}[a-z0-9])?\.[a-z]{2,63}$"#,
@@ -187,6 +205,16 @@ public enum GoalongSiteExport {
             throw GoalongSiteExportError.invalid("An activity label exceeds the website exchange limit.")
         }
         return result
+    }
+
+    private static func anonymousDeviceName(_ value: AppleScreenTimeDeviceKind) -> String {
+        switch value {
+        case .mac: return "Ordinateur"
+        case .iPhone, .iPod: return "Téléphone"
+        case .iPad: return "Tablette"
+        case .appleWatch: return "Montre"
+        default: return "Appareil"
+        }
     }
 
     private static func kind(_ value: AppleScreenTimeDeviceKind) -> String {
