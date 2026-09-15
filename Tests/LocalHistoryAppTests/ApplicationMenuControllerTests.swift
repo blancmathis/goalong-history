@@ -29,10 +29,12 @@
                     "Hide \(ProductIdentity.displayName)",
                     "Hide Others",
                     "Show All",
+                    "Quit & Reopen Goalong History",
                     "Quit \(ProductIdentity.displayName)",
                 ]
             )
             XCTAssertEqual(applicationMenu.item(withTitle: "Settings…")?.keyEquivalent, ",")
+            XCTAssertEqual(applicationMenu.item(withTitle: "Quit & Reopen Goalong History")?.keyEquivalent, "")
             XCTAssertEqual(
                 applicationMenu.item(withTitle: "Quit \(ProductIdentity.displayName)")?.keyEquivalent,
                 "q"

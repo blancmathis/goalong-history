@@ -282,7 +282,9 @@
                 dashboardWindowController?.show(section: .settings)
             } else if CommandLine.arguments.contains(PermissionRecovery.completedArgument) || UserDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
                 UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
-                dashboardWindowController?.show(section: dashboardViewModel.selectedSection)
+                let previousSection = UserDefaults.standard.string(forKey: "goalong.restoreVisibleSection")
+                    .flatMap(DashboardSection.init(rawValue:)) ?? dashboardViewModel.selectedSection
+                dashboardWindowController?.show(section: previousSection)
             }
             // A URL can arrive before the dashboard exists on a cold launch.
             Task { @MainActor in presentWebsitePairingIfReady() }
@@ -310,6 +312,7 @@
             guard runtimeStarted else { return }
             if dashboardWindowController?.window?.isVisible == true {
                 UserDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
+                UserDefaults.standard.set(dashboardViewModel.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
             }
             SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()

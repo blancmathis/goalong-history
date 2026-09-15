@@ -150,6 +150,15 @@ final class GoalongBrandRenderingTests: XCTestCase {
                 window.contentViewController = recovery
                 window.setContentSize(NSSize(width: 620, height: 690)); pump()
                 try snapshot(recovery.view, to: output.appendingPathComponent("permission-recovery-\(name)-\(dark ? "dark" : "light").png"))
+                for (phase, initial): (String, SourceAccessStatus) in [("ready", .ready), ("restart", status)] {
+                    let resumed = NSHostingController(rootView: SourceActivationSheet(
+                        capability: capability, surface: .settings,
+                        prepare: { XCTFail("Preview must never prepare recording") },
+                        check: { _, done in done(initial) }, initialStatus: initial, resumingAfterRestart: true))
+                    window.contentViewController = resumed
+                    window.setContentSize(NSSize(width: 620, height: 690)); pump()
+                    try snapshot(resumed.view, to: output.appendingPathComponent("permission-\(phase)-\(name)-\(dark ? "dark" : "light").png"))
+                }
             }
         }
         if environment["GOALONG_JOURNEY_INTERACTIVE"] == "1" {
