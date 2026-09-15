@@ -39,17 +39,17 @@ final class GoalongSiteExportTests: XCTestCase {
     }
 
     func testExplicitAllowlistNeverIncludesOtherAppsDevicesOrDomains() throws {
-        let sites = ["allowed.example", "private.example"].map {
+        let sites = ["allowed.example.org", "private.example.org"].map {
             DailyWebsiteUsage(host: $0, foregroundSeconds: 120, activeMinuteCount: 2, eventCount: 1,
                 sourceApplications: ["Safari"], primaryBundleIdentifier: nil, category: nil, identityProofAvailable: false)
         }
         for structured in [false, true] {
             let data = try GoalongSiteExport.payload(record: fixture(), options: .init(deviceIDs: ["mac"], includeApplications: true,
-                includeWebsites: true, structuredReport: structured, selectedApplicationIDs: [], selectedWebsiteDomains: ["allowed.example"], includeDeviceNames: false), websites: sites)
+                includeWebsites: true, structuredReport: structured, selectedApplicationIDs: [], selectedWebsiteDomains: ["allowed.example.org"], includeDeviceNames: false), websites: sites)
             let text = String(decoding: data, as: UTF8.self)
             XCTAssertFalse(text.contains("secret.app")); XCTAssertFalse(text.contains("Private application"))
-            XCTAssertFalse(text.contains("private.example")); XCTAssertFalse(text.contains("iPhone"))
-            XCTAssertTrue(text.contains("allowed.example"))
+            XCTAssertFalse(text.contains("private.example.org")); XCTAssertFalse(text.contains("iPhone"))
+            XCTAssertTrue(text.contains("allowed.example.org"))
             let rows = try deviceRows(data)
             XCTAssertEqual(rows.count, 1)
             XCTAssertEqual(rows[0]["name"] as? String, "Ordinateur")
@@ -64,11 +64,11 @@ final class GoalongSiteExportTests: XCTestCase {
     }
 
     func testEmptyWebsiteAllowlistAndLocalCatalogDoNotWidenDisclosure() throws {
-        let site = DailyWebsiteUsage(host: "private.example", foregroundSeconds: 120, activeMinuteCount: 2, eventCount: 1,
+        let site = DailyWebsiteUsage(host: "private.example.org", foregroundSeconds: 120, activeMinuteCount: 2, eventCount: 1,
             sourceApplications: ["Safari"], primaryBundleIdentifier: nil, category: nil, identityProofAvailable: false)
         let data = try GoalongSiteExport.payload(record: fixture(), options: .init(includeApplications: true,
             includeWebsites: true, selectedApplicationIDs: ["secret.app"], selectedWebsiteDomains: []), websites: [site])
-        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("private.example"))
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("private.example.org"))
         let catalog = try GoalongSiteSelectionCatalog(payload: data)
         XCTAssertEqual(catalog.devices.count, 2)
         XCTAssertEqual(catalog.devices[0].applications[0].id, "secret.app")
@@ -303,7 +303,11 @@ final class GoalongSiteExportTests: XCTestCase {
         let unsafe = DailyWebsiteUsage(host: "https://example.org/private?q=secret", foregroundSeconds: 10,
             activeMinuteCount: 1, eventCount: 1, sourceApplications: ["Safari"],
             primaryBundleIdentifier: nil, category: nil, identityProofAvailable: false)
-        XCTAssertThrowsError(try GoalongSiteExport.payload(record: fixture(), options: .init(includeWebsites: true), websites: [unsafe]))
+        let mixed = try GoalongSiteExport.payload(record: fixture(), options: .init(includeWebsites: true), websites: [unsafe, site])
+        XCTAssertFalse(String(decoding: mixed, as: UTF8.self).contains("q=secret"))
+        let mixedTelemetry = try XCTUnwrap(firstDay(object(mixed))["telemetry"] as? [String: Any])
+        let mixedWebsites = try XCTUnwrap(mixedTelemetry["websites"] as? [String: Any])
+        XCTAssertEqual((mixedWebsites["rows"] as? [[String: Any]])?.count, 1)
     }
 
     func testMeasuredZeroRemainsDistinctFromEmptyDeviceReport() throws {

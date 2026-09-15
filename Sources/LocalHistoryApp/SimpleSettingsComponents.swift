@@ -58,26 +58,37 @@ struct GoalongSettingsGroup<Content: View>: View {
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var sender = GoalongWebsiteAutoSender.shared
     @ObservedObject private var analysis = ChatGPTRecapRuntime.shared
-    @State private var globalPause = GoalongGlobalPause.load()
+    @State private var pause = GoalongGlobalPause.load()
+    @State private var analysisSelection = GoalongAnalysisSelection.load()
+    @ObservedObject private var exclusions = GoalongExclusionStore.shared
     var body: some View {
         VStack(spacing: 12) {
-            row("Enregistrement local", value: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : model.runtime.displayTitle,
-                symbol: "internaldrive", pane: .recording)
-            row("Envoi à Goalong", value: sender.enabled ? "Chaque jour" : "Automatique désactivé", symbol: "arrow.up.circle", pane: .connections)
-            row("Analyse ChatGPT", value: !consents.isEnabled(.chatGPTAnalysis) ? "Désactivée" : !GoalongAnalysisSelection.load().isValid(for: GoalongExclusionStore.shared.policy) ? "À configurer" : analysis.automaticRecapsEnabled ? "Automatique" : "À la demande",
-                symbol: "sparkles", pane: .connections)
-        }.onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in globalPause = .load() }
+            card("Enregistrement local", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : "Activé",
+                 detail: "Ce que Goalong conserve sur ce Mac", symbol: "internaldrive", pane: .recording)
+            card("Envoi à Goalong", status: sender.enabled ? "Chaque jour" : "À la demande",
+                 detail: "Compte, données et fréquence des envois", symbol: "arrow.up.circle", pane: .website)
+            card("Analyse ChatGPT", status: !consents.isEnabled(.chatGPTAnalysis) || !analysisSelection.isValid(for: exclusions.policy) ? "À configurer" : analysis.automaticRecapsEnabled ? "Automatique" : "À la demande",
+                 detail: "Applications, textes, noms masqués et consignes", symbol: "sparkles", pane: .chatGPT)
+        }.onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }
+            .onReceive(NotificationCenter.default.publisher(for: .goalongAnalysisSelectionDidChange)) { _ in analysisSelection = .load() }
     }
-    private func row(_ title: String, value: String, symbol: String, pane: SettingsPane) -> some View {
+    private func card(_ title: String, status: String, detail: String, symbol: String, pane: SettingsPane) -> some View {
         Button { model.selectSection(.settings); model.settingsPane = pane } label: {
-            HStack(spacing: 10) {
-                Image(systemName: symbol).frame(width: 20).foregroundStyle(.secondary)
-                Text(title).font(.system(size: 12, weight: .medium))
-                Spacer()
-                Text(globalPause.blocksActivity ? "Suspendu" : value).font(.system(size: 12)).foregroundStyle(.secondary)
-                Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.secondary)
-            }.contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityElement(children: .combine)
+            HStack(spacing: 16) {
+                Image(systemName: symbol).font(.system(size: 23)).foregroundStyle(LHTheme.accent)
+                    .frame(width: 48, height: 48).background(LHTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 13))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title).font(.system(size: 17, weight: .semibold))
+                    Text(detail).font(.system(size: 13)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Text(pause.blocksActivity ? "Suspendu" : status).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+            }.padding(20).frame(maxWidth: .infinity, minHeight: 92, alignment: .leading).contentShape(Rectangle())
+        }.buttonStyle(LHNavigationButtonStyle(cornerRadius: 14))
+            .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LHTheme.separator))
+            .accessibilityIdentifier("settings-\(pane)")
     }
 }
 

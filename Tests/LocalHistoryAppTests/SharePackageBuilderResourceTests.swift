@@ -374,7 +374,7 @@
             let hidden = try XCTUnwrap(
                 slice(
                     source,
-                    from: "        func dashboardDidBecomeHidden()",
+                    from: "        func dashboardDidBecomeHidden(",
                     through: "        func togglePause()"
                 )
             )

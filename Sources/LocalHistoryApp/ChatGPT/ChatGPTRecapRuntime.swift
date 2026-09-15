@@ -573,7 +573,7 @@
             refreshDayOverview()
         }
 
-        func start() {
+        func start(checkPreviousDayImmediately: Bool = true) {
             guard !GoalongGlobalPause.isPaused() else { return }
             guard GoalongBuildCapabilities.permitsRemoteAnalysis else { return }
             guard analysisConsentProvider(), analysisSelectionProvider().isValid(for: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)) else { return }
@@ -581,6 +581,7 @@
             started = true
             scheduleNextAutomaticRecap()
             scheduleAutomaticBoundaryFallback()
+            guard checkPreviousDayImmediately else { return }
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self, self.started else { return }
                 self.maybeGenerateAutomaticRecap()
@@ -892,7 +893,7 @@
             guard selection.isValid(for: privacy) else {
                 if !automatic {
                     alert = ChatGPTRecapAlert(title: "Choisissez les données pour ChatGPT",
-                        message: "Ouvrez Réglages → Connexions pour confirmer les sources de l’analyse.")
+                        message: "Ouvrez Réglages → Analyse ChatGPT pour confirmer les sources de l’analyse.")
                 }
                 return
             }
@@ -983,7 +984,8 @@
 
                     let prompt = try ChatGPTRecapContextBuilder.prompt(
                         for: context,
-                        outputLanguage: Self.outputLanguage
+                        outputLanguage: Self.outputLanguage,
+                        outputGuidance: try GoalongTextTransformer(selection.replacements ?? []).apply(selection.outputGuidance ?? "", maximumCharacters: 4000)
                     )
                     guard self.analysisConsentProvider(), self.isRunActive(runID),
                           self.analysisSelectionProvider() == selection,

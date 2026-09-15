@@ -576,7 +576,7 @@
             )
             let hidden = try XCTUnwrap(
                 viewModel.slice(
-                    from: "        func dashboardDidBecomeHidden()",
+                    from: "        func dashboardDidBecomeHidden(",
                     through: "        func togglePause()"
                 )
             )

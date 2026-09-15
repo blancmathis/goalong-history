@@ -64,25 +64,17 @@ struct RecordingChoicesView: View {
         }
     }
     private func signalGroup(_ title: String, signals: [RecordingSignal]) -> some View {
-        DisclosureGroup {
-            VStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 20)], spacing: 6) {
                 ForEach(signals) { signal in
-                    HStack {
+                    HStack(spacing: 4) {
                         Toggle(isOn: Binding(get: { draft[keyPath: signal.keyPath] }, set: { draft[keyPath: signal.keyPath] = $0 })) {
-                            Text(signal.title).font(.system(size: 13))
+                            Text(signal.title).font(.system(size: 14))
                         }.toggleStyle(.switch).accessibilityIdentifier("recording-\(signal.rawValue)")
-                            .accessibilityHint(signal.detail)
                         GoalongHelpButton(text: signal.detail)
-                    }
+                    }.frame(minHeight: 42)
                 }
-                if signals.contains(.typing) { Text("Comptages uniquement, pas les caractères tapés.").font(.system(size: 12)).foregroundStyle(.secondary) }
-            }.padding(.top, 14)
-        } label: {
-            HStack {
-                Text(title).font(.system(size: 14, weight: .medium))
-                Spacer()
-                let count = signals.filter { draft[keyPath: $0.keyPath] }.count
-                Text(count == 0 ? "Désactivés" : "\(count) activés").font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
     }

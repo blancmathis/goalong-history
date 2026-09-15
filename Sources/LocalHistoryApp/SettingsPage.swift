@@ -25,10 +25,11 @@ import AppKit
                 Text(pane.title).font(LHTheme.pageTitleFont).accessibilityAddTraits(.isHeader)
                 content
             }
-            .frame(maxWidth: 760, alignment: .leading)
+            .frame(maxWidth: pane == .chatGPT ? 960 : 840, alignment: .leading)
             .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 26)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .id(pane)
         .safeAreaInset(edge: .top, spacing: 0) {
             if pane != .home { SettingsBackBar { pane = .home } }
         }
@@ -50,8 +51,7 @@ import AppKit
     @ViewBuilder private var content: some View {
         switch pane {
         case .home:
-            LHCard { GoalongDataStatus(model: model) }
-            GoalongGlobalPauseControl(model: model)
+            GoalongDataStatus(model: model)
             TextField("Rechercher un réglage…", text: $search).textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Rechercher un réglage")
             LHCard(padding: 0) {
@@ -64,9 +64,11 @@ import AppKit
                 }
             }
             if search.isEmpty {
-                HStack {
-                    Button("Avancé") { pane = .advanced }.buttonStyle(.borderless)
-                    Spacer()
+                VStack(alignment: .trailing, spacing: 14) {
+                    GoalongSettingsLink(title: "Avancé", value: "Outils et diagnostics", symbol: "slider.horizontal.3") { pane = .advanced }
+                        .accessibilityIdentifier("settings-advanced")
+                        .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(LHTheme.separator))
                     Button(updates.availableVersion == nil ? "Version \(updates.currentVersion)" : "Mise à jour disponible") { updates.showAvailableUpdate() }
                         .buttonStyle(.borderless)
                 }.font(.system(size: 12))
@@ -79,6 +81,7 @@ import AppKit
                     get: { consents.isEnabled(.launchAtLogin) }, set: { saveStartup($0) }))
                     .toggleStyle(.switch)
             }
+            GoalongCompleteRecordingButton(model: model)
             GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording) }
             VisibleContextControl()
             DisclosureGroup("Confidentialité avancée") {
@@ -109,7 +112,11 @@ import AppKit
         case .applications:
             GoalongApplicationsSettings(model: model)
         case .connections:
-            GoalongWebsiteConnectionCard()
+            GoalongSettingsLink(title: "Envoi à Goalong", value: "Compte, données et fréquence", symbol: "arrow.up.circle") { pane = .website }
+            GoalongSettingsLink(title: "Analyse ChatGPT", value: "Données et personnalisation", symbol: "sparkles") { pane = .chatGPT }
+        case .website:
+            GoalongWebsiteSettings(model: model)
+        case .chatGPT:
             GoalongChatGPTSettings(model: model)
         case .permissions:
             GoalongSettingsGroup(title: "Accès nécessaires à vos choix") {
@@ -144,13 +151,15 @@ import AppKit
         }
     }
     private var visiblePanes: [SettingsPane] {
-        SettingsPane.primary.filter { search.isEmpty || ($0.title + " " + $0.keywords).localizedStandardContains(search) }
+        SettingsPane.primary.filter { search.isEmpty ? [.applications, .permissions, .storage].contains($0) : ($0.title + " " + $0.keywords).localizedStandardContains(search) }
     }
     private func summary(_ item: SettingsPane) -> String {
         switch item {
         case .recording: return consents.isEnabled(.localComputerHistory) ? "Activé" : "Désactivé"
         case .applications: return "Choisir les exclusions"
-        case .connections: return "Goalong · ChatGPT"
+        case .connections: return "Choisir une connexion"
+        case .website: return "Compte, données et fréquence"
+        case .chatGPT: return "Données et personnalisation"
         case .permissions: return "Selon vos fonctions"
         case .storage: return "Conservation et effacement"
         default: return ""
@@ -167,14 +176,16 @@ import AppKit
 }
 
 enum SettingsPane: Hashable {
-    case home, recording, applications, connections, permissions, storage, advanced, tools
-    static let primary: [Self] = [.recording, .applications, .connections, .permissions, .storage]
+    case home, recording, applications, connections, website, chatGPT, permissions, storage, advanced, tools
+    static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .permissions, .storage]
     var title: String {
         switch self {
         case .home: return "Réglages"
         case .recording: return "Enregistrement"
         case .applications: return "Apps et sites"
         case .connections: return "Connexions"
+        case .website: return "Envoi à Goalong"
+        case .chatGPT: return "Analyse ChatGPT"
         case .permissions: return "Autorisations macOS"
         case .storage: return "Stockage"
         case .advanced: return "Avancé"
@@ -187,6 +198,8 @@ enum SettingsPane: Hashable {
         case .recording: return "record.circle"
         case .applications: return "app.badge.checkmark"
         case .connections: return "link"
+        case .website: return "arrow.up.circle"
+        case .chatGPT: return "sparkles"
         case .permissions: return "hand.raised"
         case .storage: return "internaldrive"
         default: return "slider.horizontal.3"
@@ -196,7 +209,9 @@ enum SettingsPane: Hashable {
         switch self {
         case .recording: return "arrêter pause clavier clic souris texte activité sources démarrage"
         case .applications: return "ignorer exclure exclusions masquer application navigateur domaine"
-        case .connections: return "chatgpt compte goalong connecter partager envoyer synchroniser analyse"
+        case .connections: return "connexions"
+        case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"
+        case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"
         case .storage: return "supprimer effacer historique conserver durée espace mémoire"
         default: return ""

@@ -4,15 +4,15 @@ import Combine
 import LocalHistoryCore
 import LocalHistoryQueryCLI
 
-struct GoalongWebsiteShareDraft: Equatable {
-    enum Delivery: String, CaseIterable { case once, daily }
+struct GoalongWebsiteShareDraft: Equatable, Codable {
+    enum Delivery: String, CaseIterable, Codable { case once, daily }
     var delivery: Delivery = .once
     var date = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
     var deviceIDs = Set<String>()
     var applicationIDs = Set<String>()
     var anonymousApplicationIDs = Set<String>()
     var websiteDomains = Set<String>()
-    var includeApplications = false
+    var includeApplications = true
     var includeHourly = false
     var includeWebsites = false
     var includeDeviceNames = false
@@ -36,7 +36,7 @@ struct GoalongWebsiteShareDraft: Equatable {
               includeDeviceNames: includeDeviceNames, strictSelection: true)
     }
     var validationMessage: String? {
-        if deviceIDs.isEmpty { return "Sélectionnez au moins un appareil. Rien n’est coché par défaut." }
+        if deviceIDs.isEmpty { return "Sélectionnez au moins un appareil." }
         if deviceIDs.count > 12 { return "Sélectionnez au maximum douze appareils." }
         if !includeApplications && !includeWebsites { return "Choisissez des applications ou des sites à envoyer." }
         if includeApplications && applicationIDs.isEmpty { return "Choisissez les applications à transmettre ou désactivez ce détail." }
@@ -70,6 +70,11 @@ struct GoalongWebsiteShareDraft: Equatable {
     @Published var draft = GoalongWebsiteShareDraft() {
         didSet {
             guard draft != oldValue else { return }
+            if !configuringPresentation {
+                if draft.deviceIDs != oldValue.deviceIDs || draft.applicationIDs != oldValue.applicationIDs
+                    || draft.includeApplications != oldValue.includeApplications { userChangedSelection = true }
+                if draft.websiteDomains != oldValue.websiteDomains { needsWebsiteSuggestion = false }
+            }
             invalidate()
             if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled { autoSender.stop(); status = "Synchronisation mise en pause pendant la modification. Relisez puis confirmez vos nouveaux choix." }
         }
@@ -83,6 +88,9 @@ struct GoalongWebsiteShareDraft: Equatable {
     @Published var status: String?
     private var generation = UUID()
     private var configuringPresentation = false
+    private var needsInitialSuggestion = true
+    private var userChangedSelection = false
+    private var needsWebsiteSuggestion = true
     let autoSender: GoalongWebsiteAutoSender
     private let root: URL
     private let catalogLoader: (URL, String, Bool) throws -> GoalongSiteSelectionCatalog
@@ -112,7 +120,13 @@ struct GoalongWebsiteShareDraft: Equatable {
             restored.hour = saved.hour ?? 9; restored.minute = saved.minute ?? 0
             restored.timezone = saved.timeZoneIdentifier ?? TimeZone.current.identifier
             draft = restored
+            needsInitialSuggestion = false; needsWebsiteSuggestion = false
+        } else if root.standardizedFileURL == AppPaths.applicationSupportDirectory.standardizedFileURL,
+                  let remembered = Self.rememberedSelection(in: root) {
+            draft = remembered; draft.delivery = .once; draft.date = Date()
+            needsInitialSuggestion = false; needsWebsiteSuggestion = false
         }
+        userChangedSelection = false
     }
     /// Opening a one-off send never edits or pauses the approved daily plan.
     func presentSingleDay(_ day: Date) {
@@ -120,6 +134,38 @@ struct GoalongWebsiteShareDraft: Equatable {
         defer { configuringPresentation = false }
         draft.delivery = .once
         draft.date = day
+    }
+    private struct Remembered: Codable { let account: String; let draft: GoalongWebsiteShareDraft }
+    private static var accountKey: String {
+        SHA256Digest.hashHex((UserDefaults.standard.string(forKey: "goalong.website.origin") ?? "") + "|" +
+            (UserDefaults.standard.string(forKey: "goalong.website.accountID") ?? ""))
+    }
+    private static func rememberedSelection(in root: URL) -> GoalongWebsiteShareDraft? {
+        let file = root.appendingPathComponent("website-selection.json")
+        guard let data = try? Data(contentsOf: file), data.count < 262144,
+              let value = try? JSONDecoder().decode(Remembered.self, from: data), value.account == accountKey else { return nil }
+        return value.draft
+    }
+    private func rememberSelection() {
+        guard root.standardizedFileURL == AppPaths.applicationSupportDirectory.standardizedFileURL else { return }
+        let file = root.appendingPathComponent("website-selection.json")
+        do {
+            try JSONEncoder().encode(Remembered(account: Self.accountKey, draft: draft)).write(to: file, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        } catch { /* Delivery succeeded; failure to remember must not duplicate a send. */ }
+    }
+    private func readableError(_ error: Error) -> String {
+        let message = String(describing: error)
+        if message.contains("Apple Screen Time is off") { return "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer." }
+        if message.contains("No saved Screen Time") { return "Aucune donnée Apple enregistrée pour cette journée. Choisissez une autre date ou actualisez l’historique." }
+        if message.contains("Computer History is off") { return "Activez l’historique de ce Mac pour inclure les sites, ou désactivez Sites web." }
+        if message.contains("Website details are unavailable") { return "Les sites ne sont pas disponibles pour cette date. Les applications restent utilisables sans les sites." }
+        return "Lecture locale indisponible : " + message
+    }
+    var selectionHint: String? {
+        if loading { return "Lecture de la journée…" }
+        if catalog == nil { return "Aucune journée disponible. Actualisez ou choisissez une autre date." }
+        return draft.validationMessage
     }
     func invalidate() { preview = nil; reviewed = false; error = nil; status = nil }
     func connectionChanged() { generation = UUID(); invalidate(); autoSender.stop() }
@@ -135,10 +181,40 @@ struct GoalongWebsiteShareDraft: Equatable {
             let value = try await Task.detached(priority: .userInitiated) { try loader(root, snapshot.day, snapshot.includeWebsites) }.value
             guard generation == ticket, draft.day == snapshot.day, draft.includeWebsites == snapshot.includeWebsites else { return }
             catalog = value
+            configuringPresentation = true
+            defer { configuringPresentation = false }
+            if needsInitialSuggestion && !userChangedSelection {
+                draft.deviceIDs = Set(value.devices.prefix(12).map(\.id))
+                draft.includeApplications = true
+                draft.applicationIDs = Set(value.devices.filter { draft.deviceIDs.contains($0.id) }.flatMap { $0.applications.map(\.id) })
+                // Keep the selected calendar date when its archive uses another zone.
+                let dateParser = DateFormatter()
+                dateParser.calendar = Calendar(identifier: .gregorian)
+                dateParser.locale = Locale(identifier: "en_US_POSIX")
+                dateParser.dateFormat = "yyyy-MM-dd"
+                dateParser.timeZone = TimeZone(identifier: value.timezone)
+                let sameCalendarDate = dateParser.date(from: snapshot.day)
+                draft.timezone = value.timezone
+                if let sameCalendarDate { draft.date = sameCalendarDate }
+                needsInitialSuggestion = false
+            }
+            if snapshot.includeWebsites && needsWebsiteSuggestion && draft.websiteDomains.isEmpty {
+                draft.websiteDomains = Set(value.websites.prefix(200).map(\.domain))
+                needsWebsiteSuggestion = false
+            }
         } catch {
             guard generation == ticket else { return }
-            catalog = nil
-            self.error = "Lecture locale indisponible : \(error)"
+            if snapshot.includeWebsites, let fallback = try? await Task.detached(priority: .userInitiated, operation: { try loader(root, snapshot.day, false) }).value {
+                guard generation == ticket else { return }
+                catalog = fallback
+                configuringPresentation = true
+                draft.includeWebsites = false
+                configuringPresentation = false
+                self.error = readableError(error)
+            } else {
+                catalog = nil
+                self.error = readableError(error)
+            }
         }
         if generation == ticket { loading = false }
     }
@@ -164,9 +240,12 @@ struct GoalongWebsiteShareDraft: Equatable {
         let pause = GoalongGlobalPause.load(in: root)
         do {
             try GoalongGlobalPause.revalidate(pause.revision, in: root)
-            _ = try GoalongSiteSubmission.endpoint(origin: target)
-            let token = try GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))
-            let fingerprint = SHA256Digest.hashHex(Data(token.utf8))
+            if !target.isEmpty { _ = try GoalongSiteSubmission.endpoint(origin: target) }
+            let fingerprint: String
+            if !target.isEmpty && !tokenPath.isEmpty,
+               let token = try? GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath)) {
+                fingerprint = SHA256Digest.hashHex(Data(token.utf8))
+            } else { fingerprint = "" }
             let bytes = try await Task.detached(priority: .userInitiated) { try exporter(root, snapshot.day, options) }.value
             try GoalongGlobalPause.revalidate(pause.revision, in: root)
             _ = try GoalongReadableShareData(payload: bytes)
@@ -180,8 +259,11 @@ struct GoalongWebsiteShareDraft: Equatable {
     }
     func confirm(origin: String, tokenPath: String) async {
         guard !busy, reviewed, let approved = preview else { return }
+        guard !approved.origin.isEmpty, !approved.tokenPath.isEmpty, !approved.credentialFingerprint.isEmpty else {
+            error = "Reliez votre compte Goalong, puis vérifiez à nouveau l’aperçu avant d’envoyer."; return
+        }
         guard approved.draft == draft, approved.origin == origin.trimmingCharacters(in: .whitespacesAndNewlines),
-              approved.tokenPath == tokenPath, Date().timeIntervalSince(approved.createdAt) <= 900,
+              approved.tokenPath == tokenPath, Date().timeIntervalSince(approved.createdAt) >= 0, Date().timeIntervalSince(approved.createdAt) <= 900,
               sourceConsent(approved.draft.options),
               GoalongPrivacyPolicy.load(in: root).revision == approved.privacyRevision else {
             invalidate(); error = "L’aperçu ou les autorisations ont changé. Préparez un nouvel aperçu avant l’envoi."; return
@@ -198,6 +280,7 @@ struct GoalongWebsiteShareDraft: Equatable {
                 try autoSender.enable(origin: approved.origin, tokenPath: approved.tokenPath, options: approved.draft.options,
                                       hour: draft.hour, minute: draft.minute, timeZoneIdentifier: draft.timezone)
                 preview = nil; reviewed = false
+                rememberSelection()
                 status = "Synchronisation activée. Seules les données autorisées de la veille seront envoyées, lorsque l’app est ouverte."
             } else {
                 let sender = sender, root = root
@@ -211,6 +294,7 @@ struct GoalongWebsiteShareDraft: Equatable {
                 }.value
                 let object = try JSONSerialization.jsonObject(with: receipt) as? [String: Any] ?? [:]
                 preview = nil; reviewed = false
+                rememberSelection()
                 status = "Reçu par Goalong : \(object["imported"] ?? 0) ajout, \(object["updated"] ?? 0) mise à jour, \(object["skipped"] ?? 0) inchangé. Aucun envoi quotidien n’a été activé."
             }
         } catch { self.error = "Envoi non confirmé : \(error)" }

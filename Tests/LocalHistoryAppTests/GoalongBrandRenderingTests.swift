@@ -24,6 +24,9 @@ final class GoalongBrandRenderingTests: XCTestCase {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         app.finishLaunching()
+        // Activate this test process's own accessibility tree. This does not grant
+        // macOS permissions or access any other application's UI.
+        app.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
         let config = ConfigManager()
         let permissions = PermissionManager()
         let health = CaptureHealthStore(permissions: permissions)
@@ -97,6 +100,22 @@ final class GoalongBrandRenderingTests: XCTestCase {
         model.settingsPane = .home
         window.contentViewController = controller
         window.setContentSize(NSSize(width: 1080, height: 680)); pump()
+        // Exercise actual native accessibility actions, not just the underlying callbacks.
+        for (identifier, destination) in [("settings-recording", SettingsPane.recording),
+                                         ("settings-website", .website), ("settings-chatGPT", .chatGPT)] {
+            model.selectSection(.settings); pump()
+            let control = try XCTUnwrap(accessibleElement(identifier, within: window), identifier)
+            let frame = control.accessibilityFrame()
+            XCTAssertGreaterThanOrEqual(frame.width, 400, "Primary card needs a large clickable area")
+            XCTAssertGreaterThanOrEqual(frame.height, 88)
+            XCTAssertTrue(control.accessibilityPerformPress(), "The real native card must respond")
+            pump()
+            XCTAssertEqual(model.settingsPane, destination, "Cards must navigate to distinct functional pages")
+            let back = try XCTUnwrap(accessibleElement("settings-back", within: window))
+            XCTAssertTrue(back.accessibilityPerformPress()); pump()
+            XCTAssertEqual(model.settingsPane, .home)
+        }
+        print("NATIVE_ACTIONS three primary cards and their back buttons passed")
         let consentBeforePause = GoalongCapabilityConsentStore.shared.document
         try GoalongGlobalPause.setPaused(true, recordingWasPaused: false)
         pump()
@@ -105,6 +124,33 @@ final class GoalongBrandRenderingTests: XCTestCase {
         try GoalongGlobalPause.setPaused(false)
         pump()
         XCTAssertEqual(GoalongCapabilityConsentStore.shared.document, consentBeforePause)
+        var granular = GoalongAnalysisSelection()
+        granular.computer = true
+        var fine = GoalongAnalysisScope()
+        fine.applicationIDs = ["com.apple.Safari", "com.apple.Notes"]
+        fine.detailApplicationIDs = ["com.apple.Safari"]
+        fine.applicationNames = ["com.apple.Safari": "Safari", "com.apple.Notes": "Notes"]
+        fine.windowTitles = true; fine.websiteDomains = true
+        granular.scope = fine
+        granular.replacements = [GoalongTextReplacement(search: "Hi Charlie", replacement: "Projet A")]
+        granular.outputGuidance = "Concentre-toi sur les progrès des projets. Ne cite pas les noms de personnes."
+        for tab in 0...2 {
+            let editor = NSHostingController(rootView: GoalongAnalysisSelectionSheet(model: model, selection: granular, initialTab: tab) { _ in
+                XCTFail("Rendering cannot authorize an analysis")
+            })
+            window.contentViewController = editor
+            window.setContentSize(NSSize(width: 940, height: 740)); pump()
+            try snapshot(editor.view, to: output.appendingPathComponent("analysis-editor-tab-\(tab).png"))
+        }
+        let syntheticPreview = """
+        {"applications_sur_ce_Mac":[{"application":"Projet A","secondes_actives":3600}],"details_autorises":[{"application":"Safari","titre":"Projet A — Documentation","site":"example.org"}]}
+        """
+        let filteredPreview = NSHostingController(rootView: ScrollView { GoalongAnalysisHumanPreview(text: syntheticPreview).padding(24) })
+        window.contentViewController = filteredPreview; window.setContentSize(NSSize(width: 900, height: 620)); pump()
+        try snapshot(filteredPreview.view, to: output.appendingPathComponent("analysis-filtered-preview.png"))
+        model.settingsPane = .home
+        window.contentViewController = controller
+        window.setContentSize(NSSize(width: 1080, height: 680)); pump()
         // Exercise the existing transaction layer without claiming physical button activation.
         let originalClicks = model.settingsDraft.captureClicks
         model.settingsDraft.captureClicks.toggle(); pump()
@@ -203,6 +249,46 @@ final class GoalongBrandRenderingTests: XCTestCase {
         let count = try FileManager.default.contentsOfDirectory(atPath: output.path).filter { $0.hasSuffix(".png") }.count
         try String("\(count) actual native-view renders, isolated home, empty stores and disabled sources.\nModel save/discard and section selection assertions passed.\nPhysical interaction results are reported separately; this render count is not a user-testing claim.\n").write(to: output.appendingPathComponent("runtime-results.txt"), atomically: true, encoding: .utf8)
 
+    }
+
+    /// SwiftUI's accessibility proxy objects implement the Objective-C selectors
+    /// without necessarily advertising conformance to NSAccessibilityProtocol.
+    private struct NativeAccessibilityNode {
+        let object: NSObject
+        func value(_ name: String) -> AnyObject? {
+            let selector = NSSelectorFromString(name)
+            guard object.responds(to: selector), let method = object.method(for: selector) else { return nil }
+            typealias Getter = @convention(c) (AnyObject, Selector) -> Unmanaged<AnyObject>?
+            return unsafeBitCast(method, to: Getter.self)(object, selector)?.takeUnretainedValue()
+        }
+        func accessibilityFrame() -> NSRect {
+            let selector = NSSelectorFromString("accessibilityFrame")
+            guard object.responds(to: selector), let method = object.method(for: selector) else { return .zero }
+            typealias Getter = @convention(c) (AnyObject, Selector) -> CGRect
+            return unsafeBitCast(method, to: Getter.self)(object, selector)
+        }
+        func accessibilityPerformPress() -> Bool {
+            let selector = NSSelectorFromString("accessibilityPerformPress")
+            guard object.responds(to: selector), let method = object.method(for: selector) else { return false }
+            typealias Press = @convention(c) (AnyObject, Selector) -> Bool
+            return unsafeBitCast(method, to: Press.self)(object, selector)
+        }
+    }
+    @MainActor private func accessibleElement(_ identifier: String, within root: Any) -> NativeAccessibilityNode? {
+        var pending: [Any] = [root], seen = Set<ObjectIdentifier>(), visited = 0
+        while let value = pending.popLast(), visited < 10_000 {
+            guard let object = value as? NSObject else { continue }
+            let identity = ObjectIdentifier(object)
+            guard seen.insert(identity).inserted else { continue }
+            visited += 1
+            let node = NativeAccessibilityNode(object: object)
+            if node.value("accessibilityIdentifier") as? String == identifier { return node }
+            pending.append(contentsOf: node.value("accessibilityChildren") as? [Any] ?? [])
+            if let view = object as? NSView { pending.append(contentsOf: view.subviews) }
+            if let window = object as? NSWindow, let view = window.contentView { pending.append(view) }
+        }
+        print("Native control not found: \(identifier); inspected \(visited) native nodes")
+        return nil
     }
 
     @MainActor private func pump() {

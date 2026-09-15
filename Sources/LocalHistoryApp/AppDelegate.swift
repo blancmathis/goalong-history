@@ -57,6 +57,7 @@
                     if connected && pendingWebsiteURL == nil {
                         UserDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
                         controller.show(section: .settings)
+                        self.dashboardViewModel.settingsPane = .website
                         NotificationCenter.default.post(name: .goalongWebsiteConnected, object: nil)
                     }
                 }

@@ -200,7 +200,7 @@
                     .appendingPathComponent("Sources/LocalHistoryApp/DashboardComponents.swift"),
                 encoding: .utf8
             )
-            XCTAssertTrue(components.contains("Label(\"Back to Settings\", systemImage: \"chevron.left\")"))
+            XCTAssertTrue(components.contains("Label(\"Retour aux réglages\", systemImage: \"chevron.left\")"))
             XCTAssertTrue(source.contains("DisclosureGroup(\"Preview agent instructions\""))
             XCTAssertTrue(source.contains("copyQuickCommand(item)"))
             XCTAssertTrue(source.contains("NSAccessibility.post("))

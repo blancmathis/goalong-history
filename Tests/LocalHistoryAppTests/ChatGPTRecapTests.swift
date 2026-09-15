@@ -1990,7 +1990,7 @@
                 },
                 analysisConsentProvider: { true },
                 analysisSelectionProvider: {
-                    var value = GoalongAnalysisSelection(); value.revision = "test-approved"; value.reviewed = true; value.computer = true
+                    var value = GoalongAnalysisSelection(); value.version = 1; value.revision = "test-approved"; value.reviewed = true; value.computer = true
                     value.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
                     return value
                 }
@@ -2042,7 +2042,7 @@
                 },
                 analysisConsentProvider: { true },
                 analysisSelectionProvider: {
-                    var value = GoalongAnalysisSelection(); value.revision = "test-approved"; value.reviewed = true; value.computer = true
+                    var value = GoalongAnalysisSelection(); value.version = 1; value.revision = "test-approved"; value.reviewed = true; value.computer = true
                     value.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
                     return value
                 }

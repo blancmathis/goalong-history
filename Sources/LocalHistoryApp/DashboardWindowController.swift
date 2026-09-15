@@ -55,7 +55,7 @@
             if isVisible {
                 self.viewModel.dashboardDidBecomeVisible()
             } else {
-                self.viewModel.dashboardDidBecomeHidden()
+                self.viewModel.dashboardDidBecomeHidden(discardContents: false)
             }
         }
 
@@ -105,7 +105,7 @@
             window.titlebarAppearsTransparent = true
             window.backgroundColor = NSColor(LHTheme.pageBackground)
             window.isMovableByWindowBackground = false
-            window.minSize = NSSize(width: 1080, height: 680)
+            window.minSize = NSSize(width: 900, height: 620)
             window.setContentSize(NSSize(width: 1240, height: 790))
             window.isReleasedWhenClosed = false
             window.level = .normal
@@ -191,6 +191,7 @@
 
         func windowWillClose(_ notification: Notification) {
             visibilityCoordinator.update(.hidden)
+            viewModel.dashboardDidBecomeHidden()
             let closingWindow = notification.object as? NSWindow
             closingWindow?.contentViewController = nil
             DispatchQueue.main.async { [weak self, weak closingWindow] in
@@ -219,6 +220,9 @@
             guard isWindowLoaded, let window else {
                 visibilityCoordinator.update(.hidden)
                 return
+            }
+            if !window.isVisible || window.isMiniaturized || NSApplication.shared.isHidden {
+                viewModel.dashboardDidBecomeHidden()
             }
             visibilityCoordinator.update(
                 DashboardVisibilityState(

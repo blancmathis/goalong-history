@@ -71,7 +71,7 @@ import LocalHistoryQueryCLI
             Divider()
             footer
         }
-        .frame(minWidth: 640, idealWidth: 720, maxWidth: 820, minHeight: 560, idealHeight: 710, maxHeight: 780)
+        .frame(minWidth: 680, idealWidth: 840, maxWidth: 980, minHeight: 560, idealHeight: 760, maxHeight: 900)
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .environment(\.locale, Locale(identifier: "fr_FR"))
         .environment(\.timeZone, sharingCalendar.timeZone)
@@ -80,6 +80,7 @@ import LocalHistoryQueryCLI
         .task { if model.catalog == nil { await model.loadCatalog() } }
         .onChange(of: model.draft.date) { _ in Task { await model.loadCatalog() } }
         .onChange(of: model.draft.includeWebsites) { _ in Task { await model.loadCatalog() } }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)) { _ in model.connectionChanged() }
         .onChange(of: origin) { _ in model.connectionChanged() }
         .onChange(of: tokenPath) { _ in model.connectionChanged() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongExclusionsDidChange)) { _ in model.connectionChanged(); Task { await model.loadCatalog() } }
@@ -163,7 +164,7 @@ import LocalHistoryQueryCLI
                 DisclosureGroup("Nom des appareils") {
                     Toggle("Inclure leurs noms personnels", isOn: $model.draft.includeDeviceNames).toggleStyle(.checkbox).padding(.top, 10)
                 }.font(.system(size: 13))
-                Text("Les totaux complets et les horaires sont exclus : ils pourraient contenir des activités non sélectionnées.")
+                Text("Les textes ne sont pas inclus. Les adresses locales ou non valides sont ignorées.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             } else {
                 Text("Aucune donnée disponible pour cette journée.").font(.system(size: 13)).foregroundStyle(.secondary)
@@ -252,13 +253,15 @@ import LocalHistoryQueryCLI
     private var footer: some View {
         HStack {
             if model.busy { ProgressView().controlSize(.small) }
-            Text(model.preview == nil ? "Aucun envoi à cette étape." : "La confirmation autorise l’envoi.")
+            Text(model.preview == nil ? (model.selectionHint ?? "Aperçu local · rien n’est envoyé.") : "La confirmation autorise l’envoi.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             Spacer()
             if model.preview == nil {
                 Button("Voir l’aperçu") { Task { await model.prepare(origin: origin, tokenPath: tokenPath) } }
                     .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("sharing-preview")
-                    .disabled(model.busy || model.loading || model.catalog == nil || model.draft.validationMessage != nil || !connected)
+                    .disabled(model.busy || model.loading || model.catalog == nil || model.draft.validationMessage != nil )
+            } else if !connected || model.preview?.credentialFingerprint.isEmpty == true {
+                Button("Relier mon compte") { openSite(fragment: "settings") }.buttonStyle(LHPrimaryButtonStyle())
             } else {
                 Button(model.draft.delivery == .daily ? "Activer l’envoi quotidien" : "Envoyer cette journée") {
                     if model.draft.delivery == .once { model.reviewed = true }

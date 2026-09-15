@@ -34,7 +34,7 @@
                     .font(LHTheme.pageTitleFont)
                     .tracking(-0.5)
                     .accessibilityAddTraits(.isHeader)
-                Text(day.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                Text(day.formatted(.dateTime.weekday(.wide).month(.wide).day().locale(Locale(identifier: "fr_FR"))))
                     .font(.system(size: 13))
                     .foregroundStyle(LHTheme.secondaryText)
             }

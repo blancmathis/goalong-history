@@ -108,7 +108,7 @@
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Choisir les données") { model.selectSection(.settings); model.settingsPane = .connections }
+                    Button("Choisir les données") { model.selectSection(.settings); model.settingsPane = .chatGPT }
                         .buttonStyle(.bordered)
                 }
             }
@@ -531,9 +531,9 @@
 
         private var automaticCard: some View {
             HStack {
-                Text("Fréquence et données : Réglages → Connexions").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Fréquence et données : Réglages → Analyse ChatGPT").font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer()
-                Button("Configurer") { model.selectSection(.settings); model.settingsPane = .connections }.buttonStyle(.borderless)
+                Button("Configurer") { model.selectSection(.settings); model.settingsPane = .chatGPT }.buttonStyle(.borderless)
             }
         }
 

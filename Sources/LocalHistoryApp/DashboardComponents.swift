@@ -68,12 +68,13 @@
         var body: some View {
             HStack {
                 Button(action: onBack) {
-                    Label("Back to Settings", systemImage: "chevron.left")
+                    Label("Retour aux réglages", systemImage: "chevron.left")
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.regular)
                 .keyboardShortcut("[", modifiers: .command)
-                .accessibilityHint("Return to the Settings overview")
+                .accessibilityHint("Revenir à la liste des réglages")
+                .accessibilityIdentifier("settings-back")
                 Spacer()
             }
             .font(.system(size: 12, weight: .medium))

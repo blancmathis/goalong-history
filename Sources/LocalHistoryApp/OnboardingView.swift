@@ -9,6 +9,8 @@
         @AppStorage("goalongOnboardingStep") var step: SetupStep = .privacy
         @State var launchAtLoginPreference = false
         @State var note: String?
+        @State var visibleTextDraft = false
+        @State private var loadedProposal = false
         @State var showingRetention = false
         @AppStorage("goalongOnboardingPrivacyReviewedV1") var privacyReviewed = false
         @State var checkingSources: Set<GoalongCapability> = []
@@ -40,6 +42,14 @@
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 if step == .welcome || !privacyReviewed { step = .privacy }
+                if !loadedProposal {
+                    let firstReview = !privacyReviewed && !consents.isEnabled(.localComputerHistory)
+                    if firstReview && !UserDefaults.standard.bool(forKey: GoalongRecordingSetup.preparedKey) {
+                        model.settingsDraft = GoalongRecordingSetup.proposed(from: model.settingsDraft)
+                        visibleTextDraft = true
+                    } else { visibleTextDraft = ActivityAnalysisPreferences.richContextEnabled }
+                    loadedProposal = true
+                }
                 launchAtLogin.refresh()
                 launchAtLoginPreference = consents.isEnabled(.launchAtLogin)
             }
@@ -90,17 +100,20 @@
                         .buttonStyle(.bordered)
                 }
                 Spacer()
-                if !checkingSources.isEmpty { ProgressView("Checking access…").controlSize(.small) }
+                if !checkingSources.isEmpty { ProgressView("Vérification des accès…").controlSize(.small) }
                 Button(step.actionTitle) {
                     note = nil
                     if step == .ready { finishSetup() }
                     else {
                         if step == .privacy {
                             guard model.saveOnboardingRecordingChoices() else {
-                                note = model.alert?.message ?? "Your choices could not be saved. Try again."
+                                note = model.alert?.message ?? "Les choix n’ont pas pu être enregistrés. Réessayez."
                                 model.alert = nil
                                 return
                             }
+                            UserDefaults.standard.set(visibleTextDraft, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
+                            ActivityAnalysisRuntime.shared.richContextPreferenceDidChange()
+                            UserDefaults.standard.set(true, forKey: GoalongRecordingSetup.preparedKey)
                             privacyReviewed = true
                         }
                         step = step.next ?? .ready
@@ -108,6 +121,7 @@
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("onboarding-continue")
                 .disabled(!checkingSources.isEmpty)
             }
             .controlSize(.large)
@@ -118,15 +132,15 @@
             // Source activation already saved the user's choices. Do not reset their
             // recording, privacy or analysis preferences when setup is revisited.
             guard consents.set(.launchAtLogin, enabled: launchAtLoginPreference, surface: .onboarding) else {
-                note = "Your startup preference could not be saved. Please try again."
+                note = "Le choix de démarrage n’a pas pu être enregistré. Réessayez."
                 return
             }
             guard launchAtLogin.setEnabled(launchAtLoginPreference) else {
-                note = launchAtLogin.message ?? "macOS could not save the startup preference. Try again or turn it off."
+                note = launchAtLogin.message ?? "macOS n’a pas enregistré ce choix. Réessayez ou désactivez le démarrage automatique."
                 return
             }
             if launchAtLoginPreference && launchAtLogin.requiresApproval {
-                note = "macOS needs approval for automatic startup. You can open Login Items below, or turn off automatic startup and continue."
+                note = "Autorisez le démarrage dans les réglages macOS, ou désactivez cette option pour continuer."
                 return
             }
             UserDefaults.standard.set(launchAtLoginPreference, forKey: "launchAtLoginPreference")
@@ -147,7 +161,7 @@
         var actionTitle: String {
             switch self {
             case .welcome: return "Commencer"
-            case .privacy: return "Continuer"
+            case .privacy: return "Valider mes choix"
             case .sources: return "Continuer"
             case .ready: return "Ouvrir Goalong"
             }

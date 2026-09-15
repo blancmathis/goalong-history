@@ -541,7 +541,7 @@
 
         @ViewBuilder private var recapAction: some View {
             if !consents.isEnabled(.chatGPTAnalysis) || !GoalongAnalysisSelection.load().isValid(for: GoalongExclusionStore.shared.policy) {
-                Button("Configurer ChatGPT") { model.selectSection(.settings); model.settingsPane = .connections }
+                Button("Configurer ChatGPT") { model.selectSection(.settings); model.settingsPane = .chatGPT }
                     .buttonStyle(.bordered)
             } else if recapRuntime.isGenerating {
                 ProgressView()
@@ -556,7 +556,7 @@
                     .controlSize(.small)
             } else {
                 Button("Connecter ChatGPT") {
-                    model.selectSection(.settings); model.settingsPane = .connections
+                    model.selectSection(.settings); model.settingsPane = .chatGPT
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
             }

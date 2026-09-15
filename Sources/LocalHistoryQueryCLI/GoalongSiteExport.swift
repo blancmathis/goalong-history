@@ -160,7 +160,8 @@ public enum GoalongSiteExport {
         if options.includeWebsites, masks.isEmpty, let websites {
             let allowedDomains = options.selectedWebsiteDomains.map { Set($0.map { $0.lowercased() }) }
             let websites = websites.filter {
-                guard allowedDomains?.contains($0.host.lowercased()) ?? true,
+                guard let normalizedHost = GoalongPublicDomain.normalized($0.host),
+                      allowedDomains?.contains(normalizedHost) ?? true,
                       !privacy.excludes(domain: $0.host) else { return false }
                 guard !privacy.applications.isEmpty else { return true }
                 // A mixed or unidentifiable browser origin cannot reintroduce an excluded app.
@@ -171,12 +172,9 @@ public enum GoalongSiteExport {
                 return !$0.sourceUsage.contains { privacy.excludes(appID: $0.bundleIdentifier, name: $0.applicationName) }
             }
             guard websites.count <= 200 else { throw GoalongSiteExportError.invalid("This day exceeds 200 domains; export without website details.") }
-            let rows: [[String: Any]] = try websites.map { website in
-                guard website.host.range(of: #"^[a-z0-9](?:[a-z0-9.-]{0,249}[a-z0-9])?\.[a-z]{2,63}$"#,
-                    options: [.regularExpression, .caseInsensitive]) != nil else {
-                    throw GoalongSiteExportError.invalid("A website is not a public domain-only value.")
-                }
-                return ["domain": website.host, "browser": "Navigateurs sur ce Mac",
+            let rows: [[String: Any]] = try websites.compactMap { website in
+                guard let publicHost = GoalongPublicDomain.normalized(website.host) else { return nil }
+                return ["domain": publicHost, "browser": "Navigateurs sur ce Mac",
                         "seconds": try seconds(website.foregroundSeconds)]
             }
             // Reading every retained event does not establish full-day recording coverage.

@@ -376,8 +376,11 @@
             updateRefreshSchedule()
         }
 
-        func dashboardDidBecomeHidden() {
-            guard dashboardIsVisible else { return }
+        func dashboardDidBecomeHidden(discardContents: Bool = true) {
+            guard dashboardIsVisible else {
+                if discardContents { discardVisibleSnapshot() }
+                return
+            }
             dashboardIsVisible = false
             refreshScheduler.deactivate()
             dataRequestSequence &+= 1
@@ -389,15 +392,19 @@
             discardShareCache()
             dataRefreshPending = false
             isRefreshing = false
-            snapshot = .empty(day: selectedDay)
-            snapshotGeneration &+= 1
-            shareSegments = []
-            selectedShareSegmentID = nil
+            if discardContents { discardVisibleSnapshot() }
             agentActivityRuntime.dashboardDidBecomeHidden()
             let reader = dataReader
             dataQueue.async {
                 reader.discardTransientCaches()
             }
+        }
+
+        private func discardVisibleSnapshot() {
+            snapshot = .empty(day: selectedDay)
+            snapshotGeneration &+= 1
+            shareSegments = []
+            selectedShareSegmentID = nil
         }
 
         func togglePause() {

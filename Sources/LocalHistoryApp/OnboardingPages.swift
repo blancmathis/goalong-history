@@ -39,13 +39,19 @@
         var privacyPage: some View {
             VStack(alignment: .leading, spacing: 22) {
                 Text("Votre activité, sur votre Mac").font(.system(size: 27, weight: .semibold))
-                Text("Enregistrer n’autorise aucun envoi.").font(.system(size: 14)).foregroundStyle(.secondary)
-                LHCard { RecordingChoicesView(draft: $model.settingsDraft) }
+                Text("Tout est proposé. Désactivez ce que vous ne souhaitez pas conserver.").font(.system(size: 14)).foregroundStyle(.secondary)
+                LHCard {
+                    VStack(spacing: 16) {
+                        RecordingChoicesView(draft: $model.settingsDraft)
+                        Divider()
+                        GoalongVisibleTextChoice(enabled: $visibleTextDraft)
+                    }
+                }
+                Text("Vos choix restent sur ce Mac. Aucun envoi n’est autorisé ici.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
                 DisclosureGroup("Choisir des exclusions avant de commencer") {
                     GoalongOnboardingExclusions(model: model).padding(.top, 12)
                 }.font(.system(size: 13))
-                DisclosureGroup("Texte affiché · facultatif") { VisibleContextControl().padding(.top, 12) }
-                    .font(.system(size: 13))
                 if let note { Text(note).font(.system(size: 13)).foregroundStyle(LHTheme.warning) }
             }
         }
@@ -118,7 +124,7 @@
                 }
                 Text("Le nouvel historique apparaîtra avec votre activité.").font(.system(size: 13)).foregroundStyle(.secondary)
                 Toggle("Ouvrir Goalong à la connexion", isOn: $launchAtLoginPreference).toggleStyle(.switch)
-                Text("Goalong et ChatGPT se connectent séparément dans Réglages → Connexions.")
+                Text("Les envois à Goalong et les analyses ChatGPT se règlent séparément.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                 if let note { Text(note).font(.system(size: 13)).foregroundStyle(LHTheme.warning) }
                 if launchAtLoginPreference && launchAtLogin.requiresApproval {

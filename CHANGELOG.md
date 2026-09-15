@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.27 — contrôles détaillés et parcours vérifiés
+
+- Trois grandes entrées distinctes : enregistrement, envoi à Goalong et analyse ChatGPT.
+- Onboarding : tous les détails proposés, texte visible inclus, puis validation explicite ; choix existants conservés.
+- Sélection ChatGPT par application et type de données, appareils et dossiers ; remplacements locaux et consignes de rédaction.
+- Aperçu local après filtrage, remplacements avant troncature et protection des champs exclus.
+- Présélection du partage sans envoi, gestion des domaines locaux et aperçu utilisable sans connexion.
+- Correction de l’affichage vide lors d’un changement de fenêtre ; la lecture en arrière-plan reste suspendue.
+- Retour au bon écran après connexion, état de configuration exact, fenêtres réduites et grands aperçus progressifs.
+- Tests des combinaisons de champs, de la persistance, des contrôles natifs et du transport local.
+
+
 ## 0.6.26 — réglages et confidentialité simplifiés
 
 - Pause globale persistante pour les sources, analyses et envois ; protection des requêtes en attente à la reprise.

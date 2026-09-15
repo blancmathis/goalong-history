@@ -1,6 +1,7 @@
 #if os(macOS)
 import XCTest
 import Foundation
+import Darwin
 import AgentActivity
 @testable import LocalHistoryApp
 @testable import LocalHistoryCore
@@ -21,11 +22,16 @@ final class GoalongSimpleJourneyTests: XCTestCase {
         XCTAssertThrowsError(try GoalongReadableShareData(payload: Data("{}".utf8)))
     }
     func testLocalSourcesAreNotChatGPTConsentAndExclusionChangesInvalidateScope() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-analysis-choice-\(UUID())")
+        // Foundation intentionally abbreviates /private/var; use the physical test
+        // path because the secure writer correctly refuses symlinked ancestors.
+        let physical = try XCTUnwrap(realpath(FileManager.default.temporaryDirectory.path, nil))
+        defer { free(physical) }
+        let root = URL(fileURLWithPath: String(cString: physical), isDirectory: true)
+            .appendingPathComponent("goalong-analysis-choice-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
         var policy = GoalongPrivacyPolicy.load(in: root)
         XCTAssertFalse(GoalongAnalysisSelection.load(root: root).isValid(for: policy))
-        var scope = GoalongAnalysisSelection(); scope.reviewed = true; scope.computer = true; scope.privacyRevision = policy.revision
+        var scope = GoalongAnalysisSelection(); scope.version = 1; scope.reviewed = true; scope.computer = true; scope.privacyRevision = policy.revision
         try scope.save(root: root)
         XCTAssertTrue(GoalongAnalysisSelection.load(root: root).isValid(for: policy))
         policy.revision = "changed"

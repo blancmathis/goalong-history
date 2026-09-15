@@ -36,6 +36,27 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         return (model, token, defaults, suite)
     }
 
+    @MainActor func testLocalPreviewDoesNotRequireAConnectionAndCannotSend() async throws {
+        let (model, token, _, _) = try fixture(onSend: { _ in XCTFail("No connection must never send") })
+        defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
+        await model.loadCatalog(); model.draft.applicationIDs = ["editor"]
+        await model.prepare(origin: "", tokenPath: "")
+        XCTAssertNotNil(model.preview)
+        XCTAssertEqual(model.preview?.credentialFingerprint, "")
+        model.reviewed = true
+        await model.confirm(origin: "", tokenPath: "")
+        XCTAssertTrue(model.error?.contains("Reliez") == true)
+    }
+    @MainActor func testExplicitExclusionsSurviveReloadingTheSuggestedSelection() async throws {
+        let (model, token, _, _) = try fixture()
+        defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
+        await model.loadCatalog()
+        XCTAssertEqual(model.draft.applicationIDs, ["editor", "private"])
+        model.draft.applicationIDs = ["editor"]
+        await model.loadCatalog()
+        XCTAssertEqual(model.draft.applicationIDs, ["editor"])
+    }
+
     @MainActor func testPauseAndResumeCannotSendAnOldPreview() async throws {
         let (model, token, _, _) = try fixture(onSend: { _ in XCTFail("Old preview must not be sent") })
         defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
@@ -59,15 +80,17 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         XCTAssertEqual(draft.day, "2026-09-14")
     }
 
-    @MainActor func testCatalogDoesNotSelectAnythingAndOnlyConfirmedBytesAreSent() async throws {
+    @MainActor func testCatalogProposesAllAvailableDataButOnlyConfirmedBytesAreSent() async throws {
         var received: Data?
         let (model, token, _, _) = try fixture(onSend: { received = $0 })
         defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
         await model.loadCatalog()
         XCTAssertEqual(model.catalog?.devices.count, 1)
-        XCTAssertTrue(model.draft.deviceIDs.isEmpty)
-        await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
-        XCTAssertNil(model.preview)
+        XCTAssertEqual(model.draft.deviceIDs, ["mac"])
+        XCTAssertEqual(model.draft.applicationIDs, ["editor", "private"])
+        XCTAssertTrue(model.draft.includeApplications)
+        XCTAssertNil(received)
+        XCTAssertFalse(model.reviewed)
         model.draft.deviceIDs = ["mac"]; model.draft.includeApplications = true; model.draft.applicationIDs = ["editor"]
         await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
         let bytes = try XCTUnwrap(model.preview?.payload)
