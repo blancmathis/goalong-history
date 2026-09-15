@@ -5,6 +5,15 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      signed_stage:
+        description: Optional release staging tag for an already certificate-signed local build
+        type: string
+        required: false
+      signed_sha256:
+        description: SHA-256 of the explicitly supplied signed ZIP
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -44,25 +53,54 @@ jobs:
             fi
           done
 
+      - name: Prepare stable code-signing identity
+        if: inputs.signed_stage == ''
+        env:
+          MACOS_SIGNING_CERTIFICATE_P12: ${{ secrets.MACOS_SIGNING_CERTIFICATE_P12 }}
+          MACOS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: bash scripts/import_release_signing_identity.sh
+
+      - name: Validate explicitly supplied local signature
+        if: inputs.signed_stage != ''
+        env:
+          SIGNED_STAGE: ${{ inputs.signed_stage }}
+          SIGNED_SHA256: ${{ inputs.signed_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/prepare_presigned_release.py "$SIGNED_STAGE" "$SIGNED_SHA256"
+
+      - name: Test source for supplied build
+        if: inputs.signed_stage != ''
+        run: |
+          xcrun swift test
+          bash scripts/audit_privacy_boundaries.sh
+          bash scripts/test_release_signing_policy.sh
+
       - name: Resolve rolling version
         id: version
         shell: bash
         run: |
           set -euo pipefail
-          ./scripts/resolve_rolling_version.sh "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          if [[ -f "dist/Goalong History.app/Contents/Info.plist" ]]; then
+            INFO="dist/Goalong History.app/Contents/Info.plist"
+            echo "value=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO")" >> "$GITHUB_OUTPUT"
+            echo "build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")" >> "$GITHUB_OUTPUT"
+          else
+            ./scripts/resolve_rolling_version.sh "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build universal Community app
+        if: inputs.signed_stage == ''
         env:
           LOCALHISTORY_VERSION: ${{ steps.version.outputs.value }}
           LOCALHISTORY_BUILD_NUMBER: ${{ steps.version.outputs.build }}
           LOCALHISTORY_DISPLAY_NAME: Goalong History
           LOCALHISTORY_ARCHS: arm64 x86_64
           LOCALHISTORY_RUN_TESTS: 1
-          LOCALHISTORY_CODESIGN_IDENTITY: '-'
+          LOCALHISTORY_CODESIGN_IDENTITY: ${{ env.LOCALHISTORY_CODESIGN_IDENTITY }}
           LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY || vars.SPARKLE_PUBLIC_ED_KEY }}
         run: ./scripts/build_app.sh
 
-      - name: Verify architecture, ad-hoc signature, identity, and privacy policy
+      - name: Verify architecture, stable signature, identity, and privacy policy
         env:
           LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
           EXPECTED_VERSION: ${{ steps.version.outputs.value }}
@@ -76,16 +114,7 @@ jobs:
           lipo -info "$APP/Contents/MacOS/Goalong History"
           lipo "$APP/Contents/MacOS/Goalong History" -verify_arch arm64 x86_64
           codesign --verify --strict --verbose=4 "$APP"
-          SIGNING_DETAILS="$(codesign -dv --verbose=4 "$APP" 2>&1)"
-          grep -Fxq 'Signature=adhoc' <<<"$SIGNING_DETAILS"
-          if grep -q '^Authority=' <<<"$SIGNING_DETAILS"; then
-            echo "Community releases must not depend on a certificate-backed Apple identity." >&2
-            exit 1
-          fi
-          if spctl --assess --type execute "$APP" >/dev/null 2>&1; then
-            echo "Community releases must not be presented as Apple-notarized builds." >&2
-            exit 1
-          fi
+          bash scripts/verify_release_identity.sh "$APP"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO")" = "$BUNDLE_ID"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")" = "$PRODUCT"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO")" = "$PRODUCT"
@@ -102,7 +131,7 @@ jobs:
         run: |
           set -euo pipefail
           brew install create-dmg
-          LOCALHISTORY_CODESIGN_IDENTITY=- ./scripts/package_release.sh
+          env -u LOCALHISTORY_CODESIGN_IDENTITY ./scripts/package_release.sh
 
       - name: Generate authenticated Community appcast
         env:
@@ -160,7 +189,7 @@ jobs:
           gh release create "$IMMUTABLE_TAG" \
             --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "Goalong History ${{ steps.version.outputs.value }} — build ${{ steps.version.outputs.build }}" \
-            --notes "Authenticated Community update archive for $GITHUB_SHA. Not Apple-notarized; macOS permissions may need renewal." \
+            --notes "Authenticated Community update archive for $GITHUB_SHA. Stable certificate-backed identity; not Apple-notarized." \
             dist/Goalong-History-macOS-universal.zip \
             dist/Goalong-History-macOS-universal.zip.sha256 \
             dist/security-capabilities.json dist/sbom.spdx.json dist/release-manifest.json
@@ -191,13 +220,13 @@ jobs:
           body: |
             Goalong History `${{ steps.version.outputs.value }}` (build `${{ steps.version.outputs.build }}`), built from `${{ github.sha }}` on `main`.
 
-            This is the single free Community Build. It is ad-hoc code signed for bundle-integrity checks, but it is not Apple-notarized and does not require a paid Apple Developer membership. On first launch, macOS may require **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper globally.
+            This is the single free Community Build. It is signed with a pinned, stable Apple Development identity. It is not Developer ID notarized. On first launch, macOS may require **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper globally.
 
             Verify the downloaded SHA-256 file and `release-manifest.json`. GitHub also publishes a Sigstore-backed build-provenance attestation; with GitHub CLI, run `gh attestation verify <downloaded-file> --repo blancmathis/goalong-history`.
 
             Updates are offered in the app through an Ed25519-authenticated Sparkle feed and archive. Click **Update available** or **Check for Updates…**, then approve installation. The first replacement of an older build without an updater must be installed once manually. Automatic installation is disabled.
 
-            Because a free ad-hoc signature has no stable Apple-issued identity, macOS may ask for Goalong permissions again after replacement. Existing history and settings remain in place. No activity contents or system profile are sent by the updater.
+            Subsequent builds keep the same signing identity so updates do not intentionally invalidate permissions. Migration from old ad-hoc builds may require one final macOS approval. Existing history and settings remain in place. No activity contents or system profile are sent by the updater.
           draft: false
           prerelease: true
           make_latest: false
@@ -221,3 +250,10 @@ jobs:
           git tag --force "$ROLLING_TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$ROLLING_TAG" --force
           echo "Published signed update ${{ steps.version.outputs.value }} (${{ steps.version.outputs.build }}) from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary signing keychain
+        if: always()
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/goalong-release-signing.keychain-db"
+          if [[ -f "$KEYCHAIN" ]]; then security delete-keychain "$KEYCHAIN"; fi
+          rm -f "$RUNNER_TEMP/goalong-release-signing.p12"

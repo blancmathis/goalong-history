@@ -60,7 +60,7 @@ bundle_signature_kind() {
 bundle_designated_requirement() {
   local requirement
   requirement="$(/usr/bin/codesign -d -r- "$1" 2>&1)" || return 1
-  /usr/bin/sed -n 's/^designated => //p' <<<"$requirement"
+  /usr/bin/sed -nE 's/^(# )?designated => //p' <<<"$requirement"
 }
 
 privacy_identity_replacement_allowed() {
@@ -74,6 +74,9 @@ privacy_identity_replacement_allowed() {
     return 0
   fi
   if [[ "$source_kind" == 'adHoc' ]]; then
+    return 1
+  fi
+  if [[ "$installed_kind" == 'adHoc' && "$source_kind" == 'development' ]]; then
     PRIVACY_REAUTH_REQUIRED=1
     return 0
   fi
@@ -101,7 +104,7 @@ verify_replacement_preserves_privacy_identity() {
          && ( "$installed_kind" == 'adHoc' || "$installed_kind" == 'development' ) ]]; then
       warn "Migrating to a stable Developer ID identity; macOS may require one final approval."
     elif [[ "$PRIVACY_REAUTH_REQUIRED" -eq 1 ]]; then
-      warn "This free Community update has a new ad-hoc identity; macOS may ask for Goalong permissions again."
+      warn "Migrating from an old ad-hoc build to the pinned stable identity; macOS may require one final approval."
     fi
     return 0
   fi
@@ -548,9 +551,9 @@ if ! validate_release_bundle "$SOURCE_APP"; then
 fi
 
 SOURCE_SIGNATURE_KIND="$(bundle_signature_kind "$SOURCE_APP" 2>/dev/null || true)"
-if [[ "$SOURCE_SIGNATURE_KIND" != 'adHoc' ]]; then
+if ! bash "$ROOT_DIR/scripts/verify_release_identity.sh" "$SOURCE_APP"; then
   echo "failed"
-  fail "The public artifact is not the expected free ad-hoc Community Build."
+  fail "The public artifact does not have Goalong’s pinned stable signing identity."
   exit 1
 fi
 if /usr/sbin/spctl --assess --type execute --verbose=2 "$SOURCE_APP" >/dev/null 2>&1; then

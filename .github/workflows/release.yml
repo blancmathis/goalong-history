@@ -33,6 +33,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Prepare stable code-signing identity
+        env:
+          MACOS_SIGNING_CERTIFICATE_P12: ${{ secrets.MACOS_SIGNING_CERTIFICATE_P12 }}
+          MACOS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: bash scripts/import_release_signing_identity.sh
+
       - name: Resolve version
         id: version
         shell: bash
@@ -58,7 +64,7 @@ jobs:
           LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
           LOCALHISTORY_ARCHS: arm64 x86_64
           LOCALHISTORY_RUN_TESTS: 1
-          LOCALHISTORY_CODESIGN_IDENTITY: '-'
+          LOCALHISTORY_CODESIGN_IDENTITY: ${{ env.LOCALHISTORY_CODESIGN_IDENTITY }}
         run: ./scripts/build_app.sh
 
       - name: Verify Community bundle
@@ -70,23 +76,14 @@ jobs:
           lipo -info "$APP/Contents/MacOS/Goalong History"
           lipo "$APP/Contents/MacOS/Goalong History" -verify_arch arm64 x86_64
           codesign --verify --strict --verbose=4 "$APP"
-          SIGNING_DETAILS="$(codesign -dv --verbose=4 "$APP" 2>&1)"
-          grep -Fxq 'Signature=adhoc' <<<"$SIGNING_DETAILS"
-          if grep -q '^Authority=' <<<"$SIGNING_DETAILS"; then
-            echo "Community releases must not depend on a certificate-backed Apple identity." >&2
-            exit 1
-          fi
-          if spctl --assess --type execute "$APP" >/dev/null 2>&1; then
-            echo "Community releases must not be presented as Apple-notarized builds." >&2
-            exit 1
-          fi
+          bash scripts/verify_release_identity.sh "$APP"
           ./scripts/verify_local_bundle.sh
 
       - name: Create Community DMG and ZIP
         run: |
           set -euo pipefail
           brew install create-dmg
-          LOCALHISTORY_CODESIGN_IDENTITY=- ./scripts/package_release.sh
+          env -u LOCALHISTORY_CODESIGN_IDENTITY ./scripts/package_release.sh
 
       - name: Generate auditable release inventory
         run: |
@@ -120,13 +117,13 @@ jobs:
           body: |
             Free Community Build of Goalong History `${{ steps.version.outputs.value }}`, built from `${{ github.sha }}`.
 
-            This build is ad-hoc code signed for bundle-integrity checks but is not Apple-notarized. On first launch, macOS may require **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper globally.
+            This build keeps a pinned, stable Apple Development code-signing identity but is not Apple-notarized. On first launch, macOS may require **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper globally.
 
             Verify the SHA-256 file and `release-manifest.json`. GitHub also publishes a Sigstore-backed provenance attestation: `gh attestation verify <downloaded-file> --repo blancmathis/goalong-history`.
 
             This installer uses the same signed Community main update channel. Installation is user-approved; automatic checks can be disabled in Settings.
 
-            A free ad-hoc update can make macOS ask for Goalong permissions again. Existing history and settings are preserved.
+            Updates preserve the pinned signing identity. Migration from legacy ad-hoc builds may require a final macOS approval. Existing history and settings are preserved.
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(steps.version.outputs.value, '-') }}
@@ -138,3 +135,10 @@ jobs:
             dist/security-capabilities.json
             dist/sbom.spdx.json
             dist/release-manifest.json
+
+      - name: Remove temporary signing keychain
+        if: always()
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/goalong-release-signing.keychain-db"
+          if [[ -f "$KEYCHAIN" ]]; then security delete-keychain "$KEYCHAIN"; fi
+          rm -f "$RUNNER_TEMP/goalong-release-signing.p12"

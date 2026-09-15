@@ -4,11 +4,15 @@
 
 Goalong History can be listed as enabled in System Settings while the running app
 still receives a denied Accessibility preflight or `EPERM` opening Apple Screen
-Time stores. Community builds are ad-hoc signed: replacing a build changes its
+Time stores. Legacy Community builds were ad-hoc signed: replacing a build changed their
 code identity. A switch for an earlier build is not proof that macOS authorizes
 the current process. Full Disk Access changes may also require a process restart.
 Neither a cached checkbox nor an AX read of Goalong's own window may override a
 denied permission.
+
+For the root-cause signing correction and its verified limits, see
+[Stable release identity](STABLE_RELEASE_IDENTITY.md). Manual entry replacement is
+not the normal update path.
 
 ## Recovery in the app
 
