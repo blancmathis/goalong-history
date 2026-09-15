@@ -104,7 +104,7 @@
             PermissionRecovery.launchWhenParentHasExited { [weak self] in self?.startApplication() }
         }
 
-        private func startApplication() {
+        @MainActor private func startApplication() {
             guard !anotherInstanceIsRunning() else {
                 NSApplication.shared.terminate(nil)
                 return

@@ -27,7 +27,7 @@
             return .waiting
         }
 
-        @MainActor static func launchWhenParentHasExited(_ start: @escaping () -> Void) {
+        @MainActor static func launchWhenParentHasExited(_ start: @escaping @MainActor () -> Void) {
             let deadline = Date().addingTimeInterval(20)
             func check() {
                 let state = parentState(arguments: CommandLine.arguments,
