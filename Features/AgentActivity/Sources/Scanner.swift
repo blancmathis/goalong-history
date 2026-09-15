@@ -1,5 +1,6 @@
 import Dispatch
 import Foundation
+import LocalHistoryCore
 
 struct AgentScannerCycleMetrics: Equatable, Sendable {
     var metadataResolutionCount = 0
@@ -197,6 +198,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
         analyzeContent: Bool = true,
         at observedAt: Date = Date()
     ) -> AgentScanResult {
+        guard !GoalongGlobalPause.isPaused() else { return AgentScanResult() }
         scanLock.lock()
         defer {
             resetCancellation()
@@ -447,7 +449,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
     private func isScanCancellationRequested() -> Bool {
         cancellationLock.lock()
         defer { cancellationLock.unlock() }
-        return cancellationRequested
+        return cancellationRequested || GoalongGlobalPause.isPaused()
     }
 
     private struct FolderScanOutcome {

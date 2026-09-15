@@ -41,6 +41,8 @@ def audit(root: Path) -> list[str]:
             'request.httpMethod = "POST"', 'forHTTPHeaderField: "Authorization"',
             'forHTTPHeaderField: "Idempotency-Key"', 'SHA256Digest.hashHex(payload)',
             'SHA256Digest.hashHex(Data(token.utf8)) != expectedTokenFingerprint',
+            'let pauseTicket = try GoalongGlobalPause.admit(in: privacyRoot)',
+            'try GoalongGlobalPause.revalidate(pauseTicket, in: privacyRoot)',
             'URLSessionConfiguration.ephemeral', 'configuration.httpShouldSetCookies = false',
             'payload.count <= 2 * 1024 * 1024',
             'configuration.httpCookieStorage = nil', 'configuration.urlCredentialStorage = nil',
@@ -70,7 +72,8 @@ def audit(root: Path) -> list[str]:
         ],
         "schedule": [
             'guard !busy, enabled, var current = configuration()',
-            'current.policyVersion == 2', 'current.paused != true',
+            'current.policyVersion == 3', 'selected.strictSelection = true',
+            'guard !pause.blocksActivity', 'GoalongGlobalPause.revalidate(pause.revision, in: root)', 'current.paused != true',
             'current.lastAttempt != day', 'current.lastAttempt = day', 'try store(current)',
             'configuration()?.identifier == snapshot.identifier',
             'configuration()?.origin == snapshot.origin', 'configuration()?.tokenPath == snapshot.tokenPath',
@@ -90,13 +93,17 @@ def audit(root: Path) -> list[str]:
             'SHA256Digest.hashHex(Data(token.utf8)) == approved.credentialFingerprint',
             'try sender(approved.payload, approved.origin', 'approved.credentialFingerprint)',
             'autoSender.enable(origin: approved.origin', 'options: approved.draft.options',
-            'if autoSender.enabled { autoSender.stop()', 'func invalidate() { preview = nil; reviewed = false;',
+            'if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled { autoSender.stop()',
+            'GoalongGlobalPause.revalidate(approved.pauseRevision, in: root)',
+            '_ = try GoalongReadableShareData(payload: bytes)', 'func invalidate() { preview = nil; reviewed = false;',
             'var deviceIDs = Set<String>()', 'var applicationIDs = Set<String>()', 'var websiteDomains = Set<String>()',
         ],
         "sharing_ui": [
             'model.confirm(origin: origin, tokenPath: tokenPath)',
-            '.disabled(model.busy || !model.reviewed)',
-            'Toggle(isOn: $model.reviewed)',
+            '.disabled(model.busy || (model.draft.delivery == .daily && !model.reviewed)',
+            'isOn: $model.reviewed)',
+            'if model.draft.delivery == .once { model.reviewed = true }',
+            'GoalongReadableShareData(payload: $0.payload)',
         ],
         "sharing_link": ['items.count == 2', 'Set(items.map(\\.name)) == ["site", "account"]',
                          'parts.fragment == nil', 'UUID(uuidString: account)',
@@ -144,8 +151,21 @@ def audit(root: Path) -> list[str]:
         errors.append("Website transport must create exactly one explicit data task, without an automatic retry")
     if re.search(r"\.\s*(?:uploadTask|downloadTask|webSocketTask|streamTask)\s*\(|URLSession\.shared", sources["transport"]):
         errors.append("An additional or ambient transport was introduced in the website sender")
+    # The only lifecycle observer admitted in the sender is a root-scoped CANCEL.
+    # Pin its full body: a added send, retry or broader callback still fails this audit.
+    cancellation_observer = """        let pauseObserver = NotificationCenter.default.addObserver(forName: .goalongGlobalPauseDidChange,
+            object: nil, queue: nil) { notification in
+            if notification.object as? String == privacyRoot.standardizedFileURL.path,
+               GoalongGlobalPause.isPaused(in: privacyRoot) { session.invalidateAndCancel() }
+        }
+        defer { NotificationCenter.default.removeObserver(pauseObserver); session.invalidateAndCancel() }"""
+    if sources["transport"].count(cancellation_observer) != 1:
+        errors.append("The pause observer must only cancel the matching root and remove itself after completion")
     for key in ["export", "transport"]:
-        if re.search(r"\b(?:Timer|NotificationCenter|NSWorkspace|Process)\b|\.scheduledTimer\b", sources[key]):
+        inspected = sources[key]
+        if key == "transport":
+            inspected = inspected.replace(cancellation_observer, "", 1)
+        if re.search(r"\b(?:Timer|NotificationCenter|NSWorkspace|Process)\b|\.scheduledTimer\b", inspected):
             errors.append(f"Website {key} introduces a process, lifecycle, browser or timer dependency")
     if re.search(r'"(?:messages|transcript|rawEvents|capturedText|sourcePath|rootDirectory)"\s*:', sources["export"]):
         errors.append("Website export contains a forbidden raw body or local-path field")

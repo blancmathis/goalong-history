@@ -4,6 +4,7 @@
     import Combine
     import Darwin
     import Foundation
+    import LocalHistoryCore
 
     struct AgentActivityAlert: Identifiable {
         let id = UUID()
@@ -120,6 +121,7 @@
         }
 
         func start() {
+            guard !GoalongGlobalPause.isPaused() else { return }
             guard !started else { return }
             if !initialDiscoveryPerformed {
                 let merged = AgentDefaultSourceDiscovery.merging(
@@ -168,7 +170,7 @@
             forceFullDiscovery: Bool = false,
             analyzeSelectedDay: Bool = false
         ) {
-            guard started else { return }
+            guard started, !GoalongGlobalPause.isPaused() else { return }
             enqueueScan(
                 forceFullDiscovery: forceFullDiscovery,
                 clearTransientAnalyses: false,
@@ -206,7 +208,7 @@
         }
 
         func detectCommonSources() {
-            guard started else { return }
+            guard started, !GoalongGlobalPause.isPaused() else { return }
             let discovered = sourceDiscovery()
             let merged = AgentDefaultSourceDiscovery.merging(
                 configuration: configuration,
@@ -490,6 +492,7 @@
             entryID: String,
             analysisInterval: DateInterval? = nil
         ) throws -> AgentCaptureRecord {
+            let admission = try GoalongGlobalPause.admit()
             guard let entry = store.entry(id: entryID) else {
                 throw AgentActivityRuntimeAccessError.unauthorizedSource(entryID)
             }
@@ -497,12 +500,14 @@
             guard AgentSourceAccessAuthority.allows(entry, configuration: snapshot) else {
                 throw AgentActivityRuntimeAccessError.unauthorizedSource(entryID)
             }
-            return try store.directRead(
+            let result = try store.directRead(
                 entryID: entryID,
                 maximumBytes: snapshot.maximumFileBytes,
                 expectedReference: entry.reference,
                 analysisInterval: analysisInterval
             )
+            try GoalongGlobalPause.revalidate(admission)
+            return result
         }
 
         private func updateFolder(id: String, mutation: (inout AgentWatchedFolder) -> Void) {
@@ -541,6 +546,7 @@
         }
 
         private func performScan(_ request: ScanRequest) {
+            guard !GoalongGlobalPause.isPaused() else { return }
             let snapshot = currentScanSnapshot()
 
             if request.clearTransientAnalyses {
@@ -649,7 +655,7 @@
         private func scanIsStopping() -> Bool {
             scanStateLock.lock()
             defer { scanStateLock.unlock() }
-            return isStopping
+            return isStopping || GoalongGlobalPause.isPaused()
         }
 
         private func enqueueScan(
@@ -808,7 +814,7 @@
         }
 
         private func rescheduleTimer() {
-            guard started else { return }
+            guard started, !GoalongGlobalPause.isPaused() else { return }
             scanTimer?.cancel()
             scanTimer = nil
             scheduleTimer()

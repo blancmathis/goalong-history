@@ -2,6 +2,7 @@
 import XCTest
 import Foundation
 import LocalHistoryQueryCLI
+import LocalHistoryCore
 @testable import LocalHistoryApp
 
 final class GoalongWebsiteSharingModelTests: XCTestCase {
@@ -33,6 +34,20 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
                 return Data(#"{"imported":1,"updated":0,"skipped":0,"verification":"unverified"}"#.utf8)
             }, sourceConsent: consent)
         return (model, token, defaults, suite)
+    }
+
+    @MainActor func testPauseAndResumeCannotSendAnOldPreview() async throws {
+        let (model, token, _, _) = try fixture(onSend: { _ in XCTFail("Old preview must not be sent") })
+        defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
+        await model.loadCatalog()
+        model.draft.deviceIDs = ["mac"]; model.draft.includeApplications = true; model.draft.applicationIDs = ["editor"]
+        await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
+        XCTAssertNotNil(model.preview)
+        model.reviewed = true
+        try GoalongGlobalPause.setPaused(true, in: token.deletingLastPathComponent())
+        try GoalongGlobalPause.setPaused(false, in: token.deletingLastPathComponent())
+        await model.confirm(origin: "https://goalong.example", tokenPath: token.path)
+        XCTAssertNotNil(model.error)
     }
 
     func testPreviewDayUsesTheSavedTimezoneInsteadOfAnImplicitUTCDay() {

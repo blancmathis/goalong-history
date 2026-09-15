@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import AppKit
+import LocalHistoryCore
 
 extension Notification.Name {
     static let goalongRecordingChoicesDidChange = Notification.Name("goalong.recording.choices.changed")
@@ -57,6 +58,7 @@ struct GoalongSettingsGroup<Content: View>: View {
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var sender = GoalongWebsiteAutoSender.shared
     @ObservedObject private var analysis = ChatGPTRecapRuntime.shared
+    @State private var globalPause = GoalongGlobalPause.load()
     var body: some View {
         VStack(spacing: 12) {
             row("Enregistrement local", value: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : model.runtime.displayTitle,
@@ -64,7 +66,7 @@ struct GoalongSettingsGroup<Content: View>: View {
             row("Envoi à Goalong", value: sender.enabled ? "Chaque jour" : "Automatique désactivé", symbol: "arrow.up.circle", pane: .connections)
             row("Analyse ChatGPT", value: !consents.isEnabled(.chatGPTAnalysis) ? "Désactivée" : !GoalongAnalysisSelection.load().isValid(for: GoalongExclusionStore.shared.policy) ? "À configurer" : analysis.automaticRecapsEnabled ? "Automatique" : "À la demande",
                 symbol: "sparkles", pane: .connections)
-        }
+        }.onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in globalPause = .load() }
     }
     private func row(_ title: String, value: String, symbol: String, pane: SettingsPane) -> some View {
         Button { model.selectSection(.settings); model.settingsPane = pane } label: {
@@ -72,7 +74,7 @@ struct GoalongSettingsGroup<Content: View>: View {
                 Image(systemName: symbol).frame(width: 20).foregroundStyle(.secondary)
                 Text(title).font(.system(size: 12, weight: .medium))
                 Spacer()
-                Text(value).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(globalPause.blocksActivity ? "Suspendu" : value).font(.system(size: 12)).foregroundStyle(.secondary)
                 Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.secondary)
             }.contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityElement(children: .combine)

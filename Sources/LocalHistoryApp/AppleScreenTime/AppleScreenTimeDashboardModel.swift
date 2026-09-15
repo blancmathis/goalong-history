@@ -4,6 +4,7 @@
     import AppleSystemScreenTime
     import Combine
     import Foundation
+    import LocalHistoryCore
     import UniformTypeIdentifiers
 
     final class AppleScreenTimeDashboardModel: ObservableObject {
@@ -168,6 +169,7 @@
         }
 
         func refresh() {
+            guard !GoalongGlobalPause.isPaused() else { isBusy = false; return }
             guard accessEnabled else { return }
             guard isActive else { return }
             guard !isBusy else { return }
@@ -217,7 +219,7 @@
 
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    guard self.isActive, self.lifecycleGeneration == generation else {
+                    guard !GoalongGlobalPause.isPaused(), self.isActive, self.lifecycleGeneration == generation else {
                         self.isBusy = false
                         return
                     }

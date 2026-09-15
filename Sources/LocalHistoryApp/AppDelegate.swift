@@ -96,6 +96,8 @@
         private var lastRecordedHealthState: CaptureHealthState?
         private var workspaceObservers: [NSObjectProtocol] = []
         private var capabilityConsentObserver: NSObjectProtocol?
+        private var globalPauseObserver: NSObjectProtocol?
+        private var resumingGlobalPause = false
         private var retentionCleanupGate = DailyMaintenanceGate()
         private var localCaptureRuntimeActive = false
 
@@ -190,7 +192,7 @@
                 agentActivityRuntime = try AgentActivityRuntime(
                     rootDirectory: AppPaths.agentActivityDirectory,
                     executableURL: executableURL,
-                    performInitialDiscovery: capabilityConsents.isEnabled(.aiConversations),
+                    performInitialDiscovery: capabilityConsents.isEnabled(.aiConversations) && !GoalongGlobalPause.isPaused(),
                     onCaptured: { _ in }
                 )
 
@@ -322,6 +324,8 @@
                 NotificationCenter.default.removeObserver(capabilityConsentObserver)
             }
             capabilityConsentObserver = nil
+            if let globalPauseObserver { NotificationCenter.default.removeObserver(globalPauseObserver) }
+            globalPauseObserver = nil
             if let retentionPolicyObserver { NotificationCenter.default.removeObserver(retentionPolicyObserver) }
             retentionPolicyObserver = nil
             readOnlyQueryServer?.stop()
@@ -358,6 +362,7 @@
         }
 
         private func toggleManualPause() {
+            guard !GoalongGlobalPause.isPaused() else { dashboardWindowController.show(section: .settings); return }
             if !capabilityConsents.isEnabled(.localComputerHistory) {
                 // A menu action must not broaden capture or bypass the guided source choice.
                 dashboardWindowController.show(section: .settings)
@@ -728,7 +733,7 @@
         }
 
         private func checkPermissionsAndStartTap(forceRefresh: Bool = false) {
-            guard capabilityConsents.isEnabled(.localComputerHistory) else {
+            guard capabilityConsents.isEnabled(.localComputerHistory), !GoalongGlobalPause.isPaused() else {
                 permissionTimer?.invalidate()
                 permissionTimer = nil
                 eventTapMonitor.stop()
@@ -788,6 +793,15 @@
         }
 
         private func installCapabilityConsentObserver() {
+            globalPauseObserver = NotificationCenter.default.addObserver(forName: .goalongGlobalPauseDidChange,
+                object: nil, queue: .main) { [weak self] notice in
+                guard let self, notice.object as? String == AppPaths.applicationSupportDirectory.standardizedFileURL.path else { return }
+                self.resumingGlobalPause = !GoalongGlobalPause.isPaused()
+                self.applyCapabilityConsents(recordTransition: true)
+                if GoalongGlobalPause.isPaused() { self.screenTimeRepository?.waitForPendingCollection() }
+                self.resumingGlobalPause = false
+                self.menuBarController.updateStatus()
+            }
             capabilityConsentObserver = NotificationCenter.default.addObserver(
                 forName: .goalongCapabilityConsentDidChange,
                 object: capabilityConsents,
@@ -798,13 +812,14 @@
         }
 
         private func applyCapabilityConsents(recordTransition: Bool) {
-            let localCaptureEnabled = capabilityConsents.isEnabled(.localComputerHistory)
+            let localCaptureEnabled = capabilityConsents.isEnabled(.localComputerHistory) && !GoalongGlobalPause.isPaused()
             if localCaptureEnabled && !localCaptureRuntimeActive {
                 let wasActive = localCaptureRuntimeActive
                 localCaptureRuntimeActive = true
-                captureState.setManualPaused(false)
-                captureHealthStore.setPaused(false)
-                minuteSealer.start()
+                let retainManualPause = resumingGlobalPause && GoalongGlobalPause.load().recordingWasPaused
+                captureState.setManualPaused(retainManualPause)
+                captureHealthStore.setPaused(retainManualPause)
+                if !retainManualPause { minuteSealer.start() }
                 contextMonitor.start()
                 checkPermissionsAndStartTap(forceRefresh: true)
                 if recordTransition && !wasActive {
@@ -857,7 +872,7 @@
                 }
             }
 
-            if capabilityConsents.isEnabled(.aiConversations) {
+            if capabilityConsents.isEnabled(.aiConversations) && !GoalongGlobalPause.isPaused() {
                 agentActivityRuntime.start()
             } else {
                 agentActivityRuntime.stop()
@@ -867,7 +882,7 @@
             configureReadOnlyQueryServer()
 
             let analysisEnabled = GoalongBuildCapabilities.permitsRemoteAnalysis
-                && capabilityConsents.isEnabled(.chatGPTAnalysis)
+                && capabilityConsents.isEnabled(.chatGPTAnalysis) && !GoalongGlobalPause.isPaused()
             if analysisEnabled {
                 ChatGPTRecapRuntime.shared.start()
             } else {
@@ -879,7 +894,7 @@
         }
 
         private func configureReadOnlyQueryServer() {
-            guard capabilityConsents.isEnabled(.appleScreenTime) else {
+            guard capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused() else {
                 readOnlyQueryServer?.stop()
                 readOnlyQueryServer = nil
                 do {
@@ -934,7 +949,7 @@
         private func configureScreenTimeDailyArchive() {
             screenTimeArchiveTimer?.invalidate()
             screenTimeArchiveTimer = nil
-            guard capabilityConsents.isEnabled(.appleScreenTime), screenTimeRepository != nil else {
+            guard capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused(), screenTimeRepository != nil else {
                 return
             }
 
@@ -949,7 +964,7 @@
         }
 
         private func refreshCurrentScreenTimeDay() {
-            guard capabilityConsents.isEnabled(.appleScreenTime),
+            guard capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused(),
                   let screenTimeRepository,
                   !screenTimeArchiveRefreshInFlight
             else { return }

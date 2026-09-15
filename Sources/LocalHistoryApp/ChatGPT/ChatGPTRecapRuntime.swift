@@ -574,6 +574,7 @@
         }
 
         func start() {
+            guard !GoalongGlobalPause.isPaused() else { return }
             guard GoalongBuildCapabilities.permitsRemoteAnalysis else { return }
             guard analysisConsentProvider(), analysisSelectionProvider().isValid(for: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)) else { return }
             guard !started else { return }
@@ -638,6 +639,7 @@
         }
 
         func refreshDayOverview() {
+            guard !GoalongGlobalPause.isPaused() else { return }
             guard analysisConsentProvider() else {
                 dayOverview = nil
                 dayOverviewError = nil
@@ -872,6 +874,10 @@
         }
 
         private func generateRecap(for day: Date, automatic: Bool) {
+            guard !GoalongGlobalPause.isPaused() else {
+                if !automatic { alert = ChatGPTRecapAlert(title: "Pause globale", message: "Reprenez Goalong avant de lancer une analyse.") }
+                return
+            }
             guard analysisConsentProvider() else {
                 if !automatic {
                     alert = ChatGPTRecapAlert(
@@ -1227,7 +1233,7 @@
 
         private func maybeGenerateAutomaticRecap() {
             guard analysisConsentProvider(), analysisSelectionProvider().isValid(for: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)) else { return }
-            guard started, automaticRecapsEnabled, !isGenerating else { return }
+            guard !GoalongGlobalPause.isPaused(), started, automaticRecapsEnabled, !isGenerating else { return }
             guard let completedDay = ChatGPTDailyRecapSchedule.completedDay(at: Date()) else { return }
             if let stored = ChatGPTRecapPersistence.load(for: completedDay, from: recapsDirectory),
                 stored.isValidCurrentAssessment

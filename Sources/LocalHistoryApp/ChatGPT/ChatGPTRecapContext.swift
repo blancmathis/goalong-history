@@ -168,6 +168,7 @@
             analyzeAgentContent: Bool = true,
             selection: GoalongAnalysisSelection? = nil
         ) throws -> ChatGPTRecapContext {
+            _ = try GoalongGlobalPause.admit()
             let normalizedDay = Calendar.current.startOfDay(for: day)
             if let selection {
                 return try buildSelected(for: normalizedDay, deviceID: deviceID,
@@ -516,7 +517,7 @@
                 max(8, sourceBatchCount + folderBatchCount + 16)
             )
             var cycleCount = 1
-            while analyzeContent, result.analysisIncomplete, cycleCount < maximumCycleCount {
+            while analyzeContent, result.analysisIncomplete, cycleCount < maximumCycleCount, !GoalongGlobalPause.isPaused() {
                 result = scanner.scan(
                     configuration: validated,
                     analysisDay: day,

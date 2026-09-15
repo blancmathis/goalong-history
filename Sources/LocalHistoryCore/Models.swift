@@ -264,6 +264,7 @@ public struct ContextSnapshot: Equatable {
     public let url: URLSnapshot?
     public let suppressionReason: SuppressionReason?
     public let privacyRevision: String?
+    public let globalPauseRevision: String?
 
     public init(
         app: AppSnapshot,
@@ -271,7 +272,8 @@ public struct ContextSnapshot: Equatable {
         focusedElement: ElementSnapshot?,
         url: URLSnapshot?,
         suppressionReason: SuppressionReason?,
-        privacyRevision: String? = nil
+        privacyRevision: String? = nil,
+        globalPauseRevision: String? = nil
     ) {
         self.app = app
         self.window = window
@@ -279,6 +281,7 @@ public struct ContextSnapshot: Equatable {
         self.url = url
         self.suppressionReason = suppressionReason
         self.privacyRevision = privacyRevision
+        self.globalPauseRevision = globalPauseRevision
     }
 
     public var fingerprint: String {
@@ -292,6 +295,7 @@ public struct ContextSnapshot: Equatable {
         parts.append(url?.value ?? "")
         parts.append(suppressionReason?.rawValue ?? "")
         if let privacyRevision { parts.append(privacyRevision) }
+        if let globalPauseRevision { parts.append(globalPauseRevision) }
         return parts.joined(separator: "|")
     }
 }

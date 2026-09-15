@@ -1,4 +1,5 @@
 #if os(macOS)
+import LocalHistoryCore
     import AppKit
     import AgentActivity
     import AppleSystemScreenTime
@@ -71,6 +72,7 @@
         }
 
         private static func probe(_ capability: GoalongCapability) -> SourceAccessStatus {
+            guard !GoalongGlobalPause.isPaused() else { return .unavailable("Pause globale : reprenez Goalong pour vérifier cet accès.") }
             switch capability {
             case .localComputerHistory:
                 return computerHistoryAccess(PermissionManager.activationStatus())

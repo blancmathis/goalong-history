@@ -2,6 +2,8 @@
 
 ## 0.6.26 — réglages et confidentialité simplifiés
 
+- Pause globale persistante pour les sources, analyses et envois ; protection des requêtes en attente à la reprise.
+
 - Cinq rubriques de réglages, recherche, états courts et onboarding en trois étapes.
 - Réglages immédiats, catalogue d’applications et exclusions explicites.
 - Sélection ChatGPT indépendante, connexion sans installation manuelle de Codex.

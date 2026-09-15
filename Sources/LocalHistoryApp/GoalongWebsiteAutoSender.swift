@@ -96,6 +96,7 @@ import LocalHistoryCore
     }
     func enable(origin: String, tokenPath: String, options: GoalongSiteExportOptions, hour: Int = 9,
                 minute: Int = 0, timeZoneIdentifier: String = TimeZone.current.identifier) throws {
+        _ = try GoalongGlobalPause.admit(in: root)
         guard !busy else { throw GoalongSiteExportError.invalid("Un envoi est déjà en cours.") }
         _ = try GoalongSiteSubmission.endpoint(origin: origin)
         let token = try GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))
@@ -131,6 +132,11 @@ import LocalHistoryCore
         }
     }
     func tick(now: Date = Date()) async {
+        let pause = GoalongGlobalPause.load(in: root)
+        guard !pause.blocksActivity else {
+            if enabled { status = "Pause globale : envoi suspendu, programmation conservée." }
+            return
+        }
         guard !busy, enabled, var current = configuration(), current.policyVersion == 3, current.paused != true,
               let zone = TimeZone(identifier: current.timeZoneIdentifier ?? "") else { return }
         guard current.privacyRevision == GoalongPrivacyPolicy.load(in: root).revision else {
@@ -161,9 +167,11 @@ import LocalHistoryCore
             guard sourceConsent(snapshot.options) else {
                 stop(); status = "Synchronisation arrêtée : une source est désactivée."; return
             }
+            try GoalongGlobalPause.revalidate(pause.revision, in: root)
             _ = try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: snapshot.privacyRevision)
             status = "Envoi du \(day)…"
             _ = try await Task.detached {
+                try GoalongGlobalPause.revalidate(pause.revision, in: root)
                 _ = try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: snapshot.privacyRevision)
                 if let sender { return try sender(payload, snapshot.origin, URL(fileURLWithPath: snapshot.tokenPath), snapshot.credentialFingerprint) }
                 return try GoalongSiteSubmission.send(payload: payload, origin: snapshot.origin,

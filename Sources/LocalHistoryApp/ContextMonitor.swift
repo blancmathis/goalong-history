@@ -181,7 +181,7 @@
                         focusedElement: nil,
                         url: nil,
                         suppressionReason: .secureInput,
-                        privacyRevision: current.privacyRevision
+                        privacyRevision: current.privacyRevision, globalPauseRevision: current.globalPauseRevision
                     )
                 }
                 setLatest(safeContext)

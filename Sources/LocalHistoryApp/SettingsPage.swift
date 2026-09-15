@@ -51,6 +51,7 @@ import AppKit
         switch pane {
         case .home:
             LHCard { GoalongDataStatus(model: model) }
+            GoalongGlobalPauseControl(model: model)
             TextField("Rechercher un réglage…", text: $search).textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Rechercher un réglage")
             LHCard(padding: 0) {

@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppleSystemScreenTime
     import Foundation
+    import LocalHistoryCore
 
     enum GoalongScreenTimeRepositoryProvider {
         private static let lock = NSLock()
@@ -27,7 +28,8 @@
             }
             let repository = try AppleSystemScreenTimeRepository(
                 rootDirectory: rootDirectory,
-                deviceID: deviceID
+                deviceID: deviceID,
+                activityAdmission: { try? GoalongGlobalPause.admit() }
             )
             productionRepository = repository
             productionDeviceID = deviceID

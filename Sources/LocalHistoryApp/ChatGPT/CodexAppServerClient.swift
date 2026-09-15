@@ -697,6 +697,7 @@
         private var stderrData = Data()
         private let closeLock = NSLock()
         private var closed = false
+        private var globalPauseObserver: NSObjectProtocol?
 
         init(
             executableURL: URL,
@@ -704,6 +705,7 @@
             limits: CodexAppServerLimits = .production,
             siteAnalysisOnly: Bool = false
         ) throws {
+            let pauseAdmission = try GoalongGlobalPause.admit()
             self.limits = limits
             self.siteAnalysisOnly = siteAnalysisOnly
             stdoutDecoder = CodexAppServerMessageDecoder(limits: limits)
@@ -748,7 +750,13 @@
                 throw CodexAppServerError.launchFailed(error.localizedDescription)
             }
 
+            globalPauseObserver = NotificationCenter.default.addObserver(forName: .goalongGlobalPauseDidChange,
+                object: nil, queue: nil) { [weak self] notification in
+                if notification.object as? String == AppPaths.applicationSupportDirectory.standardizedFileURL.path,
+                   GoalongGlobalPause.isPaused() { self?.close() }
+            }
             do {
+                try GoalongGlobalPause.revalidate(pauseAdmission)
                 let initialization = try request(
                     method: "initialize",
                     params: [
@@ -789,6 +797,7 @@
         }
 
         deinit {
+            if let globalPauseObserver { NotificationCenter.default.removeObserver(globalPauseObserver) }
             close()
         }
 
@@ -893,6 +902,7 @@
 
         private func generateSelectedAnalysisJSON(prompt: String, schema: [String: Any], workingDirectory: URL,
                                                   maximumResponseBytes: Int = 32 * 1024) throws -> Data {
+            let pauseTicket = try GoalongGlobalPause.admit()
             let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
             guard !GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).hasExclusions else {
                 throw CodexAppServerError.generationFailed("Les exclusions bloquent cette analyse de texte. Utilisez le bilan par applications dans Connexions.")
@@ -949,6 +959,7 @@
             guard GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == privacyRevision else {
                 throw CodexAppServerError.generationFailed("Les exclusions ont changé. L’analyse a été arrêtée avant l’envoi.")
             }
+            try GoalongGlobalPause.revalidate(pauseTicket)
             let turnResponse = try request(
                 method: "turn/start",
                 params: [
@@ -1071,6 +1082,7 @@
             workingDirectory: URL,
             onDelta: ((String) -> Void)? = nil
         ) throws -> ChatGPTDailyAssessment {
+            let pauseTicket = try GoalongGlobalPause.admit()
             let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
             let selectionRevision = GoalongAnalysisSelection.load().revision
             guard let account = try readAccount(refreshToken: true) else {
@@ -1154,6 +1166,7 @@
                   GoalongAnalysisSelection.load().revision == selectionRevision else {
                 throw CodexAppServerError.generationFailed("Les choix d’analyse ont changé. Aucun contexte n’a été transmis.")
             }
+            try GoalongGlobalPause.revalidate(pauseTicket)
             let startedTurn = try request(
                 method: "turn/start",
                 params: [

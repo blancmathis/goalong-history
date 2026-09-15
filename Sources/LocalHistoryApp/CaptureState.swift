@@ -1,5 +1,6 @@
 #if os(macOS)
     import Foundation
+    import LocalHistoryCore
 
     final class CaptureState {
         private let lock = NSLock()
@@ -8,7 +9,7 @@
         private var systemAwake = true
 
         var isCapturing: Bool {
-            lock.withLock { !manualPaused && userSessionActive && systemAwake }
+            !GoalongGlobalPause.isPaused() && lock.withLock { !manualPaused && userSessionActive && systemAwake }
         }
 
         var isManuallyPaused: Bool {

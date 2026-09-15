@@ -51,6 +51,27 @@ class WebsiteBoundaryTests(unittest.TestCase):
     def test_reviewed_boundary_passes(self):
         self.assertEqual(boundary.audit(self.root), [])
 
+    def test_global_pause_admission_cannot_be_removed(self):
+        self.change(FILES[0], 'let pauseTicket = try GoalongGlobalPause.admit(in: privacyRoot)', 'let pauseTicket = "ignored"')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_pause_resume_revision_cannot_be_ignored(self):
+        self.change(FILES[0], 'try GoalongGlobalPause.revalidate(pauseTicket, in: privacyRoot)', '// removed final pause validation')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_pause_observer_cannot_target_another_root(self):
+        self.change(FILES[0], 'notification.object as? String == privacyRoot.standardizedFileURL.path', 'true')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_pause_observer_cannot_restart_a_transfer(self):
+        self.change(FILES[0], 'GoalongGlobalPause.isPaused(in: privacyRoot) { session.invalidateAndCancel() }',
+                    'GoalongGlobalPause.isPaused(in: privacyRoot) { session.dataTask(with: request).resume() }')
+        self.assertTrue(boundary.audit(self.root))
+
+    def test_strict_daily_scope_cannot_be_weakened(self):
+        self.change(FILES[9], 'selected.strictSelection = true', 'selected.strictSelection = false')
+        self.assertTrue(boundary.audit(self.root))
+
     def test_pairing_confirmation_is_required(self):
         self.change(FILES[8], 'guard await present(confirmation, on: window) == .alertFirstButtonReturn else { return false }', '// confirmation removed')
         self.assertTrue(boundary.audit(self.root))

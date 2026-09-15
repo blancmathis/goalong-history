@@ -361,6 +361,7 @@
     public final class AppleSystemScreenTimeRepository: @unchecked Sendable {
         public let currentMacDevice: AppleScreenTimeDevice
 
+        private let activityAdmission: () -> String?
         private let archive: AppleSystemScreenTimeDailyArchive
         private let calendar: Calendar
         private let nowProvider: () -> Date
@@ -372,7 +373,8 @@
             rootDirectory: URL,
             deviceID: String,
             calendar: Calendar = .current,
-            nowProvider: @escaping () -> Date = Date.init
+            nowProvider: @escaping () -> Date = Date.init,
+            activityAdmission: @escaping () -> String? = { "active" }
         ) throws {
             let source = AppleSystemScreenTimeSource(
                 deviceID: deviceID,
@@ -384,7 +386,8 @@
                 currentMacDevice: source.currentMacDevice,
                 calendar: calendar,
                 nowProvider: nowProvider,
-                liveCollectionProvider: { source.collect(for: $0) }
+                liveCollectionProvider: { source.collect(for: $0) },
+                activityAdmission: activityAdmission
             )
         }
 
@@ -393,12 +396,14 @@
             currentMacDevice: AppleScreenTimeDevice,
             calendar: Calendar = .current,
             nowProvider: @escaping () -> Date = Date.init,
-            liveCollectionProvider: @escaping (Date) -> AppleSystemScreenTimeCollection
+            liveCollectionProvider: @escaping (Date) -> AppleSystemScreenTimeCollection,
+            activityAdmission: @escaping () -> String? = { "active" }
         ) throws {
             self.currentMacDevice = currentMacDevice
             self.calendar = calendar
             self.nowProvider = nowProvider
             self.liveCollectionProvider = liveCollectionProvider
+            self.activityAdmission = activityAdmission
             self.archive = try AppleSystemScreenTimeDailyArchive(
                 rootDirectory: rootDirectory,
                 calendar: calendar
@@ -407,6 +412,7 @@
 
         public func collect(for day: Date) -> AppleSystemScreenTimeCollection {
             queue.sync {
+                guard let admission = activityAdmission() else { return pausedCollection() }
                 let now = nowProvider()
                 let today = calendar.startOfDay(for: now)
                 let requestedDay = calendar.startOfDay(for: day)
@@ -427,6 +433,7 @@
                     liveCollectionProvider(requestedDay),
                     currentMac: currentMacDevice
                 )
+                guard activityAdmission() == admission else { return pausedCollection() }
                 if live.storedExport != nil {
                     do {
                         _ = try archive.storeActiveDay(live, for: requestedDay, storedAt: now)
@@ -471,6 +478,16 @@
                 }
                 return live.replacingStorageState(.directAppleRead)
             }
+        }
+
+        public func waitForPendingCollection() { queue.sync {} }
+
+        private func pausedCollection() -> AppleSystemScreenTimeCollection {
+            AppleSystemScreenTimeCollection(storedExport: nil, availableDevices: [],
+                status: AppleSystemScreenTimeStatus(kind: .noAppleData, title: "Pause globale",
+                    message: "Goalong ne lit pas le temps d’écran pendant la pause globale."),
+                deviceSourceLabels: [:], latestAppleUpdate: nil, knowledgeIntervalCount: 0,
+                biomeIntervalCount: 0, screenTimeAppUsageIntervalCount: 0, storageState: .directAppleRead)
         }
 
         public func storedDayStrings() -> [String] {

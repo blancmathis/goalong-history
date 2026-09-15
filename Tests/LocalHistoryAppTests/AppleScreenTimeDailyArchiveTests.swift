@@ -5,6 +5,33 @@
     import XCTest
 
     final class AppleScreenTimeDailyArchiveTests: XCTestCase {
+        func testGlobalPausePreventsAppleReadsAndDiscardsAnInterruptedCollection() throws {
+            let root = temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let calendar = testCalendar()
+            let day = try date(2026, 9, 4, hour: 12, calendar: calendar)
+            let mac = AppleScreenTimeDevice(id: "mac", name: "Mac", kind: .mac)
+            var admission: String? = nil
+            var interrupt = false
+            var reads = 0
+            let repository = try AppleSystemScreenTimeRepository(rootDirectory: root, currentMacDevice: mac,
+                calendar: calendar, nowProvider: { day }, liveCollectionProvider: { requestedDay in
+                    reads += 1
+                    if interrupt { admission = nil }
+                    return self.collection(day: requestedDay, device: mac, seconds: 600, calendar: calendar)
+                }, activityAdmission: { admission })
+            XCTAssertNil(repository.collect(for: day).storedExport)
+            XCTAssertEqual(reads, 0)
+            admission = "before-pause"; interrupt = true
+            XCTAssertNil(repository.collect(for: day).storedExport)
+            XCTAssertEqual(reads, 1)
+            XCTAssertTrue(repository.storedDayStrings().isEmpty)
+            admission = "after-resume"; interrupt = false
+            XCTAssertNotNil(repository.collect(for: day).storedExport)
+            XCTAssertEqual(reads, 2)
+            XCTAssertEqual(repository.storedDayStrings().count, 1)
+        }
+
         func testCompletedDayLoadsFromSingleLocalRecordWithoutReopeningApple() throws {
             let root = temporaryRoot()
             defer { try? FileManager.default.removeItem(at: root) }

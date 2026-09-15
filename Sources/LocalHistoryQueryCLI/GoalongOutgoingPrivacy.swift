@@ -8,6 +8,7 @@ public enum GoalongOutgoingPrivacy {
     }
     /// Validates metadata and selected numeric exports without changing reviewed bytes.
     public static func validate(_ payload: Data, root: URL, expectedRevision: String?) throws -> GoalongPrivacyPolicy {
+        _ = try GoalongGlobalPause.admit(in: root)
         let policy = GoalongPrivacyPolicy.load(in: root)
         guard !policy.blocked, expectedRevision.map({ $0 == policy.revision }) ?? !policy.hasExclusions else {
             throw GoalongSiteExportError.invalid("Les exclusions ont changé ou doivent être vérifiées. Préparez un nouvel aperçu.")

@@ -83,6 +83,10 @@ import LocalHistoryQueryCLI
         .onChange(of: origin) { _ in model.connectionChanged() }
         .onChange(of: tokenPath) { _ in model.connectionChanged() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongExclusionsDidChange)) { _ in model.connectionChanged(); Task { await model.loadCatalog() } }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in
+            model.cancelPreparation()
+            if !GoalongGlobalPause.isPaused() { Task { await model.loadCatalog() } }
+        }
         .onDisappear { model.cancelPreparation() }
         .sheet(isPresented: $advanced) { GoalongWebsiteConnectionSheet() }
     }

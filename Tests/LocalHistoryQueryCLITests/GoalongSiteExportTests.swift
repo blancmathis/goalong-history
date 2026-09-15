@@ -7,6 +7,16 @@ import XCTest
 @testable import LocalHistoryQueryCLI
 
 final class GoalongSiteExportTests: XCTestCase {
+    func testGlobalPauseBlocksTransmissionBeforeCredentialsOrNetwork() throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try GoalongGlobalPause.setPaused(true, in: root)
+        XCTAssertThrowsError(try GoalongSiteSubmission.send(payload: Data("{}".utf8),
+            origin: "https://example.invalid", tokenFile: root.appendingPathComponent("must-not-be-read"), privacyRoot: root)) { error in
+            XCTAssertTrue(error is GoalongGlobalPause.PauseError)
+        }
+    }
+
     func testStrictSelectionExcludesUnselectedDurationsFromTotalsAndHours() throws {
         let payload = try GoalongSiteExport.payload(record: fixture(), options: .init(
             deviceIDs: ["mac"], includeApplications: true, includeHourly: true,

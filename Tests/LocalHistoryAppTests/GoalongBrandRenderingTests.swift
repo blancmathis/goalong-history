@@ -97,6 +97,14 @@ final class GoalongBrandRenderingTests: XCTestCase {
         model.settingsPane = .home
         window.contentViewController = controller
         window.setContentSize(NSSize(width: 1080, height: 680)); pump()
+        let consentBeforePause = GoalongCapabilityConsentStore.shared.document
+        try GoalongGlobalPause.setPaused(true, recordingWasPaused: false)
+        pump()
+        try snapshot(host, to: output.appendingPathComponent("global-pause-dark.png"))
+        XCTAssertEqual(GoalongCapabilityConsentStore.shared.document, consentBeforePause)
+        try GoalongGlobalPause.setPaused(false)
+        pump()
+        XCTAssertEqual(GoalongCapabilityConsentStore.shared.document, consentBeforePause)
         // Exercise the existing transaction layer without claiming physical button activation.
         let originalClicks = model.settingsDraft.captureClicks
         model.settingsDraft.captureClicks.toggle(); pump()

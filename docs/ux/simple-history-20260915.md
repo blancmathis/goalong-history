@@ -17,3 +17,6 @@ Le composant Codex officiel 0.154.0 est vérifié par SHA-256 et intégré au pa
 
 ## Vérification
 Les tests s’exécutent dans un dossier utilisateur isolé. Les rendus natifs utilisent des données synthétiques ; ils ne constituent pas des tests réalisés avec des utilisateurs. Les résultats réels de compilation, de test et d’installation sont consignés dans le rapport de validation.
+
+## Pause globale
+Disponible dans la barre latérale, les réglages et le menu macOS. Elle persiste au relancement, bloque les nouvelles observations, les lectures Apple/IA et les envois d’activité, annule les transferts de l’application encore annulables et invalide les anciens aperçus. Les préférences de sources restent intactes. La reprise restaure uniquement les choix déjà autorisés. Cette pause ne désactive pas le suivi fait par les applications sources elles-mêmes ; leur historique peut être relu après reprise. Des données déjà transmises ne peuvent pas être rappelées.

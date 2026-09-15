@@ -153,6 +153,7 @@ public enum GoalongSiteSubmission {
 
     public static func send(payload: Data, origin: String, tokenFile: URL, expectedTokenFingerprint: String? = nil,
                             privacyRoot: URL = GoalongOutgoingPrivacy.defaultRoot, expectedPrivacyRevision: String? = nil) throws -> Data {
+        let pauseTicket = try GoalongGlobalPause.admit(in: privacyRoot)
         guard !payload.isEmpty, payload.count <= 2 * 1024 * 1024 else {
             throw GoalongSiteExportError.invalid("The website import must be nonempty and at most 2 MiB.")
         }
@@ -172,10 +173,16 @@ public enum GoalongSiteSubmission {
         configuration.urlCache = nil
         configuration.timeoutIntervalForResource = 30
         let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
+        let pauseObserver = NotificationCenter.default.addObserver(forName: .goalongGlobalPauseDidChange,
+            object: nil, queue: nil) { notification in
+            if notification.object as? String == privacyRoot.standardizedFileURL.path,
+               GoalongGlobalPause.isPaused(in: privacyRoot) { session.invalidateAndCancel() }
+        }
+        defer { NotificationCenter.default.removeObserver(pauseObserver); session.invalidateAndCancel() }
         guard GoalongPrivacyPolicy.load(in: privacyRoot).revision == privacy.revision else {
             throw GoalongSiteExportError.invalid("Les exclusions ont changé juste avant l’envoi. Refaites l’aperçu.")
         }
+        try GoalongGlobalPause.revalidate(pauseTicket, in: privacyRoot)
         session.dataTask(with: requestForNewSubmission(payload: payload, endpoint: destination, token: token)).resume()
         guard delegate.finished.wait(timeout: .now() + 35) == .success else {
             throw GoalongSiteExportError.invalid("Upload timed out. Check the site's import history before retrying; receipt status is unknown.")

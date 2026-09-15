@@ -17,6 +17,7 @@
                             .fill(LHTheme.separator)
                             .frame(width: 1)
                         page
+                            .safeAreaInset(edge: .top, spacing: 0) { GoalongGlobalPauseBanner(model: model) }
                             .safeAreaInset(edge: .bottom, spacing: 0) {
                                 if model.settingsHaveChanges && model.selectedSection != .settings {
                                     HStack(spacing: 12) {
@@ -114,6 +115,9 @@
                 }
 
                 Spacer(minLength: 20)
+
+                GoalongGlobalPauseControl(model: model, compact: true)
+                    .padding(.horizontal, 16).padding(.bottom, 12)
 
                 statusRow
                     .padding(.horizontal, 10)

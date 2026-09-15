@@ -54,11 +54,12 @@
         }
 
         func capture() -> ContextSnapshot? {
+            guard let pauseRevision = try? GoalongGlobalPause.admit() else { return nil }
             let policy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory)
             guard let snapshot = capture(privacy: policy) else { return nil }
             return ContextSnapshot(app: snapshot.app, window: snapshot.window,
                 focusedElement: snapshot.focusedElement, url: snapshot.url,
-                suppressionReason: snapshot.suppressionReason, privacyRevision: policy.revision)
+                suppressionReason: snapshot.suppressionReason, privacyRevision: policy.revision, globalPauseRevision: pauseRevision)
         }
 
         private func capture(privacy: GoalongPrivacyPolicy) -> ContextSnapshot? {
@@ -240,6 +241,7 @@
         }
 
         func fastSuppressionReason() -> SuppressionReason? {
+            guard !GoalongGlobalPause.isPaused() else { return .manualPause }
             guard let runningApplication = NSWorkspace.shared.frontmostApplication else { return .sessionUnavailable }
             let privacy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory)
             let config = privacy.applying(to: configManager.config)

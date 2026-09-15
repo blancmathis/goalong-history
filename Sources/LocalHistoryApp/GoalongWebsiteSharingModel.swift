@@ -56,6 +56,7 @@ struct GoalongWebsiteShareDraft: Equatable {
         let credentialFingerprint: String
         let createdAt: Date
         var privacyRevision: String = "none"
+        var pauseRevision: String = "initial"
         var transmittedCounts: (devices: Int, applications: Int, websites: Int) {
             guard let value = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
                   let day = (value["days"] as? [[String: Any]])?.first,
@@ -125,6 +126,7 @@ struct GoalongWebsiteShareDraft: Equatable {
     func cancelPreparation() { generation = UUID(); loading = false; invalidate() }
 
     func loadCatalog() async {
+        guard !GoalongGlobalPause.isPaused(in: root) else { error = "Pause globale : lecture suspendue."; return }
         let ticket = UUID(); generation = ticket
         let snapshot = draft, root = root, loader = catalogLoader
         loading = true; error = nil
@@ -159,18 +161,21 @@ struct GoalongWebsiteShareDraft: Equatable {
         defer { busy = false }
         let root = root, exporter = exporter
         let privacyRevision = GoalongPrivacyPolicy.load(in: root).revision
+        let pause = GoalongGlobalPause.load(in: root)
         do {
+            try GoalongGlobalPause.revalidate(pause.revision, in: root)
             _ = try GoalongSiteSubmission.endpoint(origin: target)
             let token = try GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))
             let fingerprint = SHA256Digest.hashHex(Data(token.utf8))
             let bytes = try await Task.detached(priority: .userInitiated) { try exporter(root, snapshot.day, options) }.value
+            try GoalongGlobalPause.revalidate(pause.revision, in: root)
             _ = try GoalongReadableShareData(payload: bytes)
             guard generation == ticket, draft == snapshot, sourceConsent(options),
                   GoalongPrivacyPolicy.load(in: root).revision == privacyRevision else {
                 error = "Les choix ou les autorisations ont changé. Préparez un nouvel aperçu."; return
             }
             preview = Preview(payload: bytes, draft: snapshot, origin: target, tokenPath: tokenPath,
-                              credentialFingerprint: fingerprint, createdAt: Date(), privacyRevision: privacyRevision)
+                              credentialFingerprint: fingerprint, createdAt: Date(), privacyRevision: privacyRevision, pauseRevision: pause.revision)
         } catch { self.error = "Aperçu non préparé : \(error)" }
     }
     func confirm(origin: String, tokenPath: String) async {
@@ -184,6 +189,7 @@ struct GoalongWebsiteShareDraft: Equatable {
         busy = true; error = nil
         defer { busy = false }
         do {
+            try GoalongGlobalPause.revalidate(approved.pauseRevision, in: root)
             let token = try GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))
             guard SHA256Digest.hashHex(Data(token.utf8)) == approved.credentialFingerprint else {
                 throw GoalongSiteExportError.invalid("L’accès au compte a changé depuis l’aperçu. Reliez le compte et relisez la sélection.")
@@ -196,6 +202,7 @@ struct GoalongWebsiteShareDraft: Equatable {
             } else {
                 let sender = sender, root = root
                 let receipt = try await Task.detached(priority: .userInitiated) {
+                    try GoalongGlobalPause.revalidate(approved.pauseRevision, in: root)
                     _ = try GoalongOutgoingPrivacy.validate(approved.payload, root: root, expectedRevision: approved.privacyRevision)
                     if let sender { return try sender(approved.payload, approved.origin, URL(fileURLWithPath: approved.tokenPath), approved.credentialFingerprint) }
                     return try GoalongSiteSubmission.send(payload: approved.payload, origin: approved.origin,

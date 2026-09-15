@@ -1757,6 +1757,7 @@ public enum GoalongQueryCLI {
         options: GoalongSiteExportOptions = .init(),
         now: Date = Date()
     ) throws -> Data {
+        let pauseTicket = try GoalongGlobalPause.admit(in: root)
         let privacy = GoalongPrivacyPolicy.load(in: root)
         guard !privacy.blocked else { throw CLIError.unsafeSource("Les exclusions sont illisibles. Aucun export n’a été préparé.") }
         if privacy.hasExclusions && (options.includeRecap || options.rhythmProject != nil || options.contextualRhythm != nil) {
@@ -1820,6 +1821,7 @@ public enum GoalongQueryCLI {
         if options.rhythmProject != nil || options.contextualRhythm != nil { selectedOptions.structuredReport = true }
         let payload = try GoalongSiteExport.payload(record: record, options: selectedOptions, websites: websites,
                                                     recap: recapText, now: now, privacy: privacy)
+        try GoalongGlobalPause.revalidate(pauseTicket, in: root)
         guard GoalongPrivacyPolicy.load(in: root).revision == privacy.revision else {
             throw CLIError.unsafeSource("Les exclusions ont changé. Préparez un nouvel aperçu.")
         }
@@ -2928,6 +2930,7 @@ public enum GoalongQueryCLI {
         rootDirectory: URL,
         capability: String
     ) -> Bool {
+        guard !GoalongGlobalPause.isPaused(in: rootDirectory) else { return false }
         let file = rootDirectory.appendingPathComponent(
             "capability-consent.json",
             isDirectory: false

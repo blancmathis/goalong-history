@@ -150,6 +150,8 @@
             metadata: [String: String]? = nil,
             timestamp: Date = Date()
         ) -> Bool {
+            guard !GoalongGlobalPause.isPaused() else { return false }
+            let pauseRevision = context?.globalPauseRevision ?? GoalongGlobalPause.load().revision
             let policyStamp = context?.privacyRevision
                 ?? GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory).revision
             let base = HistoryEvent(
@@ -185,7 +187,7 @@
             }
 
             if DispatchQueue.getSpecific(key: writerQueueKey) != nil {
-                return recordFromWriterQueue(base, privacyRevision: policyStamp)
+                return recordFromWriterQueue(base, privacyRevision: policyStamp, globalPauseRevision: pauseRevision)
             }
 
             let shouldWaitForCapacity = !isMainThread()
@@ -220,7 +222,7 @@
                 return false
             }
 
-            admitEventLocked(base, completion: completion, privacyRevision: policyStamp)
+            admitEventLocked(base, completion: completion, privacyRevision: policyStamp, globalPauseRevision: pauseRevision)
             writerCondition.unlock()
             completion?.wait()
             return true
@@ -284,7 +286,7 @@
             )
         }
 
-        private func recordFromWriterQueue(_ base: HistoryEvent, privacyRevision: String) -> Bool {
+        private func recordFromWriterQueue(_ base: HistoryEvent, privacyRevision: String, globalPauseRevision: String) -> Bool {
             writerCondition.lock()
             guard acceptingEvents else {
                 writerCondition.unlock()
@@ -298,7 +300,7 @@
             }
             mutateStatus { acceptedEventCount &+= 1 }
             writerCondition.unlock()
-            persist(base, isObservationGap: false, privacyRevision: privacyRevision)
+            persist(base, isObservationGap: false, privacyRevision: privacyRevision, globalPauseRevision: globalPauseRevision)
             return true
         }
 
@@ -308,7 +310,8 @@
         private func admitEventLocked(
             _ base: HistoryEvent,
             completion: DispatchSemaphore?,
-            privacyRevision: String
+            privacyRevision: String,
+            globalPauseRevision: String
         ) {
             pendingEventCount += 1
             writerTaskCount += 1
@@ -320,7 +323,7 @@
                     finishEventTask()
                     completion?.signal()
                 }
-                persist(base, isObservationGap: false, privacyRevision: privacyRevision)
+                persist(base, isObservationGap: false, privacyRevision: privacyRevision, globalPauseRevision: globalPauseRevision)
             }
         }
 
@@ -384,8 +387,13 @@
             writerCondition.unlock()
         }
 
-        private func persist(_ base: HistoryEvent, isObservationGap: Bool, privacyRevision: String? = nil) {
+        private func persist(_ base: HistoryEvent, isObservationGap: Bool, privacyRevision: String? = nil, globalPauseRevision: String? = nil) {
+            guard !GoalongGlobalPause.isPaused() else { return }
             beforePersist?(base)
+            guard !GoalongGlobalPause.isPaused() else { return }
+            if let globalPauseRevision {
+                do { try GoalongGlobalPause.revalidate(globalPauseRevision) } catch { return }
+            }
             if let writerPoisonReason {
                 noteFailure(
                     operation: "append",

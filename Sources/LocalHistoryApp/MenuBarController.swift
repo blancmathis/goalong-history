@@ -25,6 +25,7 @@
 
         private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let permissionMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        private let globalPauseItem = NSMenuItem(title: "Pause globale", action: #selector(toggleGlobalPause), keyEquivalent: "")
         private let pauseMenuItem = NSMenuItem(title: "", action: #selector(togglePause), keyEquivalent: "p")
 
         init(
@@ -79,7 +80,9 @@
             let health = captureHealth()
 
             let display: (title: String, symbol: String, description: String)
-            if health.state == .permissionRequired
+            if GoalongGlobalPause.isPaused() {
+                display = ("Pause globale", "pause.circle.fill", "Sources et envois suspendus")
+            } else if health.state == .permissionRequired
                 || health.state == .permissionAppearsEnabledButStaleForBuild
                 || health.state == .accessibilityContextUnavailable
             {
@@ -116,6 +119,7 @@
             statusMenuItem.toolTip = display.description
             permissionMenuItem.title =
                 "Accessibility: \(permissionStatus.accessibility ? "on" : "off")  •  Direct input: \(permissionStatus.inputMonitoringStatusLabel)  •  Tap object: \(eventTapStatus() ? "on" : "off")  •  Evidence: \(health.captureProven ? "yes" : "no")"
+            globalPauseItem.title = GoalongGlobalPause.isPaused() ? "Reprendre Goalong" : "Pause globale — sources et envois"
             pauseMenuItem.title = !GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
                 ? "Set up Computer History…"
                 : (state.isManuallyPaused ? "Resume recording" : "Pause recording")
@@ -152,6 +156,8 @@
             menu.addItem(permissionMenuItem)
             menu.addItem(.separator())
 
+            globalPauseItem.target = self
+            menu.addItem(globalPauseItem)
             pauseMenuItem.target = self
             menu.addItem(pauseMenuItem)
             menu.addItem(makeItem("Share signed day…", action: #selector(openShare)))
@@ -198,6 +204,16 @@
 
         @objc private func openShare() {
             onOpenShare()
+        }
+
+        @objc private func toggleGlobalPause() {
+            do {
+                try GoalongGlobalPause.setPaused(!GoalongGlobalPause.isPaused(), recordingWasPaused: state.isManuallyPaused)
+                updateStatus()
+            } catch {
+                let alert = NSAlert(); alert.messageText = "Pause non modifiée"; alert.informativeText = error.localizedDescription
+                alert.runModal()
+            }
         }
 
         @objc private func togglePause() {
