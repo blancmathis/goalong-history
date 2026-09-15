@@ -67,6 +67,7 @@
         private var semanticContextStore: SemanticContextStore!
         private var memoryStore: LocalActivityMemoryStore!
         private var retentionStore: HistoryRetentionStore!
+        private var retentionPolicyObserver: NSObjectProtocol?
         private var captureState: CaptureState!
         private var store: JSONLStore!
         private var integrityStateStore: IntegrityStateStore!
@@ -256,6 +257,15 @@
             applyCapabilityConsents(recordTransition: false)
             ChatGPTRecapRuntime.shared.configure(deviceID: deviceIdentity.info.deviceID)
             installCapabilityConsentObserver()
+            retentionPolicyObserver = NotificationCenter.default.addObserver(
+                forName: .goalongRetentionPolicyDidChange, object: nil, queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                self.retentionStore = HistoryRetentionStore(legacyRetentionDays: self.configManager.config.retentionDays)
+                self.retentionStore.applyCleanupAfterDrainingDerivedWriters { [weak self] in
+                    self?.dashboardViewModel.refreshEverything()
+                }
+            }
 
             installWorkspaceObservers()
             showDashboardOnFirstConsentLaunch()
@@ -272,6 +282,8 @@
                 NotificationCenter.default.removeObserver(capabilityConsentObserver)
             }
             capabilityConsentObserver = nil
+            if let retentionPolicyObserver { NotificationCenter.default.removeObserver(retentionPolicyObserver) }
+            retentionPolicyObserver = nil
             readOnlyQueryServer?.stop()
             readOnlyQueryServer = nil
             agentActivityRuntime?.stop()
@@ -307,20 +319,8 @@
 
         private func toggleManualPause() {
             if !capabilityConsents.isEnabled(.localComputerHistory) {
-                do {
-                    try dashboardViewModel.configureCaptureForOnboarding(enabled: true)
-                } catch {
-                    Diagnostics.write(
-                        "Computer History stayed off because its local configuration could not be enabled: \(error)"
-                    )
-                    return
-                }
-                guard capabilityConsents.set(
-                    .localComputerHistory,
-                    enabled: true,
-                    surface: .menuBar
-                ) else { return }
-                applyCapabilityConsents(recordTransition: true)
+                // A menu action must not broaden capture or bypass the guided source choice.
+                dashboardWindowController.show(section: .settings)
                 return
             }
             if captureState.isManuallyPaused {
@@ -341,12 +341,8 @@
 
         private func applyConfiguration(_ config: RecorderConfig) throws -> RecorderConfig {
             let applied = try configManager.save(config)
-            do {
-                try retentionStore.updateDetailedRetention(fromLegacyDays: applied.retentionDays)
-                retentionStore.applyCleanup()
-            } catch {
-                Diagnostics.write("Could not persist detailed retention policy: \(error)")
-            }
+            // Retention is an independent, explicitly confirmed policy. Saving a
+            // recording switch must never authorize deletion of existing history.
             contextMonitor.resetAndSample()
             configureUploader(for: applied)
             menuBarController.updateStatus()
@@ -763,7 +759,7 @@
 
         private func applyCapabilityConsents(recordTransition: Bool) {
             let localCaptureEnabled = capabilityConsents.isEnabled(.localComputerHistory)
-            if localCaptureEnabled {
+            if localCaptureEnabled && !localCaptureRuntimeActive {
                 let wasActive = localCaptureRuntimeActive
                 localCaptureRuntimeActive = true
                 captureState.setManualPaused(false)
@@ -800,7 +796,7 @@
                         ]
                     )
                 }
-            } else {
+            } else if !localCaptureEnabled {
                 let wasActive = localCaptureRuntimeActive
                 localCaptureRuntimeActive = false
                 permissionTimer?.invalidate()
@@ -928,7 +924,7 @@
 
         private func applyDailyRetentionCleanupIfNeeded(now: Date = Date()) {
             guard retentionCleanupGate.admit(now: now) else { return }
-            retentionStore.applyCleanup(now: now)
+            retentionStore.applyCleanupAfterDrainingDerivedWriters(now: now)
         }
 
         private func installWorkspaceObservers() {

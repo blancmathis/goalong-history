@@ -301,6 +301,8 @@ public struct RecorderConfig: Codable, Equatable {
     }
 
     public func allowsWebsite(host: String?) -> Bool {
+        // Unknown domains must not bypass exclusions, including when URL capture is off.
+        if host?.isEmpty != false, !excludedDomains.isEmpty || includedDomains?.isEmpty == false { return false }
         guard !URLRedactor.domain(host, matches: excludedDomains) else { return false }
         guard let allowed = includedDomains, !allowed.isEmpty else { return true }
         return URLRedactor.domain(host, matches: allowed)

@@ -90,8 +90,7 @@
 
         @ViewBuilder private var captureControl: some View {
             if !consents.isEnabled(.localComputerHistory) {
-                SourceActivationToggle(capability: .localComputerHistory,
-                    prepare: { try model.configureCaptureForOnboarding(enabled: true) }) {
+                SourceActivationToggle(capability: .localComputerHistory) {
                     Text("Record activity").font(.system(size: 12))
                 }.fixedSize()
             } else {

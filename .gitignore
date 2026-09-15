@@ -4,3 +4,7 @@
 dist/
 *.xcuserstate
 .sparkle-private-key*
+
+# Isolated user-journey QA outputs; never personal app data.
+qa/journey/
+qa/journey-ci/

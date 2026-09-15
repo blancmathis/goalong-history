@@ -30,9 +30,9 @@
         var message: String {
             switch self {
             case .ready: return "The required access is available."
-            case .accessibility: return "Allow Accessibility for Goalong in System Settings, then return here to verify access."
+            case .accessibility: return "In Privacy & Security → Accessibility, enable Goalong History. If it is missing, use + and choose the app in Applications. Return here to verify access; granting macOS access alone does not enable a source."
             case .inputMonitoring: return "Allow Input Monitoring for Goalong in System Settings, then return here to verify access."
-            case .fullDiskAccess: return "Allow Full Disk Access for Goalong in System Settings, then return here. macOS may require you to quit and reopen Goalong before the change takes effect."
+            case .fullDiskAccess: return "In Privacy & Security → Full Disk Access, enable Goalong History. If it is missing, use + and choose the app in Applications. Reopen Goalong if macOS asks, then check access again. You may also continue without this source."
             case .screenTimeSetup: return "No Apple Screen Time source is available yet. Turn on App & Website Activity in macOS Screen Time, then check again."
             case .unavailable(let message): return message
             }
@@ -43,7 +43,7 @@
         var accessExplanation: String {
             switch self {
             case .localComputerHistory:
-                return "To build your activity timeline, Goalong needs Accessibility access to identify the app and window you use. Input access lets it count interactions without recording what you type. Activity stays on this Mac."
+                return "To build your activity timeline, Goalong needs Accessibility access to identify the app and window you use. Input access lets it count interactions without recording what you type. Recording is local. Optional analysis and website sharing have separate controls."
             case .appleScreenTime:
                 return "To show time spent in your apps, Goalong reads Apple’s Screen Time files. macOS protects these files with Full Disk Access, a broad permission you control in System Settings."
             case .aiConversations:
@@ -263,9 +263,9 @@
             checkAccess(capability) { status in
                 guard validation == request, consents.isEnabled(capability), !showingActivation,
                       status != .ready else { return }
-                if consents.set(capability, enabled: false, surface: surface) {
-                    accessIssue = status.message + " This source is now off. Turn it on again to check access."
-                } else { saveFailed = true }
+                guard activationStatus != status else { return }
+                activationStatus = status
+                accessIssue = status.message + " Your saved source choice is unchanged. No new data is available until access works again."
             }
         }
     }
@@ -324,103 +324,75 @@
         private func check() { flow.checkAndEnable(capability, surface: surface, prepare: prepare) }
     }
 
-    /// Opening a history source uses existing access directly; missing access is explained in place.
-    struct SourceAccessGate<Content: View>: View {
+    /// Passive navigation can inspect existing consent, never grant or revoke it.
+    /// In-flight results are discarded after navigation or a changed source choice.
+    final class SourceAccessValidation: ObservableObject {
+        @Published private(set) var checking = false
+        @Published private(set) var result: SourceAccessStatus?
+        private var generation = UUID()
+        private let store: GoalongCapabilityConsentStore
+
+        init(store: GoalongCapabilityConsentStore = .shared) { self.store = store }
+
+        func validate(_ capability: GoalongCapability, check: @escaping SourceAccessService.Check) {
+            let request = UUID(); generation = request
+            guard store.isEnabled(capability) else { checking = false; result = nil; return }
+            checking = true
+            check(capability) { [weak self] status in
+                guard let self, self.generation == request else { return }
+                self.checking = false
+                self.result = self.store.isEnabled(capability) ? status : nil
+            }
+        }
+        func cancel() { generation = UUID(); checking = false }
+        func report(_ status: SourceAccessStatus) { cancel(); result = status }
+    }
+
+    @MainActor struct SourceAccessGate<Content: View>: View {
         let capability: GoalongCapability
-        var automaticallyEnable = true
-        var prepare: () throws -> Void = {}
         var knownAccessIssue: SourceAccessStatus? = nil
         @ViewBuilder var content: () -> Content
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @Environment(\.sourceAccessCheck) private var checkAccess
-        @State private var hasPresentedContent = false
-        @State private var checking = true
-        @State private var generation = UUID()
-        @State private var requiredAccess: SourceAccessStatus?
-        @State private var openedSettings = false
+        @StateObject private var validation = SourceAccessValidation()
 
         var body: some View {
-            ZStack(alignment: .topLeading) {
-                if hasPresentedContent || (!checking && requiredAccess == nil && !consents.isEnabled(capability)) {
+            Group {
+                if !consents.isEnabled(capability) || validation.result == .ready {
                     content()
-                        .opacity(checking || requiredAccess != nil ? 0 : 1)
-                        .allowsHitTesting(!checking && requiredAccess == nil)
-                        .accessibilityHidden(checking || requiredAccess != nil)
-                }
-                if checking {
-                    ProgressView("Checking access…").controlSize(.small).padding(LHTheme.pageInset)
-                } else if let status = requiredAccess {
+                } else if validation.checking {
+                    ProgressView("Checking access…").padding(LHTheme.pageInset)
+                } else if let status = validation.result {
                     LHCard {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Access for \(capability.title)").font(.system(size: 15, weight: .semibold))
                             Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Text(status.message).font(.system(size: 12)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            HStack(spacing: 10) {
-                                Button(status.actionTitle) {
-                                    if status.hasSettingsAction {
-                                        openedSettings = true
-                                        SourceAccessService.openAccess(status)
-                                    } else { validate(allowAutomaticEnable: true) }
-                                }.buttonStyle(LHPrimaryButtonStyle())
-                                if openedSettings { Button("Check access") { validate(allowAutomaticEnable: true) } }
+                            Text(status.message).font(.system(size: 13))
+                            Text("Your source choice is unchanged. Missing access is not evidence of inactivity.")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                            HStack(spacing: 12) {
+                                if status.hasSettingsAction {
+                                    Button(status.actionTitle) { SourceAccessService.openAccess(status) }
+                                        .buttonStyle(LHPrimaryButtonStyle())
+                                }
+                                Button("Check access again") { validate() }.buttonStyle(.bordered)
                             }
-                        }
-                    }.padding(.horizontal, LHTheme.pageInset).padding(.top, 18)
+                        }.fixedSize(horizontal: false, vertical: true)
+                    }.padding(LHTheme.pageInset)
+                } else {
+                    ProgressView("Checking access…").padding(LHTheme.pageInset)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onAppear { validate(allowAutomaticEnable: automaticallyEnable) }
-            .onChange(of: consents.isEnabled(capability)) { enabled in
-                if enabled { validate() }
-                else {
-                    generation = UUID(); checking = false; hasPresentedContent = false
-                    requiredAccess = automaticallyEnable ? (knownAccessIssue ?? requiredAccess) : nil
-                }
-            }
+            .onAppear { validate() }
+            .onChange(of: consents.isEnabled(capability)) { _ in validate() }
             .onChange(of: knownAccessIssue) { issue in
-                if let issue {
-                    generation = UUID(); checking = false; hasPresentedContent = false
-                    requiredAccess = issue
-                }
+                if let issue { validation.report(issue) } else { validate() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in validate(allowAutomaticEnable: openedSettings) }
-            .onDisappear { generation = UUID(); checking = false }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in validate() }
+            .onDisappear { validation.cancel() }
         }
-
-        private func validate(allowAutomaticEnable: Bool = false) {
-            guard allowAutomaticEnable || consents.isEnabled(capability) else {
-                if !automaticallyEnable { requiredAccess = nil; checking = false }
-                return
-            }
-            let request = UUID()
-            generation = request
-            checking = true
-            checkAccess(capability) { status in
-                guard generation == request else { return }
-                checking = false
-                if status == .ready {
-                    if !consents.isEnabled(capability) {
-                        do { try prepare() }
-                        catch { requiredAccess = .unavailable("Settings could not be saved: \(error.localizedDescription)"); return }
-                        guard consents.set(capability, enabled: true, surface: .settings) else {
-                            requiredAccess = .unavailable("This setting could not be saved. Please try again.")
-                            return
-                        }
-                    }
-                    requiredAccess = nil
-                    openedSettings = false
-                    hasPresentedContent = true
-                } else {
-                    requiredAccess = status
-                    hasPresentedContent = false
-                    if consents.isEnabled(capability) {
-                        _ = consents.set(capability, enabled: false, surface: .settings)
-                    }
-                }
-            }
-        }
+        private func validate() { validation.validate(capability, check: checkAccess) }
     }
 
     struct ComputerHistoryActivationCard: View {
@@ -434,8 +406,7 @@
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    SourceActivationToggle(capability: .localComputerHistory,
-                        prepare: { try model.configureCaptureForOnboarding(enabled: true) }) { Text("Computer History") }
+                    SourceActivationToggle(capability: .localComputerHistory) { Text("Computer History") }
                         .labelsHidden()
                 }
             }

@@ -29,8 +29,11 @@
                         }
                     }
 
-                    buildSecurityCard
-                    dataFlowCard
+                    PrivacyChoicesOverview(model: model)
+                    VisibleContextControl()
+                    DisclosureGroup("Build and verification details") {
+                        VStack(spacing: 14) { buildSecurityCard; dataFlowCard }.padding(.top, 12)
+                    }
                     permissionsCard
                     protectionGrid
 
@@ -209,15 +212,15 @@
                 VStack(alignment: .leading, spacing: 15) {
                     SectionTitle(
                         title: "macOS permissions",
-                        subtitle: "macOS switches, functional AX access and real input callbacks are measured separately."
+                        subtitle: "Access is optional for sources you leave off. macOS permission and your choice to enable a source are separate."
                     )
 
-                    captureHealthPanel
+                    DisclosureGroup("Capture diagnostics") { captureHealthPanel.padding(.top, 12) }
 
-                    HStack(spacing: 12) {
+                    VStack(spacing: 16) {
                         permissionRow(
                             title: "Accessibility",
-                            message: "Reads the active app, window and accessible UI context for Computer History. Screen Time is read directly from Apple-owned files in the background; Goalong never opens or controls System Settings or sends input.",
+                            message: "Reads eligible foreground context for Computer History. Goalong opens System Settings only on your request and never changes macOS permissions for you.",
                             granted: model.runtime.accessibilityGranted,
                             grantedLabel: "Granted",
                             buttonTitle: "Guided setup",
@@ -231,6 +234,16 @@
                             buttonTitle: "Guided setup",
                             action: model.openInputMonitoringSettings
                         )
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Full Disk Access").font(.system(size: 13, weight: .semibold))
+                        Text("Screen Time is read directly from Apple-owned files. Full Disk Access is a broad macOS permission, not access to just one folder. You can leave Apple Screen Time off. If Goalong is missing from a permission list, use + to add Goalong History from Applications, then return and check access for the source.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Open Full Disk Access settings") {
+                            SourceAccessService.openAccess(.fullDiskAccess)
+                        }.buttonStyle(.bordered)
                     }
 
                     if let health = model.runtime.captureHealth,
@@ -336,13 +349,13 @@
                     symbol: "person.fill.questionmark",
                     title: "Private browsing",
                     message:
-                        "Private windows are excluded by default. You can include them in Settings → Recording; secure fields and exclusions still apply.",
+                        "Your saved private-window choice is shown above. Detection varies by browser; Pause is available for sensitive activity.",
                     tint: LHTheme.privateTint
                 )
                 protectionCard(
                     symbol: "key.fill",
                     title: "Passwords and secure fields",
-                    message: "Password managers are excluded and secure text input suppresses keyboard activity.",
+                    message: "Secure text input suppresses keyboard activity. Review password-manager exclusions in Recording.",
                     tint: LHTheme.success
                 )
                 protectionCard(
@@ -354,7 +367,7 @@
                 protectionCard(
                     symbol: "link.badge.plus",
                     title: "Sanitized URLs",
-                    message: model.settingsDraft.redactAllURLQueryValues
+                    message: model.appliedSettings.redactAllURLQueryValues
                         ? "URL query values and fragments are removed before local storage."
                         : "Sensitive query names are redacted; full-query redaction is currently disabled.",
                     tint: LHTheme.accent
@@ -377,10 +390,8 @@
                     )
                     infoRow(
                         symbol: "calendar",
-                        title: "Detailed retention",
-                        value: model.settingsDraft.retentionDays == 0
-                            ? "Keep indefinitely"
-                            : "\(model.settingsDraft.retentionDays) days"
+                        title: "Retention policy",
+                        value: "See retention by data type above"
                     )
                     infoRow(
                         symbol: "doc.text",
@@ -447,7 +458,7 @@
 
                     HStack {
                         StatusPill(
-                            title: model.runtime.verificationEnabled ? "Verification enabled" : "Local-only mode",
+                            title: model.runtime.verificationEnabled ? "Verification enabled" : "No external verification",
                             symbol: model.runtime.verificationEnabled ? "checkmark.seal.fill" : "internaldrive",
                             tint: model.runtime.verificationEnabled ? LHTheme.accent : Color.secondary
                         )

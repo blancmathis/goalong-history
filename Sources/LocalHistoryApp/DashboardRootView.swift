@@ -17,6 +17,18 @@
                             .fill(LHTheme.separator)
                             .frame(width: 1)
                         page
+                            .safeAreaInset(edge: .bottom, spacing: 0) {
+                                if model.settingsHaveChanges && model.selectedSection != .settings {
+                                    HStack(spacing: 12) {
+                                        Label("Recording changes are not saved", systemImage: "pencil.circle")
+                                            .font(.system(size: 12, weight: .medium))
+                                        Spacer()
+                                        Button("Discard draft") { model.discardSettingsChanges() }
+                                        Button("Review changes") { model.openRecordingSettings() }
+                                            .buttonStyle(LHPrimaryButtonStyle())
+                                    }.padding(14).background(LHTheme.cardBackground)
+                                }
+                            }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }

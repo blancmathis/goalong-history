@@ -71,7 +71,7 @@
         }
 
         var body: some View {
-            SourceAccessGate(capability: .aiConversations, automaticallyEnable: presentation == .history) { pageBody }
+            SourceAccessGate(capability: .aiConversations) { pageBody }
         }
 
         private var pageBody: some View {

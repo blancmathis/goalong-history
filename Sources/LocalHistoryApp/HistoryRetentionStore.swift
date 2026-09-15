@@ -178,6 +178,16 @@
             return value
         }
 
+        /// Activation is a distinct destructive authorization, never a side effect of
+        /// saving capture settings. The matching record remains the cleanup authority.
+        var isAutomaticCleanupEnabled: Bool { cleanupMayRun && activationMatchesCurrentPolicy() }
+
+        func activate(_ value: HistoryRetentionPolicy) throws {
+            _ = try save(value)
+            try writeMetadata(Self.encoder.encode(ActivationRecord(policy: value)), to: storage.activationFile)
+            cleanupMayRun = true
+        }
+
         /// Keeps the Settings value effective for the detailed layer. Zero,
         /// negative and otherwise invalid values conservatively mean "keep".
         func updateDetailedRetention(fromLegacyDays days: Int) throws {
@@ -191,6 +201,23 @@
             let activation = ActivationRecord(policy: updated)
             try writeMetadata(Self.encoder.encode(activation), to: storage.activationFile)
             cleanupMayRun = true
+        }
+
+        /// In-flight derived writers must finish before expiry removes their output.
+        /// Generation invalidation also prevents a pre-cleanup queued job recreating it.
+        func applyCleanupAfterDrainingDerivedWriters(
+            now: Date = Date(),
+            barrier: DerivedHistoryWriteBarrier = .shared,
+            completion: @escaping () -> Void = {}
+        ) {
+            guard isAutomaticCleanupEnabled else { completion(); return }
+            let suspension = barrier.suspend()
+            barrier.notifyWhenDrained(suspension) { [self] in
+                // Revalidates the activation record: a later stop or policy change wins.
+                applyCleanup(now: now)
+                barrier.resume(suspension)
+                completion()
+            }
         }
 
         func applyCleanup(now: Date = Date()) {

@@ -9,6 +9,8 @@
         @AppStorage("goalongOnboardingStep") var step: SetupStep = .welcome
         @State var launchAtLoginPreference = false
         @State var note: String?
+        @State var showingRetention = false
+        @AppStorage("goalongOnboardingPrivacyReviewedV1") var privacyReviewed = false
         @State var checkingSources: Set<GoalongCapability> = []
 
         var body: some View {
@@ -19,7 +21,7 @@
                     HStack {
                         Text(step.navigationTitle).font(.system(size: 20, weight: .semibold))
                         Spacer()
-                        Text("\(step.rawValue + 1) of \(SetupStep.allCases.count)")
+                        Text("\(step.position) of \(SetupStep.allCases.count)")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 28).frame(height: 72)
@@ -37,6 +39,7 @@
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
+                if !privacyReviewed && step != .welcome { step = .privacy }
                 launchAtLogin.refresh()
                 launchAtLoginPreference = consents.isEnabled(.launchAtLogin)
             }
@@ -83,14 +86,25 @@
         var footer: some View {
             HStack(spacing: 14) {
                 if step != .welcome {
-                    Button("Back") { note = nil; step = SetupStep(rawValue: step.rawValue - 1)! }
+                    Button("Back") { note = nil; step = step.previous ?? .welcome }
                         .buttonStyle(.bordered)
                 }
                 Spacer()
                 if !checkingSources.isEmpty { ProgressView("Checking access…").controlSize(.small) }
-                Button(step == .ready ? "Open Goalong" : step == .welcome ? "Choose sources" : "Review setup") {
+                Button(step.actionTitle) {
+                    note = nil
                     if step == .ready { finishSetup() }
-                    else { note = nil; step = SetupStep(rawValue: step.rawValue + 1)! }
+                    else {
+                        if step == .privacy {
+                            guard model.saveOnboardingRecordingChoices() else {
+                                note = model.alert?.message ?? "Your choices could not be saved. Try again."
+                                model.alert = nil
+                                return
+                            }
+                            privacyReviewed = true
+                        }
+                        step = step.next ?? .ready
+                    }
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
@@ -98,12 +112,6 @@
             }
             .controlSize(.large)
             .padding(.horizontal, 28).frame(height: 72)
-        }
-
-        func prepareComputerHistory() throws {
-            guard consents.document.consent(for: .localComputerHistory).changedAt == nil,
-                  !UserDefaults.standard.bool(forKey: "didShowLocalHistoryConsentOnboardingV5") else { return }
-            try model.configureCaptureForOnboarding(enabled: true)
         }
 
         func finishSetup() {
@@ -129,11 +137,25 @@
     }
 
     enum SetupStep: Int, CaseIterable, Identifiable {
-        case welcome, sources, ready
+        // Preserve the raw values used by previous installations.
+        case welcome = 0, sources = 1, ready = 2, privacy = 3
+        static let allCases: [SetupStep] = [.welcome, .privacy, .sources, .ready]
         var id: Int { rawValue }
+        var position: Int { (Self.allCases.firstIndex(of: self) ?? 0) + 1 }
+        var previous: SetupStep? { position > 1 ? Self.allCases[position - 2] : nil }
+        var next: SetupStep? { position < Self.allCases.count ? Self.allCases[position] : nil }
+        var actionTitle: String {
+            switch self {
+            case .welcome: return "Choose your data"
+            case .privacy: return "Save choices & choose sources"
+            case .sources: return "Review setup"
+            case .ready: return "Open Goalong"
+            }
+        }
         var navigationTitle: String {
             switch self {
             case .welcome: return "Welcome"
+            case .privacy: return "Your data"
             case .sources: return "Your sources"
             case .ready: return "Ready to start"
             }

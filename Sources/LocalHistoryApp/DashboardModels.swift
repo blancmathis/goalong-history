@@ -302,8 +302,8 @@
             output.verificationEnabled = verificationEnabled
             output.verificationServerURL = verificationServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
             output.enableAppAttest = enableAppAttest
-            output.excludedDomains = Self.lines(from: excludedDomainsText).map { $0.lowercased() }
-            let includedDomains = Self.lines(from: includedDomainsText).map { $0.lowercased() }
+            output.excludedDomains = (try? PrivacyScopeInput.domains(excludedDomainsText)) ?? base.excludedDomains
+            let includedDomains = (try? PrivacyScopeInput.domains(includedDomainsText)) ?? (base.includedDomains ?? [])
             output.includedDomains = includedDomains.isEmpty ? nil : includedDomains
             let includedApplications = Self.lines(from: includedApplicationsText)
             output.includedBundleIdentifiers = includedApplications.isEmpty ? nil : includedApplications
