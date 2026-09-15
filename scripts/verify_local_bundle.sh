@@ -83,7 +83,8 @@ if [[ -f "$ROOT_DIR/Sources/GoalongRelauncher/main.swift" ]]; then
   test -x "$RELAUNCHER"
   test ! -L "$RELAUNCHER"
   /usr/bin/codesign --verify --strict --verbose=2 "$RELAUNCHER"
-  /usr/bin/codesign -d --verbose=4 "$RELAUNCHER" 2>&1 | /usr/bin/grep -Fq "Identifier=$EXPECTED_BUNDLE_ID.relauncher"
+  RELAUNCHER_DETAILS="$(/usr/bin/codesign -d --verbose=4 "$RELAUNCHER" 2>&1)"
+  /usr/bin/grep -Fxq "Identifier=$EXPECTED_BUNDLE_ID.relauncher" <<< "$RELAUNCHER_DETAILS"
 fi
 
 LOCALHISTORY_AUDIT_BINARY="$BINARY" "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
