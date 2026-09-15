@@ -98,12 +98,20 @@
         private var retentionCleanupGate = DailyMaintenanceGate()
         private var localCaptureRuntimeActive = false
 
+        private var runtimeStarted = false
+
         func applicationDidFinishLaunching(_ notification: Notification) {
+            PermissionRecovery.launchWhenParentHasExited { [weak self] in self?.startApplication() }
+        }
+
+        private func startApplication() {
             guard !anotherInstanceIsRunning() else {
                 NSApplication.shared.terminate(nil)
                 return
             }
 
+            runtimeStarted = true
+            LegacyInstallationMigrator.run()
             NSApplication.shared.setActivationPolicy(.accessory)
             GoalongWebsiteAutoSender.shared.start()
             SoftwareUpdateManager.shared.start()
@@ -269,11 +277,15 @@
 
             installWorkspaceObservers()
             showDashboardOnFirstConsentLaunch()
+            if CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
+                dashboardWindowController?.show(section: .settings)
+            }
             // A URL can arrive before the dashboard exists on a cold launch.
             Task { @MainActor in presentWebsitePairingIfReady() }
         }
 
         func applicationWillTerminate(_ notification: Notification) {
+            guard runtimeStarted else { return }
             SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()
             screenTimeArchiveTimer?.invalidate()

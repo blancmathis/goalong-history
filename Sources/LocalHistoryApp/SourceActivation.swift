@@ -20,6 +20,13 @@
             }
         }
 
+        var isMacPermission: Bool {
+            switch self {
+            case .accessibility, .inputMonitoring, .fullDiskAccess: return true
+            case .ready, .screenTimeSetup, .unavailable: return false
+            }
+        }
+
         var hasSettingsAction: Bool {
             switch self {
             case .accessibility, .inputMonitoring, .fullDiskAccess, .screenTimeSetup: return true
@@ -30,9 +37,9 @@
         var message: String {
             switch self {
             case .ready: return "The required access is available."
-            case .accessibility: return "In Privacy & Security → Accessibility, enable Goalong History. If it is missing, use + and choose the app in Applications. Return here to verify access; granting macOS access alone does not enable a source."
+            case .accessibility: return "In Privacy & Security → Accessibility, enable Goalong History. If it is already enabled but this check fails, macOS may still be authorizing an older app copy. Use the recovery steps below. Granting macOS access alone does not enable a source."
             case .inputMonitoring: return "Allow Input Monitoring for Goalong in System Settings, then return here to verify access."
-            case .fullDiskAccess: return "In Privacy & Security → Full Disk Access, enable Goalong History. If it is missing, use + and choose the app in Applications. Reopen Goalong if macOS asks, then check access again. You may also continue without this source."
+            case .fullDiskAccess: return "In Privacy & Security → Full Disk Access, enable Goalong History. After changing this permission, restart Goalong History before checking again. If the switch is already on, use the recovery steps below to replace an older app entry. You may also continue without this source."
             case .screenTimeSetup: return "No Apple Screen Time source is available yet. Turn on App & Website Activity in macOS Screen Time, then check again."
             case .unavailable(let message): return message
             }
@@ -66,7 +73,7 @@
         private static func probe(_ capability: GoalongCapability) -> SourceAccessStatus {
             switch capability {
             case .localComputerHistory:
-                return computerHistoryAccess(PermissionManager().snapshot)
+                return computerHistoryAccess(PermissionManager.activationStatus())
             case .appleScreenTime:
                 switch AppleSystemScreenTimeSource(deviceID: "access-check").activationAccess() {
                 case .available: return .ready
@@ -121,27 +128,52 @@
         @Published private(set) var checking = false
         @Published private(set) var result: SourceAccessStatus?
         @Published private(set) var completed = false
+        @Published private(set) var completedCheckCount = 0
+        @Published private(set) var feedback: String?
+        private var timeoutWorkItem: DispatchWorkItem?
+        private let checkTimeout: TimeInterval
         private var generation = 0
         private let store: GoalongCapabilityConsentStore
         private let checkAccess: SourceAccessService.Check
 
-        init(store: GoalongCapabilityConsentStore = .shared, check: @escaping SourceAccessService.Check = SourceAccessService.check, initialStatus: SourceAccessStatus? = nil) {
+        init(store: GoalongCapabilityConsentStore = .shared, check: @escaping SourceAccessService.Check = SourceAccessService.check, initialStatus: SourceAccessStatus? = nil, checkTimeout: TimeInterval = 8) {
+            self.checkTimeout = checkTimeout
             self.store = store
             self.checkAccess = check
             self.result = initialStatus
         }
 
         func checkAndEnable(_ capability: GoalongCapability, surface: GoalongConsentSurface, prepare: @escaping () throws -> Void) {
-            guard !checking else { return }
+            guard !checking, !completed else { return }
             generation += 1
             let request = generation
             checking = true
-            result = nil
-            checkAccess(capability) { [weak self] status in
-                guard let self, self.generation == request else { return }
+            feedback = nil
+            // Keep the previous result visible while checking; never leave an empty sheet.
+            let timeout = DispatchWorkItem { [weak self] in
+                guard let self, self.generation == request, self.checking else { return }
+                self.generation += 1
                 self.checking = false
+                self.completedCheckCount += 1
+                self.feedback = "The access check did not finish. Nothing has been enabled. Restart Goalong History and try again."
+                if self.result == nil { self.result = .unavailable(self.feedback!) }
+            }
+            timeoutWorkItem?.cancel()
+            timeoutWorkItem = timeout
+            DispatchQueue.main.asyncAfter(deadline: .now() + checkTimeout, execute: timeout)
+            checkAccess(capability) { [weak self] status in
+                guard let self, self.generation == request, self.checking else { return }
+                self.timeoutWorkItem?.cancel()
+                self.timeoutWorkItem = nil
+                self.checking = false
+                self.completedCheckCount += 1
                 self.result = status
-                guard status == .ready else { return }
+                guard status == .ready else {
+                    self.feedback = status.isMacPermission
+                        ? "Check \(self.completedCheckCount): macOS still denies access to this running copy of Goalong History. The source is not enabled."
+                        : "Check \(self.completedCheckCount): this source is not ready. Nothing has been enabled."
+                    return
+                }
                 do { if !self.store.isEnabled(capability) { try prepare() } }
                 catch {
                     self.result = .unavailable("Settings could not be saved: \(error.localizedDescription)")
@@ -160,7 +192,14 @@
             request(result)
         }
 
-        func cancel() { generation += 1; checking = false }
+        func cancel() {
+            generation += 1
+            timeoutWorkItem?.cancel()
+            timeoutWorkItem = nil
+            checking = false
+        }
+
+        deinit { timeoutWorkItem?.cancel() }
     }
 
     private struct SourceAccessCheckKey: EnvironmentKey {
@@ -292,25 +331,39 @@
                 if let status = flow.result, status != .ready {
                     Text(status.message).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
                 }
+                if flow.checking {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Checking macOS access…").font(.system(size: 12))
+                    }
+                    .accessibilityLabel("Checking macOS access")
+                } else if let feedback = flow.feedback {
+                    Text(feedback).font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("source-access-check-result")
+                }
+                if let status = flow.result, status.isMacPermission {
+                    PermissionRecoveryView(status: status, expandOnFailure: flow.completedCheckCount > 0)
+                        .disabled(flow.checking)
+                }
                 HStack(spacing: 10) {
                     Button("Not now", role: .cancel) { flow.cancel(); dismiss() }
                         .keyboardShortcut(.cancelAction)
                     Spacer()
-                    if openedSettings {
-                        Button("Check access") { check() }.disabled(flow.checking)
-                    }
-                    Button(flow.checking ? "Checking access…" : flow.result?.actionTitle ?? "Checking access…") {
-                        if let status = flow.result, status.hasSettingsAction {
+                    if let status = flow.result, status.hasSettingsAction {
+                        Button(status.actionTitle) {
                             openedSettings = true
                             flow.requestMissingAccess()
-                        } else { check() }
+                        }.disabled(flow.checking)
                     }
-                    .buttonStyle(LHPrimaryButtonStyle())
-                    .disabled(flow.checking || flow.result == nil)
-                    .keyboardShortcut(.defaultAction)
+                    Button(flow.checking ? "Checking…" : "Check access") { check() }
+                        .buttonStyle(LHPrimaryButtonStyle())
+                        .disabled(flow.checking)
+                        .keyboardShortcut(.defaultAction)
                 }
             }
-            .padding(28).frame(width: 520)
+            .padding(28).frame(width: 560)
             .background(LHTheme.pageBackground)
             .background(PermissionSheetWindowBehavior())
             .onAppear { if flow.result == nil { check() } }
@@ -368,6 +421,7 @@
                             Text("Access for \(capability.title)").font(.system(size: 15, weight: .semibold))
                             Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
                             Text(status.message).font(.system(size: 13))
+                            if status.isMacPermission { PermissionRecoveryView(status: status) }
                             Text("Your source choice is unchanged. Missing access is not evidence of inactivity.")
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                             HStack(spacing: 12) {

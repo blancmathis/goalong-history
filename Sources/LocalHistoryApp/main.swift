@@ -67,8 +67,6 @@
         exit(0)
     }
 
-    LegacyInstallationMigrator.run()
-
     let delegate = AppDelegate()
     application.delegate = delegate
     application.run()

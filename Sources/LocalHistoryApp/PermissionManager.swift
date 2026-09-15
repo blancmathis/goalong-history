@@ -164,6 +164,17 @@
             return value
         }
 
+        /// Activation checks ask macOS about this process only. A focused-window AX
+        /// round trip is capture health, not authorization, and can stall a setup sheet.
+        static func activationStatus() -> PermissionStatus {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
+            return .resolved(
+                accessibilityPreflight: AXIsProcessTrustedWithOptions(options),
+                accessibilityFunctionalProbe: false,
+                inputMonitoringDirectlyGranted: CGPreflightListenEventAccess()
+            )
+        }
+
         private static func liveStatus() -> PermissionStatus {
             let accessibilityPreflight = AXIsProcessTrusted()
             let accessibilityFunctionalProbe = Self.canReadFocusedApplication()
@@ -276,6 +287,7 @@
 
         private static func canReadFocusedApplication() -> Bool {
             let systemWide = AXUIElementCreateSystemWide()
+            AXUIElementSetMessagingTimeout(systemWide, 0.12)
             var focusedApplication: CFTypeRef?
             let result = AXUIElementCopyAttributeValue(
                 systemWide,

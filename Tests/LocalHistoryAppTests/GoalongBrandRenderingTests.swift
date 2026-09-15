@@ -135,6 +135,23 @@ final class GoalongBrandRenderingTests: XCTestCase {
             window.setContentSize(NSSize(width: 740, height: 720)); pump()
             try snapshot(sharing.view, to: output.appendingPathComponent("journey-sharing-\(dark ? "dark" : "light").png"))
         }
+        // Deterministic denied-access recovery; never probes real macOS permissions.
+        for dark in [true, false] {
+            app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.appearance = app.appearance
+            for (name, capability, status): (String, GoalongCapability, SourceAccessStatus) in [
+                ("computer", .localComputerHistory, .accessibility),
+                ("screen-time", .appleScreenTime, .fullDiskAccess)
+            ] {
+                let recovery = NSHostingController(rootView: SourceActivationSheet(
+                    capability: capability, surface: .settings,
+                    prepare: { XCTFail("Denied preview must never prepare recording") },
+                    check: { _, done in done(status) }))
+                window.contentViewController = recovery
+                window.setContentSize(NSSize(width: 620, height: 690)); pump()
+                try snapshot(recovery.view, to: output.appendingPathComponent("permission-recovery-\(name)-\(dark ? "dark" : "light").png"))
+            }
+        }
         if environment["GOALONG_JOURNEY_INTERACTIVE"] == "1" {
             app.setActivationPolicy(.regular)
             window.title = "Goalong Journey QA — synthetic data only"

@@ -249,6 +249,33 @@ while IFS= read -r match; do
   fi
 done < <(grep -R -nE --include='*.swift' 'NSWorkspace\.shared\.open\(' "$ROOT_DIR/Sources/LocalHistoryApp" || true)
 
+# Permission recovery may relaunch only the exact current bundle through LaunchServices.
+# It must not gain a shell, accept an arbitrary app URL, reset TCC, or overlap data writers.
+PERMISSION_RECOVERY="$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift"
+while IFS= read -r match; do
+  file="${match%%:*}"
+  if [[ "$file" != "$PERMISSION_RECOVERY" ]]; then
+    echo "Unreviewed application relaunch boundary: $match" >&2
+    failed=true
+  fi
+done < <(grep -R -nE --include='*.swift' 'NSWorkspace\.shared\.openApplication\(' "$ROOT_DIR/Sources/LocalHistoryApp" || true)
+for required_fragment in \
+  'bundle.bundleIdentifier == "ai.goalong.localhistory"' \
+  'NSWorkspace.shared.openApplication(at: bundle.bundleURL, configuration: configuration)' \
+  'configuration.createsNewApplicationInstance = true' \
+  'parentURL.standardizedFileURL == bundleURL.standardizedFileURL' \
+  'abs(launchDate.timeIntervalSince1970 - launched) < 0.01' \
+  'case .notRequested, .ready: start()'; do
+  if ! grep -Fq "$required_fragment" "$PERMISSION_RECOVERY"; then
+    echo "Permission relaunch confinement invariant is missing: $required_fragment" >&2
+    failed=true
+  fi
+done
+if grep -nE 'tccutil|SecItem|SecTrust|CGRequest|AXIsProcessTrustedWithOptions|\.set\(.*enabled:' "$PERMISSION_RECOVERY"; then
+  echo "Permission recovery must not grant access, change trust, or enable recording." >&2
+  failed=true
+fi
+
 # The deprecated LocalHistory-derived Screen Time approximation must not return.
 if [[ -e "$ROOT_DIR/Sources/LocalHistoryApp/AppleScreenTime/LiveMacScreenTimeSource.swift" ]]; then
   echo "Deprecated LocalHistory-derived Screen Time source is still present." >&2

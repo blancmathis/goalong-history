@@ -136,5 +136,55 @@ final class SourceActivationTests: XCTestCase {
         flow.checkAndEnable(.localComputerHistory, surface: .settings) {}
         XCTAssertTrue(consent.isEnabled(.localComputerHistory))
     }
+    func testFailedChecksAlwaysProduceVisibleChangingFeedback() throws {
+        let consent = try store()
+        let flow = SourceActivationFlow(store: consent, check: { _, done in done(.accessibility) }, initialStatus: .accessibility)
+        flow.checkAndEnable(.localComputerHistory, surface: .settings) {}
+        XCTAssertEqual(flow.completedCheckCount, 1)
+        XCTAssertTrue(flow.feedback?.contains("Check 1") == true)
+        flow.checkAndEnable(.localComputerHistory, surface: .settings) {}
+        XCTAssertEqual(flow.completedCheckCount, 2)
+        XCTAssertTrue(flow.feedback?.contains("Check 2") == true)
+        XCTAssertFalse(consent.isEnabled(.localComputerHistory))
+    }
+
+    func testCheckingKeepsRecoveryInstructionsVisible() throws {
+        let consent = try store()
+        let flow = SourceActivationFlow(store: consent, check: { _, _ in }, initialStatus: .fullDiskAccess)
+        flow.checkAndEnable(.appleScreenTime, surface: .settings) {}
+        XCTAssertTrue(flow.checking)
+        XCTAssertEqual(flow.result, .fullDiskAccess)
+        flow.cancel()
+    }
+
+    func testTimedOutCheckCannotEnableSourceWithLateSuccess() throws {
+        let consent = try store()
+        var finish: ((SourceAccessStatus) -> Void)?
+        let flow = SourceActivationFlow(store: consent, check: { _, done in finish = done },
+                                        initialStatus: .accessibility, checkTimeout: 0.01)
+        flow.checkAndEnable(.localComputerHistory, surface: .settings) { XCTFail("Timed-out preparation") }
+        let timeout = expectation(description: "Check expires")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { timeout.fulfill() }
+        wait(for: [timeout], timeout: 1)
+        XCTAssertFalse(flow.checking)
+        XCTAssertNotNil(flow.feedback)
+        XCTAssertEqual(flow.result, .accessibility)
+        finish?(.ready)
+        XCTAssertFalse(consent.isEnabled(.localComputerHistory))
+        XCTAssertFalse(flow.completed)
+    }
+
+    func testDuplicatedCompletionCannotOverrideSuccessfulActivation() throws {
+        let consent = try store()
+        var finish: ((SourceAccessStatus) -> Void)?
+        let flow = SourceActivationFlow(store: consent, check: { _, done in finish = done })
+        flow.checkAndEnable(.appleScreenTime, surface: .settings) {}
+        finish?(.ready)
+        finish?(.fullDiskAccess)
+        XCTAssertTrue(flow.completed)
+        XCTAssertEqual(flow.result, .ready)
+        XCTAssertEqual(flow.completedCheckCount, 1)
+    }
+
 }
 #endif
