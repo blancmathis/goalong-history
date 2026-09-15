@@ -16,7 +16,7 @@ import LocalHistoryCore
     private let defaults: UserDefaults
     private let root: URL
     private let exporter: (URL, String, GoalongSiteExportOptions) throws -> Data
-    private let sender: (Data, String, URL, String?) throws -> Data
+    private let sender: ((Data, String, URL, String?) throws -> Data)?
     private let sourceConsent: @MainActor (GoalongSiteExportOptions) -> Bool
     private let key = "goalong.website.autoSend.v1"
     struct Configuration: Codable {
@@ -27,7 +27,8 @@ import LocalHistoryCore
         var hour: Int?
         var minute: Int? = 0
         var timeZoneIdentifier: String? = TimeZone.current.identifier
-        var policyVersion: Int? = 2
+        var policyVersion: Int? = 3
+        var privacyRevision: String?
         var identifier: String? = UUID().uuidString
         var lastSuccess: String?
         var paused: Bool? = false
@@ -44,15 +45,16 @@ import LocalHistoryCore
 
     init(defaults: UserDefaults = .standard, root: URL = AppPaths.applicationSupportDirectory,
          exporter: @escaping (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) },
-         sender: @escaping (Data, String, URL, String?) throws -> Data = { try GoalongSiteSubmission.send(payload: $0, origin: $1, tokenFile: $2, expectedTokenFingerprint: $3) },
+         sender: ((Data, String, URL, String?) throws -> Data)? = nil,
          sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) }) {
         self.defaults = defaults; self.root = root; self.exporter = exporter; self.sender = sender
         self.sourceConsent = sourceConsent
         let saved = configuration()
         lastSuccess = saved?.lastSuccess
-        enabled = saved?.policyVersion == 2 && saved?.paused != true
+        enabled = saved?.policyVersion == 3 && saved?.paused != true
+            && saved?.privacyRevision == GoalongPrivacyPolicy.load(in: root).revision
         if let saved {
-            if saved.policyVersion != 2 {
+            if saved.policyVersion != 3 {
                 status = "Ancienne synchronisation suspendue : relisez la sélection avant de la réactiver."
             } else if enabled {
                 status = "Activée · la veille à partir de \(Self.timeLabel(saved)), lorsque Goalong est ouvert."
@@ -77,6 +79,8 @@ import LocalHistoryCore
             throw GoalongSiteExportError.invalid("Choisissez les applications et domaines autorisés dans la nouvelle fenêtre de partage.")
         }
         var selected = options
+        selected.strictSelection = true
+        selected.includeHourly = false
         // Today's free text and positional recap indices cannot authorize tomorrow's text.
         selected.includeRecap = false
         selected.recapText = nil
@@ -100,8 +104,10 @@ import LocalHistoryCore
         }
         let selected = try Self.dailyOptions(options)
         guard sourceConsent(selected) else { throw GoalongSiteExportError.invalid("Une source sélectionnée est désactivée dans les réglages.") }
-        let value = Configuration(origin: origin, tokenPath: tokenPath, options: selected, hour: hour,
+        var value = Configuration(origin: origin, tokenPath: tokenPath, options: selected, hour: hour,
                                   minute: minute, timeZoneIdentifier: timeZoneIdentifier, credentialFingerprint: SHA256Digest.hashHex(Data(token.utf8)))
+        value.privacyRevision = GoalongPrivacyPolicy.load(in: root).revision
+        guard !GoalongPrivacyPolicy.load(in: root).blocked else { throw GoalongSiteExportError.invalid("Les exclusions sont illisibles.") }
         try store(value)
         lastSuccess = nil
         enabled = true
@@ -125,8 +131,11 @@ import LocalHistoryCore
         }
     }
     func tick(now: Date = Date()) async {
-        guard !busy, enabled, var current = configuration(), current.policyVersion == 2, current.paused != true,
+        guard !busy, enabled, var current = configuration(), current.policyVersion == 3, current.paused != true,
               let zone = TimeZone(identifier: current.timeZoneIdentifier ?? "") else { return }
+        guard current.privacyRevision == GoalongPrivacyPolicy.load(in: root).revision else {
+            stop(); status = "Exclusions modifiées : vérifiez la sélection avant de reprendre."; return
+        }
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
         let minutes = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
         guard minutes >= (current.hour ?? 9) * 60 + (current.minute ?? 0),
@@ -152,8 +161,15 @@ import LocalHistoryCore
             guard sourceConsent(snapshot.options) else {
                 stop(); status = "Synchronisation arrêtée : une source est désactivée."; return
             }
+            _ = try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: snapshot.privacyRevision)
             status = "Envoi du \(day)…"
-            _ = try await Task.detached { try sender(payload, snapshot.origin, URL(fileURLWithPath: snapshot.tokenPath), snapshot.credentialFingerprint) }.value
+            _ = try await Task.detached {
+                _ = try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: snapshot.privacyRevision)
+                if let sender { return try sender(payload, snapshot.origin, URL(fileURLWithPath: snapshot.tokenPath), snapshot.credentialFingerprint) }
+                return try GoalongSiteSubmission.send(payload: payload, origin: snapshot.origin,
+                    tokenFile: URL(fileURLWithPath: snapshot.tokenPath), expectedTokenFingerprint: snapshot.credentialFingerprint,
+                    privacyRoot: root, expectedPrivacyRevision: snapshot.privacyRevision)
+            }.value
             guard enabled, configuration()?.identifier == snapshot.identifier else { return }
             current.lastSuccess = day
             try store(current)

@@ -72,10 +72,10 @@
 
         private var header: some View {
             DayNavigationHeader(
-                title: "History", day: model.selectedDay,
+                title: "Historique", day: model.selectedDay,
                 isRefreshing: model.isRefreshing || agents.isScanning || screenTime.isBusy,
                 onSelectDay: selectDay,
-                onShare: { model.selectSection(.share) },
+                onShare: { model.showingWebsiteShare = true },
                 onRefresh: refresh
             )
         }
@@ -137,9 +137,9 @@
 
         var title: String {
             switch self {
-            case .computer: return "Computer History"
-            case .screenTime: return "Screen Time"
-            case .conversations: return "AI conversations"
+            case .computer: return "Ce Mac"
+            case .screenTime: return "Temps d’écran Apple"
+            case .conversations: return "Conversations locales"
             }
         }
     }

@@ -54,9 +54,17 @@
         }
 
         func capture() -> ContextSnapshot? {
+            let policy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory)
+            guard let snapshot = capture(privacy: policy) else { return nil }
+            return ContextSnapshot(app: snapshot.app, window: snapshot.window,
+                focusedElement: snapshot.focusedElement, url: snapshot.url,
+                suppressionReason: snapshot.suppressionReason, privacyRevision: policy.revision)
+        }
+
+        private func capture(privacy: GoalongPrivacyPolicy) -> ContextSnapshot? {
             guard let workspaceApplication = NSWorkspace.shared.frontmostApplication else { return nil }
             let runningApplication = focusedRunningApplication(fallback: workspaceApplication)
-            let config = configManager.config
+            let config = privacy.applying(to: configManager.config)
             let app = AppSnapshot(
                 name: StringSanitizer.clean(
                     runningApplication.localizedName ?? "Unknown application",
@@ -66,7 +74,7 @@
                 processIdentifier: runningApplication.processIdentifier
             )
 
-            if isExcluded(app: app, config: config) {
+            if privacy.blocked || isExcluded(app: app, config: config) {
                 return ContextSnapshot(
                     app: app,
                     window: nil,
@@ -173,14 +181,16 @@
                 // A website exclusion or include-only scope must never fall back to recording a
                 // browser without a host just because URL capture was disabled.
                 if !config.captureURLs, !config.allowsWebsite(host: nil) {
+                    // Inspection is separately authorized; do not cache or persist the URL.
+                    let host = privacy.inspectDomainsForExclusions
+                        ? AXReader.browserURL(from: windowElement, addressFieldMarkers: config.addressFieldMarkers)
+                            .flatMap { URLComponents(string: $0)?.host }
+                        : nil
                     clearCachedURL()
-                    return ContextSnapshot(
-                        app: app,
-                        window: nil,
-                        focusedElement: nil,
-                        url: nil,
-                        suppressionReason: .excludedDomain
-                    )
+                    if !config.allowsWebsite(host: host) {
+                        return ContextSnapshot(app: app, window: nil, focusedElement: nil, url: nil,
+                                               suppressionReason: .excludedDomain)
+                    }
                 }
             }
 
@@ -231,14 +241,15 @@
 
         func fastSuppressionReason() -> SuppressionReason? {
             guard let runningApplication = NSWorkspace.shared.frontmostApplication else { return .sessionUnavailable }
-            let config = configManager.config
+            let privacy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory)
+            let config = privacy.applying(to: configManager.config)
             let app = AppSnapshot(
                 name: runningApplication.localizedName ?? "Unknown application",
                 bundleIdentifier: runningApplication.bundleIdentifier,
                 processIdentifier: runningApplication.processIdentifier
             )
 
-            if isExcluded(app: app, config: config) {
+            if privacy.blocked || isExcluded(app: app, config: config) {
                 return .excludedApplication
             }
 
@@ -270,7 +281,7 @@
                 return .accessibilityUnavailable
             }
 
-            let rawURL = hasDomainRules && config.captureURLs
+            let rawURL = hasDomainRules && (config.captureURLs || privacy.inspectDomainsForExclusions)
                 ? AXReader.browserURL(
                     from: windowElement,
                     addressFieldMarkers: config.addressFieldMarkers,

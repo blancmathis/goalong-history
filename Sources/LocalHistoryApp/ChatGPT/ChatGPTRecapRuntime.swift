@@ -454,6 +454,7 @@
         private let automaticRetryScheduler: (TimeInterval, DispatchWorkItem) -> Void
         private let automaticBoundaryFallbackScheduler: (Date, DispatchWorkItem) -> Void
         private let analysisConsentProvider: () -> Bool
+        private let analysisSelectionProvider: () -> GoalongAnalysisSelection
         private let analysisSigningIdentityProvider: (() throws -> AnalysisRunSigningIdentity)?
         private let derivedWriteBarrier = DerivedHistoryWriteBarrier.shared
         private let sessionLock = NSLock()
@@ -507,6 +508,7 @@
             analysisConsentProvider: @escaping () -> Bool = {
                 GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis)
             },
+            analysisSelectionProvider: @escaping () -> GoalongAnalysisSelection = { GoalongAnalysisSelection.load() },
             analysisSigningIdentityProvider: (() throws -> AnalysisRunSigningIdentity)? = nil
         ) {
             self.chatHistoryStore = chatHistoryStore
@@ -526,6 +528,7 @@
             self.automaticRetryScheduler = automaticRetryScheduler
             self.automaticBoundaryFallbackScheduler = automaticBoundaryFallbackScheduler
             self.analysisConsentProvider = analysisConsentProvider
+            self.analysisSelectionProvider = analysisSelectionProvider
             self.analysisSigningIdentityProvider = analysisSigningIdentityProvider
             let today = Calendar.current.startOfDay(for: Date())
             selectedDay = today
@@ -572,7 +575,7 @@
 
         func start() {
             guard GoalongBuildCapabilities.permitsRemoteAnalysis else { return }
-            guard analysisConsentProvider() else { return }
+            guard analysisConsentProvider(), analysisSelectionProvider().isValid(for: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)) else { return }
             guard !started else { return }
             started = true
             scheduleNextAutomaticRecap()
@@ -685,8 +688,8 @@
             }
         }
 
-        func refreshAccount() {
-            guard analysisConsentProvider() else {
+        func refreshAccount(userInitiated: Bool = false) {
+            guard userInitiated || analysisConsentProvider() else {
                 connectionState = .signedOut
                 return
             }
@@ -720,13 +723,6 @@
         }
 
         func connectChatGPT() {
-            guard analysisConsentProvider() else {
-                alert = ChatGPTRecapAlert(
-                    title: "AI analysis is off",
-                    message: "Enable ChatGPT analysis first. Goalong will then show exactly what can be sent before a run."
-                )
-                return
-            }
             guard GoalongBuildCapabilities.permitsRemoteAnalysis else {
                 connectionState = .codexUnavailable
                 alert = ChatGPTRecapAlert(
@@ -761,9 +757,9 @@
                         self.isConnecting = false
                         self.publishAccount(account)
                         self.alert = ChatGPTRecapAlert(
-                            title: "ChatGPT connected",
+                            title: "ChatGPT connecté",
                             message:
-                                "Goalong can now launch recap agents with the usage included in this ChatGPT plan. Codex keeps the managed credentials in Goalong's private, isolated Codex directory; Goalong never reads or copies the token values."
+                                "La connexion est prête. Choisissez les données avant de lancer une analyse. Aucune activité n’a été transmise par cette connexion."
                         )
                     }
                 } catch {
@@ -780,6 +776,8 @@
         }
 
         func disconnectChatGPT() {
+            stop()
+            automaticRecapsEnabled = false
             guard let executable = executableLocator() else {
                 connectionState = .codexUnavailable
                 return
@@ -883,6 +881,15 @@
                 }
                 return
             }
+            let selection = analysisSelectionProvider()
+            let privacy = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)
+            guard selection.isValid(for: privacy) else {
+                if !automatic {
+                    alert = ChatGPTRecapAlert(title: "Choisissez les données pour ChatGPT",
+                        message: "Ouvrez Réglages → Connexions pour confirmer les sources de l’analyse.")
+                }
+                return
+            }
             guard GoalongBuildCapabilities.permitsRemoteAnalysis else {
                 if !automatic {
                     alert = ChatGPTRecapAlert(
@@ -943,10 +950,11 @@
                         chatHistoryStore: self.chatHistoryStore,
                         includeScreenTime: includeScreenTime,
                         includeAgentActivity: includeAgentActivity,
-                        analyzeAgentContent: includeAgentActivity
+                        analyzeAgentContent: includeAgentActivity,
+                        selection: selection
                     )
                     guard context.hasMeaningfulData else {
-                        throw CodexAppServerError.generationFailed("There is no captured context for this day yet.")
+                        throw CodexAppServerError.generationFailed("Aucune donnée autorisée n’est disponible pour cette journée. Les exclusions de sites limitent aussi les anciens agrégats non filtrables.")
                     }
                     let overview = ChatGPTRecapContextBuilder.dayOverview(from: context)
                     guard self.derivedWriteBarrier.isCurrent(permit), self.isRunActive(runID) else {
@@ -971,6 +979,11 @@
                         for: context,
                         outputLanguage: Self.outputLanguage
                     )
+                    guard self.analysisConsentProvider(), self.isRunActive(runID),
+                          self.analysisSelectionProvider() == selection,
+                          GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == privacy.revision else {
+                        throw CodexAppServerError.generationFailed("Les autorisations ont changé. Aucune analyse n’a été envoyée.")
+                    }
                     let assessment = try session.generateRecap(
                         prompt: prompt,
                         workingDirectory: directory
@@ -1213,7 +1226,7 @@
         #endif
 
         private func maybeGenerateAutomaticRecap() {
-            guard analysisConsentProvider() else { return }
+            guard analysisConsentProvider(), analysisSelectionProvider().isValid(for: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)) else { return }
             guard started, automaticRecapsEnabled, !isGenerating else { return }
             guard let completedDay = ChatGPTDailyRecapSchedule.completedDay(at: Date()) else { return }
             if let stored = ChatGPTRecapPersistence.load(for: completedDay, from: recapsDirectory),

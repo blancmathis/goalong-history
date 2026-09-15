@@ -263,19 +263,22 @@ public struct ContextSnapshot: Equatable {
     public let focusedElement: ElementSnapshot?
     public let url: URLSnapshot?
     public let suppressionReason: SuppressionReason?
+    public let privacyRevision: String?
 
     public init(
         app: AppSnapshot,
         window: WindowSnapshot?,
         focusedElement: ElementSnapshot?,
         url: URLSnapshot?,
-        suppressionReason: SuppressionReason?
+        suppressionReason: SuppressionReason?,
+        privacyRevision: String? = nil
     ) {
         self.app = app
         self.window = window
         self.focusedElement = focusedElement
         self.url = url
         self.suppressionReason = suppressionReason
+        self.privacyRevision = privacyRevision
     }
 
     public var fingerprint: String {
@@ -288,6 +291,7 @@ public struct ContextSnapshot: Equatable {
         parts.append(focusedElement?.label ?? "")
         parts.append(url?.value ?? "")
         parts.append(suppressionReason?.rawValue ?? "")
+        if let privacyRevision { parts.append(privacyRevision) }
         return parts.joined(separator: "|")
     }
 }

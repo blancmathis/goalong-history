@@ -124,12 +124,12 @@
             XCTAssertTrue(history.contains("@State private var source: HistorySource = .computer"))
             XCTAssertTrue(history.contains("presentation: .history"))
             XCTAssertTrue(history.contains("DayNavigationHeader("))
-            XCTAssertTrue(history.contains("onShare: { model.selectSection(.share) }"))
+            XCTAssertTrue(history.contains("onShare: { model.showingWebsiteShare = true }"))
             let dayHeader = try String(
                 contentsOf: repositoryRoot.appendingPathComponent("Sources/LocalHistoryApp/DayNavigationHeader.swift"),
                 encoding: .utf8
             )
-            XCTAssertTrue(dayHeader.contains("Label(\"Share day\", systemImage: \"square.and.arrow.up\")"))
+            XCTAssertTrue(dayHeader.contains("Label(\"Envoyer à Goalong\", systemImage: \"square.and.arrow.up\")"))
 
             let settings = try String(
                 contentsOf: repositoryRoot
@@ -137,13 +137,13 @@
                 encoding: .utf8
             )
             XCTAssertTrue(settings.contains("case .home:"))
-            XCTAssertTrue(settings.contains("title: \"Goalong CLI\""))
+            XCTAssertTrue(settings.contains("title: \"Terminal et agents\""))
             XCTAssertTrue(settings.contains("model.selectSection(.cli)"))
-            XCTAssertTrue(settings.contains("title: \"Recording\""))
-            XCTAssertTrue(settings.contains("title: \"Sources\""))
+            XCTAssertTrue(settings.contains("return \"Enregistrement\""))
+            XCTAssertTrue(settings.contains("title: \"Autres sources · facultatives\""))
             XCTAssertTrue(settings.contains("model.selectSection(.agentActivity)"))
-            XCTAssertTrue(settings.contains("title: \"Privacy & permissions\""))
-            XCTAssertTrue(settings.contains("title: \"Advanced\""))
+            XCTAssertTrue(settings.contains("return \"Autorisations macOS\""))
+            XCTAssertTrue(settings.contains("return \"Avancé\""))
 
             let agentActivity = try String(
                 contentsOf: repositoryRoot
@@ -251,7 +251,7 @@
             XCTAssertFalse(screenTime.contains("Inside browser apps · This Mac only · never added"))
             XCTAssertFalse(screenTime.contains("with input"))
             XCTAssertFalse(overview.contains("with input"))
-            XCTAssertTrue(overview.contains("Apps & websites"))
+            XCTAssertTrue(overview.contains("Applications et sites"))
             XCTAssertTrue(overview.contains("Group sites by browser"))
             XCTAssertTrue(overview.contains("Same usage and total; only the grouping changes."))
             XCTAssertTrue(overview.contains("isOn: groupsSitesByBrowser"))

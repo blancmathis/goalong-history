@@ -57,12 +57,12 @@ final class JourneyPrivacyTests: XCTestCase {
         XCTAssertEqual(validation.result, .fullDiskAccess)
     }
     func testSetupAlwaysReviewsDataBeforeSourcesWithoutChangingLegacyStepIDs() {
-        XCTAssertEqual(SetupStep.allCases, [.welcome, .privacy, .sources, .ready])
+        XCTAssertEqual(SetupStep.allCases, [.privacy, .sources, .ready])
         XCTAssertEqual(SetupStep.sources.rawValue, 1)
         XCTAssertEqual(SetupStep.ready.rawValue, 2)
         XCTAssertEqual(SetupStep.welcome.next, .privacy)
         XCTAssertEqual(SetupStep.sources.previous, .privacy)
-        XCTAssertEqual(SetupStep.privacy.position, 2)
+        XCTAssertEqual(SetupStep.privacy.position, 1)
         XCTAssertNil(SetupStep.ready.next)
     }
     func testMinimalNewConfigurationLeavesAllOptionalFieldsOff() {

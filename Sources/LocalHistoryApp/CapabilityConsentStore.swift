@@ -15,13 +15,13 @@
 
         var title: String {
             switch self {
-            case .localComputerHistory: return "Computer History"
-            case .appleScreenTime: return "Apple Screen Time"
-            case .aiConversations: return "AI conversations"
-            case .chatGPTAnalysis: return "ChatGPT analysis"
+            case .localComputerHistory: return "Historique de ce Mac"
+            case .appleScreenTime: return "Temps d’écran Apple"
+            case .aiConversations: return "Conversations locales"
+            case .chatGPTAnalysis: return "Analyse ChatGPT"
             case .remoteVerification: return "External verification"
             case .automaticUpdates: return "Automatic update checks"
-            case .launchAtLogin: return "Launch at login"
+            case .launchAtLogin: return "Démarrage à la connexion"
             }
         }
     }

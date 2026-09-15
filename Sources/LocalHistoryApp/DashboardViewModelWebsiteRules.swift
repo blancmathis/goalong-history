@@ -51,14 +51,16 @@
                     let included = configuredIncludedDomains.filter {
                         SharingSubjectKey.normalizedHost($0) != normalized
                     }
-                    settingsDraft.includedDomainsText = included.sorted().joined(separator: "\n")
+                    // Keep the allow-list: an exclusion overrides it, including its last item.
+                    _ = included
+                    domains.append(normalized)
                 } else {
                     domains.append(normalized)
                 }
             }
 
             settingsDraft.excludedDomainsText = domains.sorted().joined(separator: "\n")
-            saveSettings()
+            if !applyRecordingChoice(settingsDraft) { discardSettingsChanges() }
         }
 
         /// Updates the recorder's persistent excluded-application list from the Activity screen.
@@ -95,9 +97,8 @@
                     let included = configuredIncludedApplications.filter {
                         $0.caseInsensitiveCompare(normalized) != .orderedSame
                     }
-                    settingsDraft.includedApplicationsText = included
-                        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-                        .joined(separator: "\n")
+                    _ = included
+                    applications.append(normalized)
                 } else {
                     applications.append(normalized)
                 }
@@ -106,7 +107,7 @@
             settingsDraft.excludedApplicationsText = applications
                 .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
                 .joined(separator: "\n")
-            saveSettings()
+            if !applyRecordingChoice(settingsDraft) { discardSettingsChanges() }
         }
 
         func hideWebsiteInEveryShare(_ host: String) {

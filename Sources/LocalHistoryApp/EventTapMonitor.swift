@@ -1159,7 +1159,8 @@
                     window: nil,
                     focusedElement: nil,
                     url: nil,
-                    suppressionReason: .secureInput
+                    suppressionReason: .secureInput,
+                    privacyRevision: $0.privacyRevision
                 )
             }
             recorder.record(

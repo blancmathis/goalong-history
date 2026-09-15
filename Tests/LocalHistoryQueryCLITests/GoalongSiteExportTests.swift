@@ -7,6 +7,27 @@ import XCTest
 @testable import LocalHistoryQueryCLI
 
 final class GoalongSiteExportTests: XCTestCase {
+    func testStrictSelectionExcludesUnselectedDurationsFromTotalsAndHours() throws {
+        let payload = try GoalongSiteExport.payload(record: fixture(), options: .init(
+            deviceIDs: ["mac"], includeApplications: true, includeHourly: true,
+            selectedApplicationIDs: [], strictSelection: true))
+        let rows = try deviceRows(payload)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertTrue(rows[0]["screenSeconds"] is NSNull)
+        XCTAssertTrue(rows[0]["hourly"] is NSNull)
+        XCTAssertTrue((rows[0]["apps"] as? [Any])?.isEmpty == true)
+    }
+    func testGlobalExclusionAppliesEvenWithLegacyExportOptions() throws {
+        var privacy = GoalongPrivacyPolicy(); privacy.applications = ["secret.app": "Private application"]
+        let payload = try GoalongSiteExport.payload(record: fixture(), options: .init(includeApplications: true, includeHourly: true), privacy: privacy)
+        XCTAssertFalse(String(decoding: payload, as: UTF8.self).contains("secret.app"))
+        XCTAssertFalse(String(decoding: payload, as: UTF8.self).contains("Private application"))
+        for row in try deviceRows(payload) {
+            XCTAssertTrue(row["screenSeconds"] is NSNull); XCTAssertTrue(row["hourly"] is NSNull)
+        }
+        XCTAssertThrowsError(try GoalongSiteExport.payload(record: fixture(), options: .init(includeRecap: true), privacy: privacy))
+    }
+
     func testExplicitAllowlistNeverIncludesOtherAppsDevicesOrDomains() throws {
         let sites = ["allowed.example", "private.example"].map {
             DailyWebsiteUsage(host: $0, foregroundSeconds: 120, activeMinuteCount: 2, eventCount: 1,

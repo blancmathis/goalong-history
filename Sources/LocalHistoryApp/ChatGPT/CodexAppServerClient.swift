@@ -893,6 +893,10 @@
 
         private func generateSelectedAnalysisJSON(prompt: String, schema: [String: Any], workingDirectory: URL,
                                                   maximumResponseBytes: Int = 32 * 1024) throws -> Data {
+            let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+            guard !GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).hasExclusions else {
+                throw CodexAppServerError.generationFailed("Les exclusions bloquent cette analyse de texte. Utilisez le bilan par applications dans Connexions.")
+            }
             guard siteAnalysisOnly else {
                 throw CodexAppServerError.generationFailed("Site analysis requires its isolated Codex connection.")
             }
@@ -941,6 +945,9 @@
                 Self.workspaceRootsAreConfined(roots, to: workingDirectory)
             else {
                 throw CodexAppServerError.generationFailed("Codex did not confirm the restricted analysis settings. Update Codex before trying again.")
+            }
+            guard GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == privacyRevision else {
+                throw CodexAppServerError.generationFailed("Les exclusions ont changé. L’analyse a été arrêtée avant l’envoi.")
             }
             let turnResponse = try request(
                 method: "turn/start",
@@ -1064,6 +1071,8 @@
             workingDirectory: URL,
             onDelta: ((String) -> Void)? = nil
         ) throws -> ChatGPTDailyAssessment {
+            let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+            let selectionRevision = GoalongAnalysisSelection.load().revision
             guard let account = try readAccount(refreshToken: true) else {
                 throw CodexAppServerError.accountNotChatGPT("signed-out")
             }
@@ -1141,6 +1150,10 @@
                 )
             }
 
+            guard GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == privacyRevision,
+                  GoalongAnalysisSelection.load().revision == selectionRevision else {
+                throw CodexAppServerError.generationFailed("Les choix d’analyse ont changé. Aucun contexte n’a été transmis.")
+            }
             let startedTurn = try request(
                 method: "turn/start",
                 params: [

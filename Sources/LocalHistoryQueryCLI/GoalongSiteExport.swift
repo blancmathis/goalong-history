@@ -23,6 +23,8 @@ public struct GoalongSiteExportOptions: Codable {
     public var selectedApplicationIDs: [String]?
     public var selectedWebsiteDomains: [String]?
     public var includeDeviceNames: Bool?
+    /// Exact selection: unselected activity must not survive in device totals.
+    public var strictSelection: Bool?
 
     public init(deviceIDs: [String] = [], includeApplications: Bool = false,
                 includeHourly: Bool = false, includeWebsites: Bool = false,
@@ -32,7 +34,7 @@ public struct GoalongSiteExportOptions: Codable {
                 includeRhythmTimeline: Bool = false, includeRhythmTimes: Bool = false, includeRhythmContext: Bool = false,
                 contextualRhythm: GoalongContextualRhythm.Rhythm? = nil,
                 selectedApplicationIDs: [String]? = nil, selectedWebsiteDomains: [String]? = nil,
-                includeDeviceNames: Bool? = nil) {
+                includeDeviceNames: Bool? = nil, strictSelection: Bool? = nil) {
         self.deviceIDs = deviceIDs
         self.includeApplications = includeApplications
         self.includeHourly = includeHourly
@@ -51,6 +53,7 @@ public struct GoalongSiteExportOptions: Codable {
         self.selectedApplicationIDs = selectedApplicationIDs
         self.selectedWebsiteDomains = selectedWebsiteDomains
         self.includeDeviceNames = includeDeviceNames
+        self.strictSelection = strictSelection
     }
 }
 
@@ -67,7 +70,12 @@ public enum GoalongSiteExport {
     public static func payload(record: AppleSystemScreenTimeDailyArchiveRecord,
                                options: GoalongSiteExportOptions = .init(),
                                websites: [DailyWebsiteUsage]? = nil,
-                               recap: String? = nil, now: Date = Date()) throws -> Data {
+                               recap: String? = nil, now: Date = Date(),
+                               privacy: GoalongPrivacyPolicy = .init()) throws -> Data {
+        guard !privacy.blocked else { throw GoalongSiteExportError.invalid("Les exclusions sont illisibles. Aucun envoi n’est autorisé.") }
+        if privacy.hasExclusions && (options.includeRecap || options.rhythmProject != nil || options.contextualRhythm != nil) {
+            throw GoalongSiteExportError.invalid("Les textes et analyses ne peuvent pas être filtrés avec ces exclusions. Envoyez uniquement des données chiffrées.")
+        }
         guard let zone = TimeZone(identifier: record.timeZoneIdentifier),
               let stored = record.collection.storedExport else {
             throw GoalongSiteExportError.invalid("The stored Screen Time day has no valid timezone or data.")
@@ -113,7 +121,14 @@ public enum GoalongSiteExport {
                 ?? (hasSegments && report.segments.allSatisfy { $0.totalScreenOnDuration == 0 } ? 0 : nil)
             let allApps = options.includeApplications ? item?.applications ?? [] : []
             let allowedApps = options.selectedApplicationIDs.map(Set.init)
-            let apps = allApps.filter { allowedApps?.contains($0.id) ?? true }
+            // Apple totals cannot be safely decomposed into an excluded website's usage.
+            // Domain exclusions therefore omit these opaque per-app aggregates as well.
+            let apps = allApps.filter {
+                (allowedApps?.contains($0.id) ?? true)
+                    && !privacy.excludes(appID: $0.bundleIdentifier ?? $0.id, name: $0.resolvedName)
+                    && privacy.domains.isEmpty
+            }
+            let mayIncludeTotal = options.strictSelection != true && !privacy.hasExclusions
             guard apps.count <= 200 else { throw GoalongSiteExportError.invalid("This device exceeds 200 applications; export totals or select fewer details.") }
             var result: [String: Any] = [
                 "id": options.includeDeviceNames == false
@@ -128,14 +143,14 @@ public enum GoalongSiteExport {
                 // partial so an unclassified social/work metric cannot become a false zero.
                 "appsCoverage": options.includeApplications && total != nil
                     ? (options.selectedApplicationIDs != nil ? "partial" : (apps.isEmpty ? coverage : "partial")) : "unknown",
-                "screenSeconds": total as Any? ?? NSNull(), "hourly": NSNull(),
+                "screenSeconds": mayIncludeTotal ? (total as Any? ?? NSNull()) : NSNull(), "hourly": NSNull(),
                 "apps": try apps.map { app -> [String: Any] in
                     ["id": try text(app.id, maximum: 160),
                      "name": try text(app.resolvedName, maximum: 100),
                      "seconds": try seconds(app.duration), "category": "other"]
                 }
             ]
-            if options.includeHourly, let total {
+            if mayIncludeTotal, options.includeHourly, let total {
                 result["hourly"] = try hourly(report: report, stored: stored, calendar: calendar,
                                                interval: interval, total: total) as Any? ?? NSNull()
             }
@@ -144,7 +159,17 @@ public enum GoalongSiteExport {
         var websiteValue: Any = NSNull()
         if options.includeWebsites, masks.isEmpty, let websites {
             let allowedDomains = options.selectedWebsiteDomains.map { Set($0.map { $0.lowercased() }) }
-            let websites = websites.filter { allowedDomains?.contains($0.host.lowercased()) ?? true }
+            let websites = websites.filter {
+                guard allowedDomains?.contains($0.host.lowercased()) ?? true,
+                      !privacy.excludes(domain: $0.host) else { return false }
+                guard !privacy.applications.isEmpty else { return true }
+                // A mixed or unidentifiable browser origin cannot reintroduce an excluded app.
+                guard !$0.sourceUsage.isEmpty else {
+                    return $0.sourceApplications.count == 1 && $0.primaryBundleIdentifier != nil
+                        && !privacy.excludes(appID: $0.primaryBundleIdentifier, name: $0.sourceApplications.first)
+                }
+                return !$0.sourceUsage.contains { privacy.excludes(appID: $0.bundleIdentifier, name: $0.applicationName) }
+            }
             guard websites.count <= 200 else { throw GoalongSiteExportError.invalid("This day exceeds 200 domains; export without website details.") }
             let rows: [[String: Any]] = try websites.map { website in
                 guard website.host.range(of: #"^[a-z0-9](?:[a-z0-9.-]{0,249}[a-z0-9])?\.[a-z]{2,63}$"#,

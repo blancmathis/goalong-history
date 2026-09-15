@@ -2,6 +2,7 @@
 import XCTest
 import Foundation
 import LocalHistoryQueryCLI
+import LocalHistoryCore
 @testable import LocalHistoryApp
 
 final class GoalongWebsiteAutoSenderTests: XCTestCase {
@@ -40,8 +41,9 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         let suite = "goalong-auto-time-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let config = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: .init(deviceIDs: ["mac"]),
+        var config = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: .init(deviceIDs: ["mac"]),
             hour: 9, minute: 45, timeZoneIdentifier: "America/Chicago")
+        config.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
         defaults.set(try JSONEncoder().encode(config), forKey: "goalong.website.autoSend.v1")
         var sent = 0
         let scheduler = GoalongWebsiteAutoSender(defaults: defaults, exporter: { _, day, _ in XCTAssertEqual(day, "2026-09-13"); return Data() },
@@ -118,7 +120,8 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let options = GoalongSiteExportOptions(deviceIDs: ["mac"])
-        let configuration = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: options)
+        var configuration = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: options)
+        configuration.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
         defaults.set(try JSONEncoder().encode(configuration), forKey: "goalong.website.autoSend.v1")
         var sent = 0
         let sender = GoalongWebsiteAutoSender(defaults: defaults, exporter: { _, _, _ in Data() }, sender: { _, _, _, _ in
@@ -134,7 +137,8 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         let suite = "goalong-auto-consent-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let configuration = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: .init(deviceIDs: ["mac"]))
+        var configuration = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: .init(deviceIDs: ["mac"]))
+        configuration.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
         defaults.set(try JSONEncoder().encode(configuration), forKey: "goalong.website.autoSend.v1")
         var consent = true, sent = 0
         let sender = GoalongWebsiteAutoSender(defaults: defaults, exporter: { _, _, _ in

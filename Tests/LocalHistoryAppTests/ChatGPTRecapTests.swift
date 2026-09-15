@@ -1988,7 +1988,12 @@
                     scheduledDelays.append(delay)
                     scheduledWork.append(workItem)
                 },
-                analysisConsentProvider: { true }
+                analysisConsentProvider: { true },
+                analysisSelectionProvider: {
+                    var value = GoalongAnalysisSelection(); value.revision = "test-approved"; value.reviewed = true; value.computer = true
+                    value.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+                    return value
+                }
             )
             runtime.automaticRecapsEnabled = true
             runtime.start()
@@ -2035,7 +2040,12 @@
                     scheduledDates.append(fireDate)
                     scheduledItems.append(workItem)
                 },
-                analysisConsentProvider: { true }
+                analysisConsentProvider: { true },
+                analysisSelectionProvider: {
+                    var value = GoalongAnalysisSelection(); value.revision = "test-approved"; value.reviewed = true; value.computer = true
+                    value.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+                    return value
+                }
             )
 
             runtime.automaticRecapsEnabled = true

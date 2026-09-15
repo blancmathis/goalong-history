@@ -22,6 +22,7 @@ ARCHS="${LOCALHISTORY_ARCHS:-$(uname -m)}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
 SIGN_IDENTITY="${LOCALHISTORY_CODESIGN_IDENTITY:--}"
 RUN_TESTS="${LOCALHISTORY_RUN_TESTS:-1}"
+BUILD_JOBS="${LOCALHISTORY_BUILD_JOBS:-2}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build_app.sh must run on macOS." >&2
@@ -87,7 +88,7 @@ build_arch() {
   local scratch="$WORK_DIR/build-$arch"
   local log="$WORK_DIR/build-$arch.log"
   local cli_log="$WORK_DIR/build-$arch-cli.log"
-  local command=(xcrun swift build -c release --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
+  local command=(xcrun swift build -c release -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
 
   echo "Building ${arch}…"
   set +e
@@ -100,7 +101,7 @@ build_arch() {
     return "$status"
   fi
 
-  local bin_command=(xcrun swift build -c release --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch" --show-bin-path)
+  local bin_command=(xcrun swift build -c release -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch" --show-bin-path)
   local bin_dir
   bin_dir="$(cd "$ROOT_DIR" && "${bin_command[@]}")"
   local binary="$bin_dir/$PRODUCT_NAME"
@@ -110,7 +111,7 @@ build_arch() {
   fi
   cp "$binary" "$WORK_DIR/$PRODUCT_NAME-$arch"
 
-  local cli_command=(xcrun swift build -c release --product "$CLI_PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
+  local cli_command=(xcrun swift build -c release -j "$BUILD_JOBS" --product "$CLI_PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
   if ! (cd "$ROOT_DIR" && "${cli_command[@]}") >"$cli_log" 2>&1; then
     cat "$cli_log" >&2
     return 1
@@ -121,7 +122,7 @@ build_arch() {
     return 1
   fi
   cp "$cli_binary" "$WORK_DIR/$CLI_PRODUCT_NAME-$arch"
-  local helper_command=(xcrun swift build -c release --product goalong-relauncher --arch "$arch" --scratch-path "$scratch")
+  local helper_command=(xcrun swift build -c release -j "$BUILD_JOBS" --product goalong-relauncher --arch "$arch" --scratch-path "$scratch")
   (cd "$ROOT_DIR" && "${helper_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
   cp "$bin_dir/goalong-relauncher" "$WORK_DIR/goalong-relauncher-$arch"
 }
@@ -273,6 +274,15 @@ else
   SIGN_TIMESTAMP_ARGUMENT="$(localhistory_codesign_timestamp_argument "$SIGN_IDENTITY")"
   SIGN_ARGS=(--force --options runtime --sign "$SIGN_IDENTITY" "$SIGN_TIMESTAMP_ARGUMENT")
 fi
+
+# Ship the reviewed native sign-in runtime; end users never install a CLI.
+mkdir -p "$CONTENTS/Helpers" "$CONTENTS/Resources/ThirdParty"
+python3 "$ROOT_DIR/scripts/prepare_codex_runtime.py" \
+  --cache "$ROOT_DIR/.build/goalong-runtime-cache" \
+  --output "$CONTENTS/Helpers/codex" --archs $ARCHS
+mv "$CONTENTS/Helpers/CODEX-LICENSE.txt" "$CONTENTS/Resources/ThirdParty/CODEX-LICENSE.txt"
+mv "$CONTENTS/Helpers/codex-runtime.json" "$CONTENTS/Resources/ThirdParty/codex-runtime.json"
+codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID.codex-runtime" "$CONTENTS/Helpers/codex"
 
 # Explicit inside-out signing; never use --deep to sign nested executable code.
 SPARKLE_VERSION_DIR="$CONTENTS/Frameworks/Sparkle.framework/Versions/B"

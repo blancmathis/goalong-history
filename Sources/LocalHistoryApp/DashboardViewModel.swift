@@ -106,6 +106,7 @@
 
         @Published var selectedSection: DashboardSection = .overview
         @Published var settingsPane: SettingsPane = .home
+        @Published var showingWebsiteShare = false
         @Published private(set) var runtime: RuntimePresentation = .unavailable
         @Published private(set) var snapshot: DashboardDaySnapshot
         @Published private(set) var snapshotGeneration: UInt64 = 0
@@ -652,7 +653,7 @@
             }
         }
 
-        func saveSettings() {
+        func saveSettings(showConfirmation: Bool = true) {
             if !GoalongBuildCapabilities.permitsRemoteVerification {
                 settingsDraft.verificationEnabled = false
                 settingsDraft.verificationServerURL = ""
@@ -678,12 +679,10 @@
                 settingsDraft = refreshed
                 savedSettingsDraft = refreshed
                 refreshRuntime()
-                alert = DashboardAlert(
-                    kind: .information,
-                    title: "Settings saved",
-                    message:
-                        "Your recording choices are saved for future activity. Existing data is unchanged. Automatic deletion is managed separately in Privacy & security."
-                )
+                if showConfirmation {
+                    alert = DashboardAlert(kind: .information, title: "Réglages enregistrés",
+                        message: "Ces choix s’appliquent aux prochaines activités. L’historique est conservé.")
+                }
             } catch {
                 alert = DashboardAlert(
                     kind: .error,
@@ -691,6 +690,24 @@
                     message: String(describing: error)
                 )
             }
+        }
+
+        /// Immediate controls always read back the persisted state. A failed save
+        /// restores the previous value instead of leaving a falsely reassuring switch.
+        @discardableResult
+        func applyRecordingChoice(_ next: DashboardSettingsDraft) -> Bool {
+            let previous = savedSettingsDraft
+            settingsDraft = next
+            alert = nil
+            saveSettings(showConfirmation: false)
+            guard alert == nil else {
+                settingsDraft = savedSettingsDraft
+                return false
+            }
+            if previous != savedSettingsDraft {
+                NotificationCenter.default.post(name: .goalongRecordingChoicesDidChange, object: nil)
+            }
+            return true
         }
 
         /// The Privacy screen reports persisted choices, never an unsaved editor draft.

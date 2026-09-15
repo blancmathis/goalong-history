@@ -253,7 +253,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         {
             "purpose": "managed-ChatGPT-analysis-after-explicit-consent",
             "destination": "Codex app-server managed account transport",
-            "source": "separately installed Codex executable",
+            "source": "pinned SHA-256-verified Codex executable bundled in Contents/Helpers",
         },
         {
             "purpose": "explicit-selected-website-import",

@@ -151,12 +151,14 @@ public enum GoalongSiteSubmission {
         return request(payload: payload, endpoint: endpoint, token: token, idempotencyKey: key)
     }
 
-    public static func send(payload: Data, origin: String, tokenFile: URL, expectedTokenFingerprint: String? = nil) throws -> Data {
+    public static func send(payload: Data, origin: String, tokenFile: URL, expectedTokenFingerprint: String? = nil,
+                            privacyRoot: URL = GoalongOutgoingPrivacy.defaultRoot, expectedPrivacyRevision: String? = nil) throws -> Data {
         guard !payload.isEmpty, payload.count <= 2 * 1024 * 1024 else {
             throw GoalongSiteExportError.invalid("The website import must be nonempty and at most 2 MiB.")
         }
         // Validate destination and token before any network operation. No cookies, cache,
         // ambient credentials, redirects or retries can expand the destination or action.
+        let privacy = try GoalongOutgoingPrivacy.validate(payload, root: privacyRoot, expectedRevision: expectedPrivacyRevision)
         let destination = try endpoint(origin: origin)
         let token = try readToken(file: tokenFile)
         if let expectedTokenFingerprint, SHA256Digest.hashHex(Data(token.utf8)) != expectedTokenFingerprint {
@@ -171,6 +173,9 @@ public enum GoalongSiteSubmission {
         configuration.timeoutIntervalForResource = 30
         let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
+        guard GoalongPrivacyPolicy.load(in: privacyRoot).revision == privacy.revision else {
+            throw GoalongSiteExportError.invalid("Les exclusions ont changé juste avant l’envoi. Refaites l’aperçu.")
+        }
         session.dataTask(with: requestForNewSubmission(payload: payload, endpoint: destination, token: token)).resume()
         guard delegate.finished.wait(timeout: .now() + 35) == .success else {
             throw GoalongSiteExportError.invalid("Upload timed out. Check the site's import history before retrying; receipt status is unknown.")

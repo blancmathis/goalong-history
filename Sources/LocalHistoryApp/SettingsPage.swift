@@ -1,629 +1,205 @@
 #if os(macOS)
-    import SwiftUI
+import SwiftUI
+import AppKit
 
-    @MainActor struct SettingsPage: View {
-        @ObservedObject var model: DashboardViewModel
-        @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
-        @ObservedObject private var updates = SoftwareUpdateManager.shared
-        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
-        private var pane: SettingsPane {
-            get { model.settingsPane }
-            nonmutating set { model.settingsPane = newValue }
-        }
-        @State private var showingRetention = false
-        @State private var confirmingSensitiveChanges = false
-
-        init(model: DashboardViewModel) {
-            self.model = model
-            _recapRuntime = ObservedObject(wrappedValue: ChatGPTRecapRuntime.shared)
-        }
-
-        var body: some View {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        settingsHeader
-                        paneContent
-                    }
-                    .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-                    .padding(.horizontal, LHTheme.pageInset)
-                    .padding(.top, 28)
-                    .padding(.bottom, 36)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-
-                if pane != .home || model.settingsHaveChanges {
-                    saveBar
-                }
+@MainActor struct SettingsPage: View {
+    @ObservedObject var model: DashboardViewModel
+    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    @ObservedObject private var updates = SoftwareUpdateManager.shared
+    @StateObject private var launchAtLogin = LaunchAtLoginManager()
+    @State private var search = ""
+    @State private var showingRetention = false
+    @State private var pendingPrivate = false
+    @State private var pendingUnredacted = false
+    @State private var startupError: String?
+    private var pane: SettingsPane {
+        get { model.settingsPane }
+        nonmutating set { model.settingsPane = newValue }
+    }
+    private var recording: Binding<DashboardSettingsDraft> {
+        Binding(get: { model.appliedSettings }, set: { _ = model.applyRecordingChoice($0) })
+    }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text(pane.title).font(LHTheme.pageTitleFont).accessibilityAddTraits(.isHeader)
+                content
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if pane != .home {
-                    SettingsBackBar { pane = .home }
-                }
-            }
-            .background(LHTheme.pageBackground)
-            .onAppear {
-                if GoalongBuildCapabilities.permitsRemoteAnalysis,
-                    consents.isEnabled(.chatGPTAnalysis)
-                {
-                    recapRuntime.configure(deviceID: model.deviceID)
-                    recapRuntime.activate()
-                }
-            }
-            .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet() }
-            .alert(item: $recapRuntime.alert) { item in
-                Alert(
-                    title: Text(item.title),
-                    message: Text(item.message),
-                    dismissButton: .default(Text("OK"))
-                )
-            }
-        }
-
-        private var settingsHeader: some View {
-            PageHeader(
-                eyebrow: pane == .home ? "Configuration" : "Settings",
-                title: pane.title,
-                subtitle: pane.subtitle
-            ) {
-                HStack(spacing: 10) {
-                    if model.settingsHaveChanges {
-                        Button("Save settings") {
-                            requestSave()
-                        }
-                        .buttonStyle(LHPrimaryButtonStyle())
-                        .keyboardShortcut("s", modifiers: [.command])
-                    }
-                }
-            }
-        }
-
-        @ViewBuilder private var paneContent: some View {
-            switch pane {
-            case .home:
-                if GoalongBuildCapabilities.permitsRemoteAnalysis,
-                    consents.isEnabled(.chatGPTAnalysis)
-                {
-                    ChatGPTAccountConnectionCard(runtime: recapRuntime)
-                }
-                softwareUpdatesCard
-                capabilityConsentCard
-                GoalongWebsiteConnectionCard()
-                settingsNavigation
-                Button("Review onboarding") { model.showWelcome = true }
-                    .buttonStyle(.bordered)
-            case .recording:
-                captureCard
-                VisibleContextControl()
-                privacyCard
-                monitoringScopeCard
-            case .advanced:
-                verificationCard
-                advancedCard
-            }
-        }
-
-        private var softwareUpdatesCard: some View {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionTitle(title: "Software updates", subtitle: "New releases appear here and in the sidebar. Installation always requires your approval.")
-                LHCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Goalong History \(updates.currentVersion)").font(.system(size: 14, weight: .semibold))
-                                Text(updates.statusMessage).font(.system(size: 12)).foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer(minLength: 12)
-                            if updates.isChecking { ProgressView().controlSize(.small) }
-                            Button(updates.availableVersion == nil ? "Check for Updates…" : "Update available…") {
-                                updates.showAvailableUpdate()
-                            }.buttonStyle(LHPrimaryButtonStyle())
-                        }
-                        if updates.isConfigured {
-                            Divider()
-                            Toggle("Automatically check for updates", isOn: Binding(
-                                get: { updates.automaticallyChecksForUpdates },
-                                set: { updates.setAutomaticallyChecksForUpdates($0) }
-                            )).toggleStyle(.switch).controlSize(.small)
-                            Text("Signed feed and downloads only; no activity or conversation contents are sent. Community builds may require macOS permissions again after replacement.")
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-            }
-        }
-
-        private var capabilityConsentCard: some View {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionTitle(
-                    title: "Optional capabilities",
-                    subtitle: "These switches apply immediately. A source starts only when you enable it; opening History never grants consent. Recording detail changes have a separate Save button."
-                )
-                LHCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        capabilityToggle(
-                            .localComputerHistory,
-                            message: "Observe foreground apps and coarse interaction signals; detailed events stay on this Mac."
-                        )
-                        Divider()
-                        capabilityToggle(
-                            .appleScreenTime,
-                            message: "Read Apple’s protected Screen Time stores in place; Full Disk Access may be required."
-                        )
-                        Divider()
-                        capabilityToggle(
-                            .aiConversations,
-                            message: "Index local provider metadata and read selected conversations directly from their original files."
-                        )
-                        Divider()
-                        capabilityToggle(
-                            .chatGPTAnalysis,
-                            message: "Send only the bounded analysis context to the Codex/ChatGPT connection after you explicitly start or schedule a run."
-                        )
-                        if GoalongBuildCapabilities.permitsRemoteVerification {
-                            Divider()
-                            capabilityToggle(
-                                .remoteVerification,
-                                message: "Allow opaque signed commitments—not activity contents—to reach the configured verifier."
-                            )
-                        }
-
-                    }
-                }
-            }
-        }
-
-        @ViewBuilder
-        private func capabilityToggle(_ capability: GoalongCapability, message: String) -> some View {
-            let label = VStack(alignment: .leading, spacing: 3) {
-                Text(capability.title).font(.system(size: 13, weight: .medium))
-                Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-            if [.localComputerHistory, .appleScreenTime, .aiConversations].contains(capability) {
-                SourceActivationToggle(capability: capability) { label }
-                .accessibilityHint(message).controlSize(.small)
-            } else {
-                Toggle(isOn: Binding(
-                    get: { consents.isEnabled(capability) },
-                    set: { value in
-                        if !consents.set(capability, enabled: value, surface: .settings) {
-                            model.alert = DashboardAlert(kind: .error, title: "Choice could not be saved",
-                                message: "The previous setting is still active. Try again before relying on this change.")
-                        }
-                    }
-                )) { label }
-                .toggleStyle(.switch).accessibilityLabel(capability.title)
-                .accessibilityHint(message).controlSize(.small)
-            }
-        }
-
-        private var settingsNavigation: some View {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Preferences")
-                    .font(.system(size: 15, weight: .semibold))
-                LHCard(padding: 0) {
-                    VStack(spacing: 0) {
-                        settingsNavigationRow(
-                            title: "Goalong CLI",
-                            detail: "Use your local history from Terminal or give an agent one complete guide.",
-                            symbol: "terminal"
-                        ) {
-                            model.selectSection(.cli)
-                        }
-                        Divider().padding(.leading, 52)
-                        settingsNavigationRow(
-                            title: "Recording",
-                            detail: "Choose the local signals Goalong may record.",
-                            symbol: "dot.radiowaves.left.and.right"
-                        ) {
-                            pane = .recording
-                        }
-                        Divider().padding(.leading, 52)
-                        settingsNavigationRow(
-                            title: "Sources",
-                            detail: "Manage local AI conversation folders and integrations.",
-                            symbol: "externaldrive.connected.to.line.below"
-                        ) {
-                            model.selectSection(.agentActivity)
-                        }
-                        Divider().padding(.leading, 52)
-                        settingsNavigationRow(
-                            title: "Privacy & permissions",
-                            detail: "Review macOS access, local storage and deletion controls.",
-                            symbol: "hand.raised"
-                        ) {
-                            model.selectSection(.privacy)
-                        }
-                        Divider().padding(.leading, 52)
-                        settingsNavigationRow(
-                            title: "Advanced",
-                            detail: "Verification and config.json. Recording scope is in Recording.",
-                            symbol: "slider.horizontal.3"
-                        ) {
-                            pane = .advanced
-                        }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous))
-                }
-            }
-        }
-
-        private func settingsNavigationRow(
-            title: String,
-            detail: String,
-            symbol: String,
-            action: @escaping () -> Void
-        ) -> some View {
-            Button(action: action) {
-                HStack(spacing: 14) {
-                    Image(systemName: symbol)
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 24)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(title)
-                            .font(.system(size: 13, weight: .medium))
-                        Text(detail)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .frame(minHeight: 60)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
-            .accessibilityLabel(title)
-            .accessibilityHint(detail)
-            .help("Open \(title)")
-        }
-
-        private var captureCard: some View {
-            settingsCard(symbol: "slider.horizontal.3", title: "Recording details",
-                         subtitle: "Choose optional fields. Changes apply after Save settings, not when you move a switch.") {
-                RecordingChoicesView(draft: $model.settingsDraft)
-            }
-        }
-
-        private func requestSave() {
-            let saved = model.appliedSettings
-            if (model.settingsDraft.capturePrivateBrowsing && !saved.capturePrivateBrowsing)
-                || (!model.settingsDraft.redactAllURLQueryValues && saved.redactAllURLQueryValues) {
-                confirmingSensitiveChanges = true
-            } else { model.saveSettings() }
-        }
-
-        private var privacyCard: some View {
-            settingsCard(
-                symbol: "hand.raised.fill",
-                title: "Privacy defaults",
-                subtitle:
-                    "Private browsing is excluded by default. Password managers, secure fields and your exclusions remain protected."
-            ) {
-                VStack(spacing: 14) {
-                    settingToggle(
-                        title: "Include private browsing",
-                        message: "Record private windows using your activity capture settings. This can save their titles, URLs and visible context locally. Off by default; password fields and exclusions remain protected.",
-                        isOn: $model.settingsDraft.capturePrivateBrowsing
-                    )
-                    Divider()
-                    settingToggle(
-                        title: "Redact every URL query value",
-                        message: "Keeps parameter names but replaces all values before local storage",
-                        isOn: $model.settingsDraft.redactAllURLQueryValues
-                    )
-
-                    Divider()
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Button("Choose retention separately…") { showingRetention = true }.buttonStyle(.bordered)
-                        Text("Choose how long to keep details, visible context, memories and proofs. Saving recording settings never activates deletion.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-
-                }
-            }
-        }
-
-        private var verificationCard: some View {
-            settingsCard(
-                symbol: "checkmark.seal.fill",
-                title: "Anti-tamper verification",
-                subtitle: GoalongBuildCapabilities.permitsRemoteVerification
-                    ? "When enabled, the server receives opaque signed commitments — never your detailed activity"
-                    : "Local proofs remain available; this edition contains no uploader"
-            ) {
-                VStack(spacing: 15) {
-                    settingToggle(
-                        title: "Send opaque minute commitments",
-                        message: GoalongBuildCapabilities.permitsRemoteVerification
-                            ? "Allows later verification that a selectively shared day was not rewritten"
-                            : "Unavailable because the Local target physically excludes the network uploader",
-                        isOn: $model.settingsDraft.verificationEnabled
-                    )
-                    .disabled(!GoalongBuildCapabilities.permitsRemoteVerification)
-
-                    if GoalongBuildCapabilities.permitsRemoteVerification,
-                        model.settingsDraft.verificationEnabled
-                    {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Verification server")
-                                .font(.system(size: 12, weight: .semibold))
-                            TextField("https://verify.example.com", text: $model.settingsDraft.verificationServerURL)
-                                .textFieldStyle(.roundedBorder)
-                            Text(
-                                "HTTPS is required outside localhost. The server will see request metadata such as time and IP, but not app names, URLs or event contents."
-                            )
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(13)
-                        .background(
-                            Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-
-                        settingToggle(
-                            title: "Use Apple App Attest when available",
-                            message: "Raises trust by proving commitments came from an eligible official app instance",
-                            isOn: $model.settingsDraft.enableAppAttest
-                        )
-                    }
-
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark.shield.fill")
-                            .foregroundStyle(LHTheme.success)
-                        Text(model.deviceProtectionSummary)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(11)
-                    .background(
-                        LHTheme.success.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-            }
-        }
-
-        private var monitoringScopeCard: some View {
-            settingsCard(
-                symbol: "eye.slash.fill",
-                title: "Apps and websites",
-                subtitle:
-                    "Choose exclusions or switch to an include-only scope for future activity"
-            ) {
-                VStack(spacing: 16) {
-                    HStack(alignment: .top, spacing: 14) {
-                        exclusionEditor(
-                            title: "Excluded website domains",
-                            placeholder: "example.com\nprivate.company.com",
-                            text: $model.settingsDraft.excludedDomainsText,
-                            help:
-                                "One domain or website URL per line. Paths and query values are discarded on save; subdomains are included."
-                        )
-                        exclusionEditor(
-                            title: "Excluded apps",
-                            placeholder: "com.example.privateapp",
-                            text: $model.settingsDraft.excludedApplicationsText,
-                            help: "Choose apps below or enter one bundle identifier per line. Exclusions take priority.",
-                            applications: true
-                        )
-                    }
-
-                    Divider()
-
-                    HStack(alignment: .top, spacing: 14) {
-                        exclusionEditor(
-                            title: "Include only website domains",
-                            placeholder: "work.example.com",
-                            text: $model.settingsDraft.includedDomainsText,
-                            help:
-                                "Leave empty to allow every non-excluded site. When populated, browser pages without a matching visible host fail closed."
-                        )
-                        exclusionEditor(
-                            title: "Include only these apps",
-                            placeholder: "com.apple.TextEdit",
-                            text: $model.settingsDraft.includedApplicationsText,
-                            help:
-                                "Leave empty to allow every non-excluded app. Choose apps below or enter bundle identifiers.",
-                            applications: true
-                        )
-                    }
-                }
-            }
-        }
-
-        private var advancedCard: some View {
-            LHCard {
-                HStack(spacing: 14) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(LHTheme.accent)
-                        .frame(width: 38, height: 38)
-                        .background(
-                            LHTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Advanced configuration")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(
-                            "Polling intervals, browser markers and other expert settings remain available in config.json."
-                        )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Open config.json") {
-                        model.openConfiguration()
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-        }
-
-        private var saveBar: some View {
-            HStack(spacing: 12) {
-                Image(systemName: model.settingsHaveChanges ? "pencil.circle.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(model.settingsHaveChanges ? LHTheme.warning : LHTheme.success)
-                Text(model.settingsHaveChanges ? "You have unsaved changes" : "Settings are up to date")
-                    .font(.system(size: 12, weight: .semibold))
-                Spacer()
-                if model.settingsHaveChanges {
-                    Button("Discard") {
-                        model.discardSettingsChanges()
-                    }
-                    .buttonStyle(.bordered)
-                    Button("Save settings") {
-                        requestSave()
-                    }
-                    .buttonStyle(LHPrimaryButtonStyle())
-                }
-            }
-            .padding(.horizontal, 24)
-            .frame(height: 58)
-            .background(.ultraThinMaterial)
-            .overlay(alignment: .top) {
-                Rectangle().fill(LHTheme.separator).frame(height: 1)
-            }
-            .alert("Save these sensitive recording choices?", isPresented: $confirmingSensitiveChanges) {
-                Button("Cancel", role: .cancel) {}
-                Button("Save recording choices") { model.saveSettings() }
-            } message: {
-                Text("These choices include private browsing or reduce URL-query redaction. They can retain personal information in future activity. Existing files and remote copies are unchanged.")
-            }
-        }
-
-        private func settingsCard<Content: View>(
-            symbol: String,
-            title: String,
-            subtitle: String,
-            @ViewBuilder content: () -> Content
-        ) -> some View {
-            LHCard {
-                VStack(alignment: .leading, spacing: 17) {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: symbol)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(LHTheme.accent)
-                            .frame(width: 36, height: 36)
-                            .background(
-                                LHTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(title)
-                                .font(.system(size: 14, weight: .semibold))
-                            Text(subtitle)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    content()
-                }
-            }
-        }
-
-        private func settingsGrid<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 260), spacing: 10)],
-                alignment: .leading,
-                spacing: 10,
-                content: content
-            )
-        }
-
-        private func settingToggle(title: String, message: String, isOn: Binding<Bool>) -> some View {
-            Toggle(isOn: isOn) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .medium))
-                    Text(message)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .toggleStyle(.switch)
-            .accessibilityLabel(title)
-            .accessibilityHint(message)
-            .controlSize(.small)
-            .padding(13)
-            .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        }
-
-        private func exclusionEditor(
-            title: String,
-            placeholder: String,
-            text: Binding<String>,
-            help: String,
-            applications: Bool = false
-        ) -> some View {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: text)
-                        .accessibilityLabel(title)
-                        .font(.system(size: 12, design: .monospaced))
-                        .scrollContentBackground(.hidden)
-                        .padding(7)
-                        .background(
-                            Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                        )
-                    if text.wrappedValue.isEmpty {
-                        Text(placeholder)
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 11)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .frame(minHeight: 125)
-                if applications { ApplicationScopePickerButton(text: text) }
-                Text(help)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 26)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-    }
-
-    enum SettingsPane {
-        case home
-        case recording
-        case advanced
-
-        var title: String {
-            switch self {
-            case .home: return "Settings"
-            case .recording: return "Recording"
-            case .advanced: return "Advanced settings"
-            }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if pane != .home { SettingsBackBar { pane = .home } }
         }
-
-        var subtitle: String {
-            switch self {
-            case .home:
-                return "Your account and the few controls that usually matter."
-            case .recording:
-                return "Review optional details, website and app exclusions. Save applies only to future recording."
-            case .advanced:
-                return "Verification and expert controls that rarely need changing."
+        .background(LHTheme.pageBackground)
+        .onAppear { launchAtLogin.refresh() }
+        .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet() }
+        .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
+            Button("Annuler", role: .cancel) {}
+            Button("Inclure") { var next = model.appliedSettings; next.capturePrivateBrowsing = true; _ = model.applyRecordingChoice(next) }
+        } message: { Text("Les fenêtres privées détectées pourront être enregistrées sur ce Mac. Aucun envoi n’est autorisé par ce choix.") }
+        .alert("Conserver les paramètres des adresses ?", isPresented: $pendingUnredacted) {
+            Button("Annuler", role: .cancel) {}
+            Button("Conserver les valeurs") { var next = model.appliedSettings; next.redactAllURLQueryValues = false; _ = model.applyRecordingChoice(next) }
+        } message: { Text("Les paramètres peuvent contenir des recherches ou des informations personnelles. Ils seront conservés sur ce Mac lorsque l’enregistrement des adresses est activé.") }
+        .alert("Démarrage non modifié", isPresented: Binding(get: { startupError != nil }, set: { if !$0 { startupError = nil } })) {
+            Button("Fermer", role: .cancel) {}
+        } message: { Text(startupError ?? "") }
+    }
+    @ViewBuilder private var content: some View {
+        switch pane {
+        case .home:
+            LHCard { GoalongDataStatus(model: model) }
+            TextField("Rechercher un réglage…", text: $search).textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Rechercher un réglage")
+            LHCard(padding: 0) {
+                VStack(spacing: 0) {
+                    ForEach(visiblePanes, id: \.self) { item in
+                        GoalongSettingsLink(title: item.title, value: summary(item), symbol: item.symbol) { pane = item }
+                        if item != visiblePanes.last { Divider().padding(.leading, 64) }
+                    }
+                    if visiblePanes.isEmpty { Text("Aucun résultat").foregroundStyle(.secondary).padding(20) }
+                }
             }
+            if search.isEmpty {
+                HStack {
+                    Button("Avancé") { pane = .advanced }.buttonStyle(.borderless)
+                    Spacer()
+                    Button(updates.availableVersion == nil ? "Version \(updates.currentVersion)" : "Mise à jour disponible") { updates.showAvailableUpdate() }
+                        .buttonStyle(.borderless)
+                }.font(.system(size: 12))
+            }
+        case .recording:
+            GoalongSettingsGroup(title: "Sur ce Mac") {
+                SourceActivationToggle(capability: .localComputerHistory) { Text("Enregistrer mon activité").font(.system(size: 14, weight: .medium)) }
+                Text("Enregistrer n’autorise aucun envoi.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Toggle("Ouvrir Goalong à la connexion", isOn: Binding(
+                    get: { consents.isEnabled(.launchAtLogin) }, set: { saveStartup($0) }))
+                    .toggleStyle(.switch)
+            }
+            GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording) }
+            VisibleContextControl()
+            DisclosureGroup("Confidentialité avancée") {
+                VStack(alignment: .leading, spacing: 14) {
+                    Toggle("Inclure les fenêtres privées détectées", isOn: Binding(
+                        get: { model.appliedSettings.capturePrivateBrowsing },
+                        set: { value in
+                            if value { pendingPrivate = true }
+                            else { var next = model.appliedSettings; next.capturePrivateBrowsing = false; _ = model.applyRecordingChoice(next) }
+                        })).toggleStyle(.switch)
+                    Toggle("Masquer les valeurs des paramètres d’URL", isOn: Binding(
+                        get: { model.appliedSettings.redactAllURLQueryValues },
+                        set: { value in
+                            if !value { pendingUnredacted = true }
+                            else { var next = model.appliedSettings; next.redactAllURLQueryValues = true; _ = model.applyRecordingChoice(next) }
+                        }))
+                        .toggleStyle(.switch)
+                    Text("La détection des fenêtres privées dépend du navigateur. Utilisez Pause pour une activité sensible.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }.padding(.top, 12)
+            }.font(.system(size: 13))
+            GoalongSettingsGroup(title: "Autres sources · facultatives") {
+                SourceActivationToggle(capability: .appleScreenTime) { Text("Temps d’écran Apple") }
+                Divider()
+                SourceActivationToggle(capability: .aiConversations) { Text("Conversations locales") }
+                Button("Choisir les dossiers de conversations…") { model.selectSection(.agentActivity) }.buttonStyle(.borderless)
+            }
+        case .applications:
+            GoalongApplicationsSettings(model: model)
+        case .connections:
+            GoalongWebsiteConnectionCard()
+            GoalongChatGPTSettings(model: model)
+        case .permissions:
+            GoalongSettingsGroup(title: "Accès nécessaires à vos choix") {
+                GoalongPermissionRow(capability: .localComputerHistory)
+                Divider()
+                GoalongPermissionRow(capability: .appleScreenTime)
+                Divider()
+                GoalongPermissionRow(capability: .aiConversations)
+            }
+            Text("Les fonctions désactivées ne demandent aucune autorisation.")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            DisclosureGroup("Résoudre un problème") {
+                Button("Ouvrir les diagnostics d’accès") { model.selectSection(.privacy) }.buttonStyle(.bordered).padding(.top, 10)
+            }.font(.system(size: 13))
+        case .storage:
+            GoalongStorageSettings(model: model)
+        case .advanced:
+            GoalongSettingsGroup(title: "Outils") {
+                GoalongSettingsLink(title: "Outils de partage et analyses", value: "", symbol: "square.and.arrow.up") { pane = .tools }
+                GoalongSettingsLink(title: "Terminal et agents", value: "CLI", symbol: "terminal") { model.selectSection(.cli) }
+                GoalongSettingsLink(title: "Diagnostic et preuves", value: "", symbol: "checkmark.shield") { model.selectSection(.privacy) }
+                Button("Ouvrir config.json") { model.openConfiguration() }.buttonStyle(.bordered)
+            }
+            GoalongSettingsGroup(title: "Mises à jour") {
+                HStack { Text("Goalong History \(updates.currentVersion)"); Spacer(); Button("Rechercher") { updates.checkForUpdates() } }
+                Toggle("Rechercher les mises à jour automatiquement", isOn: Binding(
+                    get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.switch)
+            }
+            Button("Revoir le démarrage") { model.showWelcome = true }.buttonStyle(.bordered)
+        case .tools:
+            GoalongAdvancedTools(model: model)
         }
     }
+    private var visiblePanes: [SettingsPane] {
+        SettingsPane.primary.filter { search.isEmpty || ($0.title + " " + $0.keywords).localizedStandardContains(search) }
+    }
+    private func summary(_ item: SettingsPane) -> String {
+        switch item {
+        case .recording: return consents.isEnabled(.localComputerHistory) ? "Activé" : "Désactivé"
+        case .applications: return "Choisir les exclusions"
+        case .connections: return "Goalong · ChatGPT"
+        case .permissions: return "Selon vos fonctions"
+        case .storage: return "Conservation et effacement"
+        default: return ""
+        }
+    }
+    private func saveStartup(_ enabled: Bool) {
+        let previous = consents.isEnabled(.launchAtLogin)
+        guard launchAtLogin.setEnabled(enabled) else { startupError = launchAtLogin.message; return }
+        guard consents.set(.launchAtLogin, enabled: enabled, surface: .settings) else {
+            _ = launchAtLogin.setEnabled(previous); startupError = "Le réglage n’a pas pu être enregistré."; return
+        }
+        if enabled && launchAtLogin.requiresApproval { launchAtLogin.openLoginItemsSettings() }
+    }
+}
+
+enum SettingsPane: Hashable {
+    case home, recording, applications, connections, permissions, storage, advanced, tools
+    static let primary: [Self] = [.recording, .applications, .connections, .permissions, .storage]
+    var title: String {
+        switch self {
+        case .home: return "Réglages"
+        case .recording: return "Enregistrement"
+        case .applications: return "Apps et sites"
+        case .connections: return "Connexions"
+        case .permissions: return "Autorisations macOS"
+        case .storage: return "Stockage"
+        case .advanced: return "Avancé"
+        case .tools: return "Outils de partage"
+        }
+    }
+    var subtitle: String { "" }
+    var symbol: String {
+        switch self {
+        case .recording: return "record.circle"
+        case .applications: return "app.badge.checkmark"
+        case .connections: return "link"
+        case .permissions: return "hand.raised"
+        case .storage: return "internaldrive"
+        default: return "slider.horizontal.3"
+        }
+    }
+    var keywords: String {
+        switch self {
+        case .recording: return "arrêter pause clavier clic souris texte activité sources démarrage"
+        case .applications: return "ignorer exclure exclusions masquer application navigateur domaine"
+        case .connections: return "chatgpt compte goalong connecter partager envoyer synchroniser analyse"
+        case .permissions: return "accès accessibilité disque autoriser problème réparer"
+        case .storage: return "supprimer effacer historique conserver durée espace mémoire"
+        default: return ""
+        }
+    }
+}
 #endif

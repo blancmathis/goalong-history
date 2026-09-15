@@ -23,8 +23,9 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
             catalogLoader: { _, _, _ in try GoalongSiteSelectionCatalog(payload: bytes) },
             exporter: { _, _, options in
                 XCTAssertEqual(options.deviceIDs, ["mac"])
-                XCTAssertEqual(options.selectedApplicationIDs, [])
-                return Data(#"{"reviewed":"exact-bytes"}"#.utf8)
+                XCTAssertEqual(options.selectedApplicationIDs, ["editor"])
+                XCTAssertEqual(options.strictSelection, true)
+                return Data(#"{"version":2,"source":"goalong-history","days":[{"date":"2026-09-14","title":"Goalong","summary":"","outcomes":[],"activities":[],"telemetry":{"devices":[{"id":"device-test","name":"Ordinateur","screenSeconds":null,"hourly":null,"apps":[{"id":"editor","name":"Éditeur","seconds":1800}]}],"websites":null,"agent":null}}]}"#.utf8)
             }, sender: { data, origin, path, fingerprint in
                 XCTAssertEqual(origin, "https://goalong.example"); XCTAssertEqual(path, token)
                 XCTAssertFalse(fingerprint.isEmpty)
@@ -52,7 +53,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         XCTAssertTrue(model.draft.deviceIDs.isEmpty)
         await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
         XCTAssertNil(model.preview)
-        model.draft.deviceIDs = ["mac"]
+        model.draft.deviceIDs = ["mac"]; model.draft.includeApplications = true; model.draft.applicationIDs = ["editor"]
         await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
         let bytes = try XCTUnwrap(model.preview?.payload)
         await model.confirm(origin: "https://goalong.example", tokenPath: token.path)
@@ -67,7 +68,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
     @MainActor func testEditingSelectionInvalidatesPreviewAndConfirmation() async throws {
         let (model, token, _, _) = try fixture(onSend: { _ in XCTFail("Stale preview") })
         defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
-        await model.loadCatalog(); model.draft.deviceIDs = ["mac"]
+        await model.loadCatalog(); model.draft.deviceIDs = ["mac"]; model.draft.includeApplications = true; model.draft.applicationIDs = ["editor"]
         await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
         model.reviewed = true; model.draft.includeHourly = true
         XCTAssertNil(model.preview); XCTAssertFalse(model.reviewed)
@@ -77,7 +78,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
     @MainActor func testDestinationAndCredentialChangesCannotReuseConsent() async throws {
         let (model, token, _, _) = try fixture(onSend: { _ in XCTFail("Account changed") })
         defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
-        await model.loadCatalog(); model.draft.deviceIDs = ["mac"]
+        await model.loadCatalog(); model.draft.deviceIDs = ["mac"]; model.draft.includeApplications = true; model.draft.applicationIDs = ["editor"]
         await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
         model.reviewed = true
         await model.confirm(origin: "https://another.example", tokenPath: token.path)
@@ -93,7 +94,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         var consent = true
         let (model, token, _, _) = try fixture(consent: { _ in consent }, onSend: { _ in XCTFail("Source revoked") })
         defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
-        await model.loadCatalog(); model.draft.deviceIDs = ["mac"]
+        await model.loadCatalog(); model.draft.deviceIDs = ["mac"]; model.draft.includeApplications = true; model.draft.applicationIDs = ["editor"]
         await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
         model.reviewed = true; consent = false
         await model.confirm(origin: "https://goalong.example", tokenPath: token.path)
@@ -103,7 +104,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
     @MainActor func testEnablingDailyScheduleDoesNotUploadTheExampleDay() async throws {
         let (model, token, _, _) = try fixture(onSend: { _ in XCTFail("Activating a plan must not send the example") })
         defer { model.autoSender.forget(); try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
-        await model.loadCatalog(); model.draft.deviceIDs = ["mac"]; model.draft.delivery = .daily; model.draft.timezone = "Europe/Paris"
+        await model.loadCatalog(); model.draft.deviceIDs = ["mac"]; model.draft.includeApplications = true; model.draft.applicationIDs = ["editor"]; model.draft.delivery = .daily; model.draft.timezone = "Europe/Paris"
         await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
         model.reviewed = true
         await model.confirm(origin: "https://goalong.example", tokenPath: token.path)

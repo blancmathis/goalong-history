@@ -46,7 +46,7 @@
                 DateSelectionControl(date: day, onChange: onSelectDay)
                 Divider().frame(height: 20).padding(.horizontal, 4)
                 Button(action: onShare) {
-                    Label("Share day", systemImage: "square.and.arrow.up")
+                    Label("Envoyer à Goalong", systemImage: "square.and.arrow.up")
                 }
                 Button(action: onRefresh) {
                     Group {
@@ -56,8 +56,8 @@
                     .frame(width: 20, height: 20)
                 }
                 .disabled(isRefreshing)
-                .accessibilityLabel("Refresh selected day")
-                .help(isRefreshing ? "Refreshing selected day…" : "Refresh selected day")
+                .accessibilityLabel("Actualiser la journée")
+                .help(isRefreshing ? "Actualisation…" : "Actualiser la journée")
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)

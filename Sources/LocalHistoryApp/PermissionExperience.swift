@@ -26,24 +26,24 @@ struct PermissionSetupCopy {
     }
     var purpose: String {
         switch capability {
-        case .appleScreenTime: return "See time spent in your apps, directly from Apple’s Screen Time records."
-        case .aiConversations: return "Connect the conversation folders you selected to your private history."
-        default: return "Build a private timeline of the apps and windows you use."
+        case .appleScreenTime: return "Retrouver le temps passé dans vos applications Apple."
+        case .aiConversations: return "Retrouver les conversations des dossiers choisis."
+        default: return "Reconnaître les applications et fenêtres utilisées."
         }
     }
     var permissionDetail: String {
         switch status {
-        case .inputMonitoring: return "Counts interactions without recording what you type."
-        case .screenTimeSetup: return "Apple needs to create Screen Time records first."
+        case .inputMonitoring: return "Compter les interactions, sans les caractères tapés."
+        case .screenTimeSetup: return "Apple doit d’abord disposer de données d’usage."
         default:
-            return capability == .appleScreenTime ? "Required by macOS to open Apple’s protected usage files." : "Identifies the foreground app and window."
+            return capability == .appleScreenTime ? "Nécessaire pour lire les données d’usage protégées d’Apple." : "Reconnaître l’application et la fenêtre actives."
         }
     }
     var privacy: String {
         switch capability {
-        case .appleScreenTime: return "Full Disk Access is a broad macOS permission. For this source, Goalong reads Apple’s Screen Time files in place. Sharing has separate controls."
-        case .aiConversations: return "Your conversation bodies stay in their original files. Analysis and sharing are separate choices."
-        default: return "No screenshots, typed characters, passwords or clipboard contents. Your timeline stays on this Mac; sharing is a separate choice."
+        case .appleScreenTime: return "L’accès complet au disque est large. Goalong l’utilise ici pour lire le temps d’écran Apple. Aucun envoi n’est autorisé."
+        case .aiConversations: return "Les conversations restent dans leurs fichiers d’origine. Analyser et envoyer sont des choix séparés."
+        default: return "Pas de captures d’écran ni de caractères tapés. Cet accès n’autorise aucun envoi."
         }
     }
     var settingsPath: String { status == .screenTimeSetup ? "System Settings  ›  Screen Time" : "Privacy & Security  ›  \(permission)" }
@@ -62,10 +62,10 @@ struct PermissionSetupHeader: View {
                 .background(LHTheme.selectionBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 6) {
-                Text("MAC PERMISSIONS")
+                Text("AUTORISATIONS MACOS")
                     .font(.system(size: 10, weight: .semibold)).tracking(1.6)
                     .foregroundStyle(LHTheme.secondaryText)
-                Text(ready ? "You’re ready" : "Connect \(copy.capability.title)")
+                Text(ready ? "Accès disponible" : "Autoriser \(copy.capability.title)")
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(LHTheme.text)
                     .accessibilityAddTraits(.isHeader)
@@ -97,7 +97,7 @@ struct PermissionSetupStatusCard: View {
             HStack(spacing: 5) {
                 if checking { ProgressView().controlSize(.mini) }
                 else { Image(systemName: ready ? "checkmark.circle.fill" : "circle.dashed").font(.system(size: 11)) }
-                Text(checking ? "Checking" : ready ? "Allowed" : "Needs access")
+                Text(checking ? "Vérification" : ready ? "Autorisé" : "À autoriser")
                     .font(.system(size: 11, weight: .medium))
             }
             .foregroundStyle(ready ? LHTheme.success : LHTheme.secondaryText)
@@ -118,11 +118,11 @@ struct PermissionSetupSteps: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            step(1, title: "Open System Settings", detail: copy.settingsPath, done: openedSettings || ready, active: !openedSettings && !ready)
-            step(2, title: copy.status == .screenTimeSetup ? "Turn on App & Website Activity" : "Allow Goalong History",
-                 detail: copy.status == .screenTimeSetup ? "Apple will begin preparing your usage records." : "Turn on Goalong History in the permission list.",
+            step(1, title: "Ouvrir les réglages macOS", detail: copy.settingsPath, done: openedSettings || ready, active: !openedSettings && !ready)
+            step(2, title: copy.status == .screenTimeSetup ? "Activer le temps d’écran" : "Autoriser Goalong History",
+                 detail: copy.status == .screenTimeSetup ? "Apple commencera à mesurer votre usage." : "Activez Goalong History dans la liste.",
                  done: ready, active: openedSettings && !ready)
-            step(3, title: "Return to Goalong", detail: "We’ll check access when you return. If macOS asks, choose Quit & Reopen.", done: ready, active: false)
+            step(3, title: "Revenir dans Goalong", detail: "Vérification automatique au retour. Relancez Goalong si macOS le demande.", done: ready, active: false)
         }
         .padding(.horizontal, 4).padding(.vertical, 2)
     }
@@ -173,28 +173,28 @@ struct PermissionRecoveryView: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "arrow.clockwise").foregroundStyle(LHTheme.accent).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Already allowed?").font(.system(size: 12, weight: .semibold))
-                        Text("Restart to let macOS apply the change. Goalong will reopen here; your saved settings and history stay intact.")
+                        Text("Déjà autorisé ?").font(.system(size: 12, weight: .semibold))
+                        Text("Relancez Goalong pour appliquer l’accès. Vous reviendrez ici.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Button(restarting ? "Preparing restart…" : "Quit & reopen Goalong") {
+                Button(restarting ? "Relancement…" : "Relancer Goalong") {
                     if let capability { PermissionRecovery.rememberSetup(capability) }
                     restarting = true
                     PermissionRecovery.restart { error in restartError = error; restarting = error == nil }
                 }
                 .buttonStyle(.bordered).disabled(restarting)
             }
-            DisclosureGroup("Still need help?", isExpanded: $expanded) {
+            DisclosureGroup("Résoudre un problème", isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Make sure the permission is for this installed copy of Goalong. You can reveal it directly — no searching required.")
+                    Text("Vérifiez que l’autorisation correspond à cette application.")
                         .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
-                    Button("Show Goalong in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
+                    Button("Afficher Goalong dans le Finder") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
                         .buttonStyle(.bordered)
                     Text(Bundle.main.bundleURL.path).font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(LHTheme.secondaryText).textSelection(.enabled)
-                    Text("Save pending settings edits before restarting. Restarting does not enable any source or sharing option.")
+                    Text("Relancer ne change ni les sources ni les envois.")
                         .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
                 }.padding(.top, 8).fixedSize(horizontal: false, vertical: true)
             }.font(.system(size: 11, weight: .medium))

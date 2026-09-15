@@ -30,10 +30,10 @@
         var body: some View {
             VStack(spacing: 0) {
                 DayNavigationHeader(
-                    title: "Today", day: model.selectedDay,
+                    title: "Aujourd’hui", day: model.selectedDay,
                     isRefreshing: model.isRefreshing || screenTime.isBusy,
                     onSelectDay: selectDay,
-                    onShare: { model.selectSection(.share) },
+                    onShare: { model.showingWebsiteShare = true },
                     onRefresh: refreshAll
                 )
                 Divider()
@@ -91,17 +91,17 @@
         @ViewBuilder private var captureControl: some View {
             if !consents.isEnabled(.localComputerHistory) {
                 SourceActivationToggle(capability: .localComputerHistory) {
-                    Text("Record activity").font(.system(size: 12))
+                    Text("Enregistrer mon activité").font(.system(size: 12))
                 }.fixedSize()
             } else {
             switch model.runtime.state {
             case .permissionsMissing:
-                Button("Finish setup") {
+                Button("Configurer") {
                     model.requestPermissions()
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
             case .inputTapUnavailable:
-                Button("Check input") {
+                Button("Vérifier les accès") {
                     model.beginCaptureValidation()
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
@@ -109,15 +109,19 @@
                 Button {
                     model.togglePause()
                 } label: {
-                    Label("Resume", systemImage: "play.fill")
+                    Label("Reprendre", systemImage: "play.fill")
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
             default:
-                StatusPill(
+                HStack(spacing: 10) {
+                    Button { model.togglePause() } label: { Label("Pause", systemImage: "pause.fill") }
+                        .buttonStyle(.bordered).help("Mettre en pause l’enregistrement détaillé, pas les autres sources ou les envois.")
+                    StatusPill(
                     title: model.runtime.displayTitle,
                     symbol: model.runtime.displaySymbol,
                     tint: model.runtime.displayTint
-                )
+                    )
+                }
             }
             }
         }
@@ -125,7 +129,7 @@
         private var dayCard: some View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("Your day")
+                    Text("Votre journée")
                         .font(.system(size: 15, weight: .semibold))
                     Spacer()
                     if screenTime.isBusy { ProgressView().controlSize(.small) }
@@ -210,7 +214,7 @@
             return VStack(alignment: .leading, spacing: 13) {
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Apps & websites")
+                        Text("Applications et sites")
                             .font(.system(size: 15, weight: .semibold))
                         Text(
                             usageMode == .websites
@@ -494,7 +498,7 @@
                 VStack(spacing: 0) {
                     HStack(alignment: .center, spacing: 16) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Daily Activity")
+                            Text("Bilan de la journée")
                                 .font(.system(size: 15, weight: .semibold))
                             Text(aiRecapSubtitle)
                                 .font(.system(size: 11))
@@ -517,13 +521,13 @@
                         Image(systemName: "sparkles")
                             .foregroundStyle(LHTheme.accent)
                         Text(
-                            "Uses Computer History, Apple Screen Time and AI conversations read from their original local sources."
+                            "Seules les sources autorisées pour ChatGPT sont analysées."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         Spacer(minLength: 16)
-                        Button(recapRuntime.recap == nil ? "Activity setup" : "Open Activity") {
+                        Button(recapRuntime.recap == nil ? "Configurer" : "Ouvrir le bilan") {
                             model.selectSection(.chatGPTRecap)
                         }
                         .buttonStyle(.link)
@@ -536,14 +540,14 @@
         }
 
         @ViewBuilder private var recapAction: some View {
-            if !consents.isEnabled(.chatGPTAnalysis) {
-                Button("Set up analysis") { model.selectSection(.chatGPTRecap) }
+            if !consents.isEnabled(.chatGPTAnalysis) || !GoalongAnalysisSelection.load().isValid(for: GoalongExclusionStore.shared.policy) {
+                Button("Configurer ChatGPT") { model.selectSection(.settings); model.settingsPane = .connections }
                     .buttonStyle(.bordered)
             } else if recapRuntime.isGenerating {
                 ProgressView()
                     .controlSize(.small)
             } else if aiRecapIsConnected {
-                Button(recapRuntime.recap == nil ? "Analyze day" : "Analyze again") {
+                Button(recapRuntime.recap == nil ? "Analyser la journée" : "Actualiser le bilan") {
                     recapRuntime.generateRecap()
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
@@ -551,8 +555,8 @@
                 ProgressView()
                     .controlSize(.small)
             } else {
-                Button("Connect ChatGPT") {
-                    model.selectSection(.chatGPTRecap)
+                Button("Connecter ChatGPT") {
+                    model.selectSection(.settings); model.settingsPane = .connections
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
             }
@@ -564,7 +568,7 @@
                     HStack(spacing: 10) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("Combining your activity, Screen Time and AI conversations…")
+                        Text("Analyse des sources autorisées…")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }

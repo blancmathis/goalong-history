@@ -150,6 +150,8 @@
             metadata: [String: String]? = nil,
             timestamp: Date = Date()
         ) -> Bool {
+            let policyStamp = context?.privacyRevision
+                ?? GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory).revision
             let base = HistoryEvent(
                 schemaVersion: 4,
                 sessionID: sessionID,
@@ -183,7 +185,7 @@
             }
 
             if DispatchQueue.getSpecific(key: writerQueueKey) != nil {
-                return recordFromWriterQueue(base)
+                return recordFromWriterQueue(base, privacyRevision: policyStamp)
             }
 
             let shouldWaitForCapacity = !isMainThread()
@@ -218,7 +220,7 @@
                 return false
             }
 
-            admitEventLocked(base, completion: completion)
+            admitEventLocked(base, completion: completion, privacyRevision: policyStamp)
             writerCondition.unlock()
             completion?.wait()
             return true
@@ -282,7 +284,7 @@
             )
         }
 
-        private func recordFromWriterQueue(_ base: HistoryEvent) -> Bool {
+        private func recordFromWriterQueue(_ base: HistoryEvent, privacyRevision: String) -> Bool {
             writerCondition.lock()
             guard acceptingEvents else {
                 writerCondition.unlock()
@@ -296,7 +298,7 @@
             }
             mutateStatus { acceptedEventCount &+= 1 }
             writerCondition.unlock()
-            persist(base, isObservationGap: false)
+            persist(base, isObservationGap: false, privacyRevision: privacyRevision)
             return true
         }
 
@@ -305,7 +307,8 @@
         /// `writerQueueCapacity` EventRecorder work items.
         private func admitEventLocked(
             _ base: HistoryEvent,
-            completion: DispatchSemaphore?
+            completion: DispatchSemaphore?,
+            privacyRevision: String
         ) {
             pendingEventCount += 1
             writerTaskCount += 1
@@ -317,7 +320,7 @@
                     finishEventTask()
                     completion?.signal()
                 }
-                persist(base, isObservationGap: false)
+                persist(base, isObservationGap: false, privacyRevision: privacyRevision)
             }
         }
 
@@ -381,7 +384,7 @@
             writerCondition.unlock()
         }
 
-        private func persist(_ base: HistoryEvent, isObservationGap: Bool) {
+        private func persist(_ base: HistoryEvent, isObservationGap: Bool, privacyRevision: String? = nil) {
             beforePersist?(base)
             if let writerPoisonReason {
                 noteFailure(
@@ -391,7 +394,9 @@
                 return
             }
 
-            let event = integrityJournal.prepare(base)
+            let privacy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory)
+            let protected = privacy.eventForPersistence(base, expectedRevision: privacyRevision)
+            let event = integrityJournal.prepare(protected)
             let outcome: JSONLAppendOutcome
             do {
                 outcome = try store.appendAndWait(event)

@@ -91,7 +91,7 @@
         let digest: String
 
         var hasMeaningfulData: Bool {
-            sourceCounts.localEvents > 0
+            !activity.applications.isEmpty || sourceCounts.localEvents > 0
                 || sourceCounts.screenTimeDevices > 0
                 || sourceCounts.agentCaptures > 0
                 || sourceCounts.importedChatMessages > 0
@@ -165,9 +165,15 @@
             chatHistoryStore: ChatGPTHistoryStore,
             includeScreenTime: Bool = true,
             includeAgentActivity: Bool = true,
-            analyzeAgentContent: Bool = true
+            analyzeAgentContent: Bool = true,
+            selection: GoalongAnalysisSelection? = nil
         ) throws -> ChatGPTRecapContext {
             let normalizedDay = Calendar.current.startOfDay(for: day)
+            if let selection {
+                return try buildSelected(for: normalizedDay, deviceID: deviceID,
+                    includeScreenTime: includeScreenTime, includeAgentActivity: includeAgentActivity,
+                    analyzeAgentContent: analyzeAgentContent, selection: selection)
+            }
             let computerHistoryStore = ComputerHistoryStore()
             let localActivity = try buildLocalActivityViews(
                 for: normalizedDay,
@@ -230,6 +236,113 @@
                 sourceCounts: counts,
                 digest: SHA256Digest.hashHex(rendered)
             )
+        }
+
+        /// The remote recap has its own explicit source selection. Basic mode reads
+        /// bounded event projections and emits only application names and durations.
+        static func buildSelected(for day: Date, deviceID: String, includeScreenTime: Bool,
+                                  includeAgentActivity: Bool, analyzeAgentContent: Bool,
+                                  selection: GoalongAnalysisSelection) throws -> ChatGPTRecapContext {
+            let root = AppPaths.applicationSupportDirectory
+            let privacy = GoalongPrivacyPolicy.load(in: root)
+            guard selection.isValid(for: privacy) else {
+                throw CodexAppServerError.generationFailed("Confirmez les données pour ChatGPT dans Réglages → Connexions.")
+            }
+            var activity = ActivityAnalysisEngine.analyze(events: [], day: day)
+            var memory: ComputerHistoryDayMemory?
+            var sourceAbsent = true
+            let computerAllowed = selection.computer && GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
+            let detailsAllowed = computerAllowed && selection.details && !privacy.hasExclusions
+            if computerAllowed {
+                if detailsAllowed {
+                    let local = try buildLocalActivityViews(for: day, rootDirectory: root, computerHistoryStore: ComputerHistoryStore())
+                    activity = local.activity; memory = local.computerHistory; sourceAbsent = local.cycleResult.sourceAbsent
+                } else if let interval = Calendar.current.dateInterval(of: .day, for: day) {
+                    // Before a website exclusion was activated, browser aggregates may
+                    // contain unknown sites. Only post-policy observations are usable.
+                    let start = privacy.domains.isEmpty ? interval.start : max(interval.start, privacy.effectiveFrom ?? interval.end)
+                    if start < interval.end {
+                        let evidence = HistoryLocalStoreReader(rootDirectory: root).loadComputerHistoryEvidence(
+                            start: start, endExclusive: interval.end, includeSemanticText: false)
+                        guard !evidence.metrics.sourceAccessWasIncomplete, !evidence.metrics.evidenceBudgetExceeded,
+                              !evidence.metrics.wasCancelled, !evidence.metrics.sourceChangedDuringRead else {
+                            throw CodexAppServerError.generationFailed("Lecture locale incomplète. Aucune analyse n’a été envoyée.")
+                        }
+                        let events = evidence.events.map { event in
+                            privacy.permits(event) ? event : HistoryEvent(sessionID: event.sessionID,
+                                timestamp: event.timestamp, kind: .heartbeat, suppressionReason: .excludedApplication)
+                        }
+                        activity = ActivityAnalysisEngine.analyze(events: events, day: day)
+                        sourceAbsent = events.isEmpty
+                    }
+                }
+            }
+            let screenTime = selection.screenTime && includeScreenTime && privacy.domains.isEmpty
+                ? loadScreenTime(for: day, deviceID: deviceID) : nil
+            let agents = selection.conversations && includeAgentActivity && !privacy.hasExclusions
+                ? loadAgentActivity(for: day, analyzeContent: analyzeAgentContent) : AgentActivityOverview(day: day)
+            return try selectedContext(day: day, activity: activity, memory: memory, screenTime: screenTime,
+                agents: agents, sourceAbsent: sourceAbsent, selection: selection, privacy: privacy)
+        }
+
+        static func selectedContext(day: Date, activity: ActivityDayAnalysis, memory: ComputerHistoryDayMemory?,
+                                    screenTime: AppleScreenTimeDaySummary?, agents: AgentActivityOverview,
+                                    sourceAbsent: Bool, selection: GoalongAnalysisSelection,
+                                    privacy: GoalongPrivacyPolicy) throws -> ChatGPTRecapContext {
+            let details = selection.computer && selection.details && !privacy.hasExclusions
+            let apps = selection.computer ? activity.applications.filter { !privacy.excludes(appID: $0.bundleIdentifier, name: $0.name) } : []
+            let safeAgents = selection.conversations && !privacy.hasExclusions ? agents : AgentActivityOverview(day: day)
+            let safeMemory = details ? memory : nil
+            let safeScreenTime = selection.screenTime && privacy.domains.isEmpty ? screenTime : nil
+            var sections: [String] = ["Selected sources only. Missing or excluded evidence is not inactivity."]
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            if selection.computer {
+                if details {
+                    sections.append(try renderComputerHistory(safeMemory, tokenBudget: ActivityAnalysisPreferences.agentTokenBudget))
+                    sections.append(boundedRedactedSection(renderActivity(activity), maximum: maximumActivityCharacters))
+                } else {
+                    let rows = apps.map { ["application": $0.name, "activeSeconds": String($0.activeSeconds)] }
+                    sections.append("Computer activity — application names and active durations only:\n" + String(decoding: try encoder.encode(rows), as: UTF8.self))
+                }
+            }
+            var appleAppCount = 0
+            if let safeScreenTime {
+                for (index, device) in safeScreenTime.deviceSummaries.enumerated() {
+                    let permitted = device.applications.filter { !privacy.excludes(appID: $0.bundleIdentifier, name: $0.resolvedName) }
+                    appleAppCount += permitted.count
+                    let rows = permitted.map { ["application": $0.resolvedName, "seconds": String(Int($0.duration))] }
+                    sections.append("Apple device \(index + 1) — permitted application durations, not unique elapsed time:\n" + String(decoding: try encoder.encode(rows), as: UTF8.self))
+                }
+            } else if selection.screenTime && !privacy.domains.isEmpty {
+                sections.append("Apple usage omitted: website exclusions cannot be separated from its opaque aggregates.")
+            }
+            if selection.conversations && !privacy.hasExclusions {
+                sections.append(boundedRedactedSection(renderAgentActivity(safeAgents), maximum: maximumAgentActivityCharacters))
+            }
+            let assembled = sections.joined(separator: "\n\n")
+            guard let rendered = ActivitySemanticTextSanitizer.redact(assembled), rendered.count <= maximumRenderedDataCharacters else {
+                throw CodexAppServerError.protocolLimitExceeded("selected context exceeded its bound")
+            }
+            let counts = ChatGPTRecapSourceCounts(localEvents: details ? activity.coverage.sourceEventCount : 0,
+                activeMinutes: apps.reduce(0) { $0 + $1.activeSeconds } / 60,
+                semanticSnapshots: details ? activity.coverage.semanticSnapshotCount : 0,
+                screenTimeDevices: safeScreenTime?.deviceSummaries.count ?? 0, screenTimeApplications: appleAppCount,
+                agentCaptures: safeAgents.sessionCount, agentMessages: safeAgents.messageCount,
+                visibleAgentMessages: safeAgents.visibleMessageCount, agentToolCalls: safeAgents.toolCallCount,
+                agentErrors: safeAgents.errorCount, analyzedAgentCaptures: safeAgents.analyzedSessionCount,
+                importedChatMessages: 0, computerHistoryEpisodes: safeMemory?.coverage.episodeCount,
+                computerHistoryResources: safeMemory?.coverage.resourceCount, workflowSuggestions: safeMemory?.suggestions.count)
+            let minimal = ActivityDayAnalysis(schemaVersion: activity.schemaVersion, dayStart: activity.dayStart,
+                dayEnd: activity.dayEnd, generatedAt: activity.generatedAt, headline: "Applications autorisées",
+                activeSeconds: apps.reduce(0) { $0 + $1.activeSeconds }, workSeconds: 0, focusBlocks: [], sites: [],
+                applications: apps, requests: [], contextHighlights: [],
+                coverage: ActivityAnalysisCoverage(sourceEventCount: 0, representativeMinuteCount: 0, privateMinuteCount: 0,
+                    semanticSnapshotCount: 0, semanticContextEnabledInData: false, sourceFirstSequence: nil,
+                    sourceLastSequence: nil, sourceLastEventHash: nil), agentMarkdown: "", estimatedAgentTokens: 0)
+            return ChatGPTRecapContext(day: day, activity: details ? activity : minimal,
+                computerHistory: safeMemory, screenTime: privacy.hasExclusions ? nil : safeScreenTime,
+                agentActivity: safeAgents, importedChats: [], localJournalSourceAbsent: sourceAbsent,
+                renderedData: rendered, sourceCounts: counts, digest: SHA256Digest.hashHex(rendered))
         }
 
         static func buildLocalActivityViews(

@@ -8,7 +8,7 @@
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(
                     eyebrow: "Selective disclosure",
-                    title: "Share a locally signed day",
+                    title: "Exporter un fichier signé",
                     subtitle:
                         "Set one clear rule for each app and website. Goalong verifies its local device signatures and integrity chain before creating the package."
                 ) {
@@ -138,7 +138,7 @@
                 Button {
                     model.exportSharePackage()
                 } label: {
-                    Label("Export signed package", systemImage: "square.and.arrow.up")
+                    Label("Créer le fichier", systemImage: "square.and.arrow.up")
                         .frame(minWidth: 176)
                 }
                 .buttonStyle(LHPrimaryButtonStyle())

@@ -10,12 +10,12 @@ extension Notification.Name {
 extension HistoryDataClass {
     var retentionTitle: String {
         switch self {
-        case .detailedEvents: return "Detailed activity"
-        case .semanticSnapshots: return "Saved visible context"
-        case .memories: return "Derived memories & Computer History"
-        case .analysisCaches: return "Local analysis caches"
-        case .minuteSeals: return "Local cryptographic seals"
-        case .anchorReceipts: return "Local verification receipts"
+        case .detailedEvents: return "Activité détaillée"
+        case .semanticSnapshots: return "Texte affiché"
+        case .memories: return "Historique et résumés locaux"
+        case .analysisCaches: return "Fichiers temporaires d’analyse"
+        case .minuteSeals: return "Preuves locales"
+        case .anchorReceipts: return "Reçus de vérification"
         }
     }
 }
@@ -33,7 +33,7 @@ extension HistoryRetentionPolicy {
     var includesProofExpiry: Bool { minuteSeals.days != nil || anchorReceipts.days != nil }
     var retentionDescription: String {
         HistoryDataClass.allCases.map { kind in
-            let duration = duration(for: kind).days.map { "\($0) days" } ?? "until you delete it"
+            let duration = duration(for: kind).days.map { "\($0) jours" } ?? "sans limite"
             return "\(kind.retentionTitle): \(duration)"
         }.joined(separator: "\n")
     }

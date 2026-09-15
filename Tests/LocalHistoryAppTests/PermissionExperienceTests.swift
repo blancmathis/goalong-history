@@ -55,10 +55,10 @@ final class PermissionExperienceTests: XCTestCase {
     func testRecoveryCopyNamesRealPermissionAndDisclosesBroadDiskAccess() {
         let screenTime = PermissionSetupCopy(capability: .appleScreenTime, status: .fullDiskAccess)
         XCTAssertEqual(screenTime.permission, "Full Disk Access")
-        XCTAssertTrue(screenTime.privacy.contains("broad macOS permission"))
+        XCTAssertTrue(screenTime.privacy.contains("L’accès complet au disque est large"))
         let computer = PermissionSetupCopy(capability: .localComputerHistory, status: .accessibility)
         XCTAssertEqual(computer.permission, "Accessibility")
-        XCTAssertTrue(computer.privacy.contains("No screenshots"))
+        XCTAssertTrue(computer.privacy.contains("Pas de captures d’écran"))
         XCTAssertFalse(computer.purpose.contains("record what you type"))
     }
 }

@@ -100,37 +100,16 @@
 
         private var analysisConsentCard: some View {
             LHCard {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(LHTheme.accent)
-                        .frame(width: 42, height: 42)
-                        .background(
-                            LHTheme.accent.opacity(0.1),
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        )
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(consents.isEnabled(.chatGPTAnalysis) ? "ChatGPT analysis enabled" : "ChatGPT analysis is off")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(
-                            "Existing signed reports remain readable while this is off. When enabled, Goalong uses the dedicated Codex connection only for an explicit or scheduled analysis and never sends system prompts or agent work traces."
-                        )
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 14) {
+                    Image(systemName: "sparkles").foregroundStyle(LHTheme.accent)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Analyse avec ChatGPT").font(.system(size: 14, weight: .semibold))
+                        Text("Les données autorisées sont envoyées à ChatGPT, pas au site Goalong.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
-                    Spacer(minLength: 14)
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { consents.isEnabled(.chatGPTAnalysis) },
-                            set: {
-                                _ = consents.set(.chatGPTAnalysis, enabled: $0, surface: .settings)
-                            }
-                        )
-                    )
-                    .labelsHidden()
-                    .toggleStyle(.switch)
+                    Spacer()
+                    Button("Choisir les données") { model.selectSection(.settings); model.settingsPane = .connections }
+                        .buttonStyle(.bordered)
                 }
             }
         }
@@ -551,20 +530,10 @@
         }
 
         private var automaticCard: some View {
-            LHCard {
-                Toggle(isOn: $recapRuntime.automaticRecapsEnabled) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Automatic completed-day analysis")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(
-                            "At 00:05, Goalong runs one temporary GPT-5.6 Luna High analysis for the day that just ended. On launch it catches up yesterday only, never an unbounded backlog."
-                        )
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .toggleStyle(.switch)
+            HStack {
+                Text("Fréquence et données : Réglages → Connexions").font(.system(size: 12)).foregroundStyle(.secondary)
+                Spacer()
+                Button("Configurer") { model.selectSection(.settings); model.settingsPane = .connections }.buttonStyle(.borderless)
             }
         }
 

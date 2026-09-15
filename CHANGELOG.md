@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.26 — réglages et confidentialité simplifiés
+
+- Cinq rubriques de réglages, recherche, états courts et onboarding en trois étapes.
+- Réglages immédiats, catalogue d’applications et exclusions explicites.
+- Sélection ChatGPT indépendante, connexion sans installation manuelle de Codex.
+- Envoi Goalong unifié, aperçu lisible et choix par application sans fuite via les totaux.
+- Conservation simplifiée ; effacement et activation des envois toujours confirmés.
+- Les anciennes programmations dont le périmètre change demandent une nouvelle validation.
+
+
 ## Unreleased
 
 - Made the Goalong CLI self-describing through a canonical machine-readable command catalog,

@@ -33,11 +33,12 @@
                     }
                 }
             }
+            .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay) }
             .background(LHTheme.pageBackground)
             .foregroundStyle(LHTheme.text)
             .tint(LHTheme.accent)
             .accentColor(LHTheme.accent)
-            .frame(minWidth: 1080, minHeight: 680)
+            .frame(minWidth: 900, minHeight: 620)
             .alert(item: $model.alert) { item in
                 Alert(
                     title: Text(item.title),
@@ -143,7 +144,7 @@
                     Text("Goalong")
                         .font(.system(size: 20, weight: .semibold))
                         .tracking(-0.6)
-                    Text("Private activity history")
+                    Text("Historique sur ce Mac")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -193,7 +194,7 @@
                     Circle()
                         .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : Color.secondary)
                         .frame(width: 7, height: 7)
-                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Recording off")
+                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Enregistrement désactivé")
                         .font(.system(size: 11, weight: .semibold))
                         .lineLimit(1)
                     Spacer()
@@ -282,8 +283,8 @@
     extension DashboardSection {
         fileprivate var simpleTitle: String {
             switch self {
-            case .overview: return "Today"
-            case .history: return "History"
+            case .overview: return "Aujourd’hui"
+            case .history: return "Historique"
             case .activity: return "Computer History"
             case .screenTime: return "Screen Time"
             case .agentActivity: return "AI conversations"
@@ -291,7 +292,7 @@
             case .share: return "Share"
             case .privacy: return "Privacy"
             case .cli: return "CLI"
-            case .settings: return "Settings"
+            case .settings: return "Réglages"
             }
         }
 

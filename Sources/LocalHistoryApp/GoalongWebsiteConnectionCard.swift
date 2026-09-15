@@ -8,60 +8,69 @@ import SwiftUI
 extension Notification.Name { static let goalongWebsiteConnected = Notification.Name("goalong.website.connected") }
 
 /// Explicit pairing and reviewed export. Credentials stay in private files, outside preferences.
-struct GoalongWebsiteConnectionCard: View {
-    @AppStorage("goalong.website.tokenFilePath") private var savedTokenPath = ""
+@MainActor struct GoalongWebsiteConnectionCard: View {
+    @AppStorage("goalong.website.tokenFilePath") private var tokenPath = ""
+    @AppStorage("goalong.website.origin") private var origin = ""
+    @ObservedObject private var sender = GoalongWebsiteAutoSender.shared
     @State private var showsConnection = false
-    @StateObject private var profileWindow = GoalongProfileWindow()
-    @State private var preparedAnalysis: Data?
-    @State private var showsSiteAnalysis = false
-    @State private var showsHealthImport = false
-
+    @State private var disconnecting = false
+    @State private var credentialAvailable = false
     var body: some View {
-        LHCard {
-            HStack(alignment: .top, spacing: 14) {
-                Image(systemName: "person.2.crop.square.stack")
-                    .font(.title2).foregroundStyle(LHTheme.accent)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Partager avec GoLong").font(.headline)
-                    Text("Envoi dans votre compte. Les règles de partage configurées sur le site s’appliquent aux dates et champs autorisés.")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Une fois ou chaque jour · Sélection locale · Arrêt à tout moment")
-                        .font(.caption).foregroundStyle(.secondary)
+        GoalongSettingsGroup(title: "Compte Goalong") {
+            HStack(spacing: 14) {
+                Image(systemName: "link").font(.system(size: 20)).foregroundStyle(LHTheme.accent)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(credentialAvailable ? "Liaison enregistrée" : "Compte non relié").font(.system(size: 15, weight: .semibold))
+                    Text(credentialAvailable ? (URL(string: origin)?.host ?? "Goalong") : "La liaison ne transmet aucune activité.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 10) {
-                    Button(savedTokenPath.isEmpty ? "Relier mon compte" : "Choisir les données à partager") {
-                        if savedTokenPath.isEmpty {
-                            _ = GoalongWorkspaceOpenPolicy.open(URL(string: "https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#settings")!, purpose: .goalongWebsite)
-                        } else { preparedAnalysis = nil; showsConnection = true }
-                    }
-                        .buttonStyle(.bordered)
-                    Button("Comprendre mon travail") { preparedAnalysis = nil; profileWindow.show { preparedAnalysis = $0; showsConnection = true } }
-                        .buttonStyle(.bordered)
-                    Button("Analyser une demande du site") { showsSiteAnalysis = true }
-                        .buttonStyle(.bordered)
-                    Button("Importer Apple Santé…") { showsHealthImport = true }
-                        .buttonStyle(.bordered)
+                Spacer()
+                if credentialAvailable {
+                    Button("Déconnecter") { disconnecting = true }.buttonStyle(.bordered)
+                } else {
+                    Button("Relier mon compte") { openWebsite() }.buttonStyle(LHPrimaryButtonStyle())
                 }
+            }
+            Divider()
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(sender.enabled ? "Envoi quotidien activé" : "Envois automatiques désactivés").font(.system(size: 13, weight: .medium))
+                    if let day = sender.lastSuccess { Text("Dernière journée reçue : \(day)").font(.system(size: 12)).foregroundStyle(.secondary) }
+                }
+                Spacer()
+                if sender.enabled { Button("Mettre en pause") { sender.stop() }.buttonStyle(.bordered) }
+                Button("Choisir les données…") { showsConnection = true }.buttonStyle(.bordered).disabled(!credentialAvailable)
             }
         }
         .onAppear {
+            refreshCredential()
             if UserDefaults.standard.bool(forKey: "goalong.website.openAfterPairing") {
-                UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing")
-                showsConnection = true
+                UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)) { _ in
-            UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing")
-            showsConnection = true
+            refreshCredential(); UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
         }
-        .sheet(isPresented: $showsConnection) {
-            if let preparedAnalysis { GoalongWebsiteConnectionSheet(preparedAnalysis: preparedAnalysis) }
-            else { GoalongWebsiteSharingSheet() }
-        }
-        .sheet(isPresented: $showsSiteAnalysis) { GoalongSiteAnalysisSheet() }
-        .sheet(isPresented: $showsHealthImport) { GoalongHealthImportSheet() }
+        .onChange(of: tokenPath) { _ in refreshCredential() }
+        .sheet(isPresented: $showsConnection) { GoalongWebsiteSharingSheet() }
+        .alert("Déconnecter ce compte ?", isPresented: $disconnecting) {
+            Button("Annuler", role: .cancel) {}
+            Button("Déconnecter") {
+                sender.forget(); tokenPath = ""; origin = ""; credentialAvailable = false
+                for key in ["goalong.website.accountID", "goalong.website.accountCredentialFingerprint"] { UserDefaults.standard.removeObject(forKey: key) }
+            }
+        } message: { Text("Les prochains envois seront arrêtés. Les données déjà reçues restent sur le site. Un envoi déjà commencé peut encore aboutir.") }
+    }
+    private func refreshCredential() {
+        credentialAvailable = !origin.isEmpty && !tokenPath.isEmpty
+            && (try? GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))) != nil
+    }
+    private func openWebsite() {
+        let site = origin.isEmpty ? "https://goalong.spry-crumb-3668.chatgpt.site" : origin
+        guard let endpoint = try? GoalongSiteSubmission.endpoint(origin: site),
+              var parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else { return }
+        parts.path = "/goalong.dc.html"; parts.fragment = "settings"
+        if let url = parts.url { _ = GoalongWorkspaceOpenPolicy.open(url, purpose: .goalongWebsite) }
     }
 }
 

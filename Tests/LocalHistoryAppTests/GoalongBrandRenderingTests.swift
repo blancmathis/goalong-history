@@ -83,6 +83,20 @@ final class GoalongBrandRenderingTests: XCTestCase {
         try snapshot(contrastController.view, to: output.appendingPathComponent("settings-increased-contrast.png"))
         window.appearance = app.appearance
         window.contentViewController = controller; pump()
+        for pane in SettingsPane.primary {
+            model.selectedSection = .settings
+            model.settingsPane = pane
+            let page = NSHostingController(rootView: LocalHistoryDashboardView(model: model))
+            window.contentViewController = page
+            for size in [NSSize(width: 900, height: 620), NSSize(width: 1240, height: 790)] {
+                window.setContentSize(size); pump()
+                try snapshot(page.view, to: output.appendingPathComponent("simple-\(pane)-\(Int(size.width)).png"))
+                XCTAssertGreaterThanOrEqual(page.view.bounds.width, 900)
+            }
+        }
+        model.settingsPane = .home
+        window.contentViewController = controller
+        window.setContentSize(NSSize(width: 1080, height: 680)); pump()
         // Exercise the existing transaction layer without claiming physical button activation.
         let originalClicks = model.settingsDraft.captureClicks
         model.settingsDraft.captureClicks.toggle(); pump()

@@ -6,7 +6,7 @@
         @ObservedObject var model: DashboardViewModel
         @StateObject var launchAtLogin = LaunchAtLoginManager()
         @ObservedObject var consents = GoalongCapabilityConsentStore.shared
-        @AppStorage("goalongOnboardingStep") var step: SetupStep = .welcome
+        @AppStorage("goalongOnboardingStep") var step: SetupStep = .privacy
         @State var launchAtLoginPreference = false
         @State var note: String?
         @State var showingRetention = false
@@ -21,7 +21,7 @@
                     HStack {
                         Text(step.navigationTitle).font(.system(size: 20, weight: .semibold))
                         Spacer()
-                        Text("\(step.position) of \(SetupStep.allCases.count)")
+                        Text("\(step.position) / \(SetupStep.allCases.count)")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 28).frame(height: 72)
@@ -39,7 +39,7 @@
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
-                if !privacyReviewed && step != .welcome { step = .privacy }
+                if step == .welcome || !privacyReviewed { step = .privacy }
                 launchAtLogin.refresh()
                 launchAtLoginPreference = consents.isEnabled(.launchAtLogin)
             }
@@ -71,9 +71,9 @@
                 }
                 Spacer()
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Your sources, your choice", systemImage: "lock")
+                    Label("Sur ce Mac", systemImage: "lock")
                         .font(.system(size: 12, weight: .medium))
-                    Text("You can change these choices in Settings at any time.")
+                    Text("Tous ces choix restent modifiables.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -85,8 +85,8 @@
 
         var footer: some View {
             HStack(spacing: 14) {
-                if step != .welcome {
-                    Button("Back") { note = nil; step = step.previous ?? .welcome }
+                if step != .privacy {
+                    Button("Retour") { note = nil; step = step.previous ?? .privacy }
                         .buttonStyle(.bordered)
                 }
                 Spacer()
@@ -132,32 +132,32 @@
             UserDefaults.standard.set(launchAtLoginPreference, forKey: "launchAtLoginPreference")
             model.selectSection(.overview)
             model.dismissWelcome()
-            step = .welcome
+            step = .privacy
         }
     }
 
     enum SetupStep: Int, CaseIterable, Identifiable {
         // Preserve the raw values used by previous installations.
         case welcome = 0, sources = 1, ready = 2, privacy = 3
-        static let allCases: [SetupStep] = [.welcome, .privacy, .sources, .ready]
+        static let allCases: [SetupStep] = [.privacy, .sources, .ready]
         var id: Int { rawValue }
         var position: Int { (Self.allCases.firstIndex(of: self) ?? 0) + 1 }
         var previous: SetupStep? { position > 1 ? Self.allCases[position - 2] : nil }
-        var next: SetupStep? { position < Self.allCases.count ? Self.allCases[position] : nil }
+        var next: SetupStep? { self == .welcome ? .privacy : position < Self.allCases.count ? Self.allCases[position] : nil }
         var actionTitle: String {
             switch self {
-            case .welcome: return "Choose your data"
-            case .privacy: return "Save choices & choose sources"
-            case .sources: return "Review setup"
-            case .ready: return "Open Goalong"
+            case .welcome: return "Commencer"
+            case .privacy: return "Continuer"
+            case .sources: return "Continuer"
+            case .ready: return "Ouvrir Goalong"
             }
         }
         var navigationTitle: String {
             switch self {
-            case .welcome: return "Welcome"
-            case .privacy: return "Your data"
-            case .sources: return "Your sources"
-            case .ready: return "Ready to start"
+            case .welcome: return "Vos données"
+            case .privacy: return "Vos données"
+            case .sources: return "Vos sources"
+            case .ready: return "Prêt"
             }
         }
     }

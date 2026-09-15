@@ -1757,6 +1757,11 @@ public enum GoalongQueryCLI {
         options: GoalongSiteExportOptions = .init(),
         now: Date = Date()
     ) throws -> Data {
+        let privacy = GoalongPrivacyPolicy.load(in: root)
+        guard !privacy.blocked else { throw CLIError.unsafeSource("Les exclusions sont illisibles. Aucun export n’a été préparé.") }
+        if privacy.hasExclusions && (options.includeRecap || options.rhythmProject != nil || options.contextualRhythm != nil) {
+            throw CLIError.unsafeSource("Les exclusions bloquent les textes et analyses non filtrables. Choisissez les données chiffrées.")
+        }
         guard capabilityConsentEnabled(rootDirectory: root, capability: "appleScreenTime") else {
             throw CLIError.unsafeSource("Apple Screen Time is off in Goalong. Enable the source before exporting its saved data.")
         }
@@ -1814,7 +1819,10 @@ public enum GoalongQueryCLI {
         var selectedOptions = options
         if options.rhythmProject != nil || options.contextualRhythm != nil { selectedOptions.structuredReport = true }
         let payload = try GoalongSiteExport.payload(record: record, options: selectedOptions, websites: websites,
-                                                    recap: recapText, now: now)
+                                                    recap: recapText, now: now, privacy: privacy)
+        guard GoalongPrivacyPolicy.load(in: root).revision == privacy.revision else {
+            throw CLIError.unsafeSource("Les exclusions ont changé. Préparez un nouvel aperçu.")
+        }
         if var rhythm = options.contextualRhythm {
             guard capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory"),
                   rhythm.timezone == record.timeZoneIdentifier,

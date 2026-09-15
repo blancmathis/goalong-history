@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import SwiftUI
+import LocalHistoryCore
 import LocalHistoryQueryCLI
 
 @MainActor struct GoalongWebsiteSharingSheet: View {
@@ -11,55 +12,66 @@ import LocalHistoryQueryCLI
     @AppStorage("goalong.website.tokenFilePath") private var tokenPath = ""
     @State private var exactData = false
     @State private var advanced = false
+    @State private var appSearch = ""
 
-    init(model: GoalongWebsiteSharingModel? = nil) {
+    init(model: GoalongWebsiteSharingModel? = nil, initialDay: Date? = nil) {
         let resolved = model ?? GoalongWebsiteSharingModel()
+        if let initialDay { resolved.presentSingleDay(initialDay) }
         _model = StateObject(wrappedValue: resolved)
         _autoSender = ObservedObject(wrappedValue: resolved.autoSender)
     }
     var body: some View {
         VStack(spacing: 0) {
-            header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Envoyer à Goalong").font(.system(size: 24, weight: .semibold))
+                    Text(model.preview == nil ? "1. Choisir les données" : "2. Vérifier l’envoi")
+                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction).disabled(model.busy)
+            }.padding(24)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     account
-                    delivery
+                    if let approved = model.preview {
+                        preview(approved)
+                    } else {
+                        delivery
+                        selection
+                    }
                     if autoSender.savedConfiguration != nil {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(LHTheme.accent)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(autoSender.status).font(.callout)
-                                if let day = autoSender.lastSuccess { Text("Dernière journée reçue : \(day)").font(.caption).foregroundStyle(.secondary) }
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(autoSender.enabled ? "Envoi quotidien activé" : "Envoi quotidien en pause").font(.system(size: 13, weight: .medium))
+                                if let day = autoSender.lastSuccess { Text("Dernière journée reçue : \(day)").font(.system(size: 12)).foregroundStyle(.secondary) }
                             }
                             Spacer()
                             if autoSender.enabled { Button("Mettre en pause") { autoSender.stop() }.buttonStyle(.bordered) }
-                        }.padding(14).background(LHTheme.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                            GoalongHelpButton(text: autoSender.status)
+                        }
                     }
-                    selection
-                    preview
                     if let status = model.status {
-                        Label(status, systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(LHTheme.success)
-                            .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("sharing-success")
-                        Button("Voir mon historique sur le site") { openSite(fragment: "history") }.buttonStyle(.bordered)
+                        Label(status, systemImage: "checkmark.circle").font(.system(size: 13)).foregroundStyle(LHTheme.success)
+                            .accessibilityIdentifier("sharing-success")
+                        Button("Voir la journée sur le site") { openSite(fragment: "history") }.buttonStyle(.bordered)
                     }
                     if let error = model.error {
-                        Label(error, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(LHTheme.warning)
-                            .fixedSize(horizontal: false, vertical: true).textSelection(.enabled).accessibilityIdentifier("sharing-error")
+                        Label(error, systemImage: "exclamationmark.circle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)
+                            .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("sharing-error")
                     }
-                    DisclosureGroup("Récap, analyse relue ou connexion manuelle") {
-                        VStack(alignment: .leading, spacing: 9) {
-                            Text("Les textes et analyses peuvent contenir des informations personnelles. Ils se partagent séparément, après relecture, et ne sont jamais ajoutés à l’envoi quotidien.")
-                                .font(.callout).foregroundStyle(.secondary)
-                            Button("Préparer un partage ponctuel avancé…") { advanced = true }.buttonStyle(.bordered)
-                        }.padding(.top, 8)
-                    }.font(.callout)
+                    if model.preview == nil {
+                        DisclosureGroup("Outils avancés") {
+                            Button("Récap relu ou connexion manuelle…") { advanced = true }.buttonStyle(.bordered).padding(.top, 10)
+                        }.font(.system(size: 13))
+                    }
                 }.padding(24)
             }.disabled(model.busy)
             Divider()
             footer
         }
-        .frame(minWidth: 680, idealWidth: 740, maxWidth: 820, minHeight: 560, idealHeight: 720, maxHeight: 780)
+        .frame(minWidth: 640, idealWidth: 720, maxWidth: 820, minHeight: 560, idealHeight: 710, maxHeight: 780)
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .environment(\.locale, Locale(identifier: "fr_FR"))
         .environment(\.timeZone, sharingCalendar.timeZone)
@@ -70,203 +82,187 @@ import LocalHistoryQueryCLI
         .onChange(of: model.draft.includeWebsites) { _ in Task { await model.loadCatalog() } }
         .onChange(of: origin) { _ in model.connectionChanged() }
         .onChange(of: tokenPath) { _ in model.connectionChanged() }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongExclusionsDidChange)) { _ in model.connectionChanged(); Task { await model.loadCatalog() } }
         .onDisappear { model.cancelPreparation() }
         .sheet(isPresented: $advanced) { GoalongWebsiteConnectionSheet() }
     }
-    private var header: some View {
-        HStack(alignment: .center, spacing: 15) {
-            Image(systemName: "arrow.up.doc").font(.system(size: 24, weight: .medium))
-                .foregroundStyle(LHTheme.accent).frame(width: 48, height: 48)
-                .background(LHTheme.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
-            VStack(alignment: .leading, spacing: 5) {
-                Text("GOALONG HISTORY").font(.system(size: 10, weight: .semibold)).tracking(1.6).foregroundStyle(.secondary)
-                Text("Partager avec GoLong").font(.system(size: 24, weight: .semibold))
-                Text("Vos données. Vos choix. Aucun envoi sans votre accord.").font(.callout).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 12)
-            Button { dismiss() } label: { Image(systemName: "xmark").frame(width: 26, height: 26) }
-                .buttonStyle(.borderless).accessibilityLabel("Fermer le partage")
-                .keyboardShortcut(.cancelAction).disabled(model.busy)
-        }.padding(24)
-    }
     private var account: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "lock.shield").foregroundStyle(LHTheme.accent)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(tokenPath.isEmpty || origin.isEmpty ? "Reliez votre compte avant d’envoyer" : "Destination : votre compte GoLong").font(.callout.weight(.semibold))
-                Text(origin.isEmpty ? "La liaison n’envoie aucune activité." : origin).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                Text("L’envoi au compte et le partage à d’autres personnes sont distincts. Vos règles actives sur le site s’appliqueront aux données reçues.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        GoalongSettingsGroup(title: "Destination") {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(connected ? "Votre compte Goalong" : "Compte non relié").font(.system(size: 14, weight: .medium))
+                    Text(connected ? (URL(string: origin)?.host ?? "Liaison enregistrée") : "Relier le compte ne transmet aucune activité.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(connected ? "Règles du site" : "Relier mon compte") { openSite(fragment: connected ? "privacy" : "settings") }
+                    .buttonStyle(.bordered)
             }
-            Spacer(minLength: 8)
-            Button(tokenPath.isEmpty || origin.isEmpty ? "Relier mon compte" : "Règles du site") {
-                openSite(fragment: tokenPath.isEmpty || origin.isEmpty ? "settings" : "privacy")
-            }.buttonStyle(.bordered)
+            if connected {
+                Text("Visibilité : vos règles du site s’appliquent après l’envoi.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+            }
         }
     }
+    private var connected: Bool { !tokenPath.isEmpty && !origin.isEmpty }
     private var delivery: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Picker("Mode d’envoi", selection: $model.draft.delivery) {
-                Text("Partager une fois").tag(GoalongWebsiteShareDraft.Delivery.once)
-                Text("Synchroniser chaque jour").tag(GoalongWebsiteShareDraft.Delivery.daily)
-            }.pickerStyle(.segmented).controlSize(.large).accessibilityIdentifier("sharing-delivery")
+        VStack(alignment: .leading, spacing: 14) {
+            Picker("Fréquence", selection: $model.draft.delivery) {
+                Text("Une fois").tag(GoalongWebsiteShareDraft.Delivery.once)
+                Text("Chaque jour").tag(GoalongWebsiteShareDraft.Delivery.daily)
+            }.pickerStyle(.segmented).accessibilityIdentifier("sharing-delivery")
             if model.draft.delivery == .daily {
-                HStack(alignment: .top, spacing: 16) {
-                    DatePicker("À partir de", selection: scheduleTime, displayedComponents: .hourAndMinute)
-                        .datePickerStyle(.field).frame(width: 190)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.draft.timezone).font(.callout.weight(.medium))
-                        Text("La veille uniquement, lorsque l’app est ouverte et le Mac connecté. Au prochain lancement après cette heure, la veille est traitée ; les journées plus anciennes ne sont pas rattrapées.")
-                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    }
+                HStack {
+                    DatePicker("La veille, après", selection: scheduleTime, displayedComponents: .hourAndMinute).datePickerStyle(.field)
+                    Spacer()
+                    GoalongHelpButton(text: "Fuseau : \(model.draft.timezone). L’envoi se fait lorsque Goalong est ouvert et le Mac connecté. Seule la veille est envoyée. Les journées plus anciennes ne sont pas rattrapées. La sélection ne s’élargit jamais automatiquement.")
                 }
-                Label("Nouveaux appareils, applications et domaines exclus. Récaps, conversations et textes libres jamais envoyés automatiquement.", systemImage: "checkmark.shield")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("Un seul envoi de la journée choisie. Aucun envoi quotidien n’est activé par cette action.")
-                    .font(.callout).foregroundStyle(.secondary)
+                Text("Nouvelles applications, nouveaux sites et textes exclus.").font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
     }
     private var sharingCalendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: model.draft.timezone) ?? .current
-        return calendar
+        var value = Calendar(identifier: .gregorian); value.timeZone = TimeZone(identifier: model.draft.timezone) ?? .current; return value
     }
     private var scheduleTime: Binding<Date> {
-        Binding(get: {
-            sharingCalendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: model.draft.hour, minute: model.draft.minute)) ?? Date()
-        }, set: {
-            model.draft.hour = sharingCalendar.component(.hour, from: $0)
-            model.draft.minute = sharingCalendar.component(.minute, from: $0)
-        })
+        Binding(get: { sharingCalendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: model.draft.hour, minute: model.draft.minute)) ?? Date() },
+                set: { model.draft.hour = sharingCalendar.component(.hour, from: $0); model.draft.minute = sharingCalendar.component(.minute, from: $0) })
     }
     private var selection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            sectionTitle("1", "Choisir les données")
-            HStack {
-                DatePicker(model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à partager", selection: $model.draft.date,
-                           in: ...Date(), displayedComponents: .date).datePickerStyle(.field)
-                Spacer()
-                Button { Task { await model.loadCatalog() } } label: { Label("Actualiser", systemImage: "arrow.clockwise") }
-                    .buttonStyle(.borderless).disabled(model.loading)
-            }
+        VStack(alignment: .leading, spacing: 18) {
+            DatePicker(model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer", selection: $model.draft.date,
+                       in: ...Date(), displayedComponents: .date).datePickerStyle(.field)
             if model.loading {
-                ProgressView("Lecture des données déjà enregistrées sur ce Mac…").font(.callout)
+                ProgressView("Lecture sur ce Mac…").font(.system(size: 13))
             } else if let catalog = model.catalog {
-                VStack(alignment: .leading, spacing: 12) {
-                    GoalongSharingSelector(title: "Appareils", symbol: "desktopcomputer", items: catalog.devices.map {
-                        .init(id: $0.id, title: $0.name, detail: $0.screenSeconds.map(duration) ?? "Durée indisponible")
+                GoalongSettingsGroup(title: "Appareils") {
+                    GoalongSharingSelector(title: "Choisir les appareils", symbol: "desktopcomputer", items: catalog.devices.map {
+                        .init(id: $0.id, title: $0.name, detail: $0.screenSeconds.map(GoalongReadableSharePreview.duration) ?? "Durée non transmise")
                     }, selection: $model.draft.deviceIDs)
-                    Text("Les durées totales des appareils cochés sont incluses, y compris le temps des applications dont les noms restent masqués. Fuseau des données : \(catalog.timezone).")
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    Toggle("Inclure le nom personnel des appareils", isOn: $model.draft.includeDeviceNames).font(.callout)
-                    Text("Désactivé : nom générique et identifiant pseudonymisé, sans le nom personnel de l’appareil.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Divider()
-                    Toggle("Applications et durées", isOn: $model.draft.includeApplications).font(.callout.weight(.medium))
-                    if model.draft.includeApplications {
-                        GoalongSharingSelector(title: "Applications autorisées", symbol: "app", items: applicationItems,
-                                               selection: $model.draft.applicationIDs)
-                    }
-                    Toggle("Répartition horaire des appareils choisis", isOn: $model.draft.includeHourly).font(.callout.weight(.medium))
-                    Text("Uniquement si elle a été enregistrée. Les horaires ne sont jamais reconstitués à partir d’un total.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Divider()
-                    Toggle("Domaines web observés sur ce Mac", isOn: $model.draft.includeWebsites).font(.callout.weight(.medium))
+                }
+                GoalongSettingsGroup(title: "Applications") {
+                    Toggle("Inclure des applications", isOn: $model.draft.includeApplications).toggleStyle(.switch)
+                    if model.draft.includeApplications { applicationChoices }
+                }
+                GoalongSettingsGroup(title: "Sites web") {
+                    Toggle("Inclure des sites", isOn: $model.draft.includeWebsites).toggleStyle(.switch)
+                        .disabled(!model.draft.anonymousApplicationIDs.intersection(model.draft.applicationIDs).isEmpty)
                     if model.draft.includeWebsites {
-                        GoalongSharingSelector(title: "Domaines autorisés", symbol: "globe", items: catalog.websites.map {
-                            .init(id: $0.domain, title: $0.domain, detail: duration($0.seconds))
+                        GoalongSharingSelector(title: "Domaines uniquement", symbol: "globe", items: catalog.websites.map {
+                            .init(id: $0.domain, title: $0.domain, detail: GoalongReadableSharePreview.duration($0.seconds))
                         }, selection: $model.draft.websiteDomains)
-                        Text("Cette source vient de ce Mac, indépendamment des appareils ci-dessus. Domaines uniquement : ni URL complète, ni titre de page, ni contenu.")
-                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                }.padding(18).background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 14))
+                    if !model.draft.anonymousApplicationIDs.intersection(model.draft.applicationIDs).isEmpty {
+                        Text("Les domaines sont retirés pour préserver le masquage des applications.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                }
+                DisclosureGroup("Nom des appareils") {
+                    Toggle("Inclure leurs noms personnels", isOn: $model.draft.includeDeviceNames).toggleStyle(.checkbox).padding(.top, 10)
+                }.font(.system(size: 13))
+                Text("Les totaux complets et les horaires sont exclus : ils pourraient contenir des activités non sélectionnées.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
             } else {
-                Text("Aucune journée disponible pour cette sélection. Choisissez une autre date ou vérifiez les sources autorisées dans les réglages.")
-                    .font(.callout).foregroundStyle(.secondary)
-                if model.draft.includeWebsites {
-                    Button("Continuer sans les domaines web") { model.draft.includeWebsites = false }.buttonStyle(.bordered)
+                Text("Aucune donnée disponible pour cette journée.").font(.system(size: 13)).foregroundStyle(.secondary)
+                Button("Réessayer") { Task { await model.loadCatalog() } }.buttonStyle(.bordered)
+            }
+        }
+    }
+    private var availableApps: [GoalongSiteSelectionCatalog.Application] {
+        var rows: [String: GoalongSiteSelectionCatalog.Application] = [:]
+        for device in model.catalog?.devices ?? [] where model.draft.deviceIDs.contains(device.id) {
+            for app in device.applications { rows[app.id] = app }
+        }
+        return rows.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+    private var applicationChoices: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if availableApps.count > 5 { TextField("Rechercher une application…", text: $appSearch).textFieldStyle(.roundedBorder) }
+            if availableApps.isEmpty { Text("Choisissez un appareil disposant de données.").font(.system(size: 12)).foregroundStyle(.secondary) }
+            HStack {
+                Button("Sélectionner les résultats") {
+                    model.draft.applicationIDs.formUnion(availableApps.filter { appSearch.isEmpty || $0.name.localizedStandardContains(appSearch) }.map(\.id))
+                }
+                Button("Tout exclure") { model.draft.applicationIDs.removeAll(); model.draft.anonymousApplicationIDs.removeAll() }
+            }.buttonStyle(.borderless).font(.system(size: 12))
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(availableApps.filter { appSearch.isEmpty || $0.name.localizedStandardContains(appSearch) }) { app in
+                        HStack(spacing: 12) {
+                            AppIconView(bundleIdentifier: app.id, appName: app.name, size: 28)
+                            Text(app.name).font(.system(size: 13)).lineLimit(2)
+                            Spacer()
+                            Picker("Envoi de \(app.name)", selection: Binding(get: {
+                                !model.draft.applicationIDs.contains(app.id) ? 0 : model.draft.anonymousApplicationIDs.contains(app.id) ? 1 : 2
+                            }, set: { choice in
+                                if choice == 0 { model.draft.applicationIDs.remove(app.id); model.draft.anonymousApplicationIDs.remove(app.id) }
+                                else {
+                                    model.draft.applicationIDs.insert(app.id)
+                                    if choice == 1 { model.draft.anonymousApplicationIDs.insert(app.id); model.draft.includeWebsites = false }
+                                    else { model.draft.anonymousApplicationIDs.remove(app.id) }
+                                }
+                            })) {
+                                Text("Ne rien envoyer").tag(0)
+                                Text("Durée sans nom").tag(1)
+                                Text("Nom et durée").tag(2)
+                            }.labelsHidden().frame(width: 168)
+                        }.padding(.vertical, 3)
+                    }
+                }
+            }.frame(maxHeight: 230)
+            let absent = model.draft.applicationIDs.subtracting(Set(availableApps.map(\.id)))
+            if !absent.isEmpty {
+                HStack {
+                    Text("\(absent.count) choix d’autres journées conservés").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Retirer") { model.draft.applicationIDs.subtract(absent); model.draft.anonymousApplicationIDs.subtract(absent) }
+                        .buttonStyle(.borderless)
                 }
             }
         }
     }
-    private var applicationItems: [GoalongSharingSelector.Item] {
-        var rows: [String: GoalongSharingSelector.Item] = [:]
-        for device in model.catalog?.devices ?? [] where model.draft.deviceIDs.contains(device.id) {
-            for app in device.applications {
-                rows[app.id] = .init(id: app.id, title: app.name, detail: "Application enregistrée sur les appareils choisis")
+    private func preview(_ approved: GoalongWebsiteSharingModel.Preview) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("Aperçu local du \(approved.draft.day)").font(.system(size: 14, weight: .medium))
+                Spacer()
+                Button("Modifier") { model.invalidate() }.buttonStyle(.bordered)
             }
-        }
-        return rows.values.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-    }
-    private var preview: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("2", "Vérifier avant d’autoriser")
-            if let approved = model.preview {
-                HStack(spacing: 16) {
-                    summary("Appareils", "\(approved.transmittedCounts.devices)")
-                    summary("Lignes d’apps", "\(approved.transmittedCounts.applications)")
-                    summary("Domaines", "\(approved.transmittedCounts.websites)")
-                    summary("Taille", ByteCountFormatter.string(fromByteCount: Int64(approved.payload.count), countStyle: .file))
-                }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(LHTheme.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-                Text("Aperçu local du \(approved.draft.day). Rien n’a encore été envoyé.").font(.callout)
-                DisclosureGroup("Voir exactement les données transmises", isExpanded: $exactData) {
-                    ScrollView([.horizontal, .vertical]) {
-                        Text(String(decoding: approved.payload, as: UTF8.self)).font(.system(size: 11, design: .monospaced))
-                            .textSelection(.enabled).padding(12)
-                    }.frame(height: 190).background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 10))
-                }.font(.callout)
-                Toggle(isOn: $model.reviewed) {
-                    Text(model.draft.delivery == .daily
-                         ? "J’autorise l’envoi quotidien de la veille avec ces appareils et ces champs uniquement. Les valeurs évolueront ; la sélection ne s’élargira pas."
-                         : "J’ai vérifié la destination et les données. J’autorise cet envoi unique.")
-                        .font(.callout).fixedSize(horizontal: false, vertical: true)
-                }.accessibilityIdentifier("sharing-confirm-review")
-                Text("Vos règles de partage actives sur le site peuvent rendre ces données visibles à leurs destinataires. Décocher ou mettre en pause ne supprime pas les données déjà reçues. Un envoi n’est pas une preuve indépendante d’authenticité.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let data = try? GoalongReadableShareData(payload: approved.payload) {
+                GoalongReadableSharePreview(data: data)
             } else {
-                Text(model.draft.validationMessage ?? "Préparez l’aperçu local pour voir les seuls champs qui seront envoyés. Toute modification impose un nouvel aperçu.")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Label("Aperçu non lisible. L’envoi est bloqué.", systemImage: "exclamationmark.circle").foregroundStyle(LHTheme.warning)
             }
+            if model.draft.delivery == .daily {
+                Toggle("J’autorise ces données chaque jour, sans élargir la sélection.", isOn: $model.reviewed)
+                    .toggleStyle(.checkbox).font(.system(size: 13)).accessibilityIdentifier("sharing-confirm-review")
+            }
+            DisclosureGroup("Données techniques", isExpanded: $exactData) {
+                ScrollView([.horizontal, .vertical]) {
+                    Text(String(decoding: approved.payload, as: UTF8.self)).font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled).padding(12)
+                }.frame(height: 180)
+            }.font(.system(size: 13))
+            Text("Mettre en pause n’efface pas les données déjà reçues.").font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }
     private var footer: some View {
-        HStack(spacing: 14) {
+        HStack {
             if model.busy { ProgressView().controlSize(.small) }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.busy ? "Opération en cours…" : "Votre sélection reste sous votre contrôle").font(.callout.weight(.medium))
-                Text(model.preview == nil ? "L’aperçu ne transmet aucune donnée." : "Seule votre confirmation autorise l’envoi.").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
+            Text(model.preview == nil ? "Aucun envoi à cette étape." : "La confirmation autorise l’envoi.")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            Spacer()
             if model.preview == nil {
-                Button("Préparer l’aperçu") { Task { await model.prepare(origin: origin, tokenPath: tokenPath) } }
-                    .buttonStyle(LHPrimaryButtonStyle())
-                    .disabled(model.busy || model.loading || model.catalog == nil || model.draft.validationMessage != nil || origin.isEmpty || tokenPath.isEmpty)
-                    .accessibilityIdentifier("sharing-preview")
+                Button("Voir l’aperçu") { Task { await model.prepare(origin: origin, tokenPath: tokenPath) } }
+                    .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("sharing-preview")
+                    .disabled(model.busy || model.loading || model.catalog == nil || model.draft.validationMessage != nil || !connected)
             } else {
-                Button(model.draft.delivery == .daily ? "Activer la synchronisation" : "Envoyer cette journée") {
+                Button(model.draft.delivery == .daily ? "Activer l’envoi quotidien" : "Envoyer cette journée") {
+                    if model.draft.delivery == .once { model.reviewed = true }
                     Task { await model.confirm(origin: origin, tokenPath: tokenPath) }
-                }.buttonStyle(LHPrimaryButtonStyle()).disabled(model.busy || !model.reviewed)
-                    .accessibilityIdentifier("sharing-send")
+                }.buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("sharing-send")
+                    .disabled(model.busy || (model.draft.delivery == .daily && !model.reviewed) || (model.preview.flatMap { try? GoalongReadableShareData(payload: $0.payload) } == nil))
             }
         }.padding(20).background(LHTheme.cardBackground)
-    }
-    private func sectionTitle(_ number: String, _ text: String) -> some View {
-        HStack(spacing: 9) {
-            Text(number).font(.system(size: 11, weight: .semibold)).foregroundStyle(LHTheme.accent)
-                .frame(width: 24, height: 24).background(LHTheme.accent.opacity(0.10), in: Circle())
-            Text(text).font(.system(size: 15, weight: .semibold))
-        }
-    }
-    private func summary(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) { Text(value).font(.system(size: 18, weight: .semibold)).monospacedDigit(); Text(label).font(.caption).foregroundStyle(.secondary) }
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    private func duration(_ seconds: Int) -> String {
-        if seconds < 60 { return "\(seconds) s" }
-        return seconds < 3600 ? "\(seconds / 60) min" : "\(seconds / 3600) h \(String(format: "%02d", (seconds % 3600) / 60))"
     }
     private func openSite(fragment: String) {
         let site = origin.isEmpty ? "https://goalong.spry-crumb-3668.chatgpt.site" : origin

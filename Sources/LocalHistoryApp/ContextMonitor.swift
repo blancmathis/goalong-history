@@ -180,7 +180,8 @@
                         window: nil,
                         focusedElement: nil,
                         url: nil,
-                        suppressionReason: .secureInput
+                        suppressionReason: .secureInput,
+                        privacyRevision: current.privacyRevision
                     )
                 }
                 setLatest(safeContext)

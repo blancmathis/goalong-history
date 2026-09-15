@@ -10,6 +10,7 @@ struct GoalongWebsiteShareDraft: Equatable {
     var date = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
     var deviceIDs = Set<String>()
     var applicationIDs = Set<String>()
+    var anonymousApplicationIDs = Set<String>()
     var websiteDomains = Set<String>()
     var includeApplications = false
     var includeHourly = false
@@ -29,13 +30,15 @@ struct GoalongWebsiteShareDraft: Equatable {
     }
     var options: GoalongSiteExportOptions {
         .init(deviceIDs: deviceIDs.sorted(), includeApplications: includeApplications,
-              includeHourly: includeHourly, includeWebsites: includeWebsites,
+              includeHourly: false, includeWebsites: includeWebsites,
+              maskedApplications: anonymousApplicationIDs.intersection(applicationIDs).sorted(),
               selectedApplicationIDs: applicationIDs.sorted(), selectedWebsiteDomains: websiteDomains.sorted(),
-              includeDeviceNames: includeDeviceNames)
+              includeDeviceNames: includeDeviceNames, strictSelection: true)
     }
     var validationMessage: String? {
         if deviceIDs.isEmpty { return "Sélectionnez au moins un appareil. Rien n’est coché par défaut." }
         if deviceIDs.count > 12 { return "Sélectionnez au maximum douze appareils." }
+        if !includeApplications && !includeWebsites { return "Choisissez des applications ou des sites à envoyer." }
         if includeApplications && applicationIDs.isEmpty { return "Choisissez les applications à transmettre ou désactivez ce détail." }
         if includeWebsites && websiteDomains.isEmpty { return "Choisissez les domaines à transmettre ou désactivez ce détail." }
         return nil
@@ -52,6 +55,7 @@ struct GoalongWebsiteShareDraft: Equatable {
         let tokenPath: String
         let credentialFingerprint: String
         let createdAt: Date
+        var privacyRevision: String = "none"
         var transmittedCounts: (devices: Int, applications: Int, websites: Int) {
             guard let value = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
                   let day = (value["days"] as? [[String: Any]])?.first,
@@ -66,7 +70,7 @@ struct GoalongWebsiteShareDraft: Equatable {
         didSet {
             guard draft != oldValue else { return }
             invalidate()
-            if autoSender.enabled { autoSender.stop(); status = "Synchronisation mise en pause pendant la modification. Relisez puis confirmez vos nouveaux choix." }
+            if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled { autoSender.stop(); status = "Synchronisation mise en pause pendant la modification. Relisez puis confirmez vos nouveaux choix." }
         }
     }
     @Published private(set) var catalog: GoalongSiteSelectionCatalog?
@@ -77,26 +81,28 @@ struct GoalongWebsiteShareDraft: Equatable {
     @Published var error: String?
     @Published var status: String?
     private var generation = UUID()
+    private var configuringPresentation = false
     let autoSender: GoalongWebsiteAutoSender
     private let root: URL
     private let catalogLoader: (URL, String, Bool) throws -> GoalongSiteSelectionCatalog
     private let exporter: (URL, String, GoalongSiteExportOptions) throws -> Data
-    private let sender: (Data, String, URL, String) throws -> Data
+    private let sender: ((Data, String, URL, String) throws -> Data)?
     private let sourceConsent: @MainActor (GoalongSiteExportOptions) -> Bool
 
     init(autoSender: GoalongWebsiteAutoSender? = nil, root: URL = AppPaths.applicationSupportDirectory,
          catalogLoader: @escaping (URL, String, Bool) throws -> GoalongSiteSelectionCatalog = { try GoalongQueryCLI.siteSelectionCatalog(rootDirectory: $0, day: $1, includeWebsites: $2) },
          exporter: @escaping (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) },
-         sender: @escaping (Data, String, URL, String) throws -> Data = { try GoalongSiteSubmission.send(payload: $0, origin: $1, tokenFile: $2, expectedTokenFingerprint: $3) },
+         sender: ((Data, String, URL, String) throws -> Data)? = nil,
          sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) }) {
         let autoSender = autoSender ?? .shared
         self.autoSender = autoSender; self.root = root; self.catalogLoader = catalogLoader
         self.exporter = exporter; self.sender = sender; self.sourceConsent = sourceConsent
-        if let saved = autoSender.savedConfiguration, saved.policyVersion == 2 {
+        if let saved = autoSender.savedConfiguration, [2, 3].contains(saved.policyVersion ?? 0) {
             var restored = GoalongWebsiteShareDraft()
             restored.delivery = .daily
             restored.deviceIDs = Set(saved.options.deviceIDs)
             restored.applicationIDs = Set(saved.options.selectedApplicationIDs ?? [])
+            restored.anonymousApplicationIDs = Set(saved.options.maskedApplications)
             restored.websiteDomains = Set(saved.options.selectedWebsiteDomains ?? [])
             restored.includeApplications = saved.options.includeApplications
             restored.includeHourly = saved.options.includeHourly
@@ -106,6 +112,13 @@ struct GoalongWebsiteShareDraft: Equatable {
             restored.timezone = saved.timeZoneIdentifier ?? TimeZone.current.identifier
             draft = restored
         }
+    }
+    /// Opening a one-off send never edits or pauses the approved daily plan.
+    func presentSingleDay(_ day: Date) {
+        configuringPresentation = true
+        defer { configuringPresentation = false }
+        draft.delivery = .once
+        draft.date = day
     }
     func invalidate() { preview = nil; reviewed = false; error = nil; status = nil }
     func connectionChanged() { generation = UUID(); invalidate(); autoSender.stop() }
@@ -145,23 +158,27 @@ struct GoalongWebsiteShareDraft: Equatable {
         busy = true
         defer { busy = false }
         let root = root, exporter = exporter
+        let privacyRevision = GoalongPrivacyPolicy.load(in: root).revision
         do {
             _ = try GoalongSiteSubmission.endpoint(origin: target)
             let token = try GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))
             let fingerprint = SHA256Digest.hashHex(Data(token.utf8))
             let bytes = try await Task.detached(priority: .userInitiated) { try exporter(root, snapshot.day, options) }.value
-            guard generation == ticket, draft == snapshot, sourceConsent(options) else {
+            _ = try GoalongReadableShareData(payload: bytes)
+            guard generation == ticket, draft == snapshot, sourceConsent(options),
+                  GoalongPrivacyPolicy.load(in: root).revision == privacyRevision else {
                 error = "Les choix ou les autorisations ont changé. Préparez un nouvel aperçu."; return
             }
             preview = Preview(payload: bytes, draft: snapshot, origin: target, tokenPath: tokenPath,
-                              credentialFingerprint: fingerprint, createdAt: Date())
+                              credentialFingerprint: fingerprint, createdAt: Date(), privacyRevision: privacyRevision)
         } catch { self.error = "Aperçu non préparé : \(error)" }
     }
     func confirm(origin: String, tokenPath: String) async {
         guard !busy, reviewed, let approved = preview else { return }
         guard approved.draft == draft, approved.origin == origin.trimmingCharacters(in: .whitespacesAndNewlines),
               approved.tokenPath == tokenPath, Date().timeIntervalSince(approved.createdAt) <= 900,
-              sourceConsent(approved.draft.options) else {
+              sourceConsent(approved.draft.options),
+              GoalongPrivacyPolicy.load(in: root).revision == approved.privacyRevision else {
             invalidate(); error = "L’aperçu ou les autorisations ont changé. Préparez un nouvel aperçu avant l’envoi."; return
         }
         busy = true; error = nil
@@ -177,9 +194,13 @@ struct GoalongWebsiteShareDraft: Equatable {
                 preview = nil; reviewed = false
                 status = "Synchronisation activée. Seules les données autorisées de la veille seront envoyées, lorsque l’app est ouverte."
             } else {
-                let sender = sender
+                let sender = sender, root = root
                 let receipt = try await Task.detached(priority: .userInitiated) {
-                    try sender(approved.payload, approved.origin, URL(fileURLWithPath: approved.tokenPath), approved.credentialFingerprint)
+                    _ = try GoalongOutgoingPrivacy.validate(approved.payload, root: root, expectedRevision: approved.privacyRevision)
+                    if let sender { return try sender(approved.payload, approved.origin, URL(fileURLWithPath: approved.tokenPath), approved.credentialFingerprint) }
+                    return try GoalongSiteSubmission.send(payload: approved.payload, origin: approved.origin,
+                        tokenFile: URL(fileURLWithPath: approved.tokenPath), expectedTokenFingerprint: approved.credentialFingerprint,
+                        privacyRoot: root, expectedPrivacyRevision: approved.privacyRevision)
                 }.value
                 let object = try JSONSerialization.jsonObject(with: receipt) as? [String: Any] ?? [:]
                 preview = nil; reviewed = false
