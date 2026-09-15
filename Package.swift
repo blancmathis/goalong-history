@@ -33,6 +33,7 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
+        .executable(name: "goalong-relauncher", targets: ["GoalongRelauncher"]),
         .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
         .library(name: "AppleSystemScreenTime", targets: ["AppleSystemScreenTime"]),
         .library(name: "AgentActivity", targets: ["AgentActivity"]),
@@ -42,6 +43,7 @@ let package = Package(
     ],
     dependencies: packageDependencies,
     targets: [
+        .executableTarget(name: "GoalongRelauncher", path: "Sources/GoalongRelauncher"),
         .target(
             name: "AppleScreenTime",
             path: "Features/AppleScreenTime/Sources"

@@ -49,68 +49,121 @@
             check()
         }
 
-        @MainActor static func restart(completion: @escaping (String?) -> Void) {
-            let bundle = Bundle.main
-            guard bundle.bundleURL.pathExtension == "app",
-                  bundle.bundleIdentifier == "ai.goalong.localhistory",
-                  let launched = NSRunningApplication.current.launchDate else {
-                completion("Quit Goalong History, then reopen the installed app from Applications.")
-                return
+        static let completedArgument = "--permission-recovery-complete"
+        private static let returnKey = "goalong.permissions.returnToSetup.v2"
+        @MainActor static var resumedCapability: GoalongCapability?
+        @MainActor private static var relaunch: PermissionRelaunchHandshake?
+        @MainActor static var isRestarting: Bool { relaunch != nil }
+
+        static func rememberSetup(_ capability: GoalongCapability, defaults: UserDefaults = .standard, now: Date = Date()) {
+            guard [.localComputerHistory, .appleScreenTime, .aiConversations].contains(capability) else { return }
+            defaults.set(["capability": capability.rawValue, "expires": now.addingTimeInterval(600).timeIntervalSince1970], forKey: returnKey)
+        }
+
+        static func pendingSetup(defaults: UserDefaults = .standard, now: Date = Date()) -> GoalongCapability? {
+            guard let value = defaults.dictionary(forKey: returnKey),
+                  let raw = value["capability"] as? String, let capability = GoalongCapability(rawValue: raw),
+                  [.localComputerHistory, .appleScreenTime, .aiConversations].contains(capability),
+                  let expiry = value["expires"] as? Double, expiry.isFinite,
+                  expiry > now.timeIntervalSince1970, expiry <= now.addingTimeInterval(600).timeIntervalSince1970 else { return nil }
+            return capability
+        }
+
+        static func clearSetup(defaults: UserDefaults = .standard) { defaults.removeObject(forKey: returnKey) }
+
+        @MainActor static func consumeSetupReturn() -> Bool {
+            resumedCapability = pendingSetup()
+            clearSetup()
+            return resumedCapability != nil || CommandLine.arguments.contains(completedArgument)
+        }
+
+        @MainActor static func takeSetupReturn(for capability: GoalongCapability) -> Bool {
+            guard resumedCapability == capability else { return false }
+            resumedCapability = nil
+            return true
+        }
+
+        static func shouldAssistSettingsQuit(senderBundleID: String?, pendingSetup: Bool, alreadyRestarting: Bool) -> Bool {
+            pendingSetup && !alreadyRestarting && senderBundleID == "com.apple.systempreferences"
+        }
+
+        @MainActor static func prepareRelaunch(completion: @escaping (String?) -> Void) {
+            guard relaunch == nil else { completion("Goalong is already preparing to reopen."); return }
+            let handshake = PermissionRelaunchHandshake()
+            relaunch = handshake
+            handshake.start { error in
+                if error != nil { relaunch = nil }
+                completion(error)
             }
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.createsNewApplicationInstance = true
-            configuration.arguments = [parentArgument, String(ProcessInfo.processInfo.processIdentifier),
-                                       parentLaunchArgument, String(launched.timeIntervalSince1970)]
-            NSWorkspace.shared.openApplication(at: bundle.bundleURL, configuration: configuration) { app, error in
-                DispatchQueue.main.async {
-                    guard error == nil, let app,
-                          app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
-                        completion("Goalong could not restart. Quit it, reopen the installed app, then check access again.")
-                        return
-                    }
-                    completion(nil)
-                    NSApplication.shared.terminate(nil)
-                }
+        }
+
+        @MainActor static func restart(completion: @escaping (String?) -> Void) {
+            prepareRelaunch { error in
+                completion(error)
+                guard error == nil else { return }
+                NSApplication.shared.terminate(nil)
             }
         }
     }
 
-    struct PermissionRecoveryView: View {
-        let status: SourceAccessStatus
-        var expandOnFailure = false
-        @State private var expanded = false
-        @State private var restarting = false
-        @State private var restartError: String?
+    /// The parent stays alive until its bundled, fixed-purpose helper is listening for its exit.
+    /// Failure cancels only that owned helper, not Goalong or another application.
+    @MainActor private final class PermissionRelaunchHandshake {
+        private var process: Process?
+        private var pipe: Pipe?
+        private var timeout: DispatchWorkItem?
+        private var finished = false
+        private var received = Data()
 
-        var body: some View {
-            DisclosureGroup("Already enabled in System Settings?", isExpanded: $expanded) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("A macOS switch can still refer to an older build after an update. Turning it off and on may not replace that entry.")
-                    Text("Remove only Goalong History from this permission list with −, then use + to add the exact app shown below and enable it. Do not reset permissions for other apps.")
-                    Text(Bundle.main.bundleURL.path).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
-                    Text("Restart Goalong History after granting access, then enable this source again. Your history, saved recording settings, exclusions, and sharing choices are kept. Save pending settings changes before restarting. Restarting never enables a source by itself.")
-                    HStack(spacing: 12) {
-                        Button("Show this app in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
-                        }
-                        Button(restarting ? "Restarting…" : "Restart Goalong History") {
-                            restarting = true
-                            restartError = nil
-                            PermissionRecovery.restart { message in
-                                restartError = message
-                                if message != nil { restarting = false }
-                            }
-                        }.disabled(restarting)
-                    }.buttonStyle(.bordered)
-                    if let restartError { Text(restartError).foregroundStyle(.secondary) }
-                }
-                .font(.system(size: 12))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 8)
+        func start(completion: @escaping (String?) -> Void) {
+            let bundle = Bundle.main
+            let helper = bundle.bundleURL.resolvingSymlinksInPath().appendingPathComponent("Contents/MacOS/goalong-relauncher")
+            guard bundle.bundleURL.pathExtension == "app", bundle.bundleIdentifier == "ai.goalong.localhistory",
+                  helper.resolvingSymlinksInPath() == helper.standardizedFileURL,
+                  FileManager.default.isExecutableFile(atPath: helper.path),
+                  let launched = NSRunningApplication.current.launchDate else {
+                completion("The restart component is unavailable. Goalong has stayed open; install the latest update and try again.")
+                return
             }
-            .font(.system(size: 12, weight: .medium))
-            .onAppear { if expandOnFailure { expanded = true } }
-            .onChange(of: expandOnFailure) { if $0 { expanded = true } }
+            let child = Process()
+            child.executableURL = helper
+            child.arguments = ["--parent", String(ProcessInfo.processInfo.processIdentifier),
+                               "--launched", String(launched.timeIntervalSince1970)]
+            let inherited = ProcessInfo.processInfo.environment
+            child.environment = inherited.filter { ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE"].contains($0.key) }
+            child.standardInput = FileHandle.nullDevice
+            child.standardError = FileHandle.nullDevice
+            let output = Pipe()
+            child.standardOutput = output
+            pipe = output; process = child
+            output.fileHandleForReading.readabilityHandler = { [weak self] handle in
+                let bytes = handle.availableData
+                DispatchQueue.main.async {
+                    guard let self, !self.finished else { return }
+                    self.received.append(bytes)
+                    if self.received == Data("READY\n".utf8) {
+                        self.finish(error: nil, completion: completion)
+                    } else if bytes.isEmpty || self.received.count > 32 {
+                        self.finish(error: "Restart could not be prepared. Goalong has stayed open. Please try again.", completion: completion)
+                    }
+                }
+            }
+            let deadline = DispatchWorkItem { [weak self] in
+                self?.finish(error: "The restart component did not respond. Goalong has stayed open. Please try again.", completion: completion)
+            }
+            timeout = deadline
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: deadline)
+            do { try child.run() }
+            catch { finish(error: "Restart could not be prepared: \(error.localizedDescription)", completion: completion) }
+        }
+
+        private func finish(error: String?, completion: (String?) -> Void) {
+            guard !finished else { return }
+            finished = true
+            timeout?.cancel(); timeout = nil
+            pipe?.fileHandleForReading.readabilityHandler = nil
+            if error != nil, let process, process.isRunning { process.terminate() }
+            completion(error)
         }
     }
 #endif

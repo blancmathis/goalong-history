@@ -85,6 +85,7 @@
             menu.addItem(
                 responderItem("Show All", action: #selector(NSApplication.unhideAllApplications(_:))))
             menu.addItem(.separator())
+            menu.addItem(item("Quit & Reopen Goalong History", action: #selector(restart)))
             menu.addItem(
                 item(
                     "Quit \(ProductIdentity.displayName)",
@@ -185,6 +186,19 @@
 
         @objc private func checkForUpdates() {
             onCheckForUpdates()
+        }
+
+        @objc private func restart() {
+            Task { @MainActor in
+                PermissionRecovery.restart { error in
+                    guard let error else { return }
+                    let alert = NSAlert()
+                    alert.messageText = "Goalong stayed open"
+                    alert.informativeText = error
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+            }
         }
 
         @objc private func quit() {

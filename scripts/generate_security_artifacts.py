@@ -243,7 +243,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "automaticUpdater": "sparkle-signed-user-approved-install",
         "managedChatGPTBridge": "explicit-consent-only",
         "directProviderSourceReaders": "present",
-        "processExecution": "fixed-codex-app-server-and-sparkle-installer-only",
+        "processExecution": "fixed-codex-app-server-sparkle-installer-and-self-relauncher-only",
         "fullDiskAccessIsolationService": "not-shipped",
         "osEnforcedNetworkSandbox": "not-enabled",
     }

@@ -108,8 +108,8 @@ fi
 # argument. No shell, arbitrary command, or user-provided argument vector is allowed.
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$CODEX_BRIDGE" ]]; then
-    echo "Unexpected Process API outside the Codex app-server bridge: $match" >&2
+  if [[ "$file" != "$CODEX_BRIDGE" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift" ]]; then
+    echo "Unexpected Process API outside the fixed Codex and self-relaunch boundaries: $match" >&2
     failed=true
   fi
 done < <(grep -R -nE 'Process\(' "${CODE_ROOTS[@]}" || true)
@@ -249,30 +249,49 @@ while IFS= read -r match; do
   fi
 done < <(grep -R -nE --include='*.swift' 'NSWorkspace\.shared\.open\(' "$ROOT_DIR/Sources/LocalHistoryApp" || true)
 
-# Permission recovery may relaunch only the exact current bundle through LaunchServices.
-# It must not gain a shell, accept an arbitrary app URL, reset TCC, or overlap data writers.
+# The one-shot relauncher is a fixed executable inside this app. It does not read
+# history or grant permissions. The old process must exit before LaunchServices opens the app.
 PERMISSION_RECOVERY="$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift"
+RELAUNCHER="$ROOT_DIR/Sources/GoalongRelauncher/main.swift"
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$PERMISSION_RECOVERY" ]]; then
+  if [[ "$file" != "$RELAUNCHER" ]]; then
     echo "Unreviewed application relaunch boundary: $match" >&2
     failed=true
   fi
-done < <(grep -R -nE --include='*.swift' 'NSWorkspace\.shared\.openApplication\(' "$ROOT_DIR/Sources/LocalHistoryApp" || true)
+done < <(grep -R -nE --include='*.swift' 'NSWorkspace\.shared\.openApplication\(' "$ROOT_DIR/Sources" || true)
 for required_fragment in \
   'bundle.bundleIdentifier == "ai.goalong.localhistory"' \
-  'NSWorkspace.shared.openApplication(at: bundle.bundleURL, configuration: configuration)' \
-  'configuration.createsNewApplicationInstance = true' \
-  'parentURL.standardizedFileURL == bundleURL.standardizedFileURL' \
-  'abs(launchDate.timeIntervalSince1970 - launched) < 0.01' \
-  'case .notRequested, .ready: start()'; do
+  'child.executableURL = helper' \
+  'Contents/MacOS/goalong-relauncher' \
+  'helper.resolvingSymlinksInPath() == helper.standardizedFileURL' \
+  'child.environment = inherited.filter' \
+  'Data("READY\n".utf8)' \
+  'private var finished = false'; do
   if ! grep -Fq "$required_fragment" "$PERMISSION_RECOVERY"; then
-    echo "Permission relaunch confinement invariant is missing: $required_fragment" >&2
+    echo "Permission relaunch handshake invariant is missing: $required_fragment" >&2
     failed=true
   fi
 done
-if grep -nE 'tccutil|SecItem|SecTrust|CGRequest|AXIsProcessTrustedWithOptions|\.set\(.*enabled:' "$PERMISSION_RECOVERY"; then
+for required_fragment in \
+  'getppid() == parentPID' \
+  'parent.bundleURL?.resolvingSymlinksInPath() == appURL' \
+  'abs(launchDate.timeIntervalSince1970 - launched) < 0.01' \
+  'DispatchSource.makeProcessSource(identifier: parentPID, eventMask: .exit' \
+  'configuration.createsNewApplicationInstance = false' \
+  'NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)' \
+  'exitWatch.activate()'; do
+  if ! grep -Fq "$required_fragment" "$RELAUNCHER"; then
+    echo "One-shot relaunch confinement invariant is missing: $required_fragment" >&2
+    failed=true
+  fi
+done
+if grep -nE 'tccutil|SecItem|SecTrust|CGRequest|AXIsProcessTrustedWithOptions|\.set\(.*enabled:' "$PERMISSION_RECOVERY" "$RELAUNCHER"; then
   echo "Permission recovery must not grant access, change trust, or enable recording." >&2
+  failed=true
+fi
+if grep -nE 'Process\(|URLSession|AppPaths|NSApplication\.shared|capability-consent' "$RELAUNCHER"; then
+  echo "The one-shot relauncher must not execute commands, open history, or become the app." >&2
   failed=true
 fi
 
@@ -545,4 +564,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is isolated to the fixed Codex app-server bridge; first-party networking is confined to confirmed website pairing and explicit reviewed sends; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge and bundled one-shot self-relauncher; first-party networking is confined to confirmed website pairing and explicit reviewed sends; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."

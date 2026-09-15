@@ -37,9 +37,9 @@
         var message: String {
             switch self {
             case .ready: return "The required access is available."
-            case .accessibility: return "In Privacy & Security → Accessibility, enable Goalong History. If it is already enabled but this check fails, macOS may still be authorizing an older app copy. Use the recovery steps below. Granting macOS access alone does not enable a source."
+            case .accessibility: return "Allow Goalong History in Privacy & Security → Accessibility. Return to Goalong to finish connecting this source. Your sharing settings are unchanged."
             case .inputMonitoring: return "Allow Input Monitoring for Goalong in System Settings, then return here to verify access."
-            case .fullDiskAccess: return "In Privacy & Security → Full Disk Access, enable Goalong History. After changing this permission, restart Goalong History before checking again. If the switch is already on, use the recovery steps below to replace an older app entry. You may also continue without this source."
+            case .fullDiskAccess: return "Allow Goalong History in Privacy & Security → Full Disk Access. If macOS asks, choose Quit & Reopen; Goalong will return to setup. You can continue without this source."
             case .screenTimeSetup: return "No Apple Screen Time source is available yet. Turn on App & Website Activity in macOS Screen Time, then check again."
             case .unavailable(let message): return message
             }
@@ -143,7 +143,15 @@
             self.result = initialStatus
         }
 
+        func inspect(_ capability: GoalongCapability) {
+            runCheck(capability, enable: false, surface: .settings, prepare: {})
+        }
+
         func checkAndEnable(_ capability: GoalongCapability, surface: GoalongConsentSurface, prepare: @escaping () throws -> Void) {
+            runCheck(capability, enable: true, surface: surface, prepare: prepare)
+        }
+
+        private func runCheck(_ capability: GoalongCapability, enable: Bool, surface: GoalongConsentSurface, prepare: @escaping () throws -> Void) {
             guard !checking, !completed else { return }
             generation += 1
             let request = generation
@@ -175,6 +183,7 @@
                         : "Check \(self.completedCheckCount): this source is not ready. Nothing has been enabled."
                     return
                 }
+                guard enable else { return }
                 do { if !self.store.isEnabled(capability) { try prepare() } }
                 catch {
                     self.result = .unavailable("Settings could not be saved: \(error.localizedDescription)")
@@ -235,6 +244,7 @@
         @ViewBuilder var label: () -> Label
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @Environment(\.sourceAccessCheck) private var checkAccess
+        @State private var resumingAfterRestart = false
         @State private var showingActivation = false
         @State private var activationStatus: SourceAccessStatus?
         @State private var checking = false
@@ -258,9 +268,15 @@
             }
             .disabled(checking)
             .sheet(isPresented: $showingActivation) {
-                SourceActivationSheet(capability: capability, surface: surface, prepare: prepare, check: checkAccess, initialStatus: activationStatus)
+                SourceActivationSheet(capability: capability, surface: surface, prepare: prepare, check: checkAccess, initialStatus: activationStatus, resumingAfterRestart: resumingAfterRestart)
             }
-            .onAppear { validateExistingConsent() }
+            .onAppear {
+                if PermissionRecovery.takeSetupReturn(for: capability) {
+                    resumingAfterRestart = true
+                    activationStatus = nil
+                    showingActivation = true
+                } else { validateExistingConsent() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 validateExistingConsent()
             }
@@ -274,6 +290,7 @@
             } message: { Text("The source is still enabled. Try turning it off again.") }
         }
         private func beginActivation() {
+            resumingAfterRestart = false
             let request = UUID()
             validation = request
             checking = true
@@ -314,73 +331,143 @@
         let capability: GoalongCapability
         let surface: GoalongConsentSurface
         let prepare: () throws -> Void
+        let resumingAfterRestart: Bool
         @StateObject private var flow: SourceActivationFlow
         @Environment(\.dismiss) private var dismiss
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var openedSettings = false
+        @State private var restarting = false
+        @State private var restartError: String?
+        @State private var manualChecks = 0
+        @State private var watchUntil = Date.distantPast
+        private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
         init(capability: GoalongCapability, surface: GoalongConsentSurface, prepare: @escaping () throws -> Void,
-             check: @escaping SourceAccessService.Check, initialStatus: SourceAccessStatus? = nil) {
+             check: @escaping SourceAccessService.Check, initialStatus: SourceAccessStatus? = nil, resumingAfterRestart: Bool = false) {
             self.capability = capability; self.surface = surface; self.prepare = prepare
+            self.resumingAfterRestart = resumingAfterRestart
             _flow = StateObject(wrappedValue: SourceActivationFlow(check: check, initialStatus: initialStatus))
         }
 
+        private var access: SourceAccessStatus { flow.result ?? (capability == .appleScreenTime ? .fullDiskAccess : .accessibility) }
+        private var copy: PermissionSetupCopy { PermissionSetupCopy(capability: capability, status: access) }
+        private var ready: Bool { flow.result == .ready }
+        private var needsRestart: Bool { openedSettings && access == .fullDiskAccess && !ready }
+        private var primaryTitle: String {
+            if restarting { return "Preparing restart…" }
+            if flow.checking { return "Checking access…" }
+            if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Done" : "Enable \(capability.title)" }
+            if needsRestart { return "Quit & reopen" }
+            if !openedSettings && access.hasSettingsAction { return "Open System Settings" }
+            return "Check access"
+        }
+
         var body: some View {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Access for \(capability.title)").font(.system(size: 22, weight: .semibold))
+            VStack(alignment: .leading, spacing: 0) {
+                PermissionSetupHeader(copy: copy, ready: ready).padding(28)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let status = flow.result, status != .ready {
-                            Text(status.message).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
-                        }
-                        if flow.checking {
-                            HStack(spacing: 10) {
-                                ProgressView().controlSize(.small)
-                                Text("Checking macOS access…").font(.system(size: 12))
+                    VStack(alignment: .leading, spacing: 22) {
+                        PermissionSetupStatusCard(copy: copy, checking: flow.checking, ready: ready)
+                        if ready {
+                            VStack(alignment: .leading, spacing: 7) {
+                                Text("Access confirmed").font(.system(size: 15, weight: .semibold))
+                                Text(GoalongCapabilityConsentStore.shared.isEnabled(capability)
+                                     ? "Your saved source choice is unchanged. You can return to your history."
+                                     : "Enable this source to finish. Your recording preferences, exclusions and sharing choices stay unchanged.")
+                                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            PermissionSetupSteps(copy: copy, openedSettings: openedSettings, ready: ready)
+                            if case .unavailable(let message) = access {
+                                Label(message, systemImage: "exclamationmark.circle")
+                                    .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else if openedSettings && !flow.checking {
+                                Label(needsRestart ? "Restart to apply access, then finish here." : "Waiting for macOS. We’ll check again when you return.",
+                                      systemImage: needsRestart ? "arrow.clockwise.circle" : "clock")
+                                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                    .accessibilityIdentifier("source-access-check-result")
                             }
-                            .accessibilityLabel("Checking macOS access")
-                        } else if let feedback = flow.feedback {
-                            Text(feedback).font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityIdentifier("source-access-check-result")
+                            if manualChecks > 0, !flow.checking, flow.feedback != nil {
+                                Text("Access is not available to this copy yet. Nothing has been enabled.")
+                                    .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            if access.isMacPermission && (openedSettings || resumingAfterRestart || manualChecks > 0) {
+                                PermissionRecoveryView(status: access, expandOnFailure: !needsRestart && (manualChecks > 0 || resumingAfterRestart))
+                                    .disabled(flow.checking || restarting)
+                            }
                         }
-                        if let status = flow.result, status.isMacPermission {
-                            PermissionRecoveryView(status: status, expandOnFailure: flow.completedCheckCount > 0)
-                                .disabled(flow.checking)
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
+                        Rectangle().fill(LHTheme.separator).frame(height: 1)
+                        PermissionPrivacyNote(text: copy.privacy)
+                        if let restartError { Text(restartError).font(.system(size: 12)).foregroundStyle(LHTheme.danger).fixedSize(horizontal: false, vertical: true) }
+                    }.padding(.horizontal, 28).padding(.bottom, 24)
                 }
-                .frame(maxHeight: min(520, (NSScreen.main?.visibleFrame.height ?? 800) * 0.65))
-                HStack(spacing: 10) {
-                    Button("Not now", role: .cancel) { flow.cancel(); dismiss() }
-                        .keyboardShortcut(.cancelAction)
-                    Spacer()
-                    if let status = flow.result, status.hasSettingsAction {
-                        Button(status.actionTitle) {
-                            openedSettings = true
-                            flow.requestMissingAccess()
-                        }.disabled(flow.checking)
+                .frame(maxHeight: min(465, (NSScreen.main?.visibleFrame.height ?? 900) * 0.53))
+                Rectangle().fill(LHTheme.separator).frame(height: 1)
+                HStack(spacing: 12) {
+                    Button("Not now", role: .cancel) { PermissionRecovery.clearSetup(); flow.cancel(); dismiss() }
+                        .keyboardShortcut(.cancelAction).buttonStyle(.plain)
+                        .foregroundStyle(LHTheme.secondaryText).disabled(restarting)
+                    Spacer(minLength: 8)
+                    if openedSettings && !ready {
+                        Button(needsRestart ? "Check again" : "Open settings") {
+                            if needsRestart { manualChecks += 1; check() } else { openSettings() }
+                        }.buttonStyle(.bordered).disabled(flow.checking || restarting)
                     }
-                    Button(flow.checking ? "Checking…" : "Check access") { check() }
-                        .buttonStyle(LHPrimaryButtonStyle())
-                        .disabled(flow.checking)
+                    Button(primaryTitle) { primaryAction() }
+                        .buttonStyle(LHPrimaryButtonStyle()).controlSize(.large)
+                        .disabled(flow.checking || restarting)
                         .keyboardShortcut(.defaultAction)
+                        .accessibilityIdentifier("permission-primary-action")
                 }
+                .font(.system(size: 12, weight: .medium)).padding(.horizontal, 28).padding(.vertical, 20)
+                .background(LHTheme.cardBackground)
             }
-            .padding(28).frame(width: 560)
+            .frame(width: 576)
+            .foregroundStyle(LHTheme.text).tint(LHTheme.accent)
             .background(LHTheme.pageBackground)
             .background(PermissionSheetWindowBehavior())
-            .onAppear { if flow.result == nil { check() } }
-            .onChange(of: flow.completed) { if $0 { dismiss() } }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: ready)
+            .onAppear {
+                openedSettings = resumingAfterRestart
+                if flow.result == nil { check() }
+            }
+            .onChange(of: flow.completed) {
+                if $0 { PermissionRecovery.clearSetup(); dismiss() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                if openedSettings && !flow.checking { check() }
+                if openedSettings && !flow.checking && !restarting { check() }
+            }
+            .onReceive(refreshTimer) { now in
+                if openedSettings && now < watchUntil && NSApplication.shared.isActive && !flow.checking && !ready && !restarting { check() }
             }
             .onDisappear { flow.cancel() }
         }
 
-        private func check() { flow.checkAndEnable(capability, surface: surface, prepare: prepare) }
+        private func check() {
+            // Across process restarts, restore context but require a new explicit Enable click.
+            if resumingAfterRestart { flow.inspect(capability) }
+            else { flow.checkAndEnable(capability, surface: surface, prepare: prepare) }
+        }
+        private func openSettings() {
+            PermissionRecovery.rememberSetup(capability)
+            openedSettings = true
+            watchUntil = Date().addingTimeInterval(180)
+            flow.requestMissingAccess()
+        }
+        private func primaryAction() {
+            if ready {
+                if GoalongCapabilityConsentStore.shared.isEnabled(capability) { PermissionRecovery.clearSetup(); dismiss() }
+                else { flow.checkAndEnable(capability, surface: surface, prepare: prepare) }
+            } else if needsRestart {
+                PermissionRecovery.rememberSetup(capability)
+                restarting = true; restartError = nil
+                PermissionRecovery.restart { error in restartError = error; restarting = error == nil }
+            } else if !openedSettings && access.hasSettingsAction { openSettings() }
+            else { manualChecks += 1; check() }
+        }
     }
 
     /// Passive navigation can inspect existing consent, never grant or revoke it.
@@ -432,7 +519,7 @@
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                             HStack(spacing: 12) {
                                 if status.hasSettingsAction {
-                                    Button(status.actionTitle) { SourceAccessService.openAccess(status) }
+                                    Button(status.actionTitle) { PermissionRecovery.rememberSetup(capability); SourceAccessService.openAccess(status) }
                                         .buttonStyle(LHPrimaryButtonStyle())
                                 }
                                 Button("Check access again") { validate() }.buttonStyle(.bordered)

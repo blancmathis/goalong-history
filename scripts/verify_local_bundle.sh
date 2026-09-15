@@ -78,6 +78,14 @@ done
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 /usr/bin/codesign --verify --strict --verbose=2 "$CLI_BINARY"
 
+RELAUNCHER="$APP_PATH/Contents/MacOS/goalong-relauncher"
+if [[ -f "$ROOT_DIR/Sources/GoalongRelauncher/main.swift" ]]; then
+  test -x "$RELAUNCHER"
+  test ! -L "$RELAUNCHER"
+  /usr/bin/codesign --verify --strict --verbose=2 "$RELAUNCHER"
+  /usr/bin/codesign -d --verbose=4 "$RELAUNCHER" 2>&1 | /usr/bin/grep -Fq "Identifier=$EXPECTED_BUNDLE_ID.relauncher"
+fi
+
 LOCALHISTORY_AUDIT_BINARY="$BINARY" "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
 
 if ! /usr/bin/grep -Fq 'app-server' "$STRINGS"; then

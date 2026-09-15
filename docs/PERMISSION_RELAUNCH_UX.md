@@ -1,0 +1,9 @@
+# Permission setup and one-shot relaunch
+
+The UI shows the requested permission, a three-step path, a source-specific privacy explanation and one primary action. Checks run on return from Settings and, for up to three minutes, while the setup sheet is active. Missing permission, unavailable source and success remain separate states. Reduced Motion, keyboard actions, increased contrast and fixed reachable footer controls use native/theme primitives.
+
+An in-app restart first launches only `Contents/MacOS/goalong-relauncher`. The helper validates the actual parent, its launch date and its own enclosing application. It registers a process-exit watcher before its `READY` acknowledgement. Only then may the parent quit normally and drain its writers. The helper reopens the exact bundle after that process exits; it reuses an instance macOS may already have opened and verifies it survives startup. No shell, arbitrary executable, OS permission change or activity read is permitted. A missing/unresponsive helper leaves the parent open with an error.
+
+A quit Apple event from System Settings may use the same protocol only during a fresh, explicit permission session. Ordinary Quit, updater exits, logout and shutdown do not arm it. A short-lived setup bookmark restores the source sheet; post-restart inspection never grants source consent. The person must press Enable if that source is still off.
+
+`test_permission_relaunch.sh` runs three actual relaunches of a small isolated host with the production handshake/helper (only its bundle ID is substituted). It asserts four PIDs, old-writer draining before each new launch, normal Quit staying quit, and missing-helper failure without silent termination. Native rendering uses synthetic stores, not the user's history. macOS System Settings behavior still requires separate live verification; synthetic process tests are not a physical permission-grant test.

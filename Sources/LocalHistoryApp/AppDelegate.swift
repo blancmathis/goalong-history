@@ -1,6 +1,7 @@
 #if os(macOS)
     import AgentActivity
     import AppKit
+    import Carbon
     import AppleSystemScreenTime
     import Foundation
     import LocalHistoryCore
@@ -277,15 +278,39 @@
 
             installWorkspaceObservers()
             showDashboardOnFirstConsentLaunch()
-            if CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
+            if PermissionRecovery.consumeSetupReturn() || CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
                 dashboardWindowController?.show(section: .settings)
+            } else if UserDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
+                UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
+                dashboardWindowController?.show(section: dashboardViewModel.selectedSection)
             }
             // A URL can arrive before the dashboard exists on a cold launch.
             Task { @MainActor in presentWebsitePairingIfReady() }
         }
 
+        func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+            let event = NSAppleEventManager.shared().currentAppleEvent
+            let senderPID = event?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
+            let senderID = senderPID.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+            guard event?.eventClass == AEEventClass(kCoreEventClass), event?.eventID == AEEventID(kAEQuitApplication),
+                  PermissionRecovery.shouldAssistSettingsQuit(senderBundleID: senderID,
+                    pendingSetup: PermissionRecovery.pendingSetup() != nil, alreadyRestarting: PermissionRecovery.isRestarting) else {
+                return .terminateNow
+            }
+            // Assist only a fresh permission-session quit sent by Apple's System Settings.
+            // Ordinary Quit, shutdown, logout and updater quits never arm this path.
+            PermissionRecovery.prepareRelaunch { error in
+                if let error { Diagnostics.write("Permission relaunch preparation failed: \(error)") }
+                sender.reply(toApplicationShouldTerminate: error == nil)
+            }
+            return .terminateLater
+        }
+
         func applicationWillTerminate(_ notification: Notification) {
             guard runtimeStarted else { return }
+            if dashboardWindowController?.window?.isVisible == true {
+                UserDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
+            }
             SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()
             screenTimeArchiveTimer?.invalidate()

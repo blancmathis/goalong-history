@@ -17,6 +17,7 @@ fi
 source "$CODESIGN_POLICY"
 VERSION="${LOCALHISTORY_VERSION:-0.6.0}"
 BUILD_NUMBER="${LOCALHISTORY_BUILD_NUMBER:-1}"
+SOURCE_REVISION="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf unknown)"
 ARCHS="${LOCALHISTORY_ARCHS:-$(uname -m)}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
 SIGN_IDENTITY="${LOCALHISTORY_CODESIGN_IDENTITY:--}"
@@ -120,6 +121,9 @@ build_arch() {
     return 1
   fi
   cp "$cli_binary" "$WORK_DIR/$CLI_PRODUCT_NAME-$arch"
+  local helper_command=(xcrun swift build -c release --product goalong-relauncher --arch "$arch" --scratch-path "$scratch")
+  (cd "$ROOT_DIR" && "${helper_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
+  cp "$bin_dir/goalong-relauncher" "$WORK_DIR/goalong-relauncher-$arch"
 }
 
 build_all_archs() {
@@ -154,6 +158,10 @@ else
   cp "$WORK_DIR/$PRODUCT_NAME-$first_arch" "$CONTENTS/MacOS/$EXECUTABLE_NAME"
   cp "$WORK_DIR/$CLI_PRODUCT_NAME-$first_arch" "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 fi
+HELPER_BINARIES=()
+for arch in $ARCHS; do HELPER_BINARIES+=("$WORK_DIR/goalong-relauncher-$arch"); done
+lipo -create "${HELPER_BINARIES[@]}" -output "$CONTENTS/MacOS/goalong-relauncher"
+chmod 755 "$CONTENTS/MacOS/goalong-relauncher"
 chmod 755 "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 chmod 755 "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
@@ -231,6 +239,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <true/>
     <key>GoalongBuildEdition</key>
     <string>$BUILD_EDITION</string>
+    <key>GoalongSourceRevision</key>
+    <string>$SOURCE_REVISION</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.productivity</string>
     <key>LSMinimumSystemVersion</key>
@@ -270,6 +280,7 @@ codesign "${SIGN_ARGS[@]}" "$SPARKLE_VERSION_DIR/Autoupdate"
 codesign "${SIGN_ARGS[@]}" "$SPARKLE_VERSION_DIR/Updater.app"
 codesign "${SIGN_ARGS[@]}" "$CONTENTS/Frameworks/Sparkle.framework"
 codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID" "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
+codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID.relauncher" "$CONTENTS/MacOS/goalong-relauncher"
 
 APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
 if [[ "$SIGN_IDENTITY" != "-" ]]; then

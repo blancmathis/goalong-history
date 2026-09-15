@@ -53,8 +53,8 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
         fail("new-install data-access defaults are not off")
     if value.get("capabilities", {}).get("managedChatGPTBridge") != "explicit-consent-only":
         fail("Codex bridge consent state is not explicit")
-    if value.get("capabilities", {}).get("processExecution") != "fixed-codex-app-server-and-sparkle-installer-only":
-        fail("process execution is broader than the fixed Codex bridge")
+    if value.get("capabilities", {}).get("processExecution") != "fixed-codex-app-server-sparkle-installer-and-self-relauncher-only":
+        fail("process execution is broader than the fixed Codex, update and self-relaunch boundaries")
     if value.get("bundle", {}).get("frameworks") != ["Sparkle.framework"]:
         fail("only the pinned Sparkle framework may be embedded")
     if value.get("bundle", {}).get("appGroups"):

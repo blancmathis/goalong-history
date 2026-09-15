@@ -65,6 +65,9 @@ jobs:
             fi
           fi
 
+      - name: Exercise real permission relaunches
+        run: bash scripts/test_permission_relaunch.sh
+
       - name: Render isolated native user journeys
         run: bash scripts/verify_brand_ui.sh qa/journey-ci
 

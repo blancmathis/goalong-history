@@ -1,0 +1,42 @@
+name: Prepare universal archive for local signing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Resolve version
+        id: version
+        run: ./scripts/resolve_rolling_version.sh "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+      - name: Test source and actual relaunch protocol
+        run: |
+          xcrun swift test
+          bash scripts/test_permission_relaunch.sh
+          bash scripts/audit_privacy_boundaries.sh
+      - name: Build universal staging app
+        env:
+          LOCALHISTORY_VERSION: ${{ steps.version.outputs.value }}
+          LOCALHISTORY_BUILD_NUMBER: ${{ steps.version.outputs.build }}
+          LOCALHISTORY_CODESIGN_IDENTITY: '-'
+          LOCALHISTORY_RUN_TESTS: 0
+          LOCALHISTORY_ARCHS: arm64 x86_64
+          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY || vars.SPARKLE_PUBLIC_ED_KEY }}
+        run: |
+          ./scripts/build_app.sh
+          ditto -c -k --keepParent --norsrc "dist/Goalong History.app" dist/Goalong-History-macOS-universal.zip
+          shasum -a 256 dist/Goalong-History-macOS-universal.zip > dist/staging-sha256.txt
+      - name: Upload staging archive only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Goalong-Unsigned-Universal-${{ github.sha }}
+          path: |
+            dist/Goalong-History-macOS-universal.zip
+            dist/staging-sha256.txt
+          retention-days: 3
