@@ -37,17 +37,11 @@ func reopen(attempt: Int) {
     configuration.arguments = ["--permission-recovery-complete"]
     NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { app, error in
         DispatchQueue.main.async {
-            if error == nil, let app, !app.isTerminated, app.processIdentifier != parentPID {
-                // LaunchServices acknowledgement alone is not proof that the reopened app survived startup.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    if !app.isTerminated { exit(0) }
-                    guard attempt < 3 else { exit(71) }
-                    reopen(attempt: attempt + 1)
-                }
-            } else {
-                guard attempt < 3 else { exit(71) }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { reopen(attempt: attempt + 1) }
-            }
+            // A successful launch ends our responsibility. Never resurrect an app the
+            // person immediately quits again; retries are only for failed launch requests.
+            if error == nil, let app, !app.isTerminated, app.processIdentifier != parentPID { exit(0) }
+            guard attempt < 3 else { exit(71) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { reopen(attempt: attempt + 1) }
         }
     }
 }

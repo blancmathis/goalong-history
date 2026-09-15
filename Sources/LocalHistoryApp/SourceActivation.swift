@@ -395,7 +395,7 @@
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             if access.isMacPermission && (openedSettings || resumingAfterRestart || manualChecks > 0) {
-                                PermissionRecoveryView(status: access, expandOnFailure: !needsRestart && (manualChecks > 0 || resumingAfterRestart))
+                                PermissionRecoveryView(status: access, capability: capability, expandOnFailure: !needsRestart && (manualChecks > 0 || resumingAfterRestart))
                                     .disabled(flow.checking || restarting)
                             }
                         }
@@ -404,7 +404,7 @@
                         if let restartError { Text(restartError).font(.system(size: 12)).foregroundStyle(LHTheme.danger).fixedSize(horizontal: false, vertical: true) }
                     }.padding(.horizontal, 28).padding(.bottom, 24)
                 }
-                .frame(maxHeight: min(465, (NSScreen.main?.visibleFrame.height ?? 900) * 0.53))
+                .frame(maxHeight: min(ready ? 250 : 465, (NSScreen.main?.visibleFrame.height ?? 900) * 0.53))
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 HStack(spacing: 12) {
                     Button("Not now", role: .cancel) { PermissionRecovery.clearSetup(); flow.cancel(); dismiss() }
@@ -514,7 +514,7 @@
                             Text("Access for \(capability.title)").font(.system(size: 15, weight: .semibold))
                             Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
                             Text(status.message).font(.system(size: 13))
-                            if status.isMacPermission { PermissionRecoveryView(status: status) }
+                            if status.isMacPermission { PermissionRecoveryView(status: status, capability: capability) }
                             Text("Your source choice is unchanged. Missing access is not evidence of inactivity.")
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                             HStack(spacing: 12) {

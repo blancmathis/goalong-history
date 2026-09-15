@@ -161,6 +161,7 @@ struct PermissionPrivacyNote: View {
 /// Recovery is secondary, not the normal path. No demand to remove and re-add an app.
 struct PermissionRecoveryView: View {
     let status: SourceAccessStatus
+    var capability: GoalongCapability? = nil
     var expandOnFailure = false
     @State private var expanded = false
     @State private var restarting = false
@@ -179,6 +180,7 @@ struct PermissionRecoveryView: View {
                     }
                 }
                 Button(restarting ? "Preparing restart…" : "Quit & reopen Goalong") {
+                    if let capability { PermissionRecovery.rememberSetup(capability) }
                     restarting = true
                     PermissionRecovery.restart { error in restartError = error; restarting = error == nil }
                 }

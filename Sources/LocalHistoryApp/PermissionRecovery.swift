@@ -74,7 +74,7 @@
         @MainActor static func consumeSetupReturn() -> Bool {
             resumedCapability = pendingSetup()
             clearSetup()
-            return resumedCapability != nil || CommandLine.arguments.contains(completedArgument)
+            return resumedCapability != nil
         }
 
         @MainActor static func takeSetupReturn(for capability: GoalongCapability) -> Bool {

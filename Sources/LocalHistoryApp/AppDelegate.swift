@@ -280,7 +280,7 @@
             showDashboardOnFirstConsentLaunch()
             if PermissionRecovery.consumeSetupReturn() || CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
                 dashboardWindowController?.show(section: .settings)
-            } else if UserDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
+            } else if CommandLine.arguments.contains(PermissionRecovery.completedArgument) || UserDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
                 UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
                 dashboardWindowController?.show(section: dashboardViewModel.selectedSection)
             }
