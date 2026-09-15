@@ -88,7 +88,7 @@
                     Text("A macOS switch can still refer to an older build after an update. Turning it off and on may not replace that entry.")
                     Text("Remove only Goalong History from this permission list with −, then use + to add the exact app shown below and enable it. Do not reset permissions for other apps.")
                     Text(Bundle.main.bundleURL.path).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
-                    Text("Restart Goalong History after granting access, then enable this source again. Your history, recording settings, exclusions, and sharing choices are kept. Restarting never enables a source by itself.")
+                    Text("Restart Goalong History after granting access, then enable this source again. Your history, saved recording settings, exclusions, and sharing choices are kept. Save pending settings changes before restarting. Restarting never enables a source by itself.")
                     HStack(spacing: 12) {
                         Button("Show this app in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])

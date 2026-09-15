@@ -155,8 +155,9 @@
                 self.generation += 1
                 self.checking = false
                 self.completedCheckCount += 1
-                self.feedback = "The access check did not finish. Nothing has been enabled. Restart Goalong History and try again."
-                if self.result == nil { self.result = .unavailable(self.feedback!) }
+                let message = "The access check did not finish. Nothing has been enabled. Restart Goalong History and try again."
+                self.feedback = message
+                if self.result == nil { self.result = .unavailable(message) }
             }
             timeoutWorkItem?.cancel()
             timeoutWorkItem = timeout
@@ -326,27 +327,32 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Access for \(capability.title)").font(.system(size: 22, weight: .semibold))
-                Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let status = flow.result, status != .ready {
-                    Text(status.message).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let status = flow.result, status != .ready {
+                            Text(status.message).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                        }
+                        if flow.checking {
+                            HStack(spacing: 10) {
+                                ProgressView().controlSize(.small)
+                                Text("Checking macOS access…").font(.system(size: 12))
+                            }
+                            .accessibilityLabel("Checking macOS access")
+                        } else if let feedback = flow.feedback {
+                            Text(feedback).font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("source-access-check-result")
+                        }
+                        if let status = flow.result, status.isMacPermission {
+                            PermissionRecoveryView(status: status, expandOnFailure: flow.completedCheckCount > 0)
+                                .disabled(flow.checking)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if flow.checking {
-                    HStack(spacing: 10) {
-                        ProgressView().controlSize(.small)
-                        Text("Checking macOS access…").font(.system(size: 12))
-                    }
-                    .accessibilityLabel("Checking macOS access")
-                } else if let feedback = flow.feedback {
-                    Text(feedback).font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("source-access-check-result")
-                }
-                if let status = flow.result, status.isMacPermission {
-                    PermissionRecoveryView(status: status, expandOnFailure: flow.completedCheckCount > 0)
-                        .disabled(flow.checking)
-                }
+                .frame(maxHeight: min(520, (NSScreen.main?.visibleFrame.height ?? 800) * 0.65))
                 HStack(spacing: 10) {
                     Button("Not now", role: .cancel) { flow.cancel(); dismiss() }
                         .keyboardShortcut(.cancelAction)
