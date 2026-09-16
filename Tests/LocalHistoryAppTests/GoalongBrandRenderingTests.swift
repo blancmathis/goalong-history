@@ -116,6 +116,41 @@ final class GoalongBrandRenderingTests: XCTestCase {
             XCTAssertEqual(model.settingsPane, .home)
         }
         print("NATIVE_ACTIONS three primary cards and their back buttons passed")
+        // First presentation must receive its action's date, not a stale optional
+        // value captured before SwiftUI invalidated the parent view.
+        let selectedDate = Calendar.current.date(from: DateComponents(year: 2026, month: 7, day: 2))!
+        model.selectDay(selectedDate)
+        model.settingsPane = .website
+        pump()
+        let chooseDate = try XCTUnwrap(accessibleElement("website-open-selected-day", within: window))
+        XCTAssertTrue(chooseDate.accessibilityPerformPress())
+        pump(); pump()
+        let shareSheet = try XCTUnwrap(window.attachedSheet)
+        let dateControl = try XCTUnwrap(accessibleElement("sharing-selected-date", within: shareSheet))
+        let nativeDate = try XCTUnwrap(dateControl.value("accessibilityValue") as? Date,
+            "Date picker must expose the actual selected date")
+        XCTAssertTrue(Calendar.current.isDate(nativeDate, inSameDayAs: selectedDate))
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("sharing-close", within: shareSheet)).accessibilityPerformPress())
+        pump()
+        XCTAssertNil(window.attachedSheet)
+        // Each first-click shortcut owns its payload, including after a previous editor closes.
+        for (action, title) in [("analysis-open-replacements", "analysis-replacements-title"),
+                                ("analysis-open-guidance", "analysis-guidance-title")] {
+            model.settingsPane = .chatGPT
+            pump()
+            XCTAssertTrue(try XCTUnwrap(accessibleElement(action, within: window)).accessibilityPerformPress())
+            pump(); pump()
+            let editor = try XCTUnwrap(window.attachedSheet)
+            XCTAssertNotNil(accessibleElement(title, within: editor), "Correct tab must open immediately")
+            XCTAssertTrue(try XCTUnwrap(accessibleElement("analysis-cancel", within: editor)).accessibilityPerformPress())
+            pump()
+            XCTAssertNil(window.attachedSheet)
+        }
+        model.settingsPane = .home
+        model.selectDay(Date())
+        pump()
+        print("NATIVE_ACTIONS selected-day sheet and direct ChatGPT tabs passed")
+
         let consentBeforePause = GoalongCapabilityConsentStore.shared.document
         try GoalongGlobalPause.setPaused(true, recordingWasPaused: false)
         pump()

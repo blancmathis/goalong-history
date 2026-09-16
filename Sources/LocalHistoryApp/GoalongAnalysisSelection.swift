@@ -41,6 +41,9 @@ struct GoalongAnalysisSelection: Codable, Equatable {
         }
         try scope?.validate()
         guard (outputGuidance?.count ?? 0) <= 4000 else { throw NSError(domain: "GoalongAnalysis", code: 1, userInfo: [NSLocalizedDescriptionKey: "Limite : 4 000 caractères de consignes."]) }
+        guard !(replacements ?? []).contains(where: { $0.search.isEmpty && !$0.replacement.isEmpty }) else {
+            throw PrivacyScopeInput.invalid("Un remplacement est incomplet : indiquez le texte à rechercher.")
+        }
         _ = try GoalongTextTransformer(replacements ?? [])
     }
     func save(root: URL = AppPaths.applicationSupportDirectory) throws {

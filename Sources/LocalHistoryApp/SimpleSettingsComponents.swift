@@ -48,7 +48,7 @@ struct GoalongSettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !title.isEmpty { Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary) }
-            LHCard { VStack(alignment: .leading, spacing: 16, content: content) }
+            LHCard { VStack(alignment: .leading, spacing: 16, content: content).frame(maxWidth: .infinity, alignment: .leading) }
         }
     }
 }

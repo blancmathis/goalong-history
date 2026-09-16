@@ -675,22 +675,22 @@
         }
 
         private var recordingStateTitle: String {
-            if isPreparingTimeline { return "Preparing this day" }
+            if isPreparingTimeline { return "Préparation de la journée" }
             switch model.sourceStatus {
             case .checking:
-                return "Checking this day"
+                return "Vérification de la journée"
             case .available:
                 return snapshot.eventCount > 0 || !tenMinuteGroups.isEmpty
-                    ? "Stored on this Mac"
-                    : "No activity loaded"
+                    ? "Enregistré sur ce Mac"
+                    : "Aucune activité chargée"
             case .absent:
                 return model.memory == nil
-                    ? "No local source for this day"
-                    : "Retained Computer History"
+                    ? "Aucune source pour cette date"
+                    : "Historique local conservé"
             case .inaccessible:
-                return "History could not be refreshed"
+                return "Actualisation impossible"
             case .unverified:
-                return "History has not been checked yet"
+                return "Historique à vérifier"
             }
         }
 
@@ -733,11 +733,11 @@
             }
             switch model.sourceStatus {
             case .checking:
-                return "Checking for updates. Any activity already loaded stays visible below."
+                return "Vérification des nouveautés. L’activité déjà chargée reste visible."
             case .absent:
                 return model.memory == nil
-                    ? "No saved activity was found for this date. Choose another day using the date controls above."
-                    : "The original recording is no longer available. Previously saved history has been kept."
+                    ? "Aucune activité pour cette date. Choisissez une autre journée."
+                    : "Le journal original est indisponible. L’historique déjà enregistré est conservé."
             case .inaccessible:
                 if hasRetried {
                     let nextStep = "Refresh failed again. Choose another date above or inspect Technical details."
@@ -752,13 +752,13 @@
                 break
             }
             let windows = tenMinuteGroups.count.formatted()
-            return "\(windows) ten-minute windows from local recordings. Open a window to inspect its details."
+            return "\(windows) périodes de dix minutes. Ouvrez une période pour voir ses détails."
         }
 
         private var historySection: some View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 9) {
-                    Text("Timeline")
+                    Text("Chronologie")
                         .font(.system(size: 20, weight: .semibold))
                     Image(systemName: "info.circle")
                         .font(.system(size: 12))
@@ -772,12 +772,12 @@
                             .controlSize(.small)
                             .help("Grouping recorded activity")
                     } else {
-                        Text(timelineSearch.isEmpty ? "\(tenMinuteGroups.count) windows" : "\(visibleTimelineGroups.count) of \(tenMinuteGroups.count) windows")
+                        Text(timelineSearch.isEmpty ? "\(tenMinuteGroups.count) périodes" : "\(visibleTimelineGroups.count) of \(tenMinuteGroups.count) périodes")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
                     Button(action: openSourceJSON) {
-                        Label("Source data", systemImage: "curlybraces")
+                        Label("Journal original", systemImage: "curlybraces")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
@@ -788,23 +788,23 @@
                 HStack(spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("Search apps or context", text: $timelineSearch)
+                        TextField("Rechercher une application ou un contexte", text: $timelineSearch)
                             .textFieldStyle(.plain)
-                            .accessibilityLabel("Search timeline")
+                            .accessibilityLabel("Rechercher dans la chronologie")
                         if !timelineSearch.isEmpty {
                             Button { timelineSearch = "" } label: {
                                 Image(systemName: "xmark.circle.fill")
                             }
                             .buttonStyle(.borderless)
-                            .accessibilityLabel("Clear timeline search")
+                            .accessibilityLabel("Effacer la recherche")
                         }
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: 7))
-                    Picker("Timeline order", selection: $newestFirst) {
-                        Text("Newest first").tag(true)
-                        Text("Oldest first").tag(false)
+                    Picker("Ordre de la chronologie", selection: $newestFirst) {
+                        Text("Plus récent d’abord").tag(true)
+                        Text("Plus ancien d’abord").tag(false)
                     }
                     .labelsHidden()
                     .frame(width: 150)
@@ -821,14 +821,14 @@
                     HStack {
                         Text(
                             Calendar.current.isDateInToday(day)
-                                ? "Today"
+                                ? "Aujourd’hui"
                                 : DashboardFormatters.dayTitle.string(from: day)
                         )
                         .font(.system(size: 14, weight: .semibold))
                         Spacer()
                         Text(snapshot.eventCount == 0
-                            ? "No recorded activity"
-                            : "\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) · whole day")
+                            ? "Aucune activité enregistrée"
+                            : "\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) · journée complète")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -841,9 +841,9 @@
                         VStack(spacing: 11) {
                             ProgressView()
                                 .controlSize(.regular)
-                            Text("Grouping recorded activity…")
+                            Text("Préparation de la chronologie…")
                                 .font(.system(size: 14, weight: .semibold))
-                            Text("This runs locally only when a new daily snapshot is available.")
+                            Text("Préparation locale de la journée.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
@@ -901,26 +901,26 @@
 
         private var sourceDataHelp: String {
             canRevealSourceData
-                ? "Reveal the original read-only event journal for this day in Finder"
-                : "The original event journal for this day is not currently available"
+                ? "Afficher le journal original de cette journée dans le Finder"
+                : "Le journal original de cette journée est indisponible"
         }
 
         private var emptyTimelineTitle: String {
             switch model.sourceStatus {
             case .inaccessible:
-                return "Activity could not be loaded"
+                return "Chargement impossible"
             case .absent:
                 return model.memory == nil
-                    ? "No source journal for this day"
-                    : "Detailed timeline no longer available"
+                    ? "Aucun journal pour cette date"
+                    : "Détails de la journée indisponibles"
             case .available where Calendar.current.isDateInToday(day):
-                return "No activity recorded yet today"
+                return "Aucune activité enregistrée aujourd’hui"
             case .available:
-                return "No recorded activity found"
+                return "Aucune activité trouvée"
             case .checking:
-                return "Checking recorded activity"
+                return "Vérification de l’activité"
             case .unverified:
-                return "Activity source not verified"
+                return "Source à vérifier"
             }
         }
 
@@ -935,9 +935,9 @@
                     ? "No retained Computer History exists for this day. Other days are unchanged."
                     : "The original journal is absent, but the retained Computer History was not deleted."
             case .available where Calendar.current.isDateInToday(day):
-                return "Activity appears here after Goalong records an eligible app."
+                return "L’activité apparaît ici lorsque Goalong enregistre une application autorisée."
             case .available:
-                return "Choose another day. An empty timeline is not treated as proof of inactivity when capture coverage is incomplete."
+                return "Choisissez une autre date. Un historique vide ne prouve pas une absence d’activité."
             case .checking:
                 return "Goalong is verifying the original local journal before showing this day."
             case .unverified:
@@ -1101,7 +1101,7 @@
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                         if let retainedGap = answer.limitations.first(where: {
-                            $0.hasPrefix("Retained Computer History loading was incomplete")
+                            $0.hasPrefix("Historique local conservé loading was incomplete")
                         }) {
                             Label(retainedGap, systemImage: "exclamationmark.triangle.fill")
                                 .font(.system(size: 11))

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.28 — fiabilité des fenêtres et finition des réglages
+
+- La fenêtre d’envoi conserve la journée demandée dès sa première ouverture.
+- Les raccourcis ChatGPT ouvrent directement le bon onglet, sans état périmé.
+- Choix de détails immédiatement visibles, grilles accessibles et cartes de largeur cohérente.
+- Recherche étendue aux outils avancés ; remplacement incomplet signalé avant validation.
+- Dates et principaux états de l’historique harmonisés en français ; icônes d’appareils distinctes.
+- Tests natifs des ouvertures, de la date, des retours et des sélections, sans envoi de données personnelles.
+
 ## 0.6.27 — contrôles détaillés et parcours vérifiés
 
 - Trois grandes entrées distinctes : enregistrement, envoi à Goalong et analyse ChatGPT.

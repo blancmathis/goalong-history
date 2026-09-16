@@ -151,7 +151,7 @@ import AppKit
         }
     }
     private var visiblePanes: [SettingsPane] {
-        SettingsPane.primary.filter { search.isEmpty ? [.applications, .permissions, .storage].contains($0) : ($0.title + " " + $0.keywords).localizedStandardContains(search) }
+        SettingsPane.matches(search)
     }
     private func summary(_ item: SettingsPane) -> String {
         switch item {
@@ -178,6 +178,11 @@ import AppKit
 enum SettingsPane: Hashable {
     case home, recording, applications, connections, website, chatGPT, permissions, storage, advanced, tools
     static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .permissions, .storage]
+    static func matches(_ raw: String) -> [Self] {
+        let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty { return [.applications, .permissions, .storage] }
+        return (primary + [.advanced, .tools]).filter { ($0.title + " " + $0.keywords).localizedStandardContains(query) }
+    }
     var title: String {
         switch self {
         case .home: return "Réglages"
@@ -214,6 +219,8 @@ enum SettingsPane: Hashable {
         case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"
         case .storage: return "supprimer effacer historique conserver durée espace mémoire"
+        case .advanced: return "terminal cli configuration json diagnostic diagnostics version mise à jour démarrage"
+        case .tools: return "export fichier signé signature preuve santé récapitulatif"
         default: return ""
         }
     }

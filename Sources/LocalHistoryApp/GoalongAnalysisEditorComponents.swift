@@ -15,7 +15,12 @@ struct GoalongAnalysisAppRow: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 AppIconView(bundleIdentifier: app.id.hasPrefix("name:") ? nil : app.id, appName: app.name, size: 30)
-                Text(app.name).font(.system(size: 14, weight: .medium)).lineLimit(2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(app.name).font(.system(size: 14, weight: .medium)).lineLimit(2)
+                    if mode == 2 && !GoalongAnalysisField.allCases.contains(where: { scope.allows($0, id: app.id, name: app.name) }) {
+                        Text("Aucun détail activé").font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
                 if mode == 2 {
                     Button(expanded ? "Masquer les options" : "Personnaliser") { expanded.toggle() }.buttonStyle(.borderless).font(.system(size: 12))
@@ -71,6 +76,9 @@ struct GoalongReplacementRow: View {
                         TextField("Projet A · vide pour supprimer", text: $rule.replacement).textFieldStyle(.roundedBorder)
                     }
                     Button(action: remove) { Image(systemName: "trash").frame(width: 30, height: 30) }.buttonStyle(.borderless).accessibilityLabel("Supprimer le remplacement")
+                }
+                if rule.search.isEmpty && !rule.replacement.isEmpty {
+                    Text("Indiquez le texte à rechercher.").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                 }
                 HStack(spacing: 24) {
                     Toggle("Respecter la casse", isOn: $rule.caseSensitive).toggleStyle(.checkbox)

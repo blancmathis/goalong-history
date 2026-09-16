@@ -52,11 +52,11 @@ import AgentActivity
                     Text("Choisissez ce qui sort du Mac, puis la façon de rédiger le bilan.").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).accessibilityIdentifier("analysis-cancel")
             }.padding(24)
             Picker("Configuration ChatGPT", selection: $tab) {
                 Text("Données").tag(0); Text("Remplacements").tag(1); Text("Consignes").tag(2); Text("Aperçu").tag(3)
-            }.pickerStyle(.segmented).padding(.horizontal, 24).padding(.bottom, 18)
+            }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("analysis-editor-tabs").padding(.horizontal, 24).padding(.bottom, 18)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -107,12 +107,18 @@ import AgentActivity
                 source("Temps d’écran Apple", capability: .appleScreenTime, value: $selection.screenTime)
                 source("Conversations locales", capability: .aiConversations, value: $selection.conversations)
             }
-            if selection.computer || selection.screenTime { applicationChoices }
             if selection.computer {
                 GoalongSettingsGroup(title: "Détails possibles · uniquement pour les apps autorisées") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 24)], spacing: 14) {
-                        ForEach(GoalongAnalysisField.allCases) { field in
-                            Toggle(field.title, isOn: scope[dynamicMember: field.keyPath]).toggleStyle(.checkbox).font(.system(size: 13))
+                    Grid(horizontalSpacing: 24, verticalSpacing: 14) {
+                        ForEach(0..<5, id: \.self) { row in
+                            GridRow {
+                                ForEach(Array(GoalongAnalysisField.allCases[(row * 2)..<min(row * 2 + 2, GoalongAnalysisField.allCases.count)])) { field in
+                                    Toggle(field.title, isOn: scope[dynamicMember: field.keyPath])
+                                        .toggleStyle(.checkbox).font(.system(size: 13))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .accessibilityIdentifier("analysis-field-\(field.rawValue)")
+                                }
+                            }
                         }
                     }
                     Text("Une app réglée sur « Durée seulement » ne transmet aucun de ces détails.").font(.system(size: 12)).foregroundStyle(.secondary)
@@ -126,6 +132,7 @@ import AgentActivity
                     }.padding(.top, 10)
                 }.font(.system(size: 13))
             }
+            if selection.computer || selection.screenTime { applicationChoices }
             if selection.screenTime && catalogLoading { ProgressView("Lecture des appareils…").font(.system(size: 13)) }
             if selection.screenTime, let catalogError {
                 Label(catalogError, systemImage: "info.circle").font(.system(size: 13)).foregroundStyle(.secondary)
@@ -156,6 +163,10 @@ import AgentActivity
                 }.fixedSize()
             }
             if installedApps.loading { ProgressView("Applications installées…").font(.system(size: 12)) }
+            if !installedApps.loading && apps.filter({ appSearch.isEmpty || $0.name.localizedStandardContains(appSearch) }).isEmpty {
+                Text(apps.isEmpty ? "Aucune application disponible." : "Aucun résultat pour cette recherche.")
+                    .font(.system(size: 13)).foregroundStyle(.secondary).padding(.vertical, 14)
+            }
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(apps.filter { appSearch.isEmpty || $0.name.localizedStandardContains(appSearch) }) { app in
@@ -179,11 +190,15 @@ import AgentActivity
             }
             if folders.isEmpty { Text("Aucun dossier activé. Ajoutez une source dans Enregistrement.").font(.system(size: 13)).foregroundStyle(.secondary) }
             Divider()
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240))], spacing: 12) {
-                Toggle("Nombre de messages", isOn: scope.conversationCounts).toggleStyle(.checkbox)
-                Toggle("Titres des conversations", isOn: scope.conversationTitles).toggleStyle(.checkbox)
-                Toggle("Vos messages", isOn: scope.conversationUserMessages).toggleStyle(.checkbox)
-                Toggle("Réponses finales des assistants", isOn: scope.conversationAssistantMessages).toggleStyle(.checkbox)
+            Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 14) {
+                GridRow {
+                    Toggle("Nombre de messages", isOn: scope.conversationCounts).toggleStyle(.checkbox)
+                    Toggle("Titres des conversations", isOn: scope.conversationTitles).toggleStyle(.checkbox)
+                }
+                GridRow {
+                    Toggle("Vos messages", isOn: scope.conversationUserMessages).toggleStyle(.checkbox)
+                    Toggle("Réponses finales des assistants", isOn: scope.conversationAssistantMessages).toggleStyle(.checkbox)
+                }
             }.font(.system(size: 13))
             if exclusions.policy.hasExclusions {
                 Text("Des exclusions globales sont actives : les conversations dont le texte n’est pas filtrable sont omises.").font(.system(size: 12)).foregroundStyle(.secondary)
@@ -194,11 +209,11 @@ import AgentActivity
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Remplacer avant l’envoi").font(.system(size: 20, weight: .semibold))
+                    Text("Remplacer avant l’envoi").font(.system(size: 20, weight: .semibold)).accessibilityIdentifier("analysis-replacements-title")
                     Text("Appliqué sur le Mac. L’historique original reste inchangé.").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Ajouter un remplacement") { selection.replacements = (selection.replacements ?? []) + [GoalongTextReplacement()] }.buttonStyle(.bordered)
+                Button("Ajouter un remplacement") { selection.replacements = (selection.replacements ?? []) + [GoalongTextReplacement()] }.buttonStyle(.bordered).disabled(rules.wrappedValue.count >= 100)
             }
             ForEach(rules) { rule in GoalongReplacementRow(rule: rule) { selection.replacements?.removeAll { $0.id == rule.wrappedValue.id } } }
             if rules.wrappedValue.isEmpty {
@@ -217,7 +232,7 @@ import AgentActivity
     }
     private var instructions: some View {
         GoalongSettingsGroup(title: "Comment rédiger le bilan") {
-            Text("Vos consignes").font(.system(size: 19, weight: .semibold))
+            Text("Vos consignes").font(.system(size: 19, weight: .semibold)).accessibilityIdentifier("analysis-guidance-title")
             TextEditor(text: Binding(get: { selection.outputGuidance ?? "" }, set: { selection.outputGuidance = String($0.prefix(4000)) }))
                 .font(.system(size: 14)).padding(10).frame(minHeight: 190)
                 .background(LHTheme.pageBackground, in: RoundedRectangle(cornerRadius: 10))
@@ -237,7 +252,7 @@ import AgentActivity
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Ce que ChatGPT recevra").font(.system(size: 21, weight: .semibold))
-                    Text(model.selectedDay.formatted(date: .long, time: .omitted)).font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(GoalongUIFormat.day(model.selectedDay)).font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(previewText == nil ? "Préparer l’aperçu local" : "Actualiser") { preparePreview() }.buttonStyle(.bordered).disabled(previewBusy || catalogLoading || installedApps.loading)
@@ -256,7 +271,9 @@ import AgentActivity
     }
     private func source(_ title: String, capability: GoalongCapability, value: Binding<Bool>) -> some View {
         HStack {
-            Toggle(title, isOn: value).toggleStyle(.switch).disabled(!consents.isEnabled(capability))
+            Text(title).font(.system(size: 14))
+            Spacer()
+            Toggle(title, isOn: value).labelsHidden().toggleStyle(.switch).disabled(!consents.isEnabled(capability))
             if !consents.isEnabled(capability) {
                 Button("Configurer la source") { dismiss(); model.selectSection(.settings); model.settingsPane = .recording }
                     .buttonStyle(.borderless).font(.system(size: 12))
@@ -315,6 +332,9 @@ import AgentActivity
         if next.conversations && !value.conversationCounts && !value.hasConversationText { throw PrivacyScopeInput.invalid("Choisissez le contenu des conversations à analyser, ou désactivez cette source.") }
         next.scope = value; next.version = 2; next.reviewed = true; next.revision = UUID().uuidString
         next.privacyRevision = exclusions.policy.revision
+        guard !(next.replacements ?? []).contains(where: { $0.search.isEmpty && !$0.replacement.isEmpty }) else {
+            throw PrivacyScopeInput.invalid("Un remplacement est incomplet : indiquez le texte à rechercher.")
+        }
         next.replacements = (next.replacements ?? []).filter { !$0.search.isEmpty }
         _ = try GoalongTextTransformer(next.replacements ?? [])
         try next.validate()

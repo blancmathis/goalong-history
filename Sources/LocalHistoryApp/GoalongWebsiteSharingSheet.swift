@@ -29,7 +29,7 @@ import LocalHistoryQueryCLI
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction).disabled(model.busy)
+                Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction).disabled(model.busy).accessibilityIdentifier("sharing-close")
             }.padding(24)
             Divider()
             ScrollView {
@@ -137,12 +137,14 @@ import LocalHistoryQueryCLI
         VStack(alignment: .leading, spacing: 18) {
             DatePicker(model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer", selection: $model.draft.date,
                        in: ...Date(), displayedComponents: .date).datePickerStyle(.field)
+                .accessibilityIdentifier("sharing-selected-date")
             if model.loading {
                 ProgressView("Lecture sur ce Mac…").font(.system(size: 13))
             } else if let catalog = model.catalog {
                 GoalongSettingsGroup(title: "Appareils") {
                     GoalongSharingSelector(title: "Choisir les appareils", symbol: "desktopcomputer", items: catalog.devices.map {
-                        .init(id: $0.id, title: $0.name, detail: $0.screenSeconds.map(GoalongReadableSharePreview.duration) ?? "Durée non transmise")
+                        .init(id: $0.id, title: $0.name, detail: $0.screenSeconds.map(GoalongReadableSharePreview.duration) ?? "Durée non transmise",
+                              symbol: $0.kind == "phone" ? "iphone" : $0.kind == "tablet" ? "ipad" : "desktopcomputer")
                     }, selection: $model.draft.deviceIDs)
                 }
                 GoalongSettingsGroup(title: "Applications") {
@@ -280,7 +282,7 @@ import LocalHistoryQueryCLI
 }
 
 struct GoalongSharingSelector: View {
-    struct Item: Identifiable { let id: String; let title: String; let detail: String }
+    struct Item: Identifiable { let id: String; let title: String; let detail: String; var symbol: String? = nil }
     let title: String
     let symbol: String
     let items: [Item]
@@ -329,7 +331,7 @@ struct GoalongSharingSelector: View {
                                 if $0 { selection.insert(item.id) } else { selection.remove(item.id) }
                             })) {
                                 HStack(spacing: 10) {
-                                    Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 20)
+                                    Image(systemName: item.symbol ?? symbol).foregroundStyle(.secondary).frame(width: 20)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(item.title).font(.callout).lineLimit(1)
                                         Text(item.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)

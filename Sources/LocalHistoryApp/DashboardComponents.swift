@@ -445,43 +445,43 @@
         }
 
         var displayTitle: String {
-            if isBackgroundPrivacyRule { return "Recording locally" }
+            if isBackgroundPrivacyRule { return "Suivi local actif" }
             switch state {
-            case .recording: return "Recording locally"
-            case .paused: return "Recording paused"
-            case .permissionsMissing: return "Setup required"
-            case .inputTapUnavailable: return "Input monitoring inactive"
+            case .recording: return "Suivi local actif"
+            case .paused: return "Enregistrement en pause"
+            case .permissionsMissing: return "Accès à configurer"
+            case .inputTapUnavailable: return "Interactions indisponibles"
             case .suppressed(let reason):
                 switch reason {
-                case .manualPause: return "Recording paused"
-                case .sessionUnavailable: return "Mac session unavailable"
-                case .accessibilityUnavailable: return "Browser context unavailable"
+                case .manualPause: return "Enregistrement en pause"
+                case .sessionUnavailable: return "Session Mac inactive"
+                case .accessibilityUnavailable: return "Navigateur non accessible"
                 case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput:
-                    return "Recording locally"
+                    return "Suivi local actif"
                 }
             }
         }
 
         var displayDetail: String {
             if isBackgroundPrivacyRule {
-                return "Goalong keeps recording eligible activity while your monitoring and privacy rules run in the background. Manage them in Activity → Apps & websites."
+                return "Le suivi respecte vos exclusions. Modifiez-les dans Réglages → Apps et sites."
             }
             switch state {
             case .recording:
                 return
-                    "Detailed activity stays on this Mac. Only opaque commitments are sent when verification is enabled."
+                    "L’activité détaillée reste sur ce Mac. Les envois et analyses nécessitent des choix séparés."
             case .paused:
-                return "No detailed activity is being captured until you resume. The gap remains visible in coverage."
+                return "L’enregistrement détaillé est arrêté jusqu’à la reprise."
             case .permissionsMissing:
-                return "Accessibility and Input Monitoring are both required for reliable capture."
+                return "Vérifiez les accès macOS nécessaires aux enregistrements choisis."
             case .inputTapUnavailable:
-                return "macOS granted permissions, but the keyboard and mouse event monitor is not running yet."
+                return "Les interactions clavier et souris ne sont pas encore disponibles."
             case .suppressed(let reason):
                 switch reason {
                 case .manualPause:
-                    return "Capture is paused."
+                    return "L’enregistrement est en pause."
                 case .sessionUnavailable:
-                    return "The Mac is locked, asleep or otherwise unavailable."
+                    return "Le Mac est verrouillé, en veille ou indisponible."
                 case .accessibilityUnavailable:
                     return "Goalong cannot safely inspect this browser window, so it records no details."
                 case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput:

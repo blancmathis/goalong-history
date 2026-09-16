@@ -192,7 +192,11 @@
 
         private var statusRow: some View {
             Button {
-                model.selectSection(!consents.isEnabled(.localComputerHistory) ? .settings : model.runtime.state == .permissionsMissing ? .privacy : .overview)
+                if !consents.isEnabled(.localComputerHistory) {
+                    model.openRecordingSettings()
+                } else if model.runtime.state == .permissionsMissing || model.runtime.state == .inputTapUnavailable {
+                    model.selectSection(.settings); model.settingsPane = .permissions
+                } else { model.selectSection(.overview) }
             } label: {
                 HStack(spacing: 9) {
                     Circle()
@@ -253,7 +257,7 @@
 
         private var footer: some View {
             HStack {
-                Text("History")
+                Text("Historique")
                     .help(ProductIdentity.displayName)
                 Spacer()
                 Button {
