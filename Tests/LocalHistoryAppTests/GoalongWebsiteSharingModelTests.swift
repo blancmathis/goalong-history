@@ -75,9 +75,11 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         let (model, token, _, _) = try fixture(onSend: { _ in XCTFail("A preview cannot send") })
         defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
         await model.loadCatalog()
+        model.draft.applicationIDs = ["editor"]
         model.draft.includeWebsites = true
         await model.loadCatalog()
         XCTAssertTrue(model.catalog?.websites.isEmpty == true)
+        XCTAssertEqual(model.draft.applicationIDs, ["editor"], "Loading empty sites must preserve an explicit app exclusion")
         XCTAssertNil(model.draft.validationMessage)
         await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
         XCTAssertNotNil(model.preview)
