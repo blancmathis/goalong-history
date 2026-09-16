@@ -42,12 +42,16 @@
                 Text("Tout est proposé. Désactivez ce que vous ne souhaitez pas conserver.").font(.system(size: 14)).foregroundStyle(.secondary)
                 LHCard {
                     VStack(spacing: 16) {
-                        RecordingChoicesView(draft: $model.settingsDraft)
+                        Toggle("Enregistrer l’activité de ce Mac", isOn: $localRecordingDraft)
+                            .toggleStyle(.switch).font(.system(size: 15, weight: .semibold))
+                            .accessibilityIdentifier("onboarding-record-local")
                         Divider()
                         GoalongVisibleTextChoice(enabled: $visibleTextDraft)
+                        Divider()
+                        RecordingChoicesView(draft: $model.settingsDraft)
                     }
                 }
-                Text("Vos choix restent sur ce Mac. Aucun envoi n’est autorisé ici.")
+                Text(localRecordingDraft ? "Valider démarre le suivi local avec ces choix, après les accès macOS nécessaires. Aucun envoi." : "Le suivi ne démarrera pas. Vos choix restent modifiables.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 DisclosureGroup("Choisir des exclusions avant de commencer") {
                     GoalongOnboardingExclusions(model: model).padding(.top, 12)

@@ -35,7 +35,9 @@
             guard !defaults.bool(forKey: migrationKey) else { return }
             defaults.removeObject(forKey: "didShowLocalHistoryConsentOnboardingV5")
             defaults.set(false, forKey: "chatgptRecap.automaticEnabled")
-            defaults.set(false, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
+            if !GoalongRecordingSetup.hasReviewedChoices(defaults: defaults) {
+                defaults.set(false, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
+            }
             defaults.set(false, forKey: "launchAtLoginPreference")
             if SMAppService.mainApp.status == .enabled
                 || SMAppService.mainApp.status == .requiresApproval

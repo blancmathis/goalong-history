@@ -52,11 +52,6 @@ struct RecordingChoicesView: View {
             signalGroup("Interactions", signals: [.clicks, .scrolling, .typing, .shortcuts])
             Divider()
             signalGroup("Titres et adresses", signals: [.windowTitles, .interfaceLabels, .browserURLs])
-            if RecordingSignal.allCases.contains(where: { draft[keyPath: $0.keyPath] }) {
-                Button("Revenir aux applications et durées") {
-                    for signal in RecordingSignal.allCases { draft[keyPath: signal.keyPath] = false }
-                }.buttonStyle(.borderless).font(.system(size: 12))
-            }
             if (!draft.excludedDomainsText.isEmpty || !draft.includedDomainsText.isEmpty) && !draft.captureURLs {
                 Label("Les filtres web peuvent bloquer le navigateur. Vérifiez Apps et sites.", systemImage: "info.circle")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -66,14 +61,20 @@ struct RecordingChoicesView: View {
     private func signalGroup(_ title: String, signals: [RecordingSignal]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 20)], spacing: 6) {
-                ForEach(signals) { signal in
-                    HStack(spacing: 4) {
-                        Toggle(isOn: Binding(get: { draft[keyPath: signal.keyPath] }, set: { draft[keyPath: signal.keyPath] = $0 })) {
-                            Text(signal.title).font(.system(size: 14))
-                        }.toggleStyle(.switch).accessibilityIdentifier("recording-\(signal.rawValue)")
-                        GoalongHelpButton(text: signal.detail)
-                    }.frame(minHeight: 42)
+            Grid(horizontalSpacing: 22, verticalSpacing: 10) {
+                ForEach(0..<((signals.count + 1) / 2), id: \.self) { row in
+                    GridRow {
+                        ForEach(Array(signals[(row * 2)..<min(row * 2 + 2, signals.count)])) { signal in
+                            HStack(spacing: 8) {
+                                Text(signal.title).font(.system(size: 14))
+                                GoalongHelpButton(text: signal.detail)
+                                Spacer(minLength: 8)
+                                Toggle(signal.title, isOn: Binding(get: { draft[keyPath: signal.keyPath] }, set: { draft[keyPath: signal.keyPath] = $0 }))
+                                    .labelsHidden().toggleStyle(.switch)
+                                    .accessibilityIdentifier("recording-\(signal.rawValue)")
+                            }.frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+                        }
+                    }
                 }
             }
         }

@@ -74,6 +74,7 @@ import AppKit
                 }.font(.system(size: 12))
             }
         case .recording:
+            GoalongRecordingCoverageNotice(model: model)
             GoalongSettingsGroup(title: "Sur ce Mac") {
                 SourceActivationToggle(capability: .localComputerHistory) { Text("Enregistrer mon activité").font(.system(size: 14, weight: .medium)) }
                 Text("Enregistrer n’autorise aucun envoi.").font(.system(size: 12)).foregroundStyle(.secondary)
@@ -81,7 +82,6 @@ import AppKit
                     get: { consents.isEnabled(.launchAtLogin) }, set: { saveStartup($0) }))
                     .toggleStyle(.switch)
             }
-            GoalongCompleteRecordingButton(model: model)
             GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording) }
             VisibleContextControl()
             DisclosureGroup("Confidentialité avancée") {

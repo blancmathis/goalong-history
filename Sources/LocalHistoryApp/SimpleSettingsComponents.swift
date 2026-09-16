@@ -61,9 +61,10 @@ struct GoalongSettingsGroup<Content: View>: View {
     @State private var pause = GoalongGlobalPause.load()
     @State private var analysisSelection = GoalongAnalysisSelection.load()
     @ObservedObject private var exclusions = GoalongExclusionStore.shared
+    @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey) private var visibleText = false
     var body: some View {
         VStack(spacing: 12) {
-            card("Enregistrement local", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : "Activé",
+            card("Enregistrement local", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText),
                  detail: "Ce que Goalong conserve sur ce Mac", symbol: "internaldrive", pane: .recording)
             card("Envoi à Goalong", status: sender.enabled ? "Chaque jour" : "À la demande",
                  detail: "Compte, données et fréquence des envois", symbol: "arrow.up.circle", pane: .website)

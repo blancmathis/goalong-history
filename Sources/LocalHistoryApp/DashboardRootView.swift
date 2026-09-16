@@ -34,6 +34,7 @@
                     }
                 }
             }
+            .environment(\.goalongRecordingModel, model)
             .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay) }
             .background(LHTheme.pageBackground)
             .foregroundStyle(LHTheme.text)

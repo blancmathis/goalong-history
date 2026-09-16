@@ -246,6 +246,9 @@ import LocalHistoryCore
         @ViewBuilder var label: () -> Label
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @Environment(\.sourceAccessCheck) private var checkAccess
+        @Environment(\.goalongRecordingModel) private var recordingModel
+        @State private var showingRecordingReview = false
+        @State private var continueAfterRecordingReview = false
         @State private var resumingAfterRestart = false
         @State private var showingActivation = false
         @State private var activationStatus: SourceAccessStatus?
@@ -266,11 +269,24 @@ import LocalHistoryCore
                 )) { Text(capability.title) }
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .accessibilityIdentifier("source-\(capability.rawValue)")
                 .fixedSize()
             }
             .disabled(checking)
             .sheet(isPresented: $showingActivation) {
                 SourceActivationSheet(capability: capability, surface: surface, prepare: prepare, check: checkAccess, initialStatus: activationStatus, resumingAfterRestart: resumingAfterRestart)
+            }
+            .sheet(isPresented: $showingRecordingReview, onDismiss: {
+                if continueAfterRecordingReview {
+                    continueAfterRecordingReview = false
+                    beginActivation()
+                }
+            }) {
+                if let recordingModel {
+                    GoalongRecordingSetupSheet(model: recordingModel, activating: true) {
+                        continueAfterRecordingReview = true
+                    }
+                }
             }
             .onAppear {
                 if PermissionRecovery.takeSetupReturn(for: capability) {
@@ -292,6 +308,16 @@ import LocalHistoryCore
             } message: { Text("The source is still enabled. Try turning it off again.") }
         }
         private func beginActivation() {
+            // A valid macOS permission must not bypass the initial recording choice.
+            if capability == .localComputerHistory && !GoalongRecordingSetup.hasReviewedChoices() {
+                guard recordingModel != nil else {
+                    accessIssue = "Ouvrez Enregistrement pour confirmer les détails à conserver avant d’activer le suivi."
+                    return
+                }
+                continueAfterRecordingReview = false
+                showingRecordingReview = true
+                return
+            }
             resumingAfterRestart = false
             let request = UUID()
             validation = request
@@ -336,6 +362,9 @@ import LocalHistoryCore
         let resumingAfterRestart: Bool
         @StateObject private var flow: SourceActivationFlow
         @Environment(\.dismiss) private var dismiss
+        @Environment(\.goalongRecordingModel) private var recordingModel
+        @State private var showingRecordingReview = false
+        @State private var continueAfterRecordingReview = false
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var openedSettings = false
         @State private var restarting = false
@@ -432,6 +461,13 @@ import LocalHistoryCore
             .background(LHTheme.pageBackground)
             .background(PermissionSheetWindowBehavior())
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: ready)
+            .sheet(isPresented: $showingRecordingReview, onDismiss: {
+                if continueAfterRecordingReview { continueAfterRecordingReview = false; check() }
+            }) {
+                if let recordingModel {
+                    GoalongRecordingSetupSheet(model: recordingModel, activating: true) { continueAfterRecordingReview = true }
+                }
+            }
             .onAppear {
                 openedSettings = resumingAfterRestart
                 if flow.result == nil { check() }
@@ -448,7 +484,19 @@ import LocalHistoryCore
             .onDisappear { flow.cancel() }
         }
 
+        private func recordingChoicesReady() -> Bool {
+            guard capability == .localComputerHistory,
+                  !GoalongCapabilityConsentStore.shared.isEnabled(capability),
+                  !GoalongRecordingSetup.hasReviewedChoices() else { return true }
+            guard recordingModel != nil else {
+                restartError = "Confirmez les détails d’enregistrement depuis les réglages avant d’activer ce suivi."
+                return false
+            }
+            showingRecordingReview = true
+            return false
+        }
         private func check() {
+            guard recordingChoicesReady() else { return }
             // Across process restarts, restore context but require a new explicit Enable click.
             if resumingAfterRestart { flow.inspect(capability) }
             else { flow.checkAndEnable(capability, surface: surface, prepare: prepare) }
@@ -460,6 +508,7 @@ import LocalHistoryCore
             flow.requestMissingAccess()
         }
         private func primaryAction() {
+            guard recordingChoicesReady() else { return }
             if ready {
                 if GoalongCapabilityConsentStore.shared.isEnabled(capability) { PermissionRecovery.clearSetup(); dismiss() }
                 else { flow.checkAndEnable(capability, surface: surface, prepare: prepare) }

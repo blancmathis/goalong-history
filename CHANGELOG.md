@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.30 — enregistrement complet dès l’activation
+
+- Proposition complète des huit types de détails à la première activation, depuis chaque entrée de l’application.
+- Validation et démarrage du suivi local dans le même parcours ; texte affiché visible immédiatement.
+- Choix explicitement désactivés conservés après arrêt, reprise et relancement.
+- Profil réellement enregistré affiché : Complet 8/8, Personnalisé ou Applications seules.
+- Suppression du raccourci qui désactivait plusieurs enregistrements sans confirmation.
+- Enregistrement vérifié des choix et retour au profil précédent en cas d’échec.
+
+
 ## 0.6.29 — aperçu des journées sans sites
 
 - Une catégorie vide ne bloque plus l’aperçu lorsque l’autre contient une sélection explicite.

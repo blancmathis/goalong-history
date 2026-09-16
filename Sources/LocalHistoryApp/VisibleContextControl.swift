@@ -24,7 +24,10 @@ struct VisibleContextControl: View {
                 }
             }
         }
-        .onChange(of: enabled) { _ in ActivityAnalysisRuntime.shared.richContextPreferenceDidChange() }
+        .onChange(of: enabled) { value in
+            GoalongRecordingSetup.rememberVisibleText(value)
+            ActivityAnalysisRuntime.shared.richContextPreferenceDidChange()
+        }
         .alert("Enregistrer le texte affiché ?", isPresented: $confirming) {
             Button("Annuler", role: .cancel) {}
             Button("Autoriser le texte affiché") { enabled = true }

@@ -39,6 +39,7 @@
                 Divider()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
+                        GoalongRecordingCoverageNotice(model: model)
                         dayCard
                         LHCard { topUsageSection }
                         aiRecapCard

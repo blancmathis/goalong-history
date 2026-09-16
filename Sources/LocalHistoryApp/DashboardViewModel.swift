@@ -712,9 +712,70 @@
                 return false
             }
             if previous != savedSettingsDraft {
+                GoalongRecordingSetup.rememberChanges(from: previous, to: savedSettingsDraft)
                 NotificationCenter.default.post(name: .goalongRecordingChoicesDidChange, object: nil)
             }
             return true
+        }
+
+        /// Save the whole local recording choice before permitting source activation.
+        /// Preferences are read back and durably flushed; on error retain the previous
+        /// profile rather than marking an unrecorded proposal as reviewed.
+        @discardableResult
+        func applyRecordingSetup(_ proposal: GoalongRecordingSetup.Proposal,
+                                 defaults: UserDefaults = .standard,
+                                 flushPreferences: (() -> Bool)? = nil,
+                                 notifyRuntime: Bool = true) -> Bool {
+            let original = configManager.config
+            let keys = [ActivityAnalysisPreferences.richContextEnabledKey,
+                        GoalongRecordingSetup.reviewedKey, GoalongRecordingSetup.preparedKey,
+                        GoalongRecordingSetup.explicitChoicesKey]
+            let prior = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
+            var configurationChanged = false
+            alert = nil
+            do {
+                try proposal.settings.validatePrivacyRules()
+                let applied = try onSaveConfiguration(proposal.settings.applying(to: original))
+                configurationChanged = true
+                let saved = DashboardSettingsDraft(config: applied)
+                guard RecordingSignal.allCases.allSatisfy({ saved[keyPath: $0.keyPath] == proposal.settings[keyPath: $0.keyPath] }) else {
+                    throw PrivacyScopeInput.invalid("Le profil enregistré ne correspond pas aux options choisies.")
+                }
+                defaults.set(proposal.visibleText, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
+                var explicit: [String: Bool] = [:]
+                for signal in RecordingSignal.allCases { explicit[signal.rawValue] = saved[keyPath: signal.keyPath] }
+                explicit["visibleText"] = proposal.visibleText
+                defaults.set(explicit, forKey: GoalongRecordingSetup.explicitChoicesKey)
+                defaults.set(true, forKey: GoalongRecordingSetup.reviewedKey)
+                defaults.set(true, forKey: GoalongRecordingSetup.preparedKey)
+                guard (flushPreferences?() ?? defaults.synchronize()),
+                      defaults.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey) == proposal.visibleText,
+                      defaults.bool(forKey: GoalongRecordingSetup.reviewedKey) else {
+                    throw PrivacyScopeInput.invalid("Les préférences n’ont pas été enregistrées. Réessayez.")
+                }
+                settingsDraft = saved; savedSettingsDraft = saved
+                if notifyRuntime { ActivityAnalysisRuntime.shared.richContextPreferenceDidChange() }
+                NotificationCenter.default.post(name: .goalongRecordingChoicesDidChange, object: nil)
+                refreshRuntime()
+                return true
+            } catch {
+                for key in keys {
+                    if let value = prior[key] ?? nil { defaults.set(value, forKey: key) }
+                    else { defaults.removeObject(forKey: key) }
+                }
+                _ = defaults.synchronize()
+                var rollbackError: String?
+                if configurationChanged {
+                    do {
+                        let restored = try onSaveConfiguration(original)
+                        savedSettingsDraft = DashboardSettingsDraft(config: restored)
+                    } catch { rollbackError = error.localizedDescription }
+                }
+                settingsDraft = savedSettingsDraft
+                alert = DashboardAlert(kind: .error, title: "Enregistrement non confirmé",
+                    message: error.localizedDescription + (rollbackError.map { " Vérifiez le profil actuel : " + $0 } ?? " Vos choix précédents sont conservés."))
+                return false
+            }
         }
 
         /// The Privacy screen reports persisted choices, never an unsaved editor draft.

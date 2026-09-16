@@ -9,7 +9,10 @@
         @AppStorage("goalongOnboardingStep") var step: SetupStep = .privacy
         @State var launchAtLoginPreference = false
         @State var note: String?
-        @State var visibleTextDraft = false
+        @State var visibleTextDraft = true
+        @State var localRecordingDraft = true
+        @State private var showingLocalActivation = false
+        @Environment(\.sourceAccessCheck) private var checkAccess
         @State private var loadedProposal = false
         @State var showingRetention = false
         @AppStorage("goalongOnboardingPrivacyReviewedV1") var privacyReviewed = false
@@ -40,14 +43,21 @@
                 .background(LHTheme.pageBackground)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.goalongRecordingModel, model)
+            .sheet(isPresented: $showingLocalActivation) {
+                SourceActivationSheet(capability: .localComputerHistory, surface: .onboarding,
+                    prepare: {}, check: checkAccess)
+                    .environment(\.goalongRecordingModel, model)
+            }
             .onAppear {
                 if step == .welcome || !privacyReviewed { step = .privacy }
                 if !loadedProposal {
-                    let firstReview = !privacyReviewed && !consents.isEnabled(.localComputerHistory)
-                    if firstReview && !UserDefaults.standard.bool(forKey: GoalongRecordingSetup.preparedKey) {
-                        model.settingsDraft = GoalongRecordingSetup.proposed(from: model.settingsDraft)
-                        visibleTextDraft = true
-                    } else { visibleTextDraft = ActivityAnalysisPreferences.richContextEnabled }
+                    let previouslyReviewed = GoalongRecordingSetup.hasReviewedChoices()
+                    let proposed = GoalongRecordingSetup.proposal(from: model.appliedSettings,
+                        visibleText: ActivityAnalysisPreferences.richContextEnabled)
+                    model.settingsDraft = proposed.settings
+                    visibleTextDraft = proposed.visibleText
+                    localRecordingDraft = previouslyReviewed ? consents.isEnabled(.localComputerHistory) : true
                     loadedProposal = true
                 }
                 launchAtLogin.refresh()
@@ -101,20 +111,29 @@
                 }
                 Spacer()
                 if !checkingSources.isEmpty { ProgressView("Vérification des accès…").controlSize(.small) }
-                Button(step.actionTitle) {
+                Button(step == .privacy && localRecordingDraft && !consents.isEnabled(.localComputerHistory)
+                       ? "Valider et démarrer" : step.actionTitle) {
                     note = nil
                     if step == .ready { finishSetup() }
                     else {
                         if step == .privacy {
-                            guard model.saveOnboardingRecordingChoices() else {
+                            let choices = GoalongRecordingSetup.Proposal(settings: model.settingsDraft,
+                                visibleText: visibleTextDraft)
+                            guard model.applyRecordingSetup(choices) else {
                                 note = model.alert?.message ?? "Les choix n’ont pas pu être enregistrés. Réessayez."
-                                model.alert = nil
-                                return
+                                model.alert = nil; return
                             }
-                            UserDefaults.standard.set(visibleTextDraft, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
-                            ActivityAnalysisRuntime.shared.richContextPreferenceDidChange()
-                            UserDefaults.standard.set(true, forKey: GoalongRecordingSetup.preparedKey)
                             privacyReviewed = true
+                            if !localRecordingDraft && consents.isEnabled(.localComputerHistory) {
+                                guard consents.set(.localComputerHistory, enabled: false, surface: .onboarding) else {
+                                    note = "L’arrêt du suivi n’a pas pu être enregistré."; return
+                                }
+                            }
+                            step = .sources
+                            if localRecordingDraft && !consents.isEnabled(.localComputerHistory) {
+                                showingLocalActivation = true
+                            }
+                            return
                         }
                         step = step.next ?? .ready
                     }

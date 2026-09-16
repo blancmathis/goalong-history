@@ -195,11 +195,11 @@ final class GoalongBrandRenderingTests: XCTestCase {
         XCTAssertFalse(model.settingsHaveChanges)
         XCTAssertEqual(model.settingsDraft.captureClicks, originalClicks)
         model.settingsDraft.captureClicks.toggle()
-        model.saveSettings(); pump()
+        model.saveSettings(showConfirmation: false); pump()
         XCTAssertFalse(model.settingsHaveChanges)
         XCTAssertEqual(config.config.captureClicks, !originalClicks)
         model.settingsDraft.captureClicks = originalClicks
-        model.saveSettings(); pump()
+        model.saveSettings(showConfirmation: false); pump()
         XCTAssertEqual(config.config.captureClicks, originalClicks)
         model.selectSection(.history)
         XCTAssertEqual(model.selectedSection, .history)
@@ -263,6 +263,84 @@ final class GoalongBrandRenderingTests: XCTestCase {
                     try snapshot(resumed.view, to: output.appendingPathComponent("permission-\(phase)-\(name)-\(dark ? "dark" : "light").png"))
                 }
             }
+        }
+        // Exercise the real first-activation gate with mock OS permission, never
+        // with the user's recorder, protected sources, or external services.
+        do {
+            let defaults = UserDefaults.standard
+            let keys = [GoalongRecordingSetup.reviewedKey, GoalongRecordingSetup.preparedKey,
+                        GoalongRecordingSetup.explicitChoicesKey, "goalongOnboardingPrivacyReviewedV1",
+                        ActivityAnalysisPreferences.richContextEnabledKey]
+            let previousDefaults = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
+            let originalDraft = model.appliedSettings
+            let originalLocalConsent = GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
+            let originalRemoteConsent = GoalongCapabilityConsentStore.shared.document.consent(for: .chatGPTAnalysis)
+            defer {
+                _ = model.applyRecordingChoice(originalDraft)
+                _ = GoalongCapabilityConsentStore.shared.set(.localComputerHistory, enabled: originalLocalConsent, surface: .settings)
+                for key in keys {
+                    if let value = previousDefaults[key] ?? nil { defaults.set(value, forKey: key) }
+                    else { defaults.removeObject(forKey: key) }
+                }
+                _ = defaults.synchronize()
+            }
+            _ = GoalongCapabilityConsentStore.shared.set(.localComputerHistory, enabled: false, surface: .settings)
+            model.settingsDraft = DashboardSettingsDraft(config: .default)
+            model.saveSettings(showConfirmation: false)
+            model.alert = nil
+            for key in keys { defaults.removeObject(forKey: key) }
+            defaults.set(false, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
+            model.showWelcome = false; model.selectSection(.settings); model.settingsPane = .recording
+            let recordingHost = NSHostingController(rootView: LocalHistoryDashboardView(model: model)
+                .environment(\.sourceAccessCheck, { _, done in done(.ready) }))
+            window.contentViewController = recordingHost
+            window.setContentSize(NSSize(width: 1080, height: 790)); pump(); pump()
+            XCTAssertTrue(try XCTUnwrap(accessibleElement("source-localComputerHistory", within: window)).accessibilityPerformPress())
+            pump(); pump()
+            let first = try XCTUnwrap(window.attachedSheet, "First activation must review data before enabling")
+            pump(); pump()
+            for signal in RecordingSignal.allCases {
+                let node = try XCTUnwrap(accessibleElement("recording-\(signal.rawValue)", within: first))
+                XCTAssertEqual((node.value("accessibilityValue") as? NSNumber)?.boolValue, true, signal.title)
+            }
+            let visible = try XCTUnwrap(accessibleElement("recording-visible-text-draft", within: first))
+            XCTAssertEqual((visible.value("accessibilityValue") as? NSNumber)?.boolValue, true)
+            XCTAssertFalse(config.config.captureClicks)
+            XCTAssertFalse(GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory))
+            try snapshot(first.contentView!, to: output.appendingPathComponent("recording-first-activation-all-on.png"))
+            XCTAssertTrue(try XCTUnwrap(accessibleElement("recording-setup-cancel", within: first)).accessibilityPerformPress())
+            pump(); pump()
+            XCTAssertFalse(config.config.captureClicks)
+            XCTAssertFalse(GoalongRecordingSetup.hasReviewedChoices())
+            XCTAssertFalse(GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory))
+            XCTAssertTrue(try XCTUnwrap(accessibleElement("source-localComputerHistory", within: window)).accessibilityPerformPress())
+            pump(); pump()
+            let accepted = try XCTUnwrap(window.attachedSheet)
+            XCTAssertTrue(try XCTUnwrap(accessibleElement("recording-clicks", within: accepted)).accessibilityPerformPress())
+            XCTAssertTrue(try XCTUnwrap(accessibleElement("recording-setup-confirm", within: accepted)).accessibilityPerformPress())
+            pump(); pump(); pump()
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertFalse(config.config.captureClicks, "Explicitly unchecked click capture must remain off")
+            for signal in RecordingSignal.allCases where signal != .clicks {
+                XCTAssertTrue(model.appliedSettings[keyPath: signal.keyPath], signal.title)
+            }
+            XCTAssertTrue(ActivityAnalysisPreferences.richContextEnabled)
+            XCTAssertTrue(GoalongRecordingSetup.hasReviewedChoices())
+            XCTAssertTrue(GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory))
+            XCTAssertEqual(GoalongCapabilityConsentStore.shared.document.consent(for: .chatGPTAnalysis), originalRemoteConsent)
+            try snapshot(recordingHost.view, to: output.appendingPathComponent("recording-opt-out-preserved.png"))
+            // Off/on resumes the accepted selection without reverting to a preset.
+            XCTAssertTrue(try XCTUnwrap(accessibleElement("source-localComputerHistory", within: window)).accessibilityPerformPress())
+            pump()
+            XCTAssertFalse(GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory))
+            XCTAssertTrue(try XCTUnwrap(accessibleElement("source-localComputerHistory", within: window)).accessibilityPerformPress())
+            pump(); pump()
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertTrue(GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory))
+            XCTAssertFalse(config.config.captureClicks)
+            XCTAssertTrue(config.config.captureScroll)
+            XCTAssertFalse(ConfigManager().config.captureClicks, "Fresh model reads the accepted opt-out from disk")
+            print("NATIVE_RECORDING complete first proposal, cancellation, real save and off/on persistence passed")
         }
         if environment["GOALONG_JOURNEY_INTERACTIVE"] == "1" {
             app.setActivationPolicy(.regular)
