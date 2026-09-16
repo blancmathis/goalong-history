@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.29 — aperçu des journées sans sites
+
+- Une catégorie vide ne bloque plus l’aperçu lorsque l’autre contient une sélection explicite.
+- Les listes vides restent strictement vides : aucune autorisation implicite n’est ajoutée.
+- La suggestion initiale de sites attend une journée contenant réellement des domaines.
+- Tests du parcours applications seules avec l’option Sites activée.
+
 ## 0.6.28 — fiabilité des fenêtres et finition des réglages
 
 - La fenêtre d’envoi conserve la journée demandée dès sa première ouverture.

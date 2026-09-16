@@ -71,6 +71,21 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         XCTAssertNotNil(model.error)
     }
 
+    @MainActor func testApplicationPreviewWorksWhenTheWebsiteCatalogIsEmpty() async throws {
+        let (model, token, _, _) = try fixture(onSend: { _ in XCTFail("A preview cannot send") })
+        defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
+        await model.loadCatalog()
+        model.draft.includeWebsites = true
+        await model.loadCatalog()
+        XCTAssertTrue(model.catalog?.websites.isEmpty == true)
+        XCTAssertNil(model.draft.validationMessage)
+        await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
+        XCTAssertNotNil(model.preview)
+        XCTAssertNil(model.error)
+        XCTAssertFalse(model.reviewed)
+        XCTAssertFalse(model.autoSender.enabled)
+    }
+
     func testPreviewDayUsesTheSavedTimezoneInsteadOfAnImplicitUTCDay() {
         var draft = GoalongWebsiteShareDraft()
         draft.date = ISO8601DateFormatter().date(from: "2026-09-14T02:00:00Z")!

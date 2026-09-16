@@ -38,9 +38,11 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     var validationMessage: String? {
         if deviceIDs.isEmpty { return "Sélectionnez au moins un appareil." }
         if deviceIDs.count > 12 { return "Sélectionnez au maximum douze appareils." }
-        if !includeApplications && !includeWebsites { return "Choisissez des applications ou des sites à envoyer." }
-        if includeApplications && applicationIDs.isEmpty { return "Choisissez les applications à transmettre ou désactivez ce détail." }
-        if includeWebsites && websiteDomains.isEmpty { return "Choisissez les domaines à transmettre ou désactivez ce détail." }
+        // An empty optional group must not block a different, explicitly selected group.
+        // Empty allow-lists remain empty in the payload; they never mean “allow all”.
+        let selectedApps = includeApplications && !applicationIDs.isEmpty
+        let selectedSites = includeWebsites && !websiteDomains.isEmpty
+        if !selectedApps && !selectedSites { return "Sélectionnez au moins une application ou un site." }
         return nil
     }
 }
@@ -198,7 +200,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
                 if let sameCalendarDate { draft.date = sameCalendarDate }
                 needsInitialSuggestion = false
             }
-            if snapshot.includeWebsites && needsWebsiteSuggestion && draft.websiteDomains.isEmpty {
+            if snapshot.includeWebsites && needsWebsiteSuggestion && draft.websiteDomains.isEmpty && !value.websites.isEmpty {
                 draft.websiteDomains = Set(value.websites.prefix(200).map(\.domain))
                 needsWebsiteSuggestion = false
             }

@@ -155,6 +155,10 @@ import LocalHistoryQueryCLI
                     Toggle("Inclure des sites", isOn: $model.draft.includeWebsites).toggleStyle(.switch)
                         .disabled(!model.draft.anonymousApplicationIDs.intersection(model.draft.applicationIDs).isEmpty)
                     if model.draft.includeWebsites {
+                        if catalog.websites.isEmpty && !model.draft.applicationIDs.isEmpty {
+                            Text("Aucun site pour cette journée. L’aperçu des applications reste disponible.")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
                         GoalongSharingSelector(title: "Domaines uniquement", symbol: "globe", items: catalog.websites.map {
                             .init(id: $0.domain, title: $0.domain, detail: GoalongReadableSharePreview.duration($0.seconds))
                         }, selection: $model.draft.websiteDomains)
