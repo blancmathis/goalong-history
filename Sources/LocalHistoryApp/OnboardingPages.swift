@@ -128,6 +128,8 @@
                 }
                 Text("Le nouvel historique apparaîtra avec votre activité.").font(.system(size: 13)).foregroundStyle(.secondary)
                 Toggle("Ouvrir Goalong à la connexion", isOn: $launchAtLoginPreference).toggleStyle(.switch)
+                Text("Conseillé et sélectionné par défaut. Vous pouvez le désactiver ici ou dans Réglages. Seules les sources que vous avez activées démarrent.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
                 Text("Les envois à Goalong et les analyses ChatGPT se règlent séparément.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                 if let note { Text(note).font(.system(size: 13)).foregroundStyle(LHTheme.warning) }

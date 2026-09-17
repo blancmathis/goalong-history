@@ -64,6 +64,7 @@ import AppKit
                 }
             }
             if search.isEmpty {
+                BackgroundContinuitySettings()
                 VStack(alignment: .trailing, spacing: 14) {
                     GoalongSettingsLink(title: "Avancé", value: "Outils et diagnostics", symbol: "slider.horizontal.3") { pane = .advanced }
                         .accessibilityIdentifier("settings-advanced")
@@ -166,10 +167,9 @@ import AppKit
         }
     }
     private func saveStartup(_ enabled: Bool) {
-        let previous = consents.isEnabled(.launchAtLogin)
-        guard launchAtLogin.setEnabled(enabled) else { startupError = launchAtLogin.message; return }
-        guard consents.set(.launchAtLogin, enabled: enabled, surface: .settings) else {
-            _ = launchAtLogin.setEnabled(previous); startupError = "Le réglage n’a pas pu être enregistré."; return
+        guard launchAtLogin.setUserPreference(enabled, surface: .settings) else {
+            startupError = launchAtLogin.message ?? "Le réglage n’a pas pu être enregistré."
+            return
         }
         if enabled && launchAtLogin.requiresApproval { launchAtLogin.openLoginItemsSettings() }
     }

@@ -88,6 +88,17 @@
             accessibilityEventMonitor?.start()
         }
 
+        /// Recover only the existing in-process monitor. The caller must check
+        /// source consent, pause, and session state before requesting recovery.
+        func ensureRunning() {
+            if !pollingIsActive {
+                Diagnostics.write("Recovering the in-process context monitor")
+                start()
+            } else if timer?.isValid != true && !scheduledPollInProgress {
+                scheduleNextPoll()
+            }
+        }
+
         func stop() {
             pollingIsActive = false
             accessibilityEventMonitor?.stop()

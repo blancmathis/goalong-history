@@ -40,6 +40,7 @@ jobs:
           bash scripts/test_release_signing_policy.sh
           xcrun swiftc -typecheck scripts/verify_update_archive.swift
           python3 scripts/test_update_policy.py
+          python3 scripts/test_background_continuity.py
           python3 scripts/test_prepare_presigned_release.py
           python3 scripts/test_site_submission_policy.py
           bash scripts/test_validate_computer_history_upgrade_safety.sh

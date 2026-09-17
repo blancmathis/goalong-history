@@ -7,7 +7,7 @@
         @StateObject var launchAtLogin = LaunchAtLoginManager()
         @ObservedObject var consents = GoalongCapabilityConsentStore.shared
         @AppStorage("goalongOnboardingStep") var step: SetupStep = .privacy
-        @State var launchAtLoginPreference = false
+        @State var launchAtLoginPreference = true
         @State var note: String?
         @State var visibleTextDraft = true
         @State var localRecordingDraft = true
@@ -61,7 +61,7 @@
                     loadedProposal = true
                 }
                 launchAtLogin.refresh()
-                launchAtLoginPreference = consents.isEnabled(.launchAtLogin)
+                launchAtLoginPreference = launchAtLogin.suggestedOnboardingPreference
             }
         }
 
@@ -150,11 +150,7 @@
         func finishSetup() {
             // Source activation already saved the user's choices. Do not reset their
             // recording, privacy or analysis preferences when setup is revisited.
-            guard consents.set(.launchAtLogin, enabled: launchAtLoginPreference, surface: .onboarding) else {
-                note = "Le choix de démarrage n’a pas pu être enregistré. Réessayez."
-                return
-            }
-            guard launchAtLogin.setEnabled(launchAtLoginPreference) else {
+            guard launchAtLogin.setUserPreference(launchAtLoginPreference, surface: .onboarding) else {
                 note = launchAtLogin.message ?? "macOS n’a pas enregistré ce choix. Réessayez ou désactivez le démarrage automatique."
                 return
             }

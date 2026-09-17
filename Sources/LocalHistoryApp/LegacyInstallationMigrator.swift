@@ -38,12 +38,7 @@
             if !GoalongRecordingSetup.hasReviewedChoices(defaults: defaults) {
                 defaults.set(false, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
             }
-            defaults.set(false, forKey: "launchAtLoginPreference")
-            if SMAppService.mainApp.status == .enabled
-                || SMAppService.mainApp.status == .requiresApproval
-            {
-                try? SMAppService.mainApp.unregister()
-            }
+            // Refresh privacy onboarding without revoking the existing native login item.
             defaults.set(true, forKey: migrationKey)
         }
 

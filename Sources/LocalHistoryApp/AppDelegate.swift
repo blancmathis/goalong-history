@@ -103,6 +103,16 @@
         private var localCaptureRuntimeActive = false
 
         private var runtimeStarted = false
+        private var userQuitConfirmed = false
+        private var quitAlertIsVisible = false
+        private let continuityPreferences = BackgroundContinuityPreferences()
+
+        private var hasEnabledBackgroundSources: Bool {
+            guard let capabilityConsents else { return false }
+            return [GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations].contains {
+                capabilityConsents.isEnabled($0)
+            }
+        }
 
         func applicationDidFinishLaunching(_ notification: Notification) {
             PermissionRecovery.launchWhenParentHasExited { [weak self] in self?.startApplication() }
@@ -235,9 +245,7 @@
                     canCheckForUpdates: {
                         SoftwareUpdateManager.shared.canCheckForUpdates
                     },
-                    onQuit: {
-                        NSApplication.shared.terminate(nil)
-                    }
+                    onQuit: { [weak self] in self?.requestUserQuit() }
                 )
                 applicationMenuController.install(in: NSApplication.shared)
 
@@ -258,7 +266,7 @@
                     onTogglePause: { [weak self] in self?.toggleManualPause() },
                     onRequestPermissions: { [weak self] in self?.requestPermissionsAndExplain() },
                     onReloadConfig: { [weak self] in self?.reloadConfiguration() },
-                    onQuit: { NSApplication.shared.terminate(nil) }
+                    onQuit: { [weak self] in self?.requestUserQuit() }
                 )
             } catch {
                 presentFatalError(error)
@@ -267,6 +275,7 @@
 
             applyDailyRetentionCleanupIfNeeded()
             applyCapabilityConsents(recordTransition: false)
+            BackgroundContinuityController.shared.start(hasEnabledSources: hasEnabledBackgroundSources)
             ChatGPTRecapRuntime.shared.configure(deviceID: deviceIdentity.info.deviceID)
             installCapabilityConsentObserver()
             retentionPolicyObserver = NotificationCenter.default.addObserver(
@@ -293,10 +302,45 @@
             Task { @MainActor in presentWebsitePairingIfReady() }
         }
 
+        func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+            !continuityPreferences.keepRunning
+        }
+
+        private func requestUserQuit() {
+            guard confirmUserQuitIfNeeded() else { return }
+            userQuitConfirmed = true
+            NSApplication.shared.terminate(nil)
+        }
+
+        private func confirmUserQuitIfNeeded() -> Bool {
+            guard !userQuitConfirmed,
+                  BackgroundContinuityPreferences.shouldConfirmQuit(
+                    keepRunning: continuityPreferences.keepRunning,
+                    hasEnabledSources: hasEnabledBackgroundSources
+                  ) else { return true }
+            guard !quitAlertIsVisible else { return false }
+            quitAlertIsVisible = true
+            defer { quitAlertIsVisible = false }
+            let alert = NSAlert()
+            alert.messageText = "Quit Goalong and stop recording?"
+            alert.informativeText = "Your enabled sources will stop until you reopen Goalong or its next enabled login. Close the window instead to keep recording in the background. Activity while Goalong is closed cannot be recovered."
+            alert.addButton(withTitle: "Keep running")
+            alert.addButton(withTitle: "Quit and stop recording")
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            return alert.runModal() == .alertSecondButtonReturn
+        }
+
         func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
             let event = NSAppleEventManager.shared().currentAppleEvent
             let senderPID = event?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
             let senderID = senderPID.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+            // Our menu and Command-Q use requestUserQuit(). Cover a direct Dock Quit
+            // as well, but never intercept logout/shutdown, installers, or a restart.
+            if senderID == "com.apple.dock", !PermissionRecovery.isRestarting,
+               !SoftwareUpdateManager.shared.isRelaunchingForUpdate {
+                guard confirmUserQuitIfNeeded() else { return .terminateCancel }
+                userQuitConfirmed = true
+            }
             guard event?.eventClass == AEEventClass(kCoreEventClass), event?.eventID == AEEventID(kAEQuitApplication),
                   PermissionRecovery.shouldAssistSettingsQuit(senderBundleID: senderID,
                     pendingSetup: PermissionRecovery.pendingSetup() != nil, alreadyRestarting: PermissionRecovery.isRestarting) else {
@@ -346,6 +390,10 @@
                 minuteSealer?.stopAndSeal()
             }
             recorder?.close()
+            let reason = SoftwareUpdateManager.shared.isRelaunchingForUpdate ? "update"
+                : PermissionRecovery.isRestarting ? "permission_restart"
+                : userQuitConfirmed ? "user_quit" : "system_or_application_exit"
+            BackgroundContinuityController.shared.stop(reason: reason)
 
             let center = NSWorkspace.shared.notificationCenter
             for observer in workspaceObservers {
@@ -370,14 +418,17 @@
                 return
             }
             if captureState.isManuallyPaused {
+                continuityPreferences.manuallyPaused = false
                 captureState.setManualPaused(false)
                 captureHealthStore.setPaused(false)
+                minuteSealer.start()
                 recorder.record(
                     kind: .recordingResumed, message: "Recording resumed from the Goalong History interface")
                 contextMonitor.resetAndSample()
             } else {
                 recorder.record(kind: .recordingPaused, message: "Recording paused from the Goalong History interface")
                 recorder.flush()
+                continuityPreferences.manuallyPaused = true
                 captureState.setManualPaused(true)
                 captureHealthStore.setPaused(true)
                 _ = minuteSealer.stopAndSeal()
@@ -769,7 +820,10 @@
                 lastPermissionStatus = status
             }
 
-            if status.canAttemptInputTap, !eventTapMonitor.isRunning {
+            if continuityPreferences.keepRunning && captureState.isCapturing {
+                contextMonitor.ensureRunning()
+            }
+            if status.canAttemptInputTap, !eventTapMonitor.isRunning, captureState.isCapturing {
                 _ = eventTapMonitor.start()
             } else if !status.canAttemptInputTap,
                 eventTapMonitor.isRunning || eventTapMonitor.hasPendingUnexpectedRestart
@@ -817,10 +871,17 @@
             if localCaptureEnabled && !localCaptureRuntimeActive {
                 let wasActive = localCaptureRuntimeActive
                 localCaptureRuntimeActive = true
+                // Preserve a manual pause across both global-pause recovery and updates.
                 let retainManualPause = resumingGlobalPause && GoalongGlobalPause.load().recordingWasPaused
-                captureState.setManualPaused(retainManualPause)
-                captureHealthStore.setPaused(retainManualPause)
-                if !retainManualPause { minuteSealer.start() }
+                if resumingGlobalPause {
+                    continuityPreferences.manuallyPaused = retainManualPause
+                } else if recordTransition {
+                    continuityPreferences.manuallyPaused = false
+                }
+                let paused = continuityPreferences.manuallyPaused
+                captureState.setManualPaused(paused)
+                captureHealthStore.setPaused(paused)
+                if !paused { minuteSealer.start() }
                 contextMonitor.start()
                 checkPermissionsAndStartTap(forceRefresh: true)
                 if recordTransition && !wasActive {
@@ -891,6 +952,10 @@
             }
 
             configureUploader(for: configManager.config)
+            let backgroundSourcesEnabled = hasEnabledBackgroundSources
+            DispatchQueue.main.async {
+                BackgroundContinuityController.shared.update(hasEnabledSources: backgroundSourcesEnabled)
+            }
             dashboardViewModel.refreshEverything()
         }
 
@@ -1077,7 +1142,7 @@
                     if self.captureState.setSystemAwake(true) {
                         self.recorder.record(kind: .systemWake, message: "Displays woke")
                         self.contextMonitor.resetAndSample()
-                        self.checkPermissionsAndStartTap()
+                        self.checkPermissionsAndStartTap(forceRefresh: true)
                     }
                 }
             )

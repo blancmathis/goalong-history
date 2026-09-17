@@ -101,6 +101,7 @@
 
         private var updaterController: SPUStandardUpdaterController?
         private var hasStarted = false
+        private(set) var isRelaunchingForUpdate = false
         private var lastBackgroundCheck: Date?
         private var userAttendedCurrentUpdate = false
 
@@ -173,6 +174,11 @@
 
         func stop() {
             guard hasStarted else { return }
+            // Sparkle still owns installer/XPC state during applicationWillTerminate.
+            // Keep its controller alive until process exit when it is handing off a
+            // user-approved update. Do not add a competing relauncher or unregister
+            // the native login item during replacement.
+            guard !isRelaunchingForUpdate else { return }
             updaterController = nil
             hasStarted = false
             lastBackgroundCheck = nil
@@ -376,6 +382,18 @@
     }
 
     extension SoftwareUpdateManager: SPUUpdaterDelegate {
+        func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+            isRelaunchingForUpdate = true
+            Diagnostics.write("Sparkle is handing off a user-approved update and relaunch")
+        }
+
+        func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
+            isRelaunchingForUpdate = false
+            if !Self.isNoUpdateResult(error) {
+                Diagnostics.write("Sparkle update aborted: \((error as NSError).domain) \((error as NSError).code)")
+            }
+        }
+
         func feedURLString(for updater: SPUUpdater) -> String? {
             // Ignore any obsolete user-default feed override from pre-Community builds.
             Self.releaseFeedURL
