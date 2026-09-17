@@ -58,6 +58,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
+      # Bound the GitHub CLI large-asset transport to HTTP/1.1; TLS and signature checks remain mandatory.
+      GODEBUG: http2client=0
       PRODUCT: Goalong History
       DISPLAY_NAME: Goalong History
       BUNDLE_ID: ai.goalong.localhistory

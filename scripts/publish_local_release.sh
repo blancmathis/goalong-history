@@ -1,6 +1,9 @@
 #!/bin/bash
 # Explicit owner action. Signs one tested CI archive locally; never exports signing keys.
 set -euo pipefail
+# Use the large-asset transport that completed the verified release handoff.
+# This changes only the ephemeral Go HTTP transport, never TLS authentication.
+export GODEBUG=http2client=0
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 RUN_ID=""
@@ -25,10 +28,9 @@ umask 077
 gh run view "$RUN_ID" --repo "$REPO" --json conclusion,headSha,headBranch,workflowName > "$WORK/run.json"
 python3 - "$WORK/run.json" "$REVISION" <<'PY'
 import json,sys
-r=json.load(open(sys.argv[1]))
-assert r['conclusion']=='success', 'The entire input workflow must succeed first'
-assert r['headSha']==sys.argv[2] and r['headBranch']=='main', 'The signing input must match current main'
-assert r['workflowName'] in ['Continuous Community macOS release','Prepare universal archive for local signing'], 'Unexpected workflow'
+sys.path.insert(0, 'scripts')
+from release_publication_policy import validate_staging_run
+validate_staging_run(json.load(open(sys.argv[1])), sys.argv[2])
 PY
 gh run download "$RUN_ID" --repo "$REPO" --name "Goalong-Unsigned-Universal-$REVISION" --dir "$WORK/input"
 python3 - "$WORK/input" <<'PY'
@@ -89,4 +91,5 @@ gh release create "$STAGE" --repo "$REPO" --target "$REVISION" --prerelease --la
   --notes "Locally signed input for $REVISION. Awaiting independent CI checks and Ed25519 release signatures. No private signing key was exported." "$ZIP"
 gh workflow run continuous-release.yml --repo "$REPO" --ref main -f "signed_stage=$STAGE" -f "signed_sha256=$SHA256"
 echo "Publication requested for $REVISION; wait for CI and verify the public feed before claiming delivery."
-echo "After success: bash scripts/verify_published_update.sh '$OUT'"
+echo "CI verifies the final published feed and repackaged archive with the committed public key."
+echo "The local ZIP is a signing input; it is not a byte-for-byte reference for CI packaging."

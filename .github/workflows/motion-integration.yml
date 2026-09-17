@@ -18,13 +18,12 @@ jobs:
           persist-credentials: false
       - name: Privacy boundaries
         run: ./scripts/audit_privacy_boundaries.sh
-      - name: Build and test on macOS
-        run: swift test
-      - name: Native activity, release and reduced-motion rendering
+      - name: Native activity under the AppKit event loop
+        timeout-minutes: 3
         run: |
           mkdir -p qa/brand-motion
           set +e
-          GOALONG_MOTION_SNAPSHOTS="$PWD/qa/brand-motion" swift test --skip-build --filter GoalongMotionRenderingTests >qa/brand-motion/rendering-test.log 2>&1
+          ./scripts/test_brand_motion.sh "$PWD/qa/brand-motion" >qa/brand-motion/rendering-test.log 2>&1
           result=$?
           tail -n 80 qa/brand-motion/rendering-test.log
           exit "$result"
@@ -35,3 +34,5 @@ jobs:
           path: qa/brand-motion/
           if-no-files-found: ignore
           retention-days: 7
+      - name: Build and test on macOS
+        run: swift test

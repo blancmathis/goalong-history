@@ -35,11 +35,15 @@ universal **unpublished signing input**, instead of failing on a missing Apple c
 silently switching users to an ad-hoc identity. No new LaunchAgent, runner or persistent
 process is installed on the owner's Mac.
 
-Once that main run succeeds, the owner signs and authorizes publication with:
+Once that run succeeds and its exact commit is on `main`, the owner signs and authorizes publication with:
 
 ```sh
 ./scripts/publish_local_release.sh --run-id RUN_ID --publish
 ```
+
+A release-candidate build can be promoted without downloading a second identical
+CI build: its exact commit must already be current `main`, and the official signing-input
+workflow must have succeeded. A branch name alone never authorizes publication.
 
 Without `--publish`, the script only prepares and verifies the locally signed bundle. With
 it, the script checks the run, source revision, archive checksum, path safety, architecture,
@@ -47,11 +51,18 @@ embedded update policy, and the exact pinned app/CLI identity. It signs inside-o
 `codesign` locally, uploads **only the signed application**, then requests the existing CI
 publication workflow. The private signing key is never exported.
 
+Large GitHub CLI transfers explicitly use HTTP/1.1 over HTTPS; certificate verification
+and the independent Ed25519 checks are unchanged. A failed transfer must never be
+reported as publication success.
+
 The publication run independently validates the supplied ZIP and exact current main revision,
 runs tests, generates Ed25519 signatures, and publishes an immutable archive before replacing
 the feed. The final public-feed check downloads the actual served feed and archive, verifies
 both signatures using only the shipped public key, and compares them with the tested build.
 An uploaded staging archive or a queued workflow is **not** a published update.
+The signing-input ZIP may be repackaged by CI. `verify_published_update.sh` expects
+CI’s final packaged distribution, not the intermediate locally signed ZIP; its
+exact archive checksum comparison must not be used across different ZIP packaging.
 
 ## Existing installations
 

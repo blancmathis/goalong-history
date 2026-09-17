@@ -7,7 +7,7 @@
 
 A native menu-bar app that turns foreground activity into a clear local timeline, seals it against later rewriting, and lets the user disclose only what they choose.
 
-[Download the free Community Build](https://github.com/blancmathis/goalong-history/releases/latest) · [Guide français](GUIDE_FR.md) · [Security and privacy](docs/INDEX.md)
+[Download the free Community Build](https://github.com/blancmathis/goalong-history/releases/tag/latest-main) · [Guide français](GUIDE_FR.md) · [Security and privacy](docs/INDEX.md)
 </div>
 
 > **Community Build:** Goalong History is distributed as one free, open-source app. The public

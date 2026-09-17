@@ -48,17 +48,20 @@ access and storage are unchanged.
 `swift test` covers independent numeric reference samples, a 21.6-second sequence,
 cycle continuity, the G attachment and interruption/reentry across thirteen phases.
 
-For an isolated real SwiftUI window:
+For an isolated real SwiftUI window under a running AppKit event loop:
 
 ```sh
-mkdir -p qa/brand-motion
-GOALONG_MOTION_SNAPSHOTS="$PWD/qa/brand-motion" \
-  swift test --filter GoalongMotionRenderingTests
+./scripts/test_brand_motion.sh "$PWD/qa/brand-motion"
 ```
 
-This opt-in test renders 24/32/48-point marks, compares live activity frames,
+The probe compiles the production theme, model and view directly; it does not
+load the main application, read user history or create app services. It renders 24/32/48-point marks, compares live activity frames,
 checks identical settled and reduced frames, and renders both macOS appearances
 and measured versus indefinite progress. It toggles the additive local motion
 preference, not the user's system setting. It uses synthetic view state, not a
 user's activity history. A screenshot is not a full application usability or
 accessibility audit, nor proof that an installed app has been updated.
+
+The rendering probe uses `NSApplication.run()` rather than substituting the
+XCTest event loop for AppKit. Pixel comparisons use booleans and SHA-256 reports,
+so a failure never expands a full raw bitmap into CI logs.
