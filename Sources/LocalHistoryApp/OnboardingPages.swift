@@ -153,7 +153,7 @@
                 }
                 Toggle("Start Goalong when I log in", isOn: $launchAtLoginPreference)
                     .toggleStyle(.switch)
-                Text("Optional. Your source choices stay the same on the next launch.")
+                Text("Recommended and selected by default. You can turn this off now or in Settings. Only your enabled sources run; no extra service is installed.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 if let note {
                     Text(note).font(.system(size: 13)).foregroundStyle(LHTheme.warning)

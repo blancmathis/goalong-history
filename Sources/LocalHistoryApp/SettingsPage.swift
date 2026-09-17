@@ -86,6 +86,7 @@
                 {
                     ChatGPTAccountConnectionCard(runtime: recapRuntime)
                 }
+                BackgroundContinuitySettings()
                 softwareUpdatesCard
                 capabilityConsentCard
                 GoalongWebsiteConnectionCard()
