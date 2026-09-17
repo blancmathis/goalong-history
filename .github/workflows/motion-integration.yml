@@ -1,0 +1,54 @@
+name: Native brand motion integration
+
+on:
+  push:
+    branches: [main, motion/integration-20260917]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Privacy boundaries
+        run: ./scripts/audit_privacy_boundaries.sh
+      - name: Native activity under the AppKit event loop
+        timeout-minutes: 3
+        run: |
+          # This job uses a disposable GitHub-hosted VM, never the user's Mac.
+          # Exercise both real OS preferences; do not override them in the app.
+          original=$(defaults read com.apple.universalaccess reduceMotion 2>/dev/null || true)
+          restore_preference() {
+            if [ -n "$original" ]; then
+              defaults write com.apple.universalaccess reduceMotion -bool "$original"
+            else
+              defaults delete com.apple.universalaccess reduceMotion 2>/dev/null || true
+            fi
+          }
+          trap restore_preference EXIT
+          set +e
+          result=0
+          for reduced in false true; do
+            defaults write com.apple.universalaccess reduceMotion -bool "$reduced"
+            output="$PWD/qa/brand-motion/system-$reduced"
+            mkdir -p "$output"
+            ./scripts/test_brand_motion.sh "$output" >"$output/rendering-test.log" 2>&1 || result=1
+            tail -n 80 "$output/rendering-test.log"
+            python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["passed"] and r["systemReducedMotion"] == (sys.argv[2] == "true"), r' "$output/native-results.json" "$reduced" || result=1
+          done
+          exit "$result"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: goalong-native-motion-evidence
+          path: qa/brand-motion/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Build and test on macOS
+        run: swift test
