@@ -103,7 +103,7 @@ Directories use mode `0700`; detailed files use mode `0600`.
 
 There is exactly one public application: **Goalong History**, bundle identifier
 `ai.goalong.localhistory`. Its compiled target excludes the retired commitment uploader,
-App Attest transport and in-app updater. Optional ChatGPT analysis starts the fixed local Codex
+App Attest transport. Signed updates use the pinned Sparkle framework. Optional ChatGPT analysis starts the fixed local Codex
 `app-server` process only after its own consent. The optional website connector separately exports
 selected saved data offline and sends it through explicit actions or a separately enabled schedule,
 using a chosen owner-only upload-token file. Scheduling is off by default, runs only while the app is open, and stops on error;

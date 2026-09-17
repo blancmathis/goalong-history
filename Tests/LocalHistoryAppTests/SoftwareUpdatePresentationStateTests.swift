@@ -6,6 +6,10 @@
     final class SoftwareUpdatePresentationStateTests: XCTestCase {
         func testSparkleComparatorRecognizesMigrationAndEveryNextBuild() {
             let comparator = SUStandardVersionComparator()
+            let epoch = "30000000.3526000.1"
+            XCTAssertEqual(comparator.compareVersion(epoch, toVersion: "20260916.084704"), .orderedDescending)
+            XCTAssertEqual(comparator.compareVersion(epoch, toVersion: "20991231.235959"), .orderedDescending)
+            XCTAssertEqual(comparator.compareVersion("30000000.3526000.2", toVersion: epoch), .orderedDescending)
             let first = "20260913.3476827.178501"
             XCTAssertEqual(comparator.compareVersion(first, toVersion: "20260912.4"), .orderedDescending)
             XCTAssertEqual(comparator.compareVersion(first, toVersion: "5000.0.66"), .orderedDescending)

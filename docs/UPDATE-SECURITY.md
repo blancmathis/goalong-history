@@ -1,4 +1,6 @@
 ---
+
+> Current build defaults and the key-preserving local publication workflow: [FREE-UPDATES.md](FREE-UPDATES.md). Normal source builds now include the committed public update key; no paid Apple membership or developer-key export is required.
 context_room:
   id: assurance.supply-chain.updates
 ---
