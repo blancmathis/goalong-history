@@ -1450,6 +1450,14 @@ public struct HistoryLocalStoreReader {
         )
     }
 
+    /// Analytics retains no window titles, rich text, conversation or input payloads.
+    package func loadLocalAnalyticsEvidence(
+        start: Date, endExclusive: Date, shouldContinue: () -> Bool = { true }
+    ) -> ComputerHistoryEvidenceLoad {
+        loadBoundedDerivedEvidence(start: start, endExclusive: endExclusive,
+            projection: .localAnalytics, limits: .production, shouldContinue: shouldContinue)
+    }
+
     /// Loads a persisted bounded day memory only when it contains every episode
     /// shell and its recorded tail hash, sequence and modification time still
     /// match the authoritative event journal. This avoids repeated whole-day
@@ -1618,6 +1626,7 @@ public struct HistoryLocalStoreReader {
     private enum BoundedDerivedEvidenceProjection {
         case computerHistory
         case rhythmWithoutRich
+        case localAnalytics
         case activityMemory
 
         func project(_ event: HistoryEvent) -> HistoryEvent? {
@@ -1631,6 +1640,15 @@ public struct HistoryLocalStoreReader {
                     timestamp: event.timestamp, kind: event.kind, app: event.app, window: event.window,
                     element: event.element, url: event.url, suppressionReason: event.suppressionReason,
                     metadata: event.metadata?["observation_gap"].map { ["observation_gap": $0] }, integrity: event.integrity)
+            case .localAnalytics:
+                guard event.isDerivedAnalysisEvidence else { return nil }
+                let keys: Set<String> = ["idle_seconds", "observation_gap", "accessibility", "input_monitoring"]
+                let host = event.url?.host
+                return HistoryEvent(schemaVersion: event.schemaVersion, id: event.id, sessionID: "",
+                    timestamp: event.timestamp, kind: event.kind, app: event.app,
+                    url: host.map { URLSnapshot(value: "https://" + $0, host: $0, redactionApplied: true) },
+                    classification: event.classification, suppressionReason: event.suppressionReason,
+                    metadata: event.metadata?.filter { keys.contains($0.key) })
             case .activityMemory:
                 guard event.isDerivedAnalysisEvidence else { return nil }
                 return event.compactedForDerivedAnalysis

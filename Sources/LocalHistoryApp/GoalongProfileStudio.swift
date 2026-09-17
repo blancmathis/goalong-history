@@ -6,6 +6,10 @@ import LocalHistoryCore
 import LocalHistoryQueryCLI
 import SwiftUI
 
+extension Notification.Name {
+    static let goalongProfileAnalysisDidSave = Notification.Name("goalong.profile-analysis.did-save")
+}
+
 @MainActor final class GoalongProfileStudioModel: ObservableObject {
     @Published var request: GoalongProfileAnalysis.Request?
     @Published var result: GoalongProfileAnalysis.Result?
@@ -96,6 +100,7 @@ import SwiftUI
             let url = folder.appendingPathComponent(request.request_id + (result == nil ? ".request.json" : ".analysis.json"))
             try ChatGPTSecureStorage.writeFileAtomically(bytes, to: url)
             status = "Enregistré dans Goalong History. Aucun envoi au site."
+            NotificationCenter.default.post(name: .goalongProfileAnalysisDidSave, object: nil)
         } catch { self.error = error.localizedDescription }
     }
     func open(_ url: URL) {
@@ -122,12 +127,12 @@ import SwiftUI
 /// A document-sized window keeps the long, scrollable review usable on smaller displays.
 @MainActor final class GoalongProfileWindow: NSObject, ObservableObject, NSWindowDelegate {
     private var studioWindow: NSWindow?
-    func show(onSend: @escaping (Data) -> Void) {
+    func show(localOnly: Bool = false, initialDay: Date? = nil, onSend: @escaping (Data) -> Void) {
         if let studioWindow { studioWindow.makeKeyAndOrderFront(nil); return }
         let view = GoalongProfileStudio(onSend: { [weak self] data in
             self?.studioWindow?.close()
             onSend(data)
-        }, onClose: { [weak self] in self?.studioWindow?.close() })
+        }, onClose: { [weak self] in self?.studioWindow?.close() }, localOnly: localOnly, initialDay: initialDay)
         let window = NSWindow(contentViewController: NSHostingController(rootView: view
             .background(LHTheme.pageBackground)
             .foregroundStyle(LHTheme.text)
@@ -154,6 +159,7 @@ import SwiftUI
 struct GoalongProfileStudio: View {
     let onSend: (Data) -> Void
     var onClose: (() -> Void)? = nil
+    var localOnly = false
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = GoalongProfileStudioModel()
     @StateObject private var connection = GoalongSiteAnalysisModel()
@@ -168,6 +174,12 @@ struct GoalongProfileStudio: View {
     @State private var exclusions = ""
     @State private var aliases = ""
     @State private var instructions = ""
+    init(onSend: @escaping (Data) -> Void, onClose: (() -> Void)? = nil, localOnly: Bool = false, initialDay: Date? = nil) {
+        self.onSend = onSend; self.onClose = onClose; self.localOnly = localOnly
+        let day = Calendar.current.startOfDay(for: initialDay ?? Date())
+        _start = State(initialValue: day)
+        _end = State(initialValue: min(Date(), Calendar.current.date(byAdding: .day, value: 1, to: day) ?? Date()))
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack { Text("Comprendre mon travail").font(.title2.weight(.semibold)); Spacer(); Button("Fermer") { model.cancel(); closeStudio() } }.padding(22)
@@ -226,12 +238,12 @@ struct GoalongProfileStudio: View {
                         }
                     }
                     if let result = model.result {
-                        GoalongProfileSection("4. Relire et choisir les résultats à transmettre") {
+                        GoalongProfileSection(localOnly ? "4. Relire et conserver dans History" : "4. Relire et choisir les résultats à transmettre") {
                             VStack(alignment: .leading, spacing: 14) {
-                                Text("Aucun résultat n’est sélectionné par défaut. Les preuves, leurs timestamps et vos règles privées restent dans Goalong History.").font(.caption)
+                                Text(localOnly ? "Relisez les cartes avant de les conserver. Elles apparaîtront dans Analyses, sans envoi au site." : "Aucun résultat n’est sélectionné par défaut. Les preuves, leurs timestamps et vos règles privées restent dans Goalong History.").font(.caption)
                                 ForEach(result.items, id: \.id) { item in
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Toggle("Transmettre : \(GoalongProfileAnalysis.labels[item.module] ?? item.module)", isOn: Binding(get: { model.selectedItems.contains(item.id) }, set: { yes in if yes { model.selectedItems.insert(item.id) } else { model.selectedItems.remove(item.id) }; model.reviewed = false }))
+                                        if !localOnly { Toggle("Transmettre : \(GoalongProfileAnalysis.labels[item.module] ?? item.module)", isOn: Binding(get: { model.selectedItems.contains(item.id) }, set: { yes in if yes { model.selectedItems.insert(item.id) } else { model.selectedItems.remove(item.id) }; model.reviewed = false })) }
                                         TextField("Titre", text: Binding(get: { item.title }, set: { model.correct(item.id, field: "title", text: $0) })).textFieldStyle(.roundedBorder)
                                         TextEditor(text: Binding(get: { item.summary }, set: { model.correct(item.id, field: "summary", text: $0) })).frame(height: 70).accessibilityLabel("Synthèse \(item.title)")
                                         TextField("Limites", text: Binding(get: { item.caveat }, set: { model.correct(item.id, field: "caveat", text: $0) })).textFieldStyle(.roundedBorder)
@@ -241,12 +253,14 @@ struct GoalongProfileStudio: View {
                                     }
                                 }
                                 Button("Conserver l’analyse dans Goalong History") { model.save() }
+                                if !localOnly {
                                 Toggle("J’ai relu les résultats sélectionnés et leur confidentialité", isOn: $model.reviewed)
                                 if let archive = model.archive, let projection = try? GoalongProfileAnalysis.project(archive, selectedIDs: model.selectedItems), let bytes = try? GoalongContextualRhythm.encode(projection) {
                                     DisclosureGroup("Voir exactement les cartes sélectionnées") { Text(String(decoding: bytes, as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                                 }
                                 HStack { Button("Exporter les cartes sélectionnées…") { exportCards() }; Button("Préparer l’envoi à mon compte Goalong") { do { let bytes = try model.projection(); onSend(bytes); closeStudio() } catch { model.error = error.localizedDescription } } }.disabled(!model.reviewed || model.selectedItems.isEmpty || model.busy)
                                 Text("Le partage avec les autres se règle ensuite sur le site, rubrique par rubrique et selon le public choisi.").font(.caption).foregroundStyle(.secondary)
+                                }
                             }.padding(8)
                         }
                     }

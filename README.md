@@ -151,10 +151,13 @@ actually included.
 
 ## Native dashboard
 
-The SwiftUI dashboard exposes only three primary destinations:
+The SwiftUI dashboard exposes four primary destinations:
 
 - **Today** — runtime state, daily metrics, top applications, coverage and the optional
   five-line GPT-5.6 Luna High assessment;
+- **Analyses** — local focus proxies, hourly/daily charts, 1/7/28-day trends, usage
+  breakdowns and saved project/method/progress reports, without opening the website.
+  See [definitions and coverage limits](docs/LOCAL-ANALYTICS.md).
 - **History** — one selected-day view with an all-sources timeline and filters for causal
   [Computer History](docs/COMPUTER_HISTORY_PARITY.md), Apple Screen Time and
   [AI conversations](Features/AgentActivity/README.md);

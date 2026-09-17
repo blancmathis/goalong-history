@@ -89,7 +89,7 @@
             XCTAssertTrue(dashboardModel.contains("activateFileViewerSelecting([file])"))
         }
 
-        func testSidebarKeepsThreePrimaryDestinationsAndOpensCLIFromSettings() throws {
+        func testSidebarMakesLocalAnalyticsPrimaryAndKeepsCLIInSettings() throws {
             let repositoryRoot = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -102,7 +102,7 @@
 
             XCTAssertTrue(
                 source.contains(
-                    "private let primarySections: [DashboardSection] = [.overview, .history, .settings]"
+                    "private let primarySections: [DashboardSection] = [.overview, .analytics, .history, .settings]"
                 )
             )
             XCTAssertTrue(source.contains("case .history:\n                UnifiedHistoryPage(model: model)"))

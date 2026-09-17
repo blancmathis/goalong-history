@@ -41,6 +41,7 @@
                     VStack(alignment: .leading, spacing: 24) {
                         GoalongRecordingCoverageNotice(model: model)
                         dayCard
+                        analyticsShortcut
                         LHCard { topUsageSection }
                         aiRecapCard
                     }
@@ -87,6 +88,23 @@
                     dismissButton: .default(Text("OK"))
                 )
             }
+        }
+
+        private var analyticsShortcut: some View {
+            Button { model.selectSection(.analytics) } label: {
+                HStack(spacing: 16) {
+                    Image(systemName: "chart.xyaxis.line").font(.system(size: 25)).foregroundStyle(LHTheme.accent)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Comprendre votre rythme").font(.system(size: 15, weight: .semibold))
+                        Text("Focus observé, courbes, projets et évolution sur 7 ou 28 jours.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.up.right").foregroundStyle(LHTheme.accent)
+                }.padding(20).background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(LHTheme.separator, lineWidth: 1))
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("today-open-analytics")
         }
 
         @ViewBuilder private var captureControl: some View {

@@ -54,6 +54,8 @@
             switch model.selectedSection {
             case .overview:
                 OverviewPage(model: model)
+            case .analytics:
+                GoalongAnalyticsPage(model: model)
             case .history:
                 UnifiedHistoryPage(model: model)
             case .activity:
@@ -93,7 +95,7 @@
         @ObservedObject private var updates = SoftwareUpdateManager.shared
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
-        private let primarySections: [DashboardSection] = [.overview, .history, .settings]
+        private let primarySections: [DashboardSection] = [.overview, .analytics, .history, .settings]
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
@@ -293,6 +295,7 @@
         fileprivate var simpleTitle: String {
             switch self {
             case .overview: return "Aujourd’hui"
+            case .analytics: return "Analyses"
             case .history: return "Historique"
             case .activity: return "Computer History"
             case .screenTime: return "Screen Time"
@@ -307,6 +310,8 @@
 
         fileprivate var sidebarParent: DashboardSection {
             switch self {
+            case .analytics:
+                return .analytics
             case .overview, .chatGPTRecap, .share:
                 return .overview
             case .history, .activity, .screenTime:
