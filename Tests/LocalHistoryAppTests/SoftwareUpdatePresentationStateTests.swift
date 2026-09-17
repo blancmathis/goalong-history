@@ -25,7 +25,8 @@
             XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: [:], isApp: true))
             var info: [String: Any] = [
                 "SUFeedURL": SoftwareUpdateManager.releaseFeedURL,
-                "SUPublicEDKey": Data(repeating: 1, count: 32).base64EncodedString(),
+                "SUPublicEDKey": SoftwareUpdateManager.releasePublicEDKey,
+                "SUSignedFeedFailureExpirationInterval": 0,
                 "SURequireSignedFeed": true, "SUVerifyUpdateBeforeExtraction": true,
                 "SUAllowsAutomaticUpdates": false, "SUEnableSystemProfiling": false,
             ]

@@ -156,12 +156,9 @@ bundle_has_single_app_security_policy() {
   [[ -f "$info_plist" && ! -L "$info_plist" ]] || return 1
   [[ "$(/usr/bin/plutil -extract GoalongBuildEdition raw -expect string -o - "$info_plist" 2>/dev/null)" == "unified" ]] \
     || return 1
-  for forbidden_key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks SURequireSignedFeed SUVerifyUpdateBeforeExtraction; do
-    if /usr/bin/plutil -extract "$forbidden_key" raw -o - "$info_plist" >/dev/null 2>&1; then
-      return 1
-    fi
-  done
-  [[ ! -e "$app_path/Contents/Frameworks/Sparkle.framework" ]]
+  /usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" --verify-info "$info_plist" || return 1
+  [[ -d "$app_path/Contents/Frameworks/Sparkle.framework" ]] || return 1
+  /usr/bin/codesign --verify --strict "$app_path/Contents/Frameworks/Sparkle.framework" >/dev/null 2>&1
 }
 
 validate_app_bundle() {
@@ -182,7 +179,7 @@ validate_app_bundle() {
   verify_bundle_signature "$app_path" || return 1
   audit_bundle_privacy "$app_path" || return 1
   if ! bundle_has_single_app_security_policy "$app_path"; then
-    echo "Refusing a bundle that is not the unified updater-free Goalong app: $app_path" >&2
+    echo "Refusing a bundle that is not the unified Goalong app with a valid update policy: $app_path" >&2
     return 1
   fi
 }

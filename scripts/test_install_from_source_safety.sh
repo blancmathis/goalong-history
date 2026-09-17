@@ -32,6 +32,16 @@ make_fixture_bundle() {
   /usr/bin/plutil -insert CFBundleVersion -string "$build_number" "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert GoalongBuildEdition -string unified "$app_bundle/Contents/Info.plist"
   /usr/bin/plutil -insert LocalHistoryAgentActivityDirectSourceV2 -bool true "$app_bundle/Contents/Info.plist"
+  /usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" --configure-info "$app_bundle/Contents/Info.plist"
+  local framework="$app_bundle/Contents/Frameworks/Sparkle.framework"
+  mkdir -p "$framework/Resources"
+  cp /usr/bin/true "$framework/Sparkle"
+  /usr/bin/python3 - "$framework/Resources/Info.plist" <<'PYFIXTURE'
+import plistlib,sys
+with open(sys.argv[1], 'wb') as f:
+    plistlib.dump({'CFBundleIdentifier':'org.sparkle-project.Sparkle','CFBundleExecutable':'Sparkle','CFBundlePackageType':'FMWK','CFBundleShortVersionString':'2.9.6'},f)
+PYFIXTURE
+  codesign --force --sign - --identifier org.sparkle-project.Sparkle "$framework" >/dev/null 2>&1
   /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle/Contents/MacOS/goalong" >/dev/null 2>&1
   /usr/bin/codesign --force --sign - --identifier "$identifier" "$app_bundle" >/dev/null 2>&1
 }

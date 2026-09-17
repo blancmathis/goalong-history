@@ -7,13 +7,13 @@ import re
 from pathlib import Path
 import subprocess
 import unittest
-from update_policy import SETTINGS, FEED_URL, validate_info, manifest_policy
+from update_policy import SETTINGS, FEED_URL, validate_info, manifest_policy, configure_info, release_public_key
 
 ROOT = Path(__file__).resolve().parent.parent
 
 class UpdatePolicyTests(unittest.TestCase):
     def configured(self):
-        return dict(SETTINGS, SUPublicEDKey=base64.b64encode(bytes(range(32))).decode())
+        return dict(SETTINGS, SUPublicEDKey=release_public_key())
 
     def test_configured_release_and_disabled_source_build(self):
         self.assertTrue(validate_info(self.configured(), require_configured=True))
@@ -22,6 +22,31 @@ class UpdatePolicyTests(unittest.TestCase):
             validate_info({}, require_configured=True)
         self.assertFalse(manifest_policy({})['automaticChecksDefault'])
         self.assertTrue(manifest_policy(self.configured())['automaticChecksDefault'])
+
+    def test_source_builds_include_the_committed_public_key_without_secrets(self):
+        result = configure_info({'CFBundleIdentifier': 'ai.goalong.localhistory'}, {})
+        self.assertTrue(validate_info(result, require_configured=True))
+        self.assertEqual(result['SUPublicEDKey'], release_public_key())
+        self.assertEqual(result['CFBundleIdentifier'], 'ai.goalong.localhistory')
+        self.assertEqual(result['SUSignedFeedFailureExpirationInterval'], 0)
+
+    def test_explicit_offline_build_is_rejected_when_release_is_required(self):
+        self.assertFalse(validate_info(configure_info(self.configured(), {'LOCALHISTORY_DISABLE_UPDATES': '1'})))
+        with self.assertRaises(ValueError):
+            configure_info({}, {'LOCALHISTORY_DISABLE_UPDATES': '1', 'LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED': '1'})
+        with self.assertRaises(ValueError):
+            configure_info({}, {'LOCALHISTORY_DISABLE_UPDATES': 'false'})
+
+    def test_ci_cannot_replace_the_key_silently(self):
+        source = {'CFBundleVersion': '123'}
+        with self.assertRaises(ValueError):
+            configure_info(source, {'LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY': base64.b64encode(bytes(range(32))).decode()})
+        self.assertEqual(source, {'CFBundleVersion': '123'})
+        self.assertEqual(configure_info(source, {'LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY': release_public_key()})['SUPublicEDKey'], release_public_key())
+
+    def test_native_and_build_trust_anchors_match(self):
+        source = (ROOT / 'Sources/LocalHistoryApp/SoftwareUpdateManager.swift').read_text()
+        self.assertIn('releasePublicEDKey = "' + release_public_key() + '"', source)
 
     def test_every_security_setting_is_required_and_exact(self):
         for key in self.configured():
@@ -40,6 +65,8 @@ class UpdatePolicyTests(unittest.TestCase):
             {'SUFeedURL': 'https://example.com/feed.xml'},
             {'SUFeedURL': FEED_URL + '?activity=private'},
             {'SURequireSignedFeed': False},
+            {'SUSignedFeedFailureExpirationInterval': 1728000},
+            {'SUPublicEDKey': base64.b64encode(bytes(range(32))).decode()},
             {'SUVerifyUpdateBeforeExtraction': False},
             {'SUAllowsAutomaticUpdates': True},
             {'SUEnableSystemProfiling': True},

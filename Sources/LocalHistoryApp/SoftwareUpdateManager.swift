@@ -134,7 +134,7 @@
 
             guard Self.hasValidSparkleConfiguration(in: .main) else {
                 requiresSignedBuild = true
-                statusMessage = "This source build has no release signing key. Install the Community release to enable in-app updates."
+                statusMessage = "Cette version a été compilée sans configuration de mise à jour valide. Installez une fois la version Community ou recompilez avec la clé publique incluse dans le dépôt. Aucun abonnement Apple n’est nécessaire."
                 return
             }
 
@@ -216,10 +216,10 @@
             if !hasStarted { start() }
             guard let updater = updaterController?.updater, isConfigured else {
                 let alert = NSAlert()
-                alert.messageText = "In-app updates are unavailable in this build"
+                alert.messageText = "Mises à jour indisponibles dans cette version"
                 alert.informativeText = statusMessage
-                alert.addButton(withTitle: "Open releases")
-                alert.addButton(withTitle: "Cancel")
+                alert.addButton(withTitle: "Voir les versions")
+                alert.addButton(withTitle: "Annuler")
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 if alert.runModal() == .alertFirstButtonReturn { openRollingReleasePage() }
                 return
@@ -362,6 +362,7 @@
             return error.domain == SUSparkleErrorDomain && error.code == Int(SUError.noUpdateError.rawValue)
         }
 
+        static let releasePublicEDKey = "unzWUzbW9prJnXXU9IU3WiXeutTek3kRah73Y8dh/LA="
         static let releaseFeedURL = "https://github.com/blancmathis/goalong-history/releases/download/latest-main/community-appcast.xml"
 
         private static func hasValidSparkleConfiguration(in bundle: Bundle) -> Bool {
@@ -371,7 +372,8 @@
         static func hasValidSparkleConfiguration(info: [String: Any], isApp: Bool) -> Bool {
             guard isApp, info["SUFeedURL"] as? String == releaseFeedURL,
                   let key = info["SUPublicEDKey"] as? String,
-                  Data(base64Encoded: key)?.count == 32,
+                  key == releasePublicEDKey,
+                  info["SUSignedFeedFailureExpirationInterval"] as? Int == 0,
                   info["SURequireSignedFeed"] as? Bool == true,
                   info["SUVerifyUpdateBeforeExtraction"] as? Bool == true,
                   info["SUAllowsAutomaticUpdates"] as? Bool == false,
@@ -443,7 +445,7 @@
                         alert.messageText = "Unable to check for updates"
                         alert.informativeText = self.statusMessage
                         alert.addButton(withTitle: "Try again")
-                        alert.addButton(withTitle: "Cancel")
+                        alert.addButton(withTitle: "Annuler")
                         NSApplication.shared.activate(ignoringOtherApps: true)
                         if alert.runModal() == .alertFirstButtonReturn { self.checkForUpdates() }
                     }
