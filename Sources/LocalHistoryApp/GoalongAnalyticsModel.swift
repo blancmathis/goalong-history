@@ -3,6 +3,16 @@ import Foundation
 import Combine
 import LocalHistoryCore
 
+enum GoalongAnalyticsFormatting {
+    /// A missing/zero measurement must never acquire a minute through presentation rounding.
+    static func duration(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "—" }
+        if seconds == 0 { return "0 min" }
+        if seconds < 60 { return "< 1 min" }
+        return DashboardFormatters.duration(seconds: seconds)
+    }
+}
+
 struct GoalongAnalyticsCard: Identifiable, Sendable {
     let id: String
     let day: String

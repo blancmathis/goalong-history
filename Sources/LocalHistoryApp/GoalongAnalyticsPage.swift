@@ -146,7 +146,7 @@ struct GoalongAnalyticsContent: View {
             metric("Temps actif observé", value: duration(current.activeSeconds), detail: "Activité au premier plan", symbol: "clock", tint: LHTheme.text)
             metric("Focus observé", value: duration(focusSeconds), detail: "\(focus.count) séquences ≥ \(focusMinutes) min", symbol: "scope", tint: LHTheme.accent)
             metric("Plus longue séquence", value: duration(current.days.flatMap(\.sequences).map(\.seconds).max() ?? 0), detail: "Même application et domaine", symbol: "arrow.left.and.right", tint: LHTheme.teal)
-            metric("Changements de contexte", value: "\(current.contextChanges)", detail: String(format: "%.1f par heure observée", Double(current.contextChanges) / max(1.0 / 60, current.activeSeconds / 3600)), symbol: "arrow.triangle.branch", tint: LHTheme.warning)
+            metric("Changements de contexte", value: "\(current.contextChanges)", detail: String(format: "%.1f par heure observée", locale: Locale(identifier: "fr_FR"), Double(current.contextChanges) / max(1.0 / 60, current.activeSeconds / 3600)), symbol: "arrow.triangle.branch", tint: LHTheme.warning)
     }
     private func metric(_ title: String, value: String, detail: String, symbol: String, tint: Color) -> some View {
         LHCard(padding: 17) {
@@ -213,7 +213,7 @@ struct GoalongAnalyticsContent: View {
             }
         }.chartLegend(.hidden).chartYScale(domain: 0...max(1, (current.days.map { $0.activeSeconds / 3600 }.max() ?? 1) * 1.12))
             .chartXScale(domain: chartDateRange)
-            .chartXAxis { AxisMarks(values: .stride(by: .day, count: current.days.count > 7 ? 4 : 1)) { _ in AxisValueLabel(format: .dateTime.day().month(.abbreviated)); AxisTick() } }
+            .chartXAxis { AxisMarks(values: .stride(by: .day, count: current.days.count > 7 ? 4 : 1)) { _ in AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)); AxisTick() } }
             .chartYAxis { AxisMarks(position: .leading) { value in AxisGridLine(); AxisValueLabel { if let h = value.as(Double.self) { Text("\(h, specifier: "%.0f") h") } } } }
             .frame(height: 230)
             .chartOverlay { proxy in
@@ -245,12 +245,12 @@ struct GoalongAnalyticsContent: View {
                         .accessibilityValue(duration(hour.seconds))
                     PointMark(x: .value("Heure", hour.start.addingTimeInterval(1800)), y: .value("Minutes de focus", hour.focusSeconds / 60))
                         .foregroundStyle(LHTheme.teal).symbolSize(38)
-                        .accessibilityLabel("Focus à \(hour.start.formatted(.dateTime.hour()))")
+                        .accessibilityLabel("Focus à \(hour.start.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour()))")
                         .accessibilityValue(duration(hour.focusSeconds))
                 }
             }
         }.chartXScale(domain: chartDateRange).chartYScale(domain: 0...60)
-            .chartXAxis { AxisMarks(values: .stride(by: .hour, count: 4)) { _ in AxisValueLabel(format: .dateTime.hour()); AxisTick() } }
+            .chartXAxis { AxisMarks(values: .stride(by: .hour, count: 4)) { _ in AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour()); AxisTick() } }
             .chartYAxis { AxisMarks(position: .leading, values: [0, 15, 30, 45, 60]) { value in AxisGridLine(); AxisValueLabel { if let minutes = value.as(Int.self) { Text("\(minutes) min") } } } }
             .frame(height: 220)
     }
@@ -290,7 +290,7 @@ struct GoalongAnalyticsContent: View {
                         .foregroundStyle(kindColor(segment.kind)).accessibilityLabel(kindLabel(segment.kind))
                         .accessibilityValue(duration(segment.seconds))
                 }.chartXScale(domain: chartDateRange).chartYAxis(.hidden)
-                    .chartXAxis { AxisMarks(values: .stride(by: .hour, count: 4)) { _ in AxisValueLabel(format: .dateTime.hour()) } }
+                    .chartXAxis { AxisMarks(values: .stride(by: .hour, count: 4)) { _ in AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour()) } }
                     .frame(height: 52)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), alignment: .leading)], alignment: .leading, spacing: 9) {
                     ForEach(GoalongLocalAnalytics.Kind.allCases, id: \.rawValue) { kind in
@@ -351,7 +351,7 @@ struct GoalongAnalyticsContent: View {
             VStack(alignment: .leading, spacing: 17) {
                 sectionHeader("04 / Les usages", title: "Où passe votre temps ?", subtitle: "Une application peut servir plusieurs projets. Les sites sont inclus dans le temps des navigateurs, jamais ajoutés.")
                 Picker("Répartition des usages", selection: $websites) { Text("Applications").tag(false); Text("Sites").tag(true) }
-                    .pickerStyle(.segmented).frame(width: 220)
+                    .labelsHidden().pickerStyle(.segmented).frame(width: 220)
                 if visible.isEmpty { Text("Aucun domaine disponible sur cette période. Les détails masqués restent privés.").font(.subheadline).foregroundStyle(.secondary) }
                 ForEach(visible) { item in
                     VStack(spacing: 7) {
@@ -433,7 +433,7 @@ struct GoalongAnalyticsContent: View {
     private func legend(_ text: String, color: Color) -> some View {
         HStack(spacing: 5) { Circle().fill(color).frame(width: 6, height: 6); Text(text) }
     }
-    private func duration(_ seconds: Double) -> String { DashboardFormatters.duration(seconds: seconds) }
+    private func duration(_ seconds: Double) -> String { GoalongAnalyticsFormatting.duration(seconds) }
     private func time(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) }
     private func shortDate(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)) }
     private func periodLabel(_ period: GoalongLocalAnalytics.Period) -> String {
