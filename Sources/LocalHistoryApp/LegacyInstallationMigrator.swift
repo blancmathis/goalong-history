@@ -36,12 +36,8 @@
             defaults.removeObject(forKey: "didShowLocalHistoryConsentOnboardingV5")
             defaults.set(false, forKey: "chatgptRecap.automaticEnabled")
             defaults.set(false, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
-            defaults.set(false, forKey: "launchAtLoginPreference")
-            if SMAppService.mainApp.status == .enabled
-                || SMAppService.mainApp.status == .requiresApproval
-            {
-                try? SMAppService.mainApp.unregister()
-            }
+            // Privacy onboarding may be refreshed, but an app update must not
+            // revoke the user's existing native login item or reset its preference.
             defaults.set(true, forKey: migrationKey)
         }
 

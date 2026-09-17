@@ -111,6 +111,28 @@
             }
         }
 
+        var suggestedOnboardingPreference: Bool {
+            let consent = GoalongCapabilityConsentStore.shared.document.consent(for: .launchAtLogin)
+            return BackgroundContinuityPreferences.suggestedLoginPreference(
+                storedPreference: UserDefaults.standard.object(forKey: "launchAtLoginPreference") as? Bool,
+                consentEnabled: consent.enabled,
+                consentWasRecorded: consent.changedAt != nil,
+                systemEnabled: isRegistered
+            )
+        }
+
+        @discardableResult
+        func setUserPreference(_ enabled: Bool, surface: GoalongConsentSurface) -> Bool {
+            guard GoalongCapabilityConsentStore.shared.set(.launchAtLogin, enabled: enabled, surface: surface) else {
+                message = "Your startup preference could not be saved. Please try again."
+                return false
+            }
+            // Save explicit opt-outs even when the previous consent was already off.
+            // Never re-register in refresh(), after a wake, or merely after an update.
+            UserDefaults.standard.set(enabled, forKey: "launchAtLoginPreference")
+            return setEnabled(enabled)
+        }
+
         func openLoginItemsSettings() {
             SMAppService.openSystemSettingsLoginItems()
         }

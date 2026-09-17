@@ -7,7 +7,7 @@
         @StateObject var launchAtLogin = LaunchAtLoginManager()
         @ObservedObject var consents = GoalongCapabilityConsentStore.shared
         @AppStorage("goalongOnboardingStep") var step: SetupStep = .welcome
-        @State var launchAtLoginPreference = false
+        @State var launchAtLoginPreference = true
         @State var note: String?
         @State var showingRetention = false
         @AppStorage("goalongOnboardingPrivacyReviewedV1") var privacyReviewed = false
@@ -41,7 +41,7 @@
             .onAppear {
                 if !privacyReviewed && step != .welcome { step = .privacy }
                 launchAtLogin.refresh()
-                launchAtLoginPreference = consents.isEnabled(.launchAtLogin)
+                launchAtLoginPreference = launchAtLogin.suggestedOnboardingPreference
             }
         }
 
@@ -117,11 +117,7 @@
         func finishSetup() {
             // Source activation already saved the user's choices. Do not reset their
             // recording, privacy or analysis preferences when setup is revisited.
-            guard consents.set(.launchAtLogin, enabled: launchAtLoginPreference, surface: .onboarding) else {
-                note = "Your startup preference could not be saved. Please try again."
-                return
-            }
-            guard launchAtLogin.setEnabled(launchAtLoginPreference) else {
+            guard launchAtLogin.setUserPreference(launchAtLoginPreference, surface: .onboarding) else {
                 note = launchAtLogin.message ?? "macOS could not save the startup preference. Try again or turn it off."
                 return
             }
