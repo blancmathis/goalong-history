@@ -31,7 +31,7 @@ struct GoalongAnalyticsPage: View {
                         Spacer(minLength: 12)
                         Picker("Période", selection: $period) {
                             Text("Jour").tag(1); Text("7 jours").tag(7); Text("28 jours").tag(28)
-                        }.pickerStyle(.segmented).frame(width: 218).accessibilityIdentifier("analytics-period")
+                        }.labelsHidden().pickerStyle(.segmented).frame(width: 218).accessibilityIdentifier("analytics-period")
                     }
                     if let payload = analytics.payload {
                         GoalongAnalyticsContent(payload: payload, focusMinutes: $focusMinutes,
@@ -106,7 +106,7 @@ struct GoalongAnalyticsContent: View {
             HStack {
                 Label("Calcul local · aucune transmission au site", systemImage: "internaldrive")
                 Spacer()
-                Text("Actualisé à \(payload.updatedAt.formatted(.dateTime.hour().minute()))")
+                Text("Actualisé à \(payload.updatedAt.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()))")
             }.font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }
@@ -310,13 +310,19 @@ struct GoalongAnalyticsContent: View {
                     Text("Séquence minimale").font(.system(size: 12))
                     Picker("Séquence minimale de focus", selection: $focusMinutes) {
                         Text("10 min").tag(10); Text("25 min").tag(25); Text("50 min").tag(50)
-                    }.pickerStyle(.segmented).frame(width: 225).accessibilityIdentifier("analytics-focus-threshold")
+                    }.labelsHidden().pickerStyle(.segmented).frame(width: 225).accessibilityIdentifier("analytics-focus-threshold")
                     Spacer()
                     Text(hasData ? String(format: "%.0f %% du temps actif", focusSeconds / current.activeSeconds * 100) : "—")
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.teal)
                 }
-                ProgressView(value: focusSeconds, total: max(1, current.activeSeconds)).tint(LHTheme.teal)
+                GeometryReader { geometry in
+                    Capsule().fill(LHTheme.separator)
+                    Capsule().fill(LHTheme.teal)
+                        .frame(width: geometry.size.width * min(1, focusSeconds / max(1, current.activeSeconds)))
+                }.frame(height: 6)
+                    .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Part du temps actif en séquences continues")
+                    .accessibilityValue(String(format: "%.0f pour cent", focusSeconds / max(1, current.activeSeconds) * 100))
                 if focus.isEmpty {
                     Text("Aucune séquence d’au moins \(focusMinutes) minutes observée. Essayez un seuil plus court ; changer d’outil ne signifie pas se disperser.")
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -374,7 +380,7 @@ struct GoalongAnalyticsContent: View {
                 HStack {
                     Picker("Rubrique d’analyse", selection: $module) {
                         ForEach(GoalongProfileAnalysis.modules, id: \.self) { key in Text(GoalongProfileAnalysis.labels[key] ?? key).tag(key) }
-                    }.frame(maxWidth: 300)
+                    }.labelsHidden().frame(maxWidth: 300)
                     Spacer()
                     Button("Comprendre mon travail", action: onProjects).buttonStyle(.bordered).accessibilityIdentifier("analytics-projects")
                 }
@@ -428,7 +434,7 @@ struct GoalongAnalyticsContent: View {
         HStack(spacing: 5) { Circle().fill(color).frame(width: 6, height: 6); Text(text) }
     }
     private func duration(_ seconds: Double) -> String { DashboardFormatters.duration(seconds: seconds) }
-    private func time(_ date: Date) -> String { date.formatted(.dateTime.hour().minute()) }
+    private func time(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) }
     private func shortDate(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)) }
     private func periodLabel(_ period: GoalongLocalAnalytics.Period) -> String {
         guard let first = period.days.first, let last = period.days.last else { return "Aucune période" }
