@@ -47,6 +47,10 @@ embedded update policy, and the exact pinned app/CLI identity. It signs inside-o
 `codesign` locally, uploads **only the signed application**, then requests the existing CI
 publication workflow. The private signing key is never exported.
 
+Large GitHub CLI transfers explicitly use HTTP/1.1 over HTTPS; certificate verification
+and the independent Ed25519 checks are unchanged. A failed transfer must never be
+reported as publication success.
+
 The publication run independently validates the supplied ZIP and exact current main revision,
 runs tests, generates Ed25519 signatures, and publishes an immutable archive before replacing
 the feed. The final public-feed check downloads the actual served feed and archive, verifies

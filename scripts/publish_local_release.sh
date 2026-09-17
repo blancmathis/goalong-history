@@ -1,6 +1,9 @@
 #!/bin/bash
 # Explicit owner action. Signs one tested CI archive locally; never exports signing keys.
 set -euo pipefail
+# Use the large-asset transport that completed the verified release handoff.
+# This changes only the ephemeral Go HTTP transport, never TLS authentication.
+export GODEBUG=http2client=0
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 RUN_ID=""
