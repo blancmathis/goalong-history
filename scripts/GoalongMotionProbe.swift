@@ -54,7 +54,11 @@ private struct ProbeMarks: View {
         }
         after(1.45) {
             let activeB = try self.capture("native-active-b")
-            self.expect(self.activeA != activeB, "Visible activity changes actual pixels")
+            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                self.expect(self.activeA == activeB, "System reduced motion keeps active-operation pixels fixed")
+            } else {
+                self.expect(self.activeA != activeB, "Visible activity changes actual pixels")
+            }
             self.fixture.active = false
         }
         after(2.0) { self.restA = try self.capture("native-rest-dark") }

@@ -65,3 +65,9 @@ accessibility audit, nor proof that an installed app has been updated.
 The rendering probe uses `NSApplication.run()` rather than substituting the
 XCTest event loop for AppKit. Pixel comparisons use booleans and SHA-256 reports,
 so a failure never expands a full raw bitmap into CI logs.
+
+CI runs the probe with both OS reduced-motion settings on a disposable hosted
+Mac, verifies the observed system preference in each report and restores the
+runner's original preference. The local script and application never modify
+the user's preference. A locally reduced system is tested as stationary, not
+incorrectly expected to animate.
