@@ -23,7 +23,9 @@ remain unchanged; neither is repurposed as a persistent supervisor.
 ## Reliability
 
 The privacy-onboarding migration no longer unregisters an existing native login
-item or resets its startup preference. Sparkle's controller is retained during
+item or resets its startup preference. In-place source updates also preserve the
+current app's native login item; only obsolete bundles receive cleanup.
+Sparkle's controller is retained during
 its approved update/relaunch handoff. There is no competing relaunch loop.
 
 A Foundation activity assertion disables automatic/sudden termination while

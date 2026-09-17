@@ -13,6 +13,11 @@ class BackgroundContinuityIntegrationTests(unittest.TestCase):
         self.assertNotIn('set(false, forKey: "launchAtLoginPreference")', migration)
         self.assertIn('ActivityAnalysisPreferences.richContextEnabledKey', migration)
 
+    def test_in_place_source_update_does_not_unregister_current_login_item(self):
+        installer = (ROOT / "scripts/install_from_source.sh").read_text()
+        self.assertNotIn('unregister_login_item_if_possible "$TARGET_APP"', installer)
+        self.assertIn('unregister_login_item_if_possible "/Applications/$PREVIOUS_APP_NAME.app"', installer)
+
     def test_settings_and_onboarding_use_the_same_explicit_startup_write(self):
         onboarding = (APP / 'OnboardingView.swift').read_text()
         settings = (APP / 'BackgroundContinuitySettings.swift').read_text()

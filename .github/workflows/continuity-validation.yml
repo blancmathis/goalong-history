@@ -14,19 +14,33 @@ jobs:
         run: |
           git apply --check .github/continuity.patch
           git apply .github/continuity.patch
+          git apply --check .github/continuity-followup.patch
+          git apply .github/continuity-followup.patch
           git diff --check
-      - name: Regression tests
+      - name: Installer and policy regression tests
         run: |
           set -euo pipefail
           python3 scripts/test_background_continuity.py
           python3 scripts/test_update_policy.py
-          swift test
-          bash scripts/test_permission_relaunch.sh
+          bash -n scripts/install_from_source.sh
+          bash scripts/test_install_from_source_safety.sh
+      - name: Compile and run the full native test suite
+        run: |
+          set -euo pipefail
+          if ! swift test > /tmp/goalong-swift-tests.log 2>&1; then
+            grep -E 'error:| failed |failed at|Executed .*failures' /tmp/goalong-swift-tests.log | sort -u | tail -80 || true
+            tail -60 /tmp/goalong-swift-tests.log
+            exit 1
+          fi
+          grep -A2 'BackgroundContinuityTests.*passed' /tmp/goalong-swift-tests.log || true
+          tail -25 /tmp/goalong-swift-tests.log
+      - name: Exercise real permission relaunches
+        run: bash scripts/test_permission_relaunch.sh
       - name: Save tested source on the isolated branch
         run: |
           git config user.name 'Goalong'
           git config user.email '72321235+blancmathis@users.noreply.github.com'
-          git add Sources/LocalHistoryApp
+          git add Sources/LocalHistoryApp scripts/install_from_source.sh
           git commit -m 'Validate native background continuity and update handoff on macOS'
           git push origin HEAD:fix/background-continuity-20260917
           echo "TESTED_COMMIT=$(git rev-parse HEAD)"
@@ -42,4 +56,5 @@ jobs:
           path: |
             /tmp/goalong-source.zip
             /tmp/goalong-continuity.diff
+            /tmp/goalong-swift-tests.log
           retention-days: 1

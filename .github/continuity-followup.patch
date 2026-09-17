@@ -1,0 +1,29 @@
+diff --git a/Sources/LocalHistoryApp/AppDelegate.swift b/Sources/LocalHistoryApp/AppDelegate.swift
+--- a/Sources/LocalHistoryApp/AppDelegate.swift
++++ b/Sources/LocalHistoryApp/AppDelegate.swift
+@@ -932,7 +932,10 @@
+             }
+ 
+             configureUploader(for: configManager.config)
+-            BackgroundContinuityController.shared.update(hasEnabledSources: hasEnabledBackgroundSources)
++            let backgroundSourcesEnabled = hasEnabledBackgroundSources
++            DispatchQueue.main.async {
++                BackgroundContinuityController.shared.update(hasEnabledSources: backgroundSourcesEnabled)
++            }
+             dashboardViewModel.refreshEverything()
+         }
+ 
+diff --git a/scripts/install_from_source.sh b/scripts/install_from_source.sh
+index c7fb828..46ed02f 100644
+--- a/scripts/install_from_source.sh
++++ b/scripts/install_from_source.sh
+@@ -593,7 +593,8 @@ main() {
+   preflight_existing_target
+   run_step "Rechecking macOS privacy identity" \
+     verify_replacement_preserves_privacy_identity "$TARGET_APP" "$staged_app"
+-  unregister_login_item_if_possible "$TARGET_APP" "$EXECUTABLE_NAME"
++  # Preserve the native login item during an in-place update. Unregister only
++  # obsolete bundles that are actually being removed, never the current target.
+   unregister_login_item_if_possible "/Applications/$PREVIOUS_APP_NAME.app" "$PREVIOUS_APP_NAME"
+   unregister_login_item_if_possible "$HOME/Applications/$PREVIOUS_APP_NAME.app" "$PREVIOUS_APP_NAME"
+   unregister_login_item_if_possible "/Applications/$LEGACY_APP_NAME.app" "$LEGACY_APP_NAME"
