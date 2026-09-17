@@ -34,8 +34,9 @@
                     }
                 }
             }
+            .progressViewStyle(GoalongProgressViewStyle())
             .environment(\.goalongRecordingModel, model)
-            .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay) }
+            .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay).progressViewStyle(GoalongProgressViewStyle()) }
             .background(LHTheme.pageBackground)
             .foregroundStyle(LHTheme.text)
             .tint(LHTheme.accent)
@@ -138,13 +139,9 @@
 
         private var brand: some View {
             HStack(spacing: 11) {
-                GoalongMark()
-                    .stroke(
-                        LHTheme.accent,
-                        style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round)
-                    )
-                    .frame(width: 30, height: 21)
+                GoalongActivityMark(isActive: model.isRefreshing, width: 30)
                     .frame(width: 32, height: 32)
+                    .accessibilityHidden(false)
                     .accessibilityLabel("Goalong logo")
 
                 VStack(alignment: .leading, spacing: 1) {
