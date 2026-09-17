@@ -3,24 +3,43 @@ on:
   push:
     branches: [fix/background-continuity-20260917]
 permissions:
-  contents: read
+  contents: write
 jobs:
   validate:
     runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Export working source for review
-        run: git archive --format=zip HEAD -o /tmp/goalong-source.zip
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: goalong-continuity-source
-          path: /tmp/goalong-source.zip
-          retention-days: 1
+      - name: Apply staged continuity changes
+        run: |
+          git apply --check .github/continuity.patch
+          git apply .github/continuity.patch
+          git diff --check
       - name: Regression tests
-        if: ${{ hashFiles('Tests/LocalHistoryAppTests/BackgroundContinuityTests.swift') != '' }}
         run: |
           set -euo pipefail
-          swift test
+          python3 scripts/test_background_continuity.py
           python3 scripts/test_update_policy.py
+          swift test
           bash scripts/test_permission_relaunch.sh
+      - name: Save tested source on the isolated branch
+        run: |
+          git config user.name 'Goalong'
+          git config user.email '72321235+blancmathis@users.noreply.github.com'
+          git add Sources/LocalHistoryApp
+          git commit -m 'Validate native background continuity and update handoff on macOS'
+          git push origin HEAD:fix/background-continuity-20260917
+          echo "TESTED_COMMIT=$(git rev-parse HEAD)"
+      - name: Export test evidence
+        if: always()
+        run: |
+          git diff > /tmp/goalong-continuity.diff
+          git archive --format=zip HEAD -o /tmp/goalong-source.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: goalong-continuity-source
+          path: |
+            /tmp/goalong-source.zip
+            /tmp/goalong-continuity.diff
+          retention-days: 1

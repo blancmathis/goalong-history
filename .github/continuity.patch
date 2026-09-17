@@ -1,0 +1,346 @@
+diff --git a/Sources/LocalHistoryApp/AppDelegate.swift b/Sources/LocalHistoryApp/AppDelegate.swift
+index 487554f..b182601 100644
+--- a/Sources/LocalHistoryApp/AppDelegate.swift
++++ b/Sources/LocalHistoryApp/AppDelegate.swift
+@@ -100,6 +100,16 @@
+         private var localCaptureRuntimeActive = false
+ 
+         private var runtimeStarted = false
++        private var userQuitConfirmed = false
++        private var quitAlertIsVisible = false
++        private let continuityPreferences = BackgroundContinuityPreferences()
++
++        private var hasEnabledBackgroundSources: Bool {
++            guard let capabilityConsents else { return false }
++            return [GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations].contains {
++                capabilityConsents.isEnabled($0)
++            }
++        }
+ 
+         func applicationDidFinishLaunching(_ notification: Notification) {
+             PermissionRecovery.launchWhenParentHasExited { [weak self] in self?.startApplication() }
+@@ -232,9 +242,7 @@
+                     canCheckForUpdates: {
+                         SoftwareUpdateManager.shared.canCheckForUpdates
+                     },
+-                    onQuit: {
+-                        NSApplication.shared.terminate(nil)
+-                    }
++                    onQuit: { [weak self] in self?.requestUserQuit() }
+                 )
+                 applicationMenuController.install(in: NSApplication.shared)
+ 
+@@ -255,7 +263,7 @@
+                     onTogglePause: { [weak self] in self?.toggleManualPause() },
+                     onRequestPermissions: { [weak self] in self?.requestPermissionsAndExplain() },
+                     onReloadConfig: { [weak self] in self?.reloadConfiguration() },
+-                    onQuit: { NSApplication.shared.terminate(nil) }
++                    onQuit: { [weak self] in self?.requestUserQuit() }
+                 )
+             } catch {
+                 presentFatalError(error)
+@@ -264,6 +272,7 @@
+ 
+             applyDailyRetentionCleanupIfNeeded()
+             applyCapabilityConsents(recordTransition: false)
++            BackgroundContinuityController.shared.start(hasEnabledSources: hasEnabledBackgroundSources)
+             ChatGPTRecapRuntime.shared.configure(deviceID: deviceIdentity.info.deviceID)
+             installCapabilityConsentObserver()
+             retentionPolicyObserver = NotificationCenter.default.addObserver(
+@@ -290,10 +299,45 @@
+             Task { @MainActor in presentWebsitePairingIfReady() }
+         }
+ 
++        func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
++            !continuityPreferences.keepRunning
++        }
++
++        private func requestUserQuit() {
++            guard confirmUserQuitIfNeeded() else { return }
++            userQuitConfirmed = true
++            NSApplication.shared.terminate(nil)
++        }
++
++        private func confirmUserQuitIfNeeded() -> Bool {
++            guard !userQuitConfirmed,
++                  BackgroundContinuityPreferences.shouldConfirmQuit(
++                    keepRunning: continuityPreferences.keepRunning,
++                    hasEnabledSources: hasEnabledBackgroundSources
++                  ) else { return true }
++            guard !quitAlertIsVisible else { return false }
++            quitAlertIsVisible = true
++            defer { quitAlertIsVisible = false }
++            let alert = NSAlert()
++            alert.messageText = "Quit Goalong and stop recording?"
++            alert.informativeText = "Your enabled sources will stop until you reopen Goalong or its next enabled login. Close the window instead to keep recording in the background. Activity while Goalong is closed cannot be recovered."
++            alert.addButton(withTitle: "Keep running")
++            alert.addButton(withTitle: "Quit and stop recording")
++            NSApplication.shared.activate(ignoringOtherApps: true)
++            return alert.runModal() == .alertSecondButtonReturn
++        }
++
+         func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+             let event = NSAppleEventManager.shared().currentAppleEvent
+             let senderPID = event?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
+             let senderID = senderPID.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
++            // Our menu and Command-Q use requestUserQuit(). Cover a direct Dock Quit
++            // as well, but never intercept logout/shutdown, installers, or a restart.
++            if senderID == "com.apple.dock", !PermissionRecovery.isRestarting,
++               !SoftwareUpdateManager.shared.isRelaunchingForUpdate {
++                guard confirmUserQuitIfNeeded() else { return .terminateCancel }
++                userQuitConfirmed = true
++            }
+             guard event?.eventClass == AEEventClass(kCoreEventClass), event?.eventID == AEEventID(kAEQuitApplication),
+                   PermissionRecovery.shouldAssistSettingsQuit(senderBundleID: senderID,
+                     pendingSetup: PermissionRecovery.pendingSetup() != nil, alreadyRestarting: PermissionRecovery.isRestarting) else {
+@@ -341,6 +385,10 @@
+                 minuteSealer?.stopAndSeal()
+             }
+             recorder?.close()
++            let reason = SoftwareUpdateManager.shared.isRelaunchingForUpdate ? "update"
++                : PermissionRecovery.isRestarting ? "permission_restart"
++                : userQuitConfirmed ? "user_quit" : "system_or_application_exit"
++            BackgroundContinuityController.shared.stop(reason: reason)
+ 
+             let center = NSWorkspace.shared.notificationCenter
+             for observer in workspaceObservers {
+@@ -364,14 +412,17 @@
+                 return
+             }
+             if captureState.isManuallyPaused {
++                continuityPreferences.manuallyPaused = false
+                 captureState.setManualPaused(false)
+                 captureHealthStore.setPaused(false)
++                minuteSealer.start()
+                 recorder.record(
+                     kind: .recordingResumed, message: "Recording resumed from the Goalong History interface")
+                 contextMonitor.resetAndSample()
+             } else {
+                 recorder.record(kind: .recordingPaused, message: "Recording paused from the Goalong History interface")
+                 recorder.flush()
++                continuityPreferences.manuallyPaused = true
+                 captureState.setManualPaused(true)
+                 captureHealthStore.setPaused(true)
+                 _ = minuteSealer.stopAndSeal()
+@@ -763,7 +814,10 @@
+                 lastPermissionStatus = status
+             }
+ 
+-            if status.canAttemptInputTap, !eventTapMonitor.isRunning {
++            if continuityPreferences.keepRunning && captureState.isCapturing {
++                contextMonitor.ensureRunning()
++            }
++            if status.canAttemptInputTap, !eventTapMonitor.isRunning, captureState.isCapturing {
+                 _ = eventTapMonitor.start()
+             } else if !status.canAttemptInputTap,
+                 eventTapMonitor.isRunning || eventTapMonitor.hasPendingUnexpectedRestart
+@@ -802,9 +856,12 @@
+             if localCaptureEnabled && !localCaptureRuntimeActive {
+                 let wasActive = localCaptureRuntimeActive
+                 localCaptureRuntimeActive = true
+-                captureState.setManualPaused(false)
+-                captureHealthStore.setPaused(false)
+-                minuteSealer.start()
++                // An explicit source activation may resume it; an update/restart may not.
++                if recordTransition { continuityPreferences.manuallyPaused = false }
++                let paused = continuityPreferences.manuallyPaused
++                captureState.setManualPaused(paused)
++                captureHealthStore.setPaused(paused)
++                if !paused { minuteSealer.start() }
+                 contextMonitor.start()
+                 checkPermissionsAndStartTap(forceRefresh: true)
+                 if recordTransition && !wasActive {
+@@ -875,6 +932,7 @@
+             }
+ 
+             configureUploader(for: configManager.config)
++            BackgroundContinuityController.shared.update(hasEnabledSources: hasEnabledBackgroundSources)
+             dashboardViewModel.refreshEverything()
+         }
+ 
+@@ -1061,7 +1119,7 @@
+                     if self.captureState.setSystemAwake(true) {
+                         self.recorder.record(kind: .systemWake, message: "Displays woke")
+                         self.contextMonitor.resetAndSample()
+-                        self.checkPermissionsAndStartTap()
++                        self.checkPermissionsAndStartTap(forceRefresh: true)
+                     }
+                 }
+             )
+diff --git a/Sources/LocalHistoryApp/ContextMonitor.swift b/Sources/LocalHistoryApp/ContextMonitor.swift
+index 13d7562..e067ffc 100644
+--- a/Sources/LocalHistoryApp/ContextMonitor.swift
++++ b/Sources/LocalHistoryApp/ContextMonitor.swift
+@@ -88,6 +88,17 @@
+             accessibilityEventMonitor?.start()
+         }
+ 
++        /// Recover only the existing in-process monitor. The caller must check
++        /// source consent, pause, and session state before requesting recovery.
++        func ensureRunning() {
++            if !pollingIsActive {
++                Diagnostics.write("Recovering the in-process context monitor")
++                start()
++            } else if timer?.isValid != true && !scheduledPollInProgress {
++                scheduleNextPoll()
++            }
++        }
++
+         func stop() {
+             pollingIsActive = false
+             accessibilityEventMonitor?.stop()
+diff --git a/Sources/LocalHistoryApp/LaunchAtLoginManager.swift b/Sources/LocalHistoryApp/LaunchAtLoginManager.swift
+index 192123a..dfe9da9 100644
+--- a/Sources/LocalHistoryApp/LaunchAtLoginManager.swift
++++ b/Sources/LocalHistoryApp/LaunchAtLoginManager.swift
+@@ -111,6 +111,28 @@
+             }
+         }
+ 
++        var suggestedOnboardingPreference: Bool {
++            let consent = GoalongCapabilityConsentStore.shared.document.consent(for: .launchAtLogin)
++            return BackgroundContinuityPreferences.suggestedLoginPreference(
++                storedPreference: UserDefaults.standard.object(forKey: "launchAtLoginPreference") as? Bool,
++                consentEnabled: consent.enabled,
++                consentWasRecorded: consent.changedAt != nil,
++                systemEnabled: isRegistered
++            )
++        }
++
++        @discardableResult
++        func setUserPreference(_ enabled: Bool, surface: GoalongConsentSurface) -> Bool {
++            guard GoalongCapabilityConsentStore.shared.set(.launchAtLogin, enabled: enabled, surface: surface) else {
++                message = "Your startup preference could not be saved. Please try again."
++                return false
++            }
++            // Save explicit opt-outs even when the previous consent was already off.
++            // Never re-register in refresh(), after a wake, or merely after an update.
++            UserDefaults.standard.set(enabled, forKey: "launchAtLoginPreference")
++            return setEnabled(enabled)
++        }
++
+         func openLoginItemsSettings() {
+             SMAppService.openSystemSettingsLoginItems()
+         }
+diff --git a/Sources/LocalHistoryApp/LegacyInstallationMigrator.swift b/Sources/LocalHistoryApp/LegacyInstallationMigrator.swift
+index db8665f..9f29d18 100644
+--- a/Sources/LocalHistoryApp/LegacyInstallationMigrator.swift
++++ b/Sources/LocalHistoryApp/LegacyInstallationMigrator.swift
+@@ -36,12 +36,8 @@
+             defaults.removeObject(forKey: "didShowLocalHistoryConsentOnboardingV5")
+             defaults.set(false, forKey: "chatgptRecap.automaticEnabled")
+             defaults.set(false, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
+-            defaults.set(false, forKey: "launchAtLoginPreference")
+-            if SMAppService.mainApp.status == .enabled
+-                || SMAppService.mainApp.status == .requiresApproval
+-            {
+-                try? SMAppService.mainApp.unregister()
+-            }
++            // Privacy onboarding may be refreshed, but an app update must not
++            // revoke the user's existing native login item or reset its preference.
+             defaults.set(true, forKey: migrationKey)
+         }
+ 
+diff --git a/Sources/LocalHistoryApp/OnboardingPages.swift b/Sources/LocalHistoryApp/OnboardingPages.swift
+index 0da06c2..d6e677f 100644
+--- a/Sources/LocalHistoryApp/OnboardingPages.swift
++++ b/Sources/LocalHistoryApp/OnboardingPages.swift
+@@ -153,7 +153,7 @@
+                 }
+                 Toggle("Start Goalong when I log in", isOn: $launchAtLoginPreference)
+                     .toggleStyle(.switch)
+-                Text("Optional. Your source choices stay the same on the next launch.")
++                Text("Recommended and selected by default. You can turn this off now or in Settings. Only your enabled sources run; no extra service is installed.")
+                     .font(.system(size: 12)).foregroundStyle(.secondary)
+                 if let note {
+                     Text(note).font(.system(size: 13)).foregroundStyle(LHTheme.warning)
+diff --git a/Sources/LocalHistoryApp/OnboardingView.swift b/Sources/LocalHistoryApp/OnboardingView.swift
+index 7aed611..86c9277 100644
+--- a/Sources/LocalHistoryApp/OnboardingView.swift
++++ b/Sources/LocalHistoryApp/OnboardingView.swift
+@@ -7,7 +7,7 @@
+         @StateObject var launchAtLogin = LaunchAtLoginManager()
+         @ObservedObject var consents = GoalongCapabilityConsentStore.shared
+         @AppStorage("goalongOnboardingStep") var step: SetupStep = .welcome
+-        @State var launchAtLoginPreference = false
++        @State var launchAtLoginPreference = true
+         @State var note: String?
+         @State var showingRetention = false
+         @AppStorage("goalongOnboardingPrivacyReviewedV1") var privacyReviewed = false
+@@ -41,7 +41,7 @@
+             .onAppear {
+                 if !privacyReviewed && step != .welcome { step = .privacy }
+                 launchAtLogin.refresh()
+-                launchAtLoginPreference = consents.isEnabled(.launchAtLogin)
++                launchAtLoginPreference = launchAtLogin.suggestedOnboardingPreference
+             }
+         }
+ 
+@@ -117,11 +117,7 @@
+         func finishSetup() {
+             // Source activation already saved the user's choices. Do not reset their
+             // recording, privacy or analysis preferences when setup is revisited.
+-            guard consents.set(.launchAtLogin, enabled: launchAtLoginPreference, surface: .onboarding) else {
+-                note = "Your startup preference could not be saved. Please try again."
+-                return
+-            }
+-            guard launchAtLogin.setEnabled(launchAtLoginPreference) else {
++            guard launchAtLogin.setUserPreference(launchAtLoginPreference, surface: .onboarding) else {
+                 note = launchAtLogin.message ?? "macOS could not save the startup preference. Try again or turn it off."
+                 return
+             }
+diff --git a/Sources/LocalHistoryApp/SettingsPage.swift b/Sources/LocalHistoryApp/SettingsPage.swift
+index 68376b1..60b5c95 100644
+--- a/Sources/LocalHistoryApp/SettingsPage.swift
++++ b/Sources/LocalHistoryApp/SettingsPage.swift
+@@ -86,6 +86,7 @@
+                 {
+                     ChatGPTAccountConnectionCard(runtime: recapRuntime)
+                 }
++                BackgroundContinuitySettings()
+                 softwareUpdatesCard
+                 capabilityConsentCard
+                 GoalongWebsiteConnectionCard()
+diff --git a/Sources/LocalHistoryApp/SoftwareUpdateManager.swift b/Sources/LocalHistoryApp/SoftwareUpdateManager.swift
+index 22e2292..f10df60 100644
+--- a/Sources/LocalHistoryApp/SoftwareUpdateManager.swift
++++ b/Sources/LocalHistoryApp/SoftwareUpdateManager.swift
+@@ -101,6 +101,7 @@
+ 
+         private var updaterController: SPUStandardUpdaterController?
+         private var hasStarted = false
++        private(set) var isRelaunchingForUpdate = false
+         private var lastBackgroundCheck: Date?
+         private var userAttendedCurrentUpdate = false
+ 
+@@ -173,6 +174,11 @@
+ 
+         func stop() {
+             guard hasStarted else { return }
++            // Sparkle still owns installer/XPC state during applicationWillTerminate.
++            // Keep its controller alive until process exit when it is handing off a
++            // user-approved update. Do not add a competing relauncher or unregister
++            // the native login item during replacement.
++            guard !isRelaunchingForUpdate else { return }
+             updaterController = nil
+             hasStarted = false
+             lastBackgroundCheck = nil
+@@ -376,6 +382,18 @@
+     }
+ 
+     extension SoftwareUpdateManager: SPUUpdaterDelegate {
++        func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
++            isRelaunchingForUpdate = true
++            Diagnostics.write("Sparkle is handing off a user-approved update and relaunch")
++        }
++
++        func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
++            isRelaunchingForUpdate = false
++            if !Self.isNoUpdateResult(error) {
++                Diagnostics.write("Sparkle update aborted: \((error as NSError).domain) \((error as NSError).code)")
++            }
++        }
++
+         func feedURLString(for updater: SPUUpdater) -> String? {
+             // Ignore any obsolete user-default feed override from pre-Community builds.
+             Self.releaseFeedURL
