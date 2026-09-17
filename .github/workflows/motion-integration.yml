@@ -1,0 +1,39 @@
+name: Native motion integration checks
+
+on:
+  push:
+    branches: [motion/integration-20260917]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Export tracked source for integration review
+        run: git archive --format=zip --output="$RUNNER_TEMP/goalong-history-source.zip" HEAD
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: goalong-history-source
+          path: ${{ runner.temp }}/goalong-history-source.zip
+          retention-days: 1
+      - name: Privacy boundaries
+        run: ./scripts/audit_privacy_boundaries.sh
+      - name: Build and test on macOS
+        run: swift test
+      - name: Native motion snapshots when present
+        run: |
+          if test -f Tests/LocalHistoryAppTests/GoalongMotionRenderingTests.swift; then
+            mkdir -p qa/brand-motion
+            GOALONG_MOTION_SNAPSHOTS="$PWD/qa/brand-motion" swift test --skip-build --filter GoalongMotionRenderingTests
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: goalong-native-motion-evidence
+          path: qa/brand-motion/
+          if-no-files-found: ignore
+          retention-days: 7
