@@ -22,7 +22,7 @@ final class GoalongMotionRenderingTests: XCTestCase {
             .environment(\.goalongReduceMotion, fixture.reduced)
         }
     }
-    @MainActor func testLiveActivityReleaseAndReducedMotion() throws {
+    @MainActor func testLiveActivityReleaseAndReducedMotion() async throws {
         guard let output = ProcessInfo.processInfo.environment["GOALONG_MOTION_SNAPSHOTS"] else {
             throw XCTSkip("Set GOALONG_MOTION_SNAPSHOTS for an isolated native window")
         }
@@ -40,7 +40,10 @@ final class GoalongMotionRenderingTests: XCTestCase {
         window.appearance = NSAppearance(named: .darkAqua)
         window.makeKeyAndOrderFront(nil)
         app.activate(ignoringOtherApps: true)
-        func wait(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
+        // Yield the main actor so SwiftUI .task and the display timeline can run.
+        func wait(_ seconds: Double) async throws {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        }
         func pixels(_ name: String) throws -> Data {
             let view = host.view
             view.layoutSubtreeIfNeeded(); view.displayIfNeeded()
@@ -51,24 +54,25 @@ final class GoalongMotionRenderingTests: XCTestCase {
             let pointer = try XCTUnwrap(bitmap.bitmapData)
             return Data(bytes: pointer, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
         }
-        wait(0.7)
+        try await wait(0.7)
+        print("MOTION_WINDOW visible=\(window.isVisible) occluded=\(!window.occlusionState.contains(.visible)) minimized=\(window.isMiniaturized)")
         let activeA = try pixels("native-active-a")
-        wait(0.4)
+        try await wait(0.4)
         let activeB = try pixels("native-active-b")
-        XCTAssertNotEqual(activeA, activeB, "A visible native activity must actually move")
+        XCTAssertFalse(activeA == activeB, "A visible native activity must actually move")
         fixture.active = false
-        wait(0.5)
+        try await wait(0.5)
         let restA = try pixels("native-rest-dark")
-        wait(0.4)
-        XCTAssertEqual(restA, try pixels("native-rest-dark-stable"))
+        try await wait(0.4)
+        XCTAssertTrue(restA == (try pixels("native-rest-dark-stable")), "Idle frames must remain identical")
         fixture.reduced = true; fixture.active = true
-        wait(0.4)
+        try await wait(0.4)
         let reduced = try pixels("native-reduced-dark")
-        wait(0.4)
-        XCTAssertEqual(reduced, try pixels("native-reduced-dark-stable"))
-        XCTAssertEqual(restA, reduced, "Reduced motion displays the exact resting geometry")
+        try await wait(0.4)
+        XCTAssertTrue(reduced == (try pixels("native-reduced-dark-stable")), "Reduced frames must remain identical")
+        XCTAssertTrue(restA == reduced, "Reduced motion displays the exact resting geometry")
         window.appearance = NSAppearance(named: .aqua)
-        wait(0.3)
+        try await wait(0.3)
         _ = try pixels("native-reduced-light")
 
         // A real SwiftUI ProgressView with a measured fraction must retain a bar.
@@ -84,7 +88,7 @@ final class GoalongMotionRenderingTests: XCTestCase {
         let progressHost = NSHostingController(rootView: progress)
         window.contentViewController = progressHost
         window.setContentSize(NSSize(width: 520, height: 240))
-        wait(0.3)
+        try await wait(0.3)
         let view = progressHost.view
         view.layoutSubtreeIfNeeded()
         let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))

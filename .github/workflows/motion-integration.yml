@@ -1,8 +1,9 @@
-name: Native motion integration checks
+name: Native brand motion integration
 
 on:
   push:
-    branches: [motion/integration-20260917]
+    branches: [main, motion/integration-20260917]
+  pull_request:
 
 permissions:
   contents: read
@@ -13,23 +14,20 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Export tracked source for integration review
-        run: git archive --format=zip --output="$RUNNER_TEMP/goalong-history-source.zip" HEAD
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: goalong-history-source
-          path: ${{ runner.temp }}/goalong-history-source.zip
-          retention-days: 1
+          persist-credentials: false
       - name: Privacy boundaries
         run: ./scripts/audit_privacy_boundaries.sh
       - name: Build and test on macOS
         run: swift test
-      - name: Native motion snapshots when present
+      - name: Native activity, release and reduced-motion rendering
         run: |
-          if test -f Tests/LocalHistoryAppTests/GoalongMotionRenderingTests.swift; then
-            mkdir -p qa/brand-motion
-            GOALONG_MOTION_SNAPSHOTS="$PWD/qa/brand-motion" swift test --skip-build --filter GoalongMotionRenderingTests
-          fi
+          mkdir -p qa/brand-motion
+          set +e
+          GOALONG_MOTION_SNAPSHOTS="$PWD/qa/brand-motion" swift test --skip-build --filter GoalongMotionRenderingTests >qa/brand-motion/rendering-test.log 2>&1
+          result=$?
+          tail -n 80 qa/brand-motion/rendering-test.log
+          exit "$result"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
