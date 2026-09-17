@@ -46,6 +46,9 @@ jobs:
           bash scripts/test_validate_computer_history_upgrade_safety.sh
           bash scripts/validate_computer_history_parity.sh --help >/dev/null
 
+      - name: Cryptographic update verification
+        run: bash scripts/test_update_verification.sh
+
       - name: Privacy-boundary and dependency audit
         run: ./scripts/audit_privacy_boundaries.sh
 

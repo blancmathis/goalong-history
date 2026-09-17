@@ -26,7 +26,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  signing-plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+    steps:
+      - id: plan
+        env:
+          HAS_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE_P12 != '' }}
+          HAS_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD != '' }}
+          SIGNED_STAGE: ${{ inputs.signed_stage }}
+        run: |
+          if [[ -n "$SIGNED_STAGE" ]]; then
+            echo 'mode=supplied' >> "$GITHUB_OUTPUT"
+          elif [[ "$HAS_CERTIFICATE" == true && "$HAS_PASSWORD" == true ]]; then
+            echo 'mode=hosted' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=local' >> "$GITHUB_OUTPUT"
+            echo 'Preparing a tested universal archive for local signature. No public signing downgrade or developer-key export.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+  prepare-local-signature:
+    needs: signing-plan
+    if: needs.signing-plan.outputs.mode == 'local'
+    uses: ./.github/workflows/prepare-local-signed-release.yml
+    secrets: inherit
   publish-latest-main:
+    needs: signing-plan
+    if: needs.signing-plan.outputs.mode != 'local'
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -46,7 +74,7 @@ jobs:
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
         run: |
           set -euo pipefail
-          for name in SPARKLE_PUBLIC_ED_KEY SPARKLE_PRIVATE_ED_KEY; do
+          for name in SPARKLE_PRIVATE_ED_KEY; do
             if [[ -z "${!name:-}" ]]; then
               echo "Missing required update signing value: $name" >&2
               exit 1
@@ -247,6 +275,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "$ROLLING_TAG" dist/community-appcast.xml --clobber
+          bash scripts/verify_published_update.sh dist
           git tag --force "$ROLLING_TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$ROLLING_TAG" --force
           echo "Published signed update ${{ steps.version.outputs.value }} (${{ steps.version.outputs.build }}) from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

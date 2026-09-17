@@ -35,6 +35,12 @@
             info["SUFeedURL"] = "https://example.com/appcast.xml"
             XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: info, isApp: true))
             info["SUFeedURL"] = SoftwareUpdateManager.releaseFeedURL
+            var wrongKey = info
+            wrongKey["SUPublicEDKey"] = Data(repeating: 2, count: 32).base64EncodedString()
+            XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: wrongKey, isApp: true))
+            var expiringAuthentication = info
+            expiringAuthentication["SUSignedFeedFailureExpirationInterval"] = 1_728_000
+            XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: expiringAuthentication, isApp: true))
             info["SURequireSignedFeed"] = false
             XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: info, isApp: true))
         }

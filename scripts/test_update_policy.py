@@ -91,6 +91,8 @@ class UpdatePolicyTests(unittest.TestCase):
             return tuple(map(int, output['build'].split('.')))
         build = resolve(67)
         self.assertGreater(build, (20260912, 4))
+        self.assertGreater(build, (20260916, 84704))
+        self.assertGreater(build, (20991231, 235959))
         self.assertGreater(build, (5000, 0, 99))
         self.assertGreater(resolve(67, 2), build)
         self.assertGreater(resolve(68), resolve(67, 2))

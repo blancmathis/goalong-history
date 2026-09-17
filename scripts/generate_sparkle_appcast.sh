@@ -39,6 +39,12 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 ARCHIVE_NAME="Goalong-History-macOS-universal.zip"
 cp "$ARCHIVE" "$WORK_DIR/$ARCHIVE_NAME"
+cat > "$WORK_DIR/Goalong-History-macOS-universal.html" <<'NOTES'
+<h2>Goalong History — analyses et mises à jour</h2>
+<p>Analyses locales : focus observé, courbes horaires, vues sur 7 et 28 jours, projets et évolution.</p>
+<p>Les mises à jour sont vérifiées par signature Ed25519, sans abonnement Apple. Cette version conserve la signature de distribution existante et ne remplace aucun historique ni réglage de partage.</p>
+<p>La première installation d’une version sans updater doit être faite une fois manuellement. Une ancienne signature différente peut demander une nouvelle validation des autorisations macOS. La mise à jour ne doit jamais être présentée comme une nouvelle autorisation de collecte.</p>
+NOTES
 DOWNLOAD_PREFIX="$SPARKLE_RELEASE_DOWNLOAD_ROOT/$RELEASE_TAG/"
 
 # generate_appcast signs the archive enclosure with EdDSA. Because the embedded app
@@ -47,6 +53,7 @@ printf '%s' "$PRIVATE_KEY" | "$TOOLS_DIR/generate_appcast" \
   --ed-key-file - \
   --download-url-prefix "$DOWNLOAD_PREFIX" \
   --maximum-deltas 0 \
+  --embed-release-notes \
   -o "$WORK_DIR/appcast.xml" \
   "$WORK_DIR"
 

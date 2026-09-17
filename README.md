@@ -179,7 +179,10 @@ Community app checks a fixed, signed release feed at launch and hourly (configur
 Click **Update available** in the sidebar or **Check for Updates…** to use Sparkle's native download,
 installation and relaunch flow. Both the feed and ZIP are authenticated with Ed25519; installation
 always requires approval. Builds without an updater need one initial Community reinstall. Source
-builds without a release public key do not contact the feed. Release inventories and GitHub
+builds now include the committed public verification key by default. Explicit offline
+builds (`LOCALHISTORY_DISABLE_UPDATES=1`) do not contact the feed. No private key
+or paid Apple membership is required to build the updater. See
+[`docs/FREE-UPDATES.md`](docs/FREE-UPDATES.md) for the key-preserving local publication workflow. Release inventories and GitHub
 provenance remain published for independent inspection.
 Because the free public build has no stable Apple-issued signing identity, macOS can ask for Goalong
 permissions again after a replacement. Goalong preserves the history and settings directory.

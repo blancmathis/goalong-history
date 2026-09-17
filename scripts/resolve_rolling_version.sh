@@ -96,7 +96,8 @@ else
   NEXT_VERSION="$AUTOMATIC_VERSION"
 fi
 
-# Migration high-water mark: public 20260912.4 installs must compare older.
+# Migration epoch: all legacy date-numbered source installs (including 20260916) compare older.
+# This is a version namespace, not the build date; it must never decrease.
 # GitHub run IDs are shared across workflows, unlike run_number. Partition the ID into
 # bounded numeric components; reserve two digits for retries. Tagged installers and
 # rolling releases therefore share the same monotonic update version space.
@@ -106,7 +107,7 @@ if [[ ! "$PUBLISH_RUN_ID" =~ ^[1-9][0-9]*$ || ! "$ATTEMPT" =~ ^[1-9][0-9]?$ ]]; 
   echo "A positive numeric run ID and attempt in 1...99 are required." >&2
   exit 1
 fi
-BUILD_NUMBER="20260913.$((PUBLISH_RUN_ID / 10000)).$(((PUBLISH_RUN_ID % 10000) * 100 + ATTEMPT))"
+BUILD_NUMBER="30000000.$((PUBLISH_RUN_ID / 10000)).$(((PUBLISH_RUN_ID % 10000) * 100 + ATTEMPT))"
 
 printf 'value=%s\n' "$NEXT_VERSION"
 printf 'build=%s\n' "$BUILD_NUMBER"
