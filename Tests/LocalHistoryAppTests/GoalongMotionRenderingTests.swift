@@ -19,7 +19,7 @@ final class GoalongMotionRenderingTests: XCTestCase {
             }
             .frame(width: 380, height: 180)
             .background(LHTheme.cardBackground)
-            .environment(\.accessibilityReduceMotion, fixture.reduced)
+            .environment(\.goalongReduceMotion, fixture.reduced)
         }
     }
     @MainActor func testLiveActivityReleaseAndReducedMotion() throws {
@@ -80,7 +80,7 @@ final class GoalongMotionRenderingTests: XCTestCase {
         .padding(28).frame(width: 520, height: 240)
         .foregroundStyle(LHTheme.text).background(LHTheme.pageBackground)
         .progressViewStyle(GoalongProgressViewStyle())
-        .environment(\.accessibilityReduceMotion, true)
+        .environment(\.goalongReduceMotion, true)
         let progressHost = NSHostingController(rootView: progress)
         window.contentViewController = progressHost
         window.setContentSize(NSSize(width: 520, height: 240))

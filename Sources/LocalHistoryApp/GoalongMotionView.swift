@@ -2,6 +2,18 @@
 import AppKit
 import SwiftUI
 
+/// Additive local preference, also used by isolated rendering tests. A false value
+/// never overrides the read-only system accessibilityReduceMotion preference.
+private struct GoalongReducedMotionKey: EnvironmentKey {
+    static let defaultValue = false
+}
+extension EnvironmentValues {
+    var goalongReduceMotion: Bool {
+        get { self[GoalongReducedMotionKey.self] }
+        set { self[GoalongReducedMotionKey.self] = newValue }
+    }
+}
+
 /// Exact rest mark and attached G arm. Native vector paths, not an embedded web view.
 struct GoalongPassageShape: Shape {
     var q = 0.0
@@ -28,7 +40,9 @@ struct GoalongPassageShape: Shape {
 struct GoalongActivityMark: View {
     let isActive: Bool
     var width: CGFloat = 32
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.goalongReduceMotion) private var localReduceMotion
+    private var reduceMotion: Bool { systemReduceMotion || localReduceMotion }
     @State private var motion = GoalongMotion.State()
     @State private var mounted = false
     @State private var windowVisible = false
