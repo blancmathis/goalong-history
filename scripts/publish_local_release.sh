@@ -28,10 +28,9 @@ umask 077
 gh run view "$RUN_ID" --repo "$REPO" --json conclusion,headSha,headBranch,workflowName > "$WORK/run.json"
 python3 - "$WORK/run.json" "$REVISION" <<'PY'
 import json,sys
-r=json.load(open(sys.argv[1]))
-assert r['conclusion']=='success', 'The entire input workflow must succeed first'
-assert r['headSha']==sys.argv[2] and r['headBranch']=='main', 'The signing input must match current main'
-assert r['workflowName'] in ['Continuous Community macOS release','Prepare universal archive for local signing'], 'Unexpected workflow'
+sys.path.insert(0, 'scripts')
+from release_publication_policy import validate_staging_run
+validate_staging_run(json.load(open(sys.argv[1])), sys.argv[2])
 PY
 gh run download "$RUN_ID" --repo "$REPO" --name "Goalong-Unsigned-Universal-$REVISION" --dir "$WORK/input"
 python3 - "$WORK/input" <<'PY'

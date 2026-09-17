@@ -19,6 +19,7 @@ jobs:
       - name: Test update policy and installers
         run: |
           python3 scripts/test_update_policy.py
+          python3 scripts/test_release_publication_policy.py
           bash scripts/test_public_install_safety.sh
           bash scripts/test_install_from_source_safety.sh
           bash scripts/test_update_verification.sh

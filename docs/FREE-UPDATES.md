@@ -35,11 +35,15 @@ universal **unpublished signing input**, instead of failing on a missing Apple c
 silently switching users to an ad-hoc identity. No new LaunchAgent, runner or persistent
 process is installed on the owner's Mac.
 
-Once that main run succeeds, the owner signs and authorizes publication with:
+Once that run succeeds and its exact commit is on `main`, the owner signs and authorizes publication with:
 
 ```sh
 ./scripts/publish_local_release.sh --run-id RUN_ID --publish
 ```
+
+A release-candidate build can be promoted without downloading a second identical
+CI build: its exact commit must already be current `main`, and the official signing-input
+workflow must have succeeded. A branch name alone never authorizes publication.
 
 Without `--publish`, the script only prepares and verifies the locally signed bundle. With
 it, the script checks the run, source revision, archive checksum, path safety, architecture,
