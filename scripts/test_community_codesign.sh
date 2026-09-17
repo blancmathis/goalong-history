@@ -35,7 +35,9 @@ subjectKeyIdentifier=hash
 EOF
 openssl req -new -newkey rsa:3072 -nodes -x509 -sha256 -days 2 -config "$WORK/codesign.cnf" -keyout "$WORK/key.pem" -out "$WORK/cert.pem" >/dev/null 2>&1
 export PASSWORD
-openssl pkcs12 -export -legacy -inkey "$WORK/key.pem" -in "$WORK/cert.pem" -out "$WORK/probe.p12" -passout env:PASSWORD
+PKCS12_FLAGS=()
+if [[ "$(openssl version)" == OpenSSL\ 3* ]]; then PKCS12_FLAGS=(-legacy); fi
+openssl pkcs12 -export "${PKCS12_FLAGS[@]}" -inkey "$WORK/key.pem" -in "$WORK/cert.pem" -out "$WORK/probe.p12" -passout env:PASSWORD
 security create-keychain -p "$PASSWORD" "$KEYCHAIN"
 security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
 security import "$WORK/probe.p12" -f pkcs12 -k "$KEYCHAIN" -P "$PASSWORD" -T /usr/bin/codesign >/dev/null
