@@ -1,0 +1,26 @@
+name: Background continuity validation
+on:
+  push:
+    branches: [fix/background-continuity-20260917]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Export working source for review
+        run: git archive --format=zip HEAD -o /tmp/goalong-source.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: goalong-continuity-source
+          path: /tmp/goalong-source.zip
+          retention-days: 1
+      - name: Regression tests
+        if: ${{ hashFiles('Tests/LocalHistoryAppTests/BackgroundContinuityTests.swift') != '' }}
+        run: |
+          set -euo pipefail
+          swift test
+          python3 scripts/test_update_policy.py
+          bash scripts/test_permission_relaunch.sh
