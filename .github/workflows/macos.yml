@@ -66,6 +66,22 @@ jobs:
             fi
           fi
 
+      - name: Render local analytics with synthetic data
+        run: |
+          mkdir -p qa/local-analytics
+          GOALONG_ANALYTICS_SNAPSHOTS="$PWD/qa/local-analytics" \
+            swift test --skip-build --filter GoalongAnalyticsRenderingTests \
+            2>&1 | tee qa/local-analytics/native-render.log
+
+      - name: Upload local analytics evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Goalong-Analytics-UI-${{ github.sha }}
+          path: qa/local-analytics/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Exercise real permission relaunches
         run: bash scripts/test_permission_relaunch.sh
 
