@@ -461,7 +461,7 @@ note "A clean, private setup for this Mac. No sudo required."
 
 install_source() {
   headline "Developer installation"
-  warn "This creates a local development build without production update credentials."
+  warn "This creates a local development build with the public update verification key; no private update key is included."
   if [[ ! -x "$ROOT_DIR/scripts/install_from_source.sh" ]]; then
     fail "This folder does not contain the source installer."
     return 1
@@ -638,7 +638,7 @@ done
 status "Installed in $TARGET_DIR"
 status "Legacy background service cleaned up"
 status "Your existing history, settings, and bundle ID were preserved"
-status "Single updater-free app policy verified"
+status "Single-app signed-update policy verified"
 warn "This free build is not Apple-notarized; macOS may require Privacy & Security → Open Anyway"
 warn "Never disable Gatekeeper globally"
 

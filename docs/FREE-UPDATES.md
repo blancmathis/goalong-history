@@ -52,6 +52,9 @@ runs tests, generates Ed25519 signatures, and publishes an immutable archive bef
 the feed. The final public-feed check downloads the actual served feed and archive, verifies
 both signatures using only the shipped public key, and compares them with the tested build.
 An uploaded staging archive or a queued workflow is **not** a published update.
+The signing-input ZIP may be repackaged by CI. `verify_published_update.sh` expects
+CI’s final packaged distribution, not the intermediate locally signed ZIP; its
+exact archive checksum comparison must not be used across different ZIP packaging.
 
 ## Existing installations
 

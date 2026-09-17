@@ -89,4 +89,5 @@ gh release create "$STAGE" --repo "$REPO" --target "$REVISION" --prerelease --la
   --notes "Locally signed input for $REVISION. Awaiting independent CI checks and Ed25519 release signatures. No private signing key was exported." "$ZIP"
 gh workflow run continuous-release.yml --repo "$REPO" --ref main -f "signed_stage=$STAGE" -f "signed_sha256=$SHA256"
 echo "Publication requested for $REVISION; wait for CI and verify the public feed before claiming delivery."
-echo "After success: bash scripts/verify_published_update.sh '$OUT'"
+echo "CI verifies the final published feed and repackaged archive with the committed public key."
+echo "The local ZIP is a signing input; it is not a byte-for-byte reference for CI packaging."
