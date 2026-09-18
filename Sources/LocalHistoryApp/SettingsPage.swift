@@ -135,6 +135,7 @@ import AppKit
         case .storage:
             GoalongStorageSettings(model: model)
         case .advanced:
+            GoalongDeveloperSettings()
             GoalongSettingsGroup(title: "Outils") {
                 GoalongSettingsLink(title: "Outils de partage et analyses", value: "", symbol: "square.and.arrow.up") { pane = .tools }
                 GoalongSettingsLink(title: "Terminal et agents", value: "CLI", symbol: "terminal") { model.selectSection(.cli) }
@@ -219,7 +220,7 @@ enum SettingsPane: Hashable {
         case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"
         case .storage: return "supprimer effacer historique conserver durée espace mémoire"
-        case .advanced: return "terminal cli configuration json diagnostic diagnostics version mise à jour démarrage"
+        case .advanced: return "terminal cli configuration json diagnostic diagnostics version mise à jour démarrage développeur developer mocks fictives aperçu"
         case .tools: return "export fichier signé signature preuve santé récapitulatif"
         default: return ""
         }

@@ -13,6 +13,28 @@ enum GoalongAnalyticsFormatting {
     }
 }
 
+/// Seconds and minutes remain legible for a sparse first day instead of disappearing
+/// against a fixed 60-minute / one-hour vertical axis.
+struct GoalongAnalyticsChartScale {
+    let unitSeconds: Double
+    let unit: String
+    let upperBound: Double
+
+    init(maximumSeconds: Double, hourly: Bool = false) {
+        let maximum = maximumSeconds.isFinite ? max(0, maximumSeconds) : 0
+        if maximum < 60 { unitSeconds = 1; unit = "s" }
+        else if hourly || maximum < 3600 { unitSeconds = 60; unit = "min" }
+        else { unitSeconds = 3600; unit = "h" }
+        let raw = maximum / unitSeconds
+        let step: Double = unitSeconds == 3600 ? 0.5 : (raw > 30 ? 10 : (raw > 10 ? 5 : 1))
+        let bound = max(step, ceil(raw * 1.12 / step) * step)
+        upperBound = hourly && unitSeconds == 60 ? min(60, bound) : bound
+    }
+    func label(_ value: Double) -> String {
+        value.formatted(.number.locale(Locale(identifier: "fr_FR")).precision(.fractionLength(0...1))) + " " + unit
+    }
+}
+
 struct GoalongAnalyticsCard: Identifiable, Sendable {
     let id: String
     let day: String
@@ -28,6 +50,13 @@ struct GoalongAnalyticsPayload: Sendable {
     let cards: [GoalongAnalyticsCard]
     let archiveNotice: String?
     let updatedAt: Date
+    let isPreview: Bool
+
+    init(current: GoalongLocalAnalytics.Period, previous: GoalongLocalAnalytics.Period,
+         cards: [GoalongAnalyticsCard], archiveNotice: String?, updatedAt: Date, isPreview: Bool = false) {
+        self.current = current; self.previous = previous; self.cards = cards
+        self.archiveNotice = archiveNotice; self.updatedAt = updatedAt; self.isPreview = isPreview
+    }
 }
 
 /// Lives off the main actor. Stores only bounded derived measurements, never source events.
@@ -36,7 +65,9 @@ private actor GoalongAnalyticsReader {
     private let root: URL
     init(root: URL) { self.root = root }
 
-    func read(ending day: Date, count: Int, force: Bool) throws -> GoalongAnalyticsPayload {
+    func read(ending day: Date, count: Int, force: Bool, preview: Bool) throws -> GoalongAnalyticsPayload {
+        try Task.checkCancellation()
+        if preview { return GoalongAnalyticsPreview.make(ending: day, count: count) }
         let calendar = Calendar.current, now = Date()
         let count = [1, 7, 28].contains(count) ? count : 7
         let last = calendar.startOfDay(for: day)
@@ -131,11 +162,11 @@ private actor GoalongAnalyticsReader {
     private let reader: GoalongAnalyticsReader
     private var operation = UUID()
     init(root: URL = AppPaths.applicationSupportDirectory) { reader = GoalongAnalyticsReader(root: root) }
-    func load(day: Date, count: Int, force: Bool = false) async {
+    func load(day: Date, count: Int, force: Bool = false, preview: Bool = false) async {
         let id = UUID(); operation = id; busy = true; error = nil
         payload = nil // A previous day's metrics must never appear under a new date.
         do {
-            let value = try await reader.read(ending: day, count: count, force: force)
+            let value = try await reader.read(ending: day, count: count, force: force, preview: preview)
             try Task.checkCancellation()
             guard operation == id else { return }
             payload = value; busy = false

@@ -9,6 +9,7 @@
         let onSelectDay: (Date) -> Void
         let onShare: () -> Void
         let onRefresh: () -> Void
+        var sharingEnabled = true
 
         var body: some View {
             ViewThatFits(in: .horizontal) {
@@ -48,6 +49,8 @@
                 Button(action: onShare) {
                     Label("Envoyer à Goalong", systemImage: "square.and.arrow.up")
                 }
+                .disabled(!sharingEnabled)
+                .help(sharingEnabled ? "Envoyer à Goalong" : "Les données fictives ne peuvent pas être envoyées")
                 Button(action: onRefresh) {
                     Group {
                         if isRefreshing { ProgressView().controlSize(.small) }

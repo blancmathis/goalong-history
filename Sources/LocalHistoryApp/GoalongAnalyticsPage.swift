@@ -12,20 +12,35 @@ struct GoalongAnalyticsPage: View {
     @State private var period = 7
     @State private var focusMinutes = 25
     @State private var revision = 0
-    private var requestID: String { "\(model.selectedDay.timeIntervalSince1970)|\(period)|\(revision)|\(model.dashboardIsVisible)" }
+    @AppStorage(GoalongDeveloperPreferences.enabledKey) private var developerMode = false
+    @State private var showingPreview = false // Never persisted or enabled automatically.
+    @State private var previewDay: Date?
+    private var previewActive: Bool { developerMode && showingPreview }
+    private var selectedDay: Date { previewActive ? (previewDay ?? model.selectedDay) : model.selectedDay }
+    private var requestID: String { "\(selectedDay.timeIntervalSince1970)|\(period)|\(revision)|\(model.dashboardIsVisible)|\(previewActive)" }
+
+    private func selectDay(_ date: Date) {
+        if previewActive { previewDay = date }
+        else { model.selectDay(date) }
+    }
+    private func togglePreview() {
+        if !showingPreview { previewDay = model.selectedDay }
+        showingPreview.toggle()
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            DayNavigationHeader(title: "Analyses", day: model.selectedDay,
-                isRefreshing: analytics.busy, onSelectDay: model.selectDay,
-                onShare: { model.showingWebsiteShare = true }, onRefresh: { revision += 1 })
+            DayNavigationHeader(title: previewActive ? "Analyses · aperçu" : "Analyses", day: selectedDay,
+                isRefreshing: analytics.busy, onSelectDay: selectDay,
+                onShare: { if !previewActive { model.showingWebsiteShare = true } },
+                onRefresh: { revision += 1 }, sharingEnabled: !previewActive)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Votre temps, mis en perspective.").font(.system(size: 24, weight: .semibold)).tracking(-0.5)
-                            Label("Sur ce Mac · privé · sans analyse IA nécessaire", systemImage: "lock.shield")
+                            Label(previewActive ? "Simulation locale · aucune donnée personnelle" : "Sur ce Mac · privé · sans analyse IA nécessaire", systemImage: "lock.shield")
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 12)
@@ -33,12 +48,27 @@ struct GoalongAnalyticsPage: View {
                             Text("Jour").tag(1); Text("7 jours").tag(7); Text("28 jours").tag(28)
                         }.labelsHidden().pickerStyle(.segmented).frame(width: 218).accessibilityIdentifier("analytics-period")
                     }
-                    if let payload = analytics.payload {
+                    if developerMode {
+                        HStack {
+                            Button(action: togglePreview) {
+                                Label(previewActive ? "Revenir à mes données" : "Aperçu avec données fictives",
+                                    systemImage: previewActive ? "arrow.uturn.backward" : "testtube.2")
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("analytics-preview-toggle")
+                            .help("Explorer un exemple complet sans modifier votre historique")
+                            Spacer()
+                            Text("Mode développeur").font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                    }
+                    if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
+                    // Never show old real metrics under demo dates, or demo metrics after disabling the mode.
+                    if let payload = analytics.payload, payload.isPreview == previewActive {
                         GoalongAnalyticsContent(payload: payload, focusMinutes: $focusMinutes,
-                            onDay: { date in model.selectDay(date); period = 1 },
+                            onDay: { date in selectDay(date); period = 1 },
                             onHistory: { model.selectSection(.history) },
                             onProjects: { studio.show(localOnly: true, initialDay: model.selectedDay, onSend: { _ in }) })
-                    } else if analytics.busy {
+                    } else if analytics.busy || analytics.payload != nil {
                         GoalongPageLoadingView(title: "Lecture des observations locales…",
                             message: "Les graphiques sont calculés jour par jour, sans envoyer votre historique.")
                             .accessibilityIdentifier("analytics-primary-loading-motion")
@@ -55,10 +85,31 @@ struct GoalongAnalyticsPage: View {
         }.background(LHTheme.pageBackground)
         .task(id: requestID) {
             guard model.dashboardIsVisible else { return }
-            await analytics.load(day: model.selectedDay, count: period, force: revision > 0)
+            await analytics.load(day: selectedDay, count: period, force: revision > 0, preview: previewActive)
         }
+        .onChange(of: developerMode) { enabled in
+            if !enabled { showingPreview = false; previewDay = nil }
+        }
+        .onDisappear { showingPreview = false; previewDay = nil }
         .onReceive(NotificationCenter.default.publisher(for: .goalongProfileAnalysisDidSave)) { _ in revision += 1 }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in revision += 1 }
+    }
+}
+
+struct GoalongAnalyticsPreviewBanner: View {
+    var onExit: () -> Void = {}
+    var body: some View {
+        LHCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 9) {
+                Label("Aperçu développeur · données fictives", systemImage: "testtube.2")
+                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(LHTheme.warning)
+                Text("Explorez une vue complète : graphiques, focus, applications, sites et projets. Rien n’est ajouté à votre historique ; aucun envoi ni aucune analyse IA n’est possible depuis cet aperçu.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Quitter l’aperçu", action: onExit).buttonStyle(.bordered).controlSize(.small)
+                    .accessibilityIdentifier("analytics-preview-exit")
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.accessibilityIdentifier("analytics-preview-banner")
     }
 }
 
@@ -81,7 +132,12 @@ struct GoalongAnalyticsContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             periodCaption
-            if hasData {
+            if current.observedSeconds > 0 {
+                if current.activeSeconds > 0 && current.activeSeconds < 600 {
+                    Label("Vos premières observations sont déjà visibles. Les graphiques se complètent au fil des observations, sans durée minimale requise.", systemImage: "sparkle")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 metrics
                 evolutionCard
                 if isDay, let day = current.days.first { dayRibbon(day) }
@@ -91,17 +147,26 @@ struct GoalongAnalyticsContent: View {
                 LHCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Image(systemName: "chart.xyaxis.line").font(.system(size: 32)).foregroundStyle(LHTheme.accent)
-                        Text("Pas encore d’activité mesurable sur cette période.").font(.system(size: 20, weight: .semibold))
-                        Text("Un jour sans enregistrement n’est pas un jour à zéro. Choisissez une autre date ou consultez l’historique pour vérifier les sources disponibles.")
+                        Text(current.incompleteDays > 0 ? "Certaines données n’ont pas pu être lues." : (current.eventCount > 0 ? "Les premières traces sont bien reçues." : "Pas encore d’enregistrement sur cette période."))
+                            .font(.system(size: 20, weight: .semibold))
+                        if current.eventCount > 0 {
+                            Text("\(current.eventCount) observations reçues").font(.system(size: 15, weight: .medium)).monospacedDigit()
+                                .accessibilityIdentifier("analytics-first-observations")
+                        }
+                        Text(current.incompleteDays > 0
+                            ? "La lecture est incomplète, ce qui ne signifie pas que vous n’avez aucune activité. Actualisez pour réessayer ou consultez les sources dans l’historique."
+                            : current.eventCount > 0
+                            ? "Ces traces ne suffisent pas encore à mesurer une durée d’activité. Dès que deux observations d’activité sont assez proches, même quelques secondes apparaissent ici. Les arrêts et les périodes non observées ne sont pas comptés."
+                            : "Un jour sans enregistrement n’est pas un jour à zéro. Choisissez une autre date ou consultez l’historique pour vérifier les sources disponibles.")
                             .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        Button("Consulter l’historique", action: onHistory).buttonStyle(.bordered)
+                        Button("Consulter l’historique", action: onHistory).buttonStyle(.bordered).disabled(payload.isPreview)
                     }.frame(maxWidth: .infinity, minHeight: 200, alignment: .leading)
                 }
             }
             projectsCard
             methodology
             HStack {
-                Label("Calcul local · aucune transmission au site", systemImage: "internaldrive")
+                Label(payload.isPreview ? "Données fictives · ni enregistrées ni envoyées" : "Calcul local · aucune transmission au site", systemImage: "internaldrive")
                 Spacer()
                 Text("Actualisé à \(payload.updatedAt.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()))")
             }.font(.system(size: 11)).foregroundStyle(.secondary)
@@ -123,7 +188,10 @@ struct GoalongAnalyticsContent: View {
                     .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if current.days.contains(where: { Calendar.current.isDateInToday($0.date) }) {
+            if payload.isPreview {
+                Text("Journées complètes simulées, y compris pour aujourd’hui. Ces chiffres ne représentent pas votre activité.")
+                    .font(.system(size: 11)).foregroundStyle(LHTheme.warning)
+            } else if current.days.contains(where: { Calendar.current.isDateInToday($0.date) }) {
                 Text("Journée en cours : seules les observations jusqu’à maintenant sont incluses.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
@@ -188,30 +256,31 @@ struct GoalongAnalyticsContent: View {
         }
     }
     private var dailyChart: some View {
-        Chart {
+        let scale = GoalongAnalyticsChartScale(maximumSeconds: current.days.map(\.activeSeconds).max() ?? 0)
+        return Chart {
             ForEach(current.days) { day in
                 if day.activeSeconds > 0 {
                     ForEach([GoalongLocalAnalytics.Kind.work, .other, .unclassified], id: \.rawValue) { kind in
-                        BarMark(x: .value("Jour", day.date, unit: .day), y: .value("Heures", day.seconds(kind) / 3600))
+                        BarMark(x: .value("Jour", day.date, unit: .day), y: .value("Durée", day.seconds(kind) / scale.unitSeconds))
                             .foregroundStyle(kindColor(kind)).cornerRadius(2)
                             .accessibilityLabel("\(shortDate(day.date)), \(kindLabel(kind))")
                             .accessibilityValue(duration(day.seconds(kind)))
                     }
                     LineMark(x: .value("Jour", Calendar.current.date(byAdding: .hour, value: 12, to: day.date) ?? day.date),
-                        y: .value("Focus", day.focusSeconds(minimumMinutes: focusMinutes) / 3600),
+                        y: .value("Focus", day.focusSeconds(minimumMinutes: focusMinutes) / scale.unitSeconds),
                         series: .value("Continuité", seriesID(day)))
                         .foregroundStyle(LHTheme.teal).lineStyle(StrokeStyle(lineWidth: 2))
                     PointMark(x: .value("Jour", Calendar.current.date(byAdding: .hour, value: 12, to: day.date) ?? day.date),
-                        y: .value("Focus", day.focusSeconds(minimumMinutes: focusMinutes) / 3600))
+                        y: .value("Focus", day.focusSeconds(minimumMinutes: focusMinutes) / scale.unitSeconds))
                         .foregroundStyle(LHTheme.teal).symbolSize(26)
                         .accessibilityLabel("\(shortDate(day.date)), focus observé")
                         .accessibilityValue(duration(day.focusSeconds(minimumMinutes: focusMinutes)))
                 }
             }
-        }.chartLegend(.hidden).chartYScale(domain: 0...max(1, (current.days.map { $0.activeSeconds / 3600 }.max() ?? 1) * 1.12))
+        }.chartLegend(.hidden).chartYScale(domain: 0...scale.upperBound)
             .chartXScale(domain: chartDateRange)
             .chartXAxis { AxisMarks(values: .stride(by: .day, count: current.days.count > 7 ? 4 : 1)) { _ in AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)); AxisTick() } }
-            .chartYAxis { AxisMarks(position: .leading) { value in AxisGridLine(); AxisValueLabel { if let h = value.as(Double.self) { Text("\(h, specifier: "%.0f") h") } } } }
+            .chartYAxis { AxisMarks(position: .leading) { value in AxisGridLine(); AxisValueLabel { if let duration = value.as(Double.self) { Text(scale.label(duration)) } } } }
             .frame(height: 230)
             .chartOverlay { proxy in
                 GeometryReader { geometry in
@@ -234,21 +303,22 @@ struct GoalongAnalyticsContent: View {
     }
     private func hourlyChart(_ day: GoalongLocalAnalytics.Day) -> some View {
         let hours = day.hours(minimumMinutes: focusMinutes)
+        let scale = GoalongAnalyticsChartScale(maximumSeconds: hours.map(\.seconds).max() ?? 0, hourly: true)
         return Chart {
             ForEach(hours) { hour in
                 if hour.seconds > 0 {
-                    BarMark(x: .value("Heure", hour.start, unit: .hour), y: .value("Minutes actives", hour.seconds / 60))
+                    BarMark(x: .value("Heure", hour.start, unit: .hour), y: .value("Activité", hour.seconds / scale.unitSeconds))
                         .foregroundStyle(LHTheme.accent.opacity(0.75)).cornerRadius(3)
                         .accessibilityValue(duration(hour.seconds))
-                    PointMark(x: .value("Heure", hour.start.addingTimeInterval(1800)), y: .value("Minutes de focus", hour.focusSeconds / 60))
+                    PointMark(x: .value("Heure", hour.start.addingTimeInterval(1800)), y: .value("Focus", hour.focusSeconds / scale.unitSeconds))
                         .foregroundStyle(LHTheme.teal).symbolSize(38)
                         .accessibilityLabel("Focus à \(hour.start.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour()))")
                         .accessibilityValue(duration(hour.focusSeconds))
                 }
             }
-        }.chartXScale(domain: chartDateRange).chartYScale(domain: 0...60)
+        }.chartXScale(domain: chartDateRange).chartYScale(domain: 0...scale.upperBound)
             .chartXAxis { AxisMarks(values: .stride(by: .hour, count: 4)) { _ in AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour()); AxisTick() } }
-            .chartYAxis { AxisMarks(position: .leading, values: [0, 15, 30, 45, 60]) { value in AxisGridLine(); AxisValueLabel { if let minutes = value.as(Int.self) { Text("\(minutes) min") } } } }
+            .chartYAxis { AxisMarks(position: .leading) { value in AxisGridLine(); AxisValueLabel { if let duration = value.as(Double.self) { Text(scale.label(duration)) } } } }
             .frame(height: 220)
     }
     private var comparison: some View {
@@ -295,6 +365,7 @@ struct GoalongAnalyticsContent: View {
                     }
                 }.font(.system(size: 11))
                 Button("Examiner les traces dans l’historique", action: onHistory).buttonStyle(.bordered).controlSize(.small)
+                    .disabled(payload.isPreview)
             }
         }
     }
@@ -349,7 +420,7 @@ struct GoalongAnalyticsContent: View {
                 sectionHeader("04 / Les usages", title: "Où passe votre temps ?", subtitle: "Une application peut servir plusieurs projets. Les sites sont inclus dans le temps des navigateurs, jamais ajoutés.")
                 Picker("Répartition des usages", selection: $websites) { Text("Applications").tag(false); Text("Sites").tag(true) }
                     .labelsHidden().pickerStyle(.segmented).frame(width: 220)
-                if visible.isEmpty { Text("Aucun domaine disponible sur cette période. Les détails masqués restent privés.").font(.subheadline).foregroundStyle(.secondary) }
+                if visible.isEmpty { Text(websites ? "Aucun domaine disponible sur cette période. Les détails masqués restent privés." : "Pas encore de durée active attribuable à une application. Les périodes privées ou sans interaction restent séparées.").font(.subheadline).foregroundStyle(.secondary) }
                 ForEach(visible) { item in
                     VStack(spacing: 7) {
                         HStack {
@@ -373,13 +444,17 @@ struct GoalongAnalyticsContent: View {
         return LHCard {
             VStack(alignment: .leading, spacing: 16) {
                 sectionHeader("05 / Les projets et les avancées", title: "Des heures à ce qui avance.",
-                    subtitle: "Les interprétations enregistrées dans History, à côté des mesures. L’IA reste facultative et demande votre accord.")
+                    subtitle: payload.isPreview
+                        ? "Exemples de projets, avancées et méthodes. Toutes les rubriques sont fictives ; aucune analyse IA n’a été lancée."
+                        : "Les interprétations enregistrées dans History, à côté des mesures. L’IA reste facultative et demande votre accord.")
                 HStack {
                     Picker("Rubrique d’analyse", selection: $module) {
                         ForEach(GoalongProfileAnalysis.modules, id: \.self) { key in Text(GoalongProfileAnalysis.labels[key] ?? key).tag(key) }
                     }.labelsHidden().frame(maxWidth: 300)
                     Spacer()
                     Button("Comprendre mon travail", action: onProjects).buttonStyle(.bordered).accessibilityIdentifier("analytics-projects")
+                        .disabled(payload.isPreview)
+                        .help(payload.isPreview ? "Revenez à vos données pour lancer une véritable analyse" : "Choisir les sources à analyser")
                 }
                 if cards.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
@@ -397,7 +472,7 @@ struct GoalongAnalyticsContent: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(card.title).font(.system(size: 13, weight: .medium))
-                                Text("\(card.day) · \(statusLabel(card.status))").font(.system(size: 11)).foregroundStyle(.secondary)
+                                Text("\(card.day) · \(payload.isPreview ? "Exemple fictif · " : "")\(statusLabel(card.status))").font(.system(size: 11)).foregroundStyle(.secondary)
                             }.padding(.vertical, 5)
                         }
                     }

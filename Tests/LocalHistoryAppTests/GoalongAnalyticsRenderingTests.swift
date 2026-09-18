@@ -21,10 +21,13 @@ final class GoalongAnalyticsRenderingTests: XCTestCase {
         for dark in [true, false] {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             window.appearance = app.appearance
-            for count in [1, 7, 28, 0] {
+            for count in [1, 7, 28, 0, -1, -2, -7] {
                 let payload = fixture(count: count)
                 for width in [640.0, 1000.0] {
-                    let root = GoalongAnalyticsContent(payload: payload, focusMinutes: .constant(25))
+                    let root = VStack(alignment: .leading, spacing: 22) {
+                        if payload.isPreview { GoalongAnalyticsPreviewBanner() }
+                        GoalongAnalyticsContent(payload: payload, focusMinutes: .constant(25))
+                    }
                         .padding(24).frame(width: width).fixedSize(horizontal: false, vertical: true)
                         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
                     let controller = NSHostingController(rootView: root)
@@ -49,8 +52,25 @@ final class GoalongAnalyticsRenderingTests: XCTestCase {
             }
         }
     }
-    private func fixture(count: Int) -> GoalongAnalyticsPayload {
+    private func fixture(count requestedCount: Int) -> GoalongAnalyticsPayload {
         let calendar = Calendar.current
+        let selectedDay = calendar.date(from: .init(year: 2026, month: 9, day: 18))!
+        if requestedCount > 0 {
+            return GoalongAnalyticsPreview.make(ending: selectedDay, count: requestedCount, calendar: calendar, now: selectedDay)
+        }
+        if requestedCount == -1 || requestedCount == -2 {
+            let offsets = requestedCount == -1 ? [0] : [0, 9, 7]
+            let events = offsets.map { seconds in
+                HistoryEvent(id: "sparse-\(seconds)", sessionID: "fixture",
+                    timestamp: selectedDay.addingTimeInterval(Double(9 * 3600 + seconds)), kind: .heartbeat,
+                    app: .init(name: "Éditeur", bundleIdentifier: "fixture.editor", processIdentifier: 1))
+            }
+            let day = GoalongLocalAnalytics.build(events: events, day: selectedDay,
+                now: selectedDay.addingTimeInterval(12 * 3600), calendar: calendar)
+            return GoalongAnalyticsPayload(current: .init(days: [day]), previous: .init(days: []),
+                cards: [], archiveNotice: nil, updatedAt: selectedDay)
+        }
+        let count = requestedCount == -7 ? 7 : 0
         let base = calendar.date(from: .init(year: 2026, month: 9, day: 1))!
         var days: [GoalongLocalAnalytics.Day] = []
         for index in 0..<(max(1, count) * 2) {

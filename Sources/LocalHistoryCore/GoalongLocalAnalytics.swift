@@ -109,6 +109,8 @@ public enum GoalongLocalAnalytics {
         public var activeSeconds: TimeInterval { days.reduce(0) { $0 + $1.activeSeconds } }
         public var workSeconds: TimeInterval { days.reduce(0) { $0 + $1.seconds(.work) } }
         public var daysWithObservations: Int { days.filter { $0.activeSeconds > 0 }.count }
+        public var eventCount: Int { days.reduce(0) { $0 + $1.eventCount } }
+        public var observedSeconds: TimeInterval { days.reduce(0) { $0 + $1.observedSeconds } }
         public var incompleteDays: Int { days.filter { $0.state == .incomplete }.count }
         public var contextChanges: Int { days.reduce(0) { $0 + $1.contextChanges } }
         public var classifierVersions: Set<String> { days.reduce(into: []) { $0.formUnion($1.classifierVersions) } }
@@ -133,7 +135,15 @@ public enum GoalongLocalAnalytics {
         let start = calendar.startOfDay(for: day)
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: start) ?? start
         let end = max(start, min(dayEnd, now))
-        let rows = events.filter { $0.timestamp >= start && $0.timestamp <= end && $0.isDerivedAnalysisEvidence }
+        // Buffered typing/scroll bursts can be appended after newer foreground samples.
+        // Journal append order is not observation time order. Sort only this read-only
+        // projection, preserving journal order for ties (timestamps can be second-precision).
+        let rows = events.enumerated()
+            .filter { $0.element.timestamp >= start && $0.element.timestamp <= end && $0.element.isDerivedAnalysisEvidence }
+            .sorted { a, b in
+                a.element.timestamp == b.element.timestamp
+                    ? a.offset < b.offset : a.element.timestamp < b.element.timestamp
+            }.map(\.element)
         var segments: [Segment] = []
         func append(_ a: Date, _ b: Date, _ kind: Kind, _ event: HistoryEvent? = nil) {
             guard b > a else { return }
@@ -149,9 +159,8 @@ public enum GoalongLocalAnalytics {
                     bundleIdentifier: bundle, host: host))
             }
         }
-        let ordered = zip(rows, rows.dropFirst()).allSatisfy { $0.timestamp <= $1.timestamp }
-        // Do not publish plausible totals from a failed or unstable source read.
-        if incomplete || !ordered {
+        // A genuinely failed or unstable source still must not publish plausible totals.
+        if incomplete {
             append(start, end, .unobserved)
             return Day(date: start, end: end, state: .incomplete, segments: segments, eventCount: rows.count, classifierVersions: [])
         }

@@ -52,6 +52,15 @@
 
 ## Unreleased
 
+- Fixed local Analyses rejecting an entire day when buffered typing or scrolling
+  events arrive a few seconds behind newer observations. Only the derived timeline
+  is stably sorted; the source journal and genuine incomplete-read protections stay intact.
+- Made the first seconds/minutes visible with adaptive chart scales and distinct
+  first-observation, empty, and unreadable-source states.
+- Added an explicitly opt-in developer mode in Settings → Advanced, off by default.
+  Its Analyses preview uses deterministic in-memory fixtures for 1/7/28 days and
+  all project modules, never writes to history, and disables sharing/AI actions.
+
 - Made the Goalong CLI self-describing through a canonical machine-readable command catalog,
   structured nonzero errors and explicit per-command write effects. Its metadata-only `status`
   now diagnoses Computer History, Screen Time, AI-conversation indexing, saved recaps and optional

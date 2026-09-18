@@ -90,10 +90,10 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
         XCTAssertEqual(result.seconds(.work), 0)
         XCTAssertEqual(result.seconds(.unclassified), 60)
     }
-    func testMissingFutureSingleEventAndCorruptOrderFailHonestly() {
+    func testMissingFutureAndSingleEventDoNotInventDurations() {
         XCTAssertEqual(build([]).state, .noSource)
         XCTAssertEqual(build([event(0)]).activeSeconds, 0)
-        XCTAssertEqual(build([event(60), event(0)]).state, .incomplete)
+        XCTAssertEqual(build([event(60), event(0)]).activeSeconds, 60)
         XCTAssertEqual(build([event(0), event(60)], now: 30).activeSeconds, 0)
         let future = GoalongLocalAnalytics.build(events: [], day: day, now: day.addingTimeInterval(-60), calendar: calendar)
         XCTAssertTrue(future.segments.isEmpty)
@@ -144,4 +144,73 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
         XCTAssertTrue(load.semanticSnapshots.isEmpty)
         XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("2026-09-10.jsonl")), bytes)
     }
+    func testBufferedEventsAreSortedWithoutRejectingTheDay() {
+        let ordered = [event(3600), event(3660, kind: .typingBurst), event(3663), event(3720)]
+        let buffered = [ordered[0], ordered[2], ordered[1], ordered[3]]
+        let result = build(buffered)
+        XCTAssertEqual(result.state, .ready)
+        XCTAssertEqual(result, build(ordered))
+        XCTAssertEqual(result.activeSeconds, 120)
+    }
+    func testTimestampTiesKeepJournalOrderAndPrivacyBoundaries() {
+        let rows = [event(60, suppression: .privateBrowserWindow), event(0), event(60), event(120)]
+        XCTAssertEqual(build(rows), build([rows[1], rows[0], rows[2], rows[3]]))
+        let suppressedLast = build([event(0), event(60), event(60, suppression: .privateBrowserWindow), event(120)])
+        XCTAssertEqual(suppressedLast.activeSeconds, 60)
+        XCTAssertEqual(suppressedLast.seconds(.concealed), 60)
+    }
+    func testSparseSecondsAreVisibleWithoutAMinimumDurationGate() {
+        let result = build([event(3600), event(3607)])
+        XCTAssertEqual(result.activeSeconds, 7)
+        let period = GoalongLocalAnalytics.Period(days: [result, build([])])
+        XCTAssertEqual(period.activeSeconds, 7)
+        XCTAssertEqual(period.eventCount, 2)
+        XCTAssertEqual(period.daysWithObservations, 1)
+        XCTAssertEqual(period.observedSeconds, 7)
+    }
+    func testFailedSourceStillCannotPublishTotals() {
+        let result = GoalongLocalAnalytics.build(events: [event(0), event(60)],
+            day: day, now: day.addingTimeInterval(86400), calendar: calendar, incomplete: true)
+        XCTAssertEqual(result.state, .incomplete)
+        XCTAssertEqual(result.activeSeconds, 0)
+        XCTAssertEqual(result.observedSeconds, 0)
+    }
+    func testUnorderedOnDiskJournalIsMeasuredAndNeverRewritten() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("analytics-order-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("events")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let rows = [event(3600), event(3663), event(3660, kind: .typingBurst), event(3720)]
+        let bytes = try rows.reduce(into: Data()) { data, row in data.append(try encoder.encode(row)); data.append(10) }
+        let file = folder.appendingPathComponent("2026-09-10.jsonl")
+        try bytes.write(to: file)
+        let result = GoalongLocalAnalytics.load(root: root, day: day,
+            now: day.addingTimeInterval(86400), calendar: calendar)
+        XCTAssertEqual(result.state, .ready)
+        XCTAssertEqual(result.activeSeconds, 120)
+        XCTAssertEqual(try Data(contentsOf: file), bytes)
+        try (bytes + Data("{broken JSON}\n".utf8)).write(to: file)
+        let broken = GoalongLocalAnalytics.load(root: root, day: day,
+            now: day.addingTimeInterval(86400), calendar: calendar)
+        XCTAssertEqual(broken.state, .incomplete)
+        XCTAssertEqual(broken.activeSeconds, 0)
+    }
+    func testOptInReadOnlyLocalAnalyticsProbe() throws {
+        guard let path = ProcessInfo.processInfo.environment["GOALONG_ANALYTICS_PROBE_ROOT"] else {
+            throw XCTSkip("Opt-in read-only local analytics probe; logs aggregate counts only")
+        }
+        let calendar = Calendar.current, now = Date()
+        let today = calendar.startOfDay(for: now)
+        var days: [GoalongLocalAnalytics.Day] = []
+        for offset in (0..<7).reversed() {
+            let date = calendar.date(byAdding: .day, value: -offset, to: today)!
+            let value = GoalongLocalAnalytics.load(root: URL(fileURLWithPath: path), day: date, now: now, calendar: calendar)
+            days.append(value)
+            print("ANALYTICS_LOCAL_PROBE offset=\(offset) state=\(value.state.rawValue) events=\(value.eventCount) activeSeconds=\(Int(value.activeSeconds))")
+            XCTAssertNotEqual(value.state, .incomplete)
+        }
+        XCTAssertGreaterThan(GoalongLocalAnalytics.Period(days: days).activeSeconds, 0)
+    }
+
 }
