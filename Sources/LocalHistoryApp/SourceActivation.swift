@@ -545,6 +545,18 @@ import LocalHistoryCore
         func report(_ status: SourceAccessStatus) { cancel(); result = status }
     }
 
+    /// Presentation only; never changes consent or runs a permission check.
+    enum SourceAccessPresentation: Equatable {
+        case content, loading, issue(SourceAccessStatus)
+        static func resolve(enabled: Bool, checking: Bool, result: SourceAccessStatus?) -> Self {
+            // A usable page stays visible during passive revalidation.
+            if !enabled || result == .ready { return .content }
+            if checking { return .loading }
+            if let result { return .issue(result) }
+            return .loading
+        }
+    }
+
     @MainActor struct SourceAccessGate<Content: View>: View {
         let capability: GoalongCapability
         var knownAccessIssue: SourceAccessStatus? = nil
@@ -555,11 +567,16 @@ import LocalHistoryCore
 
         var body: some View {
             Group {
-                if !consents.isEnabled(capability) || validation.result == .ready {
+                switch SourceAccessPresentation.resolve(enabled: consents.isEnabled(capability),
+                                                        checking: validation.checking, result: validation.result) {
+                case .content:
                     content()
-                } else if validation.checking {
-                    ProgressView("Checking access…").padding(LHTheme.pageInset)
-                } else if let status = validation.result {
+                case .loading:
+                    GoalongPageLoadingView(title: "Vérification des accès…")
+                        .accessibilityIdentifier("source-access-page-loading")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(LHTheme.pageInset)
+                case .issue(let status):
                     LHCard {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Access for \(capability.title)").font(.system(size: 15, weight: .semibold))
@@ -577,8 +594,6 @@ import LocalHistoryCore
                             }
                         }.fixedSize(horizontal: false, vertical: true)
                     }.padding(LHTheme.pageInset)
-                } else {
-                    ProgressView("Checking access…").padding(LHTheme.pageInset)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

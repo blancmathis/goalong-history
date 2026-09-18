@@ -303,17 +303,9 @@
 
         var loadingState: some View {
             LHCard {
-                VStack(spacing: 14) {
-                    ProgressView()
-                    Text("Building the compact day analysis…")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(
-                        "Events are being deduplicated into representative minutes, sites, pages and focus blocks locally."
-                    )
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 300)
+                GoalongPageLoadingView(title: "Building the compact day analysis…",
+                    message: "Events are being deduplicated into representative minutes, sites, pages and focus blocks locally.")
+                    .accessibilityIdentifier("day-analysis-page-loading")
             }
         }
 

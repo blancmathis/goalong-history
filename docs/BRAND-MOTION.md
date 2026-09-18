@@ -20,7 +20,16 @@ There is no dashboard-wide or sheet-wide branded ProgressViewStyle. The sidebar
 uses its original static GoalongMark. Today, toolbar refresh controls, account
 flows, settings, sheets and secondary progress indicators use their native UI.
 
-Only two production progress views explicitly opt into GoalongProgressViewStyle:
+Full-page waiting states use GoalongPageLoadingView. Its logo and label are
+centered like Analytics. SourceAccessGate uses it while resolving access before
+any History page is mounted (Ce Mac, Apple Screen Time and Conversations). The
+same component is used for the Analytics and compact day-analysis page waits.
+An immediately available page has no forced transition or loading duration.
+A ready page stays visible during passive access revalidation; disabled sources
+remain disabled and missing access still presents its normal recovery UI.
+
+The page component opts in at its leaf only. The existing day-data status remains
+explicit and separate:
 
 - History: one mark in the day-status card, continuously through preparation and
   source verification. ComputerHistoryDayLoadingPhase combines timeline/snapshot
@@ -81,5 +90,9 @@ runner's original preference. The local script and application never modify
 the user's preference. A locally reduced system is tested as stationary, not
 incorrectly expected to animate.
 
-Placement regression tests assert these two exact opt-ins, the static sidebar,
-cache-hit verification, phase continuity and completion/error states.
+Placement tests cover the actual access-gate branch, immediate and deferred
+completion, usable-page revalidation, disabled sources and errors. The native
+AppKit probe renders the shared page placeholder in light/dark and reduced
+motion, counts one real motion view while loading and zero when ready. It uses
+synthetic page state and never runs a real permission check or reads history.
+The sidebar/toolbar and data-verification placement regressions are retained.

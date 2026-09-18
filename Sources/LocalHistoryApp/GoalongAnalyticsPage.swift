@@ -39,14 +39,9 @@ struct GoalongAnalyticsPage: View {
                             onHistory: { model.selectSection(.history) },
                             onProjects: { studio.show(localOnly: true, initialDay: model.selectedDay, onSend: { _ in }) })
                     } else if analytics.busy {
-                        VStack(spacing: 14) {
-                            ProgressView()
-                                .progressViewStyle(GoalongProgressViewStyle())
-                                .accessibilityIdentifier("analytics-primary-loading-motion")
-                            Text("Lecture des observations locales…").font(.headline)
-                            Text("Les graphiques sont calculés jour par jour, sans envoyer votre historique.")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity, minHeight: 300).accessibilityElement(children: .combine)
+                        GoalongPageLoadingView(title: "Lecture des observations locales…",
+                            message: "Les graphiques sont calculés jour par jour, sans envoyer votre historique.")
+                            .accessibilityIdentifier("analytics-primary-loading-motion")
                     } else if let error = analytics.error {
                         LHCard {
                             VStack(alignment: .leading, spacing: 12) {

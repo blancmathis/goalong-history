@@ -8,6 +8,7 @@ import Darwin
 @MainActor private final class Fixture: ObservableObject {
     @Published var active = true
     @Published var reduced = false
+    @Published var pageLoading = true
 }
 
 private struct ProbeMarks: View {
@@ -29,6 +30,29 @@ private struct ProbeMarks: View {
     }
 }
 
+private struct ProbePage: View {
+    @ObservedObject var fixture: Fixture
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Historique").font(.title)
+                Spacer()
+                Image(systemName: "arrow.clockwise")
+            }.padding(24)
+            Divider()
+            if fixture.pageLoading {
+                GoalongPageLoadingView(title: "Vérification des accès…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Text("Journée prête").frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(width: 760, height: 440)
+        .foregroundStyle(LHTheme.text).background(LHTheme.pageBackground)
+        .environment(\.goalongReduceMotion, fixture.reduced)
+    }
+}
+
 @MainActor private final class Probe: NSObject, NSApplicationDelegate {
     let folder: URL
     let fixture = Fixture()
@@ -37,6 +61,7 @@ private struct ProbeMarks: View {
     var captures = [String: String]()
     var failures = [String]()
     var activeA = Data(), restA = Data(), reducedA = Data()
+    var pageA = Data(), loadedA = Data(), pageReducedA = Data()
 
     init(folder: URL) { self.folder = folder }
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -89,6 +114,37 @@ private struct ProbeMarks: View {
         }
         after(4.15) {
             _ = try self.capture("native-progress-semantics", view: self.window.contentView!)
+            self.fixture.reduced = false
+            self.window.appearance = NSAppearance(named: .darkAqua)
+            self.window.contentViewController = NSHostingController(rootView: ProbePage(fixture: self.fixture))
+            self.window.setContentSize(NSSize(width: 760, height: 440))
+        }
+        after(4.65) {
+            self.pageA = try self.capture("page-access-loading-dark", view: self.window.contentView!)
+            self.expect(self.motionCount(self.window.contentView!) == 1, "One real native motion view in the primary page wait")
+        }
+        after(5.1) {
+            let next = try self.capture("page-access-loading-next", view: self.window.contentView!)
+            self.expect(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? next == self.pageA : next != self.pageA,
+                        "Page wait follows actual motion preference")
+            self.fixture.pageLoading = false
+        }
+        after(5.55) {
+            self.loadedA = try self.capture("page-ready-no-loader", view: self.window.contentView!)
+            self.expect(self.motionCount(self.window.contentView!) == 0, "Ready page has no animated logo or visibility observer")
+        }
+        after(5.95) {
+            self.expect(self.loadedA == (try self.capture("page-ready-stable", view: self.window.contentView!)), "Ready page stays still")
+            self.fixture.reduced = true
+            self.fixture.pageLoading = true
+        }
+        after(6.4) { self.pageReducedA = try self.capture("page-access-reduced-dark", view: self.window.contentView!) }
+        after(6.85) {
+            self.expect(self.pageReducedA == (try self.capture("page-access-reduced-stable", view: self.window.contentView!)), "Reduced page wait stays fixed")
+            self.window.appearance = NSAppearance(named: .aqua)
+        }
+        after(7.25) {
+            _ = try self.capture("page-access-reduced-light", view: self.window.contentView!)
             try self.finish()
         }
     }
@@ -97,6 +153,10 @@ private struct ProbeMarks: View {
             do { try operation() }
             catch { self.failures.append(String(describing: error)); try? self.finish() }
         }
+    }
+    func motionCount(_ view: NSView) -> Int {
+        let own = view.identifier?.rawValue == "goalong-motion-visibility" ? 1 : 0
+        return own + view.subviews.reduce(0) { $0 + motionCount($1) }
     }
     func expect(_ passed: Bool, _ message: String) {
         print("\(passed ? "PASS" : "FAIL") \(message)")

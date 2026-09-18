@@ -84,6 +84,29 @@ struct GoalongActivityMark: View {
     }
 }
 
+/// Primary page wait only. The caller mounts it while content is unavailable and
+/// removes it as soon as the real operation ends; no timer or minimum display time.
+/// The style stays on this leaf, never on a page's controls or the application shell.
+struct GoalongPageLoadingView: View {
+    let title: String
+    var message: String? = nil
+    var body: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+                .progressViewStyle(GoalongProgressViewStyle())
+                .controlSize(.regular)
+                .accessibilityHidden(true)
+            Text(title).font(.headline)
+            if let message {
+                Text(message).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, minHeight: 300)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Preserve native determinate progress, labels, values and control semantics.
 struct GoalongProgressViewStyle: ProgressViewStyle {
     @Environment(\.controlSize) private var controlSize
@@ -129,6 +152,7 @@ private struct GoalongMotionVisibility: NSViewRepresentable {
         init(change: @escaping (Bool) -> Void) {
             self.change = change
             super.init(frame: .zero)
+            identifier = NSUserInterfaceItemIdentifier("goalong-motion-visibility")
         }
         required init?(coder: NSCoder) { return nil }
         override func viewDidMoveToWindow() {

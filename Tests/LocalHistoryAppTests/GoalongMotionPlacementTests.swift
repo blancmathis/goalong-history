@@ -30,7 +30,7 @@ final class GoalongMotionPlacementTests: XCTestCase {
         XCTAssertFalse(motion.busy)
     }
 
-    func testOnlyTheTwoPrimaryLoadingAreasOptIn() throws {
+    func testOnlyExplicitPrimaryLoadingAreasOptIn() throws {
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let sources = repository.appendingPathComponent("Sources/LocalHistoryApp")
         let files = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
@@ -41,7 +41,7 @@ final class GoalongMotionPlacementTests: XCTestCase {
             let count = text.components(separatedBy: marker).count - 1
             if count > 0 { placements[file.lastPathComponent] = count }
         }
-        XCTAssertEqual(placements, ["ComputerHistoryPage.swift": 1, "GoalongAnalyticsPage.swift": 1])
+        XCTAssertEqual(placements, ["ComputerHistoryPage.swift": 1, "GoalongMotionView.swift": 1])
         let root = try String(contentsOf: sources.appendingPathComponent("DashboardRootView.swift"), encoding: .utf8)
         XCTAssertTrue(root.contains("GoalongMark()"), "The sidebar keeps its original static mark")
         XCTAssertFalse(root.contains("GoalongActivityMark"))
@@ -51,6 +51,15 @@ final class GoalongMotionPlacementTests: XCTestCase {
         XCTAssertTrue(history.contains("history-day-verification-motion"))
         let analytics = try String(contentsOf: sources.appendingPathComponent("GoalongAnalyticsPage.swift"), encoding: .utf8)
         XCTAssertTrue(analytics.contains("analytics-primary-loading-motion"))
+        XCTAssertTrue(analytics.contains("GoalongPageLoadingView("))
+        let gate = try String(contentsOf: sources.appendingPathComponent("SourceActivation.swift"), encoding: .utf8)
+        XCTAssertTrue(gate.contains("source-access-page-loading"))
+        XCTAssertEqual(gate.components(separatedBy: "GoalongPageLoadingView(").count - 1, 1)
+        XCTAssertFalse(gate.contains("ProgressView(\"Checking access"), "The real page access gate must not keep the old spinner")
+        let page = try String(contentsOf: sources.appendingPathComponent("GoalongMotionView.swift"), encoding: .utf8)
+        let wait = try XCTUnwrap(page.components(separatedBy: "struct GoalongPageLoadingView: View").last?.components(separatedBy: "/// Preserve native determinate").first)
+        XCTAssertFalse(wait.contains("sleep"), "No forced page delay")
+        XCTAssertFalse(wait.contains("Timer"), "No artificial loading lifetime")
     }
 }
 #endif
