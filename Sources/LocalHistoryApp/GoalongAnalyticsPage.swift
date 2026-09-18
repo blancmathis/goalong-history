@@ -41,6 +41,8 @@ struct GoalongAnalyticsPage: View {
                     } else if analytics.busy {
                         VStack(spacing: 14) {
                             ProgressView()
+                                .progressViewStyle(GoalongProgressViewStyle())
+                                .accessibilityIdentifier("analytics-primary-loading-motion")
                             Text("Lecture des observations locales…").font(.headline)
                             Text("Les graphiques sont calculés jour par jour, sans envoyer votre historique.")
                                 .font(.subheadline).foregroundStyle(.secondary)

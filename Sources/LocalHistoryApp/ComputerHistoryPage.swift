@@ -12,6 +12,18 @@
         case inaccessible(String)
     }
 
+    /// One presentation lifetime spans snapshot reading, grouping and source verification.
+    /// A retained-memory cache hit can be checking even when isLoading is false.
+    enum ComputerHistoryDayLoadingPhase: Equatable {
+        case idle, preparing, verifying
+        static func resolve(preparing: Bool, loading: Bool, source: ComputerHistorySourceStatus) -> Self {
+            if preparing { return .preparing }
+            if loading || source == .checking { return .verifying }
+            return .idle
+        }
+        var isActive: Bool { self != .idle }
+    }
+
     final class ComputerHistoryPageModel: ObservableObject {
         @Published private(set) var memory: ComputerHistoryDayMemory?
         @Published private(set) var answer: ComputerHistoryAnswer?
@@ -617,14 +629,28 @@
             )
         }
 
+        private var dayLoadingPhase: ComputerHistoryDayLoadingPhase {
+            .resolve(preparing: isPreparingTimeline, loading: model.isLoading, source: model.sourceStatus)
+        }
+
         private var recordingStateCard: some View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: recordingStateSymbol)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(recordingStateTint)
-                        .frame(width: 20)
-                        .padding(.top, 2)
+                    Group {
+                        if dayLoadingPhase.isActive {
+                            ProgressView()
+                                .progressViewStyle(GoalongProgressViewStyle())
+                                .controlSize(.small)
+                                .accessibilityIdentifier("history-day-verification-motion")
+                                .accessibilityHidden(true)
+                        } else {
+                            Image(systemName: recordingStateSymbol)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(recordingStateTint)
+                        }
+                    }
+                    .frame(width: 28, height: 20)
+                    .padding(.top, 2)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(recordingStateTitle)
                             .font(.system(size: 13, weight: .semibold))
@@ -768,9 +794,9 @@
                         )
                     Spacer(minLength: 12)
                     if isPreparingTimeline {
-                        ProgressView()
-                            .controlSize(.small)
-                            .help("Grouping recorded activity")
+                        Text("Préparation…")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
                     } else {
                         Text(timelineSearch.isEmpty ? "\(tenMinuteGroups.count) périodes" : "\(visibleTimelineGroups.count) of \(tenMinuteGroups.count) périodes")
                             .font(.system(size: 11, weight: .medium))
@@ -839,8 +865,7 @@
 
                     if isPreparingTimeline {
                         VStack(spacing: 11) {
-                            ProgressView()
-                                .controlSize(.regular)
+                            // The verification card owns the only primary animation.
                             Text("Préparation de la chronologie…")
                                 .font(.system(size: 14, weight: .semibold))
                             Text("Préparation locale de la journée.")

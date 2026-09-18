@@ -111,7 +111,8 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         await sender.tick(now: early); XCTAssertEqual(sent, 0)
         await sender.tick(now: early.addingTimeInterval(3600)); XCTAssertEqual(sent, 1)
         await sender.tick(now: early.addingTimeInterval(7200)); XCTAssertEqual(sent, 1)
-        let restarted = GoalongWebsiteAutoSender(defaults: defaults)
+        // Reopen the same isolated privacy-policy root, never the maintainer’s real settings.
+        let restarted = GoalongWebsiteAutoSender(defaults: defaults, root: root)
         XCTAssertTrue(restarted.status.contains("15:00"))
     }
 

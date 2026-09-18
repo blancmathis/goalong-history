@@ -14,19 +14,28 @@ rest. The separate approved hero video and presentation-only placement masters
 are not available in this repository, are not approximated, and are not replaced
 by a new splash screen. The existing onboarding and menu bar identity remain.
 
-## Actual wiring
+## Actual wiring — selective placements, 18 September 2026
 
-`GoalongMotionView.swift` draws native paths using SwiftUI's display timeline.
-The dashboard installs `GoalongProgressViewStyle` for indeterminate progress,
-including its onboarding branch and website-sharing sheet. Measured progress
-continues to use a native linear ProgressView with its actual label and value.
-The persistent sidebar mark follows `DashboardViewModel.isRefreshing`; ordinary
-recording does not cause an endless branded animation.
+There is no dashboard-wide or sheet-wide branded ProgressViewStyle. The sidebar
+uses its original static GoalongMark. Today, toolbar refresh controls, account
+flows, settings, sheets and secondary progress indicators use their native UI.
 
-Operation state remains authoritative. A result, error or cancellation never
-waits for the 300ms visual release. Removing a loading view removes its motion;
-the persistent header can relax from the current phase without a jump. Repeated
-busy values do not restart a cycle and a new operation can interrupt relaxation.
+Only two production progress views explicitly opt into GoalongProgressViewStyle:
+
+- History: one mark in the day-status card, continuously through preparation and
+  source verification. ComputerHistoryDayLoadingPhase combines timeline/snapshot
+  preparation, model loading and sourceStatus == .checking. A retained-memory
+  cache hit can still be verifying after isLoading becomes false. The same mark
+  stays mounted across these phases; the timeline does not add another spinner.
+- Analytics: the existing central waiting state while the first payload is being
+  read. Its position, size, copy and real loading lifetime are retained. The
+  upper-right refresh button remains native, not a second animated logo. An
+  already available payload is not hidden just to show an animation.
+
+Operation state remains authoritative. There is no extra minimum waiting time,
+repeated splash, click-to-replay behaviour or decorative delay. Errors and absent
+sources end the logo's activity and retain their own native symbol and message.
+The equations, cycle and interrupted-release behaviour are unchanged.
 
 ## Accessibility and resource use
 
@@ -71,3 +80,6 @@ Mac, verifies the observed system preference in each report and restores the
 runner's original preference. The local script and application never modify
 the user's preference. A locally reduced system is tested as stationary, not
 incorrectly expected to animate.
+
+Placement regression tests assert these two exact opt-ins, the static sidebar,
+cache-hit verification, phase continuity and completion/error states.
