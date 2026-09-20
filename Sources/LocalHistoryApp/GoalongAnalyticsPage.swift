@@ -4,8 +4,7 @@ import AppKit
 import SwiftUI
 import Combine
 
-/// One destination for daily review and longer-term perspective. The historic type
-/// and route remain compatible, but the user-facing destination is now Activité.
+/// Daily review and longer-term perspective share one window-local selection.
 struct GoalongAnalyticsPage: View {
     @ObservedObject var model: DashboardViewModel
     @Binding var navigation: GoalongActivityNavigation
@@ -13,7 +12,9 @@ struct GoalongAnalyticsPage: View {
     @StateObject private var studio = GoalongProfileWindow()
     @State private var focusMinutes = 25
     @State private var revision = 0
+    @State private var manualRefreshRevision = 0
     @State private var forceNextRead = false
+    @State private var showingAnalysisChoice = false
     @AppStorage(GoalongDeveloperPreferences.enabledKey) private var developerMode = false
     @State private var showingPreview = false
     @State private var previewNavigation = GoalongActivityNavigation()
@@ -59,16 +60,9 @@ struct GoalongAnalyticsPage: View {
                         GoalongAnalyticsContent(payload: payload, focusMinutes: $focusMinutes,
                             onDay: { day in updateSelection { $0.openDay(day) } },
                             onHistory: { openHistory(selection.day) },
-                            onProjects: {
-                                guard !previewActive else { return }
-                                studio.show(localOnly: true, initialDay: navigation.day, onSend: { _ in })
-                            },
+                            onProjects: { if !previewActive { showingAnalysisChoice = true } },
                             onHistoryDay: openHistory,
-                            onRecap: { day in
-                                guard !previewActive else { return }
-                                model.selectDay(day)
-                                model.selectSection(.chatGPTRecap)
-                            })
+                            onRecap: openRecap)
                             .id(selectionID)
                     } else if analytics.error == nil {
                         GoalongPageLoadingView(title: "Lecture des observations locales…",
@@ -77,7 +71,8 @@ struct GoalongAnalyticsPage: View {
                     }
                     if !previewActive {
                         if selection.period == 1 {
-                            GoalongActivityAppleCard(model: model, day: navigation.day)
+                            GoalongActivityAppleCard(model: model, day: navigation.day,
+                                refreshRevision: manualRefreshRevision)
                         } else {
                             LHCard(padding: 16) {
                                 HStack(alignment: .center, spacing: 14) {
@@ -101,6 +96,17 @@ struct GoalongAnalyticsPage: View {
             }
         }
         .background(LHTheme.pageBackground)
+        .confirmationDialog("Analyser la journée du \(GoalongUIFormat.day(navigation.day))",
+                            isPresented: $showingAnalysisChoice, titleVisibility: .visible) {
+            Button("Bilan quotidien et sources…") { openRecap(navigation.day) }
+            Button("Projets et avancées…") {
+                guard !previewActive else { return }
+                studio.show(localOnly: true, initialDay: navigation.day, onSend: { _ in })
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("Choisissez le type d’analyse. Les sources et les autorisations restent à vérifier avant toute génération.")
+        }
         .onAppear { model.selectDay(navigation.day) }
         .task(id: requestID) {
             guard model.dashboardIsVisible else { return }
@@ -113,7 +119,11 @@ struct GoalongAnalyticsPage: View {
         .onChange(of: developerMode) { enabled in
             if !enabled { showingPreview = false; previewNavigation = GoalongActivityNavigation() }
         }
-        .onDisappear { showingPreview = false; previewNavigation = GoalongActivityNavigation() }
+        .onDisappear {
+            showingPreview = false
+            showingAnalysisChoice = false
+            previewNavigation = GoalongActivityNavigation()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .goalongProfileAnalysisDidSave)) { _ in
             if !previewActive { revision += 1 }
         }
@@ -121,8 +131,7 @@ struct GoalongAnalyticsPage: View {
             if model.dashboardIsVisible && !previewActive { revision += 1 }
         }
         .onReceive(refreshTimer) { _ in
-            // A visible-page refresh, not another background collector. Cached completed
-            // days are reused; the current day is reread without blanking valid content.
+            // Visible-page refresh only. Completed days reuse the existing cache.
             guard model.dashboardIsVisible, !previewActive, !analytics.busy,
                   Calendar.current.isDateInToday(navigation.day) else { return }
             revision += 1
@@ -132,6 +141,7 @@ struct GoalongAnalyticsPage: View {
     private var previewControl: some View {
         HStack(spacing: 12) {
             Button {
+                showingAnalysisChoice = false
                 if !showingPreview { previewNavigation = navigation }
                 showingPreview.toggle()
             } label: {
@@ -148,18 +158,23 @@ struct GoalongAnalyticsPage: View {
         if previewActive { change(&previewNavigation) }
         else { change(&navigation); model.selectDay(navigation.day) }
     }
-
     private func openHistory(_ day: Date) {
         guard !previewActive else { return }
-        // Leave the activity period untouched so returning from History restores it.
         model.selectDay(day)
         model.selectSection(.history)
     }
-
+    private func openRecap(_ day: Date) {
+        guard !previewActive else { return }
+        model.selectDay(day)
+        model.selectSection(.chatGPTRecap)
+    }
     private func refresh() {
         forceNextRead = true
         revision += 1
-        if !previewActive { model.refreshEverything() }
+        if !previewActive {
+            manualRefreshRevision += 1
+            model.refreshEverything()
+        }
     }
 }
 
