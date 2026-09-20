@@ -15,10 +15,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import os, re, urllib.request
+          import os, re, urllib.request, urllib.parse
+          class SafeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+                  if redirected and urllib.parse.urlparse(newurl).netloc != urllib.parse.urlparse(req.full_url).netloc:
+                      redirected.remove_header('Authorization')
+                  return redirected
+          opener = urllib.request.build_opener(SafeRedirect())
           url = 'https://api.github.com/repos/blancmathis/goalong-history/actions/jobs/106117002836/logs'
           request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
-          with urllib.request.urlopen(request, timeout=30) as response:
+          with opener.open(request, timeout=30) as response:
               text = response.read(8 * 1024 * 1024).decode('utf-8', errors='replace')
           messages = []
           for line in text.splitlines():
