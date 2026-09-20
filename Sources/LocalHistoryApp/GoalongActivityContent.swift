@@ -60,9 +60,7 @@ struct GoalongAnalyticsContent: View {
                     if !payload.isPreview { onHistoryDay(day) }
                 })
         }
-        .sheet(item: $selectedSegment) { segment in
-            segmentDetail(segment)
-        }
+        .sheet(item: $selectedSegment) { segment in segmentDetail(segment) }
         .accessibilityIdentifier("activity-content")
     }
 
@@ -99,11 +97,7 @@ struct GoalongAnalyticsContent: View {
 
     private var metrics: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) {
-                activeMetric
-                workMetric
-                focusMetric
-            }.frame(minWidth: 560)
+            HStack(alignment: .top, spacing: 12) { activeMetric; workMetric; focusMetric }.frame(minWidth: 560)
             VStack(spacing: 12) {
                 activeMetric
                 HStack(alignment: .top, spacing: 12) { workMetric; focusMetric }
@@ -127,8 +121,7 @@ struct GoalongAnalyticsContent: View {
                 Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
                 Text(value).font(.system(size: primary ? 32 : 28, weight: .semibold))
                     .tracking(-0.6).monospacedDigit().foregroundStyle(primary ? LHTheme.accent : LHTheme.text)
-                Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }.frame(maxWidth: .infinity, minHeight: 98, alignment: .leading)
         }.accessibilityElement(children: .combine)
     }
@@ -147,8 +140,7 @@ struct GoalongAnalyticsContent: View {
                     }
                 }
                 if isDay, let day = current.days.first {
-                    if hourly || sparse { hourlyChart(day) }
-                    else { timelineChart(day) }
+                    if hourly || sparse { hourlyChart(day) } else { timelineChart(day) }
                     if hourly || sparse {
                         HStack(spacing: 16) {
                             legend("Temps actif", color: LHTheme.accent)
@@ -210,17 +202,14 @@ struct GoalongAnalyticsContent: View {
     private func timelineChart(_ day: GoalongLocalAnalytics.Day) -> some View {
         Chart {
             ForEach(day.segments) { segment in
-                RectangleMark(xStart: .value("Début", segment.start), xEnd: .value("Fin", segment.end),
-                              y: .value("Lecture", "Activité"))
+                RectangleMark(xStart: .value("Début", segment.start), xEnd: .value("Fin", segment.end), y: .value("Lecture", "Activité"))
                     .foregroundStyle(kindColor(segment.kind))
                     .accessibilityLabel("\(kindLabel(segment.kind)), \(time(segment.start))–\(time(segment.end))")
                     .accessibilityValue(duration(segment.seconds))
             }
             ForEach(day.focus(minimumMinutes: focusMinutes)) { block in
-                RectangleMark(xStart: .value("Début", block.start), xEnd: .value("Fin", block.end),
-                              y: .value("Lecture", "Focus"))
-                    .foregroundStyle(LHTheme.teal)
-                    .accessibilityLabel("Continuité : \(block.application)")
+                RectangleMark(xStart: .value("Début", block.start), xEnd: .value("Fin", block.end), y: .value("Lecture", "Focus"))
+                    .foregroundStyle(LHTheme.teal).accessibilityLabel("Continuité : \(block.application)")
                     .accessibilityValue(duration(block.seconds))
             }
         }
@@ -234,8 +223,7 @@ struct GoalongAnalyticsContent: View {
                 Rectangle().fill(.clear).contentShape(Rectangle())
                     .gesture(SpatialTapGesture().onEnded { value in
                         let x = value.location.x - geometry[proxy.plotAreaFrame].origin.x
-                        guard x >= 0, x <= geometry[proxy.plotAreaFrame].width,
-                              let date: Date = proxy.value(atX: x) else { return }
+                        guard x >= 0, x <= geometry[proxy.plotAreaFrame].width, let date: Date = proxy.value(atX: x) else { return }
                         selectedSegment = day.segments.first { $0.start <= date && date < $0.end }
                     })
             }
@@ -250,8 +238,7 @@ struct GoalongAnalyticsContent: View {
                     ForEach([GoalongLocalAnalytics.Kind.work, .other, .unclassified], id: \.rawValue) { kind in
                         BarMark(x: .value("Jour", day.date, unit: .day), y: .value("Durée", day.seconds(kind) / scale.unitSeconds))
                             .foregroundStyle(kindColor(kind)).cornerRadius(2)
-                            .accessibilityLabel("\(shortDate(day.date)), \(kindLabel(kind))")
-                            .accessibilityValue(duration(day.seconds(kind)))
+                            .accessibilityLabel("\(shortDate(day.date)), \(kindLabel(kind))").accessibilityValue(duration(day.seconds(kind)))
                     }
                     // Independent points never draw a misleading line over a missing day.
                     PointMark(x: .value("Jour", middleOfDay(day.date)), y: .value("Focus", day.focusSeconds(minimumMinutes: focusMinutes) / scale.unitSeconds))
@@ -260,8 +247,7 @@ struct GoalongAnalyticsContent: View {
                         .accessibilityValue(duration(day.focusSeconds(minimumMinutes: focusMinutes)))
                 } else if day.observedSeconds > 0 && day.state == .ready {
                     PointMark(x: .value("Jour", middleOfDay(day.date)), y: .value("Durée", 0.0))
-                        .foregroundStyle(LHTheme.secondaryText)
-                        .accessibilityLabel("\(shortDate(day.date)), zéro minute active observée")
+                        .foregroundStyle(LHTheme.secondaryText).accessibilityLabel("\(shortDate(day.date)), zéro minute active observée")
                 }
             }
         }
@@ -294,13 +280,11 @@ struct GoalongAnalyticsContent: View {
             ForEach(hours.filter { $0.seconds > 0 }) { hour in
                 BarMark(x: .value("Heure", hour.start, unit: .hour), y: .value("Activité", hour.seconds / scale.unitSeconds))
                     .foregroundStyle(LHTheme.accent).cornerRadius(2)
-                    .accessibilityLabel("\(time(hour.start)), activité observée")
-                    .accessibilityValue(duration(hour.seconds))
+                    .accessibilityLabel("\(time(hour.start)), activité observée").accessibilityValue(duration(hour.seconds))
                 PointMark(x: .value("Heure", hour.start.addingTimeInterval(hour.end.timeIntervalSince(hour.start) / 2)),
                           y: .value("Focus", hour.focusSeconds / scale.unitSeconds))
                     .foregroundStyle(LHTheme.teal).symbolSize(25)
-                    .accessibilityLabel("\(time(hour.start)), focus inclus")
-                    .accessibilityValue(duration(hour.focusSeconds))
+                    .accessibilityLabel("\(time(hour.start)), focus inclus").accessibilityValue(duration(hour.focusSeconds))
             }
         }
         .chartLegend(.hidden).chartXScale(domain: dateRange).chartYScale(domain: 0...scale.upperBound)
@@ -424,8 +408,7 @@ struct GoalongAnalyticsContent: View {
                         .buttonStyle(.borderless).font(.system(size: 12))
                 }
                 Button(isDay ? "Comprendre mon travail" : "Analyser une journée…", action: onProjects)
-                    .buttonStyle(.bordered).controlSize(.small).disabled(payload.isPreview)
-                    .accessibilityIdentifier("analytics-projects")
+                    .buttonStyle(.bordered).controlSize(.small).disabled(payload.isPreview).accessibilityIdentifier("analytics-projects")
                 if let notice = payload.archiveNotice {
                     Label(notice, systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(LHTheme.warning)
                 }
@@ -443,8 +426,7 @@ struct GoalongAnalyticsContent: View {
                         Text("Séquence minimale").font(.system(size: 12))
                         Picker("Séquence minimale de focus", selection: $focusMinutes) {
                             Text("10 min").tag(10); Text("25 min").tag(25); Text("50 min").tag(50)
-                        }.labelsHidden().pickerStyle(.segmented).frame(width: 225)
-                            .accessibilityIdentifier("analytics-focus-threshold")
+                        }.labelsHidden().pickerStyle(.segmented).frame(width: 225).accessibilityIdentifier("analytics-focus-threshold")
                         Spacer(minLength: 0)
                     }
                     HStack(alignment: .top, spacing: 24) {
@@ -562,59 +544,5 @@ struct GoalongAnalyticsContent: View {
     private func statusLabel(_ value: String) -> String {
         switch value { case "observed": return "Observé"; case "inferred": return "Déduit"; case "declared": return "Déclaré"; default: return "À préciser" }
     }
-}
-
-private struct GoalongActivityUsageDetail: View {
-    let item: GoalongActivityUsageItem
-    let period: GoalongLocalAnalytics.Period
-    let grouping: GoalongActivityUsageGrouping
-    let isPreview: Bool
-    let onHistoryDay: (Date) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text(item.name).font(.system(size: 20, weight: .semibold)).textSelection(.enabled)
-                Spacer()
-                Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction)
-            }
-            Text("\(GoalongAnalyticsFormatting.duration(item.seconds)) sur la période sélectionnée\(isPreview ? " · exemple fictif" : "")")
-                .font(.system(size: 14)).foregroundStyle(.secondary)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    ForEach(period.days) { day in
-                        let seconds = GoalongActivityProjection.seconds(for: item, in: day, grouping: grouping)
-                        if seconds > 0 {
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack {
-                                    Text(GoalongUIFormat.day(day.date)).fontWeight(.medium)
-                                    Spacer()
-                                    Text(GoalongAnalyticsFormatting.duration(seconds)).monospacedDigit()
-                                }
-                                if period.days.count == 1 {
-                                    let segments = day.segments.filter { GoalongActivityProjection.usageID($0, grouping: grouping) == item.id }
-                                    ForEach(segments.prefix(50)) { segment in
-                                        HStack {
-                                            Text("\(time(segment.start))–\(time(segment.end))")
-                                            Spacer()
-                                            Text(GoalongAnalyticsFormatting.duration(segment.seconds))
-                                        }.foregroundStyle(.secondary).accessibilityElement(children: .combine)
-                                    }
-                                    if segments.count > 50 { Text("50 plages affichées. L’historique contient le détail complet.").foregroundStyle(.secondary) }
-                                }
-                                Button("Voir cette journée dans l’historique") { onHistoryDay(day.date) }
-                                    .buttonStyle(.borderless).disabled(isPreview)
-                            }
-                            Divider()
-                        }
-                    }
-                }.font(.system(size: 13))
-            }.frame(maxHeight: 460)
-            Text("Observations sur ce Mac uniquement. Les sites ne sont pas ajoutés une seconde fois au navigateur.")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-        }.padding(24).frame(width: 540)
-    }
-    private func time(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) }
 }
 #endif
