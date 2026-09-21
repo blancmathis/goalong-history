@@ -4,6 +4,7 @@
 
     struct LocalHistoryDashboardView: View {
         @ObservedObject var model: DashboardViewModel
+        @State private var activityNavigation = GoalongActivityNavigation()
 
         var body: some View {
             Group {
@@ -52,10 +53,8 @@
 
         @ViewBuilder private var page: some View {
             switch model.selectedSection {
-            case .overview:
-                OverviewPage(model: model)
-            case .analytics:
-                GoalongAnalyticsPage(model: model)
+            case .overview, .analytics:
+                GoalongAnalyticsPage(model: model, navigation: $activityNavigation)
             case .history:
                 UnifiedHistoryPage(model: model)
             case .activity:
@@ -66,6 +65,7 @@
                 )
             case .screenTime:
                 GoalongScreenTimePage(model: model)
+                    .safeAreaInset(edge: .top, spacing: 0) { activityReturnBar }
             case .agentActivity:
                 AgentActivityPage(agents: model.agentActivityRuntime)
                     .safeAreaInset(edge: .top, spacing: 0) {
@@ -73,6 +73,7 @@
                     }
             case .chatGPTRecap:
                 ChatGPTRecapPage(model: model)
+                    .safeAreaInset(edge: .top, spacing: 0) { activityReturnBar }
             case .share:
                 SharePage(model: model)
             case .privacy:
@@ -88,6 +89,16 @@
                 SettingsPage(model: model)
             }
         }
+
+        private var activityReturnBar: some View {
+            HStack {
+                Button { model.selectSection(.overview) } label: {
+                    Label("Retour à Activité", systemImage: "chevron.left")
+                }.buttonStyle(.borderless).font(.system(size: 12, weight: .medium))
+                Spacer()
+            }.padding(.horizontal, LHTheme.pageInset).padding(.vertical, 10)
+                .background(LHTheme.pageBackground)
+        }
     }
 
     private struct DashboardSidebar: View {
@@ -95,7 +106,7 @@
         @ObservedObject private var updates = SoftwareUpdateManager.shared
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
-        private let primarySections: [DashboardSection] = [.overview, .analytics, .history, .settings]
+        private let primarySections = DashboardSection.primarySections
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
@@ -164,7 +175,7 @@
             } label: {
                 navigationLabel(
                     title: section.simpleTitle,
-                    symbol: section.symbol,
+                    symbol: section == .overview ? "chart.bar.xaxis" : section.symbol,
                     selected: model.selectedSection.sidebarParent == section
                 )
             }
@@ -292,10 +303,11 @@
     }
 
     extension DashboardSection {
-        fileprivate var simpleTitle: String {
+        static let primarySections: [DashboardSection] = [.overview, .history, .settings]
+
+        var simpleTitle: String {
             switch self {
-            case .overview: return "Aujourd’hui"
-            case .analytics: return "Analyses"
+            case .overview, .analytics: return "Activité"
             case .history: return "Historique"
             case .activity: return "Computer History"
             case .screenTime: return "Screen Time"
@@ -308,11 +320,9 @@
             }
         }
 
-        fileprivate var sidebarParent: DashboardSection {
+        var sidebarParent: DashboardSection {
             switch self {
-            case .analytics:
-                return .analytics
-            case .overview, .chatGPTRecap, .share:
+            case .overview, .analytics, .chatGPTRecap, .share:
                 return .overview
             case .history, .activity, .screenTime:
                 return .history

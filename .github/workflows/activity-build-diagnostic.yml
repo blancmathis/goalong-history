@@ -1,0 +1,42 @@
+name: Activity build diagnostic
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/activity-build-diagnostic.yml'
+permissions:
+  actions: read
+jobs:
+  compiler-errors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Read bounded compiler errors from the failed validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import os, re, urllib.request, urllib.parse
+          class SafeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+                  if redirected and urllib.parse.urlparse(newurl).netloc != urllib.parse.urlparse(req.full_url).netloc:
+                      redirected.remove_header('Authorization')
+                  return redirected
+          opener = urllib.request.build_opener(SafeRedirect())
+          url = 'https://api.github.com/repos/blancmathis/goalong-history/actions/jobs/106117002836/logs'
+          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with opener.open(request, timeout=30) as response:
+              text = response.read(8 * 1024 * 1024).decode('utf-8', errors='replace')
+          messages = []
+          for line in text.splitlines():
+              if ': error:' in line or 'failed (' in line or 'fatal error:' in line:
+                  clean = re.sub(r'^\S+Z\s+', '', line).strip()
+                  if clean not in messages:
+                      messages.append(clean[:1200])
+          print('COMPILER_DIAGNOSTICS_BEGIN')
+          for message in messages[:30]:
+              print(message)
+          print('COMPILER_DIAGNOSTICS_END')
+          if not messages:
+              print('No matching compiler diagnostics found in bounded log.')
+          PY

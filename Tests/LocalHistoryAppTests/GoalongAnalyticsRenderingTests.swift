@@ -23,12 +23,20 @@ final class GoalongAnalyticsRenderingTests: XCTestCase {
             window.appearance = app.appearance
             for count in [1, 7, 28, 0, -1, -2, -7] {
                 let payload = fixture(count: count)
+                let selection = GoalongActivityNavigation(day: payload.current.days.last?.date ?? payload.updatedAt,
+                    period: payload.current.days.count)
                 for width in [640.0, 1000.0] {
-                    let root = VStack(alignment: .leading, spacing: 22) {
-                        if payload.isPreview { GoalongAnalyticsPreviewBanner() }
-                        GoalongAnalyticsContent(payload: payload, focusMinutes: .constant(25))
+                    let root = VStack(alignment: .leading, spacing: 0) {
+                        GoalongActivityHeader(selection: selection, isPreview: payload.isPreview, isRefreshing: false,
+                            onDay: { _ in }, onPeriod: { _ in }, onStep: { _ in }, onToday: {},
+                            onReturn: {}, onRefresh: {}, onShare: {})
+                        Divider()
+                        VStack(alignment: .leading, spacing: 20) {
+                            if payload.isPreview { GoalongAnalyticsPreviewBanner() }
+                            GoalongAnalyticsContent(payload: payload, focusMinutes: .constant(25))
+                        }.padding(24)
                     }
-                        .padding(24).frame(width: width).fixedSize(horizontal: false, vertical: true)
+                        .frame(width: width).fixedSize(horizontal: false, vertical: true)
                         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
                     let controller = NSHostingController(rootView: root)
                     window.contentViewController = controller
@@ -76,7 +84,6 @@ final class GoalongAnalyticsRenderingTests: XCTestCase {
         for index in 0..<(max(1, count) * 2) {
             let day = calendar.date(byAdding: .day, value: index, to: base)!
             var events: [HistoryEvent] = []
-            // Missing middle day proves the curve does not bridge a collection gap.
             if count > 0 && index != max(1, count) + 2 {
                 for minute in 0...(170 + (index % 4) * 35) {
                     let app = minute % 90 < 60 ? "Éditeur" : "Navigateur"

@@ -67,13 +67,13 @@ private actor GoalongAnalyticsReader {
 
     func read(ending day: Date, count: Int, force: Bool, preview: Bool) throws -> GoalongAnalyticsPayload {
         try Task.checkCancellation()
+        // Preview exits before looking at caches, journals, daily reports or project archives.
         if preview { return GoalongAnalyticsPreview.make(ending: day, count: count) }
         let calendar = Calendar.current, now = Date()
         let count = [1, 7, 28].contains(count) ? count : 7
         let last = calendar.startOfDay(for: day)
         var days: [GoalongLocalAnalytics.Day] = []
         if force { cache.removeAll() }
-        // A day-at-a-time source pass bounds memory, including when viewing 28 days.
         for offset in (0..<(count * 2)).reversed() {
             try Task.checkCancellation()
             guard let date = calendar.date(byAdding: .day, value: -offset, to: last) else { continue }
@@ -92,14 +92,44 @@ private actor GoalongAnalyticsReader {
         cache = cache.filter { key, _ in days.contains { $0.date == key } }
         let current = Array(days.suffix(count)), previous = Array(days.prefix(count))
         let saved = try readCards(start: current.first?.date ?? last, end: current.last?.end ?? now)
+        let recaps = try readDailyRecaps(days: current, calendar: calendar)
+        let cards = (saved.0 + recaps.0).sorted { a, b in a.day == b.day ? a.id < b.id : a.day > b.day }
+        let notices = [saved.1, recaps.1].compactMap { $0 }
         return GoalongAnalyticsPayload(current: .init(days: current), previous: .init(days: previous),
-            cards: saved.0, archiveNotice: saved.1, updatedAt: now)
+            cards: cards, archiveNotice: notices.isEmpty ? nil : notices.joined(separator: " "), updatedAt: now)
     }
+
+    /// Reads only existing bounded reports. Does not select a day in the shared recap
+    /// runtime, cancel an analysis, build its context, or launch an agent.
+    private func readDailyRecaps(days: [GoalongLocalAnalytics.Day], calendar: Calendar) throws -> ([GoalongAnalyticsCard], String?) {
+        let directory = root.appendingPathComponent("chatgpt/recaps", isDirectory: true)
+        var cards: [GoalongAnalyticsCard] = []
+        var rejected = 0
+        let formatter = DateFormatter()
+        formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
+        for day in days.prefix(28) {
+            try Task.checkCancellation()
+            let path = ChatGPTRecapPersistence.jsonURL(for: day.date, in: directory)
+            guard FileManager.default.fileExists(atPath: path.path) else { continue }
+            guard let recap = ChatGPTRecapPersistence.load(for: day.date, from: directory),
+                  calendar.isDate(recap.day, inSameDayAs: day.date) else {
+                rejected += 1
+                continue
+            }
+            let date = formatter.string(from: day.date)
+            cards.append(GoalongAnalyticsCard(id: "daily-recap|" + date, day: date, module: "dailyRecap",
+                title: "Bilan du " + day.date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)),
+                summary: recap.markdown, status: "inferred",
+                caveat: "Synthèse IA enregistrée. Ses sources peuvent différer des seules observations sur ce Mac."))
+        }
+        return (cards, rejected > 0 ? "\(rejected) bilan(s) quotidien(s) illisible(s) ou incohérent(s) ne sont pas affichés." : nil)
+    }
+
     private func sourceRevision(_ day: Date, calendar: Calendar) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar; formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = calendar.timeZone; formatter.dateFormat = "yyyy-MM-dd"
-        // Neighboring files can intersect a local day after a timezone change.
         return (-1...1).map { offset in
             let date = calendar.date(byAdding: .day, value: offset, to: day) ?? day
             let url = root.appendingPathComponent("events/" + formatter.string(from: date) + ".jsonl")
@@ -139,7 +169,6 @@ private actor GoalongAnalyticsReader {
                 let context = try archive.request.context()
                 guard context.date >= first, context.date <= last else { continue }
                 let result = try GoalongProfileAnalysis.apply(archive.result, to: archive.request)
-                // Latest saved analysis per day/module; don't duplicate earlier versions.
                 let modules = Set(result.items.map(\.module)).filter { !seen.contains(context.date + "|" + $0) }
                 for item in result.items where modules.contains(item.module) {
                     cards.append(GoalongAnalyticsCard(id: archive.request.request_id + "|" + item.id,
@@ -164,7 +193,12 @@ private actor GoalongAnalyticsReader {
     init(root: URL = AppPaths.applicationSupportDirectory) { reader = GoalongAnalyticsReader(root: root) }
     func load(day: Date, count: Int, force: Bool = false, preview: Bool = false) async {
         let id = UUID(); operation = id; busy = true; error = nil
-        payload = nil // A previous day's metrics must never appear under a new date.
+        let sameSelection = payload.map {
+            $0.isPreview == preview && $0.current.days.count == count
+                && $0.current.days.last.map { Calendar.current.isDate($0.date, inSameDayAs: day) } == true
+        } ?? false
+        // Keep a valid same-period snapshot during refresh, never across dates or preview boundaries.
+        if !sameSelection { payload = nil }
         do {
             let value = try await reader.read(ending: day, count: count, force: force, preview: preview)
             try Task.checkCancellation()
@@ -174,7 +208,9 @@ private actor GoalongAnalyticsReader {
             if operation == id { busy = false }
         } catch {
             guard operation == id else { return }
-            self.error = "Impossible de lire cette période. Réessayez ; vos enregistrements n’ont pas été modifiés."
+            self.error = payload == nil
+                ? "Impossible de lire cette période. Réessayez ; vos enregistrements n’ont pas été modifiés."
+                : "Actualisation impossible. Les derniers chiffres lus restent affichés avec leur heure de mise à jour. Réessayez."
             busy = false
         }
     }
