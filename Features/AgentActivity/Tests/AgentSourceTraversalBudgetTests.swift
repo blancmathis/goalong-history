@@ -1280,6 +1280,78 @@ final class AgentSourceTraversalBudgetTests: XCTestCase {
         XCTAssertEqual(store.lastHandledSignal(provider: .custom), secondSignalDate)
     }
 
+    func testInterruptedWarmMetadataCycleEventuallyFindsEveryChangedSource() throws {
+        let fixture = try makeTemporaryDirectory("warm-deadline-recovery")
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let sourceRoot = fixture.appendingPathComponent("source", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        let sourceCount = 300 // More than one normal 256-entry polling slice.
+        let observedAt = Date(timeIntervalSince1970: 1_787_474_500)
+        for index in 0..<sourceCount {
+            let source = sourceRoot.appendingPathComponent("source-\(index).txt")
+            try Data("before-\(index)".utf8).write(to: source)
+            try FileManager.default.setAttributes([.modificationDate: observedAt], ofItemAtPath: source.path)
+        }
+        let store = try AgentActivityStore(rootDirectory: fixture.appendingPathComponent("store"))
+        let configuration = AgentActivityConfiguration(
+            watchedFolders: [folder(root: sourceRoot, provider: .custom)],
+            maximumIndexEntries: sourceCount
+        )
+        var tick: UInt64 = 0
+        var expireTraversal = false
+        let scanner = AgentActivityScanner(
+            store: store,
+            sourceTraversalLimits: .production,
+            sourceTraversalUptimeNanoseconds: {
+                defer { if expireTraversal { tick += 500_000_000 } }
+                return tick
+            },
+            selectedDayAnalysisBodyReadLimits: .selectedDayAnalysis,
+            sourceBodyReadUptimeNanoseconds: { 0 }
+        )
+        for cycle in 0..<4 {
+            let result = scanner.scan(configuration: configuration, forceFullDiscovery: cycle == 0,
+                analyzeContent: false, at: observedAt.addingTimeInterval(Double(cycle)))
+            XCTAssertTrue(result.failures.isEmpty)
+            if store.indexEntryCount() == sourceCount,
+               scanner.pendingDiscoveryUsageForTesting().activeInventoryCount == 0 { break }
+        }
+        XCTAssertEqual(store.indexEntryCount(), sourceCount)
+        let originalHashes = Dictionary(uniqueKeysWithValues: store.entries().map { ($0.id, $0.sha256) })
+        for index in 0..<sourceCount {
+            let source = sourceRoot.appendingPathComponent("source-\(index).txt")
+            try Data("changed-content-\(index)".utf8).write(to: source, options: .atomic)
+            try FileManager.default.setAttributes([.modificationDate: observedAt.addingTimeInterval(400)],
+                ofItemAtPath: source.path)
+        }
+
+        // Explicitly expire the production traversal deadline during a warm scan.
+        // The old metadata must remain intact, and the rotating cursor must later
+        // revisit unprocessed entries rather than silently losing their changes.
+        expireTraversal = true
+        let interrupted = scanner.scan(configuration: configuration, analyzeContent: false,
+            at: observedAt.addingTimeInterval(1_000))
+        XCTAssertTrue(interrupted.failures.isEmpty)
+        XCTAssertTrue(scanner.cycleMetricsForTesting().stoppedByBudget)
+        XCTAssertEqual(store.indexEntryCount(), sourceCount)
+        XCTAssertEqual(Set(store.entries().map(\.id)), Set(originalHashes.keys))
+        XCTAssertLessThan(interrupted.changedSourceCount, sourceCount)
+
+        expireTraversal = false
+        for cycle in 1...4 {
+            let result = scanner.scan(configuration: configuration, analyzeContent: false,
+                at: observedAt.addingTimeInterval(1_000 + Double(cycle)))
+            XCTAssertTrue(result.failures.isEmpty)
+            XCTAssertEqual(result.fullDiscoveryCount, 0)
+            XCTAssertLessThanOrEqual(scanner.cycleMetricsForTesting().visitedIndexEntryCount, 256)
+            XCTAssertLessThanOrEqual(scanner.cycleMetricsForTesting().sourceBodyReadCount, 256)
+            XCTAssertLessThanOrEqual(scanner.cycleMetricsForTesting().indexWriteCount, 1)
+        }
+        XCTAssertEqual(store.indexEntryCount(), sourceCount)
+        XCTAssertEqual(store.entries().filter { originalHashes[$0.id] != $0.sha256 }.count, sourceCount)
+        XCTAssertTrue(store.entries().allSatisfy { $0.availability == .available })
+    }
+
     func testFiveHundredTwelveRootsAdvanceInBoundedThirtyTwoRootCycles() throws {
         let fixture = try makeTemporaryDirectory("root-open-fairness")
         defer { try? FileManager.default.removeItem(at: fixture) }
@@ -1304,7 +1376,14 @@ final class AgentSourceTraversalBudgetTests: XCTestCase {
             maximumIndexEntries: 100
         )
         let store = try AgentActivityStore(rootDirectory: storeRoot)
-        let scanner = AgentActivityScanner(store: store)
+        // Sixteen exact 32-root cycles prove the cardinality quota, not how much
+        // disk work the current host can finish before the independent deadline.
+        let scanner = AgentActivityScanner(
+            store: store,
+            sourceTraversalLimits: .production,
+            sourceTraversalUptimeNanoseconds: { 0 },
+            sourceBodyReadUptimeNanoseconds: { 0 }
+        )
         let startedAt = Date(timeIntervalSince1970: 1_787_474_500)
 
         var completedFolderIDs: Set<String> = []

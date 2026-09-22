@@ -214,11 +214,11 @@
             }
         }
 
-        private var hasSourceIssue: Bool {
-            !agents.indexIsValid || agents.overview.errorCount > 0
-                || agents.lastScanResult.analysisIncomplete
-                || agents.lastScanResult.capacityLimitedFolderCount > 0
+        private var sourceHealth: AgentConversationSourceHealth {
+            AgentConversationSourceHealth(indexIsValid: agents.indexIsValid, scan: agents.lastScanResult)
         }
+
+        private var hasSourceIssue: Bool { sourceHealth.hasReadFailure }
 
         private var conversationHistoryList: some View {
             let captures = filteredCaptures
@@ -259,19 +259,23 @@
                         .frame(width: 240)
                 }
 
-                if hasSourceIssue {
+                if sourceHealth != .ready {
                     HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "exclamationmark.circle").foregroundStyle(LHTheme.warning)
+                        Image(systemName: sourceHealth.symbol).foregroundStyle(LHTheme.warning)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Some conversations could not be loaded").font(.system(size: 13, weight: .semibold))
-                            Text("Results may be incomplete. Retry, or review your source folders and their access.")
+                            Text(sourceHealth.title).font(.system(size: 13, weight: .semibold))
+                            Text(sourceHealth.message)
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
-                        Button("Retry") { agents.scanNow(analyzeSelectedDay: true) }.disabled(agents.isScanning)
+                        if let title = sourceHealth.actionTitle {
+                            Button(title) { agents.scanNow(analyzeSelectedDay: true) }.disabled(agents.isScanning)
+                        }
                         if let onManageSources { Button("Review sources", action: onManageSources) }
                     }.padding(14)
                     .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityIdentifier("conversation-source-health")
                 }
 
                 LHCard(padding: 0) {
@@ -480,8 +484,8 @@
                     title: "Tool calls",
                     value: String(agents.overview.toolCallCount),
                     detail: agents.overview.errorCount == 0
-                        ? "No parsed failures"
-                        : "\(agents.overview.errorCount) parsed failure(s)",
+                        ? "No error messages observed"
+                        : "\(agents.overview.errorCount) error message(s) observed",
                     symbol: "wrench.and.screwdriver.fill",
                     tint: agents.overview.errorCount == 0 ? LHTheme.success : LHTheme.warning
                 )

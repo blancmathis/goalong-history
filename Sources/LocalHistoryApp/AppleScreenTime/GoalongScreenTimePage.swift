@@ -69,6 +69,9 @@
                         deviceScopeCard
 
                         if let summary = screenTime.summary {
+                            LHCard(padding: 14) {
+                                GoalongScreenTimeSourceNotice(presentation: .init(provenance: summary.provenance))
+                            }
                             dayOverview(summary)
                         }
 

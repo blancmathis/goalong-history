@@ -191,6 +191,11 @@ private actor GoalongAnalyticsReader {
     private let reader: GoalongAnalyticsReader
     private var operation = UUID()
     init(root: URL = AppPaths.applicationSupportDirectory) { reader = GoalongAnalyticsReader(root: root) }
+    func load(_ request: GoalongAnalyticsLoadRequest, force: Bool = false) async {
+        guard request.permitsLoading, !Task.isCancelled else { return }
+        await load(day: request.day, count: request.count, force: force, preview: request.isPreview)
+    }
+
     func load(day: Date, count: Int, force: Bool = false, preview: Bool = false) async {
         let id = UUID(); operation = id; busy = true; error = nil
         let sameSelection = payload.map {
