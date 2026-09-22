@@ -31,7 +31,16 @@ final class AgentActivityScannerLoadTests: XCTestCase {
         }
 
         let store = try AgentActivityStore(rootDirectory: storeRoot)
-        let scanner = AgentActivityScanner(store: store)
+        // This test proves the shared 256-body cardinality quota, not wall-clock
+        // throughput. Keep production limits but control both clocks so a busy
+        // test host cannot hit the independent deadline after the first folder.
+        // Dedicated deadline/fairness tests below still advance their clocks.
+        let scanner = AgentActivityScanner(
+            store: store,
+            sourceTraversalLimits: .production,
+            sourceTraversalUptimeNanoseconds: { 0 },
+            sourceBodyReadUptimeNanoseconds: { 0 }
+        )
         let result = scanner.scan(
             configuration: AgentActivityConfiguration(
                 watchedFolders: folders,

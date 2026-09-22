@@ -23,7 +23,10 @@ struct GoalongAnalyticsPage: View {
     private var previewActive: Bool { developerMode && showingPreview }
     private var selection: GoalongActivityNavigation { previewActive ? previewNavigation : navigation }
     private var selectionID: String { "\(selection.day.timeIntervalSince1970)|\(selection.period)|\(previewActive)" }
-    private var requestID: String { "\(selectionID)|\(revision)|\(model.dashboardIsVisible)" }
+    private var loadRequest: GoalongAnalyticsLoadRequest {
+        GoalongAnalyticsLoadRequest(day: selection.day, count: selection.period,
+            revision: revision, preview: previewActive, dashboardIsVisible: model.dashboardIsVisible)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,6 +67,16 @@ struct GoalongAnalyticsPage: View {
                             onHistoryDay: openHistory,
                             onRecap: openRecap)
                             .id(selectionID)
+                    } else if analytics.error == nil && !loadRequest.permitsLoading {
+                        LHCard(padding: 16) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label("Lecture en attente", systemImage: "pause.circle")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("Cliquez dans cette fenêtre pour lire les observations de cette période. Les lectures privées restent suspendues lorsque vous utilisez une autre application.")
+                                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }.accessibilityIdentifier("activity-read-waiting-for-focus")
                     } else if analytics.error == nil {
                         GoalongPageLoadingView(title: "Lecture des observations locales…",
                             message: "Les durées sont calculées sur ce Mac, sans envoyer votre historique.")
@@ -108,13 +121,12 @@ struct GoalongAnalyticsPage: View {
             Text("Choisissez le type d’analyse. Les sources et les autorisations restent à vérifier avant toute génération.")
         }
         .onAppear { model.selectDay(navigation.day) }
-        .task(id: requestID) {
-            guard model.dashboardIsVisible else { return }
-            let request = selection
-            let preview = previewActive
+        .task(id: loadRequest) {
+            let request = loadRequest
+            guard request.permitsLoading else { return }
             let force = forceNextRead
             forceNextRead = false
-            await analytics.load(day: request.day, count: request.period, force: force, preview: preview)
+            await analytics.load(request, force: force)
         }
         .onChange(of: developerMode) { enabled in
             if !enabled { showingPreview = false; previewNavigation = GoalongActivityNavigation() }
