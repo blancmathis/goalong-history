@@ -56,45 +56,85 @@ Apple measurements remain separate from Goalong foreground observations.
 ## Acceptance and evidence
 
 - [x] Resume on the current unified Activité source; preserve the original worktree.
-- [x] Add regression coverage for preview focus, preview/real separation, canceled
-  requests, source-failure semantics and all four Apple assurance levels.
-- [x] Focused native suite: 38 tests, including 17 new regression cases, passed.
+- [x] Add 17 app regression tests for preview focus, preview/real separation,
+  canceled requests, source-failure semantics and the four Apple assurance levels.
+- [x] Add a separate scanner regression that deliberately expires the production
+  traversal deadline, then verifies recovery of all 300 changed source files.
+- [x] Final local targeted suite: 39 tests passed, including the 18 new regressions.
+- [x] Scanner recheck: the three initially failing load fixtures and three existing
+  deadline/fairness tests passed, six tests total with no weakened assertions.
 - [x] Policy suites: 71 Python tests passed across background continuity, updates,
   reviewed site submission, release publication and presigned-release preparation.
 - [x] Source/privacy audit and six installer/signing/CLI safety scripts passed.
-- [x] Native synthetic rendering passed: 28 PNGs, light/dark, 640/1000 points,
-  covering 1/7/28 days, empty history, isolated events and sparse observations.
-- [ ] Finish the full native suite and recheck the deterministic quota fixture.
-- [ ] Inspect the native renders and updated live UI visually. The UI-control
-  connector currently reports a Codex signature-verification failure; generating
-  PNGs is not being reported as a completed visual review.
-- [ ] Review and commit the exact verified source.
-- [ ] Validate a signed packaged build and installation through the existing
-  stable-identity, explicitly approved update path.
+- [x] Native synthetic rendering passed: 28 analytics PNGs, light/dark, 640/1000
+  points, covering 1/7/28 days, empty history and sparse observations.
+- [x] Representative CI renders inspected visually: 1-day wide/light, 7-day
+  narrow/dark, 28-day wide/dark, empty narrow/light and sparse narrow/dark.
+  These are native fixture renders, not live user-interaction results.
+- [x] CI at app-fix commit `ccab86a`: complete macOS quality gate succeeded,
+  including the full native suite, permission relaunch isolation, 57 isolated
+  native journey renders, timezone checks, bundle validation and package smoke
+  tests. History sharing acceptance and native brand motion also succeeded.
+- [x] Application changes committed and pushed in draft PR #36. The subsequent
+  commit adds only validated test fixtures and this evidence record; application
+  code is unchanged from the successful CI commit. Its own CI status is tracked
+  on the PR rather than presumed from the previous run.
+- [ ] Review the updated application interactively on the Mac. The UI-control
+  connector reports a Codex signature-verification failure; CI image retrieval
+  enabled static visual review, not access to the running application's controls.
+- [ ] Validate the stable-signing-identity distribution and approved installation
+  path on the actual Mac. A successful CI test package is not this live install.
 - [ ] Exercise the installed build's restart and live interactions. Do not report
-  synthetic tests as live private-data transmission or successful Apple parity.
+  fixtures as live private-data transmission or successful Apple Settings parity.
 
-Logs, synthetic snapshots and per-command exit statuses belong to the local QA
-record, not the source repository. Do not publish personal histories, screenshots
-of conversations, credential material or application-support data.
+The installed application remains 0.6.34 and has not been replaced. Original source
+folders, recorded history, consent and background recording were not changed.
 
-## Additional finding during full-suite validation
+## Initial full-suite finding and resolution
 
-The initial full native run reported 200 rather than 256 reads in
-`testMultiFolderCycleSharesOneBodyBudgetAndOneAtomicIndexWrite`. That fixture
-used real monotonic time while asserting an exact cardinality: the independent
-production deadline could stop a busy test host after the first folder.
-The fixture now uses the scanner's existing injected clocks, with production
-limits and every strict assertion unchanged. Deadline/fairness tests remain
-separate. No production scanner limit was relaxed. The corrected fixture must
-be rerun before this item is considered verified.
+The first local full run completed 1,140 tests, with 21 skips and eight failed
+assertions in three pre-existing load fixtures. The result remains in the record:
 
-The long 10,000-source regression was sampled read-only while running; it was
-performing its bounded warm-polling checks, not waiting on a live personal source.
-The opt-in real-Codex-source benchmark remains disabled.
+- `testMultiFolderCycleSharesOneBodyBudgetAndOneAtomicIndexWrite`: 200 reads
+  rather than exactly 256 when the independent deadline expired on the busy host.
+- `testTenThousandSourcesUseOneCommitAndBoundedWarmPollingWithoutLostChanges`:
+  extra traversal visits and 99/100 changes found within the exact one-pass quota.
+- `testFiveHundredTwelveRootsAdvanceInBoundedThirtyTwoRootCycles`: one cycle
+  reached the time boundary before its exact 32-root quota.
 
-Local-only evidence is retained below `dist/quality-evidence-20260922/`; it is
-excluded from Git. The initial full-suite failure remains part of the record.
+All three fixtures assert cardinality/cursor contracts but originally used real
+monotonic time. They now use existing injected clocks with production limits and
+all strict assertions unchanged. The selected-day body budget is also preserved
+in the 10,000-source fixture. None of the production scanner implementation or its
+security, memory, byte, cancellation and wall-time limits was changed.
+
+The corrected three cases passed locally alongside three independent deadline
+and fairness tests (six tests, 595.608 seconds). The 10,000-source replay recovered
+all 100 modified sources. The additional forced warm-deadline regression passed
+and verified that all 300 changed sources were eventually recovered without a
+new full discovery, missing IDs or unavailable-source states. Together with the
+38 app tests, the final targeted run passed 39 tests in 20.499 seconds.
+
+This is a successful full CI run plus targeted local revalidation, not a claim
+that the first failing local log was retroactively green. The real-private-Codex
+benchmark remains opt-in and was not enabled.
+
+## Evidence locations
+
+The goal is tracked in PR #36, `fix/end-to-end-quality-20260922`.
+Successful CI for `ccab86a`: macOS quality run `35749432668`, sharing run
+`35749432620`, native brand run `35749432642`. Analytics artifact `10704965620`
+and native journey artifact `10704796341` contain synthetic data only.
+
+Local analytics snapshots are below `dist/quality-evidence-20260922/analytics/`
+and excluded from Git. Native command logs remain under `/tmp/`:
+`goalong-quality-full-20260922.log`, `goalong-quality-focused-20260922.log`,
+`goalong-quality-scanner-regression-20260922.log`,
+`goalong-quality-final-targeted-20260922.log` and
+`goalong-quality-render-20260922.log`.
+
+Do not publish personal histories, conversation screenshots, credential material
+or application-support data as evidence.
 
 ## Reproduction commands
 

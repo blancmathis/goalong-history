@@ -976,7 +976,15 @@ final class AgentActivityScannerLoadTests: XCTestCase {
             fullDiscoveryIntervalSeconds: 900,
             maximumIndexEntries: sourceCount
         )
-        let scanner = AgentActivityScanner(store: store)
+        // Cardinality and cursor continuity are independent of host throughput.
+        // Freeze only this fixture's clocks; deadline recovery is tested separately.
+        let scanner = AgentActivityScanner(
+            store: store,
+            sourceTraversalLimits: .production,
+            sourceTraversalUptimeNanoseconds: { 0 },
+            selectedDayAnalysisBodyReadLimits: .selectedDayAnalysis,
+            sourceBodyReadUptimeNanoseconds: { 0 }
+        )
         let observedAt = Date(timeIntervalSince1970: 1_787_472_100)
         let unrelatedAnalysisDay = Date(timeIntervalSince1970: 946_684_800)
 
@@ -1001,7 +1009,13 @@ final class AgentActivityScannerLoadTests: XCTestCase {
         )
 
         let restartedStore = try AgentActivityStore(rootDirectory: storeRoot)
-        let restartedScanner = AgentActivityScanner(store: restartedStore)
+        let restartedScanner = AgentActivityScanner(
+            store: restartedStore,
+            sourceTraversalLimits: .production,
+            sourceTraversalUptimeNanoseconds: { 0 },
+            selectedDayAnalysisBodyReadLimits: .selectedDayAnalysis,
+            sourceBodyReadUptimeNanoseconds: { 0 }
+        )
         let entryCountAfterFirstProcess = restartedStore.indexEntryCount()
         var cycleOffset: TimeInterval = 10
         var cycleCount = 0
