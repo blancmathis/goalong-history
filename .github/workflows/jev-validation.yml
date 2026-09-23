@@ -1,0 +1,40 @@
+name: Jev validation
+on:
+  push:
+    branches: ['feature/jev-focus-monitor']
+  pull_request:
+    paths:
+      - 'Sources/**/Jev*.swift'
+      - 'Tests/**/Jev*.swift'
+      - '.github/workflows/jev-validation.yml'
+permissions:
+  contents: read
+concurrency:
+  group: jev-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: git archive --format=tar.gz HEAD > "$RUNNER_TEMP/goalong-source.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jev-source-${{ github.sha }}
+          path: ${{ runner.temp }}/goalong-source.tar.gz
+          retention-days: 2
+  tests:
+    if: contains(github.event.head_commit.message, '[jev-test]') || github.event_name == 'pull_request'
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Tests
+        run: swift test -j 4
+      - name: Source security
+        run: ./scripts/verify_source_security.sh
