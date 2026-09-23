@@ -40,6 +40,7 @@ final class JevInterventionUXTests: XCTestCase {
         presenter.update(seconds: 120, appearance: 1, present: true, settings: settings)
         let first = try XCTUnwrap(presenter.panel)
         XCTAssertFalse(first.canBecomeKey); XCTAssertFalse(first.canBecomeMain)
+        XCTAssertEqual(first.frame.size, NSSize(width: 400, height: 156))
         let origin = first.frame.origin
         let overlay = try XCTUnwrap(presenter.overlays.first)
         XCTAssertTrue(overlay.ignoresMouseEvents); XCTAssertFalse(overlay.canBecomeKey)

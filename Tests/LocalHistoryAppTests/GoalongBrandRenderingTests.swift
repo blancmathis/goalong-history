@@ -483,25 +483,35 @@ final class GoalongBrandRenderingTests: XCTestCase {
         window.setContentSize(NSSize(width: 700, height: 800)); pump()
         XCTAssertFalse(preferences.settings.effectsEnabled)
         let effectToggle = try XCTUnwrap(accessibleElement("jev-effects-enabled", within: window))
-        XCTAssertTrue(effectToggle.accessibilityPerformPress()); pump()
+        // NSSwitch can report false from AXPress while applying the action. Assert
+        // the real state and its persistence, not that unreliable return value.
+        _ = effectToggle.accessibilityPerformPress(); pump()
         XCTAssertTrue(preferences.settings.effectsEnabled)
+        XCTAssertTrue(JevInterventionPreferences().settings.effectsEnabled)
         XCTAssertEqual(consents.document, readyState, "Configuring effects must never authorize monitoring or stop recording")
         for dark in [true, false] {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             window.appearance = app.appearance; pump()
             try snapshot(interventionHost.view, to: output.appendingPathComponent("monitoring-interventions-\(dark ? "dark" : "light").png"))
         }
-        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-effects-enabled", within: window)).accessibilityPerformPress()); pump()
+        _ = try XCTUnwrap(accessibleElement("jev-effects-enabled", within: window)).accessibilityPerformPress(); pump()
         XCTAssertFalse(preferences.settings.effectsEnabled)
-        let warningContent = JevWarningContent()
-        let warningHost = NSHostingController(rootView: JevWarningView(content: warningContent))
-        window.contentViewController = warningHost
-        window.setContentSize(NSSize(width: 400, height: 156)); pump()
-        XCTAssertNotNil(accessibleElement("jev-warning-close", within: window))
-        XCTAssertNotNil(accessibleElement("jev-warning-disable", within: window))
-        try snapshot(warningHost.view, to: output.appendingPathComponent("monitoring-warning-30s.png"))
-        warningContent.seconds = 315; pump()
-        try snapshot(warningHost.view, to: output.appendingPathComponent("monitoring-warning-5min.png"))
+        XCTAssertFalse(JevInterventionPreferences().settings.effectsEnabled)
+        // Render the actual panel, not a dashboard window carrying old minimum-size constraints.
+        // Keep this synthetic warning offscreen; never show effects on the owner's displays.
+        let presenter = JevWarningPanel(ordersWindows: false)
+        defer { presenter.hide() }
+        presenter.update(seconds: 30, appearance: 1, present: true, settings: .init())
+        let warningWindow = try XCTUnwrap(presenter.panel)
+        XCTAssertEqual(warningWindow.frame.size, NSSize(width: 400, height: 156))
+        warningWindow.setFrameOrigin(NSPoint(x: 20000, y: 20000))
+        warningWindow.orderFrontRegardless(); pump()
+        XCTAssertNotNil(accessibleElement("jev-warning-close", within: warningWindow))
+        XCTAssertNotNil(accessibleElement("jev-warning-disable", within: warningWindow))
+        try snapshot(try XCTUnwrap(warningWindow.contentView), to: output.appendingPathComponent("monitoring-warning-30s.png"))
+        presenter.update(seconds: 315, appearance: 1, present: false, settings: .init()); pump()
+        try snapshot(try XCTUnwrap(warningWindow.contentView), to: output.appendingPathComponent("monitoring-warning-5min.png"))
+        XCTAssertTrue(presenter.overlays.isEmpty)
         XCTAssertEqual(consents.document, readyState)
         print("NATIVE_INTERVENTIONS real effect toggle, preferences, warning controls and unchanged consents passed; no screen overlay or API request enabled")
         print("NATIVE_MONITORING sidebar, recording shortcut, protected connection sheet, timed pause and unchanged consents passed; no monitoring request enabled")
