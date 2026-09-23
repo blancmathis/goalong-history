@@ -27,13 +27,23 @@ import LocalHistoryCore
                 moving: settings.moveAfterSecondAppearance, previous: previousAnchor,
                 sample: Int.random(in: 0...Int.max))
             previousAnchor = anchor
-            let value = JevNonactivatingPanel(contentRect: Self.frame(in: screen.visibleFrame, anchor: anchor),
+            let target = Self.frame(in: screen.visibleFrame, anchor: anchor)
+            let value = JevNonactivatingPanel(contentRect: target,
                 styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             value.isReleasedWhenClosed = false
             value.isFloatingPanel = true; value.hidesOnDeactivate = false
             value.level = .floating; value.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             value.isOpaque = false; value.backgroundColor = .clear; value.hasShadow = true
-            value.contentView = NSHostingView(rootView: JevWarningView(content: content))
+            // A content hosting view otherwise derives window min/max sizes from SwiftUI.
+            // This reminder has an explicitly bounded layout, including after the first run loop.
+            let host = NSHostingView(rootView: JevWarningView(content: content)
+                .frame(width: target.width, height: target.height))
+            host.sizingOptions = []
+            host.frame = NSRect(origin: .zero, size: target.size)
+            host.autoresizingMask = [.width, .height]
+            value.contentView = host
+            value.contentMinSize = target.size; value.contentMaxSize = target.size
+            value.setFrame(target, display: false)
             panel = value
         }
         content.seconds = seconds
