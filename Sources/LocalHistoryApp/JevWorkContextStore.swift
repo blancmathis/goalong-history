@@ -23,11 +23,7 @@ extension Notification.Name {
         } catch { self.error = "Objectif illisible : surveillance suspendue. Enregistrez à nouveau vos projets." }
     }
     static func reviewedVerdict(_ verdict: JevVerdict, work: JevWorkContext, window: JevWindow) -> JevVerdict {
-        // A confident model answer still cannot establish project relevance without a reference/topic.
-        if verdict == .productive, work.summary.isEmpty || !window.samples.contains(where: { !$0.title.isEmpty }) {
-            return .unknown
-        }
-        return verdict
+        JevEvidencePolicy.reviewed(verdict, work: work, window: window)
     }
     /// Called only by the explicit Save action; editing a draft does not authorize new context.
     func save(_ summary: String) throws {

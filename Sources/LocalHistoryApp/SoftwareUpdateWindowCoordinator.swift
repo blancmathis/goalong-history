@@ -5,7 +5,7 @@ import Sparkle
 /// Uses public AppKit ownership/child-window APIs only; never Sparkle private ivars or KVC.
 /// Armed by an explicit update action, not a passive background check.
 @MainActor final class SoftwareUpdateWindowCoordinator {
-    private final class Entry {
+    @MainActor private final class Entry {
         weak var window: NSWindow?
         weak var attachedParent: NSWindow?
         let level: NSWindow.Level

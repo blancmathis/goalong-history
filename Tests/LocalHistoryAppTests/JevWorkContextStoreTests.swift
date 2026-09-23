@@ -34,7 +34,7 @@ final class JevWorkContextStoreTests: XCTestCase {
         let work = try JevWorkContext(summary: "Goalong Swift app")
         XCTAssertEqual(JevWorkContextStore.reviewedVerdict(.productive, work: .empty, window: window), .unknown)
         XCTAssertEqual(JevWorkContextStore.reviewedVerdict(.productive, work: work, window: window), .unknown)
-        XCTAssertEqual(JevWorkContextStore.reviewedVerdict(.procrastination, work: .empty, window: window), .procrastination)
+        XCTAssertEqual(JevWorkContextStore.reviewedVerdict(.procrastination, work: .empty, window: window), .unknown)
     }
     @MainActor func testWorkReferenceSymlinkCannotExposeAnotherFile() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("work-context-test-" + UUID().uuidString)
