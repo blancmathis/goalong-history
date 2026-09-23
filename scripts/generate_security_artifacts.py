@@ -29,6 +29,7 @@ TRANSPORT_MARKERS = {
     "managedOAuth": b"account/login/start",
     "commitmentUploader": b"The commitment endpoint URL is invalid.",
     "siteSubmission": b"/api/goalong/v1/import",
+    "jevClassification": b"https://api.typesafe.ai/v1/systemone",
     "sparkleUpdater": b"SPUStandardUpdaterController",
 }
 
@@ -239,7 +240,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "singlePublicApplication": "present",
         "defaultCapabilityState": "data-access-off-update-checks-configurable",
         "explicitConsentRegistry": "present",
-        "firstPartyNetworkTransport": "explicit-site-pairing-and-submission-only",
+        "firstPartyNetworkTransport": "explicit-site-pairing-submission-and-opt-in-jev",
         "automaticUpdater": "sparkle-signed-user-approved-install",
         "managedChatGPTBridge": "explicit-consent-only",
         "directProviderSourceReaders": "present",
@@ -248,6 +249,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "osEnforcedNetworkSandbox": "not-enabled",
     }
     declared_network_destinations: list[dict[str, str]] = [
+        {"purpose": "opt-in-jev-activity-classification", "destination": "https://api.typesafe.ai/v1/systemone", "source": "JevTransport after separate explicit consent; bounded recent context only"},
         {"purpose": "signed-software-updates", "destination": "fixed Community feed and immutable release archives on GitHub/CDN", "source": "pinned Sparkle; no activity data or system profile"},
         {"purpose": "explicit-website-pairing", "destination": "user-confirmed website origin", "source": "GoalongSitePairing after native confirmation"},
         {
@@ -316,6 +318,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "declaredDestinations": declared_network_destinations,
             "softwareUpdates": manifest_policy(info),
             "osEnforcedDeny": False,
+            "jevClassification": {'trigger': 'explicit-jev-consent-and-computer-history', 'destination': 'https://api.typesafe.ai/v1/systemone', 'model': 'jev-1.13.0', 'method': 'POST', 'intervalSeconds': 15, 'windowSeconds': 15, 'consecutiveWarnings': 2, 'skipInactive': True, 'timedBreakSuspends': True, 'privateBrowsing': 'never-sent', 'requestMaximumBytes': 800, 'acceptedInputTokensMaximum': 999, 'providerTokenizerKnown': False, 'responseMaximumBytes': 65536, 'resourceTimeoutSeconds': 12, 'redirects': 'refused', 'automaticRetry': False, 'authentication': 'user-owned-0600-api-key-file', 'payloadRetention': 'bounded-memory-only', 'extraVisibleText': 'separate-opt-in-with-existing-local-consent'},
             "sitePairing": {"trigger": "native-confirmed-goalong-history-link", "path": "/api/goalong/v1/native/pairing/claim", "method": "POST", "codeLifetimeSeconds": 300, "singleUse": True, "redirects": "refused", "responseMaximumBytes": 8192, "tokenStorage": "user-owned-0600-file", "activityDataSent": False},
             "siteSubmission": {
                 "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button", "native-reviewed-opt-in-schedule"],
@@ -359,6 +362,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "consentRegistryMode": "0600",
             "newInstallDefaults": {
                 "computerHistory": False,
+                "jevMonitoring": False,
                 "appleScreenTime": False,
                 "aiConversations": False,
                 "chatGPTAnalysis": False,
@@ -386,6 +390,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "codeObjects": code_objects,
         "limitations": [
             "This manifest inventories the built artifact; the separately published GitHub/Sigstore attestation binds artifact digests to CI provenance but does not prove source-to-binary reproducibility.",
+            "Jev classification is opt-in remote inference, not a measurement of attention; its unpublished tokenizer/framing prevents a preflight exact token guarantee. Runtime reported input usage over 999 stops analysis.",
             "Absence of reviewed transport markers does not create an OS network sandbox.",
             "Sparkle authenticates feeds and archives, not an Apple identity. Community updates may require renewed macOS permissions. User approval is required for installation.",
             "Full Disk Access readers still run in the main process; a separately sandboxed reader is not shipped.",

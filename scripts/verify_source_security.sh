@@ -27,7 +27,8 @@ for required in \
   'case localComputerHistory' \
   'case appleScreenTime' \
   'case aiConversations' \
-  'case chatGPTAnalysis'; do
+  'case chatGPTAnalysis' \
+  'case jevMonitoring'; do
   grep -Fq "$required" Sources/LocalHistoryApp/CapabilityConsentStore.swift \
     || fail "consent invariant is missing: $required"
 done
@@ -53,6 +54,7 @@ for active_file in Package.swift scripts/build_app.sh scripts/build_app_core.sh 
 done
 
 ./scripts/audit_privacy_boundaries.sh
+python3 scripts/audit_jev.py || fail "the optional Jev boundary is invalid"
 
 if [[ "${1:-}" == "--with-tests" ]]; then
   xcrun swift test \
@@ -65,7 +67,8 @@ cat <<'EOF'
 Goalong source security verification passed.
 - one public app identity
 - sensitive capabilities off by default
-- first-party HTTP limited to confirmed website pairing and explicit reviewed sends; no unapproved sync; the sole remote dependency is pinned Sparkle for authenticated, user-approved updates
+- first-party HTTP limited to reviewed website actions and separately consented, bounded Jev classification
+- signed, user-approved updates use the pinned Sparkle dependency
 - Screen Time CLI access brokered through the consented app
 - Agent Activity direct-source readers remain read-only and metadata-only on disk
 

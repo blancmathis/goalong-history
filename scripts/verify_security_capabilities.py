@@ -45,8 +45,8 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
 
     if value.get("capabilities", {}).get("automaticUpdater") != "sparkle-signed-user-approved-install":
         fail("signed user-approved updater capability is missing")
-    if value.get("capabilities", {}).get("firstPartyNetworkTransport") != "explicit-site-pairing-and-submission-only":
-        fail("first-party transport is not confined to explicit website submission")
+    if value.get("capabilities", {}).get("firstPartyNetworkTransport") != "explicit-site-pairing-submission-and-opt-in-jev":
+        fail("first-party transport differs from explicit website and optional bounded Jev boundaries")
     if value.get("capabilities", {}).get("singlePublicApplication") != "present":
         fail("single public application invariant is missing")
     if value.get("capabilities", {}).get("defaultCapabilityState") != "data-access-off-update-checks-configurable":
@@ -71,6 +71,8 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
         fail("explicit-consent Codex bridge markers are missing")
     if markers.get("commitmentUploader") or markers.get("sparkleUpdater") is not True:
         fail("retired uploader present or signed updater missing")
+    if markers.get("jevClassification") is not True:
+        fail("optional Jev classification marker is missing")
     if markers.get("siteSubmission") is not True:
         fail("explicit website submission marker is missing")
     try:
@@ -99,9 +101,12 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     }
     if value.get("network", {}).get("siteSubmission") != expected_submission:
         fail("explicit website submission constraints differ from the reviewed contract")
+    expected_jev = {'trigger': 'explicit-jev-consent-and-computer-history', 'destination': 'https://api.typesafe.ai/v1/systemone', 'model': 'jev-1.13.0', 'method': 'POST', 'intervalSeconds': 15, 'windowSeconds': 15, 'consecutiveWarnings': 2, 'skipInactive': True, 'timedBreakSuspends': True, 'privateBrowsing': 'never-sent', 'requestMaximumBytes': 800, 'acceptedInputTokensMaximum': 999, 'providerTokenizerKnown': False, 'responseMaximumBytes': 65536, 'resourceTimeoutSeconds': 12, 'redirects': 'refused', 'automaticRetry': False, 'authentication': 'user-owned-0600-api-key-file', 'payloadRetention': 'bounded-memory-only', 'extraVisibleText': 'separate-opt-in-with-existing-local-consent'}
+    if value.get("network", {}).get("jevClassification") != expected_jev:
+        fail("Jev classification differs from the reviewed opt-in bounded contract")
     destinations = value.get("network", {}).get("declaredDestinations", [])
-    if len(destinations) != 4 or {item.get("purpose") for item in destinations} != {
-        "managed-ChatGPT-analysis-after-explicit-consent", "explicit-selected-website-import", "explicit-website-pairing", "signed-software-updates"
+    if len(destinations) != 5 or {item.get("purpose") for item in destinations} != {
+        "opt-in-jev-activity-classification", "managed-ChatGPT-analysis-after-explicit-consent", "explicit-selected-website-import", "explicit-website-pairing", "signed-software-updates"
     }:
         fail("declared network emission paths differ from the reviewed optional features and signed updater")
     if value.get("ipc", {}).get("authenticatedSensitiveReader") != "not-shipped":
@@ -109,6 +114,8 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     defaults = value.get("dataAccess", {}).get("newInstallDefaults", {})
     if not defaults or any(defaults.values()):
         fail("new-install capability defaults are not all false")
+    if defaults.get("jevMonitoring") is not False:
+        fail("Jev monitoring must be disabled by default")
     if defaults.get("websiteSubmission") is not False:
         fail("website submission must be off until an explicit user action")
     expected_health = {

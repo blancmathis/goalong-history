@@ -117,6 +117,8 @@ import AppKit
             GoalongSettingsLink(title: "Analyse ChatGPT", value: "Données et personnalisation", symbol: "sparkles") { pane = .chatGPT }
         case .website:
             GoalongWebsiteSettings(model: model)
+        case .jev:
+            JevSettingsView()
         case .chatGPT:
             GoalongChatGPTSettings(model: model)
         case .permissions:
@@ -159,6 +161,7 @@ import AppKit
         switch item {
         case .recording: return consents.isEnabled(.localComputerHistory) ? "Activé" : "Désactivé"
         case .applications: return "Choisir les exclusions"
+        case .jev: return "Facultatif · pauses minutées"
         case .connections: return "Choisir une connexion"
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
@@ -177,11 +180,11 @@ import AppKit
 }
 
 enum SettingsPane: Hashable {
-    case home, recording, applications, connections, website, chatGPT, permissions, storage, advanced, tools
-    static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .permissions, .storage]
+    case home, recording, applications, connections, website, chatGPT, jev, permissions, storage, advanced, tools
+    static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .jev, .permissions, .storage]
     static func matches(_ raw: String) -> [Self] {
         let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty { return [.applications, .permissions, .storage] }
+        if query.isEmpty { return [.jev, .applications, .permissions, .storage] }
         return (primary + [.advanced, .tools]).filter { ($0.title + " " + $0.keywords).localizedStandardContains(query) }
     }
     var title: String {
@@ -192,6 +195,7 @@ enum SettingsPane: Hashable {
         case .connections: return "Connexions"
         case .website: return "Envoi à Goalong"
         case .chatGPT: return "Analyse ChatGPT"
+        case .jev: return "Jev et pauses"
         case .permissions: return "Autorisations macOS"
         case .storage: return "Stockage"
         case .advanced: return "Avancé"
@@ -206,6 +210,7 @@ enum SettingsPane: Hashable {
         case .connections: return "link"
         case .website: return "arrow.up.circle"
         case .chatGPT: return "sparkles"
+        case .jev: return "eye.circle"
         case .permissions: return "hand.raised"
         case .storage: return "internaldrive"
         default: return "slider.horizontal.3"
@@ -218,6 +223,7 @@ enum SettingsPane: Hashable {
         case .connections: return "connexions"
         case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"
         case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
+        case .jev: return "jev typesafe productivité procrastination surveillance pause minuterie"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"
         case .storage: return "supprimer effacer historique conserver durée espace mémoire"
         case .advanced: return "terminal cli configuration json diagnostic diagnostics version mise à jour démarrage développeur developer mocks fictives aperçu"
