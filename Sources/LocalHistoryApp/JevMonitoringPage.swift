@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import LocalHistoryCore
 
 /// These are setup requirements, not a claim that monitoring is currently running.
 struct JevActivationAvailability: Equatable {
@@ -28,11 +29,14 @@ struct JevActivationAvailability: Equatable {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Surveillance temps réel")
                         .font(LHTheme.pageTitleFont).accessibilityAddTraits(.isHeader)
-                    Text("Un rappel discret pour revenir à ce que vous voulez faire.")
+                    Text("Des rappels pour revenir au travail. Vos pauses Jev n’arrêtent pas l’historique.")
                         .font(.system(size: 14)).foregroundStyle(.secondary)
                 }
                 monitoringCard
                 JevBreakControls()
+                DisclosureGroup("Configurer les rappels et les effets") {
+                    JevInterventionControls().padding(.top, 12)
+                }.accessibilityIdentifier("jev-intervention-settings")
                 if !monitor.recentChecks.isEmpty {
                     DisclosureGroup("Dernières vérifications · cette session") {
                         JevRecentChecksView(checks: Array(monitor.recentChecks.prefix(6)))
@@ -88,7 +92,7 @@ struct JevActivationAvailability: Equatable {
                     .font(.system(size: 13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("jev-status")
-                Text("Avec activité : une analyse toutes les 15 s. Deux détections consécutives de procrastination déclenchent un avertissement, sans bloquer votre Mac.")
+                Text("Avec activité : une analyse toutes les 15 s. Après 30 s détectées : un rappel. Fermer le masque jusqu’à la prochaine détection. Les effets progressifs sont configurables ci-dessous.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Divider()

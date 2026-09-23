@@ -26,7 +26,7 @@
 
         private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let permissionMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        private let globalPauseItem = NSMenuItem(title: "Pause globale", action: #selector(toggleGlobalPause), keyEquivalent: "")
+        private let globalPauseItem = NSMenuItem(title: "Arrêt de confidentialité", action: #selector(toggleGlobalPause), keyEquivalent: "")
         private let pauseMenuItem = NSMenuItem(title: "", action: #selector(togglePause), keyEquivalent: "p")
 
         init(
@@ -84,7 +84,7 @@
 
             let display: (title: String, symbol: String, description: String)
             if GoalongGlobalPause.isPaused() {
-                display = ("Pause globale", "pause.circle.fill", "Sources et envois suspendus")
+                display = ("Arrêt de confidentialité", "pause.circle.fill", "Sources et envois suspendus")
             } else if health.state == .permissionRequired
                 || health.state == .permissionAppearsEnabledButStaleForBuild
                 || health.state == .accessibilityContextUnavailable
@@ -122,10 +122,10 @@
             statusMenuItem.toolTip = display.description
             permissionMenuItem.title =
                 "Accessibility: \(permissionStatus.accessibility ? "on" : "off")  •  Direct input: \(permissionStatus.inputMonitoringStatusLabel)  •  Tap object: \(eventTapStatus() ? "on" : "off")  •  Evidence: \(health.captureProven ? "yes" : "no")"
-            globalPauseItem.title = GoalongGlobalPause.isPaused() ? "Reprendre Goalong" : "Pause globale — sources et envois"
+            globalPauseItem.title = GoalongGlobalPause.isPaused() ? "Reprendre tout le suivi" : "Tout suspendre pour confidentialité…"
             pauseMenuItem.title = !GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
                 ? "Set up Computer History…"
-                : (state.isManuallyPaused ? "Resume recording" : "Pause recording")
+                : (state.isManuallyPaused ? "Reprendre l’enregistrement local" : "Arrêter l’enregistrement local…")
 
             if let button = statusItem.button {
                 button.image = GoalongBrandAssets.menuBarImage
@@ -160,9 +160,13 @@
             menu.addItem(.separator())
 
             globalPauseItem.target = self
-            menu.addItem(globalPauseItem)
             pauseMenuItem.target = self
-            menu.addItem(pauseMenuItem)
+            let privacyMenu = NSMenu(title: "Confidentialité · arrêter le suivi")
+            privacyMenu.addItem(globalPauseItem)
+            privacyMenu.addItem(pauseMenuItem)
+            let privacyItem = NSMenuItem(title: "Confidentialité · arrêter le suivi", action: nil, keyEquivalent: "")
+            privacyItem.submenu = privacyMenu
+            menu.addItem(privacyItem)
             Task { @MainActor in JevMenuController.shared.install(in: self.menu, onOpenMonitoring: self.onOpenMonitoring) }
             menu.addItem(makeItem("Share signed day…", action: #selector(openShare)))
             menu.addItem(.separator())
@@ -211,6 +215,7 @@
         }
 
         @objc private func toggleGlobalPause() {
+            if !GoalongGlobalPause.isPaused(), !confirmRecordingStop(allSources: true) { return }
             do {
                 try GoalongGlobalPause.setPaused(!GoalongGlobalPause.isPaused(), recordingWasPaused: state.isManuallyPaused)
                 updateStatus()
@@ -220,7 +225,16 @@
             }
         }
 
+        private func confirmRecordingStop(allSources: Bool) -> Bool {
+            let alert = NSAlert()
+            alert.messageText = allSources ? "Suspendre tout le suivi ?" : "Arrêter l’enregistrement local ?"
+            alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour une pause détente, utilisez Pause Jev : l’historique continue."
+            alert.addButton(withTitle: "Annuler")
+            alert.addButton(withTitle: "Suspendre le suivi")
+            return alert.runModal() == .alertSecondButtonReturn
+        }
         @objc private func togglePause() {
+            if state.isCapturing, !confirmRecordingStop(allSources: false) { return }
             onTogglePause()
             updateStatus()
         }

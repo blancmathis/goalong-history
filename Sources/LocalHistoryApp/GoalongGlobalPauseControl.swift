@@ -7,15 +7,14 @@ struct GoalongGlobalPauseControl: View {
     var compact = false
     @State private var pause = GoalongGlobalPause.load()
     @State private var error: String?
+    @State private var confirming = false
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                do {
-                    pause = try GoalongGlobalPause.setPaused(!pause.paused,
-                        recordingWasPaused: model.runtime.state == .paused)
-                } catch { self.error = error.localizedDescription }
+                if pause.blocksActivity { changePause(false) }
+                else { confirming = true }
             } label: {
-                Label(pause.blocksActivity ? "Reprendre Goalong" : "Pause globale",
+                Label(pause.blocksActivity ? "Reprendre le suivi" : "Tout suspendre…",
                       systemImage: pause.blocksActivity ? "play.circle" : "pause.circle")
                     .font(.system(size: 12, weight: .medium))
                     .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
@@ -29,9 +28,19 @@ struct GoalongGlobalPauseControl: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }
-        .alert("Pause non modifiée", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+        .alert("Suspendre aussi l’historique ?", isPresented: $confirming) {
+            Button("Annuler", role: .cancel) {}
+            Button("Tout suspendre", role: .destructive) { changePause(true) }
+        } message: {
+            Text("L’historique, les analyses et les envois seront suspendus jusqu’à votre reprise. Pour une pause détente sans trou dans l’historique, utilisez la pause Jev.")
+        }
+        .alert("Arrêt non modifié", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("Fermer", role: .cancel) {}
         } message: { Text(error ?? "") }
+    }
+    private func changePause(_ paused: Bool) {
+        do { pause = try GoalongGlobalPause.setPaused(paused, recordingWasPaused: model.runtime.state == .paused) }
+        catch { self.error = error.localizedDescription }
     }
 }
 
@@ -44,8 +53,8 @@ struct GoalongGlobalPauseBanner: View {
                 HStack(spacing: 14) {
                     Image(systemName: "pause.circle.fill").foregroundStyle(LHTheme.accent)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Pause globale").font(.system(size: 13, weight: .semibold))
-                        Text(pause.invalid ? "Réglage illisible : reprise bloquée par sécurité." : "Sources et envois suspendus. Vos choix sont conservés.")
+                        Text("Historique suspendu · confidentialité").font(.system(size: 13, weight: .semibold))
+                        Text(pause.invalid ? "Réglage illisible : reprise bloquée par sécurité." : "Tout le suivi est arrêté, pas seulement Jev. Reprenez-le pour enregistrer à nouveau.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer()

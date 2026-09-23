@@ -104,6 +104,15 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     expected_jev = {'trigger': 'explicit-jev-consent-and-computer-history', 'destination': 'https://api.typesafe.ai/v1/systemone', 'model': 'jev-1.13.0', 'method': 'POST', 'intervalSeconds': 15, 'windowSeconds': 15, 'consecutiveWarnings': 2, 'skipInactive': True, 'timedBreakSuspends': True, 'privateBrowsing': 'never-sent', 'requestMaximumBytes': 800, 'acceptedInputTokensMaximum': 999, 'providerTokenizerKnown': False, 'responseMaximumBytes': 65536, 'resourceTimeoutSeconds': 12, 'redirects': 'refused', 'automaticRetry': False, 'authentication': 'user-owned-0600-api-key-file', 'payloadRetention': 'bounded-memory-only', 'extraVisibleText': 'separate-opt-in-with-existing-local-consent'}
     if value.get("network", {}).get("jevClassification") != expected_jev:
         fail("Jev classification differs from the reviewed opt-in bounded contract")
+    if value.get("jevInterventions") != {
+        "defaultEnabled": False, "firstWarningSeconds": 30,
+        "closeBehavior": "rearm-next-positive-window-preserve-duration",
+        "moveFromAppearance": 3, "defaultStageMinutes": [2, 5, 10],
+        "maximumOpacityPercent": 40, "staleEffectsExpirySeconds": 30,
+        "hardwareBrightnessChanges": False, "blocksInput": False,
+        "timedBreakStopsRecorder": False,
+    }:
+        fail("Jev intervention safety contract differs from bounded opt-in local overlays")
     destinations = value.get("network", {}).get("declaredDestinations", [])
     if len(destinations) != 5 or {item.get("purpose") for item in destinations} != {
         "opt-in-jev-activity-classification", "managed-ChatGPT-analysis-after-explicit-consent", "explicit-selected-website-import", "explicit-website-pairing", "signed-software-updates"

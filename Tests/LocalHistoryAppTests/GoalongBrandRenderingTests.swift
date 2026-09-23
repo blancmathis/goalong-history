@@ -473,6 +473,51 @@ final class GoalongBrandRenderingTests: XCTestCase {
         XCTAssertNil(monitor.timedBreak)
         XCTAssertFalse(monitor.enabled)
         XCTAssertEqual(consents.document, readyState, "Ending a break must not activate Jev or a source")
+        let preferences = JevInterventionPreferences.shared
+        let originalInterventions = preferences.settings
+        defer { preferences.update { $0 = originalInterventions } }
+        let interventionHost = NSHostingController(rootView: ScrollView {
+            JevInterventionControls().padding(28)
+        }.background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent))
+        window.contentViewController = interventionHost
+        window.setContentSize(NSSize(width: 700, height: 800)); pump()
+        XCTAssertFalse(preferences.settings.effectsEnabled)
+        let effectToggle = try XCTUnwrap(accessibleElement("jev-effects-enabled", within: window))
+        // NSSwitch can report false from AXPress while applying the action. Assert
+        // the real state and its persistence, not that unreliable return value.
+        _ = effectToggle.accessibilityPerformPress(); pump()
+        XCTAssertTrue(preferences.settings.effectsEnabled)
+        XCTAssertTrue(JevInterventionPreferences().settings.effectsEnabled)
+        XCTAssertEqual(consents.document, readyState, "Configuring effects must never authorize monitoring or stop recording")
+        for dark in [true, false] {
+            app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.appearance = app.appearance; pump()
+            try snapshot(interventionHost.view, to: output.appendingPathComponent("monitoring-interventions-\(dark ? "dark" : "light").png"))
+        }
+        _ = try XCTUnwrap(accessibleElement("jev-effects-enabled", within: window)).accessibilityPerformPress(); pump()
+        XCTAssertFalse(preferences.settings.effectsEnabled)
+        XCTAssertFalse(JevInterventionPreferences().settings.effectsEnabled)
+        // Render the actual panel, not a dashboard window carrying old minimum-size constraints.
+        // Keep this synthetic warning offscreen; never show effects on the owner's displays.
+        let presenter = JevWarningPanel(ordersWindows: false)
+        defer { presenter.hide() }
+        presenter.update(seconds: 30, appearance: 1, present: true, settings: .init())
+        let warningWindow = try XCTUnwrap(presenter.panel)
+        XCTAssertEqual(warningWindow.frame.size, NSSize(width: 400, height: 156))
+        warningWindow.setFrameOrigin(NSPoint(x: 20000, y: 20000))
+        warningWindow.orderFrontRegardless(); pump()
+        XCTAssertEqual(warningWindow.frame.size, NSSize(width: 400, height: 156), "SwiftUI must not expand the alert after presentation")
+        XCTAssertEqual(warningWindow.contentView?.bounds.size, NSSize(width: 400, height: 156))
+        XCTAssertNotNil(accessibleElement("jev-warning-close", within: warningWindow))
+        XCTAssertNotNil(accessibleElement("jev-warning-disable", within: warningWindow))
+        try snapshot(try XCTUnwrap(warningWindow.contentView), to: output.appendingPathComponent("monitoring-warning-30s.png"))
+        presenter.update(seconds: 315, appearance: 1, present: false, settings: .init()); pump()
+        XCTAssertEqual(warningWindow.frame.size, NSSize(width: 400, height: 156), "Duration updates cannot resize the alert")
+        XCTAssertEqual(warningWindow.contentView?.bounds.size, NSSize(width: 400, height: 156))
+        try snapshot(try XCTUnwrap(warningWindow.contentView), to: output.appendingPathComponent("monitoring-warning-5min.png"))
+        XCTAssertTrue(presenter.overlays.isEmpty)
+        XCTAssertEqual(consents.document, readyState)
+        print("NATIVE_INTERVENTIONS real effect toggle, preferences, warning controls and unchanged consents passed; no screen overlay or API request enabled")
         print("NATIVE_MONITORING sidebar, recording shortcut, protected connection sheet, timed pause and unchanged consents passed; no monitoring request enabled")
     }
 

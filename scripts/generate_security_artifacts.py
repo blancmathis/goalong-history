@@ -273,6 +273,14 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "build": info.get("CFBundleVersion"),
             "edition": info.get("GoalongBuildEdition"),
         },
+        "jevInterventions": {
+            "defaultEnabled": False, "firstWarningSeconds": 30,
+            "closeBehavior": "rearm-next-positive-window-preserve-duration",
+            "moveFromAppearance": 3, "defaultStageMinutes": [2, 5, 10],
+            "maximumOpacityPercent": 40, "staleEffectsExpirySeconds": 30,
+            "hardwareBrightnessChanges": False, "blocksInput": False,
+            "timedBreakStopsRecorder": False,
+        },
         "source": {
             "commit": git_value(root, "rev-parse", "HEAD"),
             "dirty": bool(git_value(root, "status", "--porcelain")),

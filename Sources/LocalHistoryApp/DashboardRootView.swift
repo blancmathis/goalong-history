@@ -132,7 +132,7 @@
 
                 Spacer(minLength: 20)
 
-                GoalongGlobalPauseControl(model: model, compact: true)
+                JevQuickPauseControl()
                     .padding(.horizontal, 16).padding(.bottom, 12)
 
                 statusRow
