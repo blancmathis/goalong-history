@@ -499,7 +499,8 @@ final class GoalongBrandRenderingTests: XCTestCase {
         XCTAssertFalse(JevInterventionPreferences().settings.effectsEnabled)
         // Render the actual panel, not a dashboard window carrying old minimum-size constraints.
         // Keep this synthetic warning offscreen; never show effects on the owner's displays.
-        let presenter = JevWarningPanel(ordersWindows: false)
+        var reminderDismissals = 0
+        let presenter = JevWarningPanel(ordersWindows: false, onDismiss: { reminderDismissals += 1 })
         defer { presenter.hide() }
         presenter.update(seconds: 30, appearance: 1, present: true, settings: .init())
         let warningWindow = try XCTUnwrap(presenter.panel)
@@ -509,13 +510,20 @@ final class GoalongBrandRenderingTests: XCTestCase {
         XCTAssertEqual(warningWindow.frame.size, NSSize(width: 400, height: 156), "SwiftUI must not expand the alert after presentation")
         XCTAssertEqual(warningWindow.contentView?.bounds.size, NSSize(width: 400, height: 156))
         XCTAssertNotNil(accessibleElement("jev-warning-close", within: warningWindow))
-        XCTAssertNotNil(accessibleElement("jev-warning-disable", within: warningWindow))
+        XCTAssertNil(accessibleElement("jev-warning-disable", within: warningWindow))
+        XCTAssertNil(accessibleElement("jev-warning-pause", within: warningWindow))
         try snapshot(try XCTUnwrap(warningWindow.contentView), to: output.appendingPathComponent("monitoring-warning-30s.png"))
         presenter.update(seconds: 315, appearance: 1, present: false, settings: .init()); pump()
         XCTAssertEqual(warningWindow.frame.size, NSSize(width: 400, height: 156), "Duration updates cannot resize the alert")
         XCTAssertEqual(warningWindow.contentView?.bounds.size, NSSize(width: 400, height: 156))
         try snapshot(try XCTUnwrap(warningWindow.contentView), to: output.appendingPathComponent("monitoring-warning-5min.png"))
         XCTAssertTrue(presenter.overlays.isEmpty)
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-warning-close", within: warningWindow)).accessibilityPerformPress())
+        pump()
+        XCTAssertNil(presenter.panel)
+        XCTAssertEqual(reminderDismissals, 1, "The sole popup button invokes Close")
+        XCTAssertEqual(preferences.settings.stages.map(\.afterMinutes), [2, 5])
+        XCTAssertEqual(preferences.settings.stages[1].effect, .dimAndRed)
         XCTAssertEqual(consents.document, readyState)
         print("NATIVE_INTERVENTIONS real effect toggle, preferences, warning controls and unchanged consents passed; no screen overlay or API request enabled")
         print("NATIVE_MONITORING sidebar, recording shortcut, protected connection sheet, timed pause and unchanged consents passed; no monitoring request enabled")

@@ -24,17 +24,29 @@ public struct JevInterventionStage: Codable, Equatable, Sendable {
 
 /// Local presentation preferences only. No change to capture, remote consent or API payloads.
 public struct JevInterventionSettings: Codable, Equatable, Sendable {
-    public var schemaVersion = 1
+    public var schemaVersion = 2
     public var effectsEnabled = false
     public var moveAfterSecondAppearance = true
     public var stages: [JevInterventionStage] = [
         .init(afterMinutes: 2, effect: .dim, intensity: 20),
-        .init(afterMinutes: 5, effect: .red, intensity: 20),
-        .init(afterMinutes: 10, effect: .dimAndRed, intensity: 30),
+        .init(afterMinutes: 5, effect: .dimAndRed, intensity: 20),
     ]
     public init() {}
     public var isValid: Bool {
-        guard schemaVersion == 1, stages.count == 3 else { return false }
+        schemaVersion == 2 && stages.count == 2 && stages.last?.effect == .dimAndRed
+            && Self.validStages(stages)
+    }
+    /// One-time v1 migration: retain consent, enabled stages, delays and intensities.
+    /// The second stage becomes combined; the retired third stage no longer escalates.
+    public func migratingLegacy() -> Self? {
+        guard schemaVersion == 1, stages.count == 3, Self.validStages(stages) else { return nil }
+        var next = self
+        next.schemaVersion = 2
+        next.stages = Array(stages.prefix(2))
+        next.stages[1].effect = .dimAndRed
+        return next.isValid ? next : nil
+    }
+    private static func validStages(_ stages: [JevInterventionStage]) -> Bool {
         var previous = 0
         for stage in stages {
             guard (1...60).contains(stage.afterMinutes), stage.afterMinutes > previous,

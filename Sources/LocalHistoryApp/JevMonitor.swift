@@ -163,7 +163,7 @@ struct JevRecentCheck: Identifiable {
     func retry() { circuitOpen = false; retryAfter = .distantPast; error = nil; reconfigure() }
     func dismissWarning() {
         streak.dismissWarning()
-        JevWarningPanel.shared.hide()
+        JevWarningPanel.shared.dismissPopup()
     }
     private func resetInterventions() {
         streak.reset(); procrastinationSeconds = 0

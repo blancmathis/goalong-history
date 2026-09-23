@@ -106,8 +106,9 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
         fail("Jev classification differs from the reviewed opt-in bounded contract")
     if value.get("jevInterventions") != {
         "defaultEnabled": False, "firstWarningSeconds": 30,
-        "closeBehavior": "rearm-next-positive-window-preserve-duration",
-        "moveFromAppearance": 3, "defaultStageMinutes": [2, 5, 10],
+        "closeBehavior": "rearm-next-positive-window-preserve-duration-and-effects",
+        "moveFromAppearance": 3, "defaultStageMinutes": [2, 5],
+        "finalEffect": "dimAndRed", "popupActions": ["close"], "finalStagePersists": True,
         "maximumOpacityPercent": 40, "staleEffectsExpirySeconds": 30,
         "hardwareBrightnessChanges": False, "blocksInput": False,
         "timedBreakStopsRecorder": False,

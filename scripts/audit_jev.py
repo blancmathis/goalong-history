@@ -60,6 +60,9 @@ def audit(root=ROOT):
         except OSError: errors.append(f'Missing {relative}'); continue
         for fragment in fragments:
             if fragment not in text: errors.append(f'{relative}: missing {fragment!r}')
+    warning = (root/'Sources/LocalHistoryApp/JevWarningPanel.swift').read_text()
+    for forbidden in ['startBreak(', 'setEnabled(false)', 'jev-warning-disable', 'jev-warning-pause']:
+        if forbidden in warning: errors.append(f'Unexpected popup action {forbidden}')
     for path in (root/'Sources').rglob('Jev*.swift'):
         text=path.read_text()
         if path.name != 'JevTransport.swift' and any(v in text for v in ['URLSession', 'URLRequest(', 'HTTPURLResponse']):
