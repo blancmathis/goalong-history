@@ -46,7 +46,9 @@ REQUIRED = {
     ],
     'Sources/LocalHistoryApp/CapabilityConsentStore.swift': ['case jevMonitoring', 'static let disabledByDefault'],
     'Sources/LocalHistoryApp/ContextProvider.swift': ['JevIngress.shared.setPrivateWindow(cachedPrivateWindow)'],
-    'Sources/LocalHistoryApp/JevControls.swift': ['.nonactivatingPanel', 'confirming = true', 'Une clé est enregistrée sur ce Mac'],
+    'Sources/LocalHistoryApp/JevControls.swift': ['.nonactivatingPanel', 'confirmingText = true'],
+    'Sources/LocalHistoryApp/JevMonitoringPage.swift': ['confirming = true', 'Autoriser les envois à TypeSafe', 'monitor.setEnabled(false)', 'availability.canToggle(isEnabled: enabled)'],
+    'Sources/LocalHistoryApp/JevConnectionSheet.swift': ['Une clé est enregistrée sur ce Mac', 'SecureField(', 'monitor.saveKey(key)'],
 }
 
 def audit(root=ROOT):

@@ -364,6 +364,118 @@ final class GoalongBrandRenderingTests: XCTestCase {
 
     }
 
+    /// Real navigation, connection and break actions against a disposable home only.
+    @MainActor func testRenderAndExerciseIsolatedMonitoring() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let outputPath = environment["GOALONG_BRAND_SNAPSHOTS"],
+              let home = environment["GOALONG_BRAND_TEST_HOME"] else {
+            throw XCTSkip("Opt-in native UI audit; use scripts/verify_brand_ui.sh")
+        }
+        guard home.hasPrefix("/tmp/goalong-brand-"),
+              FileManager.default.homeDirectoryForCurrentUser.path == home,
+              AppPaths.applicationSupportDirectory.path.hasPrefix(home + "/") else {
+            XCTFail("Refusing to exercise monitoring against a real user home"); return
+        }
+        let output = URL(fileURLWithPath: outputPath, isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.finishLaunching()
+        app.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
+        let config = ConfigManager()
+        let permissions = PermissionManager()
+        let health = CaptureHealthStore(permissions: permissions)
+        let agents = try AgentActivityRuntime(rootDirectory: AppPaths.agentActivityDirectory,
+            executableURL: URL(fileURLWithPath: "/nonexistent/monitoring-preview"),
+            performInitialDiscovery: false, sourceDiscovery: { [] }, onCaptured: { _ in })
+        let model = DashboardViewModel(state: CaptureState(), permissions: permissions,
+            configManager: config, sharingRulesStore: SharingRulesStore(), agentActivityRuntime: agents,
+            deviceInfo: DeviceIdentityInfo(deviceID: "monitoring-fixture", publicKeyBase64: "", trustTier: "test", algorithm: "test"),
+            eventTapStatus: { false }, currentSuppression: { nil }, captureHealthSnapshot: { health.snapshot },
+            onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
+            onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
+            onDeleteTargetedDetails: { _, done in done(.success(0)) })
+        model.showWelcome = false
+        let monitor = JevMonitor.shared
+        let consents = GoalongCapabilityConsentStore.shared
+        let originalHistory = consents.isEnabled(.localComputerHistory)
+        XCTAssertFalse(monitor.enabled)
+        XCTAssertFalse(monitor.hasKey)
+        _ = consents.set(.localComputerHistory, enabled: false, surface: .settings)
+        defer {
+            monitor.endBreak(); monitor.removeKey()
+            _ = consents.set(.localComputerHistory, enabled: originalHistory, surface: .settings)
+        }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.title = "Goalong — isolated monitoring verification"
+        window.isReleasedWhenClosed = false
+        defer { window.orderOut(nil); window.contentViewController = nil }
+        let controller = NSHostingController(rootView: LocalHistoryDashboardView(model: model))
+        window.contentViewController = controller
+        window.makeKeyAndOrderFront(nil); pump()
+        let sidebar = try XCTUnwrap(accessibleElement("sidebar-monitoring", within: window))
+        XCTAssertGreaterThanOrEqual(sidebar.accessibilityFrame().height, 44)
+        XCTAssertTrue(sidebar.accessibilityPerformPress()); pump()
+        XCTAssertEqual(model.selectedSection, .monitoring)
+        let offState = consents.document
+        for dark in [true, false] {
+            app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.appearance = app.appearance
+            for size in [NSSize(width: 900, height: 620), NSSize(width: 1240, height: 790)] {
+                window.setContentSize(size); pump()
+                let connect = try XCTUnwrap(accessibleElement("jev-open-connection", within: window))
+                XCTAssertGreaterThan(connect.accessibilityFrame().width, 70)
+                XCTAssertNotNil(accessibleElement("jev-enabled", within: window))
+                XCTAssertNotNil(accessibleElement("jev-break-10", within: window))
+                try snapshot(controller.view, to: output.appendingPathComponent("monitoring-setup-\(dark ? "dark" : "light")-\(Int(size.width)).png"))
+            }
+        }
+        XCTAssertEqual(consents.document, offState, "Opening or rendering the page must not grant consent")
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-open-recording", within: window)).accessibilityPerformPress())
+        pump()
+        XCTAssertEqual(model.selectedSection, .settings)
+        XCTAssertEqual(model.settingsPane, .recording)
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("sidebar-monitoring", within: window)).accessibilityPerformPress())
+        pump()
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-open-connection", within: window)).accessibilityPerformPress())
+        pump(); pump()
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        XCTAssertNotNil(accessibleElement("jev-api-key", within: sheet))
+        try snapshot(try XCTUnwrap(sheet.contentView), to: output.appendingPathComponent("monitoring-connection-sheet.png"))
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-connection-close", within: sheet)).accessibilityPerformPress())
+        pump(); pump()
+        XCTAssertNil(window.attachedSheet)
+        XCTAssertEqual(consents.document, offState)
+        XCTAssertFalse(monitor.hasKey)
+
+        // Simulated setup cannot send a request: the separate Jev consent stays off.
+        monitor.saveKey("synthetic-monitoring-render-key")
+        XCTAssertTrue(monitor.hasKey)
+        XCTAssertFalse(monitor.enabled)
+        _ = consents.set(.localComputerHistory, enabled: true, surface: .settings)
+        let readyState = consents.document
+        window.setContentSize(NSSize(width: 900, height: 620))
+        for dark in [true, false] {
+            app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.appearance = app.appearance; pump()
+            try snapshot(controller.view, to: output.appendingPathComponent("monitoring-ready-\(dark ? "dark" : "light")-900.png"))
+        }
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-break-10", within: window)).accessibilityPerformPress())
+        pump()
+        XCTAssertNotNil(monitor.timedBreak)
+        XCTAssertGreaterThan(monitor.remainingSeconds, 590)
+        XCTAssertEqual(consents.document, readyState)
+        XCTAssertNotNil(accessibleElement("jev-break-countdown", within: window))
+        try snapshot(controller.view, to: output.appendingPathComponent("monitoring-timed-break-900.png"))
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-end-break", within: window)).accessibilityPerformPress())
+        pump()
+        XCTAssertNil(monitor.timedBreak)
+        XCTAssertFalse(monitor.enabled)
+        XCTAssertEqual(consents.document, readyState, "Ending a break must not activate Jev or a source")
+        print("NATIVE_MONITORING sidebar, recording shortcut, protected connection sheet, timed pause and unchanged consents passed; no monitoring request enabled")
+    }
+
     /// SwiftUI's accessibility proxy objects implement the Objective-C selectors
     /// without necessarily advertising conformance to NSAccessibilityProtocol.
     private struct NativeAccessibilityNode {

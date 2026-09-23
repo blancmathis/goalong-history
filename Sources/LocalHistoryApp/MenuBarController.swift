@@ -17,6 +17,7 @@
         private let captureHealth: () -> CaptureHealthAssessment
         private let onDeleteDetails: (Date?, @escaping (Result<Int, Error>) -> Void) -> Void
         private let onOpenDashboard: () -> Void
+        private let onOpenMonitoring: () -> Void
         private let onOpenShare: () -> Void
         private let onTogglePause: () -> Void
         private let onRequestPermissions: () -> Void
@@ -39,6 +40,7 @@
             captureHealth: @escaping () -> CaptureHealthAssessment,
             onDeleteDetails: @escaping (Date?, @escaping (Result<Int, Error>) -> Void) -> Void,
             onOpenDashboard: @escaping () -> Void,
+            onOpenMonitoring: @escaping () -> Void,
             onOpenShare: @escaping () -> Void,
             onTogglePause: @escaping () -> Void,
             onRequestPermissions: @escaping () -> Void,
@@ -55,6 +57,7 @@
             self.captureHealth = captureHealth
             self.onDeleteDetails = onDeleteDetails
             self.onOpenDashboard = onOpenDashboard
+            self.onOpenMonitoring = onOpenMonitoring
             self.onOpenShare = onOpenShare
             self.onTogglePause = onTogglePause
             self.onRequestPermissions = onRequestPermissions
@@ -160,7 +163,7 @@
             menu.addItem(globalPauseItem)
             pauseMenuItem.target = self
             menu.addItem(pauseMenuItem)
-            Task { @MainActor in JevMenuController.shared.install(in: self.menu) }
+            Task { @MainActor in JevMenuController.shared.install(in: self.menu, onOpenMonitoring: self.onOpenMonitoring) }
             menu.addItem(makeItem("Share signed day…", action: #selector(openShare)))
             menu.addItem(.separator())
 

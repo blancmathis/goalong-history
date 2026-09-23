@@ -151,8 +151,10 @@ actually included.
 
 ## Optional real-time Jev monitoring
 
-**Settings → Jev et pauses** provides a separate, off-by-default TypeSafe consent
-and an owner-only API-key field. During observable activity, Jev classifies one
+**Surveillance temps réel**, next to Activity, History and Settings, provides a
+separate, off-by-default TypeSafe consent. **Connecter Jev** opens the protected
+API-key sheet; connection management and detailed privacy controls stay out of
+the general settings. During observable activity, Jev classifies one
 non-overlapping 15-second window. Two consecutive windows containing
 procrastination display one non-blocking banner. Idle, private/suppressed contexts,
 errors and timed breaks reset the streak. Nothing escalates automatically.

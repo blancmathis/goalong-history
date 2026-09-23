@@ -262,6 +262,7 @@
                         self?.deleteDetails(since: cutoff, completion: completion)
                     },
                     onOpenDashboard: { [weak self] in self?.dashboardWindowController.show(section: .overview) },
+                    onOpenMonitoring: { [weak self] in self?.dashboardWindowController.show(section: .monitoring) },
                     onOpenShare: { [weak self] in self?.dashboardWindowController.show(section: .share) },
                     onTogglePause: { [weak self] in self?.toggleManualPause() },
                     onRequestPermissions: { [weak self] in self?.requestPermissionsAndExplain() },

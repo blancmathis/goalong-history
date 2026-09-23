@@ -2,18 +2,28 @@
 
 ## Commandes
 
-Réglages → **Jev et pauses**. La capacité `jevMonitoring` est désactivée par
+La page **Surveillance temps réel**, dans la navigation principale entre
+Historique et Réglages, regroupe l’activation, l’état de Jev et les pauses. La capacité `jevMonitoring` est désactivée par
 défaut et indépendante de Computer History, ChatGPT, de l’envoi au site et du
 choix de collecte locale de texte. Son activation demande une confirmation
 explicite de l’envoi à TypeSafe. L’utilisateur fournit sa propre clé API dans le
-champ protégé ; aucun secret n’est inclus dans le code ou envoyé au site Goalong.
+champ protégé de **Connecter Jev** ; aucun secret n’est inclus dans le code ou envoyé au site Goalong.
 L’API TypeSafe peut être facturée selon son offre. Aucun appel n’est fait sans clé.
 
-Le menu **Jev et pause minutée** permet une pause de 5, 10, 15 ou 30 minutes,
-sa fin anticipée et la désactivation de Jev. Les réglages permettent aussi une
-durée de 1 à 120 minutes. Le décompte persiste au redémarrage et à la veille.
+Le menu **Surveillance temps réel** permet une pause de 5, 10, 15 ou 30 minutes,
+sa fin anticipée, la désactivation de Jev et l’ouverture de sa page.
+**Autre durée** permet une pause de 1 à 120 minutes. Le décompte persiste au redémarrage et à la veille.
 Une pause de travail suspend Jev seulement : elle ne change aucun autre
 consentement, ne réactive jamais l’enregistrement et ne remplace pas Pause globale.
+
+Le bouton d’activation nécessite une clé et le consentement local Computer History.
+Une surveillance déjà activée reste toujours désactivable, même si un prérequis manque.
+**Gérer la connexion** permet de remplacer la clé sans l’afficher, ou de la supprimer
+après confirmation. Ces actions n’accordent aucun nouveau consentement.
+**Fonctionnement et confidentialité** garde les détails de budget, les règles,
+l’inspection du dernier envoi et l’option séparée d’extraits à portée de main,
+sans surcharger l’écran. Les vérifications récentes sont repliées par défaut.
+Les réglages généraux ne contiennent plus de rubrique Jev.
 
 ## Fenêtres et avertissement
 
