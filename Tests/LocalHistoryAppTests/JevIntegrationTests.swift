@@ -171,7 +171,7 @@ final class JevTransportTests: XCTestCase {
     }
     func testOverBudgetAndPreCancelledNeverStartNetwork() async throws {
         let client = fixture()
-        do { _ = try await client.classify(body: Data(repeating: 65, count: 801), key: "synthetic-key"); XCTFail("Over budget accepted") }
+        do { _ = try await client.classify(body: Data(repeating: 65, count: JevPayload.maximumRequestBytes + 1), key: "synthetic-key"); XCTFail("Over budget accepted") }
         catch { XCTAssertEqual(error as? JevError, .budget) }
         XCTAssertNil(JevFixtureProtocol.observed)
         client.cancel()

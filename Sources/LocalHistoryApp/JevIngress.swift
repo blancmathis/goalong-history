@@ -13,6 +13,10 @@ extension Notification.Name {
 final class JevIngress: @unchecked Sendable {
     static let shared = JevIngress()
     private let lock = NSLock()
+    private let notificationCenter: NotificationCenter
+    init(notificationCenter: NotificationCenter = .default) {
+        self.notificationCenter = notificationCenter
+    }
     private var enabled = false
     private var includeText = false
     private var enabledAt = Date.distantFuture
@@ -43,7 +47,15 @@ final class JevIngress: @unchecked Sendable {
         let notify = !blocked
         blocked = true; samples.removeAll(); excerpts.removeAll(); overflow = false; revision &+= 1
         lock.unlock()
-        if notify { NotificationCenter.default.post(name: .jevBoundaryChanged, object: nil) }
+        if notify {
+            // receive() runs on EventRecorder's writer queue. The main thread may be
+            // synchronously draining that writer during screen lock/sleep. Posting to
+            // a queue:.main observer here would make both queues wait for each other.
+            // Invalidate evidence above immediately; UI cancellation must never block
+            // the recorder. Generation checks reject in-flight results until delivered.
+            let center = notificationCenter
+            DispatchQueue.main.async { center.post(name: .jevBoundaryChanged, object: nil) }
+        }
     }
     func take(start: Date, end: Date) -> JevWindow? {
         lock.lock(); defer { lock.unlock() }

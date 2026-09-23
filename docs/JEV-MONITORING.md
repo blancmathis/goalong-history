@@ -124,10 +124,10 @@ pour le modèle. Il faut tester les navigateurs utilisés, en français et angla
 
 ## Référence de travail et précision
 
-**Mes projets de travail**, dans la page Surveillance temps réel, reçoit une description
+**Ce qui est productif pour moi**, dans la page Surveillance temps réel, reçoit une description
 courte saisie puis enregistrée explicitement. Elle est transmise à TypeSafe avec les
 analyses ultérieures autorisées, pas au site Goalong. Aucun projet ou document n’est
-importé automatiquement depuis l’historique. Cette référence est limitée à 100 octets
+importé automatiquement depuis l’historique. Les critères (projets, applications/sites, contenus/usages) sont limités ensemble à 800 octets
 UTF-8 et stockée dans `jev/work-context.json` (0600). La saisie n’active pas la surveillance.
 Une référence corrompue bloque les appels ; son changement invalide les résultats en vol.
 
@@ -159,7 +159,7 @@ maximale, uniquement en mémoire. La requête associe la référence de travail 
 ne sont pas remplacés par le seul dernier contexte. Une fenêtre trop complexe
 pour tenir dans le budget est ignorée et reste indéterminée, sans alerte.
 
-**Le JSON complet est borné à 800 octets UTF-8**, instructions et critères inclus.
+**Le JSON complet est borné à 1 600 octets UTF-8**, instructions et critères inclus.
 Ce n’est pas une estimation `caractères/4`. L’API ne publie pas le tokenizer et son
 éventuel encadrement interne : ce plafond conservateur ne constitue donc pas une
 preuve du nombre exact de tokens côté serveur. Chaque réponse doit annoncer moins
@@ -220,3 +220,8 @@ Les probabilités renvoyées peuvent être arrondies : une somme de 0,99 ou 1,01
 est acceptée avec une tolérance flottante de 1e-9. Le calcul est déterministe ;
 aucune normalisation ne gonfle le score, le seuil de 0,80 et le contrôle du choix
 maximum restent inchangés. Les distributions incohérentes restent rejetées.
+
+
+La correction du blocage à la veille et le format étendu des critères sont détaillés
+dans `MONITORING-STABILITY.md`. Les critères explicitement saisis peuvent autoriser
+un contenu précis (par exemple un cours vidéo), sans rendre tout le site productif.

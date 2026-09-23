@@ -26,3 +26,12 @@ des tests CI usuels et ne lisent la clé locale qu’avec l’option explicite p
 L’erreur de somme des probabilités arrondies a été reproduite (0,81 + 0,13 + 0,05),
 puis corrigée par une réduction à ordre fixe et une tolérance de 0,01 + 1e-9. Aucune
 probabilité n’est remontée artificiellement ; le seuil de décision reste 0,80.
+
+
+## Évolution des critères le 24 septembre 2026
+
+Les résultats chiffrés ci-dessus concernent l’ancien profil et l’ancien prompt.
+Le nouveau format accepte projets, applications/sites et contenus (800 octets au
+total), avec une enveloppe JSON maximale de 1 600 octets. Le plafond de réponse
+acceptée reste 999 tokens. Voir `MONITORING-STABILITY.md` ; ne pas présenter les
+scores historiques comme une évaluation du nouveau prompt.

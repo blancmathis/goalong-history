@@ -7,7 +7,7 @@ final class JevWorkContextTests: XCTestCase {
         let value = try JevWorkContext(summary: "  Goalong\nSwift et site web  ")
         XCTAssertEqual(value.summary, "Goalong Swift et site web")
         XCTAssertEqual(try JSONDecoder().decode(JevWorkContext.self, from: JSONEncoder().encode(value)), value)
-        XCTAssertThrowsError(try JevWorkContext(summary: String(repeating: "é", count: 81)))
+        XCTAssertThrowsError(try JevWorkContext(summary: String(repeating: "é", count: 401)))
         XCTAssertThrowsError(try JevWorkContext(summary: "bad\u{0000}data"))
         XCTAssertFalse(try JSONDecoder().decode(JevWorkContext.self, from: Data("{\"schemaVersion\":99,\"summary\":\"Goalong\"}".utf8)).isValid)
     }
@@ -19,7 +19,7 @@ final class JevWorkContextTests: XCTestCase {
                 .init(date: now, resource: "google.com", title: topic, action: "typing", surface: "search", isActivity: true)
             ])
             let body = try JevPayload.build(window, work: work)
-            XCTAssertLessThanOrEqual(body.count, 800)
+            XCTAssertLessThanOrEqual(body.count, JevPayload.maximumRequestBytes)
             let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
             let state = try XCTUnwrap(object["state"] as? [String: Any])
             XCTAssertEqual(state["goals"] as? String, work.summary)
@@ -42,7 +42,7 @@ final class JevWorkContextTests: XCTestCase {
         let rows = try XCTUnwrap(state["rows"] as? [[String]])
         XCTAssertEqual(rows.count, 2)
         XCTAssertTrue(rows[0][2].contains("football")); XCTAssertTrue(rows[1][2].contains("Goalong"))
-        XCTAssertLessThanOrEqual(body.count, 800)
+        XCTAssertLessThanOrEqual(body.count, JevPayload.maximumRequestBytes)
     }
     func testGenericWindowLabelsNeverProveWorkOrAnOffGoalTopic() throws {
         let now = Date(), work = try JevWorkContext(summary: "Goalong macOS app")
@@ -67,7 +67,7 @@ final class JevWorkContextTests: XCTestCase {
             .init(date: now, resource: "google.com", title: String(repeating: "y", count: 48), action: "typing", surface: "search", isActivity: true)
         ])
         let body = try JevPayload.build(window, work: work)
-        XCTAssertLessThanOrEqual(body.count, 800)
+        XCTAssertLessThanOrEqual(body.count, JevPayload.maximumRequestBytes)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
         let state = try XCTUnwrap(object["state"] as? [String: Any])
         XCTAssertEqual((state["rows"] as? [[String]])?.count, 2)
@@ -84,5 +84,62 @@ final class JevWorkContextTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         XCTAssertEqual(rows[0][2], "NSWindow ordering")
         XCTAssertEqual(state["goals"] as? String, "", "Never invent the user's projects")
+    }
+}
+
+extension JevWorkContextTests {
+    func testAllThreeCriteriaAreSentInFullAsData() throws {
+        let rules = try JevWorkContext(summary: "Goalong : app macOS. Atlas : lancement du site.",
+            applications: "Xcode et Figma pour Goalong, GitHub pour les revues.",
+            content: "Docs Swift et Supabase ; cours vidéo Swift explicitement autorisé. Pas de recherches de vacances.")
+        let now = Date()
+        let window = JevWindow(start: now, end: now.addingTimeInterval(15), samples: [
+            .init(date: now, resource: "youtube.com", title: "Cours Swift - NSWindow", action: "playing", surface: "video", isActivity: true),
+            .init(date: now, resource: "google.com", title: "vacances aux Maldives", action: "typing", surface: "search", isActivity: true)
+        ])
+        let data = try JevPayload.build(window, work: rules)
+        XCTAssertLessThanOrEqual(data.count, JevPayload.maximumRequestBytes)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let state = try XCTUnwrap(object["state"] as? [String: Any])
+        XCTAssertEqual(state["goals"] as? String, rules.summary)
+        XCTAssertEqual(state["apps"] as? String, rules.applications)
+        XCTAssertEqual(state["content"] as? String, rules.content)
+        XCTAssertEqual((state["rows"] as? [[String]])?.count, 2)
+        let questions = try XCTUnwrap(object["questions"] as? [String: [String: Any]])
+        XCTAssertTrue(try XCTUnwrap(questions["activity"]?["instructions"] as? String).contains("Explicit content rules"))
+        XCTAssertEqual(try JSONDecoder().decode(JevWorkContext.self, from: JSONEncoder().encode(rules)), rules)
+    }
+    func testApplicationsOrContentsWorkWithoutRequiringAProjectName() throws {
+        let now = Date()
+        let window = JevWindow(start: now, end: now.addingTimeInterval(15), samples: [
+            .init(date: now, resource: "Figma", title: "Design du site Atlas", action: "typing", surface: "other", isActivity: true)
+        ])
+        for rules in [try JevWorkContext(summary: "", applications: "Figma pour concevoir le site Atlas"),
+                      try JevWorkContext(summary: "", content: "Créer le design du site Atlas")] {
+            XCTAssertFalse(rules.isEmpty)
+            XCTAssertEqual(JevEvidencePolicy.reviewed(.productive, work: rules, window: window), .productive)
+        }
+    }
+    func testMaximumCriteriaAndTwoTopicsFitWithoutTruncatingCriteria() throws {
+        let rules = try JevWorkContext(summary: String(repeating: "a", count: 400),
+            applications: String(repeating: "b", count: 200), content: String(repeating: "c", count: 200))
+        let now = Date()
+        let window = JevWindow(start: now, end: now.addingTimeInterval(15), samples: [
+            .init(date: now, resource: "developer.apple.com", title: String(repeating: "x", count: 48), action: "scroll", surface: "other", isActivity: true),
+            .init(date: now, resource: "google.com", title: String(repeating: "y", count: 48), action: "typing", surface: "search", isActivity: true)
+        ])
+        let data = try JevPayload.build(window, work: rules)
+        XCTAssertLessThanOrEqual(data.count, JevPayload.maximumRequestBytes)
+        XCTAssertThrowsError(try JevWorkContext(summary: rules.summary, applications: rules.applications, content: rules.content + "x"))
+        XCTAssertEqual(JevPayload.maximumInputTokens, 999)
+    }
+    func testLegacyProjectDescriptionMigratesWithoutAddingCriteria() throws {
+        let data = Data(#"{"schemaVersion":1,"summary":"Goalong macOS Swift app"}"#.utf8)
+        let rules = try JSONDecoder().decode(JevWorkContext.self, from: data)
+        XCTAssertTrue(rules.isValid); XCTAssertEqual(rules.schemaVersion, 2)
+        XCTAssertEqual(rules.summary, "Goalong macOS Swift app")
+        XCTAssertTrue(rules.applications.isEmpty); XCTAssertTrue(rules.content.isEmpty)
+        XCTAssertThrowsError(try JSONDecoder().decode(JevWorkContext.self,
+            from: Data(#"{"schemaVersion":1,"summary":"Goalong","content":"injected"}"#.utf8)))
     }
 }

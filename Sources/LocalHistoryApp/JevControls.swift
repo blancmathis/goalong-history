@@ -23,7 +23,7 @@ import LocalHistoryCore
                 .font(.caption).foregroundStyle(.secondary)
             Text("Le service ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. Sans interaction ni lecture vidéo explicitement détectée, aucun appel n’est effectué.")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("Budget conservateur : requête JSON complète ≤ 800 octets UTF-8. Le compteur TypeSafe est aussi contrôlé : toute réponse annonçant 1 000 tokens ou plus suspend la surveillance. Le tokenizer et son surcoût interne ne sont pas publiés.")
+            Text("Budget borné : requête JSON complète ≤ 1 600 octets UTF-8. Le compteur TypeSafe est aussi contrôlé : toute réponse annonçant 1 000 tokens ou plus suspend la surveillance. Le tokenizer et son surcoût interne ne sont pas publiés.")
                 .font(.caption).foregroundStyle(.secondary)
             if let tokens = monitor.lastInputTokens {
                 Text("Dernier appel : \(tokens) tokens d’entrée · \(monitor.lastRequestBytes) octets envoyés")

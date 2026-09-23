@@ -7,7 +7,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = {
     'Sources/LocalHistoryCore/JevFocus.swift': [
-        'maximumRequestBytes = 800', 'maximumInputTokens = 999',
+        'maximumRequestBytes = 1600', 'maximumInputTokens = 999',
         'model = "jev-1.13.0"', 'window.hasActivity',
         'count >= 1, !warningIssued', 'samples.filter { $0.date >= start && $0.date < end }',
         'response.usage.input_tokens <= JevPayload.maximumInputTokens',
@@ -39,6 +39,7 @@ REQUIRED = {
         'samples.count < 512', '!IsSecureEventInputEnabled()',
         'GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory).permits(event)',
         'JevPlaybackProbe.isPlaying(context)',
+        'DispatchQueue.main.async { center.post(name: .jevBoundaryChanged',
     ],
     'Sources/LocalHistoryApp/JevLocalFiles.swift': [
         'O_NOFOLLOW', 'O_CLOEXEC', 'info.st_uid == getuid()', '0o600', '0o700',
