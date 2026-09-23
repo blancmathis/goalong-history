@@ -70,7 +70,7 @@ struct JevRecentCheck: Identifiable {
                 Task { @MainActor in self?.reconfigure() }
             })
         }
-        observers.append(center.addObserver(forName: .jevBoundaryChanged, object: nil, queue: .main) { [weak self] _ in
+        observers.append(center.addObserver(forName: .jevBoundaryChanged, object: nil, queue: nil) { [weak self] _ in
             Task { @MainActor in
                 self?.cancelPending(); self?.status = "Contexte protégé : surveillance suspendue"
             }

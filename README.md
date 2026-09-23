@@ -156,7 +156,7 @@ separate, off-by-default TypeSafe consent. **Connecter Jev** opens the protected
 API-key sheet; connection management and detailed privacy controls stay out of
 the general settings. During observable activity, Jev classifies one
 non-overlapping 15-second window. The first confident 15-second procrastination result displays one non-blocking banner.
-An explicitly saved, 100-byte work reference makes unrelated searches and reading
+Explicitly saved productivity criteria (projects, apps/sites and content, 800 UTF-8 bytes total) makes unrelated searches and reading
 classifiable as procrastination; work apps and typing alone never prove project relevance. Idle, private/suppressed contexts,
 errors and timed breaks reset the streak. Closing rearms the next positive result
 without resetting the duration or clearing effects. The popup only offers Close;
@@ -175,7 +175,7 @@ Timed breaks (1–120 minutes, with presets) are also available from the menu ba
 The primary **Faire une pause** action suspends reminders and effects without stopping
 local history. **Confidentialité · tout suspendre** is a separately confirmed full
 stop in Settings; the underlying global privacy pause remains authoritative. Only compact recent evidence is transmitted to
-`api.typesafe.ai`, with an 800-byte full-JSON budget and a check of returned input
+`api.typesafe.ai`, with a 1600-byte full-JSON budget and a check of returned input
 usage. Read [the exact privacy, token and observation limits](docs/JEV-MONITORING.md).
 
 ## Native dashboard
