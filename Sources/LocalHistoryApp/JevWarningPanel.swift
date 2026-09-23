@@ -12,6 +12,7 @@ import LocalHistoryCore
     private(set) var panel: NSPanel?
     private(set) var overlays: [NSPanel] = []
     private var previousAnchor: JevWarningAnchor?
+    private var previousFrame: NSRect?
     private var expiry: Timer?
     private let content = JevWarningContent()
     private let ordersWindows: Bool
@@ -23,15 +24,23 @@ import LocalHistoryCore
     }
 
     func update(seconds: Int, appearance: Int, present: Bool, settings: JevInterventionSettings) {
-        guard seconds >= 30 else { hide(); return }
+        guard seconds >= 15 else { hide(); return }
         guard present || panel != nil || !overlays.isEmpty else { return }
         if panel == nil && present {
             guard let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main else { return }
-            let anchor = JevWarningAnchor.next(appearance: appearance,
-                moving: settings.moveAfterSecondAppearance, previous: previousAnchor,
-                sample: Int.random(in: 0...Int.max))
+            let moving = settings.moveAfterSecondAppearance // Existing saved preference, unchanged key.
+            var anchor = JevWarningAnchor.next(appearance: previousAnchor == nil ? 1 : max(2, appearance),
+                moving: moving, previous: previousAnchor, sample: Int.random(in: 0...Int.max))
+            // Different anchors can coincide on narrow screens: exclude the actual previous frame too.
+            if moving, let previousFrame {
+                let choices = JevWarningAnchor.allCases.filter {
+                    $0 != previousAnchor && Self.frame(in: screen.visibleFrame, anchor: $0) != previousFrame
+                }
+                if let other = choices.randomElement() { anchor = other }
+            }
             previousAnchor = anchor
             let target = Self.frame(in: screen.visibleFrame, anchor: anchor)
+            previousFrame = target
             let value = JevNonactivatingPanel(contentRect: target,
                 styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             value.isReleasedWhenClosed = false
@@ -73,7 +82,7 @@ import LocalHistoryCore
         expiry?.invalidate(); expiry = nil
         dismissPopup()
         clearEffects()
-        if resetPosition { previousAnchor = nil }
+        if resetPosition { previousAnchor = nil; previousFrame = nil }
     }
 
     func expire() {
@@ -129,7 +138,7 @@ private final class JevNonactivatingPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 @MainActor final class JevWarningContent: ObservableObject {
-    @Published var seconds = 30
+    @Published var seconds = 15
 }
 @MainActor struct JevWarningView: View {
     @ObservedObject var content: JevWarningContent

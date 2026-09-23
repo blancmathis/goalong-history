@@ -67,7 +67,7 @@ import AppKit
                 BackgroundContinuitySettings()
                 DisclosureGroup("Confidentialité · tout suspendre") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une pause détente, utilisez « Faire une pause Jev » dans la barre latérale : l’historique continue.")
+                        Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une pause détente, utilisez « Faire une pause » dans la barre latérale : l’historique continue.")
                             .font(.callout).foregroundStyle(.secondary)
                         GoalongGlobalPauseControl(model: model)
                     }.padding(.top, 12)

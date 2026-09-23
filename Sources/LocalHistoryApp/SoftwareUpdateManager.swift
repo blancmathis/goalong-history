@@ -99,6 +99,11 @@
         @Published private(set) var requiresSignedBuild = false
         @Published private(set) var statusMessage = "Updates are available in update-enabled release builds."
 
+        private let updateWindows = SoftwareUpdateWindowCoordinator()
+
+        func registerDashboardWindow(_ window: NSWindow) { updateWindows.registerDashboard(window) }
+        func dashboardWasShown() { updateWindows.dashboardWasShown() }
+
         private var updaterController: SPUStandardUpdaterController?
         private var hasStarted = false
         private(set) var isRelaunchingForUpdate = false
@@ -179,6 +184,7 @@
             // user-approved update. Do not add a competing relauncher or unregister
             // the native login item during replacement.
             guard !isRelaunchingForUpdate else { return }
+            updateWindows.finish()
             updaterController = nil
             hasStarted = false
             lastBackgroundCheck = nil
@@ -225,6 +231,7 @@
                 return
             }
 
+            updateWindows.beginExplicitPresentation()
             switch presentationState.requestUpdateCheck(hasActiveSession: updater.sessionInProgress) {
             case .present:
                 presentReadyUpdate()
@@ -245,6 +252,7 @@
             }
             guard let updater = updaterController?.updater else { return }
 
+            updateWindows.beginExplicitPresentation()
             switch presentationState.requestAvailableUpdate(hasActiveSession: updater.sessionInProgress) {
             case .present:
                 presentReadyUpdate()
@@ -307,6 +315,7 @@
                 return
             }
 
+            updateWindows.beginExplicitPresentation()
             NSApplication.shared.activate(ignoringOtherApps: true)
             isChecking = true
             statusMessage = "Checking for updates…"
@@ -347,6 +356,7 @@
                 return
             }
 
+            updateWindows.beginExplicitPresentation()
             NSApplication.shared.activate(ignoringOtherApps: true)
             updater.checkForUpdates()
         }
@@ -490,6 +500,7 @@
             if handleShowingUpdate {
                 // User-initiated checks are already being presented by Sparkle. Record the same
                 // availability without trying to focus the alert a second time.
+                updateWindows.beginExplicitPresentation()
                 markReady(update, presentPendingRequest: false)
             } else {
                 markReady(update)
@@ -502,7 +513,10 @@
             isChecking = false
         }
 
+        func standardUserDriverAllowsMinimizableStatusWindow() -> Bool { false }
+
         func standardUserDriverWillFinishUpdateSession() {
+            updateWindows.finish()
             isChecking = false
             presentationState.recordSessionFinished()
             guard userAttendedCurrentUpdate else { return }

@@ -11,10 +11,10 @@ final class JevFocusTests: XCTestCase {
     private func window(_ samples: [JevSample]) -> JevWindow {
         JevWindow(start: zero, end: zero.addingTimeInterval(15), samples: samples)
     }
-    func testOnlySecondConsecutivePositiveOpensWithoutDuplicatingVisibleWarning() {
+    func testFirstConfidentPositiveOpensWithoutDuplicatingVisibleWarning() {
         var streak = JevStreak()
-        XCTAssertFalse(streak.accept(.procrastination, start: zero, end: zero.addingTimeInterval(15)))
-        XCTAssertTrue(streak.accept(.procrastination, start: zero.addingTimeInterval(15), end: zero.addingTimeInterval(30)))
+        XCTAssertTrue(streak.accept(.procrastination, start: zero, end: zero.addingTimeInterval(15)))
+        XCTAssertFalse(streak.accept(.procrastination, start: zero.addingTimeInterval(15), end: zero.addingTimeInterval(30)))
         XCTAssertFalse(streak.accept(.procrastination, start: zero.addingTimeInterval(30), end: zero.addingTimeInterval(45)))
         XCTAssertEqual(streak.count, 3)
         XCTAssertEqual(streak.observedSeconds, 45)
@@ -31,18 +31,18 @@ final class JevFocusTests: XCTestCase {
             var streak = JevStreak()
             _ = streak.accept(.procrastination, start: zero, end: zero.addingTimeInterval(15))
             XCTAssertFalse(streak.accept(verdict, start: zero.addingTimeInterval(15), end: zero.addingTimeInterval(30)))
-            XCTAssertFalse(streak.accept(.procrastination, start: zero.addingTimeInterval(30), end: zero.addingTimeInterval(45)))
+            XCTAssertTrue(streak.accept(.procrastination, start: zero.addingTimeInterval(30), end: zero.addingTimeInterval(45)))
         }
         var streak = JevStreak()
         _ = streak.accept(.procrastination, start: zero, end: zero.addingTimeInterval(15))
-        XCTAssertFalse(streak.accept(.procrastination, start: zero.addingTimeInterval(30), end: zero.addingTimeInterval(45)))
+        XCTAssertTrue(streak.accept(.procrastination, start: zero.addingTimeInterval(30), end: zero.addingTimeInterval(45)))
     }
     func testExplicitPauseIdleFailureResetAndRearm() {
         var streak = JevStreak()
         _ = streak.accept(.procrastination, start: zero, end: zero.addingTimeInterval(15))
         streak.reset()
-        XCTAssertFalse(streak.accept(.procrastination, start: zero.addingTimeInterval(15), end: zero.addingTimeInterval(30)))
-        XCTAssertTrue(streak.accept(.procrastination, start: zero.addingTimeInterval(30), end: zero.addingTimeInterval(45)))
+        XCTAssertTrue(streak.accept(.procrastination, start: zero.addingTimeInterval(15), end: zero.addingTimeInterval(30)))
+        XCTAssertFalse(streak.accept(.procrastination, start: zero.addingTimeInterval(30), end: zero.addingTimeInterval(45)))
     }
     func testHalfOpenWindowExcludesHistoryAndFuture() {
         let result = window([sample(-0.01), sample(0), sample(14.999), sample(15), sample(60)])
@@ -57,9 +57,10 @@ final class JevFocusTests: XCTestCase {
         let input = window([sample(0), sample(5, surface: "composing"), sample(6, surface: "composing"), sample(14, surface: "composing")])
         let body = try JevPayload.build(input)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
-        let state = try XCTUnwrap(object["state"] as? String)
-        XCTAssertTrue(state.contains("social-feed")); XCTAssertTrue(state.contains("composing"))
-        XCTAssertEqual(state.components(separatedBy: "\n").count, 2)
+        let state = try XCTUnwrap(object["state"] as? [String: Any])
+        let rows = try XCTUnwrap(state["rows"] as? [[String]])
+        XCTAssertTrue(rows.contains { $0[1] == "social-feed" }); XCTAssertTrue(rows.contains { $0[1] == "composing" })
+        XCTAssertEqual(rows.count, 2)
         XCTAssertLessThanOrEqual(body.count, 800)
     }
     func testUnicodeAndInjectionShapedTitlesStayByteBounded() throws {
@@ -93,6 +94,17 @@ final class JevFocusTests: XCTestCase {
         XCTAssertThrowsError(try JevDecision.decode(response(tokens: 1000)))
         XCTAssertThrowsError(try JevDecision.decode(response(tokens: -1)))
         XCTAssertThrowsError(try JevDecision.decode(response(model: "unexpected")))
+    }
+    func testRoundedProbabilityMassIsDeterministicAndDoesNotBoostConfidence() throws {
+        for _ in 0..<50 {
+            let value = try JevDecision.decode(response(probabilities: ["procrastination": 0.81, "productive": 0.13, "unknown": 0.05]))
+            XCTAssertEqual(value.verdict, .procrastination)
+            XCTAssertEqual(value.probability, 0.81)
+            XCTAssertNoThrow(try JevDecision.decode(response(probabilities: ["procrastination": 0.91, "productive": 0.05, "unknown": 0.05])))
+        }
+        XCTAssertThrowsError(try JevDecision.decode(response(probabilities: ["procrastination": 0.92, "productive": 0.05, "unknown": 0.05])))
+        XCTAssertThrowsError(try JevDecision.decode(response(probabilities: ["procrastination": 0.87, "productive": 0.05, "unknown": 0.05])))
+        XCTAssertEqual(try JevDecision.decode(response(probabilities: ["procrastination": 0.79, "productive": 0.15, "unknown": 0.05])).verdict, .unknown)
     }
     func testMalformedDistributionAndLowProbabilityNeverWarn() throws {
         XCTAssertThrowsError(try JevDecision.decode(response(probabilities: ["procrastination": 2])))

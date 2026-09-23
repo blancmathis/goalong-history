@@ -34,19 +34,21 @@ pertinents et les actions déjà autorisées alimentent un tampon en mémoire ; 
 bref passage dans un fil doit rester présent même après le retour au code.
 
 La question est : **la fenêtre contient-elle une activité de procrastination ?**
-Pas « quel est son usage majoritaire ? ». Deux réponses positives exploitables
-sur deux fenêtres adjacentes déclenchent une bannière non activante. Elle ne prend
+Pas « quel est son usage majoritaire ? ». Dès la première réponse positive exploitable (probabilité du choix ≥ 0,80),
+la fenêtre de 15 secondes déclenche une bannière non activante. Elle ne prend
 pas le focus clavier, ne bloque pas le travail et propose uniquement **Fermer** :
 aucun bouton Pause ou Désactiver. La pause et l’arrêt restent dans Goalong. Le premier message est « Arrête de procrastiner. Ça fait
-30 secondes que tu procrastines. » La durée avance par fenêtres confirmées de 15 s,
+15 secondes que tu procrastines. » La durée avance par fenêtres confirmées de 15 s,
 pas au temps mural : elle ne signifie pas que chaque seconde était improductive.
 **Fermer** masque uniquement la fenêtre jusqu’à la prochaine fenêtre positive,
 sans réinitialiser la durée ni retirer les effets en cours. Leur délai de sécurité
 reste inchangé : fermer ne le prolonge pas. Il n’y a jamais plusieurs avertissements superposés.
-Les deux premières apparitions restent en haut à droite. À partir de la troisième,
+La première apparition est en haut à droite. Dès la deuxième,
 une nouvelle apparition change de zone, sans répéter la précédente. Une fenêtre
 visible ne bouge jamais et le bouton Fermer ne fuit pas la souris. Ce déplacement
-peut être désactivé dans **Configurer les rappels et les effets**.
+peut être désactivé dans **Configurer les rappels et les effets**. La position précédente
+reste mémorisée entre les interruptions de classement ; seules une pause explicite,
+la désactivation ou la fin du processus recommencent la séquence.
 L’inactivité, une pause, un contexte protégé, une erreur ou un résultat indéterminé
 interrompt la série. Une réponse tardive ou une requête annulée ne peut pas la
 faire progresser. Après veille, retard important ou saut d’horloge, aucun arriéré
@@ -86,7 +88,7 @@ illisible, hors limites ou d’une version inconnue ne permet aucun effet.
 
 ## Deux actions clairement distinctes
 
-**Faire une pause Jev**, dans la barre latérale et le menu Surveillance, suspend
+**Faire une pause**, dans la barre latérale et le menu Surveillance, suspend
 uniquement les appels Jev, les rappels et les effets. Une reprise automatique est
 prévue à la fin du décompte. L’historique continue selon le consentement et l’état
 de l’enregistrement ; une pause Jev n’active ni ne reprend une source arrêtée.
@@ -120,11 +122,40 @@ suffit pas. Les lectures non exposées restent indétectables. Un contrôle manq
 ou du contenu défilant sous un titre inchangé ne deviennent pas magiquement visibles
 pour le modèle. Il faut tester les navigateurs utilisés, en français et anglais.
 
+## Référence de travail et précision
+
+**Mes projets de travail**, dans la page Surveillance temps réel, reçoit une description
+courte saisie puis enregistrée explicitement. Elle est transmise à TypeSafe avec les
+analyses ultérieures autorisées, pas au site Goalong. Aucun projet ou document n’est
+importé automatiquement depuis l’historique. Cette référence est limitée à 100 octets
+UTF-8 et stockée dans `jev/work-context.json` (0600). La saisie n’active pas la surveillance.
+Une référence corrompue bloque les appels ; son changement invalide les résultats en vol.
+
+Le contrat `strict-project-relevance-v2` demande de juger le sujet réel par rapport
+à cette référence : un sujet observable sans lien clair avec le projet = procrastination ; une app
+de travail, de la saisie ou un mot-clé ne prouvent pas le travail. La création de
+contenu n’est productive que si elle sert les projets indiqués. Consommation sociale
+et vidéo reste de la procrastination, même éducative. Sans référence ou indices
+suffisants, le lien au travail reste indéterminé ; une distraction explicite reste classable.
+
+Le champ `state` est structuré (`goals`, `rows`) : les titres ne deviennent pas des
+instructions et ne peuvent pas changer les champs par des séparateurs. Les lignes décrivent le site ou l’application, le mode (recherche, composition, consommation)
+et le titre. Les clics et défilements répétés sur un même sujet sont regroupés ; les sujets
+et modes différents restent distincts.
+Les titres sont limités à 96, 64 ou 48 octets, mais ne sont plus supprimés pour faire
+tenir une fenêtre. Une fenêtre trop riche ne produit pas de jugement inventé.
+Les probabilités ne prouvent pas l’exactitude ; les tests de transport simulé ne sont
+pas une évaluation sémantique. L’évaluation API facultative utilise uniquement des
+situations synthétiques, sans transmettre de donnée réelle de l’historique.
+
+Références d’implémentation : https://docs.typesafe.ai/concepts/state,
+https://docs.typesafe.ai/api et https://docs.typesafe.ai/model-jaggedness/jev-1.13.
+
 ## Données, budget et exclusions
 
 `JevIngress` est un tampon de 512 échantillons maximum et 60 secondes de rétention
-maximale, uniquement en mémoire. La requête ne sélectionne que les 15 secondes à
-classer. Les doublons sont supprimés, les titres raccourcis, mais les modes distincts
+maximale, uniquement en mémoire. La requête associe la référence de travail explicitement enregistrée aux seules
+15 secondes à classer. Les doublons sont supprimés, les titres raccourcis, mais les modes distincts
 ne sont pas remplacés par le seul dernier contexte. Une fenêtre trop complexe
 pour tenir dans le budget est ignorée et reste indéterminée, sans alerte.
 
@@ -184,3 +215,8 @@ les résultats ambigus, les champs de composition/recherche, les exclusions priv
 le stockage protégé et les erreurs/cancellations réseau. Un test en conditions
 réelles exige une clé TypeSafe, un Mac et ses permissions Accessibility. Les tests
 synthétiques ne prouvent pas la précision sémantique réelle de Jev.
+
+Les probabilités renvoyées peuvent être arrondies : une somme de 0,99 ou 1,01
+est acceptée avec une tolérance flottante de 1e-9. Le calcul est déterministe ;
+aucune normalisation ne gonfle le score, le seuil de 0,80 et le contrôle du choix
+maximum restent inchangés. Les distributions incohérentes restent rejetées.

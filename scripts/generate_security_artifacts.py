@@ -274,9 +274,9 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "edition": info.get("GoalongBuildEdition"),
         },
         "jevInterventions": {
-            "defaultEnabled": False, "firstWarningSeconds": 30,
+            "defaultEnabled": False, "firstWarningSeconds": 15,
             "closeBehavior": "rearm-next-positive-window-preserve-duration-and-effects",
-            "moveFromAppearance": 3, "defaultStageMinutes": [2, 5],
+            "moveFromAppearance": 2, "defaultStageMinutes": [2, 5],
             "finalEffect": "dimAndRed", "popupActions": ["close"], "finalStagePersists": True,
             "maximumOpacityPercent": 40, "staleEffectsExpirySeconds": 30,
             "hardwareBrightnessChanges": False, "blocksInput": False,
@@ -327,7 +327,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "declaredDestinations": declared_network_destinations,
             "softwareUpdates": manifest_policy(info),
             "osEnforcedDeny": False,
-            "jevClassification": {'trigger': 'explicit-jev-consent-and-computer-history', 'destination': 'https://api.typesafe.ai/v1/systemone', 'model': 'jev-1.13.0', 'method': 'POST', 'intervalSeconds': 15, 'windowSeconds': 15, 'consecutiveWarnings': 2, 'skipInactive': True, 'timedBreakSuspends': True, 'privateBrowsing': 'never-sent', 'requestMaximumBytes': 800, 'acceptedInputTokensMaximum': 999, 'providerTokenizerKnown': False, 'responseMaximumBytes': 65536, 'resourceTimeoutSeconds': 12, 'redirects': 'refused', 'automaticRetry': False, 'authentication': 'user-owned-0600-api-key-file', 'payloadRetention': 'bounded-memory-only', 'extraVisibleText': 'separate-opt-in-with-existing-local-consent'},
+            "jevClassification": {'trigger': 'explicit-jev-consent-and-computer-history', 'destination': 'https://api.typesafe.ai/v1/systemone', 'model': 'jev-1.13.0', 'method': 'POST', 'intervalSeconds': 15, 'windowSeconds': 15, 'consecutiveWarnings': 1, 'skipInactive': True, 'timedBreakSuspends': True, 'privateBrowsing': 'never-sent', 'requestMaximumBytes': 800, 'acceptedInputTokensMaximum': 999, 'providerTokenizerKnown': False, 'responseMaximumBytes': 65536, 'resourceTimeoutSeconds': 12, 'redirects': 'refused', 'automaticRetry': False, 'authentication': 'user-owned-0600-api-key-file', 'payloadRetention': 'bounded-memory-only', 'extraVisibleText': 'separate-opt-in-with-existing-local-consent', 'workReference': 'explicitly-saved-100-byte-owner-only', 'relevancePolicy': 'strict-project-relevance-v2'},
             "sitePairing": {"trigger": "native-confirmed-goalong-history-link", "path": "/api/goalong/v1/native/pairing/claim", "method": "POST", "codeLifetimeSeconds": 300, "singleUse": True, "redirects": "refused", "responseMaximumBytes": 8192, "tokenStorage": "user-owned-0600-file", "activityDataSent": False},
             "siteSubmission": {
                 "triggers": ["send-site", "native-reviewed-send-button", "native-consented-health-send-button", "native-reviewed-opt-in-schedule"],

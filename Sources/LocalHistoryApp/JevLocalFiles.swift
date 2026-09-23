@@ -45,7 +45,7 @@ enum JevLocalFiles {
             guard fsync(fd) == 0, renameat(directory, temporary, directory, name) == 0 else { throw failure() }
         }
     }
-    private static func validName(_ name: String) -> Bool { ["api-key", "break.json"].contains(name) }
+    private static func validName(_ name: String) -> Bool { ["api-key", "break.json", "work-context.json"].contains(name) }
     private static func withDirectory<T>(_ root: URL, body: (Int32) throws -> T) throws -> T {
         let directory = root.appendingPathComponent("jev", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
@@ -59,7 +59,7 @@ enum JevLocalFiles {
     }
     private static func failure() -> NSError {
         NSError(domain: "GoalongJev", code: 1, userInfo: [NSLocalizedDescriptionKey:
-            "Le stockage privé Jev n’est pas accessible. Aucun envoi n’est effectué."])
+            "Le stockage privé de la surveillance n’est pas accessible. Aucun envoi n’est effectué."])
     }
 }
 #endif

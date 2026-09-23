@@ -87,7 +87,8 @@ final class JevInterventionUXTests: XCTestCase {
         XCTAssertNil(presenter.panel)
         XCTAssertTrue(presenter.overlays.first === overlay, "Close never clears active effects")
         presenter.update(seconds: 315, appearance: 2, present: true, settings: settings)
-        XCTAssertNotNil(presenter.panel)
+        let secondOrigin = try XCTUnwrap(presenter.panel).frame.origin
+        XCTAssertNotEqual(secondOrigin, origin, "Second actual appearance must move")
         XCTAssertTrue(presenter.overlays.first === overlay, "Reopening never recreates/flashes effects")
         presenter.update(seconds: 600, appearance: 2, present: false, settings: settings)
         XCTAssertEqual(presenter.overlays.first?.backgroundColor, combinedColor, "The final effect does not change at 10 min")
@@ -95,13 +96,42 @@ final class JevInterventionUXTests: XCTestCase {
         presenter.expire()
         XCTAssertEqual(expirations, 1); XCTAssertNil(presenter.panel); XCTAssertTrue(presenter.overlays.isEmpty)
         presenter.update(seconds: 315, appearance: 2, present: true, settings: settings)
+        let afterExpiryOrigin = try XCTUnwrap(presenter.panel).frame.origin
+        XCTAssertNotEqual(afterExpiryOrigin, secondOrigin, "Expiry reopens at a different position from the actual previous window")
         presenter.hide()
         XCTAssertNil(presenter.panel); XCTAssertTrue(presenter.overlays.isEmpty)
         presenter.update(seconds: 330, appearance: 3, present: true, settings: settings)
-        XCTAssertNotEqual(presenter.panel?.frame.origin, origin)
+        XCTAssertNotEqual(presenter.panel?.frame.origin, afterExpiryOrigin)
         settings.effectsEnabled = false
         presenter.update(seconds: 345, appearance: 3, present: false, settings: settings)
         XCTAssertTrue(presenter.overlays.isEmpty)
+    }
+    @MainActor func testEveryReappearanceMovesEvenAfterAProductiveGap() throws {
+        _ = NSApplication.shared
+        guard !NSScreen.screens.isEmpty else { throw XCTSkip("No display available") }
+        let presenter = JevWarningPanel(ordersWindows: false)
+        defer { presenter.hide() }
+        var settings = JevInterventionSettings()
+        presenter.update(seconds: 15, appearance: 1, present: true, settings: settings)
+        let original = try XCTUnwrap(presenter.panel).frame
+        var previous = original
+        for index in 2...24 {
+            if index.isMultiple(of: 2) { presenter.dismissPopup() }
+            else { presenter.hide() }
+            presenter.update(seconds: 15, appearance: 1, present: true, settings: settings)
+            let current = try XCTUnwrap(presenter.panel).frame
+            XCTAssertNotEqual(current, previous)
+            previous = current
+            presenter.update(seconds: 30, appearance: 1, present: false, settings: settings)
+            XCTAssertEqual(presenter.panel?.frame, current, "Never move a visible close button")
+        }
+        presenter.hide(resetPosition: true)
+        presenter.update(seconds: 15, appearance: 1, present: true, settings: settings)
+        XCTAssertEqual(presenter.panel?.frame, original)
+        settings.moveAfterSecondAppearance = false
+        presenter.dismissPopup()
+        presenter.update(seconds: 30, appearance: 2, present: true, settings: settings)
+        XCTAssertEqual(presenter.panel?.frame, original)
     }
     func testWarningHasOnlyCloseAndClosingPreservesEffects() throws {
         let warning = try source("JevWarningPanel.swift")
