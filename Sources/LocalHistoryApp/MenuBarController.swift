@@ -160,6 +160,7 @@
             menu.addItem(globalPauseItem)
             pauseMenuItem.target = self
             menu.addItem(pauseMenuItem)
+            Task { @MainActor in JevMenuController.shared.install(in: self.menu) }
             menu.addItem(makeItem("Share signed day…", action: #selector(openShare)))
             menu.addItem(.separator())
 

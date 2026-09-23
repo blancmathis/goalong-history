@@ -175,7 +175,7 @@ class CapabilityManifestTests(unittest.TestCase):
         (self.app / "Contents/Info.plist").write_bytes(plistlib.dumps(self.info))
         (self.app / "Contents/Frameworks/Sparkle.framework").mkdir(parents=True)
         markers = {"codexAppServer": True, "managedOAuth": True, "siteSubmission": True,
-                   "commitmentUploader": False, "sparkleUpdater": True}
+                   "commitmentUploader": False, "sparkleUpdater": True, "jevClassification": True}
         with patch.object(generator, "inspect_code", return_value=([{"sha256": "synthetic"}], markers)), \
              patch.object(generator, "parse_codesign_metadata", return_value={}):
             self.value = generator.capability_manifest(self.app, "unified", ROOT)
@@ -198,6 +198,12 @@ class CapabilityManifestTests(unittest.TestCase):
         for key in ["rawXMLRetention", "automaticSync", "clinicalRecords", "gpsRoutes", "discovery"]:
             with self.subTest(field=key):
                 self.fails(lambda value: value["dataAccess"]["appleHealthImport"].update({key: True}))
+
+    def test_every_jev_limit_is_checked(self):
+        for key in self.value["network"]["jevClassification"]:
+            with self.subTest(field=key):
+                self.fails(lambda value: value["network"]["jevClassification"].pop(key))
+        self.fails(lambda value: value["dataAccess"]["newInstallDefaults"].update(jevMonitoring=True))
 
     def test_every_submission_limit_is_checked(self):
         for key in self.value["network"]["siteSubmission"]:

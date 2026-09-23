@@ -443,6 +443,7 @@
                 }
             }
 
+            JevIngress.shared.receive(event)
             minuteSealer.receive(event)
             captureHealth?.markRecordedEvent(event.kind, at: event.timestamp)
         }

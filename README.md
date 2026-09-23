@@ -149,6 +149,23 @@ signatures offline. Provider authorship, App Attest and an external timestamp
 remain separate and are reported as absent unless their own signed evidence is
 actually included.
 
+## Optional real-time Jev monitoring
+
+**Settings → Jev et pauses** provides a separate, off-by-default TypeSafe consent
+and an owner-only API-key field. During observable activity, Jev classifies one
+non-overlapping 15-second window. Two consecutive windows containing
+procrastination display one non-blocking banner. Idle, private/suppressed contexts,
+errors and timed breaks reset the streak. Nothing escalates automatically.
+The initial user-selected policy treats social/video consumption as procrastination
+and composition as productive; unknown evidence remains unknown. This is an
+interpretation of observable activity, not a measurement of mental attention.
+
+Timed breaks (1–120 minutes, with presets) are also available from the menu bar.
+They suspend Jev, not the independently controlled local recorder. The global
+pause remains authoritative. Only compact recent evidence is transmitted to
+`api.typesafe.ai`, with an 800-byte full-JSON budget and a check of returned input
+usage. Read [the exact privacy, token and observation limits](docs/JEV-MONITORING.md).
+
 ## Native dashboard
 
 The SwiftUI dashboard exposes four primary destinations:

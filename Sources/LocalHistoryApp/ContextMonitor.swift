@@ -127,7 +127,8 @@
                 timer = nil
                 return
             }
-            let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+            let boundedInterval = JevIngress.shared.isEnabled ? min(interval, 10) : interval
+            let timer = Timer(timeInterval: boundedInterval, repeats: false) { [weak self] _ in
                 guard let self else { return }
                 self.timer = nil
                 self.scheduledPollInProgress = true
@@ -183,7 +184,7 @@
                     scheduleNextPoll()
                 }
             }
-            guard state.isCapturing else { return nil }
+            guard state.isCapturing else { JevIngress.shared.boundary(); return nil }
             if IsSecureEventInputEnabled() {
                 let safeContext = latestSnapshot.map { current in
                     ContextSnapshot(
@@ -196,6 +197,7 @@
                     )
                 }
                 setLatest(safeContext)
+                JevIngress.shared.boundary()
                 previous = safeContext
                 consecutiveCaptureFailures = 0
                 captureHealth.setSuppression(.secureInput)
@@ -204,10 +206,12 @@
             guard let current = provider.capture() else {
                 consecutiveCaptureFailures = min(consecutiveCaptureFailures + 1, 1_000)
                 captureHealth.markAXFailure()
+                JevIngress.shared.boundary()
                 return nil
             }
             consecutiveCaptureFailures = 0
             setLatest(current)
+            JevIngress.shared.observeContext(current, labelsEnabled: configManager.config.captureElementLabels)
             captureHealth.setSuppression(current.suppressionReason)
             if current.suppressionReason == .accessibilityUnavailable {
                 captureHealth.markAXFailure()

@@ -69,6 +69,7 @@
 
     let delegate = AppDelegate()
     application.delegate = delegate
+    Task { @MainActor in JevMonitor.shared.start() }
     application.run()
 #else
     import Foundation

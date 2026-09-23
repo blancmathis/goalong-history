@@ -168,6 +168,8 @@
                     lastPrivacyProbe = Date()
                 }
 
+                // Private browsing may be explicitly recorded locally, but is never sent to Jev.
+                JevIngress.shared.setPrivateWindow(cachedPrivateWindow)
                 if config.suppressesPrivateWindow(detected: cachedPrivateWindow) {
                     clearCachedURL()
                     return ContextSnapshot(
@@ -195,6 +197,7 @@
                 }
             }
 
+            if !isBrowser { JevIngress.shared.setPrivateWindow(false) }
             let window = AXReader.windowSnapshot(windowElement, config: config)
             let focusedElement = AXReader.focusedElement(for: applicationElement)
                 .map { AXReader.elementSnapshot($0, config: config) }

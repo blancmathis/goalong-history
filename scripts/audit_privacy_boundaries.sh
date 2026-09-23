@@ -181,12 +181,13 @@ if [[ -f "$CODEX_BRIDGE" ]]; then
 fi
 
 # The single reviewed website sender is an explicit action only. The retired commitment
-# uploader stays physically excluded; every other first-party networking surface is rejected.
+# uploader stays physically excluded. Jev has its own explicit-consent bounded audit.
+# Every other first-party networking surface is rejected.
 SITE_SUBMISSION="$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSiteSubmission.swift"
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$SITE_SUBMISSION" && "$file" != "$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/CommitmentUploader.swift" ]]; then
-    echo "Unexpected first-party network API outside the reviewed explicit website sender: $match" >&2
+  if [[ "$file" != "$SITE_SUBMISSION" && "$file" != "$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/CommitmentUploader.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/JevTransport.swift" ]]; then
+    echo "Unexpected first-party network API outside the reviewed website and optional Jev boundaries: $match" >&2
     failed=true
   fi
 done < <(grep -R -nE 'URLSession|HTTPURLResponse|URLRequest' "${CODE_ROOTS[@]}" || true)
@@ -564,4 +565,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge and bundled one-shot self-relauncher; first-party networking is confined to confirmed website pairing and explicit reviewed sends; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge and bundled one-shot self-relauncher; first-party networking is confined to confirmed website pairing, reviewed sends and separately consented bounded Jev classification; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."
