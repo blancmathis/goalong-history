@@ -10,7 +10,7 @@ import LocalHistoryCore
                 Text("30 secondes · premier rappel").font(.system(size: 14, weight: .semibold))
                 Text("« Arrête de procrastiner. Ça fait 30 secondes que tu procrastines. »")
                     .font(.callout).foregroundStyle(.secondary)
-                Text("Fermer masque le rappel et ses effets jusqu’à la prochaine détection, sans remettre le compteur à zéro.")
+                Text("Fermer masque seulement le pop-up jusqu’à la prochaine détection. Le compteur et les effets continuent.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Toggle("Déplacer la fenêtre à partir du 3e affichage", isOn: binding(\.moveAfterSecondAppearance))
@@ -18,11 +18,11 @@ import LocalHistoryCore
             Divider()
             Toggle("Activer les effets progressifs", isOn: binding(\.effectsEnabled))
                 .toggleStyle(.switch).accessibilityIdentifier("jev-effects-enabled")
-            Text("Optionnel. Les effets restent visibles tant que la procrastination continue. Une pause Jev, la désactivation ou un retour au travail les enlève.")
+            Text("Optionnel. Par défaut : assombrissement à 2 min, puis assombrissement + rouge dès 5 min. Ensuite, ce dernier effet et les rappels continuent sans nouveau palier. Retour productif, pause ou arrêt de Jev dans Goalong : tout disparaît.")
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(0..<preferences.settings.stages.count, id: \.self) { index in
                 stageRow(index)
-                if index < 2 { Divider() }
+                if index < preferences.settings.stages.count - 1 { Divider() }
             }
             Text("Assombrissement = voile visuel, pas modification de la luminosité du Mac. Aucun clignotement ni blocage des clics. L’intensité est limitée à 40 %. Si Jev ne reçoit plus de résultat, les effets disparaissent sous 30 secondes.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -41,7 +41,7 @@ import LocalHistoryCore
     private func stageRow(_ index: Int) -> some View {
         let stages = preferences.settings.stages
         let lower = index == 0 ? 1 : stages[index - 1].afterMinutes + 1
-        let upper = index == 2 ? 60 : stages[index + 1].afterMinutes - 1
+        let upper = index == stages.count - 1 ? 60 : stages[index + 1].afterMinutes - 1
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Toggle("Palier \(index + 1)", isOn: stageBinding(index, \.enabled)).toggleStyle(.switch)
@@ -52,10 +52,15 @@ import LocalHistoryCore
                     .accessibilityIdentifier("jev-stage-\(index)-minutes")
             }
             HStack(spacing: 16) {
-                Picker("Effet", selection: stageBinding(index, \.effect)) {
-                    ForEach(JevScreenEffect.allCases, id: \.self) { Text($0.title).tag($0) }
-                }.frame(maxWidth: 280)
-                    .accessibilityIdentifier("jev-stage-\(index)-effect")
+                if index == stages.count - 1 {
+                    Text("Assombrir + rouge · puis maintien")
+                        .accessibilityIdentifier("jev-stage-\(index)-effect")
+                } else {
+                    Picker("Effet", selection: stageBinding(index, \.effect)) {
+                        ForEach(JevScreenEffect.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }.frame(maxWidth: 280)
+                        .accessibilityIdentifier("jev-stage-\(index)-effect")
+                }
                 Spacer(minLength: 0)
                 Stepper("Intensité : \(stages[index].intensity) %", value: stageBinding(index, \.intensity), in: 10...40, step: 5)
                     .fixedSize().accessibilityIdentifier("jev-stage-\(index)-intensity")

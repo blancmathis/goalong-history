@@ -36,12 +36,13 @@ bref passage dans un fil doit rester présent même après le retour au code.
 La question est : **la fenêtre contient-elle une activité de procrastination ?**
 Pas « quel est son usage majoritaire ? ». Deux réponses positives exploitables
 sur deux fenêtres adjacentes déclenchent une bannière non activante. Elle ne prend
-pas le focus clavier, ne bloque pas le travail et propose **Fermer** et **Désactiver Jev**,
-mais aucun bouton Pause. Le premier message est « Arrête de procrastiner. Ça fait
+pas le focus clavier, ne bloque pas le travail et propose uniquement **Fermer** :
+aucun bouton Pause ou Désactiver. La pause et l’arrêt restent dans Goalong. Le premier message est « Arrête de procrastiner. Ça fait
 30 secondes que tu procrastines. » La durée avance par fenêtres confirmées de 15 s,
 pas au temps mural : elle ne signifie pas que chaque seconde était improductive.
-**Fermer** masque la fenêtre et ses effets jusqu’à la prochaine fenêtre positive,
-sans réinitialiser la durée. Il n’y a jamais plusieurs avertissements superposés.
+**Fermer** masque uniquement la fenêtre jusqu’à la prochaine fenêtre positive,
+sans réinitialiser la durée ni retirer les effets en cours. Leur délai de sécurité
+reste inchangé : fermer ne le prolonge pas. Il n’y a jamais plusieurs avertissements superposés.
 Les deux premières apparitions restent en haut à droite. À partir de la troisième,
 une nouvelle apparition change de zone, sans répéter la précédente. Une fenêtre
 visible ne bouge jamais et le bouton Fermer ne fuit pas la souris. Ce déplacement
@@ -61,21 +62,26 @@ productif, ni une précision statistique validée sur les usages Goalong.
 Les effets progressifs sont **désactivés par défaut**, indépendamment du consentement
 Jev existant. Dans **Configurer les rappels et les effets**, l’utilisateur peut
 activer les effets, désactiver chaque palier, choisir ses minutes et son intensité.
-Trois propositions : 2 min → assombrissement 20 %, 5 min → voile rouge 20 %,
-10 min → assombrissement + rouge 30 %. Les délais restent croissants, entre 1 et
+Deux propositions : 2 min → assombrissement 20 %, puis dès 5 min →
+assombrissement + rouge 20 %. Ce dernier effet reste combiné et se maintient avec
+les rappels, sans nouveau palier à 10 minutes ou plus. Les délais restent croissants, entre 1 et
 60 minutes. L’intensité reste entre 10 et 40 %. Seul le dernier palier actif atteint
 s’applique, sans cumuler plusieurs voiles. Désactiver un palier laisse le précédent.
 
 L’assombrissement est un voile AppKit : aucune écriture de luminosité matérielle,
 de gamma, de permission système ou de Gatekeeper. Les voiles ne prennent pas le
 focus, laissent passer les clics et ne clignotent pas. La fenêtre et son bouton
-Désactiver restent au-dessus. Une erreur, un résultat indéterminé/productif, une
+Fermer restent au-dessus ; la pause et l’arrêt sont accessibles dans Goalong. Une erreur, un résultat indéterminé/productif, une
 pause, un changement d’écran ou un contexte protégé enlève tous les effets.
 Un watchdog de 30 secondes, renouvelé uniquement par un résultat frais, élimine
 les effets si les résultats s’arrêtent. Les fenêtres disparaissent avec le processus.
 
 Les préférences de présentation non sensibles sont locales dans UserDefaults ;
-la clé API reste dans son fichier privé 0600 inchangé. Une configuration absente,
+la clé API reste dans son fichier privé 0600 inchangé. La migration v1 → v2 garde
+l’activation des effets, le déplacement, les délais, intensités et interrupteurs
+des deux premiers paliers ; le deuxième devient combiné et le troisième est retiré.
+L’ancienne configuration est conservée pour un retour à la version précédente.
+Une migration ne réactive jamais Jev ni un palier désactivé. Une configuration absente,
 illisible, hors limites ou d’une version inconnue ne permet aucun effet.
 
 ## Deux actions clairement distinctes

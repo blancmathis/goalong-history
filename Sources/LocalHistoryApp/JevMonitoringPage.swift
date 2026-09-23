@@ -92,7 +92,7 @@ struct JevActivationAvailability: Equatable {
                     .font(.system(size: 13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("jev-status")
-                Text("Avec activité : une analyse toutes les 15 s. Après 30 s détectées : un rappel. Fermer le masque jusqu’à la prochaine détection. Les effets progressifs sont configurables ci-dessous.")
+                Text("Avec activité : une analyse toutes les 15 s. Après 30 s détectées : un rappel. Fermer masque seulement le rappel, pas les effets. Pause et arrêt de Jev se font ici ; les effets sont configurables ci-dessous.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Divider()

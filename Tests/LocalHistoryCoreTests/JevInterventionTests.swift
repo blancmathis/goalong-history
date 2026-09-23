@@ -23,11 +23,11 @@ final class JevInterventionTests: XCTestCase {
     func testContinuousDurationCrossesExactConfiguredBoundaries() {
         var streak = JevStreak(), settings = JevInterventionSettings()
         settings.effectsEnabled = true
-        for index in 0..<40 {
+        for index in 0..<480 {
             _ = accept(&streak, index)
             let seconds = (index + 1) * 15
             XCTAssertEqual(streak.observedSeconds, seconds)
-            let expected: JevScreenEffect? = seconds < 120 ? nil : seconds < 300 ? .dim : seconds < 600 ? .red : .dimAndRed
+            let expected: JevScreenEffect? = seconds < 120 ? nil : seconds < 300 ? .dim : .dimAndRed
             XCTAssertEqual(settings.stage(at: seconds)?.effect, expected)
         }
         XCTAssertEqual(streak.appearanceCount, 1, "A visible warning is updated, not duplicated")
@@ -60,15 +60,17 @@ final class JevInterventionTests: XCTestCase {
         settings.effectsEnabled = true; settings.stages[1].enabled = false
         XCTAssertEqual(settings.stage(at: 300)?.effect, .dim)
         settings.stages[0].enabled = false
-        XCTAssertNil(settings.stage(at: 599)); XCTAssertEqual(settings.stage(at: 600)?.effect, .dimAndRed)
-        settings.stages[2].enabled = false; XCTAssertNil(settings.stage(at: Int.max))
+        XCTAssertNil(settings.stage(at: Int.max))
+        settings.stages[1].enabled = true
+        XCTAssertNil(settings.stage(at: 299)); XCTAssertEqual(settings.stage(at: 300)?.effect, .dimAndRed)
+        XCTAssertEqual(settings.stage(at: Int.max), settings.stages[1], "No later escalation or downgrade")
     }
     func testInvalidConfigurationsNeverApplyEffects() throws {
         let edits: [(inout JevInterventionSettings) -> Void] = [
-            { $0.schemaVersion = 2 }, { $0.stages = [] },
-            { $0.stages[0].afterMinutes = 0 }, { $0.stages[2].afterMinutes = 61 },
+            { $0.schemaVersion = 3 }, { $0.stages = [] },
+            { $0.stages[0].afterMinutes = 0 }, { $0.stages[1].afterMinutes = 61 },
             { $0.stages[1].afterMinutes = 2 }, { $0.stages[1].afterMinutes = 1 },
-            { $0.stages[0].intensity = 9 }, { $0.stages[0].intensity = 100 },
+            { $0.stages[1].effect = .red }, { $0.stages[0].intensity = 9 }, { $0.stages[0].intensity = 100 },
         ]
         for edit in edits {
             var settings = JevInterventionSettings(); settings.effectsEnabled = true; edit(&settings)
@@ -76,6 +78,55 @@ final class JevInterventionTests: XCTestCase {
         }
         let original = JevInterventionSettings()
         XCTAssertEqual(try JSONDecoder().decode(JevInterventionSettings.self, from: JSONEncoder().encode(original)), original)
+    }
+    func testLegacyMigrationPreservesChoicesWithoutEnablingAnything() throws {
+        var legacy = JevInterventionSettings()
+        legacy.schemaVersion = 1
+        legacy.stages = [
+            .init(afterMinutes: 2, effect: .dim, intensity: 20),
+            .init(afterMinutes: 5, effect: .red, intensity: 20),
+            .init(afterMinutes: 10, effect: .dimAndRed, intensity: 30),
+        ]
+        let migrated = try XCTUnwrap(legacy.migratingLegacy())
+        XCTAssertEqual(migrated, JevInterventionSettings())
+        XCTAssertFalse(migrated.effectsEnabled)
+        legacy.effectsEnabled = true
+        legacy.moveAfterSecondAppearance = false
+        legacy.stages[0].afterMinutes = 3
+        legacy.stages[0].intensity = 35
+        legacy.stages[1].enabled = false
+        legacy.stages[1].afterMinutes = 7
+        legacy.stages[1].intensity = 15
+        let custom = try XCTUnwrap(legacy.migratingLegacy())
+        XCTAssertTrue(custom.effectsEnabled)
+        XCTAssertFalse(custom.moveAfterSecondAppearance)
+        XCTAssertEqual(custom.stages.count, 2)
+        XCTAssertEqual(custom.stages[0], legacy.stages[0])
+        XCTAssertFalse(custom.stages[1].enabled)
+        XCTAssertEqual(custom.stages[1].afterMinutes, 7)
+        XCTAssertEqual(custom.stages[1].intensity, 15)
+        XCTAssertEqual(custom.stages[1].effect, .dimAndRed)
+        XCTAssertEqual(custom.stage(at: 3600)?.effect, .dim, "Disabled final stage stays disabled")
+        legacy.stages[2].intensity = 100
+        XCTAssertNil(legacy.migratingLegacy(), "Validate even the retired stage before migration")
+        XCTAssertNil(JevInterventionSettings().migratingLegacy(), "Migration is exclusively v1 to v2")
+    }
+    func testCombinedStageHasNoTenMinuteChangeAndClosePreservesIt() {
+        var settings = JevInterventionSettings(), streak = JevStreak()
+        settings.effectsEnabled = true
+        XCTAssertEqual(settings.stages.map(\.afterMinutes), [2, 5])
+        for index in 0..<240 {
+            let shown = accept(&streak, index)
+            if index >= 19 {
+                XCTAssertTrue(shown, "Every fresh positive after Close shows the next reminder")
+                XCTAssertEqual(settings.stage(at: streak.observedSeconds), settings.stages[1])
+            }
+            streak.dismissWarning()
+        }
+        XCTAssertEqual(streak.observedSeconds, 3600)
+        XCTAssertFalse(accept(&streak, 240, verdict: .productive))
+        XCTAssertEqual(streak.observedSeconds, 0)
+        XCTAssertNil(settings.stage(at: streak.observedSeconds))
     }
     func testRandomPlacementStartsOnlyOnThirdAppearanceAndNeverRepeats() {
         var previous: JevWarningAnchor? = nil

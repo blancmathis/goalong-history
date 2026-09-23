@@ -158,11 +158,14 @@ the general settings. During observable activity, Jev classifies one
 non-overlapping 15-second window. Two consecutive windows containing
 procrastination display one non-blocking banner. Idle, private/suppressed contexts,
 errors and timed breaks reset the streak. Closing rearms the next positive result
-without resetting the duration. From the third presentation the reminder changes
+without resetting the duration or clearing effects. The popup only offers Close;
+pause and disable controls remain in Goalong. From the third presentation the reminder changes
 location (configurable), never while visible. Optional local screen-effect stages
-(defaults: 2/5/10 minutes) are disabled until explicitly enabled; dim/red click-through
+(defaults: dim at 2 minutes, dim + red from 5 minutes onward, no later escalation)
+are disabled until explicitly enabled; dim/red click-through
 overlays never change hardware brightness or system permissions and expire if
-fresh results stop. Stage timing, effect and intensity are configurable.
+fresh results stop. Stage timing and intensity are configurable; the final effect stays combined.
+Legacy preferences migrate without enabling effects, Jev or disabled stages.
 The initial user-selected policy treats social/video consumption as procrastination
 and composition as productive; unknown evidence remains unknown. This is an
 interpretation of observable activity, not a measurement of mental attention.

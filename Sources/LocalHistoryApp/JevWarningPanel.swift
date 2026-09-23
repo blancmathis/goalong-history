@@ -6,7 +6,9 @@ import LocalHistoryCore
 /// Non-activating, click-through screen effects. Never changes display brightness, gamma,
 /// keyboard routing or system settings. All windows die with the application process.
 @MainActor final class JevWarningPanel {
-    static let shared = JevWarningPanel(onExpiry: { JevMonitor.shared.dismissWarning() })
+    static let shared = JevWarningPanel(
+        onExpiry: { JevMonitor.shared.dismissWarning() },
+        onDismiss: { JevMonitor.shared.dismissWarning() })
     private(set) var panel: NSPanel?
     private(set) var overlays: [NSPanel] = []
     private var previousAnchor: JevWarningAnchor?
@@ -14,14 +16,16 @@ import LocalHistoryCore
     private let content = JevWarningContent()
     private let ordersWindows: Bool
     private let onExpiry: () -> Void
-    init(ordersWindows: Bool = true, onExpiry: @escaping () -> Void = {}) {
-        self.ordersWindows = ordersWindows; self.onExpiry = onExpiry
+    private let onDismiss: () -> Void
+    init(ordersWindows: Bool = true, onExpiry: @escaping () -> Void = {},
+         onDismiss: @escaping () -> Void = {}) {
+        self.ordersWindows = ordersWindows; self.onExpiry = onExpiry; self.onDismiss = onDismiss
     }
 
     func update(seconds: Int, appearance: Int, present: Bool, settings: JevInterventionSettings) {
         guard seconds >= 30 else { hide(); return }
-        guard present || panel != nil else { return }
-        if panel == nil {
+        guard present || panel != nil || !overlays.isEmpty else { return }
+        if panel == nil && present {
             guard let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main else { return }
             let anchor = JevWarningAnchor.next(appearance: appearance,
                 moving: settings.moveAfterSecondAppearance, previous: previousAnchor,
@@ -36,7 +40,9 @@ import LocalHistoryCore
             value.isOpaque = false; value.backgroundColor = .clear; value.hasShadow = true
             // A content hosting view otherwise derives window min/max sizes from SwiftUI.
             // This reminder has an explicitly bounded layout, including after the first run loop.
-            let host = NSHostingView(rootView: JevWarningView(content: content)
+            let host = NSHostingView(rootView: JevWarningView(content: content, onClose: { [weak self] in
+                self?.dismissPopup(); self?.onDismiss()
+            })
                 .frame(width: target.width, height: target.height))
             host.sizingOptions = []
             host.frame = NSRect(origin: .zero, size: target.size)
@@ -58,9 +64,14 @@ import LocalHistoryCore
         expiry = lease
     }
 
+    /// Closing a reminder is not a pause: keep effects and their existing safety lease.
+    func dismissPopup() {
+        panel?.orderOut(nil); panel?.close(); panel = nil
+    }
+
     func hide(resetPosition: Bool = false) {
         expiry?.invalidate(); expiry = nil
-        panel?.orderOut(nil); panel?.close(); panel = nil
+        dismissPopup()
         clearEffects()
         if resetPosition { previousAnchor = nil }
     }
@@ -122,6 +133,7 @@ private final class JevNonactivatingPanel: NSPanel {
 }
 @MainActor struct JevWarningView: View {
     @ObservedObject var content: JevWarningContent
+    var onClose: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Arrête de procrastiner.")
@@ -131,12 +143,10 @@ private final class JevNonactivatingPanel: NSPanel {
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("jev-warning-duration")
             HStack {
-                Button("Fermer") { JevMonitor.shared.dismissWarning() }
+                Button("Fermer", action: onClose)
                     .accessibilityIdentifier("jev-warning-close")
-                    .help("Masquer ce rappel et ses effets jusqu’à la prochaine détection de procrastination.")
+                    .help("Masquer uniquement ce rappel jusqu’à la prochaine détection. Les effets restent actifs.")
                 Spacer()
-                Button("Désactiver Jev") { JevMonitor.shared.setEnabled(false) }
-                    .buttonStyle(.borderless).accessibilityIdentifier("jev-warning-disable")
             }
         }.padding(18).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
