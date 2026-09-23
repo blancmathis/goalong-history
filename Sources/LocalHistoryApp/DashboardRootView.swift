@@ -57,6 +57,8 @@
                 GoalongAnalyticsPage(model: model, navigation: $activityNavigation)
             case .history:
                 UnifiedHistoryPage(model: model)
+            case .monitoring:
+                JevMonitoringPage(onOpenRecording: { model.openRecordingSettings() })
             case .activity:
                 ActivityPage(
                     model: model,
@@ -176,10 +178,12 @@
                 navigationLabel(
                     title: section.simpleTitle,
                     symbol: section == .overview ? "chart.bar.xaxis" : section.symbol,
-                    selected: model.selectedSection.sidebarParent == section
+                    selected: model.selectedSection.sidebarParent == section,
+                    wraps: section == .monitoring
                 )
             }
             .buttonStyle(LHNavigationButtonStyle(selected: model.selectedSection.sidebarParent == section))
+            .accessibilityIdentifier("sidebar-\(section.rawValue)")
             .accessibilityLabel(section.simpleTitle)
             .accessibilityAddTraits(model.selectedSection.sidebarParent == section ? .isSelected : [])
         }
@@ -187,7 +191,8 @@
         private func navigationLabel(
             title: String,
             symbol: String,
-            selected: Bool
+            selected: Bool,
+            wraps: Bool = false
         ) -> some View {
             HStack(spacing: 12) {
                 Image(systemName: symbol)
@@ -195,12 +200,14 @@
                     .frame(width: 20)
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                Spacer()
+                    .lineLimit(wraps ? 2 : 1)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
             }
             .foregroundStyle(selected ? LHTheme.text : LHTheme.secondaryText)
             .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 38)
+            .frame(maxWidth: .infinity, minHeight: wraps ? 48 : 38)
             .contentShape(Rectangle())
         }
 
@@ -303,12 +310,13 @@
     }
 
     extension DashboardSection {
-        static let primarySections: [DashboardSection] = [.overview, .history, .settings]
+        static let primarySections: [DashboardSection] = [.overview, .history, .monitoring, .settings]
 
         var simpleTitle: String {
             switch self {
             case .overview, .analytics: return "Activité"
             case .history: return "Historique"
+            case .monitoring: return "Surveillance temps réel"
             case .activity: return "Computer History"
             case .screenTime: return "Screen Time"
             case .agentActivity: return "AI conversations"
@@ -324,6 +332,8 @@
             switch self {
             case .overview, .analytics, .chatGPTRecap, .share:
                 return .overview
+            case .monitoring:
+                return .monitoring
             case .history, .activity, .screenTime:
                 return .history
             case .agentActivity, .privacy, .cli, .settings:

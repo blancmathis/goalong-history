@@ -5,6 +5,7 @@
     enum DashboardSection: String, CaseIterable, Identifiable, Hashable {
         case overview
         case history
+        case monitoring
         case analytics
         case activity
         case screenTime
@@ -22,6 +23,7 @@
             case .overview: return "Today"
             case .analytics: return "Analyses"
             case .history: return "History"
+            case .monitoring: return "Surveillance temps réel"
             case .activity: return "Computer History"
             case .screenTime: return "Apple Screen Time"
             case .agentActivity: return "Agentic work"
@@ -38,6 +40,7 @@
             case .overview: return "sun.max"
             case .analytics: return "chart.xyaxis.line"
             case .history: return "clock.arrow.circlepath"
+            case .monitoring: return "eye.circle"
             case .activity: return "clock.arrow.circlepath"
             case .screenTime: return "macbook.and.iphone"
             case .agentActivity: return "cpu"

@@ -3,93 +3,39 @@ import AppKit
 import SwiftUI
 import LocalHistoryCore
 
-@MainActor struct JevSettingsView: View {
+@MainActor struct JevPrivacyControls: View {
     @ObservedObject private var monitor = JevMonitor.shared
-    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey) private var richText = false
     @AppStorage(JevMonitor.excerptKey) private var excerpts = false
-    @State private var key = ""
-    @State private var confirming = false
     @State private var confirmingText = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            GoalongSettingsGroup(title: "Surveillance Jev · facultative") {
-                Toggle("Analyser mon activité toutes les 15 secondes", isOn: Binding(
-                    get: { consents.isEnabled(.jevMonitoring) },
-                    set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
-                    .toggleStyle(.switch).accessibilityIdentifier("jev-enabled")
-                Text("Deux fenêtres consécutives contenant de la procrastination déclenchent une bannière discrète. Aucun blocage et aucune escalade automatique.")
-                    .font(.callout).foregroundStyle(.secondary)
-                Label(monitor.status, systemImage: "circle.dotted").font(.callout)
-                    .accessibilityIdentifier("jev-status")
-                Text("Règle : consulter des vidéos ou des fils sociaux, même instructifs, compte comme procrastination ; composer un contenu compte comme productif. Lire une documentation n’est pas assimilé à un fil social. Une activité inconnue ne déclenche pas d’alerte.")
-                    .font(.caption).foregroundStyle(.secondary)
-                if !consents.isEnabled(.localComputerHistory) {
-                    Text("L’historique de ce Mac doit être activé séparément dans Enregistrement. Jev n’active aucun accès à votre place.")
-                        .font(.callout).foregroundStyle(.orange)
-                }
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Consommer des vidéos ou des fils sociaux, même instructifs, compte comme procrastination. Composer un contenu est distingué de la simple consultation. Lire une documentation n’est pas assimilé à un fil social. Sans indices suffisants, aucune alerte.")
+                .font(.callout).foregroundStyle(.secondary)
+            Text("Les fenêtres privées, les données supprimées et les apps ou sites exclus ne sont pas envoyés à Jev.")
+                .font(.callout).foregroundStyle(.secondary)
+            Text("Seulement les 15 dernières secondes : applications/domaines, titres disponibles et indices d’interaction. Les clics et défilements identiques sont regroupés. Aucun historique de journée n’est transmis.")
+                .font(.callout).foregroundStyle(.secondary)
+            Toggle("Joindre un bref extrait du texte affiché", isOn: Binding(
+                get: { excerpts }, set: { if $0 { confirmingText = true } else { monitor.setIncludeText(false) } }))
+                .toggleStyle(.switch).disabled(!richText)
+            Text(richText ? "L’extrait est limité, filtré et transmis uniquement après ce choix supplémentaire." : "Cette option nécessite d’abord le choix local « Texte affiché ». Celui-ci n’est jamais activé par Jev.")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("Jev ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. Sans interaction ni lecture vidéo explicitement détectée, aucun appel n’est effectué.")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("Budget conservateur : requête JSON complète ≤ 800 octets UTF-8. Le compteur TypeSafe est aussi contrôlé : toute réponse annonçant 1 000 tokens ou plus suspend Jev. Le tokenizer et son surcoût interne ne sont pas publiés.")
+                .font(.caption).foregroundStyle(.secondary)
+            if let tokens = monitor.lastInputTokens {
+                Text("Dernier appel : \(tokens) tokens d’entrée · \(monitor.lastRequestBytes) octets envoyés")
+                    .font(.caption.monospacedDigit())
             }
-            JevBreakControls()
-            GoalongSettingsGroup(title: "Connexion TypeSafe") {
-                Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac." : "Ajoutez votre clé API TypeSafe. L’usage de l’API est facturé par TypeSafe.")
-                    .font(.callout).foregroundStyle(.secondary)
-                HStack {
-                    SecureField("Clé API TypeSafe", text: $key).textFieldStyle(.roundedBorder)
-                        .accessibilityIdentifier("jev-api-key")
-                    Button("Enregistrer") { monitor.saveKey(key); key = "" }.disabled(key.isEmpty)
-                    if monitor.hasKey { Button("Supprimer") { monitor.removeKey() } }
-                }
-                Text("Clé conservée dans un fichier privé (0600), jamais dans l’historique ni les journaux de diagnostic.")
-                    .font(.caption).foregroundStyle(.secondary)
+            DisclosureGroup("Voir le dernier contenu envoyé (sans la clé)") {
+                Text(monitor.lastPayload.isEmpty ? "Aucun contenu conservé en mémoire." : monitor.lastPayload)
+                    .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
             }
-            GoalongSettingsGroup(title: "Données transmises") {
-                Text("Seulement les 15 dernières secondes : applications/domaines, titres disponibles et indices d’interaction. Les clics et défilements identiques sont regroupés. Aucun historique de journée n’est transmis.")
-                    .font(.callout).foregroundStyle(.secondary)
-                Toggle("Joindre un bref extrait du texte affiché", isOn: Binding(
-                    get: { excerpts }, set: { if $0 { confirmingText = true } else { monitor.setIncludeText(false) } }))
-                    .toggleStyle(.switch).disabled(!richText)
-                Text(richText ? "L’extrait est limité, filtré et transmis uniquement après ce choix supplémentaire." : "Cette option nécessite d’abord le choix local « Texte affiché ». Celui-ci n’est jamais activé par Jev.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text("Jev ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. Sans interaction ni lecture vidéo explicitement détectée, aucun appel n’est effectué.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text("Budget conservateur : requête JSON complète ≤ 800 octets UTF-8. Le compteur TypeSafe est aussi contrôlé : toute réponse annonçant 1 000 tokens ou plus suspend Jev. Le tokenizer et son surcoût interne ne sont pas publiés.")
-                    .font(.caption).foregroundStyle(.secondary)
-                if let tokens = monitor.lastInputTokens {
-                    Text("Dernier appel : \(tokens) tokens d’entrée · \(monitor.lastRequestBytes) octets envoyés")
-                        .font(.caption.monospacedDigit())
-                }
-                DisclosureGroup("Voir le dernier contenu envoyé (sans la clé)") {
-                    Text(monitor.lastPayload.isEmpty ? "Aucun contenu conservé en mémoire." : monitor.lastPayload)
-                        .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
-                }
-                Text("Désactiver Jev efface son contexte en mémoire et annule la requête en cours. Un envoi déjà commencé peut avoir atteint TypeSafe. Les exclusions et la pause globale restent prioritaires.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if !monitor.recentChecks.isEmpty {
-                GoalongSettingsGroup(title: "Dernières vérifications · cette session") {
-                    ForEach(monitor.recentChecks.prefix(6)) { check in
-                        HStack {
-                            Text(check.start, style: .time).monospacedDigit()
-                            Text("–"); Text(check.end, style: .time).monospacedDigit()
-                            Spacer()
-                            Text(check.verdict == .procrastination ? "Procrastination présente" : check.verdict == .productive ? "Productif" : "Indéterminé")
-                        }.font(.caption)
-                    }
-                    Text("Une fenêtre positive signifie qu’elle contient de la procrastination, pas que ses 15 secondes sont entièrement improductives. Ces résultats ne réécrivent pas l’historique.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            if let error = monitor.error {
-                Text(error).font(.callout).foregroundStyle(.orange)
-                Button("Réessayer après vérification") { monitor.retry() }
-            }
-        }
-        .alert("Activer la surveillance Jev ?", isPresented: $confirming) {
-            Button("Annuler", role: .cancel) {}
-            Button("Autoriser les envois à TypeSafe") { monitor.setEnabled(true) }
-        } message: {
-            Text("Toutes les 15 secondes avec activité observable, Goalong transmet un extrait compact (applications, domaines, titres et interactions) à api.typesafe.ai. Ces données peuvent être personnelles. L’API est payante. Deux détections consécutives affichent une bannière. Les autres sources restent inchangées.")
+            Text("Désactiver Jev efface son contexte en mémoire et annule la requête en cours. Un envoi déjà commencé peut avoir atteint TypeSafe. Les exclusions et la pause globale restent prioritaires.")
+                .font(.caption).foregroundStyle(.secondary)
         }
         .alert("Transmettre un extrait du texte affiché ?", isPresented: $confirmingText) {
             Button("Annuler", role: .cancel) {}
@@ -100,11 +46,30 @@ import LocalHistoryCore
     }
 }
 
+struct JevRecentChecksView: View {
+    let checks: [JevRecentCheck]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(checks) { check in
+                HStack {
+                    Text(check.start, style: .time).monospacedDigit()
+                    Text("–"); Text(check.end, style: .time).monospacedDigit()
+                    Spacer()
+                    Label(check.verdict == .procrastination ? "Procrastination présente" : check.verdict == .productive ? "Productif" : "Indéterminé",
+                          systemImage: check.verdict == .procrastination ? "exclamationmark.circle" : check.verdict == .productive ? "checkmark.circle" : "questionmark.circle")
+                }.font(.caption)
+            }
+            Text("Ces résultats ne réécrivent pas l’historique. Une fenêtre positive contient de la procrastination, sans être entièrement improductive.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
 @MainActor struct JevBreakControls: View {
     @ObservedObject private var monitor = JevMonitor.shared
     @State private var minutes = 10
     var body: some View {
-        GoalongSettingsGroup(title: "Pause de travail minutée") {
+        GoalongSettingsGroup(title: "Pause minutée") {
             if monitor.breakStorageInvalid {
                 Text("Minuterie illisible : Jev reste suspendu.").foregroundStyle(.secondary)
                 Button("Réinitialiser la pause") { monitor.endBreak() }
@@ -114,19 +79,23 @@ import LocalHistoryCore
                         .monospacedDigit().accessibilityIdentifier("jev-break-countdown")
                     Spacer()
                     Button("Terminer la pause") { monitor.endBreak() }
+                        .accessibilityIdentifier("jev-end-break")
                 }
             } else {
                 HStack {
                     ForEach([5, 10, 15, 30], id: \.self) { duration in
                         Button("\(duration) min") { monitor.startBreak(minutes: duration) }
+                            .accessibilityIdentifier("jev-break-\(duration)")
                     }
                 }
-                HStack {
-                    Stepper("Durée : \(minutes) min", value: $minutes, in: 1...120)
-                    Button("Démarrer") { monitor.startBreak(minutes: minutes) }
+                DisclosureGroup("Autre durée") {
+                    HStack {
+                        Stepper("Durée : \(minutes) min", value: $minutes, in: 1...120)
+                        Button("Démarrer") { monitor.startBreak(minutes: minutes) }
+                    }.padding(.top, 8)
                 }
             }
-            Text("Pendant cette pause, Jev n’analyse rien et n’affiche aucun avertissement. Le suivi local reste inchangé. Pour suspendre toutes les sources et les envois, utilisez Pause globale. La minuterie est conservée au redémarrage.")
+            Text("Pendant la pause, aucun appel ni avertissement Jev. L’historique suit vos réglages habituels. La minuterie est conservée au redémarrage.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -171,8 +140,10 @@ import LocalHistoryCore
 
 @MainActor final class JevMenuController: NSObject, NSMenuDelegate {
     static let shared = JevMenuController()
-    func install(in parent: NSMenu) {
-        let item = NSMenuItem(title: "Jev et pause minutée", action: nil, keyEquivalent: "")
+    private var onOpenMonitoring: () -> Void = {}
+    func install(in parent: NSMenu, onOpenMonitoring: @escaping () -> Void) {
+        self.onOpenMonitoring = onOpenMonitoring
+        let item = NSMenuItem(title: "Surveillance temps réel", action: nil, keyEquivalent: "")
         let menu = NSMenu(); menu.delegate = self; item.submenu = menu
         parent.addItem(item)
     }
@@ -192,11 +163,15 @@ import LocalHistoryCore
                 item.tag = minutes; item.target = self; menu.addItem(item)
             }
         }
+        menu.addItem(.separator())
+        let open = NSMenuItem(title: "Ouvrir la surveillance…", action: #selector(openMonitoring), keyEquivalent: "")
+        open.target = self; menu.addItem(open)
         if monitor.enabled {
             let item = NSMenuItem(title: "Désactiver Jev", action: #selector(disable), keyEquivalent: "")
             item.target = self; menu.addItem(item)
         }
     }
+    @objc private func openMonitoring() { onOpenMonitoring() }
     @objc private func startBreak(_ sender: NSMenuItem) { JevMonitor.shared.startBreak(minutes: sender.tag) }
     @objc private func endBreak() { JevMonitor.shared.endBreak() }
     @objc private func disable() { JevMonitor.shared.setEnabled(false) }
