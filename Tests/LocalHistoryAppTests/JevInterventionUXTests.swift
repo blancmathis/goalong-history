@@ -87,7 +87,8 @@ final class JevInterventionUXTests: XCTestCase {
         XCTAssertNil(presenter.panel)
         XCTAssertTrue(presenter.overlays.first === overlay, "Close never clears active effects")
         presenter.update(seconds: 315, appearance: 2, present: true, settings: settings)
-        XCTAssertNotNil(presenter.panel)
+        let secondOrigin = try XCTUnwrap(presenter.panel).frame.origin
+        XCTAssertNotEqual(secondOrigin, origin, "Second actual appearance must move")
         XCTAssertTrue(presenter.overlays.first === overlay, "Reopening never recreates/flashes effects")
         presenter.update(seconds: 600, appearance: 2, present: false, settings: settings)
         XCTAssertEqual(presenter.overlays.first?.backgroundColor, combinedColor, "The final effect does not change at 10 min")
@@ -95,12 +96,12 @@ final class JevInterventionUXTests: XCTestCase {
         presenter.expire()
         XCTAssertEqual(expirations, 1); XCTAssertNil(presenter.panel); XCTAssertTrue(presenter.overlays.isEmpty)
         presenter.update(seconds: 315, appearance: 2, present: true, settings: settings)
-        let secondOrigin = presenter.panel?.frame.origin
-        XCTAssertNotEqual(secondOrigin, origin)
+        let afterExpiryOrigin = try XCTUnwrap(presenter.panel).frame.origin
+        XCTAssertNotEqual(afterExpiryOrigin, secondOrigin, "Expiry reopens at a different position from the actual previous window")
         presenter.hide()
         XCTAssertNil(presenter.panel); XCTAssertTrue(presenter.overlays.isEmpty)
         presenter.update(seconds: 330, appearance: 3, present: true, settings: settings)
-        XCTAssertNotEqual(presenter.panel?.frame.origin, secondOrigin)
+        XCTAssertNotEqual(presenter.panel?.frame.origin, afterExpiryOrigin)
         settings.effectsEnabled = false
         presenter.update(seconds: 345, appearance: 3, present: false, settings: settings)
         XCTAssertTrue(presenter.overlays.isEmpty)
