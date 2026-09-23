@@ -136,10 +136,10 @@ final class JevIngress: @unchecked Sendable {
         else if isMedia(host) { surface = "video" }
         else if social, typing, !search, role.contains("text") { surface = "editing-unknown" }
         else if social { surface = search ? "social-search" : "social-feed" }
-        else { surface = "other" }
+        else { surface = search ? "search" : "other" }
         let action = typing ? "typing" : event.kind == .scrollBurst ? "scroll" : event.kind == .mouseClick ? "click" : "context"
         return JevSample(date: event.timestamp, resource: host.isEmpty ? JevPayload.clean(app.name, bytes: 36) : JevPayload.clean(host, bytes: 36),
-            title: redactedText(event.window?.title ?? "", limit: 72), action: action,
+            title: redactedText(event.window?.title ?? "", limit: 96), action: action,
             surface: surface, isActivity: activeKinds.contains(event.kind))
     }
     static func isMedia(_ host: String?) -> Bool {

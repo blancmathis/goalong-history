@@ -7,24 +7,24 @@ import LocalHistoryCore
     var body: some View {
         GoalongSettingsGroup(title: "Rappels et paliers") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("30 secondes · premier rappel").font(.system(size: 14, weight: .semibold))
-                Text("« Arrête de procrastiner. Ça fait 30 secondes que tu procrastines. »")
+                Text("Dès la première détection fiable · premier rappel").font(.system(size: 14, weight: .semibold))
+                Text("« Arrête de procrastiner. Ça fait 15 secondes que tu procrastines. »")
                     .font(.callout).foregroundStyle(.secondary)
                 Text("Fermer masque seulement le pop-up jusqu’à la prochaine détection. Le compteur et les effets continuent.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Toggle("Déplacer la fenêtre à partir du 3e affichage", isOn: binding(\.moveAfterSecondAppearance))
+            Toggle("Changer de position à chaque nouveau rappel", isOn: binding(\.moveAfterSecondAppearance))
                 .toggleStyle(.switch).accessibilityIdentifier("jev-move-warning")
             Divider()
             Toggle("Activer les effets progressifs", isOn: binding(\.effectsEnabled))
                 .toggleStyle(.switch).accessibilityIdentifier("jev-effects-enabled")
-            Text("Optionnel. Par défaut : assombrissement à 2 min, puis assombrissement + rouge dès 5 min. Ensuite, ce dernier effet et les rappels continuent sans nouveau palier. Retour productif, pause ou arrêt de Jev dans Goalong : tout disparaît.")
+            Text("Optionnel. Par défaut : assombrissement à 2 min, puis assombrissement + rouge dès 5 min. Ensuite, ce dernier effet et les rappels continuent sans nouveau palier. Retour productif, pause ou arrêt de la surveillance dans Goalong : tout disparaît.")
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(0..<preferences.settings.stages.count, id: \.self) { index in
                 stageRow(index)
                 if index < preferences.settings.stages.count - 1 { Divider() }
             }
-            Text("Assombrissement = voile visuel, pas modification de la luminosité du Mac. Aucun clignotement ni blocage des clics. L’intensité est limitée à 40 %. Si Jev ne reçoit plus de résultat, les effets disparaissent sous 30 secondes.")
+            Text("Assombrissement = voile visuel, pas modification de la luminosité du Mac. Aucun clignotement ni blocage des clics. L’intensité est limitée à 40 %. Si la surveillance ne reçoit plus de résultat, les effets disparaissent sous 30 secondes.")
                 .font(.caption).foregroundStyle(.secondary)
             Text("Le compteur additionne des fenêtres de 15 s contenant de la procrastination ; il ne prouve pas que chaque seconde était improductive. Inactivité, contexte privé, erreur ou résultat indéterminé remettent la série à zéro.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -75,15 +75,16 @@ import LocalHistoryCore
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            Text("Surveillance du travail").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
             Menu {
                 if monitor.timedBreak != nil {
-                    Button("Reprendre Jev") { monitor.endBreak() }
+                    Button("Reprendre la surveillance") { monitor.endBreak() }
                 }
                 ForEach([5, 10, 15, 30], id: \.self) { minutes in
-                    Button("Pause Jev · \(minutes) min") { monitor.startBreak(minutes: minutes) }
+                    Button("Pause de \(minutes) min") { monitor.startBreak(minutes: minutes) }
                 }
             } label: {
-                Label(monitor.timedBreak == nil ? "Faire une pause Jev" : String(format: "Pause Jev · %02d:%02d", monitor.remainingSeconds / 60, monitor.remainingSeconds % 60),
+                Label(monitor.timedBreak == nil ? "Faire une pause" : String(format: "Pause · %02d:%02d", monitor.remainingSeconds / 60, monitor.remainingSeconds % 60),
                       systemImage: "cup.and.saucer")
                     .font(.system(size: 12, weight: .medium))
             }.menuStyle(.borderlessButton)

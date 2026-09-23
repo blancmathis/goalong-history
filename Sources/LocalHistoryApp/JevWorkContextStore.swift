@@ -1,0 +1,40 @@
+#if os(macOS)
+import Combine
+import Foundation
+import LocalHistoryCore
+
+extension Notification.Name {
+    static let jevWorkContextDidChange = Notification.Name("goalong.jev.work-context.changed")
+}
+@MainActor final class JevWorkContextStore: ObservableObject {
+    static let shared = JevWorkContextStore()
+    @Published private(set) var context: JevWorkContext = .empty
+    @Published private(set) var error: String?
+    private(set) var revision = UUID()
+    private let root: URL
+    init(root: URL = AppPaths.applicationSupportDirectory) {
+        self.root = root
+        do {
+            if let data = try JevLocalFiles.read("work-context.json", root: root) {
+                let value = try JSONDecoder().decode(JevWorkContext.self, from: data)
+                guard value.isValid else { throw JevWorkContextError.tooLong }
+                context = value
+            }
+        } catch { self.error = "Objectif illisible : surveillance suspendue. Enregistrez à nouveau vos projets." }
+    }
+    static func reviewedVerdict(_ verdict: JevVerdict, work: JevWorkContext, window: JevWindow) -> JevVerdict {
+        // A confident model answer still cannot establish project relevance without a reference/topic.
+        if verdict == .productive, work.summary.isEmpty || !window.samples.contains(where: { !$0.title.isEmpty }) {
+            return .unknown
+        }
+        return verdict
+    }
+    /// Called only by the explicit Save action; editing a draft does not authorize new context.
+    func save(_ summary: String) throws {
+        let value = try JevWorkContext(summary: summary)
+        try JevLocalFiles.write(try JSONEncoder().encode(value), name: "work-context.json", root: root)
+        context = value; error = nil; revision = UUID()
+        NotificationCenter.default.post(name: .jevWorkContextDidChange, object: self)
+    }
+}
+#endif

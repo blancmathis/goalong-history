@@ -20,7 +20,7 @@
             case .appleScreenTime: return "Temps d’écran Apple"
             case .aiConversations: return "Conversations locales"
             case .chatGPTAnalysis: return "Analyse ChatGPT"
-            case .jevMonitoring: return "Surveillance Jev"
+            case .jevMonitoring: return "Surveillance temps réel"
             case .remoteVerification: return "External verification"
             case .automaticUpdates: return "Automatic update checks"
             case .launchAtLogin: return "Démarrage à la connexion"

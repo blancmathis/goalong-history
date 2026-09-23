@@ -67,12 +67,12 @@ public struct JevInterventionSettings: Codable, Equatable, Sendable {
     }
 }
 
-/// Stable first two presentations; subsequent presentations never reuse the last anchor.
+/// First presentation at top right; every subsequent presentation uses another anchor.
 /// Sampling is injectable for deterministic tests; layout does not follow the pointer.
 public enum JevWarningAnchor: Int, CaseIterable, Sendable {
     case topRight, topLeft, bottomRight, bottomLeft, topCenter, bottomCenter
     public static func next(appearance: Int, moving: Bool, previous: Self?, sample: Int) -> Self {
-        guard moving, appearance > 2 else { return .topRight }
+        guard moving, appearance > 1 else { return .topRight }
         let choices = allCases.filter { $0 != previous }
         return choices[Int(sample.magnitude % UInt(choices.count))]
     }

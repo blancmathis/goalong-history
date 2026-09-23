@@ -101,13 +101,13 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     }
     if value.get("network", {}).get("siteSubmission") != expected_submission:
         fail("explicit website submission constraints differ from the reviewed contract")
-    expected_jev = {'trigger': 'explicit-jev-consent-and-computer-history', 'destination': 'https://api.typesafe.ai/v1/systemone', 'model': 'jev-1.13.0', 'method': 'POST', 'intervalSeconds': 15, 'windowSeconds': 15, 'consecutiveWarnings': 2, 'skipInactive': True, 'timedBreakSuspends': True, 'privateBrowsing': 'never-sent', 'requestMaximumBytes': 800, 'acceptedInputTokensMaximum': 999, 'providerTokenizerKnown': False, 'responseMaximumBytes': 65536, 'resourceTimeoutSeconds': 12, 'redirects': 'refused', 'automaticRetry': False, 'authentication': 'user-owned-0600-api-key-file', 'payloadRetention': 'bounded-memory-only', 'extraVisibleText': 'separate-opt-in-with-existing-local-consent'}
+    expected_jev = {'trigger': 'explicit-jev-consent-and-computer-history', 'destination': 'https://api.typesafe.ai/v1/systemone', 'model': 'jev-1.13.0', 'method': 'POST', 'intervalSeconds': 15, 'windowSeconds': 15, 'consecutiveWarnings': 1, 'skipInactive': True, 'timedBreakSuspends': True, 'privateBrowsing': 'never-sent', 'requestMaximumBytes': 800, 'acceptedInputTokensMaximum': 999, 'providerTokenizerKnown': False, 'responseMaximumBytes': 65536, 'resourceTimeoutSeconds': 12, 'redirects': 'refused', 'automaticRetry': False, 'authentication': 'user-owned-0600-api-key-file', 'payloadRetention': 'bounded-memory-only', 'extraVisibleText': 'separate-opt-in-with-existing-local-consent', 'workReference': 'explicitly-saved-160-byte-owner-only', 'relevancePolicy': 'strict-project-relevance-v2'}
     if value.get("network", {}).get("jevClassification") != expected_jev:
         fail("Jev classification differs from the reviewed opt-in bounded contract")
     if value.get("jevInterventions") != {
-        "defaultEnabled": False, "firstWarningSeconds": 30,
+        "defaultEnabled": False, "firstWarningSeconds": 15,
         "closeBehavior": "rearm-next-positive-window-preserve-duration-and-effects",
-        "moveFromAppearance": 3, "defaultStageMinutes": [2, 5],
+        "moveFromAppearance": 2, "defaultStageMinutes": [2, 5],
         "finalEffect": "dimAndRed", "popupActions": ["close"], "finalStagePersists": True,
         "maximumOpacityPercent": 40, "staleEffectsExpirySeconds": 30,
         "hardwareBrightnessChanges": False, "blocksInput": False,

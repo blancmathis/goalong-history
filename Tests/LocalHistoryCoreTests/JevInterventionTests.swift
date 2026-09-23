@@ -10,7 +10,7 @@ final class JevInterventionTests: XCTestCase {
     }
     func testCloseRearmsNextPositiveWithoutResettingDuration() {
         var streak = JevStreak()
-        XCTAssertFalse(accept(&streak, 0)); XCTAssertTrue(accept(&streak, 1))
+        XCTAssertTrue(accept(&streak, 0)); XCTAssertFalse(accept(&streak, 1))
         XCTAssertEqual(streak.observedSeconds, 30); XCTAssertEqual(streak.appearanceCount, 1)
         streak.dismissWarning()
         XCTAssertFalse(accept(&streak, 1), "An old result cannot reopen the warning")
@@ -38,12 +38,12 @@ final class JevInterventionTests: XCTestCase {
             for i in 0..<20 { _ = accept(&streak, i) }
             XCTAssertFalse(accept(&streak, 20, verdict: verdict))
             XCTAssertEqual(streak.observedSeconds, 0); XCTAssertEqual(streak.appearanceCount, 0)
-            XCTAssertFalse(accept(&streak, 21)); XCTAssertTrue(accept(&streak, 22))
+            XCTAssertTrue(accept(&streak, 21)); XCTAssertFalse(accept(&streak, 22))
             XCTAssertEqual(streak.observedSeconds, 30)
         }
         var streak = JevStreak()
         for i in 0..<20 { _ = accept(&streak, i) }
-        XCTAssertFalse(accept(&streak, 21)); XCTAssertEqual(streak.observedSeconds, 15)
+        XCTAssertTrue(accept(&streak, 21)); XCTAssertEqual(streak.observedSeconds, 15)
         streak.reset(); XCTAssertEqual(streak.observedSeconds, 0); XCTAssertEqual(streak.appearanceCount, 0)
     }
     func testNonfiniteAndWrongDurationFailClosed() {
@@ -128,11 +128,11 @@ final class JevInterventionTests: XCTestCase {
         XCTAssertEqual(streak.observedSeconds, 0)
         XCTAssertNil(settings.stage(at: streak.observedSeconds))
     }
-    func testRandomPlacementStartsOnlyOnThirdAppearanceAndNeverRepeats() {
+    func testRandomPlacementStartsOnSecondAppearanceAndNeverRepeats() {
         var previous: JevWarningAnchor? = nil
         for appearance in 1...100 {
             let next = JevWarningAnchor.next(appearance: appearance, moving: true, previous: previous, sample: appearance)
-            if appearance <= 2 { XCTAssertEqual(next, .topRight) }
+            if appearance == 1 { XCTAssertEqual(next, .topRight) }
             else { XCTAssertNotEqual(next, previous) }
             previous = next
         }

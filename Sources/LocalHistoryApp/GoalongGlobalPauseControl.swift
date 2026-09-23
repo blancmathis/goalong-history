@@ -32,7 +32,7 @@ struct GoalongGlobalPauseControl: View {
             Button("Annuler", role: .cancel) {}
             Button("Tout suspendre", role: .destructive) { changePause(true) }
         } message: {
-            Text("L’historique, les analyses et les envois seront suspendus jusqu’à votre reprise. Pour une pause détente sans trou dans l’historique, utilisez la pause Jev.")
+            Text("L’historique, les analyses et les envois seront suspendus jusqu’à votre reprise. Pour une pause détente sans trou dans l’historique, utilisez la pause de surveillance.")
         }
         .alert("Arrêt non modifié", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("Fermer", role: .cancel) {}
@@ -54,7 +54,7 @@ struct GoalongGlobalPauseBanner: View {
                     Image(systemName: "pause.circle.fill").foregroundStyle(LHTheme.accent)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Historique suspendu · confidentialité").font(.system(size: 13, weight: .semibold))
-                        Text(pause.invalid ? "Réglage illisible : reprise bloquée par sécurité." : "Tout le suivi est arrêté, pas seulement Jev. Reprenez-le pour enregistrer à nouveau.")
+                        Text(pause.invalid ? "Réglage illisible : reprise bloquée par sécurité." : "Tout le suivi est arrêté, pas seulement la surveillance. Reprenez-le pour enregistrer à nouveau.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer()

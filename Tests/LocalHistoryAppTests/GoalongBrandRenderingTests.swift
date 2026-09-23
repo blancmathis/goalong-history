@@ -502,7 +502,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
         var reminderDismissals = 0
         let presenter = JevWarningPanel(ordersWindows: false, onDismiss: { reminderDismissals += 1 })
         defer { presenter.hide() }
-        presenter.update(seconds: 30, appearance: 1, present: true, settings: .init())
+        presenter.update(seconds: 15, appearance: 1, present: true, settings: .init())
         let warningWindow = try XCTUnwrap(presenter.panel)
         XCTAssertEqual(warningWindow.frame.size, NSSize(width: 400, height: 156))
         warningWindow.setFrameOrigin(NSPoint(x: 20000, y: 20000))
@@ -512,7 +512,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
         XCTAssertNotNil(accessibleElement("jev-warning-close", within: warningWindow))
         XCTAssertNil(accessibleElement("jev-warning-disable", within: warningWindow))
         XCTAssertNil(accessibleElement("jev-warning-pause", within: warningWindow))
-        try snapshot(try XCTUnwrap(warningWindow.contentView), to: output.appendingPathComponent("monitoring-warning-30s.png"))
+        try snapshot(try XCTUnwrap(warningWindow.contentView), to: output.appendingPathComponent("monitoring-warning-15s.png"))
         presenter.update(seconds: 315, appearance: 1, present: false, settings: .init()); pump()
         XCTAssertEqual(warningWindow.frame.size, NSSize(width: 400, height: 156), "Duration updates cannot resize the alert")
         XCTAssertEqual(warningWindow.contentView?.bounds.size, NSSize(width: 400, height: 156))

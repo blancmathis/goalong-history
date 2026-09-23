@@ -29,10 +29,11 @@ struct JevActivationAvailability: Equatable {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Surveillance temps réel")
                         .font(LHTheme.pageTitleFont).accessibilityAddTraits(.isHeader)
-                    Text("Des rappels pour revenir au travail. Vos pauses Jev n’arrêtent pas l’historique.")
+                    Text("Des rappels pour rester sur vos projets de travail. Vos pauses n’arrêtent pas l’historique.")
                         .font(.system(size: 14)).foregroundStyle(.secondary)
                 }
                 monitoringCard
+                JevWorkContextControls()
                 JevBreakControls()
                 DisclosureGroup("Configurer les rappels et les effets") {
                     JevInterventionControls().padding(.top, 12)
@@ -57,11 +58,11 @@ struct JevActivationAvailability: Equatable {
         .background(LHTheme.pageBackground)
         .accessibilityIdentifier("jev-monitoring-page")
         .sheet(isPresented: $showingConnection) { JevConnectionSheet() }
-        .alert("Activer la surveillance Jev ?", isPresented: $confirming) {
+        .alert("Activer la surveillance du travail ?", isPresented: $confirming) {
             Button("Annuler", role: .cancel) {}
             Button("Autoriser les envois à TypeSafe") { monitor.setEnabled(true) }
         } message: {
-            Text("Toutes les 15 secondes avec activité observable, Goalong transmet un extrait compact (applications, domaines, titres et interactions) à api.typesafe.ai. Ces données peuvent être personnelles. L’API est payante. Deux détections consécutives affichent une bannière. Les autres sources restent inchangées.")
+            Text("Toutes les 15 secondes avec activité observable, Goalong transmet un extrait compact (applications, domaines, titres et interactions) à api.typesafe.ai. Ces données peuvent être personnelles. L’API est payante. Une détection suffisamment fiable affiche un rappel, sans attendre une deuxième fenêtre. Les autres sources restent inchangées.")
         }
     }
 
@@ -75,12 +76,12 @@ struct JevActivationAvailability: Equatable {
                         .background(LHTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Jev").font(.system(size: 19, weight: .semibold))
+                        Text("Surveillance du travail").font(.system(size: 19, weight: .semibold))
                         Text("Facultatif · désactivé par défaut")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Toggle("Activer Jev", isOn: Binding(
+                    Toggle("Activer", isOn: Binding(
                         get: { enabled },
                         set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
                         .toggleStyle(.switch).fixedSize()
@@ -92,14 +93,14 @@ struct JevActivationAvailability: Equatable {
                     .font(.system(size: 13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("jev-status")
-                Text("Avec activité : une analyse toutes les 15 s. Après 30 s détectées : un rappel. Fermer masque seulement le rappel, pas les effets. Pause et arrêt de Jev se font ici ; les effets sont configurables ci-dessous.")
+                Text("Avec activité : une analyse toutes les 15 s. Un rappel dès la première détection fiable. Fermer masque seulement le rappel, pas les effets. Pause et arrêt de la surveillance se font ici ; les effets sont configurables ci-dessous.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Divider()
                 connectionRow
                 if !availability.localHistoryEnabled {
                     HStack(alignment: .top, spacing: 12) {
-                        Text("L’historique de ce Mac doit aussi être activé. Jev ne modifie aucun accès à votre place.")
+                        Text("L’historique de ce Mac doit aussi être activé. Aucun accès n’est modifié à votre place.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
@@ -123,13 +124,13 @@ struct JevActivationAvailability: Equatable {
     private var connectionRow: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(monitor.hasKey ? "Clé TypeSafe enregistrée" : "Connectez Jev pour commencer")
+                Text(monitor.hasKey ? "Clé TypeSafe enregistrée" : "Connexion API nécessaire")
                     .font(.system(size: 13, weight: .medium))
                 Text(monitor.hasKey ? "Usage facturé par TypeSafe." : "Votre clé API reste sur ce Mac. L’API TypeSafe est payante.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            Button(monitor.hasKey ? "Gérer la connexion" : "Connecter Jev") { showingConnection = true }
+            Button(monitor.hasKey ? "Gérer la connexion" : "Connecter l’API") { showingConnection = true }
                 .accessibilityIdentifier("jev-open-connection")
         }
     }

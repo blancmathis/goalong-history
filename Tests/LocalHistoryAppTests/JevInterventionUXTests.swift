@@ -103,6 +103,33 @@ final class JevInterventionUXTests: XCTestCase {
         presenter.update(seconds: 345, appearance: 3, present: false, settings: settings)
         XCTAssertTrue(presenter.overlays.isEmpty)
     }
+    @MainActor func testEveryReappearanceMovesEvenAfterAProductiveGap() throws {
+        _ = NSApplication.shared
+        guard !NSScreen.screens.isEmpty else { throw XCTSkip("No display available") }
+        let presenter = JevWarningPanel(ordersWindows: false)
+        defer { presenter.hide() }
+        var settings = JevInterventionSettings()
+        presenter.update(seconds: 15, appearance: 1, present: true, settings: settings)
+        let original = try XCTUnwrap(presenter.panel).frame
+        var previous = original
+        for index in 2...24 {
+            if index.isMultiple(of: 2) { presenter.dismissPopup() }
+            else { presenter.hide() }
+            presenter.update(seconds: 15, appearance: 1, present: true, settings: settings)
+            let current = try XCTUnwrap(presenter.panel).frame
+            XCTAssertNotEqual(current, previous)
+            previous = current
+            presenter.update(seconds: 30, appearance: 1, present: false, settings: settings)
+            XCTAssertEqual(presenter.panel?.frame, current, "Never move a visible close button")
+        }
+        presenter.hide(resetPosition: true)
+        presenter.update(seconds: 15, appearance: 1, present: true, settings: settings)
+        XCTAssertEqual(presenter.panel?.frame, original)
+        settings.moveAfterSecondAppearance = false
+        presenter.dismissPopup()
+        presenter.update(seconds: 30, appearance: 2, present: true, settings: settings)
+        XCTAssertEqual(presenter.panel?.frame, original)
+    }
     func testWarningHasOnlyCloseAndClosingPreservesEffects() throws {
         let warning = try source("JevWarningPanel.swift")
         XCTAssertTrue(warning.contains("Arrête de procrastiner."))

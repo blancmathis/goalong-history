@@ -126,6 +126,7 @@
 
             self.window = window
             window.delegate = self
+            SoftwareUpdateManager.shared.registerDashboardWindow(window)
         }
 
         func show(section: DashboardSection = .overview) {
@@ -144,6 +145,7 @@
             showWindow(nil)
             application.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
+            SoftwareUpdateManager.shared.dashboardWasShown()
             updateDashboardVisibility()
             DispatchQueue.main.async { [weak self] in
                 self?.updateDashboardVisibility()
