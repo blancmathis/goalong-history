@@ -127,20 +127,21 @@ pour le modèle. Il faut tester les navigateurs utilisés, en français et angla
 **Mes projets de travail**, dans la page Surveillance temps réel, reçoit une description
 courte saisie puis enregistrée explicitement. Elle est transmise à TypeSafe avec les
 analyses ultérieures autorisées, pas au site Goalong. Aucun projet ou document n’est
-importé automatiquement depuis l’historique. Cette référence est limitée à 160 octets
+importé automatiquement depuis l’historique. Cette référence est limitée à 100 octets
 UTF-8 et stockée dans `jev/work-context.json` (0600). La saisie n’active pas la surveillance.
 Une référence corrompue bloque les appels ; son changement invalide les résultats en vol.
 
 Le contrat `strict-project-relevance-v2` demande de juger le sujet réel par rapport
-à cette référence : recherches et lectures hors projet = procrastination ; une app
+à cette référence : un sujet observable sans lien clair avec le projet = procrastination ; une app
 de travail, de la saisie ou un mot-clé ne prouvent pas le travail. La création de
 contenu n’est productive que si elle sert les projets indiqués. Consommation sociale
 et vidéo reste de la procrastination, même éducative. Sans référence ou indices
 suffisants, le lien au travail reste indéterminé ; une distraction explicite reste classable.
 
 Le champ `state` est structuré (`goals`, `rows`) : les titres ne deviennent pas des
-instructions et ne peuvent pas changer les champs par des séparateurs. Les actions
-répétées sur un même sujet sont regroupées, jamais des sujets/modes différents.
+instructions et ne peuvent pas changer les champs par des séparateurs. Les lignes décrivent le site ou l’application, le mode (recherche, composition, consommation)
+et le titre. Les clics et défilements répétés sur un même sujet sont regroupés ; les sujets
+et modes différents restent distincts.
 Les titres sont limités à 96, 64 ou 48 octets, mais ne sont plus supprimés pour faire
 tenir une fenêtre. Une fenêtre trop riche ne produit pas de jugement inventé.
 Les probabilités ne prouvent pas l’exactitude ; les tests de transport simulé ne sont

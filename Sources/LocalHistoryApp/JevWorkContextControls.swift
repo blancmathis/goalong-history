@@ -13,9 +13,10 @@ import LocalHistoryCore
                 if store.context.summary.isEmpty || editing || store.error != nil {
                     Text("Indiquez vos projets et la tâche du moment. Une recherche sans rapport sera considérée comme de la procrastination.")
                         .font(.callout).foregroundStyle(.secondary)
-                    TextField("Ex. Goalong : app macOS en Swift, suivi du travail et site web.", text: $draft, axis: .vertical)
+                    TextField("Ex. Atlas : site web ; Orion : app iOS.", text: $draft, axis: .vertical)
                         .textFieldStyle(.roundedBorder).lineLimit(2...3)
                         .accessibilityIdentifier("monitoring-work-goals")
+                        .accessibilityLabel("Projets et travail à surveiller")
                     Text("Cette référence sera envoyée à TypeSafe avec les prochaines analyses autorisées. Aucun projet n’est importé depuis votre historique. Évitez les informations sensibles.")
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
@@ -34,7 +35,7 @@ import LocalHistoryCore
                     }
                 }
                 if store.context.summary.isEmpty {
-                    Text("Sans cette référence, les distractions identifiables sont signalées, mais le lien avec vos projets reste indéterminé.")
+                    Text("Sans cette référence, seuls les fils sociaux et les vidéos sont classables. Indiquez vos projets pour analyser aussi les recherches et le travail.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let message = error ?? store.error { Text(message).font(.caption).foregroundStyle(LHTheme.warning) }

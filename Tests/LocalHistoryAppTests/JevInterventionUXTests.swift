@@ -95,10 +95,12 @@ final class JevInterventionUXTests: XCTestCase {
         presenter.expire()
         XCTAssertEqual(expirations, 1); XCTAssertNil(presenter.panel); XCTAssertTrue(presenter.overlays.isEmpty)
         presenter.update(seconds: 315, appearance: 2, present: true, settings: settings)
+        let secondOrigin = presenter.panel?.frame.origin
+        XCTAssertNotEqual(secondOrigin, origin)
         presenter.hide()
         XCTAssertNil(presenter.panel); XCTAssertTrue(presenter.overlays.isEmpty)
         presenter.update(seconds: 330, appearance: 3, present: true, settings: settings)
-        XCTAssertNotEqual(presenter.panel?.frame.origin, origin)
+        XCTAssertNotEqual(presenter.panel?.frame.origin, secondOrigin)
         settings.effectsEnabled = false
         presenter.update(seconds: 345, appearance: 3, present: false, settings: settings)
         XCTAssertTrue(presenter.overlays.isEmpty)

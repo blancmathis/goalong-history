@@ -17,7 +17,7 @@ final class JevWorkContextStoreTests: XCTestCase {
         let file = root.appendingPathComponent("jev/work-context.json")
         let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
-        XCTAssertThrowsError(try store.save(String(repeating: "x", count: 161)))
+        XCTAssertThrowsError(try store.save(String(repeating: "x", count: 101)))
         XCTAssertEqual(store.context.summary, "Goalong: SwiftUI updater")
         try JevLocalFiles.write(Data("bad json".utf8), name: "work-context.json", root: root)
         let corrupt = JevWorkContextStore(root: root)

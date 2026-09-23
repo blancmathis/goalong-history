@@ -24,7 +24,7 @@ final class JevWorkContextTests: XCTestCase {
             let state = try XCTUnwrap(object["state"] as? [String: Any])
             XCTAssertEqual(state["goals"] as? String, work.summary)
             let rows = try XCTUnwrap(state["rows"] as? [[String]])
-            XCTAssertEqual(rows.first?[3], topic)
+            XCTAssertEqual(rows.first?[2], topic)
             XCTAssertEqual(rows.first?[1], "search")
         }
     }
@@ -41,12 +41,27 @@ final class JevWorkContextTests: XCTestCase {
         XCTAssertEqual(state["goals"] as? String, work.summary)
         let rows = try XCTUnwrap(state["rows"] as? [[String]])
         XCTAssertEqual(rows.count, 2)
-        XCTAssertTrue(rows[0][3].contains("football")); XCTAssertTrue(rows[1][3].contains("Goalong"))
+        XCTAssertTrue(rows[0][2].contains("football")); XCTAssertTrue(rows[1][2].contains("Goalong"))
         XCTAssertLessThanOrEqual(body.count, 800)
+    }
+    func testGenericWindowLabelsNeverProveWorkOrAnOffGoalTopic() throws {
+        let now = Date(), work = try JevWorkContext(summary: "Goalong macOS app")
+        for title in ["", "Untitled", "Sans titre", "New Tab", "Nouvel onglet", "Home", "Safari"] {
+            let window = JevWindow(start: now, end: now.addingTimeInterval(15), samples: [
+                .init(date: now, resource: "Safari", title: title, action: "typing", surface: "other", isActivity: true)
+            ])
+            for verdict in JevVerdict.allCases {
+                XCTAssertEqual(JevEvidencePolicy.reviewed(verdict, work: work, window: window), .unknown)
+            }
+        }
+        let feed = JevWindow(start: now, end: now.addingTimeInterval(15), samples: [
+            .init(date: now, resource: "x.com", title: "Home", action: "scroll", surface: "social-feed", isActivity: true)
+        ])
+        XCTAssertEqual(JevEvidencePolicy.reviewed(.procrastination, work: work, window: feed), .procrastination)
     }
     func testMaximumWorkReferenceLeavesRoomForTwoDistinctTopics() throws {
         let now = Date()
-        let work = try JevWorkContext(summary: String(repeating: "a", count: 160))
+        let work = try JevWorkContext(summary: String(repeating: "a", count: 100))
         let window = JevWindow(start: now, end: now.addingTimeInterval(15), samples: [
             .init(date: now, resource: "developer.apple.com", title: String(repeating: "x", count: 48), action: "scroll", surface: "other", isActivity: true),
             .init(date: now, resource: "google.com", title: String(repeating: "y", count: 48), action: "typing", surface: "search", isActivity: true)
@@ -67,7 +82,7 @@ final class JevWorkContextTests: XCTestCase {
         let state = try XCTUnwrap(object["state"] as? [String: Any])
         let rows = try XCTUnwrap(state["rows"] as? [[String]])
         XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows[0][2], "click+context+scroll")
+        XCTAssertEqual(rows[0][2], "NSWindow ordering")
         XCTAssertEqual(state["goals"] as? String, "", "Never invent the user's projects")
     }
 }

@@ -145,6 +145,7 @@
             showWindow(nil)
             application.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
+            SoftwareUpdateManager.shared.registerDashboardWindow(window)
             SoftwareUpdateManager.shared.dashboardWasShown()
             updateDashboardVisibility()
             DispatchQueue.main.async { [weak self] in

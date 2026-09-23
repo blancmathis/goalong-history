@@ -156,7 +156,7 @@ separate, off-by-default TypeSafe consent. **Connecter Jev** opens the protected
 API-key sheet; connection management and detailed privacy controls stay out of
 the general settings. During observable activity, Jev classifies one
 non-overlapping 15-second window. The first confident 15-second procrastination result displays one non-blocking banner.
-An explicitly saved, 160-byte work reference makes unrelated searches and reading
+An explicitly saved, 100-byte work reference makes unrelated searches and reading
 classifiable as procrastination; work apps and typing alone never prove project relevance. Idle, private/suppressed contexts,
 errors and timed breaks reset the streak. Closing rearms the next positive result
 without resetting the duration or clearing effects. The popup only offers Close;

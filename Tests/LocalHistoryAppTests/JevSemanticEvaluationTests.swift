@@ -14,7 +14,7 @@ final class JevSemanticEvaluationTests: XCTestCase {
         guard let data = try JevLocalFiles.read("api-key"), let key = String(data: data, encoding: .utf8), !key.isEmpty else {
             throw XCTSkip("No local API key available; never infer semantic accuracy from mocked transport")
         }
-        let work = try JevWorkContext(summary: "Goalong History: macOS SwiftUI work-tracking app and website. Development, design and launch communication.")
+        let work = try JevWorkContext(summary: "Goalong History: macOS SwiftUI app + website; code, design, work tracking, launch communication.")
         let cases: [(String, String, String, String, JevVerdict)] = [
             ("relevant-search-en", "google.com", "search", "SwiftUI NSWindow keep Sparkle update window in front", .productive),
             ("unrelated-search-fr", "google.com", "search", "Résultat du match de football Marseille Paris ce soir", .procrastination),

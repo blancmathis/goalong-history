@@ -24,6 +24,11 @@ final class SoftwareUpdateWindowCoordinatorTests: XCTestCase {
         XCTAssertNil(other.parent); XCTAssertEqual(other.level, .normal)
         helper.reconcile([main, update, other])
         XCTAssertEqual(main.childWindows?.filter { $0 === update }.count, 1)
+        // A known visible updater hidden with the dashboard is recoverable on an explicit reopen.
+        main.removeChildWindow(update); update.orderOut(nil)
+        helper.registerDashboard(main); helper.dashboardWasShown()
+        helper.reconcile([main, update, other])
+        XCTAssertTrue(update.parent === main)
         helper.finish()
         XCTAssertNil(update.parent); XCTAssertEqual(update.level, level)
         XCTAssertEqual(update.collectionBehavior, behavior); XCTAssertEqual(update.hidesOnDeactivate, hides)

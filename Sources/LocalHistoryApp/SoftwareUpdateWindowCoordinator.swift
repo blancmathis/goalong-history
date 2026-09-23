@@ -72,7 +72,8 @@ import Sparkle
     func reconcile(_ windows: [NSWindow]) {
         guard isPresenting else { return }
         entries = entries.filter { $0.value.window != nil }
-        for window in windows where recognizes(window) && (window.isVisible || (focusPending && window.isMiniaturized)) {
+        for window in windows where recognizes(window)
+            && (window.isVisible || (focusPending && (window.isMiniaturized || entries[ObjectIdentifier(window)] != nil))) {
             let id = ObjectIdentifier(window)
             let isNew = entries[id] == nil
             let entry = entries[id] ?? Entry(window)
