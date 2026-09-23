@@ -214,3 +214,8 @@ les résultats ambigus, les champs de composition/recherche, les exclusions priv
 le stockage protégé et les erreurs/cancellations réseau. Un test en conditions
 réelles exige une clé TypeSafe, un Mac et ses permissions Accessibility. Les tests
 synthétiques ne prouvent pas la précision sémantique réelle de Jev.
+
+Les probabilités renvoyées peuvent être arrondies : une somme de 0,99 ou 1,01
+est acceptée avec une tolérance flottante de 1e-9. Le calcul est déterministe ;
+aucune normalisation ne gonfle le score, le seuil de 0,80 et le contrôle du choix
+maximum restent inchangés. Les distributions incohérentes restent rejetées.

@@ -44,6 +44,19 @@ final class JevWorkContextTests: XCTestCase {
         XCTAssertTrue(rows[0][3].contains("football")); XCTAssertTrue(rows[1][3].contains("Goalong"))
         XCTAssertLessThanOrEqual(body.count, 800)
     }
+    func testMaximumWorkReferenceLeavesRoomForTwoDistinctTopics() throws {
+        let now = Date()
+        let work = try JevWorkContext(summary: String(repeating: "a", count: 160))
+        let window = JevWindow(start: now, end: now.addingTimeInterval(15), samples: [
+            .init(date: now, resource: "developer.apple.com", title: String(repeating: "x", count: 48), action: "scroll", surface: "other", isActivity: true),
+            .init(date: now, resource: "google.com", title: String(repeating: "y", count: 48), action: "typing", surface: "search", isActivity: true)
+        ])
+        let body = try JevPayload.build(window, work: work)
+        XCTAssertLessThanOrEqual(body.count, 800)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let state = try XCTUnwrap(object["state"] as? [String: Any])
+        XCTAssertEqual((state["rows"] as? [[String]])?.count, 2)
+    }
     func testDuplicateActionsAreMergedButTopicsAndModesAreNot() throws {
         let now = Date()
         let samples = ["click", "scroll", "click", "context"].map { action in

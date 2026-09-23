@@ -138,7 +138,7 @@ private final class JevNonactivatingPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 @MainActor final class JevWarningContent: ObservableObject {
-    @Published var seconds = 30
+    @Published var seconds = 15
 }
 @MainActor struct JevWarningView: View {
     @ObservedObject var content: JevWarningContent

@@ -34,7 +34,7 @@ import LocalHistoryCore
                     .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
             }
-            Text("Désactiver la surveillance efface son contexte en mémoire et annule la requête en cours. Un envoi déjà commencé peut avoir atteint TypeSafe. Les exclusions et l’arrêt de confidentialité restent prioritaires.")
+            Text("Désactiver la surveillance efface les échantillons d’activité et la dernière requête en mémoire et annule la requête en cours. Un envoi déjà commencé peut avoir atteint TypeSafe. Les exclusions et l’arrêt de confidentialité restent prioritaires.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .alert("Transmettre un extrait du texte affiché ?", isPresented: $confirmingText) {

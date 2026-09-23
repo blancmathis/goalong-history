@@ -95,6 +95,17 @@ final class JevFocusTests: XCTestCase {
         XCTAssertThrowsError(try JevDecision.decode(response(tokens: -1)))
         XCTAssertThrowsError(try JevDecision.decode(response(model: "unexpected")))
     }
+    func testRoundedProbabilityMassIsDeterministicAndDoesNotBoostConfidence() throws {
+        for _ in 0..<50 {
+            let value = try JevDecision.decode(response(probabilities: ["procrastination": 0.81, "productive": 0.13, "unknown": 0.05]))
+            XCTAssertEqual(value.verdict, .procrastination)
+            XCTAssertEqual(value.probability, 0.81)
+            XCTAssertNoThrow(try JevDecision.decode(response(probabilities: ["procrastination": 0.91, "productive": 0.05, "unknown": 0.05])))
+        }
+        XCTAssertThrowsError(try JevDecision.decode(response(probabilities: ["procrastination": 0.92, "productive": 0.05, "unknown": 0.05])))
+        XCTAssertThrowsError(try JevDecision.decode(response(probabilities: ["procrastination": 0.87, "productive": 0.05, "unknown": 0.05])))
+        XCTAssertEqual(try JevDecision.decode(response(probabilities: ["procrastination": 0.79, "productive": 0.15, "unknown": 0.05])).verdict, .unknown)
+    }
     func testMalformedDistributionAndLowProbabilityNeverWarn() throws {
         XCTAssertThrowsError(try JevDecision.decode(response(probabilities: ["procrastination": 2])))
         XCTAssertThrowsError(try JevDecision.decode(response(choice: "productive")))
