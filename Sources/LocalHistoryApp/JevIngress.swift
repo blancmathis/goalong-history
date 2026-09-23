@@ -55,7 +55,7 @@ final class JevIngress: @unchecked Sendable {
     func receive(_ event: HistoryEvent) {
         lock.lock(); let active = enabled; lock.unlock()
         guard active else { return }
-        let boundaries: Set<EventKind> = [.recordingPaused, .recorderStopped, .captureSuppressed,
+        let boundaries: Set<LocalHistoryCore.EventKind> = [.recordingPaused, .recorderStopped, .captureSuppressed,
             .secureInputSuppressed, .sessionLocked, .systemSleep, .historyCleared]
         guard event.suppressionReason == nil, event.element?.isSecure != true,
               !boundaries.contains(event.kind), !GoalongGlobalPause.isPaused(),
@@ -114,7 +114,7 @@ final class JevIngress: @unchecked Sendable {
     }
 
     static func sample(_ event: HistoryEvent) -> JevSample? {
-        let activeKinds: Set<EventKind> = [.mouseClick, .typingBurst, .scrollBurst,
+        let activeKinds: Set<LocalHistoryCore.EventKind> = [.mouseClick, .typingBurst, .scrollBurst,
             .keyboardShortcut, .keyPressed, .applicationActivated, .windowChanged, .urlChanged, .focusChanged]
         guard activeKinds.contains(event.kind) || event.kind == .semanticSnapshot,
               let app = event.app, event.suppressionReason == nil, event.element?.isSecure != true else { return nil }
