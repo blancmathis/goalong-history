@@ -31,6 +31,7 @@ final class JevInterventionUXTests: XCTestCase {
         }
     }
     @MainActor func testEffectsAreNonactivatingBoundedReusableAndAlwaysCleanedUp() throws {
+        _ = NSApplication.shared
         guard !NSScreen.screens.isEmpty else { throw XCTSkip("No display available") }
         var expirations = 0
         let presenter = JevWarningPanel(ordersWindows: false, onExpiry: { expirations += 1 })
@@ -63,6 +64,7 @@ final class JevInterventionUXTests: XCTestCase {
         XCTAssertFalse(warning.contains("startBreak("))
         XCTAssertTrue(warning.contains("jev-warning-close"))
         XCTAssertTrue(warning.contains("jev-warning-disable"))
+        XCTAssertTrue(warning.contains("RunLoop.main.add(lease, forMode: .common)"), "Timeout must also work while menus are tracking")
         let monitor = try source("JevMonitor.swift")
         let close = monitor.components(separatedBy: "func dismissWarning() {")[1].components(separatedBy: "private func resetInterventions")[0]
         XCTAssertTrue(close.contains("streak.dismissWarning()"))

@@ -41,9 +41,11 @@ import LocalHistoryCore
         if ordersWindows { panel?.orderFrontRegardless() }
         expiry?.invalidate()
         // A missing callback must never leave an effect indefinitely. Every fresh verdict renews it.
-        expiry = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+        let lease = Timer(timeInterval: 30, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.expire() }
         }
+        RunLoop.main.add(lease, forMode: .common)
+        expiry = lease
     }
 
     func hide(resetPosition: Bool = false) {

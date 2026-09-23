@@ -491,7 +491,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
             window.appearance = app.appearance; pump()
             try snapshot(interventionHost.view, to: output.appendingPathComponent("monitoring-interventions-\(dark ? "dark" : "light").png"))
         }
-        XCTAssertTrue(effectToggle.accessibilityPerformPress()); pump()
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-effects-enabled", within: window)).accessibilityPerformPress()); pump()
         XCTAssertFalse(preferences.settings.effectsEnabled)
         let warningContent = JevWarningContent()
         let warningHost = NSHostingController(rootView: JevWarningView(content: warningContent))

@@ -47,7 +47,7 @@ REQUIRED = {
     'Sources/LocalHistoryApp/CapabilityConsentStore.swift': ['case jevMonitoring', 'static let disabledByDefault'],
     'Sources/LocalHistoryApp/ContextProvider.swift': ['JevIngress.shared.setPrivateWindow(cachedPrivateWindow)'],
     'Sources/LocalHistoryApp/JevControls.swift': ['confirmingText = true'],
-    'Sources/LocalHistoryApp/JevWarningPanel.swift': ['.nonactivatingPanel', 'overlay.ignoresMouseEvents = true', 'withTimeInterval: 30', 'func hide(', 'canBecomeKey: Bool { false }'],
+    'Sources/LocalHistoryApp/JevWarningPanel.swift': ['.nonactivatingPanel', 'overlay.ignoresMouseEvents = true', 'timeInterval: 30', 'RunLoop.main.add(lease, forMode: .common)', 'func hide(', 'canBecomeKey: Bool { false }'],
     'Sources/LocalHistoryCore/JevInterventions.swift': ['effectsEnabled = false', '(10...40).contains(stage.intensity)', 'appearance > 2', 'filter { $0 != previous }'],
     'Sources/LocalHistoryApp/JevMonitoringPage.swift': ['confirming = true', 'Autoriser les envois à TypeSafe', 'monitor.setEnabled(false)', 'availability.canToggle(isEnabled: enabled)'],
     'Sources/LocalHistoryApp/JevConnectionSheet.swift': ['Une clé est enregistrée sur ce Mac', 'SecureField(', 'monitor.saveKey(key)'],
