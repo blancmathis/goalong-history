@@ -9,7 +9,7 @@ REQUIRED = {
     'Sources/LocalHistoryCore/JevFocus.swift': [
         'maximumRequestBytes = 800', 'maximumInputTokens = 999',
         'model = "jev-1.13.0"', 'window.hasActivity',
-        'count == 2, !warningIssued', 'samples.filter { $0.date >= start && $0.date < end }',
+        'count >= 2, !warningIssued', 'samples.filter { $0.date >= start && $0.date < end }',
         'response.usage.input_tokens <= JevPayload.maximumInputTokens',
         'response.model == JevPayload.model', 'throw JevError.budget',
     ],
@@ -46,7 +46,9 @@ REQUIRED = {
     ],
     'Sources/LocalHistoryApp/CapabilityConsentStore.swift': ['case jevMonitoring', 'static let disabledByDefault'],
     'Sources/LocalHistoryApp/ContextProvider.swift': ['JevIngress.shared.setPrivateWindow(cachedPrivateWindow)'],
-    'Sources/LocalHistoryApp/JevControls.swift': ['.nonactivatingPanel', 'confirmingText = true'],
+    'Sources/LocalHistoryApp/JevControls.swift': ['confirmingText = true'],
+    'Sources/LocalHistoryApp/JevWarningPanel.swift': ['.nonactivatingPanel', 'overlay.ignoresMouseEvents = true', 'withTimeInterval: 30', 'func hide(', 'canBecomeKey: Bool { false }'],
+    'Sources/LocalHistoryCore/JevInterventions.swift': ['effectsEnabled = false', '(10...40).contains(stage.intensity)', 'appearance > 2', 'filter { $0 != previous }'],
     'Sources/LocalHistoryApp/JevMonitoringPage.swift': ['confirming = true', 'Autoriser les envois à TypeSafe', 'monitor.setEnabled(false)', 'availability.canToggle(isEnabled: enabled)'],
     'Sources/LocalHistoryApp/JevConnectionSheet.swift': ['Une clé est enregistrée sur ce Mac', 'SecureField(', 'monitor.saveKey(key)'],
 }

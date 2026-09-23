@@ -11,12 +11,13 @@ final class JevFocusTests: XCTestCase {
     private func window(_ samples: [JevSample]) -> JevWindow {
         JevWindow(start: zero, end: zero.addingTimeInterval(15), samples: samples)
     }
-    func testOnlySecondConsecutivePositiveWarnsAndNoEscalation() {
+    func testOnlySecondConsecutivePositiveOpensWithoutDuplicatingVisibleWarning() {
         var streak = JevStreak()
         XCTAssertFalse(streak.accept(.procrastination, start: zero, end: zero.addingTimeInterval(15)))
         XCTAssertTrue(streak.accept(.procrastination, start: zero.addingTimeInterval(15), end: zero.addingTimeInterval(30)))
         XCTAssertFalse(streak.accept(.procrastination, start: zero.addingTimeInterval(30), end: zero.addingTimeInterval(45)))
-        XCTAssertEqual(streak.count, 2)
+        XCTAssertEqual(streak.count, 3)
+        XCTAssertEqual(streak.observedSeconds, 45)
     }
     func testDuplicateAndOverlappingResultsNeverCountTwice() {
         var streak = JevStreak()

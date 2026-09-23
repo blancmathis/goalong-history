@@ -473,6 +473,37 @@ final class GoalongBrandRenderingTests: XCTestCase {
         XCTAssertNil(monitor.timedBreak)
         XCTAssertFalse(monitor.enabled)
         XCTAssertEqual(consents.document, readyState, "Ending a break must not activate Jev or a source")
+        let preferences = JevInterventionPreferences.shared
+        let originalInterventions = preferences.settings
+        defer { preferences.update { $0 = originalInterventions } }
+        let interventionHost = NSHostingController(rootView: ScrollView {
+            JevInterventionControls().padding(28)
+        }.background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent))
+        window.contentViewController = interventionHost
+        window.setContentSize(NSSize(width: 700, height: 800)); pump()
+        XCTAssertFalse(preferences.settings.effectsEnabled)
+        let effectToggle = try XCTUnwrap(accessibleElement("jev-effects-enabled", within: window))
+        XCTAssertTrue(effectToggle.accessibilityPerformPress()); pump()
+        XCTAssertTrue(preferences.settings.effectsEnabled)
+        XCTAssertEqual(consents.document, readyState, "Configuring effects must never authorize monitoring or stop recording")
+        for dark in [true, false] {
+            app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.appearance = app.appearance; pump()
+            try snapshot(interventionHost.view, to: output.appendingPathComponent("monitoring-interventions-\(dark ? "dark" : "light").png"))
+        }
+        XCTAssertTrue(effectToggle.accessibilityPerformPress()); pump()
+        XCTAssertFalse(preferences.settings.effectsEnabled)
+        let warningContent = JevWarningContent()
+        let warningHost = NSHostingController(rootView: JevWarningView(content: warningContent))
+        window.contentViewController = warningHost
+        window.setContentSize(NSSize(width: 400, height: 156)); pump()
+        XCTAssertNotNil(accessibleElement("jev-warning-close", within: window))
+        XCTAssertNotNil(accessibleElement("jev-warning-disable", within: window))
+        try snapshot(warningHost.view, to: output.appendingPathComponent("monitoring-warning-30s.png"))
+        warningContent.seconds = 315; pump()
+        try snapshot(warningHost.view, to: output.appendingPathComponent("monitoring-warning-5min.png"))
+        XCTAssertEqual(consents.document, readyState)
+        print("NATIVE_INTERVENTIONS real effect toggle, preferences, warning controls and unchanged consents passed; no screen overlay or API request enabled")
         print("NATIVE_MONITORING sidebar, recording shortcut, protected connection sheet, timed pause and unchanged consents passed; no monitoring request enabled")
     }
 

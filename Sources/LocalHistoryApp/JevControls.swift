@@ -34,7 +34,7 @@ import LocalHistoryCore
                     .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
             }
-            Text("Désactiver Jev efface son contexte en mémoire et annule la requête en cours. Un envoi déjà commencé peut avoir atteint TypeSafe. Les exclusions et la pause globale restent prioritaires.")
+            Text("Désactiver Jev efface son contexte en mémoire et annule la requête en cours. Un envoi déjà commencé peut avoir atteint TypeSafe. Les exclusions et l’arrêt de confidentialité restent prioritaires.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .alert("Transmettre un extrait du texte affiché ?", isPresented: $confirmingText) {
@@ -69,16 +69,16 @@ struct JevRecentChecksView: View {
     @ObservedObject private var monitor = JevMonitor.shared
     @State private var minutes = 10
     var body: some View {
-        GoalongSettingsGroup(title: "Pause minutée") {
+        GoalongSettingsGroup(title: "Pause Jev · je prends une pause") {
             if monitor.breakStorageInvalid {
-                Text("Minuterie illisible : Jev reste suspendu.").foregroundStyle(.secondary)
+                Text("Minuterie illisible : Jev reste suspendu, pas l’historique.").foregroundStyle(.secondary)
                 Button("Réinitialiser la pause") { monitor.endBreak() }
             } else if monitor.timedBreak != nil {
                 HStack {
-                    Label(String(format: "Pause · %02d:%02d restantes", monitor.remainingSeconds / 60, monitor.remainingSeconds % 60), systemImage: "pause.circle.fill")
+                    Label(String(format: "Pause Jev · %02d:%02d restantes", monitor.remainingSeconds / 60, monitor.remainingSeconds % 60), systemImage: "pause.circle.fill")
                         .monospacedDigit().accessibilityIdentifier("jev-break-countdown")
                     Spacer()
-                    Button("Terminer la pause") { monitor.endBreak() }
+                    Button("Reprendre Jev") { monitor.endBreak() }
                         .accessibilityIdentifier("jev-end-break")
                 }
             } else {
@@ -91,50 +91,13 @@ struct JevRecentChecksView: View {
                 DisclosureGroup("Autre durée") {
                     HStack {
                         Stepper("Durée : \(minutes) min", value: $minutes, in: 1...120)
-                        Button("Démarrer") { monitor.startBreak(minutes: minutes) }
+                        Button("Mettre Jev en pause") { monitor.startBreak(minutes: minutes) }
                     }.padding(.top, 8)
                 }
             }
-            Text("Pendant la pause, aucun appel ni avertissement Jev. L’historique suit vos réglages habituels. La minuterie est conservée au redémarrage.")
+            Text("Pause Jev uniquement : pas d’analyse Jev, de rappel ni d’effet. L’enregistrement de votre activité continue s’il est activé. Jev reprend automatiquement à la fin.")
                 .font(.caption).foregroundStyle(.secondary)
         }
-    }
-}
-
-@MainActor final class JevWarningPanel {
-    static let shared = JevWarningPanel()
-    private var panel: NSPanel?
-    func show() {
-        hide()
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main else { return }
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 156),
-                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.isFloatingPanel = true; panel.hidesOnDeactivate = false
-        panel.level = .floating; panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
-        panel.contentView = NSHostingView(rootView: JevWarningView())
-        panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.maxX - 416, y: screen.visibleFrame.maxY - 172))
-        panel.orderFrontRegardless(); self.panel = panel
-    }
-    func hide() { panel?.orderOut(nil); panel?.close(); panel = nil }
-}
-
-@MainActor private struct JevWarningView: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Un détour qui se prolonge ?", systemImage: "exclamationmark.circle")
-                .font(.headline).foregroundStyle(.orange)
-            Text("Jev a détecté de la procrastination dans deux fenêtres successives de 15 secondes.")
-                .font(.callout).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Button("Pause 5 min") { JevMonitor.shared.startBreak(minutes: 5) }
-                Button("Fermer") { JevMonitor.shared.dismissWarning() }
-                Spacer()
-                Button("Désactiver") { JevMonitor.shared.setEnabled(false) }.buttonStyle(.borderless)
-            }
-        }.padding(18).frame(width: 400, height: 156)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.orange.opacity(0.4)))
     }
 }
 
@@ -154,12 +117,12 @@ struct JevRecentChecksView: View {
         status.isEnabled = false; menu.addItem(status); menu.addItem(.separator())
         if monitor.timedBreak != nil {
             let seconds = monitor.timedBreak?.remaining(at: Date()) ?? 0
-            menu.addItem(NSMenuItem(title: String(format: "Pause : %02d:%02d restantes", seconds / 60, seconds % 60), action: nil, keyEquivalent: ""))
-            let item = NSMenuItem(title: "Terminer la pause", action: #selector(endBreak), keyEquivalent: "")
+            menu.addItem(NSMenuItem(title: String(format: "Pause Jev : %02d:%02d restantes", seconds / 60, seconds % 60), action: nil, keyEquivalent: ""))
+            let item = NSMenuItem(title: "Reprendre Jev", action: #selector(endBreak), keyEquivalent: "")
             item.target = self; menu.addItem(item)
         } else {
             for minutes in [5, 10, 15, 30] {
-                let item = NSMenuItem(title: "Faire une pause de \(minutes) min", action: #selector(startBreak(_:)), keyEquivalent: "")
+                let item = NSMenuItem(title: "Pause Jev · \(minutes) min (historique inchangé)", action: #selector(startBreak(_:)), keyEquivalent: "")
                 item.tag = minutes; item.target = self; menu.addItem(item)
             }
         }

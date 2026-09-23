@@ -157,14 +157,20 @@ API-key sheet; connection management and detailed privacy controls stay out of
 the general settings. During observable activity, Jev classifies one
 non-overlapping 15-second window. Two consecutive windows containing
 procrastination display one non-blocking banner. Idle, private/suppressed contexts,
-errors and timed breaks reset the streak. Nothing escalates automatically.
+errors and timed breaks reset the streak. Closing rearms the next positive result
+without resetting the duration. From the third presentation the reminder changes
+location (configurable), never while visible. Optional local screen-effect stages
+(defaults: 2/5/10 minutes) are disabled until explicitly enabled; dim/red click-through
+overlays never change hardware brightness or system permissions and expire if
+fresh results stop. Stage timing, effect and intensity are configurable.
 The initial user-selected policy treats social/video consumption as procrastination
 and composition as productive; unknown evidence remains unknown. This is an
 interpretation of observable activity, not a measurement of mental attention.
 
 Timed breaks (1–120 minutes, with presets) are also available from the menu bar.
-They suspend Jev, not the independently controlled local recorder. The global
-pause remains authoritative. Only compact recent evidence is transmitted to
+The primary **Pause Jev** action suspends reminders and effects without stopping
+local history. **Confidentialité · tout suspendre** is a separately confirmed full
+stop in Settings; the underlying global privacy pause remains authoritative. Only compact recent evidence is transmitted to
 `api.typesafe.ai`, with an 800-byte full-JSON budget and a check of returned input
 usage. Read [the exact privacy, token and observation limits](docs/JEV-MONITORING.md).
 

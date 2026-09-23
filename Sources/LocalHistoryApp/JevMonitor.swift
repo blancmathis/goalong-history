@@ -19,6 +19,7 @@ struct JevRecentCheck: Identifiable {
     @Published private(set) var hasKey = false
     @Published private(set) var timedBreak: JevTimedBreak?
     @Published private(set) var remainingSeconds = 0
+    @Published private(set) var procrastinationSeconds = 0
     @Published private(set) var lastInputTokens: Int?
     @Published private(set) var lastRequestBytes = 0
     @Published private(set) var lastPayload = ""
@@ -63,7 +64,8 @@ struct JevRecentCheck: Identifiable {
         guard !started else { return }; started = true
         let center = NotificationCenter.default
         for name in [Notification.Name.goalongGlobalPauseDidChange, .goalongCapabilityConsentDidChange,
-                     .goalongExclusionsDidChange] {
+                     .goalongExclusionsDidChange, .jevInterventionsDidChange,
+                     NSApplication.didChangeScreenParametersNotification] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.reconfigure() }
             })
@@ -99,11 +101,11 @@ struct JevRecentCheck: Identifiable {
         "\(enabled)|\(GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory))|\(BackgroundContinuityPreferences().manuallyPaused)|\(includeText)"
     }
     private var gate: String? {
-        if timedBreak != nil || breakStorageInvalid { return "Pause minutée : aucun appel Jev" }
+        if timedBreak != nil || breakStorageInvalid { return "Pause Jev : aucun appel ni rappel" }
         if !enabled { return "Surveillance désactivée" }
         if !hasKey { return "Ajoutez votre clé TypeSafe pour utiliser Jev" }
-        if circuitOpen { return "Jev suspendu après erreur : vérifiez les réglages" }
-        if GoalongGlobalPause.isPaused() { return "Pause globale : aucun appel Jev" }
+        if circuitOpen { return "Jev suspendu après erreur : vérifiez la connexion" }
+        if GoalongGlobalPause.isPaused() { return "Arrêt de confidentialité : suivi et Jev suspendus" }
         if !GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) { return "Activez l’historique de ce Mac pour utiliser Jev" }
         if BackgroundContinuityPreferences().manuallyPaused { return "Enregistrement en pause : aucun appel Jev" }
         if !sessionAvailable { return "Mac inactif ou verrouillé : aucun appel Jev" }
@@ -159,9 +161,16 @@ struct JevRecentCheck: Identifiable {
         reconfigure()
     }
     func retry() { circuitOpen = false; retryAfter = .distantPast; error = nil; reconfigure() }
-    func dismissWarning() { JevWarningPanel.shared.hide() }
+    func dismissWarning() {
+        streak.dismissWarning()
+        JevWarningPanel.shared.hide()
+    }
+    private func resetInterventions() {
+        streak.reset(); procrastinationSeconds = 0
+        JevWarningPanel.shared.hide(resetPosition: true)
+    }
     private func cancelPending() {
-        epoch = UUID(); request?.cancel(); request = nil; streak.reset()
+        epoch = UUID(); request?.cancel(); request = nil; resetInterventions()
         lastPayload = ""; JevWarningPanel.shared.hide()
     }
     func reconfigure() {
@@ -198,12 +207,12 @@ struct JevRecentCheck: Identifiable {
         let start = boundary; boundary = end
         guard request == nil else { cancelPending(); status = "Analyse trop lente : série remise à zéro"; return }
         guard let window = inbox.take(start: start, end: end), window.hasActivity else {
-            streak.reset(); JevWarningPanel.shared.hide(); status = "Aucune nouvelle activité observable · aucun appel"; return
+            resetInterventions(); status = "Aucune nouvelle activité observable · aucun appel"; return
         }
-        guard now >= retryAfter else { streak.reset(); return }
+        guard now >= retryAfter else { resetInterventions(); return }
         let body: Data
         do { body = try JevPayload.build(window) }
-        catch { streak.reset(); JevWarningPanel.shared.hide(); status = "Fenêtre trop complexe : classement indéterminé"; return }
+        catch { resetInterventions(); status = "Fenêtre trop complexe : classement indéterminé"; return }
         let policy = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)
         let pause = GoalongGlobalPause.load()
         guard !policy.blocked, !pause.blocksActivity, gate == nil else { reconfigure(); return }
@@ -223,7 +232,7 @@ struct JevRecentCheck: Identifiable {
                       Date().timeIntervalSince(end) < 15,
                       GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == policy.revision,
                       GoalongGlobalPause.load().revision == pause.revision else {
-                    self.streak.reset(); JevWarningPanel.shared.hide(); return
+                    self.resetInterventions(); return
                 }
                 self.lastInputTokens = decision.inputTokens
                 self.recentChecks.insert(JevRecentCheck(start: start, end: end, verdict: decision.verdict,
@@ -231,15 +240,20 @@ struct JevRecentCheck: Identifiable {
                 self.recentChecks = Array(self.recentChecks.prefix(120))
                 let warn = self.streak.accept(decision.verdict, start: start, end: end)
                 switch decision.verdict {
-                case .productive: self.status = "Activité classée productive"; JevWarningPanel.shared.hide()
-                case .unknown: self.status = "Activité indéterminée · aucune alerte"; JevWarningPanel.shared.hide()
+                case .productive: self.status = "Activité classée productive"; self.resetInterventions()
+                case .unknown: self.status = "Activité indéterminée · aucune alerte"; self.resetInterventions()
                 case .procrastination:
-                    self.status = "Procrastination détectée · \(self.streak.count)/2 fenêtres"
+                    self.status = "Procrastination détectée · \(JevInterventionSettings.duration(self.streak.observedSeconds))"
                 }
-                if warn { JevWarningPanel.shared.show() }
+                self.procrastinationSeconds = self.streak.observedSeconds
+                if decision.verdict == .procrastination {
+                    JevWarningPanel.shared.update(seconds: self.streak.observedSeconds,
+                        appearance: self.streak.appearanceCount, present: warn,
+                        settings: JevInterventionPreferences.shared.settings)
+                }
             } catch {
                 guard self.epoch == token, !Task.isCancelled else { return }
-                self.request = nil; self.streak.reset(); JevWarningPanel.shared.hide()
+                self.request = nil; self.resetInterventions()
                 self.error = (error as? JevError)?.errorDescription ?? "Connexion Jev indisponible. Aucun classement inventé."
                 self.status = self.error ?? "Jev indisponible"
                 if let error = error as? JevError {

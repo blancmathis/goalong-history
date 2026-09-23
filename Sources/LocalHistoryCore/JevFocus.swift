@@ -35,20 +35,26 @@ public struct JevWindow: Equatable, Sendable {
 public struct JevStreak: Sendable {
     public private(set) var count = 0
     public private(set) var warningIssued = false
+    public private(set) var appearanceCount = 0
+    public var observedSeconds: Int { count * 15 }
     private var lastEnd: Date?
     public init() {}
-    public mutating func reset() { count = 0; warningIssued = false; lastEnd = nil }
+    public mutating func reset() { count = 0; warningIssued = false; appearanceCount = 0; lastEnd = nil }
+    /// Closing is not a break and must not reset the accumulated observed duration.
+    public mutating func dismissWarning() { warningIssued = false }
     /// Each successful answer must describe a NEW adjacent 15-second interval.
     public mutating func accept(_ verdict: JevVerdict, start: Date, end: Date) -> Bool {
-        guard end > start, abs(end.timeIntervalSince(start) - 15) < 0.01 else { reset(); return false }
+        guard start.timeIntervalSince1970.isFinite, end.timeIntervalSince1970.isFinite,
+              end > start, abs(end.timeIntervalSince(start) - 15) < 0.01 else { reset(); return false }
         if let previous = lastEnd {
             guard start >= previous else { return false } // duplicate/overlap never increments
             if abs(start.timeIntervalSince(previous)) > 0.01 { reset() }
         }
         guard verdict == .procrastination else { reset(); return false }
-        count = min(2, count + 1); lastEnd = end
-        guard count == 2, !warningIssued else { return false }
+        count = min(Int.max / 15, count + 1); lastEnd = end
+        guard count >= 2, !warningIssued else { return false }
         warningIssued = true
+        appearanceCount = min(Int.max - 1, appearanceCount + 1)
         return true
     }
 }
@@ -158,7 +164,7 @@ public enum JevError: Error, LocalizedError, Equatable {
         case .noActivity: return "Aucune nouvelle activité : aucun appel Jev."
         case .budget: return "Budget Jev dépassé : analyse suspendue, aucune alerte."
         case .invalidResponse: return "Réponse Jev non exploitable : aucune alerte."
-        case .authentication: return "Clé TypeSafe refusée. Corrigez-la dans les réglages."
+        case .authentication: return "Clé TypeSafe refusée. Corrigez-la dans Surveillance temps réel → Gérer la connexion."
         case .http(let code): return "Jev indisponible (HTTP \(code))."
         case .rateLimited(let seconds): return "Limite Jev : nouvel essai dans \(seconds) s."
         }

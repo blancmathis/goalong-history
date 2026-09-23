@@ -14,7 +14,7 @@ Le menu **Surveillance temps réel** permet une pause de 5, 10, 15 ou 30 minutes
 sa fin anticipée, la désactivation de Jev et l’ouverture de sa page.
 **Autre durée** permet une pause de 1 à 120 minutes. Le décompte persiste au redémarrage et à la veille.
 Une pause de travail suspend Jev seulement : elle ne change aucun autre
-consentement, ne réactive jamais l’enregistrement et ne remplace pas Pause globale.
+consentement, ne réactive jamais l’enregistrement et ne remplace pas l’arrêt de confidentialité.
 
 Le bouton d’activation nécessite une clé et le consentement local Computer History.
 Une surveillance déjà activée reste toujours désactivable, même si un prérequis manque.
@@ -36,8 +36,16 @@ bref passage dans un fil doit rester présent même après le retour au code.
 La question est : **la fenêtre contient-elle une activité de procrastination ?**
 Pas « quel est son usage majoritaire ? ». Deux réponses positives exploitables
 sur deux fenêtres adjacentes déclenchent une bannière non activante. Elle ne prend
-pas le focus clavier, ne bloque pas le travail et offre Fermer, Pause et Désactiver.
-Une seule alerte est émise pour une même série ; aucune escalade n’est ajoutée.
+pas le focus clavier, ne bloque pas le travail et propose **Fermer** et **Désactiver Jev**,
+mais aucun bouton Pause. Le premier message est « Arrête de procrastiner. Ça fait
+30 secondes que tu procrastines. » La durée avance par fenêtres confirmées de 15 s,
+pas au temps mural : elle ne signifie pas que chaque seconde était improductive.
+**Fermer** masque la fenêtre et ses effets jusqu’à la prochaine fenêtre positive,
+sans réinitialiser la durée. Il n’y a jamais plusieurs avertissements superposés.
+Les deux premières apparitions restent en haut à droite. À partir de la troisième,
+une nouvelle apparition change de zone, sans répéter la précédente. Une fenêtre
+visible ne bouge jamais et le bouton Fermer ne fuit pas la souris. Ce déplacement
+peut être désactivé dans **Configurer les rappels et les effets**.
 L’inactivité, une pause, un contexte protégé, une erreur ou un résultat indéterminé
 interrompt la série. Une réponse tardive ou une requête annulée ne peut pas la
 faire progresser. Après veille, retard important ou saut d’horloge, aucun arriéré
@@ -47,6 +55,41 @@ Le classement est fourni uniquement par Jev `jev-1.13.0`, avec trois choix ferm�
 `productive`, `procrastination`, `unknown`. Les mesures, règles de série et messages
 restent dans Swift. La probabilité d’un choix n’est ni un pourcentage de temps
 productif, ni une précision statistique validée sur les usages Goalong.
+
+## Paliers visuels locaux, configurables
+
+Les effets progressifs sont **désactivés par défaut**, indépendamment du consentement
+Jev existant. Dans **Configurer les rappels et les effets**, l’utilisateur peut
+activer les effets, désactiver chaque palier, choisir ses minutes et son intensité.
+Trois propositions : 2 min → assombrissement 20 %, 5 min → voile rouge 20 %,
+10 min → assombrissement + rouge 30 %. Les délais restent croissants, entre 1 et
+60 minutes. L’intensité reste entre 10 et 40 %. Seul le dernier palier actif atteint
+s’applique, sans cumuler plusieurs voiles. Désactiver un palier laisse le précédent.
+
+L’assombrissement est un voile AppKit : aucune écriture de luminosité matérielle,
+de gamma, de permission système ou de Gatekeeper. Les voiles ne prennent pas le
+focus, laissent passer les clics et ne clignotent pas. La fenêtre et son bouton
+Désactiver restent au-dessus. Une erreur, un résultat indéterminé/productif, une
+pause, un changement d’écran ou un contexte protégé enlève tous les effets.
+Un watchdog de 30 secondes, renouvelé uniquement par un résultat frais, élimine
+les effets si les résultats s’arrêtent. Les fenêtres disparaissent avec le processus.
+
+Les préférences de présentation non sensibles sont locales dans UserDefaults ;
+la clé API reste dans son fichier privé 0600 inchangé. Une configuration absente,
+illisible, hors limites ou d’une version inconnue ne permet aucun effet.
+
+## Deux actions clairement distinctes
+
+**Faire une pause Jev**, dans la barre latérale et le menu Surveillance, suspend
+uniquement les appels Jev, les rappels et les effets. Une reprise automatique est
+prévue à la fin du décompte. L’historique continue selon le consentement et l’état
+de l’enregistrement ; une pause Jev n’active ni ne reprend une source arrêtée.
+
+**Confidentialité · tout suspendre**, dans Réglages ou le sous-menu Confidentialité,
+est un arrêt exceptionnel du suivi et des envois. Une confirmation explique les
+trous d’historique ; une bannière « Historique suspendu · confidentialité » reste
+visible avec une reprise explicite. Aucune pause existante n’est annulée par cette
+mise à jour. L’utilisateur garde toujours le droit de suspendre le suivi.
 
 ## Politique initiale et limites d’observation
 

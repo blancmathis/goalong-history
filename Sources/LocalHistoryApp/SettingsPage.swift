@@ -65,6 +65,13 @@ import AppKit
             }
             if search.isEmpty {
                 BackgroundContinuitySettings()
+                DisclosureGroup("Confidentialité · tout suspendre") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une pause détente, utilisez « Faire une pause Jev » dans la barre latérale : l’historique continue.")
+                            .font(.callout).foregroundStyle(.secondary)
+                        GoalongGlobalPauseControl(model: model)
+                    }.padding(.top, 12)
+                }.accessibilityIdentifier("settings-privacy-stop")
                 VStack(alignment: .trailing, spacing: 14) {
                     GoalongSettingsLink(title: "Avancé", value: "Outils et diagnostics", symbol: "slider.horizontal.3") { pane = .advanced }
                         .accessibilityIdentifier("settings-advanced")
