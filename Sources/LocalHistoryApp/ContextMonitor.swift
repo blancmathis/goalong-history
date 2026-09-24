@@ -22,6 +22,8 @@
         private var accessibilityEventMonitor: AccessibilityEventMonitor?
         private var previous: ContextSnapshot?
         private var lastHeartbeat = Date.distantPast
+        private let foregroundActivityProbe = ForegroundActivityProbe()
+        private var lastForegroundEvidence: ForegroundActivityEvidence?
         private var pollingIsActive = false
         private var scheduledPollInProgress = false
         private var consecutiveCaptureFailures = 0
@@ -101,6 +103,8 @@
 
         func stop() {
             pollingIsActive = false
+            foregroundActivityProbe.reset()
+            lastForegroundEvidence = nil
             accessibilityEventMonitor?.stop()
             timer?.invalidate()
             timer = nil
@@ -109,6 +113,8 @@
 
         func resetAndSample() {
             previous = nil
+            foregroundActivityProbe.reset()
+            lastForegroundEvidence = nil
             sampleNow()
         }
 
@@ -127,7 +133,8 @@
                 timer = nil
                 return
             }
-            let boundedInterval = JevIngress.shared.isEnabled ? min(interval, 10) : interval
+            let boundedInterval = (JevIngress.shared.isEnabled || lastForegroundEvidence != nil)
+                ? min(interval, ForegroundActivityProbe.interval) : interval
             let timer = Timer(timeInterval: boundedInterval, repeats: false) { [weak self] _ in
                 guard let self else { return }
                 self.timer = nil
@@ -184,8 +191,12 @@
                     scheduleNextPoll()
                 }
             }
-            guard state.isCapturing else { JevIngress.shared.boundary(); return nil }
+            guard state.isCapturing else {
+                foregroundActivityProbe.reset(); lastForegroundEvidence = nil
+                JevIngress.shared.boundary(); return nil
+            }
             if IsSecureEventInputEnabled() {
+                foregroundActivityProbe.reset(); lastForegroundEvidence = nil
                 let safeContext = latestSnapshot.map { current in
                     ContextSnapshot(
                         app: current.app,
@@ -204,6 +215,7 @@
                 return safeContext
             }
             guard let current = provider.capture() else {
+                foregroundActivityProbe.reset(); lastForegroundEvidence = nil
                 consecutiveCaptureFailures = min(consecutiveCaptureFailures + 1, 1_000)
                 captureHealth.markAXFailure()
                 JevIngress.shared.boundary()
@@ -211,7 +223,9 @@
             }
             consecutiveCaptureFailures = 0
             setLatest(current)
-            JevIngress.shared.observeContext(current, labelsEnabled: configManager.config.captureElementLabels)
+            let evidence = foregroundActivityProbe.sample(current,
+                labelsEnabled: configManager.config.captureElementLabels)
+            JevIngress.shared.observeContext(current, foregroundEvidence: evidence)
             captureHealth.setSuppression(current.suppressionReason)
             if current.suppressionReason == .accessibilityUnavailable {
                 captureHealth.markAXFailure()
@@ -220,6 +234,7 @@
             }
 
             if let reason = current.suppressionReason {
+                lastForegroundEvidence = nil
                 if previous?.suppressionReason != reason || previous?.app != current.app {
                     recorder.record(
                         kind: .captureSuppressed,
@@ -240,29 +255,34 @@
                 )
             }
 
+            let observedAt = Date()
+            var activityMetadata = ["idle_seconds": String(format: "%.1f", idleSeconds())]
+            if let evidence { activityMetadata[ForegroundActivityEvidence.metadataKey] = evidence.rawValue }
             if let transition = Self.contextTransition(from: previous, to: current) {
                 recorder.record(
                     kind: transition.kind,
                     context: current,
-                    metadata: [
+                    metadata: activityMetadata.merging([
                         "computer_history.context_changes": transition.changedFields.joined(separator: ","),
-                    ]
+                    ]) { _, new in new },
+                    timestamp: observedAt
                 )
             }
 
             let heartbeatInterval = TimeInterval(
-                max(10, configManager.config.heartbeatSeconds)
+                evidence == nil ? max(10, configManager.config.heartbeatSeconds)
+                    : min(30, max(10, configManager.config.heartbeatSeconds))
             )
-            if Date().timeIntervalSince(lastHeartbeat) >= heartbeatInterval {
+            if evidence != lastForegroundEvidence || observedAt.timeIntervalSince(lastHeartbeat) >= heartbeatInterval {
                 recorder.record(
                     kind: .heartbeat,
                     context: current,
-                    metadata: [
-                        "idle_seconds": String(format: "%.1f", idleSeconds()),
-                    ]
+                    metadata: activityMetadata,
+                    timestamp: observedAt
                 )
-                lastHeartbeat = Date()
+                lastHeartbeat = observedAt
             }
+            lastForegroundEvidence = evidence
 
             previous = current
             return current
@@ -333,10 +353,7 @@
         }
 
         private func idleSeconds() -> Double {
-            CGEventSource.secondsSinceLastEventType(
-                .combinedSessionState,
-                eventType: .null
-            )
+            UserInputActivityClock.secondsSinceLastInput()
         }
     }
 #endif

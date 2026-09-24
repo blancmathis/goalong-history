@@ -18,7 +18,7 @@ Le bouton Comprendre mon travail ouvre le studio existant dans un mode local :
 sélection explicite, consentement avant l’agent, relecture et conservation locale.
 Aucun résultat n’est envoyé au site depuis ce mode.
 
-## Définition des mesures (local-observed-rhythm-v1)
+## Définition des mesures (local-observed-rhythm-v2)
 
 - Le temps actif est l’union, sans chevauchement, des intervalles entre événements
   consécutifs autorisés dans une même journée. Une observation ne prolonge jamais
@@ -33,9 +33,18 @@ Aucun résultat n’est envoyé au site depuis ce mode.
   de continuité, pas une mesure de concentration mentale ou d’efficacité. Les
   changements d’outil au sein d’un projet ne sont pas regroupés automatiquement.
 - Un écart supérieur à 120 secondes, une rupture explicite, un arrêt/reprise,
-  une suspension ou un signal d’inactivité interrompt la séquence. Un signal
-  d’inactivité d’au moins 90 secondes est séparé du temps actif : il ne prouve
-  ni une pause volontaire, ni du repos, ni une absence de travail hors écran.
+  une suspension ou un signal d’inactivité interrompt la séquence. L’absence de
+  clavier/souris pendant 90 secondes n’est plus une inactivité si un appel, une
+  lecture ou une assertion de maintien de l’écran liée au processus au premier
+  plan est observé. Sans ce signal, elle reste séparée du temps actif, sans prouver
+  une pause volontaire, du repos ou une absence de travail hors écran.
+- Une assertion de processus navigateur compte pour l’application, pas pour un
+  site : elle ne prouve pas quel onglet joue. L’attribution au site requiert les
+  contrôles du contexte au premier plan. Les fenêtres privées/exclues, la veille,
+  le verrouillage et les pauses ne sont jamais contournés.
+- Les anciens journaux sans ce nouveau signal gardent leurs mesures : aucune
+  réunion passée n’est inventée à partir du seul nom d’application. Voir
+  `FOREGROUND-ACTIVITY.md` pour les sources et limites de détection.
 - Les heures des sites sont incluses dans celles des navigateurs. Les heures de
   focus sont incluses dans le temps actif. Apple Screen Time, conversations et
   temps machine ne sont pas ajoutés aux durées de premier plan sur ce Mac.

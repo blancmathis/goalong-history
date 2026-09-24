@@ -105,8 +105,7 @@ extension ActivityAnalysisEngine {
             .keyboardShortcut, .keyPressed, .typingBurst, .scrollBurst:
             return true
         case .heartbeat:
-            guard let raw = event.metadata?["idle_seconds"], let idle = Double(raw) else { return false }
-            return idle < 90
+            return ForegroundActivityEvidence.isActiveUsageEvidence(event)
         default:
             return false
         }

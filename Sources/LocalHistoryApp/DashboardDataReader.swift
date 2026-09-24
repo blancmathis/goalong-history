@@ -499,6 +499,7 @@
                             activeMinuteKeys.insert(minute)
                         }
                         if event.classification?.isWork == true,
+                            (event.url == nil || ForegroundActivityEvidence.supportsWebsiteAttribution(event)),
                             !workMinuteKeys.contains(minute)
                         {
                             try derivedBudget.reserve(16)
@@ -2474,12 +2475,11 @@
             _ event: DashboardEventProjection
         ) -> HistoryEvent? {
             guard event.shouldRetain else { return nil }
-            let compactMetadata: [String: String]? = {
-                guard event.kind == .heartbeat,
-                    let idleSeconds = event.metadata?["idle_seconds"]
-                else { return nil }
-                return ["idle_seconds": idleSeconds]
-            }()
+            let compactMetadata = event.metadata?.filter {
+                $0.key == "idle_seconds"
+                    || ($0.key == ForegroundActivityEvidence.metadataKey
+                        && ForegroundActivityEvidence(rawValue: $0.value) != nil)
+            }
             return HistoryEvent(
                 schemaVersion: event.schemaVersion,
                 id: event.id,
@@ -2541,14 +2541,11 @@
         }
 
         private static func isActiveUsageEvidence(_ event: HistoryEvent) -> Bool {
-            guard event.kind == .heartbeat else { return true }
-            guard let rawIdleSeconds = event.metadata?["idle_seconds"],
-                let idleSeconds = Double(rawIdleSeconds)
-            else { return false }
-            return idleSeconds < 90
+            return ForegroundActivityEvidence.isActiveUsageEvidence(event)
         }
 
         private static func isActivityEvent(_ event: HistoryEvent) -> Bool {
+            if ForegroundActivityEvidence.evidence(in: event) != nil { return true }
             switch event.kind {
             case .applicationActivated, .windowChanged, .urlChanged, .mouseClick,
                 .keyboardShortcut, .keyPressed, .typingBurst, .scrollBurst:

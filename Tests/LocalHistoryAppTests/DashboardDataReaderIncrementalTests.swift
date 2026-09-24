@@ -931,6 +931,49 @@
             )
         }
 
+        func testPassiveForegroundTimeSurvivesDashboardDiskCompaction() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let day = makeDay(year: 2026, month: 8, day: 24)
+            var journal = Data()
+            // A silent video then a browser-process-only presentation, followed
+            // by input-idle. Only the proven video can belong to youtube.com.
+            for index in 0...20 {
+                journal.append(try line(usageEvent(id: "passive-\(index)",
+                    timestamp: day.addingTimeInterval(Double(index * 30)), kind: .heartbeat,
+                    appName: "Safari", bundleIdentifier: "com.apple.Safari",
+                    urlValue: "https://youtube.com/watch?v=private", host: "youtube.com", idleSeconds: 3600,
+                    foregroundEvidence: index < 10 ? .mediaPlayback : index < 20 ? .displayAssertion : nil)))
+            }
+            try journal.write(to: fixture.events.appendingPathComponent("2026-08-24.jsonl"))
+            let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
+            let app = try XCTUnwrap(snapshot.trackedUsage.first { $0.kind == .application && $0.bundleIdentifier == "com.apple.Safari" })
+            let site = try XCTUnwrap(snapshot.trackedUsage.first { $0.kind == .website && $0.name == "youtube.com" })
+            XCTAssertEqual(app.foregroundSeconds, 600, accuracy: 0.001)
+            XCTAssertEqual(snapshot.activeMinutes, 10, "Today/Computer History summary must include passive foreground use.")
+            XCTAssertEqual(site.foregroundSeconds, 300, accuracy: 0.001)
+            XCTAssertEqual(app.activeMinutes, 0)
+        }
+
+        func testZoomCallWithoutKeyboardSurvivesDashboardDiskCompaction() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let day = makeDay(year: 2026, month: 8, day: 24)
+            var journal = Data()
+            for index in 0...90 {
+                journal.append(try line(usageEvent(id: "call-\(index)",
+                    timestamp: day.addingTimeInterval(Double(index * 30)), kind: .heartbeat,
+                    appName: "Zoom", bundleIdentifier: "us.zoom.xos", urlValue: nil, host: nil,
+                    idleSeconds: 3600, foregroundEvidence: index < 90 ? .call : nil)))
+            }
+            try journal.write(to: fixture.events.appendingPathComponent("2026-08-24.jsonl"))
+            let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
+            let app = try XCTUnwrap(snapshot.trackedUsage.first { $0.kind == .application && $0.bundleIdentifier == "us.zoom.xos" })
+            XCTAssertEqual(app.foregroundSeconds, 2700, accuracy: 0.001)
+            XCTAssertEqual(snapshot.activeMinutes, 45)
+            XCTAssertEqual(snapshot.timeline.reduce(0) { $0 + $1.activeMinutes }, 45)
+        }
+
         func testIdleHeartbeatsStopExtendingWebsiteForegroundTime() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -1231,7 +1274,8 @@
             bundleIdentifier: String = "com.example.browser",
             urlValue: String?,
             host: String?,
-            idleSeconds: Double? = nil
+            idleSeconds: Double? = nil,
+            foregroundEvidence: ForegroundActivityEvidence? = nil
         ) -> HistoryEvent {
             HistoryEvent(
                 id: id,
@@ -1250,7 +1294,8 @@
                 pointer: kind == .mouseClick
                     ? PointerSnapshot(button: "left", x: 10, y: 20, clickCount: 1)
                     : nil,
-                metadata: idleSeconds.map { ["idle_seconds": String($0)] }
+                metadata: (idleSeconds.map { ["idle_seconds": String($0)] } ?? [:])
+                    .merging(foregroundEvidence.map { [ForegroundActivityEvidence.metadataKey: $0.rawValue] } ?? [:]) { _, new in new }
             )
         }
 

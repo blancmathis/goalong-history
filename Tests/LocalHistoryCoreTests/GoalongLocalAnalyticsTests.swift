@@ -65,6 +65,76 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
         XCTAssertEqual(result.activeSeconds, 60)
         XCTAssertEqual(result.focusSeconds(minimumMinutes: 1), 60)
     }
+    func testFortyFiveMinuteCallWithoutAnyInputIsFullyCounted() {
+        let rows = (0...180).map { index in
+            event(Double(index * 15), app: "Zoom", metadata: ["idle_seconds": String(3600 + index * 15),
+                ForegroundActivityEvidence.metadataKey: "call"])
+        }
+        let result = build(rows)
+        XCTAssertEqual(result.activeSeconds, 2700)
+        XCTAssertEqual(result.seconds(.idle), 0)
+        XCTAssertEqual(result.focusSeconds(minimumMinutes: 25), 2700)
+        XCTAssertEqual(GoalongLocalAnalytics.Period(days: [result]).usage().first?.seconds, 2700)
+    }
+    func testSilentVideoRetainsWebsiteTimeWithFocusedPlaybackEvidence() {
+        let rows = (0...60).map { index in
+            event(Double(index * 30), app: "Browser", host: "youtube.com", work: false,
+                metadata: ["idle_seconds": "3600", ForegroundActivityEvidence.metadataKey: "media_playback"])
+        }
+        let result = build(rows)
+        XCTAssertEqual(result.activeSeconds, 1800)
+        XCTAssertEqual(result.seconds(.other), 1800)
+        XCTAssertEqual(GoalongLocalAnalytics.Period(days: [result]).usage(websites: true).first?.seconds, 1800)
+    }
+    func testRecentInputStillProvesTheWebsiteWhenBrowserAlsoHoldsAnAssertion() {
+        let metadata = ["idle_seconds": "5", ForegroundActivityEvidence.metadataKey: "display_assertion"]
+        let result = build([event(0, host: "example.org", metadata: metadata), event(60, host: "example.org", metadata: metadata)])
+        XCTAssertEqual(result.activeSeconds, 60)
+        XCTAssertEqual(GoalongLocalAnalytics.Period(days: [result]).usage(websites: true).first?.seconds, 60)
+    }
+
+    func testProcessWideEvidenceCountsBrowserButNeverInventsWebsiteTime() {
+        let metadata = ["idle_seconds": "3600", ForegroundActivityEvidence.metadataKey: "display_assertion"]
+        let result = build([event(0, host: "example.org", metadata: metadata), event(60, metadata: metadata)])
+        XCTAssertEqual(result.activeSeconds, 60)
+        XCTAssertTrue(GoalongLocalAnalytics.Period(days: [result]).usage(websites: true).isEmpty)
+    }
+    func testCallStopAndAppSwitchDoNotEraseEarlierCallOrExtendLaterIdle() {
+        let passive = ["idle_seconds": "3600", ForegroundActivityEvidence.metadataKey: "call"]
+        let idle = ["idle_seconds": "3600"]
+        let result = build([event(0, app: "Zoom", metadata: passive), event(30, app: "Zoom", metadata: passive),
+            event(60, app: "Finder", metadata: idle), event(90, app: "Finder", metadata: idle)])
+        XCTAssertEqual(result.activeSeconds, 60)
+        XCTAssertEqual(result.seconds(.idle), 30)
+        XCTAssertEqual(GoalongLocalAnalytics.Period(days: [result]).usage().map(\.name), ["Zoom"])
+        let startsLater = build([event(0, metadata: idle), event(30, metadata: passive), event(60, metadata: passive)])
+        XCTAssertEqual(startsLater.activeSeconds, 30)
+        XCTAssertEqual(startsLater.seconds(.idle), 30)
+    }
+    func testPassiveEvidenceNeverBridgesSleepPrivatePauseOrMissingObservations() {
+        let passive = ["idle_seconds": "3600", ForegroundActivityEvidence.metadataKey: "call"]
+        let gap = build([event(0, metadata: passive), event(30, metadata: passive), event(3600, metadata: passive)])
+        XCTAssertEqual(gap.activeSeconds, 30)
+        for kind in [EventKind.systemSleep, .sessionLocked, .recordingPaused, .recorderStopped] {
+            let result = build([event(0, metadata: passive), event(30, kind: kind), event(90), event(120)])
+            XCTAssertEqual(result.activeSeconds, 60, "\(kind)")
+        }
+        let suppressed = event(0, suppression: .privateBrowserWindow, metadata: passive)
+        XCTAssertNil(ForegroundActivityEvidence.evidence(in: suppressed))
+        XCTAssertFalse(ForegroundActivityEvidence.isActiveUsageEvidence(suppressed))
+        XCTAssertEqual(build([suppressed, event(60)]).activeSeconds, 0)
+    }
+    func testOldOrUnknownMetadataCannotInventHistoricalMeetings() {
+        for value in ["", "true", "unknown", "CALL"] {
+            let row = event(0, app: "Zoom", metadata: ["idle_seconds": "3600", ForegroundActivityEvidence.metadataKey: value])
+            XCTAssertNil(ForegroundActivityEvidence.evidence(in: row))
+            XCTAssertFalse(ForegroundActivityEvidence.isActiveUsageEvidence(row))
+        }
+        for value in ["nan", "inf", "-1", "junk"] {
+            XCTAssertFalse(ForegroundActivityEvidence.isActiveUsageEvidence(event(0, metadata: ["idle_seconds": value])))
+        }
+        XCTAssertEqual(build([event(0, app: "Zoom", metadata: ["idle_seconds": "3600"]), event(60)]).activeSeconds, 0)
+    }
     func testSuppressedIntervalDoesNotExposeContext() {
         let result = build([event(0, suppression: .privateBrowserWindow), event(60, kind: .captureResumed), event(120), event(180)])
         let hidden = result.segments.filter { $0.kind == .concealed }
@@ -130,7 +200,7 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
         let folder = root.appendingPathComponent("events")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
-        let rows = [event(3600, host: "example.org", metadata: ["idle_seconds": "0", "analysis.semantic_text": "DO NOT RETAIN"]), event(3660)]
+        let rows = [event(3600, host: "example.org", metadata: ["idle_seconds": "0", ForegroundActivityEvidence.metadataKey: "media_playback", "analysis.semantic_text": "DO NOT RETAIN"]), event(3660)]
         let bytes = try rows.reduce(into: Data()) { result, row in result.append(try encoder.encode(row)); result.append(10) }
         try bytes.write(to: folder.appendingPathComponent("2026-09-10.jsonl"))
         let load = HistoryLocalStoreReader(rootDirectory: root).loadLocalAnalyticsEvidence(start: day, endExclusive: day.addingTimeInterval(86400))
@@ -138,6 +208,7 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
         XCTAssertEqual(load.events.count, 2)
         XCTAssertEqual(load.events.first?.classification?.isWork, true)
         XCTAssertEqual(load.events.first?.metadata?["idle_seconds"], "0")
+        XCTAssertEqual(load.events.first?.metadata?[ForegroundActivityEvidence.metadataKey], "media_playback")
         XCTAssertNil(load.events.first?.window)
         XCTAssertNil(load.events.first?.metadata?["analysis.semantic_text"])
         XCTAssertEqual(load.events.first?.url?.value, "https://example.org")

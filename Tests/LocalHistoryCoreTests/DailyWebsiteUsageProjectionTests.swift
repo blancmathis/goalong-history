@@ -94,6 +94,39 @@ final class DailyWebsiteUsageProjectionTests: XCTestCase {
         XCTAssertFalse(projection.wasTruncated)
     }
 
+    func testPassiveVideoSurvivesMinimalDiskProjectionAndStopsWhenPaused() throws {
+        let day = Calendar.current.startOfDay(for: fixtureStart)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        var accumulator = DailyWebsiteUsageAccumulator(day: day, currentTime: day.addingTimeInterval(600))
+        for index in 0...10 {
+            let row = websiteEvent(at: day.addingTimeInterval(Double(index * 30)), kind: .heartbeat,
+                app: "Safari", bundleIdentifier: "com.apple.Safari", URL: "https://youtube.com/watch?v=private",
+                host: "youtube.com", metadata: ["idle_seconds": "3600",
+                    ForegroundActivityEvidence.metadataKey: index < 10 ? "media_playback" : "",
+                    "analysis.semantic_text": "DO NOT RETAIN"])
+            let projected = try decoder.decode(DailyWebsiteUsageEventProjection.self, from: encoder.encode(row)).historyEvent
+            XCTAssertNil(projected.metadata?["analysis.semantic_text"])
+            if index < 10 { XCTAssertEqual(ForegroundActivityEvidence.evidence(in: projected), .mediaPlayback) }
+            accumulator.ingest(projected)
+        }
+        let result = accumulator.finish()
+        XCTAssertEqual(result.first?.foregroundSeconds, 300)
+        XCTAssertEqual(result.first?.sourceUsage.first?.foregroundSeconds, 300)
+        XCTAssertEqual(result.first?.activeMinuteCount, 0, "Playback does not fabricate keyboard/mouse input.")
+    }
+
+    func testBrowserWideDisplayAssertionDoesNotAttributeAnUnprovenWebsite() {
+        let day = Calendar.current.startOfDay(for: fixtureStart)
+        var accumulator = DailyWebsiteUsageAccumulator(day: day, currentTime: day.addingTimeInterval(600))
+        for index in 0...5 {
+            accumulator.ingest(websiteEvent(at: day.addingTimeInterval(Double(index * 30)), kind: .heartbeat,
+                app: "Chrome", bundleIdentifier: "com.google.Chrome", URL: "https://example.org/", host: "example.org",
+                metadata: ["idle_seconds": "3600", ForegroundActivityEvidence.metadataKey: "display_assertion"]))
+        }
+        XCTAssertTrue(accumulator.finish().isEmpty)
+    }
+
     func testHistoricalTailStopsAtTheCivilDayBoundary() throws {
         let calendar = Calendar.current
         let day = calendar.startOfDay(for: fixtureStart)

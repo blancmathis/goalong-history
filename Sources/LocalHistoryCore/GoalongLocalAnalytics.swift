@@ -3,9 +3,9 @@ import Foundation
 /// A read-only projection of foreground observations, not a productivity or attention score.
 /// Every elapsed second belongs to one state; missing evidence is never inferred as rest.
 public enum GoalongLocalAnalytics {
-    public static let method = "local-observed-rhythm-v1"
+    public static let method = "local-observed-rhythm-v2"
     public static let maximumGap: TimeInterval = 120
-    public static let idleThreshold: TimeInterval = 90
+    public static let idleThreshold = ForegroundActivityEvidence.inputIdleThreshold
 
     public enum Kind: String, CaseIterable, Codable, Sendable {
         case work, other, unclassified, idle, concealed, unobserved
@@ -150,7 +150,8 @@ public enum GoalongLocalAnalytics {
             let active = kind.isActive
             let application = active ? event?.app?.name : nil
             let bundle = active ? event?.app?.bundleIdentifier : nil
-            let host = active ? event?.url?.host : nil
+            let host = active && event.map(ForegroundActivityEvidence.supportsWebsiteAttribution) == true
+                ? event?.url?.host : nil
             if let last = segments.last, last.end == a, last.kind == kind,
                last.application == application, last.bundleIdentifier == bundle, last.host == host {
                 segments[segments.count - 1].end = b
@@ -185,10 +186,17 @@ public enum GoalongLocalAnalytics {
                 }
             } else if previous.isObservationContinuityBoundary || previous.app?.name.isEmpty != false {
                 kind = .unobserved
-            } else if [previous, next].contains(where: {
-                ($0.metadata?["idle_seconds"].flatMap(Double.init) ?? 0) >= idleThreshold
-            }) {
+            } else if ForegroundActivityEvidence.isInputIdle(previous)
+                || (ForegroundActivityEvidence.isInputIdle(next)
+                    && ForegroundActivityEvidence.evidence(in: previous) == nil) {
+                // A later idle sample/app switch must not erase an observed call
+                // preceding it; equally, a later call must not revive earlier idle.
                 kind = .idle
+            } else if previous.url?.host != nil,
+                      !ForegroundActivityEvidence.supportsWebsiteAttribution(previous) {
+                // A browser-process wake assertion cannot classify the content
+                // of an unproven tab as productive or unproductive.
+                kind = .unclassified
             } else if let classification = previous.classification, classification.confidence >= 0.5 {
                 kind = classification.isWork.map { $0 ? .work : .other } ?? .unclassified
             } else {

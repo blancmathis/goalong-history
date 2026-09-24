@@ -103,6 +103,8 @@ if grep -R -nE "$SHELL_EXECUTION_FORBIDDEN" "${CODE_ROOTS[@]}"; then
   failed=true
 fi
 
+# Match the Swift Process constructor, not public read-only APIs whose names end
+# in ByProcess (for example IOPMCopyAssertionsByProcess). No new launcher exception.
 # Process execution is isolated to one reviewed bridge. It may launch only the exact
 # Codex executable discovered from reviewed locations, with the fixed `app-server`
 # argument. No shell, arbitrary command, or user-provided argument vector is allowed.
@@ -112,7 +114,7 @@ while IFS= read -r match; do
     echo "Unexpected Process API outside the fixed Codex and self-relaunch boundaries: $match" >&2
     failed=true
   fi
-done < <(grep -R -nE 'Process\(' "${CODE_ROOTS[@]}" || true)
+done < <(grep -R -nE '(^|[^[:alnum:]_])Process[[:space:]]*\(' "${CODE_ROOTS[@]}" || true)
 
 if [[ -f "$CODEX_BRIDGE" ]]; then
   if ! grep -Fq 'process.executableURL = executableURL' "$CODEX_BRIDGE" \
