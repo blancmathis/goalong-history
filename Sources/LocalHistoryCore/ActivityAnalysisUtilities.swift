@@ -99,6 +99,8 @@ extension HistoryEvent {
 
 extension ActivityAnalysisEngine {
     static func isUseful(_ event: HistoryEvent) -> Bool {
+        if ForegroundUsageObservation.usesPresencePolicy(event),
+           !ForegroundActivityEvidence.isActiveUsageEvidence(event) { return false }
         if semanticText(from: event) != nil { return true }
         switch event.kind {
         case .applicationActivated, .windowChanged, .urlChanged, .mouseClick,

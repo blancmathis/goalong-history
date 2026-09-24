@@ -3,7 +3,7 @@ import Foundation
 /// A read-only projection of foreground observations, not a productivity or attention score.
 /// Every elapsed second belongs to one state; missing evidence is never inferred as rest.
 public enum GoalongLocalAnalytics {
-    public static let method = "local-observed-rhythm-v2"
+    public static let method = "local-observed-rhythm-v3"
     public static let maximumGap: TimeInterval = 120
     public static let idleThreshold = ForegroundActivityEvidence.inputIdleThreshold
 
@@ -145,12 +145,13 @@ public enum GoalongLocalAnalytics {
                     ? a.offset < b.offset : a.element.timestamp < b.element.timestamp
             }.map(\.element)
         var segments: [Segment] = []
-        func append(_ a: Date, _ b: Date, _ kind: Kind, _ event: HistoryEvent? = nil) {
+        func append(_ a: Date, _ b: Date, _ kind: Kind, _ event: HistoryEvent? = nil,
+                    websiteAllowed: Bool = true) {
             guard b > a else { return }
             let active = kind.isActive
             let application = active ? event?.app?.name : nil
             let bundle = active ? event?.app?.bundleIdentifier : nil
-            let host = active && event.map(ForegroundActivityEvidence.supportsWebsiteAttribution) == true
+            let host = active && websiteAllowed && event.map(ForegroundActivityEvidence.supportsWebsiteAttribution) == true
                 ? event?.url?.host : nil
             if let last = segments.last, last.end == a, last.kind == kind,
                last.application == application, last.bundleIdentifier == bundle, last.host == host {
@@ -186,6 +187,33 @@ public enum GoalongLocalAnalytics {
                 }
             } else if previous.isObservationContinuityBoundary || previous.app?.name.isEmpty != false {
                 kind = .unobserved
+            } else if ForegroundUsageObservation.usesPresencePolicy(previous) {
+                let seconds = ForegroundUsageObservation.activeDuration(after: previous,
+                    until: next.timestamp, nextEvent: next)
+                let activeEnd = previous.timestamp.addingTimeInterval(seconds)
+                let activeKind: Kind
+                if previous.url?.host != nil && !ForegroundActivityEvidence.supportsWebsiteAttribution(previous) {
+                    activeKind = .unclassified
+                } else if let classification = previous.classification, classification.confidence >= 0.5 {
+                    activeKind = classification.isWork.map { $0 ? .work : .other } ?? .unclassified
+                } else {
+                    activeKind = .unclassified
+                }
+                if seconds > 0, let version = previous.classification?.classifierVersion { versions.insert(version) }
+                let siteSeconds = ForegroundUsageObservation.websiteDuration(after: previous,
+                    until: next.timestamp, nextEvent: next)
+                if previous.url?.host != nil && siteSeconds < seconds {
+                    let siteEnd = previous.timestamp.addingTimeInterval(siteSeconds)
+                    append(previous.timestamp, siteEnd, activeKind, previous)
+                    append(siteEnd, activeEnd, .unclassified, previous, websiteAllowed: false)
+                } else {
+                    append(previous.timestamp, activeEnd, activeKind, previous)
+                }
+                // Split at the exact reading expiry. A later idle observation
+                // never erases a preceding minute of reading or revives absence.
+                append(activeEnd, next.timestamp,
+                    ForegroundUsageObservation.hasVisibleForeground(previous) ? .idle : .unobserved)
+                continue
             } else if ForegroundActivityEvidence.isInputIdle(previous)
                 || (ForegroundActivityEvidence.isInputIdle(next)
                     && ForegroundActivityEvidence.evidence(in: previous) == nil) {

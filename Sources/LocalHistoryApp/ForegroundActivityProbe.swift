@@ -30,9 +30,33 @@ final class ForegroundActivityProbe {
     private var cachedLabelsEnabled = false
     private var nextProbe: TimeInterval = 0
     private var cachedEvidence: ForegroundActivityEvidence?
+    private var visiblePID: pid_t = 0
+    private var visibleUntil: TimeInterval = 0
+    private var cachedVisible = false
+
+    func observe(_ context: ContextSnapshot, labelsEnabled: Bool, idleSeconds: TimeInterval,
+                 idleLimitSeconds: Int, at date: Date) -> ForegroundUsageObservation {
+        let evidence = sample(context, labelsEnabled: labelsEnabled)
+        var visible = false
+        if !IsSecureEventInputEnabled(), !GoalongGlobalPause.isPaused(),
+           let front = NSWorkspace.shared.frontmostApplication,
+           Self.isEligibleForeground(context, frontmostPID: front.processIdentifier, isHidden: front.isHidden) {
+            let now = ProcessInfo.processInfo.systemUptime
+            if visiblePID != front.processIdentifier || now >= visibleUntil {
+                visiblePID = front.processIdentifier
+                cachedVisible = Self.hasVisibleWindow(pid: front.processIdentifier)
+                visibleUntil = now + 1
+            }
+            visible = cachedVisible
+        }
+        return ForegroundUsageObservation(observedAt: date, idleSeconds: idleSeconds,
+            idleLimitSeconds: idleLimitSeconds, isForegroundVisible: visible,
+            evidence: visible ? evidence : nil)
+    }
 
     func reset() {
         cachedContext = nil; cachedEvidence = nil; nextProbe = 0
+        visiblePID = 0; visibleUntil = 0; cachedVisible = false
     }
 
     func sample(_ context: ContextSnapshot, labelsEnabled: Bool) -> ForegroundActivityEvidence? {

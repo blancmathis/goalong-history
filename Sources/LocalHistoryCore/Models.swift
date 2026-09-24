@@ -265,6 +265,7 @@ public struct ContextSnapshot: Equatable {
     public let suppressionReason: SuppressionReason?
     public let privacyRevision: String?
     public let globalPauseRevision: String?
+    public let foregroundUsage: ForegroundUsageObservation?
 
     public init(
         app: AppSnapshot,
@@ -273,7 +274,8 @@ public struct ContextSnapshot: Equatable {
         url: URLSnapshot?,
         suppressionReason: SuppressionReason?,
         privacyRevision: String? = nil,
-        globalPauseRevision: String? = nil
+        globalPauseRevision: String? = nil,
+        foregroundUsage: ForegroundUsageObservation? = nil
     ) {
         self.app = app
         self.window = window
@@ -282,6 +284,20 @@ public struct ContextSnapshot: Equatable {
         self.suppressionReason = suppressionReason
         self.privacyRevision = privacyRevision
         self.globalPauseRevision = globalPauseRevision
+        self.foregroundUsage = foregroundUsage
+    }
+
+    /// Presence changes do not constitute a new page, text or focused control.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.app == rhs.app && lhs.window == rhs.window && lhs.focusedElement == rhs.focusedElement
+            && lhs.url == rhs.url && lhs.suppressionReason == rhs.suppressionReason
+            && lhs.privacyRevision == rhs.privacyRevision && lhs.globalPauseRevision == rhs.globalPauseRevision
+    }
+
+    public func withForegroundUsage(_ observation: ForegroundUsageObservation) -> Self {
+        Self(app: app, window: window, focusedElement: focusedElement, url: url,
+             suppressionReason: suppressionReason, privacyRevision: privacyRevision,
+             globalPauseRevision: globalPauseRevision, foregroundUsage: observation)
     }
 
     public var fingerprint: String {

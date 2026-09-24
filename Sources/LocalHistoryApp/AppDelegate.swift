@@ -96,6 +96,7 @@
         private var lastPermissionStatus: PermissionStatus?
         private var lastRecordedHealthState: CaptureHealthState?
         private var workspaceObservers: [NSObjectProtocol] = []
+        private var screenLockObservers: [NSObjectProtocol] = []
         private var capabilityConsentObserver: NSObjectProtocol?
         private var globalPauseObserver: NSObjectProtocol?
         private var resumingGlobalPause = false
@@ -401,6 +402,8 @@
                 center.removeObserver(observer)
             }
             workspaceObservers.removeAll()
+            for observer in screenLockObservers { DistributedNotificationCenter.default().removeObserver(observer) }
+            screenLockObservers.removeAll()
         }
 
         func applicationShouldHandleReopen(
@@ -1051,6 +1054,24 @@
 
         private func installWorkspaceObservers() {
             let center = NSWorkspace.shared.notificationCenter
+            // Session switching is not screen locking. Keep an independent gate
+            // and still re-check WindowServer before each foreground observation.
+            let distributed = DistributedNotificationCenter.default()
+            for (name, unlocked) in [("com.apple.screenIsLocked", false), ("com.apple.screenIsUnlocked", true)] {
+                screenLockObservers.append(distributed.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] _ in
+                    guard let self else { return }
+                    if self.captureState.setScreenUnlocked(unlocked) {
+                        self.recorder.record(kind: unlocked ? .sessionUnlocked : .sessionLocked,
+                            message: unlocked ? "Screen unlocked" : "Screen locked")
+                        self.contextMonitor.invalidatePresence()
+                        self.recorder.flush()
+                        if unlocked {
+                            self.contextMonitor.resetAndSample()
+                            self.checkPermissionsAndStartTap(forceRefresh: true)
+                        }
+                    }
+                })
+            }
 
             workspaceObservers.append(
                 center.addObserver(
@@ -1071,6 +1092,7 @@
                     guard let self else { return }
                     self.recorder.record(kind: .sessionLocked, message: "macOS user session became inactive")
                     self.captureState.setUserSessionActive(false)
+                    self.contextMonitor.invalidatePresence()
                     self.recorder.flush()
                     self.menuBarController.updateStatus()
                 }
@@ -1100,6 +1122,7 @@
                     guard let self else { return }
                     self.recorder.record(kind: .systemSleep, message: "Mac is going to sleep")
                     self.captureState.setSystemAwake(false)
+                    self.contextMonitor.invalidatePresence()
                     self.recorder.flush()
                 }
             )
@@ -1126,8 +1149,9 @@
                     queue: .main
                 ) { [weak self] _ in
                     guard let self else { return }
-                    if self.captureState.setSystemAwake(false) {
+                    if self.captureState.setDisplaysAwake(false) {
                         self.recorder.record(kind: .systemSleep, message: "Displays went to sleep")
+                        self.contextMonitor.invalidatePresence()
                         self.recorder.flush()
                     }
                 }
@@ -1140,7 +1164,7 @@
                     queue: .main
                 ) { [weak self] _ in
                     guard let self else { return }
-                    if self.captureState.setSystemAwake(true) {
+                    if self.captureState.setDisplaysAwake(true) {
                         self.recorder.record(kind: .systemWake, message: "Displays woke")
                         self.contextMonitor.resetAndSample()
                         self.checkPermissionsAndStartTap(forceRefresh: true)

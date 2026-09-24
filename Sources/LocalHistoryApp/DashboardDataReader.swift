@@ -491,19 +491,29 @@
             var liveAnchoredMinuteKeys = Set<Int64>()
             var softwareAttributedEvents = 0
             do {
-                for event in events {
+                for (index, event) in events.enumerated() {
                     let minute = Self.minuteKey(event.timestamp)
-                    if Self.isActivityEvent(event) {
-                        if !activeMinuteKeys.contains(minute) {
+                    let usageMinutes: [Int64]
+                    if ForegroundUsageObservation.usesPresencePolicy(event) {
+                        let next = index + 1 < events.count ? events[index + 1] : nil
+                        let seconds = ForegroundUsageObservation.activeDuration(after: event,
+                            until: next?.timestamp ?? event.timestamp, nextEvent: next, isTail: next == nil)
+                        let stop = event.timestamp.addingTimeInterval(seconds)
+                        let lastMinute = Int64(ceil(stop.timeIntervalSince1970 / 60)) - 1
+                        usageMinutes = seconds > 0 && lastMinute >= minute ? Array(minute...lastMinute) : []
+                    } else {
+                        usageMinutes = Self.isActivityEvent(event) ? [minute] : []
+                    }
+                    for activeMinute in usageMinutes {
+                        if !activeMinuteKeys.contains(activeMinute) {
                             try derivedBudget.reserve(16)
-                            activeMinuteKeys.insert(minute)
+                            activeMinuteKeys.insert(activeMinute)
                         }
                         if event.classification?.isWork == true,
                             (event.url == nil || ForegroundActivityEvidence.supportsWebsiteAttribution(event)),
-                            !workMinuteKeys.contains(minute)
-                        {
+                            !workMinuteKeys.contains(activeMinute) {
                             try derivedBudget.reserve(16)
-                            workMinuteKeys.insert(minute)
+                            workMinuteKeys.insert(activeMinute)
                         }
                     }
                     if event.suppressionReason != nil,
@@ -2108,7 +2118,9 @@
                     if Calendar.current.isDateInToday(day) { return min(Date(), dayEnd) }
                     return min(event.timestamp.addingTimeInterval(60), dayEnd)
                 }()
-                let observedSeconds = min(75, max(0, nextTimestamp.timeIntervalSince(event.timestamp)))
+                let next = index + 1 < ordered.count ? ordered[index + 1] : nil
+                let observedSeconds = ForegroundUsageObservation.activeDuration(after: event,
+                    until: min(nextTimestamp, dayEnd), nextEvent: next, isTail: next == nil)
                 let isInput = event.pointer != nil || event.keyboard != nil || event.scroll != nil
                 let minute = Self.minuteKey(event.timestamp)
                 let category = event.classification?.category
@@ -2476,7 +2488,9 @@
         ) -> HistoryEvent? {
             guard event.shouldRetain else { return nil }
             let compactMetadata = event.metadata?.filter {
-                $0.key == "idle_seconds"
+                $0.key == "idle_seconds" || $0.key == "observation_gap"
+                    || $0.key == "accessibility" || $0.key == "input_monitoring"
+                    || ForegroundUsageObservation.metadataKeys.contains($0.key)
                     || ($0.key == ForegroundActivityEvidence.metadataKey
                         && ForegroundActivityEvidence(rawValue: $0.value) != nil)
             }
@@ -2545,6 +2559,9 @@
         }
 
         private static func isActivityEvent(_ event: HistoryEvent) -> Bool {
+            if ForegroundUsageObservation.usesPresencePolicy(event) {
+                return ForegroundActivityEvidence.isActiveUsageEvidence(event)
+            }
             if ForegroundActivityEvidence.evidence(in: event) != nil { return true }
             switch event.kind {
             case .applicationActivated, .windowChanged, .urlChanged, .mouseClick,

@@ -179,6 +179,9 @@ struct DailyWebsiteUsageEventProjection: Decodable {
     private struct MetadataProjection: Decodable {
         let idleSeconds: String?
         let foregroundEvidence: String?
+        let presencePolicy: String?
+        let idleLimit: String?
+        let foregroundVisible: String?
         let accessibility: String?
         let inputMonitoring: String?
         let observationGap: String?
@@ -186,6 +189,9 @@ struct DailyWebsiteUsageEventProjection: Decodable {
         private enum CodingKeys: String, CodingKey {
             case idleSeconds = "idle_seconds"
             case foregroundEvidence = "activity.foreground_evidence"
+            case presencePolicy = "activity.presence_policy"
+            case idleLimit = "activity.idle_limit_seconds"
+            case foregroundVisible = "activity.foreground_visible"
             case accessibility
             case inputMonitoring = "input_monitoring"
             case observationGap = "observation_gap"
@@ -194,6 +200,9 @@ struct DailyWebsiteUsageEventProjection: Decodable {
         var compactDictionary: [String: String]? {
             var values: [String: String] = [:]
             if let idleSeconds { values["idle_seconds"] = idleSeconds }
+            if let presencePolicy { values[ForegroundUsageObservation.policyKey] = presencePolicy }
+            if let idleLimit { values[ForegroundUsageObservation.idleLimitKey] = idleLimit }
+            if let foregroundVisible { values[ForegroundUsageObservation.visibleKey] = foregroundVisible }
             if let foregroundEvidence, ForegroundActivityEvidence(rawValue: foregroundEvidence) != nil {
                 values[ForegroundActivityEvidence.metadataKey] = foregroundEvidence
             }
@@ -376,11 +385,22 @@ public struct DailyWebsiteUsageAccumulator {
             wasTruncated = true
             return
         }
+        if (ForegroundUsageObservation.usesPresencePolicy(event)
+            || pendingEvent.map(ForegroundUsageObservation.usesPresencePolicy) == true),
+           !event.isDerivedAnalysisEvidence {
+            sourceEventCount += 1
+            return // Bookkeeping is not an app switch or an observation gap.
+        }
         if let pendingEvent {
             // File sequence is authoritative. Rare recorder clock jitter must
             // not reject an otherwise complete day, so a backwards timestamp
             // contributes a zero-length boundary instead of negative time.
-            attribute(pendingEvent, until: max(pendingEvent.timestamp, event.timestamp))
+            if event.timestamp < pendingEvent.timestamp,
+               ForegroundUsageObservation.usesPresencePolicy(pendingEvent) {
+                sourceEventCount += 1
+                return // Never double count by moving the cursor backwards.
+            }
+            attribute(pendingEvent, until: max(pendingEvent.timestamp, event.timestamp), nextEvent: event)
         }
         pendingEvent = event
         sourceEventCount += 1
@@ -392,7 +412,7 @@ public struct DailyWebsiteUsageAccumulator {
             let tailEnd = isCurrentDay
                 ? min(currentTime, dayEnd)
                 : min(pendingEvent.timestamp.addingTimeInterval(60), dayEnd)
-            attribute(pendingEvent, until: tailEnd)
+            attribute(pendingEvent, until: tailEnd, isTail: true)
         }
         pendingEvent = nil
         isFinished = true
@@ -479,7 +499,8 @@ public struct DailyWebsiteUsageAccumulator {
         return value
     }
 
-    private mutating func attribute(_ event: HistoryEvent, until nextTimestamp: Date) {
+    private mutating func attribute(_ event: HistoryEvent, until nextTimestamp: Date,
+                                    nextEvent: HistoryEvent? = nil, isTail: Bool = false) {
         guard event.kind != .agentArtifactCaptured,
             event.suppressionReason == nil,
             let app = event.app,
@@ -499,10 +520,8 @@ public struct DailyWebsiteUsageAccumulator {
             }
         }
 
-        let observedSeconds = min(
-            75,
-            max(0, min(nextTimestamp, dayEnd).timeIntervalSince(event.timestamp))
-        )
+        let observedSeconds = ForegroundUsageObservation.websiteDuration(after: event,
+            until: min(nextTimestamp, dayEnd), nextEvent: nextEvent, isTail: isTail)
         var counter = counters[host] ?? Counter()
         counter.foregroundSeconds += observedSeconds
         counter.eventCount += 1

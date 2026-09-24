@@ -4,6 +4,12 @@ public struct RecorderConfig: Codable, Equatable {
     public var retentionDays: Int
     public var pollIntervalMilliseconds: Int
     public var heartbeatSeconds: Int
+    /// Reading tolerance; nil migrates existing installations to five minutes.
+    /// Zero explicitly counts a visible foreground while the screen stays awake.
+    public var foregroundIdleSeconds: Int? = nil
+    public var effectiveForegroundIdleSeconds: Int {
+        ForegroundUsageObservation.normalizedIdleLimit(foregroundIdleSeconds)
+    }
 
     public var captureClicks: Bool
     public var captureScroll: Bool
@@ -223,6 +229,7 @@ public struct RecorderConfig: Codable, Equatable {
             : min(output.retentionDays, 3_650)
         output.pollIntervalMilliseconds = min(max(output.pollIntervalMilliseconds, 250), 60_000)
         output.heartbeatSeconds = min(max(output.heartbeatSeconds, 10), 3_600)
+        output.foregroundIdleSeconds = effectiveForegroundIdleSeconds
         output.maxStringLength = min(max(output.maxStringLength, 64), 8_192)
         if let raw = output.verificationServerURL?.trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty,

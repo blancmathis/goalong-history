@@ -90,6 +90,31 @@ import AppKit
                     get: { consents.isEnabled(.launchAtLogin) }, set: { saveStartup($0) }))
                     .toggleStyle(.switch)
             }
+            GoalongSettingsGroup(title: "Suivi du temps d’écran") {
+                Text("Lire, réfléchir ou regarder sans cliquer compte aussi. Seule la fenêtre au premier plan est suivie ; les apps en arrière-plan ne s’ajoutent pas au total.")
+                    .font(.callout).foregroundStyle(.secondary)
+                Picker("Sans interaction, continuer à compter", selection: recording.foregroundIdleSeconds) {
+                    Text("2 minutes").tag(120)
+                    Text("5 minutes · recommandé").tag(300)
+                    Text("10 minutes").tag(600)
+                    Text("15 minutes").tag(900)
+                    Text("30 minutes").tag(1_800)
+                    Text("Tant que l’écran reste allumé").tag(0)
+                    if ![0, 120, 300, 600, 900, 1_800].contains(model.appliedSettings.foregroundIdleSeconds) {
+                        Text("\(model.appliedSettings.foregroundIdleSeconds) secondes · personnalisé")
+                            .tag(model.appliedSettings.foregroundIdleSeconds)
+                    }
+                }.accessibilityIdentifier("settings-foreground-idle-limit")
+                Text("Les appels et lectures vidéo détectés au premier plan continuent au-delà de ce délai. Le verrouillage, la veille et l’arrêt de confidentialité interrompent toujours le suivi.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                if model.appliedSettings.foregroundIdleSeconds == 0 {
+                    Label("Ce mode peut compter votre absence si vous laissez une fenêtre visible et le Mac déverrouillé.", systemImage: "exclamationmark.triangle")
+                        .font(.callout).foregroundStyle(.secondary)
+                } else {
+                    Text("Le délai repart après une interaction. Pour une longue lecture immobile, augmentez-le. Une fenêtre ouverte ne permet pas de savoir avec certitude si vous êtes encore devant l’écran.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
             GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording) }
             VisibleContextControl()
             DisclosureGroup("Confidentialité avancée") {
@@ -220,7 +245,7 @@ enum SettingsPane: Hashable {
     }
     var keywords: String {
         switch self {
-        case .recording: return "arrêter pause clavier clic souris texte activité sources démarrage"
+        case .recording: return "arrêter pause clavier clic souris texte activité sources démarrage temps écran lecture vidéo réunion zoom inactivité présence"
         case .applications: return "ignorer exclure exclusions masquer application navigateur domaine"
         case .connections: return "connexions"
         case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"

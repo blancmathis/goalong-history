@@ -7,9 +7,16 @@
         private var manualPaused = false
         private var userSessionActive = true
         private var systemAwake = true
+        private var displaysAwake = true
+        private var screenUnlocked = true
+        private let isGloballyPaused: () -> Bool
+
+        init(isGloballyPaused: @escaping () -> Bool = { GoalongGlobalPause.isPaused() }) {
+            self.isGloballyPaused = isGloballyPaused
+        }
 
         var isCapturing: Bool {
-            !GoalongGlobalPause.isPaused() && lock.withLock { !manualPaused && userSessionActive && systemAwake }
+            !isGloballyPaused() && lock.withLock { !manualPaused && userSessionActive && systemAwake && displaysAwake && screenUnlocked }
         }
 
         var isManuallyPaused: Bool {
@@ -30,6 +37,24 @@
             lock.withLock {
                 let changed = userSessionActive != active
                 userSessionActive = active
+                return changed
+            }
+        }
+
+        @discardableResult
+        func setDisplaysAwake(_ awake: Bool) -> Bool {
+            lock.withLock {
+                let changed = displaysAwake != awake
+                displaysAwake = awake
+                return changed
+            }
+        }
+
+        @discardableResult
+        func setScreenUnlocked(_ unlocked: Bool) -> Bool {
+            lock.withLock {
+                let changed = screenUnlocked != unlocked
+                screenUnlocked = unlocked
                 return changed
             }
         }

@@ -1642,7 +1642,7 @@ public struct HistoryLocalStoreReader {
                     metadata: event.metadata?["observation_gap"].map { ["observation_gap": $0] }, integrity: event.integrity)
             case .localAnalytics:
                 guard event.isDerivedAnalysisEvidence else { return nil }
-                let keys: Set<String> = ["idle_seconds", "observation_gap", "accessibility", "input_monitoring", ForegroundActivityEvidence.metadataKey]
+                let keys: Set<String> = Set(["idle_seconds", "observation_gap", "accessibility", "input_monitoring", ForegroundActivityEvidence.metadataKey]).union(ForegroundUsageObservation.metadataKeys)
                 let host = event.url?.host
                 return HistoryEvent(schemaVersion: event.schemaVersion, id: event.id, sessionID: "",
                     timestamp: event.timestamp, kind: event.kind, app: event.app,
