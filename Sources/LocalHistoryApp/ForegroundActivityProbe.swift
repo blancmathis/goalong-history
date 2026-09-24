@@ -6,6 +6,21 @@ import Foundation
 import IOKit.pwr_mgt
 import LocalHistoryCore
 
+/// The SDK specifies kCGAnyInputEventType (all UInt32 bits set), not the
+/// distinct null event. The C macro is not imported by Swift, so bridge its
+/// documented raw value. Used by recording and semantic sampling alike.
+enum UserInputActivityClock {
+    static let anyInputEventType = CGEventType(rawValue: UInt32.max)!
+
+    static func secondsSinceLastInput(
+        reader: (CGEventSourceStateID, CGEventType) -> TimeInterval = {
+            CGEventSource.secondsSinceLastEventType($0, eventType: $1)
+        }
+    ) -> TimeInterval {
+        reader(.combinedSessionState, anyInputEventType)
+    }
+}
+
 /// Local, content-free OS evidence plus optional, bounded focused-window control
 /// checks. Never captures audio/video, requests a new permission, launches a shell,
 /// or uses global audio/CPU activity as evidence that the foreground app is in use.

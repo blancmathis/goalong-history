@@ -353,10 +353,7 @@
         }
 
         private func idleSeconds() -> Double {
-            CGEventSource.secondsSinceLastEventType(
-                .combinedSessionState,
-                eventType: .null
-            )
+            UserInputActivityClock.secondsSinceLastInput()
         }
     }
 #endif

@@ -4,6 +4,13 @@ Le temps local ne dépend plus exclusivement du délai depuis le dernier clavier
 ou mouvement de souris. Il n’est pas une preuve d’attention ou de productivité.
 Apple Screen Time reste une source distincte, non modifiée par ce mécanisme.
 
+## Mesure de la saisie
+
+Le compteur d’inactivité et la cadence du contexte riche utilisent désormais le
+sélecteur SDK `kCGAnyInputEventType` (valeur UInt32.max), commun au clavier, souris
+et tablette, au lieu de l’événement distinct `null`. Le test du lecteur injecté
+vérifie explicitement le type demandé sans poster de faux événements d’entrée.
+
 ## Signaux et périmètre
 
 `ForegroundActivityProbe` ne considère que l’application réellement au premier

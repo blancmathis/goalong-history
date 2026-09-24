@@ -374,10 +374,7 @@
             let timer = Timer(
                 timeInterval: Self.nextRichContextInterval(
                     configuredInterval: ActivityAnalysisPreferences.richContextIntervalSeconds,
-                    idleSeconds: CGEventSource.secondsSinceLastEventType(
-                        .combinedSessionState,
-                        eventType: .null
-                    )
+                    idleSeconds: UserInputActivityClock.secondsSinceLastInput()
                 ),
                 repeats: false
             ) { [weak self] _ in

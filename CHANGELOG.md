@@ -2,6 +2,8 @@
 
 ## 0.6.44 — appels et lectures au premier plan
 
+- Délai d’inactivité lu sur tous les événements d’entrée macOS, plutôt que sur l’événement null.
+
 - Les appels, vidéos et présentations observés au premier plan restent comptés sans frappe ni mouvement de souris.
 - Signaux locaux liés au processus visible, sans comptabiliser les applications simplement ouvertes en arrière-plan.
 - Calcul harmonisé entre Activité, statistiques locales, sites et observations utiles aux analyses.

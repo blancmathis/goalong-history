@@ -6,6 +6,19 @@ import XCTest
 @testable import LocalHistoryApp
 
 final class ForegroundActivityProbeTests: XCTestCase {
+    func testIdleClockRequestsKeyboardMouseAndTabletNotTheNullEvent() {
+        var observedState: CGEventSourceStateID?
+        var observedType: CGEventType?
+        let seconds = UserInputActivityClock.secondsSinceLastInput { state, type in
+            observedState = state; observedType = type
+            return 17.5
+        }
+        XCTAssertEqual(seconds, 17.5)
+        XCTAssertEqual(observedState, .combinedSessionState)
+        XCTAssertEqual(observedType?.rawValue, UInt32.max)
+        XCTAssertNotEqual(observedType, .null)
+    }
+
     func testOSEvidenceEligibilityDoesNotRequireControlOrTitlePermission() {
         func context(_ suppression: SuppressionReason? = nil) -> ContextSnapshot {
             .init(app: .init(name: "Zoom", bundleIdentifier: "us.zoom.xos", processIdentifier: 42),
