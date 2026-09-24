@@ -32,7 +32,7 @@ struct GoalongScreenTimeSourcePresentation {
         case .privateAppleAggregateStore:
             return "Données issues de l’agrégat Apple local. Le périmètre des appareils et l’heure de mise à jour peuvent différer des Réglages Apple."
         case .reconstructedAppleUsage:
-            return "macOS ne rend pas le total complet accessible à Goalong. Les durées ci-dessous sont reconstituées à partir des données Apple lisibles, pas le total officiel des Réglages. Les données manquantes restent inconnues, pas à zéro."
+            return "macOS ne rend pas le total complet accessible à Goalong. Les durées ci-dessous sont reconstituées à partir des données Apple lisibles, pas le total officiel des Réglages, et peuvent différer de celui-ci. Les données manquantes restent inconnues, pas à zéro."
         }
     }
 }
