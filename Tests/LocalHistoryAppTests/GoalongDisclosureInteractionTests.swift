@@ -30,7 +30,6 @@ private struct DisclosureInteractionFixture: View {
         }
         .padding(20).frame(width: 600, height: 500, alignment: .topLeading)
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
-        .environment(\.accessibilityReduceMotion, true)
     }
 }
 
@@ -92,19 +91,47 @@ final class GoalongDisclosureInteractionTests: XCTestCase {
         }
     }
 
+    // Same selector-based access as the existing native journey tests: SwiftUI
+    // accessibility proxy objects do not always advertise protocol conformance.
+    private struct NativeAccessibilityNode {
+        let object: NSObject
+        func value(_ name: String) -> AnyObject? {
+            let selector = NSSelectorFromString(name)
+            guard object.responds(to: selector), let method = object.method(for: selector) else { return nil }
+            typealias Getter = @convention(c) (AnyObject, Selector) -> Unmanaged<AnyObject>?
+            return unsafeBitCast(method, to: Getter.self)(object, selector)?.takeUnretainedValue()
+        }
+        func accessibilityFrame() -> NSRect {
+            let selector = NSSelectorFromString("accessibilityFrame")
+            guard object.responds(to: selector), let method = object.method(for: selector) else { return .zero }
+            typealias Getter = @convention(c) (AnyObject, Selector) -> CGRect
+            return unsafeBitCast(method, to: Getter.self)(object, selector)
+        }
+        func accessibilityPerformPress() -> Bool {
+            let selector = NSSelectorFromString("accessibilityPerformPress")
+            guard object.responds(to: selector), let method = object.method(for: selector) else { return false }
+            typealias Press = @convention(c) (AnyObject, Selector) -> Bool
+            return unsafeBitCast(method, to: Press.self)(object, selector)
+        }
+    }
+
     @MainActor private func pump() {
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.35))
     }
 
-    @MainActor private func elements(_ object: Any) -> [NSAccessibility] {
-        guard let element = object as? NSAccessibility else { return [] }
-        return [element] + (element.accessibilityChildren() ?? []).flatMap { elements($0) }
-    }
-
-    @MainActor private func button(_ label: String, in view: NSView) throws -> NSAccessibility {
-        try XCTUnwrap(elements(view).first {
-            $0.accessibilityRole() == .button && $0.accessibilityLabel() == label
-        }, "Missing accessible button: \(label)")
+    @MainActor private func button(_ label: String, in view: NSView) throws -> NativeAccessibilityNode {
+        var pending: [Any] = [view], seen = Set<ObjectIdentifier>(), visited = 0
+        while let value = pending.popLast(), visited < 10_000 {
+            guard let object = value as? NSObject, seen.insert(ObjectIdentifier(object)).inserted else { continue }
+            visited += 1
+            let node = NativeAccessibilityNode(object: object)
+            if node.value("accessibilityRole") as? String == "AXButton",
+               node.value("accessibilityLabel") as? String == label { return node }
+            pending.append(contentsOf: node.value("accessibilityChildren") as? [Any] ?? [])
+            if let child = object as? NSView { pending.append(contentsOf: child.subviews) }
+        }
+        XCTFail("Missing accessible button: \(label); visited \(visited) native nodes")
+        throw NSError(domain: "GoalongDisclosureInteractionTests", code: 1)
     }
 
     @MainActor private func click(_ frame: NSRect, fraction: CGFloat, in window: NSWindow) throws {
