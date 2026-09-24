@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import CoreGraphics
+import Carbon
 import IOKit.pwr_mgt
 import Foundation
 import LocalHistoryCore
@@ -29,13 +30,16 @@ final class ForegroundPresenceRuntimeTests: XCTestCase {
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Goalong · test local de lecture"
         window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.contentView = NSTextField(labelWithString: "Fenêtre de test synthétique. Aucun clavier, caméra ou microphone utilisé.")
         defer {
             window.orderOut(nil)
             app.setActivationPolicy(oldPolicy)
             original?.activate(options: [.activateIgnoringOtherApps])
         }
+        window.center()
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
         app.activate(ignoringOtherApps: true)
         let deadline = Date().addingTimeInterval(3)
         while NSWorkspace.shared.frontmostApplication?.processIdentifier != getpid(), Date() < deadline {
@@ -47,6 +51,27 @@ final class ForegroundPresenceRuntimeTests: XCTestCase {
         let ctx = ContextSnapshot(app: .init(name: "Synthetic Reader", bundleIdentifier: "test.reader",
             processIdentifier: getpid()), window: nil, focusedElement: nil, url: nil, suppressionReason: nil)
         let probe = ForegroundActivityProbe()
+        // AppKit visibility and activation precede the WindowServer commit. A
+        // real foreground check must wait for that commit, including active Spaces.
+        window.displayIfNeeded()
+        let visibleDeadline = Date().addingTimeInterval(5)
+        var ready = false
+        repeat {
+            if let event = app.nextEvent(matching: .any, until: Date().addingTimeInterval(0.05), inMode: .default, dequeue: true) {
+                app.sendEvent(event)
+            }
+            app.updateWindows()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            probe.reset()
+            ready = probe.observe(ctx, labelsEnabled: false, idleSeconds: 180,
+                idleLimitSeconds: 300, at: Date()).isForegroundVisible
+        } while !ready && Date() < visibleDeadline
+        print("LIVE_GATES secure=\(IsSecureEventInputEnabled()) paused=\(GoalongGlobalPause.isPaused()) visible=\(ready)")
+        if !ready, let info = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(window.windowNumber)) as? [[String: Any]] {
+            for entry in info { print("LIVE_OWN_WINDOW", getpid(), window.windowNumber, "owner", entry[kCGWindowOwnerPID as String] ?? "missing", "onScreen", entry[kCGWindowIsOnscreen as String] ?? "missing", "layer", entry[kCGWindowLayer as String] ?? "missing", "alpha", entry[kCGWindowAlpha as String] ?? "missing") }
+        }
+        XCTAssertTrue(ready, "The test window must be committed on the active display before measuring it.")
+        probe.reset()
         let reading = probe.observe(ctx, labelsEnabled: false, idleSeconds: 180,
             idleLimitSeconds: 300, at: Date())
         XCTAssertTrue(reading.isForegroundVisible)
@@ -74,7 +99,9 @@ final class ForegroundPresenceRuntimeTests: XCTestCase {
             idleLimitSeconds: 0, at: Date())
         XCTAssertFalse(hidden.isForegroundVisible)
         XCTAssertFalse(hidden.isActive)
-        print("LIVE_FOREGROUND_VALIDATION reading-without-input, screen-on, own-process assertion and hidden-window stop passed")
+        if reading.isActive && screenOn.isActive && !hidden.isForegroundVisible {
+            print("LIVE_FOREGROUND_VALIDATION reading-without-input, screen-on and hidden-window checks completed")
+        }
     }
 
     func testRecorderPropagatesReadingPresenceWithoutCapturingLabelsOrTyping() {
