@@ -237,19 +237,15 @@
                     "case .screenTime:\n                model.refreshEverything()\n                screenTime.refresh()"
                 )
             )
-            XCTAssertGreaterThanOrEqual(
-                screenTime.components(separatedBy: "LazyVStack(spacing: 0)").count - 1,
-                2
-            )
-            XCTAssertTrue(screenTime.contains("Where your screen time went"))
-            XCTAssertTrue(screenTime.contains("Group sites by browser"))
-            XCTAssertTrue(screenTime.contains("Same usage and total; only the grouping changes."))
-            XCTAssertTrue(screenTime.contains("isOn: groupsSitesByBrowser"))
-            XCTAssertFalse(screenTime.contains("Picker(\"Screen Time breakdown\""))
+            XCTAssertTrue(screenTime.contains("LazyVStack(spacing: 0)"))
+            XCTAssertTrue(screenTime.contains("Usages reçus d’Apple"))
+            XCTAssertTrue(screenTime.contains("GoalongAppleUsageProjection.rows(screenTime.summary)"))
+            XCTAssertFalse(screenTime.contains("UsageBreakdownProjection.build"))
+            XCTAssertFalse(screenTime.contains("snapshot.trackedUsage"))
+            XCTAssertTrue(screenTime.contains("Type d’usage Apple"))
+            XCTAssertTrue(screenTime.contains("screen-time-show-all"))
+            XCTAssertTrue(screenTime.contains("screen-time-open-settings"))
             XCTAssertTrue(screenTime.contains("DisclosureGroup"))
-            XCTAssertTrue(screenTime.contains("Show \\(hiddenCount) more"))
-            XCTAssertFalse(screenTime.contains("Apps & website breakdown"))
-            XCTAssertFalse(screenTime.contains("Inside browser apps · This Mac only · never added"))
             XCTAssertFalse(screenTime.contains("with input"))
             XCTAssertFalse(overview.contains("with input"))
             XCTAssertTrue(overview.contains("Applications et sites"))

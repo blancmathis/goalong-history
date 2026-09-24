@@ -19,12 +19,16 @@ struct GoalongActivityUsageDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text(item.name).font(.system(size: 20, weight: .semibold)).textSelection(.enabled)
+                GoalongActivityUsageIcon(item: item, size: 42).accessibilityHidden(true)
+                Text(item.displayName).font(.system(size: 20, weight: .semibold)).textSelection(.enabled)
+                    .lineLimit(2).help(item.displayName)
                 Spacer()
                 Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction)
             }
             Text("\(GoalongAnalyticsFormatting.duration(item.seconds)) sur la période sélectionnée\(isPreview ? " · exemple fictif" : "")")
                 .font(.system(size: 14)).foregroundStyle(.secondary)
+            Text(String(format: "%.0f %% du temps actif observé", item.seconds / max(1, period.activeSeconds) * 100))
+                .font(.system(size: 12)).foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(visibleDays, id: \.date) { day in dayRow(day) }
@@ -32,7 +36,7 @@ struct GoalongActivityUsageDetail: View {
             }.frame(maxHeight: 460)
             Text("Observations sur ce Mac uniquement. Les sites ne sont pas ajoutés une seconde fois au navigateur.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
-        }.padding(24).frame(width: 540)
+        }.padding(24).frame(width: 540).frame(maxHeight: 620)
     }
 
     private func dayRow(_ day: GoalongLocalAnalytics.Day) -> some View {

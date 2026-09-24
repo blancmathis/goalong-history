@@ -212,6 +212,7 @@
                         Text(Self.initial(for: appName))
                             .font(.system(size: size * 0.45, weight: .bold, design: .rounded))
                             .foregroundStyle(LHTheme.accent)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         Image(systemName: "app.fill")
                             .font(.system(size: size * 0.22, weight: .semibold))
                             .foregroundStyle(LHTheme.accent)
@@ -225,7 +226,11 @@
             .clipShape(RoundedRectangle(cornerRadius: size * 0.23, style: .continuous))
         }
 
-        private static let cache = NSCache<NSString, NSImage>()
+        private static let cache: NSCache<NSString, NSImage> = {
+            let cache = NSCache<NSString, NSImage>()
+            cache.countLimit = 256
+            return cache
+        }()
 
         private static func icon(bundleIdentifier: String?) -> NSImage? {
             guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return nil }
@@ -251,7 +256,7 @@
         }
 
         private static func initial(for appName: String) -> String {
-            guard let first = appName.trimmingCharacters(in: .whitespacesAndNewlines).first else {
+            guard let first = GoalongActivityPresentation.displayName(appName).first else {
                 return "•"
             }
             return String(first).uppercased()

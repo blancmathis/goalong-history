@@ -16,9 +16,13 @@ struct GoalongActivityHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 16) {
-                Text(isPreview ? "Activité · aperçu" : "Activité")
-                    .font(.system(size: 24, weight: .semibold)).tracking(-0.5)
-                    .accessibilityAddTraits(.isHeader)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(isPreview ? "Activité · aperçu" : "Activité")
+                        .font(.system(size: 26, weight: .semibold)).tracking(-0.5)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(rangeLabel).font(.system(size: 13)).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("activity-date-range")
+                }
                 Spacer(minLength: 8)
                 Picker("Période", selection: Binding(get: { selection.period }, set: onPeriod)) {
                     Text("Jour").tag(1)
@@ -39,18 +43,11 @@ struct GoalongActivityHeader: View {
                     HStack { Spacer(); actions }
                 }
             }
-            HStack(spacing: 12) {
-                Text(rangeLabel).font(.system(size: 13, weight: .medium))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("activity-date-range")
-                Spacer(minLength: 0)
-                if let previous = selection.returnContext {
-                    Button(action: onReturn) {
-                        Label("Retour aux \(previous.period) jours", systemImage: "arrow.uturn.backward")
-                    }
-                    .buttonStyle(.borderless).font(.system(size: 12))
+            if let previous = selection.returnContext {
+                Button(action: onReturn) {
+                    Label("Retour aux \(previous.period) jours", systemImage: "arrow.uturn.backward")
+                }.buttonStyle(.borderless).font(.system(size: 12))
                     .accessibilityIdentifier("activity-return-period")
-                }
             }
         }
         .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 18)
@@ -67,6 +64,7 @@ struct GoalongActivityHeader: View {
                        selection: Binding(get: { selection.day }, set: onDay),
                        in: ...Date(), displayedComponents: .date)
                 .labelsHidden().datePickerStyle(.field).fixedSize()
+                .environment(\.locale, Locale(identifier: "fr_FR"))
                 .accessibilityIdentifier("activity-date-picker")
             Button { onStep(1) } label: {
                 Label(selection.period == 1 ? "Jour suivant" : "Période suivante", systemImage: "chevron.right")
@@ -77,7 +75,7 @@ struct GoalongActivityHeader: View {
                 .disabled(selection.period == 1 && Calendar.current.isDateInToday(selection.day))
                 .accessibilityIdentifier("activity-today")
         }
-        .controlSize(.small)
+        .controlSize(.regular)
     }
 
     private var actions: some View {
@@ -98,7 +96,7 @@ struct GoalongActivityHeader: View {
             .fixedSize().disabled(isPreview)
             .help("Le partage porte sur la journée sélectionnée et demande votre validation.")
         }
-        .controlSize(.small)
+        .controlSize(.regular)
     }
 
     private var rangeLabel: String {

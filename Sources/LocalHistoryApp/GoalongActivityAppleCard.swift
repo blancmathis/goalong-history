@@ -39,8 +39,12 @@ struct GoalongActivityAppleCard: View {
                     if screenTime.isBusy && consents.isEnabled(.appleScreenTime) {
                         ProgressView().controlSize(.small).accessibilityLabel("Lecture du Temps d’écran Apple")
                     } else if consents.isEnabled(.appleScreenTime), let value = summary {
-                        Text(OverviewUsageProjection.durationLabel(seconds: value.totalScreenOnDuration))
-                            .font(.system(size: 23, weight: .semibold)).monospacedDigit()
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(OverviewUsageProjection.durationLabel(seconds: value.totalScreenOnDuration))
+                                .font(.system(size: 23, weight: .semibold)).monospacedDigit()
+                            Text(GoalongScreenTimeSourcePresentation(provenance: value.provenance).durationTitle)
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
                     }
                     Button(consents.isEnabled(.appleScreenTime) ? "Ouvrir" : "Configurer") {
                         model.selectDay(day); model.selectSection(.screenTime)
@@ -55,8 +59,11 @@ struct GoalongActivityAppleCard: View {
                 } else if !screenTime.isBusy, let value = summary {
                     Text("Source Apple · \(value.deviceSummaries.count) appareil(s)")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
-                    GoalongScreenTimeSourceNotice(presentation: .init(provenance: value.provenance))
-                    Text("Non additionné au temps actif Goalong. Des usages simultanés entre appareils peuvent se chevaucher. Le temps de connexion et d’écran verrouillé est exclu de cette synthèse.")
+                    if GoalongScreenTimeSourcePresentation(provenance: value.provenance).isPartial {
+                        Label("Données partielles · ce n’est pas le total officiel des Réglages Apple.", systemImage: "info.circle")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                    }
+                    Text("Source indépendante, jamais additionnée au temps actif Goalong. Consultez le détail pour vérifier le périmètre et les limites.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else if !screenTime.isBusy {
                     Text("Pas de données Apple disponibles pour cette journée. Ce n’est pas un total à zéro.")

@@ -1,857 +1,352 @@
 #if os(macOS)
-    import AppleScreenTime
-    import SwiftUI
+import AppleScreenTime
+import SwiftUI
 
-    struct GoalongScreenTimePage: View {
-        @ObservedObject private var dashboard: DashboardViewModel
-        @StateObject private var screenTime: AppleScreenTimeDashboardModel
-        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
-        @State private var search = ""
-        @State private var accessRevoked = false
-        @State private var showsAllUsage = false
-        @State private var usageMode: UsageBreakdownMode = .websites
-        @State private var expandedBrowserIDs = Set<String>()
-        private let showsHeader: Bool
+struct GoalongScreenTimePage: View {
+    @ObservedObject private var dashboard: DashboardViewModel
+    @StateObject private var screenTime: AppleScreenTimeDashboardModel
+    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    @State private var search = ""
+    @State private var accessRevoked = false
+    @State private var showsAllUsage = false
+    @State private var filter: GoalongAppleUsageFilter = .applications
+    private let showsHeader: Bool
 
-        init(
-            model: DashboardViewModel,
-            screenTimeModel: AppleScreenTimeDashboardModel? = nil,
-            showsHeader: Bool = true
-        ) {
-            _dashboard = ObservedObject(wrappedValue: model)
-            self.showsHeader = showsHeader
-            _screenTime = StateObject(
-                wrappedValue: screenTimeModel
-                    ?? AppleScreenTimeDashboardModel(
-                        rootDirectory: AppPaths.screenTimeDirectory,
-                        deviceID: model.deviceID,
-                        selectedDay: model.selectedDay,
-                        accessEnabled: GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)
-                    )
-            )
-        }
-
-        var body: some View {
-            SourceAccessGate(capability: .appleScreenTime,
-                knownAccessIssue: accessRevoked ? .fullDiskAccess : nil) { pageBody }
-        }
-
-        private var pageBody: some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    if showsHeader {
-                        PageHeader(
-                            eyebrow: "Apple system data",
-                            title: "Apple Screen Time",
-                            subtitle:
-                                "See what you used first. Apple application totals stay separate from Goalong's locally observed website history."
-                        ) {
-                            HStack(spacing: 10) {
-                                DateSelectionControl(date: screenTime.selectedDay, onChange: selectDay)
-                                Button {
-                                    dashboard.refreshEverything()
-                                    screenTime.refresh()
-                                } label: {
-                                    Image(systemName: "arrow.clockwise")
-                                        .frame(width: 28, height: 28)
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(screenTime.isBusy)
-                            }
-                        }
-                    }
-
-                    if !consents.isEnabled(.appleScreenTime) || accessRevoked { screenTimeConsentCard }
-
-                    if consents.isEnabled(.appleScreenTime), !accessRevoked {
-                        statusBanner
-
-                        deviceScopeCard
-
-                        if let summary = screenTime.summary {
-                            LHCard(padding: 14) {
-                                GoalongScreenTimeSourceNotice(presentation: .init(provenance: summary.provenance))
-                            }
-                            dayOverview(summary)
-                        }
-
-                        usageCard
-                        deviceUsageCard
-                        DisclosureGroup("Sharing") { shareCard.padding(.top, 12) }
-                        DisclosureGroup("Source & privacy") {
-                            VStack(spacing: 16) {
-                                screenTimeConsentCard
-                                sourceCard
-                            }
-                            .padding(.top, 12)
-                        }
-                    }
-                }
-                .padding(.horizontal, LHTheme.pageInset)
-                .padding(.top, showsHeader ? 28 : 18)
-                .padding(.bottom, 48)
-            }
-            .background(LHTheme.pageBackground)
-            .onAppear {
-                accessRevoked = false
-                screenTime.setAccessEnabled(consents.isEnabled(.appleScreenTime))
-                screenTime.setActive(dashboard.dashboardIsVisible)
-                if screenTime.selectedDay != dashboard.selectedDay {
-                    screenTime.selectDay(dashboard.selectedDay)
-                }
-                dashboard.refreshEverything()
-            }
-            .onDisappear { screenTime.setActive(false) }
-            .onChange(of: screenTime.needsFullDiskAccess) { denied in
-                guard denied else { return }
-                stopForMissingAccess()
-            }
-            .onChange(of: consents.isEnabled(.appleScreenTime)) { enabled in
-                if enabled { accessRevoked = false }
-                screenTime.setAccessEnabled(consents.isEnabled(.appleScreenTime))
-            }
-            .onChange(of: dashboard.dashboardIsVisible) { screenTime.setActive($0) }
-            .onChange(of: dashboard.selectedDay) { day in
-                showsAllUsage = false
-                expandedBrowserIDs.removeAll()
-                if screenTime.selectedDay != day {
-                    screenTime.selectDay(day)
-                }
-            }
-            .alert(item: $screenTime.alert) { item in
-                Alert(
-                    title: Text(item.title),
-                    message: Text(item.message),
-                    dismissButton: .default(Text("OK"))
-                )
-            }
-        }
-
-        private func stopForMissingAccess() {
-            accessRevoked = true
-            let saved = consents.set(.appleScreenTime, enabled: false, surface: .settings)
-            screenTime.setAccessEnabled(false)
-            if !saved {
-                screenTime.alert = AppleScreenTimeDashboardAlert(
-                    title: "Screen Time access unavailable",
-                    message: "Reading has stopped, but the disabled setting could not be saved. Try turning the switch off again."
-                )
-            }
-        }
-
-        private var screenTimeConsentCard: some View {
-            LHCard {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: "macbook.and.iphone")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(LHTheme.accent)
-                        .frame(width: 42, height: 42)
-                        .background(
-                            LHTheme.accent.opacity(0.1),
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        )
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(consents.isEnabled(.appleScreenTime) ? "Apple Screen Time enabled" : "Apple Screen Time is off")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(
-                            accessRevoked
-                                ? "macOS refused access to Screen Time while it was loading. Turn this switch on to review the required access and try again."
-                                : "See app usage across your Apple devices. We will explain and verify the required access before enabling this source."
-                        )
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 14)
-                    SourceActivationToggle(capability: .appleScreenTime) { Text("appleScreenTime") }
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .accessibilityLabel("Read Apple Screen Time")
-                }
-            }
-        }
-
-        private var statusBanner: some View {
-            HStack(alignment: .top, spacing: 13) {
-                Image(systemName: statusSymbol)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(statusTint)
-                    .frame(width: 40, height: 40)
-                    .background(statusTint.opacity(0.10), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(screenTime.status.title)
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(screenTime.status.message)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 16)
-                if screenTime.isBusy { ProgressView().controlSize(.small) }
-
-                if screenTime.needsFullDiskAccess {
-                    Button("Open Full Disk Access") {
-                        screenTime.openFullDiskAccessSettings()
-                    }
-                    .buttonStyle(LHPrimaryButtonStyle())
-                } else if screenTime.status.kind == .localOnly || screenTime.status.kind == .noAppleData {
-                    Button("Screen Time settings") {
-                        screenTime.openScreenTimeSettings()
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-            .padding(14)
-            .background(statusTint.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(statusTint.opacity(0.14), lineWidth: 1)
-            )
-        }
-
-        private var usageCard: some View {
-            let breakdown = UsageBreakdownProjection.build(
-                summary: screenTime.summary,
-                trackedUsage: dashboard.snapshot.trackedUsage
-            )
-            let allItems = breakdown.items(for: usageMode)
-            let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let matchingItems = query.isEmpty
-                ? allItems
-                : allItems.filter { $0.searchableText.contains(query) }
-            let items = query.isEmpty
-                ? UsageBreakdownProjection.presentedItems(
-                    matchingItems,
-                    showsAll: showsAllUsage
-                )
-                : matchingItems
-            let hiddenCount = query.isEmpty ? max(0, allItems.count - items.count) : 0
-            let shownSeconds = items.reduce(0) { $0 + $1.seconds }
-            let hiddenSeconds = query.isEmpty
-                ? UsageBreakdownProjection.hiddenSeconds(
-                    totalSeconds: breakdown.totalSeconds,
-                    presentedItems: items
-                )
-                : 0
-
-            return LHCard(padding: 0) {
-                LazyVStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Where your screen time went")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text(
-                                    usageMode == .websites
-                                        ? "Apps and sites share one ranking. Browser rows stay hidden."
-                                        : "The same usage is grouped by browser. Expand a browser to see its sites."
-                                )
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer(minLength: 12)
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Toggle("Group sites by browser", isOn: groupsSitesByBrowser)
-                                    .toggleStyle(.switch)
-                                    .controlSize(.small)
-                                    .accessibilityHint(
-                                        "Changes only how the same usage is grouped. Off lists sites beside apps. On lists browsers that expand into sites."
-                                    )
-                                    .help(
-                                        "Show the same Screen Time grouped into expandable browser rows instead of individual website rows."
-                                    )
-
-                                Text("Same usage and total; only the grouping changes.")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(maxWidth: 300, alignment: .trailing)
-                            }
-                        }
-
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(.secondary)
-                            TextField("Search apps, websites, or browsers", text: $search)
-                                .textFieldStyle(.plain)
-                            if !search.isEmpty {
-                                Button {
-                                    search = ""
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Clear search")
-                            }
-                            Text("\(matchingItems.count) result\(matchingItems.count == 1 ? "" : "s")")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(height: 34)
-                        .background(
-                            Color.primary.opacity(0.04),
-                            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        )
-                    }
-                    .padding(14)
-
-                    Divider()
-
-                    screenTimeBreakdownRows(items, query: query, hasHiddenUsage: hiddenCount > 0)
-                        .padding(.horizontal, 16)
-
-                    if query.isEmpty, breakdown.totalSeconds > 0.5 {
-                        Divider()
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                if hiddenSeconds > 0.5 {
-                                    Text("Shown \(duration(shownSeconds))")
-                                    Text("·")
-                                    Text("More \(duration(hiddenSeconds))")
-                                    Text("·")
-                                    Text("Total \(duration(breakdown.totalSeconds))")
-                                        .fontWeight(.semibold)
-                                } else {
-                                    Text("All \(duration(breakdown.totalSeconds)) shown")
-                                        .fontWeight(.semibold)
-                                }
-                                Spacer()
-                                if hiddenCount > 0 || showsAllUsage {
-                                    Button {
-                                        showsAllUsage.toggle()
-                                    } label: {
-                                        Label(
-                                            showsAllUsage
-                                                ? "Show less"
-                                                : "Show \(hiddenCount) more · \(duration(hiddenSeconds))",
-                                            systemImage: showsAllUsage ? "chevron.up" : "chevron.down"
-                                        )
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .accessibilityValue(showsAllUsage ? "Expanded" : "Collapsed")
-                                }
-                            }
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-
-                            Text(
-                                "Apple total across the selected devices. Simultaneous use on different devices may overlap. Website details currently cover this Mac only."
-                            )
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(14)
-                    }
-                }
-            }
-        }
-
-        private var groupsSitesByBrowser: Binding<Bool> {
-            Binding(
-                get: { usageMode == .browsers },
-                set: { groups in
-                    usageMode = groups ? .browsers : .websites
-                    showsAllUsage = false
-                    expandedBrowserIDs.removeAll()
-                }
-            )
-        }
-
-        @ViewBuilder private func screenTimeBreakdownRows(
-            _ items: [UsageBreakdownItem],
-            query: String,
-            hasHiddenUsage: Bool
-        ) -> some View {
-            if items.isEmpty, screenTime.isBusy {
-                ProgressView("Reading Apple Screen Time…")
-                    .frame(maxWidth: .infinity, minHeight: 140)
-            } else if items.isEmpty {
-                EmptyStateView(
-                    symbol: query.isEmpty ? "clock" : "magnifyingglass",
-                    title: query.isEmpty ? "No active use for this day" : "No matching activity",
-                    message: query.isEmpty
-                        ? hasHiddenUsage
-                            ? "No activity reached five minutes. Show more to include shorter use."
-                            : screenTime.status.message
-                        : "No app, website, or browser matches this search."
-                )
-                .frame(minHeight: 140)
-            } else {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        if item.kind == .browser {
-                            DisclosureGroup(isExpanded: screenTimeBrowserBinding(item.id)) {
-                                screenTimeBreakdownChildren(item.children)
-                            } label: {
-                                screenTimeBreakdownLabel(item)
-                            }
-                            .padding(.vertical, 10)
-                        } else {
-                            screenTimeBreakdownLabel(item)
-                                .padding(.vertical, 10)
-                        }
-
-                        if index < items.count - 1 {
-                            Divider().padding(.leading, 50)
-                        }
-                    }
-                }
-            }
-        }
-
-        private func screenTimeBreakdownLabel(_ item: UsageBreakdownItem) -> some View {
-            HStack(spacing: 12) {
-                screenTimeBreakdownIcon(item)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                    Text(screenTimeBreakdownDetail(item))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Spacer()
-                Text(duration(item.seconds))
-                    .font(.system(size: 12, weight: .bold))
-                    .monospacedDigit()
-            }
-            .accessibilityElement(children: .combine)
-        }
-
-        @ViewBuilder private func screenTimeBreakdownIcon(
-            _ item: UsageBreakdownItem
-        ) -> some View {
-            switch item.kind {
-            case .application, .browser:
-                AppIconView(
-                    bundleIdentifier: item.bundleIdentifier,
-                    appName: item.name,
-                    size: 38
-                )
-            case .website:
-                WebsiteIconView(host: item.host ?? item.name, size: 38)
-            case .otherWeb, .otherActive:
-                Image(systemName: item.kind == .otherWeb ? "globe.desk" : "clock")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        Color.primary.opacity(0.05),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    )
-            }
-        }
-
-        private func screenTimeBreakdownDetail(_ item: UsageBreakdownItem) -> String {
-            switch item.kind {
-            case .application: return "Application"
-            case .website: return "Website · This Mac"
-            case .browser:
-                let count = item.children.filter { $0.kind == .website }.count
-                return count == 0
-                    ? "Browser · no public site detail available"
-                    : "Browser · expand for \(count) site\(count == 1 ? "" : "s")"
-            case .otherWeb: return "Browser time without a public site detail"
-            case .otherActive: return "Active time without an application attribution"
-            }
-        }
-
-        private func screenTimeBrowserBinding(_ id: String) -> Binding<Bool> {
-            Binding(
-                get: { expandedBrowserIDs.contains(id) },
-                set: { isExpanded in
-                    if isExpanded { expandedBrowserIDs.insert(id) }
-                    else { expandedBrowserIDs.remove(id) }
-                }
-            )
-        }
-
-        private func screenTimeBreakdownChildren(
-            _ children: [UsageBreakdownChild]
-        ) -> some View {
-            VStack(spacing: 0) {
-                ForEach(children) { child in
-                    HStack(spacing: 10) {
-                        if child.kind == .website {
-                            WebsiteIconView(host: child.host ?? child.name, size: 26)
-                        } else {
-                            Image(systemName: "ellipsis")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 26, height: 26)
-                        }
-                        Text(child.name)
-                            .font(.system(size: 12, weight: .medium))
-                            .lineLimit(1)
-                        Spacer()
-                        Text(duration(child.seconds))
-                            .font(.system(size: 12, weight: .semibold))
-                            .monospacedDigit()
-                    }
-                    .padding(.leading, 50)
-                    .padding(.vertical, 7)
-                }
-            }
-        }
-
-        private func dayOverview(_ summary: AppleScreenTimeDaySummary) -> some View {
-            LHCard(padding: 0) {
-                VStack(spacing: 0) {
-                    HStack(alignment: .firstTextBaseline, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Day overview")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("Apple Screen Time for the selected day and device scope.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(scopeDescription)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 14)
-
-                    Divider()
-
-                    HStack(spacing: 0) {
-                        overviewMetric(
-                            title: "TOTAL SCREEN TIME",
-                            value: duration(summary.totalScreenOnDuration),
-                            detail: totalScreenTimeDetail(summary),
-                            symbol: "hourglass",
-                            isPrimary: true,
-                            accessibilityIdentifier: "screen-time-day-total"
-                        )
-                        overviewDivider
-                        overviewMetric(
-                            title: "APPLICATIONS",
-                            value: String(OverviewUsageProjection.appleApplications(summary).count),
-                            detail: "Apps with recorded use",
-                            symbol: "square.grid.2x2.fill",
-                            accessibilityIdentifier: "screen-time-day-applications"
-                        )
-                        overviewDivider
-                        overviewMetric(
-                            title: "DEVICES",
-                            value: String(summary.deviceSummaries.count),
-                            detail: "Included in this total",
-                            symbol: "macbook.and.iphone",
-                            accessibilityIdentifier: "screen-time-day-devices"
-                        )
-                        overviewDivider
-                        overviewMetric(
-                            title: "APPLE UPDATE",
-                            value: screenTime.latestAppleUpdate.map(relativeDate) ?? "—",
-                            detail: screenTime.selectedDayIsToday
-                                ? "Automatic every 30 seconds"
-                                : "Latest stored Apple event",
-                            symbol: "icloud.and.arrow.down",
-                            accessibilityIdentifier: "screen-time-day-update"
-                        )
-                    }
-                    .padding(.vertical, 15)
-                }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("screen-time-day-overview")
-        }
-
-        private var deviceScopeCard: some View {
-            LHCard {
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Devices included")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("Apple devices detected on this Mac stay selectable even when Apple reports no usage for the selected day.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Picker(
-                            "Device scope",
-                            selection: Binding(
-                                get: { screenTime.configuration.scope.mode },
-                                set: { screenTime.setScopeMode($0) }
-                            )
-                        ) {
-                            Text("This Mac").tag(AppleScreenTimeScopeMode.macOnly)
-                            Text("All devices").tag(AppleScreenTimeScopeMode.allDevices)
-                            Text("Selected devices").tag(AppleScreenTimeScopeMode.selectedDevices)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 350)
-                    }
-
-                    if screenTime.configuration.scope.mode == .selectedDevices {
-                        Divider()
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 9)], spacing: 9) {
-                            ForEach(screenTime.availableDevices) { device in
-                                Button {
-                                    screenTime.toggleDevice(device)
-                                } label: {
-                                    HStack(spacing: 9) {
-                                        Image(systemName: deviceSymbol(device.kind))
-                                            .frame(width: 18)
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(device.displayName)
-                                                .font(.system(size: 11, weight: .semibold))
-                                                .lineLimit(1)
-                                            Text(deviceDetail(device))
-                                                .font(.system(size: 11))
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        Spacer()
-                                        Image(systemName: screenTime.selectedDeviceIDs.contains(device.id) ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(screenTime.selectedDeviceIDs.contains(device.id) ? LHTheme.accent : Color.secondary)
-                                    }
-                                    .padding(10)
-                                    .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        private var deviceUsageCard: some View {
-            LHCard {
-                VStack(alignment: .leading, spacing: 13) {
-                    SectionTitle(
-                        title: "Time by device",
-                        subtitle: "Screen Time reported by each device in your selection."
-                    )
-
-                    if let summaries = screenTime.summary?.deviceSummaries, !summaries.isEmpty {
-                        VStack(spacing: 0) {
-                            ForEach(Array(summaries.enumerated()), id: \.element.id) { index, item in
-                                HStack(spacing: 11) {
-                                    Image(systemName: deviceSymbol(item.device.kind))
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundStyle(LHTheme.teal)
-                                        .frame(width: 30, height: 30)
-                                        .background(LHTheme.teal.opacity(0.09), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.device.displayName)
-                                            .font(.system(size: 11, weight: .semibold))
-                                        Text(deviceDetail(item.device))
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Text(duration(item.screenOnDuration))
-                                        .font(.system(size: 11, weight: .bold))
-                                        .monospacedDigit()
-                                }
-                                .padding(.vertical, 8)
-                                if index < summaries.count - 1 { Divider().padding(.leading, 42) }
-                            }
-                        }
-                    } else {
-                        Text(screenTime.isBusy ? "Reading device activity…" : "No device activity for this day and selection. Try another day or include more devices.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-
-        private var shareCard: some View {
-            LHCard {
-                HStack(spacing: 14) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(LHTheme.accent)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Export Screen Time source data")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Exports preserve the selected device scope and exact source provenance; private formats do not claim certified Settings parity.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Picker(
-                        "Disclosure",
-                        selection: Binding(
-                            get: { screenTime.configuration.shareLevel },
-                            set: { screenTime.setShareLevel($0) }
-                        )
-                    ) {
-                        ForEach(AppleScreenTimeShareLevel.allCases, id: \.self) { level in
-                            Text(level.displayName).tag(level)
-                        }
-                    }
-                    .frame(width: 210)
-                    Button("Export…") {
-                        screenTime.exportSharePayload()
-                    }
-                    .buttonStyle(LHPrimaryButtonStyle())
-                    .disabled(screenTime.summary == nil || screenTime.isBusy)
-                }
-            }
-        }
-
-        private var sourceCard: some View {
-            LHCard {
-                HStack(alignment: .top, spacing: 13) {
-                    Image(systemName: "apple.logo")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(LHTheme.success)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Data sources")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(
-                            "Goalong reads Apple-owned ScreenTimeAgent, ScreenTime.AppUsage, knowledgeC and Biome data directly in the background only for the active day. It keeps one compact local day record, then reads that record forever after the day closes without reopening Apple history. It never opens or controls System Settings or sends mouse or keyboard events."
-                        )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    if screenTime.storageState == .completedDayStored {
-                        Text("Stored completed day · Apple not re-read")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(LHTheme.success)
-                    } else if usesAppleAggregateStore {
-                        Text(aggregateSourceLabel)
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(LHTheme.success)
-                    } else {
-                        VStack(alignment: .trailing, spacing: 3) {
-                            Text("\(screenTime.screenTimeAppUsageIntervalCount) AppUsage intervals")
-                            Text("\(screenTime.knowledgeIntervalCount) knowledgeC intervals")
-                            Text("\(screenTime.biomeIntervalCount) Biome intervals")
-                        }
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-
-        private var usesAppleAggregateStore: Bool {
-            screenTime.summary?.provenance.usesScreenTimeAgentAggregateStore == true
-        }
-
-        private var aggregateSourceLabel: String {
-            "Private Apple aggregate · background only"
-        }
-
-        private var scopeDescription: String {
-            switch screenTime.configuration.scope.mode {
-            case .macOnly: return "This Mac only"
-            case .allDevices: return "All active Apple devices"
-            case .selectedDevices: return "Selected active devices"
-            }
-        }
-
-        private var statusTint: Color {
-            switch screenTime.status.kind {
-            case .ready: return LHTheme.success
-            case .localOnly: return LHTheme.teal
-            case .fullDiskAccessRequired, .noAppleData, .partial: return LHTheme.warning
-            }
-        }
-
-        private var statusSymbol: String {
-            switch screenTime.status.kind {
-            case .ready: return "checkmark.icloud.fill"
-            case .localOnly: return "laptopcomputer"
-            case .fullDiskAccessRequired: return "lock.fill"
-            case .noAppleData: return "icloud.slash"
-            case .partial: return "exclamationmark.icloud.fill"
-            }
-        }
-
-        private var overviewDivider: some View {
-            Divider()
-                .frame(height: 62)
-        }
-
-        private func overviewMetric(
-            title: String,
-            value: String,
-            detail: String,
-            symbol: String,
-            isPrimary: Bool = false,
-            accessibilityIdentifier: String
-        ) -> some View {
-            VStack(alignment: .leading, spacing: 6) {
-                Label(title, systemImage: symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.system(size: isPrimary ? 23 : 19, weight: .bold))
-                    .monospacedDigit()
-                    .accessibilityIdentifier(accessibilityIdentifier)
-                Text(detail)
-                    .font(.system(size: 8))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            .padding(.horizontal, 18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-
-        private func totalScreenTimeDetail(_ summary: AppleScreenTimeDaySummary) -> String {
-            if summary.deviceSummaries.count > 1 {
-                return "Sum across \(summary.deviceSummaries.count) devices · simultaneous use may overlap · lock time excluded"
-            }
-            return "Active-use intervals · lock time excluded"
-        }
-
-        private func deviceSymbol(_ kind: AppleScreenTimeDeviceKind) -> String {
-            switch kind {
-            case .mac: return "laptopcomputer"
-            case .iPhone: return "iphone"
-            case .iPad: return "ipad"
-            case .iPod: return "ipod"
-            case .appleWatch: return "applewatch"
-            case .appleTV: return "appletv"
-            case .homePod: return "homepod"
-            case .visionPro: return "visionpro"
-            case .unknown: return "display"
-            }
-        }
-
-        private func deviceDetail(_ device: AppleScreenTimeDevice) -> String {
-            if device.id == screenTime.currentMacDeviceID { return "This Mac" }
-            return "\(device.kind.displayName) · \(screenTime.sourceLabel(for: device))"
-        }
-
-        private func duration(_ seconds: TimeInterval) -> String {
-            let total = max(0, Int(seconds.rounded()))
-            let hours = total / 3_600
-            let minutes = (total % 3_600) / 60
-            if hours > 0 { return "\(hours)h \(minutes)m" }
-            if minutes > 0 { return "\(minutes)m" }
-            return "\(total)s"
-        }
-
-        private func relativeDate(_ date: Date) -> String {
-            if abs(date.timeIntervalSinceNow) < 60 {
-                return "Just now"
-            }
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .abbreviated
-            return formatter.localizedString(for: date, relativeTo: Date())
-        }
-
-        private func selectDay(_ date: Date) {
-            dashboard.selectDay(date)
-            screenTime.selectDay(date)
-        }
-
+    init(model: DashboardViewModel, screenTimeModel: AppleScreenTimeDashboardModel? = nil,
+         showsHeader: Bool = true) {
+        _dashboard = ObservedObject(wrappedValue: model)
+        self.showsHeader = showsHeader
+        _screenTime = StateObject(wrappedValue: screenTimeModel ?? AppleScreenTimeDashboardModel(
+            rootDirectory: AppPaths.screenTimeDirectory, deviceID: model.deviceID,
+            selectedDay: model.selectedDay,
+            accessEnabled: GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)))
     }
+
+    var body: some View {
+        SourceAccessGate(capability: .appleScreenTime,
+            knownAccessIssue: accessRevoked ? .fullDiskAccess : nil) { pageBody }
+    }
+
+    private var rows: [GoalongAppleUsageRow] { GoalongAppleUsageProjection.rows(screenTime.summary) }
+
+    private var pageBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if showsHeader {
+                    PageHeader(eyebrow: "Source indépendante", title: "Temps d’écran Apple",
+                        subtitle: "Les données Apple restent séparées des observations Goalong.") {
+                        HStack(spacing: 10) {
+                            DateSelectionControl(date: screenTime.selectedDay, onChange: selectDay)
+                            Button { screenTime.refresh() } label: { Label("Actualiser", systemImage: "arrow.clockwise") }
+                                .disabled(screenTime.isBusy)
+                        }
+                    }
+                }
+                if consents.isEnabled(.appleScreenTime), !accessRevoked {
+                    sourceStatus
+                    deviceScopeCard
+                    if let summary = screenTime.summary { dayOverview(summary) }
+                    usageCard
+                    if (screenTime.summary?.deviceSummaries.count ?? 0) > 1 {
+                        deviceUsageCard
+                    }
+                    DisclosureGroup("Source, confidentialité et export") {
+                        sourceDetails.padding(.top, 14)
+                    }.font(.system(size: 13))
+                } else { screenTimeConsentCard }
+            }
+            .frame(maxWidth: 1100)
+            .padding(.horizontal, LHTheme.pageInset).padding(.top, showsHeader ? 28 : 20)
+            .padding(.bottom, 40).frame(maxWidth: .infinity)
+        }
+        .background(LHTheme.pageBackground)
+        .onAppear {
+            accessRevoked = false
+            screenTime.setAccessEnabled(consents.isEnabled(.appleScreenTime))
+            if screenTime.selectedDay != dashboard.selectedDay { screenTime.selectDay(dashboard.selectedDay) }
+            screenTime.setActive(dashboard.dashboardIsVisible)
+        }
+        .onDisappear { screenTime.setActive(false) }
+        .onChange(of: screenTime.needsFullDiskAccess) { if $0 { stopForMissingAccess() } }
+        .onChange(of: consents.isEnabled(.appleScreenTime)) { enabled in
+            if enabled { accessRevoked = false }
+            screenTime.setAccessEnabled(enabled)
+        }
+        .onChange(of: dashboard.dashboardIsVisible) { screenTime.setActive($0) }
+        .onChange(of: dashboard.selectedDay) { day in
+            showsAllUsage = false
+            if screenTime.selectedDay != day { screenTime.selectDay(day) }
+        }
+        .onChange(of: filter) { _ in showsAllUsage = false }
+        .alert(item: $screenTime.alert) { item in
+            Alert(title: Text(item.title), message: Text(item.message), dismissButton: .default(Text("OK")))
+        }
+    }
+
+    private var sourceStatus: some View {
+        LHCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 14) {
+                    if let summary = screenTime.summary {
+                        GoalongScreenTimeSourceNotice(presentation: .init(provenance: summary.provenance))
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label(screenTime.isBusy ? "Lecture des données Apple…" : "Données Apple indisponibles",
+                                systemImage: screenTime.isBusy ? "clock" : "info.circle")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(screenTime.isBusy ? "Vérification de la journée et des appareils sélectionnés."
+                                : screenTime.storageState == .missingCompletedDay
+                                ? "Aucune archive Apple n’a été enregistrée pour cette journée. Ce n’est pas un temps d’écran à zéro."
+                                : "Aucune durée Apple lisible pour cette sélection. Essayez une autre journée ou vérifiez les appareils inclus.")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if screenTime.isBusy { ProgressView().controlSize(.small) }
+                }
+                if screenTime.status.kind == .partial,
+                   let summary = screenTime.summary,
+                   !GoalongScreenTimeSourcePresentation(provenance: summary.provenance).isPartial {
+                    Label("Une partie des données Apple n’est pas disponible. Le périmètre reçu peut être incomplet.",
+                        systemImage: "exclamationmark.triangle").foregroundStyle(LHTheme.warning).font(.system(size: 12))
+                }
+                if screenTime.storageState == .activeDayStoredFallback {
+                    Label("La dernière lecture a échoué. La dernière copie disponible est conservée ; elle peut être incomplète.",
+                        systemImage: "exclamationmark.triangle").foregroundStyle(LHTheme.warning).font(.system(size: 12))
+                }
+                HStack(spacing: 16) {
+                    Button("Voir dans les Réglages Apple") { screenTime.openScreenTimeSettings() }
+                        .buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("screen-time-open-settings")
+                    Text("Aucune modification de vos réglages Apple.").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }.fixedSize(horizontal: false, vertical: true)
+        }.accessibilityIdentifier("screen-time-status")
+    }
+
+    private var deviceScopeCard: some View {
+        LHCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 14) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 20) { scopeTitle; Spacer(minLength: 12); scopePicker }
+                    VStack(alignment: .leading, spacing: 12) { scopeTitle; scopePicker }
+                }
+                if screenTime.configuration.scope.mode == .selectedDevices {
+                    if screenTime.availableDevices.isEmpty {
+                        Text("Aucun appareil détecté pour le moment.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
+                        ForEach(screenTime.availableDevices) { device in
+                            Button { screenTime.toggleDevice(device) } label: {
+                                HStack(spacing: 9) {
+                                    Image(systemName: deviceSymbol(device.kind))
+                                    Text(device.id == screenTime.currentMacDeviceID ? "Ce Mac" : device.displayName)
+                                        .lineLimit(1).help(device.displayName)
+                                    Spacer(minLength: 5)
+                                    Image(systemName: screenTime.selectedDeviceIDs.contains(device.id) ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(screenTime.selectedDeviceIDs.contains(device.id) ? LHTheme.accent : LHTheme.secondaryText)
+                                }.font(.system(size: 12)).padding(10).contentShape(Rectangle())
+                            }.buttonStyle(.bordered)
+                        }
+                    }
+                    if screenTime.selectedDeviceIDs.isEmpty {
+                        Text("Sélectionnez au moins un appareil pour afficher ses données.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+    private var scopeTitle: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Appareils inclus").font(.system(size: 14, weight: .semibold))
+            Text("Uniquement les données Apple reçues sur ce Mac.").font(.system(size: 12)).foregroundStyle(.secondary)
+        }
+    }
+    private var scopePicker: some View {
+        Picker("Appareils inclus", selection: Binding(get: { screenTime.configuration.scope.mode }, set: screenTime.setScopeMode)) {
+            Text("Ce Mac").tag(AppleScreenTimeScopeMode.macOnly)
+            Text("Tous").tag(AppleScreenTimeScopeMode.allDevices)
+            Text("Choisir…").tag(AppleScreenTimeScopeMode.selectedDevices)
+        }.labelsHidden().pickerStyle(.segmented).frame(width: 280).accessibilityIdentifier("screen-time-device-scope")
+    }
+
+    private func dayOverview(_ summary: AppleScreenTimeDaySummary) -> some View {
+        let presentation = GoalongScreenTimeSourcePresentation(provenance: summary.provenance)
+        return LHCard {
+            HStack(alignment: .top, spacing: 24) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(presentation.durationTitle).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                    Text(duration(summary.totalScreenOnDuration)).font(.system(size: 34, weight: .semibold))
+                        .monospacedDigit().accessibilityIdentifier("screen-time-day-total")
+                    Text(presentation.isPartial ? "Valeur partielle · pas le total officiel" : "Périmètre Apple sélectionné")
+                        .font(.system(size: 12)).foregroundStyle(presentation.isPartial ? LHTheme.warning : LHTheme.secondaryText)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Applications").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text("\(rows.filter { !$0.isWebsite }.count)").font(.system(size: 28, weight: .semibold))
+                        .monospacedDigit().accessibilityIdentifier("screen-time-day-applications")
+                    Text("\(summary.deviceSummaries.count) appareil(s) avec des données").font(.system(size: 12)).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Dernière lecture").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(screenTime.lastRefreshAt.map { $0.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) } ?? "—")
+                        .font(.system(size: 25, weight: .semibold)).monospacedDigit().accessibilityIdentifier("screen-time-day-update")
+                    Text(screenTime.selectedDayIsToday ? "Actualisation locale toutes les 30 s" : "Archive locale · Apple non relu")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }.fixedSize(horizontal: false, vertical: true)
+        }.accessibilityIdentifier("screen-time-day-overview")
+    }
+
+    private var usageCard: some View {
+        let matching = GoalongAppleUsageProjection.visibleRows(rows, filter: filter, search: search)
+        let visible = showsAllUsage || !search.isEmpty ? matching : Array(matching.prefix(8))
+        return LHCard(padding: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Text("Usages reçus d’Apple").font(.system(size: 16, weight: .semibold))
+                        Spacer(minLength: 12)
+                        Picker("Type d’usage Apple", selection: $filter) {
+                            ForEach(GoalongAppleUsageFilter.allCases) { Text($0.title).tag($0) }
+                        }.labelsHidden().pickerStyle(.segmented).frame(width: 230)
+                    }
+                    Text("Les durées ne sont ni remplacées ni réparties à partir de l’historique Goalong.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Rechercher dans les données Apple", text: $search).textFieldStyle(.plain)
+                            .accessibilityIdentifier("screen-time-search")
+                        if !search.isEmpty {
+                            Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
+                                .buttonStyle(.plain).accessibilityLabel("Effacer la recherche")
+                        }
+                        Text("\(matching.count) résultat(s)").font(.system(size: 12)).foregroundStyle(.secondary)
+                    }.padding(10).background(LHTheme.secondaryText.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
+                }.padding(18)
+                Divider()
+                if visible.isEmpty && screenTime.isBusy {
+                    ProgressView("Lecture des usages Apple…")
+                        .frame(maxWidth: .infinity, minHeight: 120)
+                } else if visible.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(!search.isEmpty ? "Aucun résultat" : filter == .websites ? "Aucun détail de site fourni par Apple" : "Aucune application disponible")
+                            .font(.system(size: 14, weight: .medium))
+                        Text(!search.isEmpty ? "Essayez un autre nom." : filter == .websites
+                            ? "Les sites observés par Goalong sont disponibles dans Activité. Ils ne sont pas présentés ici comme des données Apple."
+                            : "Les données manquantes ne sont pas remplacées par votre historique local.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        if filter == .websites && search.isEmpty {
+                            Button("Voir mon activité Goalong") { dashboard.selectSection(.overview) }.buttonStyle(.bordered)
+                        }
+                    }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    LazyVStack(spacing: 0) {
+                        ForEach(visible) { row in
+                            HStack(spacing: 14) {
+                                if let host = row.host { WebsiteIconView(host: host, size: 36).accessibilityHidden(true) }
+                                else { AppIconView(bundleIdentifier: row.bundleIdentifier, appName: row.name, size: 36).accessibilityHidden(true) }
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(row.name).font(.system(size: 13, weight: .medium)).lineLimit(1).help(row.name)
+                                    Text(row.isWebsite ? "Site fourni par Apple" : "Application · source Apple")
+                                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 10)
+                                Text(duration(row.seconds)).font(.system(size: 14, weight: .semibold)).monospacedDigit()
+                            }.padding(.horizontal, 18).padding(.vertical, 12).accessibilityElement(children: .combine)
+                            if row.id != visible.last?.id { Divider().padding(.leading, 68) }
+                        }
+                    }
+                }
+                Divider()
+                VStack(alignment: .leading, spacing: 12) {
+                    if matching.count > 8 && search.isEmpty {
+                        Button(showsAllUsage ? "Réduire la liste" : "Voir les \(matching.count) usages") { showsAllUsage.toggle() }
+                            .buttonStyle(.borderless).accessibilityIdentifier("screen-time-show-all")
+                    }
+                    Text("Applications et sites sont deux lectures distinctes. Le temps d’un site peut déjà être inclus dans son navigateur ; les lignes ne sont donc pas additionnées pour recréer le total.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }.padding(18)
+            }
+        }.accessibilityIdentifier("screen-time-apple-only-usage")
+    }
+
+    private var deviceUsageCard: some View {
+        LHCard {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Répartition par appareil").font(.system(size: 15, weight: .semibold))
+                ForEach(screenTime.summary?.deviceSummaries ?? []) { item in
+                    HStack {
+                        Image(systemName: deviceSymbol(item.device.kind))
+                        Text(item.device.displayName)
+                        Spacer()
+                        Text(duration(item.screenOnDuration)).monospacedDigit()
+                    }.font(.system(size: 13))
+                }
+                Text("Les usages simultanés sur plusieurs appareils peuvent se chevaucher.").font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+        }
+    }
+    private var screenTimeConsentCard: some View {
+        LHCard {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(consents.isEnabled(.appleScreenTime) ? "Lecture des données Apple activée" : "Temps d’écran Apple désactivé")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(accessRevoked ? "La lecture a été arrêtée car macOS refuse l’accès. Réactivez cette source pour vérifier les autorisations."
+                        : "Source facultative. L’accès est expliqué et vérifié avant toute lecture.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 10)
+                SourceActivationToggle(capability: .appleScreenTime) { Text("Temps d’écran Apple") }
+                    .labelsHidden().toggleStyle(.switch).accessibilityLabel("Lire les données Temps d’écran Apple")
+            }
+        }
+    }
+    private var sourceDetails: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            screenTimeConsentCard
+            Text("Seule la journée en cours est relue dans les sources Apple autorisées. Une copie locale compacte est conservée ; les journées terminées sont consultées depuis cette archive. Aucun réglage Apple n’est modifié et aucune donnée n’est envoyée en consultant cette page.")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            DisclosureGroup("Diagnostic technique") {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(screenTime.status.message)
+                    Button("Vérifier les autorisations macOS…") { screenTime.openFullDiskAccessSettings() }
+                        .buttonStyle(.borderless)
+                        .help("L’accès complet au disque ne garantit pas que l’agrégat privé d’Apple soit disponible.")
+                    Text("AppUsage : \(screenTime.screenTimeAppUsageIntervalCount) intervalles · knowledgeC : \(screenTime.knowledgeIntervalCount) · Biome : \(screenTime.biomeIntervalCount)")
+                    if let provenance = screenTime.summary?.provenance { Text(provenance.api) }
+                }.font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled).padding(.top, 8)
+            }
+            HStack(spacing: 14) {
+                Picker("Détail de l’export", selection: Binding(get: { screenTime.configuration.shareLevel }, set: screenTime.setShareLevel)) {
+                    ForEach(AppleScreenTimeShareLevel.allCases, id: \.self) { level in Text(level.displayName).tag(level) }
+                }.frame(maxWidth: 370)
+                Spacer(minLength: 10)
+                Button("Exporter un fichier…") { screenTime.exportSharePayload() }.buttonStyle(.bordered)
+                    .disabled(screenTime.summary == nil || screenTime.isBusy)
+            }
+            Text("L’export conserve le périmètre, la provenance et les limites de la source.").font(.system(size: 12)).foregroundStyle(.secondary)
+        }.fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func stopForMissingAccess() {
+        accessRevoked = true
+        let saved = consents.set(.appleScreenTime, enabled: false, surface: .settings)
+        screenTime.setAccessEnabled(false)
+        if !saved {
+            screenTime.alert = AppleScreenTimeDashboardAlert(title: "Accès Apple indisponible",
+                message: "La lecture est arrêtée, mais le réglage n’a pas pu être enregistré. Réessayez de désactiver cette source.")
+        }
+    }
+    private func selectDay(_ date: Date) { dashboard.selectDay(date); screenTime.selectDay(date) }
+    private func duration(_ seconds: TimeInterval) -> String { GoalongAnalyticsFormatting.duration(seconds) }
+    private func deviceSymbol(_ kind: AppleScreenTimeDeviceKind) -> String {
+        switch kind {
+        case .mac: return "laptopcomputer"
+        case .iPhone: return "iphone"
+        case .iPad: return "ipad"
+        default: return "display"
+        }
+    }
+}
 #endif
