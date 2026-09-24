@@ -100,6 +100,10 @@ import AppKit
                     Text("15 minutes").tag(900)
                     Text("30 minutes").tag(1_800)
                     Text("Tant que l’écran reste allumé").tag(0)
+                    if ![0, 120, 300, 600, 900, 1_800].contains(model.appliedSettings.foregroundIdleSeconds) {
+                        Text("\(model.appliedSettings.foregroundIdleSeconds) secondes · personnalisé")
+                            .tag(model.appliedSettings.foregroundIdleSeconds)
+                    }
                 }.accessibilityIdentifier("settings-foreground-idle-limit")
                 Text("Les appels et lectures vidéo détectés au premier plan continuent au-delà de ce délai. Le verrouillage, la veille et l’arrêt de confidentialité interrompent toujours le suivi.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -209,7 +213,7 @@ enum SettingsPane: Hashable {
     static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .permissions, .storage]
     static func matches(_ raw: String) -> [Self] {
         let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty { return [.recording, .applications, .permissions, .storage] }
+        if query.isEmpty { return [.applications, .permissions, .storage] }
         return (primary + [.advanced, .tools]).filter { ($0.title + " " + $0.keywords).localizedStandardContains(query) }
     }
     var title: String {

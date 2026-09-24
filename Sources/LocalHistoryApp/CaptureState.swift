@@ -9,9 +9,14 @@
         private var systemAwake = true
         private var displaysAwake = true
         private var screenUnlocked = true
+        private let isGloballyPaused: () -> Bool
+
+        init(isGloballyPaused: @escaping () -> Bool = { GoalongGlobalPause.isPaused() }) {
+            self.isGloballyPaused = isGloballyPaused
+        }
 
         var isCapturing: Bool {
-            !GoalongGlobalPause.isPaused() && lock.withLock { !manualPaused && userSessionActive && systemAwake && displaysAwake && screenUnlocked }
+            !isGloballyPaused() && lock.withLock { !manualPaused && userSessionActive && systemAwake && displaysAwake && screenUnlocked }
         }
 
         var isManuallyPaused: Bool {

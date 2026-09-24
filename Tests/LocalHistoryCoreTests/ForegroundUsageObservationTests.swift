@@ -184,6 +184,14 @@ final class ForegroundUsageObservationTests: XCTestCase {
         XCTAssertEqual(context, observed)
         XCTAssertEqual(context.fingerprint, observed.fingerprint)
     }
+    func testBackwardTimestampCannotMoveWebsiteCursorAndDoubleCount() {
+        let rows = [row(0), row(30), row(15), row(60)]
+        XCTAssertEqual(website(rows), 60)
+        XCTAssertEqual(analytics(rows).activeSeconds, 60)
+        XCTAssertEqual(ForegroundUsageObservation.activeDuration(after: row(60),
+            until: day.addingTimeInterval(30)), 0)
+    }
+
     func testBookkeepingCannotCreateDisagreementBetweenWebsiteAndAnalytics() {
         let diagnostic = HistoryEvent(sessionID: "test", timestamp: day.addingTimeInterval(15), kind: .diagnostic)
         let healthy = HistoryEvent(sessionID: "test", timestamp: day.addingTimeInterval(45), kind: .recorderHealth)

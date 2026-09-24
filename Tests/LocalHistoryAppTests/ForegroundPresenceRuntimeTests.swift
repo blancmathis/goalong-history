@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import CoreGraphics
+import IOKit.pwr_mgt
 import Foundation
 import LocalHistoryCore
 import XCTest
@@ -13,6 +14,69 @@ final class ForegroundPresenceRuntimeTests: XCTestCase {
             window: nil, focusedElement: nil, url: nil, suppressionReason: nil,
             foregroundUsage: .init(observedAt: now, idleSeconds: idle, isForegroundVisible: true, evidence: evidence))
     }
+    /// Explicit opt-in. Only this test process's synthetic window and temporary
+    /// power assertion are inspected; no production recorder or personal store.
+    @MainActor func testLiveForegroundReadingProbeWithoutControlLabels() throws {
+        guard ProcessInfo.processInfo.environment["GOALONG_FOREGROUND_LIVE_TEST"] == "1" else {
+            throw XCTSkip("Opt-in native foreground probe")
+        }
+        let app = NSApplication.shared
+        let original = NSWorkspace.shared.frontmostApplication
+        let oldPolicy = app.activationPolicy()
+        app.setActivationPolicy(.regular)
+        app.finishLaunching()
+        let window = NSWindow(contentRect: NSRect(x: 150, y: 180, width: 560, height: 260),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "Goalong · test local de lecture"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSTextField(labelWithString: "Fenêtre de test synthétique. Aucun clavier, caméra ou microphone utilisé.")
+        defer {
+            window.orderOut(nil)
+            app.setActivationPolicy(oldPolicy)
+            original?.activate(options: [.activateIgnoringOtherApps])
+        }
+        window.makeKeyAndOrderFront(nil)
+        app.activate(ignoringOtherApps: true)
+        let deadline = Date().addingTimeInterval(3)
+        while NSWorkspace.shared.frontmostApplication?.processIdentifier != getpid(), Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == getpid() else {
+            throw XCTSkip("WindowServer did not allow this synthetic test window to become foreground")
+        }
+        let ctx = ContextSnapshot(app: .init(name: "Synthetic Reader", bundleIdentifier: "test.reader",
+            processIdentifier: getpid()), window: nil, focusedElement: nil, url: nil, suppressionReason: nil)
+        let probe = ForegroundActivityProbe()
+        let reading = probe.observe(ctx, labelsEnabled: false, idleSeconds: 180,
+            idleLimitSeconds: 300, at: Date())
+        XCTAssertTrue(reading.isForegroundVisible)
+        XCTAssertTrue(reading.isActive, "Three minutes of quiet reading must count without captured labels or input.")
+        probe.reset()
+        let screenOn = probe.observe(ctx, labelsEnabled: false, idleSeconds: 3600,
+            idleLimitSeconds: 0, at: Date())
+        XCTAssertTrue(screenOn.isActive)
+        var assertion: IOPMAssertionID = 0
+        let result = IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn), "Goalong synthetic foreground validation" as CFString, &assertion)
+        XCTAssertEqual(result, kIOReturnSuccess)
+        if result == kIOReturnSuccess {
+            defer { IOPMAssertionRelease(assertion) }
+            probe.reset()
+            let playing = probe.observe(ctx, labelsEnabled: false, idleSeconds: 3600,
+                idleLimitSeconds: 300, at: Date())
+            XCTAssertNotNil(playing.evidence)
+            XCTAssertTrue(playing.isActive)
+        }
+        window.orderOut(nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        probe.reset()
+        let hidden = probe.observe(ctx, labelsEnabled: false, idleSeconds: 0,
+            idleLimitSeconds: 0, at: Date())
+        XCTAssertFalse(hidden.isForegroundVisible)
+        XCTAssertFalse(hidden.isActive)
+        print("LIVE_FOREGROUND_VALIDATION reading-without-input, screen-on, own-process assertion and hidden-window stop passed")
+    }
+
     func testRecorderPropagatesReadingPresenceWithoutCapturingLabelsOrTyping() {
         let meta = EventRecorder.metadataForObservation(context: context(), kind: .heartbeat,
             timestamp: now.addingTimeInterval(30), metadata: nil, inputOrigin: nil)
@@ -46,7 +110,8 @@ final class ForegroundPresenceRuntimeTests: XCTestCase {
         }
     }
     func testScreenSleepSystemSleepAndLockAreIndependentGates() {
-        let state = CaptureState()
+        let state = CaptureState(isGloballyPaused: { false })
+        XCTAssertTrue(state.isCapturing)
         state.setDisplaysAwake(false)
         state.setSystemAwake(true)
         XCTAssertFalse(state.isCapturing)
@@ -61,6 +126,9 @@ final class ForegroundPresenceRuntimeTests: XCTestCase {
         state.setSystemAwake(true)
         state.setManualPaused(true)
         XCTAssertFalse(state.isCapturing)
+        state.setManualPaused(false)
+        XCTAssertTrue(state.isCapturing)
+        XCTAssertFalse(CaptureState(isGloballyPaused: { true }).isCapturing)
     }
     func testSessionQueryRejectsLockedOffscreenSleepingAndUnknownStates() {
         let session: [String: Any] = [kCGSessionOnConsoleKey as String: true, kCGSessionLoginDoneKey as String: true]
