@@ -178,12 +178,14 @@ struct DailyWebsiteUsageEventProjection: Decodable {
 
     private struct MetadataProjection: Decodable {
         let idleSeconds: String?
+        let foregroundEvidence: String?
         let accessibility: String?
         let inputMonitoring: String?
         let observationGap: String?
 
         private enum CodingKeys: String, CodingKey {
             case idleSeconds = "idle_seconds"
+            case foregroundEvidence = "activity.foreground_evidence"
             case accessibility
             case inputMonitoring = "input_monitoring"
             case observationGap = "observation_gap"
@@ -192,6 +194,9 @@ struct DailyWebsiteUsageEventProjection: Decodable {
         var compactDictionary: [String: String]? {
             var values: [String: String] = [:]
             if let idleSeconds { values["idle_seconds"] = idleSeconds }
+            if let foregroundEvidence, ForegroundActivityEvidence(rawValue: foregroundEvidence) != nil {
+                values[ForegroundActivityEvidence.metadataKey] = foregroundEvidence
+            }
             if let accessibility { values["accessibility"] = accessibility }
             if let inputMonitoring { values["input_monitoring"] = inputMonitoring }
             if let observationGap { values["observation_gap"] = observationGap }
@@ -479,6 +484,7 @@ public struct DailyWebsiteUsageAccumulator {
             event.suppressionReason == nil,
             let app = event.app,
             Self.isActiveUsageEvidence(event),
+            ForegroundActivityEvidence.supportsWebsiteAttribution(event),
             let host = Self.trackedHost(from: event.url)
         else { return }
 
@@ -626,10 +632,6 @@ public struct DailyWebsiteUsageAccumulator {
     }
 
     private static func isActiveUsageEvidence(_ event: HistoryEvent) -> Bool {
-        guard event.kind == .heartbeat else { return true }
-        guard let rawIdleSeconds = event.metadata?["idle_seconds"],
-            let idleSeconds = Double(rawIdleSeconds)
-        else { return false }
-        return idleSeconds < 90
+        return ForegroundActivityEvidence.isActiveUsageEvidence(event)
     }
 }

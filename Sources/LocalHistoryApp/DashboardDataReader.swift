@@ -2474,12 +2474,11 @@
             _ event: DashboardEventProjection
         ) -> HistoryEvent? {
             guard event.shouldRetain else { return nil }
-            let compactMetadata: [String: String]? = {
-                guard event.kind == .heartbeat,
-                    let idleSeconds = event.metadata?["idle_seconds"]
-                else { return nil }
-                return ["idle_seconds": idleSeconds]
-            }()
+            let compactMetadata = event.metadata?.filter {
+                $0.key == "idle_seconds"
+                    || ($0.key == ForegroundActivityEvidence.metadataKey
+                        && ForegroundActivityEvidence(rawValue: $0.value) != nil)
+            }
             return HistoryEvent(
                 schemaVersion: event.schemaVersion,
                 id: event.id,
@@ -2541,11 +2540,7 @@
         }
 
         private static func isActiveUsageEvidence(_ event: HistoryEvent) -> Bool {
-            guard event.kind == .heartbeat else { return true }
-            guard let rawIdleSeconds = event.metadata?["idle_seconds"],
-                let idleSeconds = Double(rawIdleSeconds)
-            else { return false }
-            return idleSeconds < 90
+            return ForegroundActivityEvidence.isActiveUsageEvidence(event)
         }
 
         private static func isActivityEvent(_ event: HistoryEvent) -> Bool {

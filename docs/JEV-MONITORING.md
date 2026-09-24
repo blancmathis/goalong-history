@@ -253,3 +253,13 @@ maximum restent inchangés. Les distributions incohérentes restent rejetées.
 La correction du blocage à la veille et le format étendu des critères sont détaillés
 dans `MONITORING-STABILITY.md`. Les critères explicitement saisis peuvent autoriser
 un contenu précis (par exemple un cours vidéo), sans rendre tout le site productif.
+
+## Appels et lectures sans saisie
+
+Les contrôles de lecture/appel observés dans la fenêtre focalisée alimentent la
+même fenêtre de 15 secondes, même sans clic ni clavier. La sonde est partagée
+avec le compteur local ; ses contrôles ne sont lus que si les libellés sont déjà
+autorisés. Une assertion globale du navigateur compte pour le navigateur, mais
+ne déclenche pas de classement sémantique ni n’identifie un site. Les appels
+natifs dont le processus au premier plan maintient l’écran actif peuvent être
+observés sans nouveau consentement ; le nom de l’app seul n’est jamais suffisant.

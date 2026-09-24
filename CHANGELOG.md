@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.44 — appels et lectures au premier plan
+
+- Les appels, vidéos et présentations observés au premier plan restent comptés sans frappe ni mouvement de souris.
+- Signaux locaux liés au processus visible, sans comptabiliser les applications simplement ouvertes en arrière-plan.
+- Calcul harmonisé entre Activité, statistiques locales, sites et observations utiles aux analyses.
+- Lecture/appel reconnu par les contrôles réutilisé pour la surveillance temps réel déjà activée ; un signal navigateur global n’invente pas le site regardé.
+- Verrouillage, veille, pauses, exclusions et choix de confidentialité conservés ; aucune capture audio ou vidéo.
+
 ## 0.6.43 — repères personnels de procrastination
 
 - Champ facultatif dans Surveillance temps réel pour donner des exemples certains de procrastination.

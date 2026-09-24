@@ -100,19 +100,20 @@ final class JevIngress: @unchecked Sendable {
         samples.append(sample)
     }
 
-    /// Called with fresh ContextProvider output. A known Pause playback control is
-    /// positive playback evidence; idle time alone is NEVER treated as watching.
-    func observeContext(_ context: ContextSnapshot?, labelsEnabled: Bool) {
+    /// Uses the same fresh foreground evidence as the local time counter. Input
+    /// silence does not stop checks during an observed call or playing video.
+    func observeContext(_ context: ContextSnapshot?, foregroundEvidence: ForegroundActivityEvidence?) {
         lock.lock(); let active = enabled; lock.unlock()
         guard active else { return }
         guard let context, context.suppressionReason == nil, context.focusedElement?.isSecure != true,
               !GoalongGlobalPause.isPaused(), !IsSecureEventInputEnabled() else { boundary(); return }
         let now = Date()
         lock.lock()
-        guard enabled, !privateWindow, labelsEnabled, now >= nextPlaybackProbe else { lock.unlock(); return }
+        guard enabled, !privateWindow, foregroundEvidence != nil, foregroundEvidence != .displayAssertion,
+              now >= nextPlaybackProbe else { lock.unlock(); return }
         nextPlaybackProbe = now.addingTimeInterval(10)
         lock.unlock()
-        guard Self.isMedia(context.url?.host), JevPlaybackProbe.isPlaying(context) else { return }
+        guard let foregroundEvidence else { return }
         let policy = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)
         guard !policy.excludes(appID: context.app.bundleIdentifier, name: context.app.name),
               !policy.excludes(domain: context.url?.host), !GoalongGlobalPause.isPaused(),
@@ -120,9 +121,11 @@ final class JevIngress: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard enabled, !privateWindow, now >= enabledAt else { return }
         blocked = false
-        appendLocked(JevSample(date: now, resource: context.url?.host ?? "video",
+        appendLocked(JevSample(date: now, resource: JevPayload.clean(context.url?.host ?? context.app.name, bytes: 36),
             title: Self.redactedText(context.window?.title ?? "", limit: 72),
-            action: "playing", surface: "video", isActivity: true))
+            action: foregroundEvidence == .call ? "call" : foregroundEvidence == .mediaPlayback ? "playing" : "presenting",
+            surface: foregroundEvidence == .call ? "meeting" : foregroundEvidence == .mediaPlayback ? "video" : "other",
+            isActivity: true))
     }
 
     static func sample(_ event: HistoryEvent) -> JevSample? {
@@ -174,36 +177,4 @@ final class JevIngress: @unchecked Sendable {
     }
 }
 
-private enum JevPlaybackProbe {
-    static func isPlaying(_ context: ContextSnapshot) -> Bool {
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == context.app.processIdentifier else { return false }
-        let application = AXUIElementCreateApplication(context.app.processIdentifier)
-        AXUIElementSetMessagingTimeout(application, 0.05)
-        var windowValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &windowValue) == .success,
-              let windowValue, CFGetTypeID(windowValue) == AXUIElementGetTypeID() else { return false }
-        let window = unsafeBitCast(windowValue, to: AXUIElement.self)
-        var queue: [AXUIElement] = [window]
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.075
-        var index = 0
-        while index < queue.count, index < 128, ProcessInfo.processInfo.systemUptime < deadline {
-            let element = queue[index]; index += 1
-            func string(_ attribute: String) -> String {
-                var value: CFTypeRef?
-                guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return "" }
-                return (value as? String ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            if string(kAXRoleAttribute) == "axbutton" {
-                let labels = [string(kAXTitleAttribute), string(kAXDescriptionAttribute)]
-                if labels.contains(where: { ["pause", "pause (k)", "mettre en pause", "mettre en pause (k)"].contains($0) }) {
-                    return NSWorkspace.shared.frontmostApplication?.processIdentifier == context.app.processIdentifier
-                }
-            }
-            var children: CFTypeRef?
-            if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children) == .success,
-               let values = children as? [AXUIElement] { queue.append(contentsOf: values.prefix(max(0, 128 - queue.count))) }
-        }
-        return false
-    }
-}
 #endif
