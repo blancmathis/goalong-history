@@ -29,14 +29,28 @@ final class JevSemanticEvaluationTests: XCTestCase {
             ("related-composition", "x.com", "composing", "Announcing Goalong History work monitoring launch", .productive),
             ("unrelated-composition", "x.com", "composing", "My favourite football team won tonight", .procrastination)
         ]
+        let negativeWork = try JevWorkContext(summary: work.summary,
+            applications: "Xcode for Goalong; X for launch announcements.",
+            content: "Swift courses and Swift documentation are allowed.",
+            procrastination: "Watching Swift video tutorials about logo design. Scrolling the For you feed on X.")
+        let negativeCases: [(String, String, String, String, JevVerdict)] = [
+            ("negative-overrides-broad-media-rule", "youtube.com", "video", "Swift course: design an animated logo for your app", .procrastination),
+            ("unlisted-shopping-still-distracts", "google.com", "search", "Compare sneaker prices for my holidays", .procrastination),
+            ("specific-use-not-whole-site-ban", "x.com", "composing", "Announcing Goalong History app launch", .productive),
+            ("explicit-negative-feed", "x.com", "social-feed", "For you - X", .procrastination),
+            ("allowed-media-not-all-banned", "youtube.com", "video", "Swift course: NSWindow window ordering API", .productive),
+            ("negative-context-no-evidence", "Safari", "other", "", .unknown)
+        ]
+        let allCases = cases.map { ($0, work) } + negativeCases.map { ($0, negativeWork) }
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        for (id, site, mode, topic, expected) in cases {
+        for (item, context) in allCases {
+            let (id, site, mode, topic, expected) = item
             let window = JevWindow(start: now, end: now.addingTimeInterval(15), samples: [
                 .init(date: now, resource: site, title: topic, action: mode == "composing" || mode == "search" || site == "Xcode" ? "typing" : "scroll", surface: mode, isActivity: true)
             ])
-            let body = try JevPayload.build(window, work: work)
+            let body = try JevPayload.build(window, work: context)
             let decision = try await JevTransport().classify(body: body, key: key)
-            let verdict = JevWorkContextStore.reviewedVerdict(decision.verdict, work: work, window: window)
+            let verdict = JevWorkContextStore.reviewedVerdict(decision.verdict, work: context, window: window)
             print("SYNTHETIC_SEMANTIC_CASE \(id) expected=\(expected.rawValue) actual=\(verdict.rawValue) raw=\(decision.verdict.rawValue) probability=\(decision.probability) bytes=\(body.count) tokens=\(decision.inputTokens)")
             XCTAssertEqual(verdict, expected, id)
             XCTAssertLessThan(decision.inputTokens, 1000)
