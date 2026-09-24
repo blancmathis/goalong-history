@@ -17,9 +17,11 @@ struct GoalongScreenTimeSourcePresentation {
         case .appleSettingsObservablePresentation: return "Présentation des Réglages Apple"
         case .publicDeviceActivityExport: return "Export Apple autorisé"
         case .privateAppleAggregateStore: return "Agrégat Apple"
-        case .reconstructedAppleUsage: return "Reconstitution Apple partielle"
+        case .reconstructedAppleUsage: return "Données Apple partielles"
         }
     }
+
+    var durationTitle: String { isPartial ? "Durée reconstituée" : "Temps d’écran Apple" }
 
     var detail: String {
         switch assurance {
@@ -30,7 +32,7 @@ struct GoalongScreenTimeSourcePresentation {
         case .privateAppleAggregateStore:
             return "Données issues de l’agrégat Apple local. Le périmètre des appareils et l’heure de mise à jour peuvent différer des Réglages Apple."
         case .reconstructedAppleUsage:
-            return "L’agrégat Apple complet n’est pas disponible. Ces durées sont reconstituées à partir des sources accessibles et peuvent différer du Temps d’écran des Réglages Apple. Les données manquantes restent inconnues, pas à zéro."
+            return "macOS ne rend pas le total complet accessible à Goalong. Les durées ci-dessous sont reconstituées à partir des données Apple lisibles, pas le total officiel des Réglages, et peuvent différer de celui-ci. Les données manquantes restent inconnues, pas à zéro."
         }
     }
 }

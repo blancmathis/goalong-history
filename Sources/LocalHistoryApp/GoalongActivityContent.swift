@@ -14,10 +14,10 @@ struct GoalongAnalyticsContent: View {
     var onHistoryDay: (Date) -> Void = { _ in }
     var onRecap: (Date) -> Void = { _ in }
     @State private var grouping: GoalongActivityUsageGrouping = .sites
-    @State private var allUsage = false
     @State private var allCards = false
     @State private var module = "all"
-    @State private var hourly = false
+    @State private var hourly = true
+    @State private var fullDay = false
     @State private var selectedUsage: GoalongActivityUsageItem?
     @State private var selectedSegment: GoalongLocalAnalytics.Segment?
 
@@ -34,13 +34,8 @@ struct GoalongAnalyticsContent: View {
             if current.observedSeconds > 0 {
                 metrics
                 rhythmCard
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 20) {
-                        usageCard.frame(maxWidth: .infinity)
-                        projectsCard.frame(maxWidth: .infinity)
-                    }.frame(minWidth: 860)
-                    VStack(spacing: 20) { usageCard; projectsCard }
-                }
+                usageCard
+                projectsCard
                 rhythmDetails
             } else {
                 emptyState
@@ -97,15 +92,24 @@ struct GoalongAnalyticsContent: View {
 
     private var metrics: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) { activeMetric; workMetric; focusMetric }.frame(minWidth: 560)
+            HStack(alignment: .top, spacing: 12) { activeMetric; applicationsMetric; continuityMetric }.frame(minWidth: 560)
             VStack(spacing: 12) {
                 activeMetric
-                HStack(alignment: .top, spacing: 12) { workMetric; focusMetric }
+                HStack(alignment: .top, spacing: 12) { applicationsMetric; continuityMetric }
             }
         }.accessibilityIdentifier("activity-primary-metrics")
     }
     private var activeMetric: some View {
         metric("Temps actif", value: duration(current.activeSeconds), detail: "Activité observée au premier plan", primary: true)
+    }
+    private var applicationsMetric: some View {
+        let apps = GoalongActivityProjection.usage(current, grouping: .applications).count
+        let sites = GoalongActivityProjection.usage(current, grouping: .sites).filter(\.isWebsite).count
+        return metric("Applications utilisées", value: String(apps), detail: "\(sites) sites observés · sur ce Mac")
+    }
+    private var continuityMetric: some View {
+        metric("Plus longue séquence", value: duration(current.days.flatMap(\.sequences).map(\.seconds).max() ?? 0),
+            detail: "Même application et même site, sans interruption")
     }
     private var workMetric: some View {
         metric("Travail classé", value: classified ? duration(current.workSeconds) : "—",
@@ -132,9 +136,11 @@ struct GoalongAnalyticsContent: View {
                 HStack {
                     heading(isDay ? "Rythme de la journée" : "Rythme sur \(current.days.count) jours")
                     Spacer()
-                    if isDay && !sparse {
+                    if isDay {
+                        Toggle("Journée entière", isOn: $fullDay).toggleStyle(.checkbox)
+                            .font(.system(size: 12)).fixedSize().accessibilityIdentifier("activity-full-day")
                         Picker("Affichage du rythme", selection: $hourly) {
-                            Text("Chronologie").tag(false)
+                            Text("Chronologie").tag(false).disabled(sparse)
                             Text("Heure par heure").tag(true)
                         }.labelsHidden().pickerStyle(.menu).fixedSize()
                     }
@@ -155,6 +161,9 @@ struct GoalongAnalyticsContent: View {
                         Text("Les zones grises sont non observées. Sélectionnez une plage pour l’examiner.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
+                    Text(fullDay ? "Vue complète · les heures sans données restent non observées."
+                        : "Vue centrée sur les heures observées · activez Journée entière pour afficher toute la journée.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                     DisclosureGroup("Heures et valeurs") {
                         VStack(spacing: 8) {
                             ForEach(day.hours(minimumMinutes: focusMinutes).filter { $0.seconds > 0 }) { hour in
@@ -213,8 +222,9 @@ struct GoalongAnalyticsContent: View {
                     .accessibilityValue(duration(block.seconds))
             }
         }
-        .chartXScale(domain: dateRange).chartYScale(domain: ["Focus", "Activité"])
-        .chartXAxis { AxisMarks(values: .stride(by: .hour, count: 4)) { _ in
+        .chartXScale(domain: chartDateRange).chartYScale(domain: ["Focus", "Activité"])
+        .chartPlotStyle { plot in plot.clipped() }
+        .chartXAxis { AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
             AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour()); AxisTick()
         } }
         .frame(height: 112)
@@ -287,8 +297,9 @@ struct GoalongAnalyticsContent: View {
                     .accessibilityLabel("\(time(hour.start)), focus inclus").accessibilityValue(duration(hour.focusSeconds))
             }
         }
-        .chartLegend(.hidden).chartXScale(domain: dateRange).chartYScale(domain: 0...scale.upperBound)
-        .chartXAxis { AxisMarks(values: .stride(by: .hour, count: 4)) { _ in
+        .chartLegend(.hidden).chartXScale(domain: chartDateRange).chartYScale(domain: 0...scale.upperBound)
+        .chartPlotStyle { plot in plot.clipped() }
+        .chartXAxis { AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
             AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour()); AxisTick()
         } }
         .chartYAxis { AxisMarks(position: .leading) { value in
@@ -320,50 +331,9 @@ struct GoalongAnalyticsContent: View {
     }
 
     private var usageCard: some View {
-        let items = GoalongActivityProjection.usage(current, grouping: grouping)
-        let visible = allUsage ? items : Array(items.prefix(6))
-        return LHCard {
-            VStack(alignment: .leading, spacing: 15) {
-                HStack {
-                    heading("Applications et sites")
-                    Spacer(minLength: 8)
-                    Picker("Regrouper les usages", selection: $grouping) {
-                        ForEach(GoalongActivityUsageGrouping.allCases) { value in Text(value.title).tag(value) }
-                    }.labelsHidden().pickerStyle(.menu).fixedSize()
-                }
-                if items.isEmpty {
-                    Text("Pas encore de durée active attribuable. Les périodes privées et non observées restent séparées.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-                ForEach(visible) { item in
-                    Button { selectedUsage = item } label: {
-                        VStack(spacing: 7) {
-                            HStack(spacing: 9) {
-                                Image(systemName: item.isWebsite ? "globe" : "app").foregroundStyle(.secondary).frame(width: 18)
-                                Text(item.name).font(.system(size: 13, weight: .medium)).lineLimit(1).help(item.name)
-                                Spacer(minLength: 8)
-                                Text(duration(item.seconds)).font(.system(size: 13)).monospacedDigit()
-                                Text(String(format: "%.0f %%", item.seconds / max(1, current.activeSeconds) * 100))
-                                    .font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 36, alignment: .trailing)
-                                Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.secondary)
-                            }
-                            GeometryReader { geometry in
-                                Capsule().fill(LHTheme.separator)
-                                Capsule().fill(LHTheme.accent.opacity(0.8))
-                                    .frame(width: geometry.size.width * min(1, item.seconds / max(1, items.first?.seconds ?? 1)))
-                            }.frame(height: 4).accessibilityHidden(true)
-                        }.padding(.vertical, 4).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityElement(children: .combine)
-                        .accessibilityHint("Ouvrir la répartition sur la période sélectionnée")
-                }
-                if items.count > 6 {
-                    Button(allUsage ? "Réduire" : "Voir les \(items.count) usages") { allUsage.toggle() }
-                        .buttonStyle(.borderless).font(.system(size: 12))
-                }
-                Text("Même total observé : \(duration(current.activeSeconds)). Les sites remplacent le temps du navigateur, sans s’y ajouter.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-        }.accessibilityIdentifier("activity-usage")
+        // Aggregate outside the search view: typing only filters the small usage list.
+        GoalongActivityUsageList(items: GoalongActivityProjection.usage(current, grouping: grouping),
+            totalSeconds: current.activeSeconds, grouping: $grouping) { selectedUsage = $0 }
     }
 
     private var projectsCard: some View {
@@ -420,6 +390,9 @@ struct GoalongAnalyticsContent: View {
         LHCard {
             DisclosureGroup("Détails du rythme et du focus") {
                 VStack(alignment: .leading, spacing: 15) {
+                    HStack(alignment: .top, spacing: 12) { workMetric; focusMetric }
+                    Text("À préciser : \(duration(current.days.reduce(0) { $0 + $1.seconds(.unclassified) })). Le classement du travail reste incomplet tant que ces usages ne sont pas classés.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                     Text("Le focus décrit une continuité dans la même application et sur le même domaine, pas la concentration mentale.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     HStack {
@@ -511,6 +484,14 @@ struct GoalongAnalyticsContent: View {
         }.font(.system(size: 13)).padding(24).frame(width: 480)
     }
 
+    private var hourStride: Int {
+        let hours = chartDateRange.upperBound.timeIntervalSince(chartDateRange.lowerBound) / 3600
+        return hours > 16 ? 4 : hours > 8 ? 2 : 1
+    }
+    private var chartDateRange: ClosedRange<Date> {
+        guard isDay, let day = current.days.first else { return dateRange }
+        return GoalongActivityPresentation.chartRange(day, fullDay: fullDay)
+    }
     private var dateRange: ClosedRange<Date> {
         let first = current.days.first?.date ?? payload.updatedAt
         let last = current.days.last?.date ?? first

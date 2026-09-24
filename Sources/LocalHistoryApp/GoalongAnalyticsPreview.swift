@@ -40,6 +40,13 @@ enum GoalongAnalyticsPreview {
             updatedAt: now, isPreview: true)
     }
 
+    // Fixed sample identities load local artwork, never real activity or history.
+    private static let previewApplicationIDs: [String: String] = [
+        "Xcode": "com.apple.dt.Xcode", "Safari": "com.apple.Safari", "Figma": "com.figma.Desktop",
+        "Notes": "com.apple.Notes", "Terminal": "com.apple.Terminal", "Mail": "com.apple.mail",
+        "Musique": "com.apple.Music", "Calendrier": "com.apple.iCal"
+    ]
+
     private static func makeDay(_ day: Date, calendar: Calendar) -> GoalongLocalAnalytics.Day {
         let seed = abs(calendar.ordinality(of: .day, in: .era, for: day) ?? 0)
         let scale = calendar.isDateInWeekend(day) ? 0.6 : 1.0
@@ -49,7 +56,7 @@ enum GoalongAnalyticsPreview {
                     metadata: [String: String]? = nil) {
             events.append(HistoryEvent(id: "preview-\(Int(day.timeIntervalSince1970))-\(events.count)",
                 sessionID: "developer-preview", timestamp: time, kind: kind,
-                app: app.map { AppSnapshot(name: $0, bundleIdentifier: "preview." + $0, processIdentifier: 0) },
+                app: app.map { AppSnapshot(name: $0, bundleIdentifier: previewApplicationIDs[$0] ?? "preview." + $0, processIdentifier: 0) },
                 url: host.map { URLSnapshot(value: "https://" + $0, host: $0, redactionApplied: true) },
                 classification: .init(category: "Exemple", isWork: work, confidence: 0.9,
                     classifierVersion: "developer-preview-v1"),

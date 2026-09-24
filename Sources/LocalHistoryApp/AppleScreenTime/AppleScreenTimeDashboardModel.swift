@@ -146,7 +146,9 @@
         }
 
         func selectDay(_ date: Date) {
-            selectedDay = Calendar.current.startOfDay(for: date)
+            let next = Calendar.current.startOfDay(for: date)
+            if next != selectedDay { clearSelectedSummary() }
+            selectedDay = next
             updateRefreshTimerForSelectedDay()
             refresh()
         }
@@ -280,6 +282,8 @@
         }
 
         func setScopeMode(_ mode: AppleScreenTimeScopeMode) {
+            guard mode != configuration.scope.mode else { return }
+            clearSelectedSummary()
             switch mode {
             case .allDevices:
                 configuration.scope = .allDevices
@@ -297,6 +301,7 @@
         }
 
         func toggleDevice(_ device: AppleScreenTimeDevice) {
+            clearSelectedSummary()
             var selected = selectedDeviceIDs
             if selected.contains(device.id) {
                 selected.remove(device.id)
@@ -308,6 +313,20 @@
                 selectedDeviceIDs: Array(selected)
             )
             saveConfigurationAndRefresh()
+        }
+
+        /// Never display or export the previous day/device selection while its replacement loads.
+        /// The in-flight request keeps its busy flag; its completion schedules the latest selection.
+        private func clearSelectedSummary() {
+            summary = nil
+            unfilteredSummary = nil
+            latestAppleUpdate = nil
+            lastRefreshAt = nil
+            knowledgeIntervalCount = 0
+            biomeIntervalCount = 0
+            screenTimeAppUsageIntervalCount = 0
+            storageState = .directAppleRead
+            status = .loading
         }
 
         func setShareLevel(_ level: AppleScreenTimeShareLevel) {
