@@ -89,7 +89,7 @@
                     } else if presentation == .history {
                         AgentTokenUsageCard(usage: agents.tokenUsageSnapshot ?? AgentDailyTokenUsage(records: [], day: agents.selectedDay), scanning: agents.isScanning, analyzedAt: agents.tokenUsageAnalyzedAt)
                         conversationHistoryList
-                        DisclosureGroup("Source & privacy") {
+                        GoalongDisclosureGroup("Source & privacy") {
                             sourceConsentCard.padding(.top, 12)
                         }
                         .font(.system(size: 12))

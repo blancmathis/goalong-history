@@ -29,7 +29,7 @@ import LocalHistoryCore
                 Text("Dernier appel : \(tokens) tokens d’entrée · \(monitor.lastRequestBytes) octets envoyés")
                     .font(.caption.monospacedDigit())
             }
-            DisclosureGroup("Voir le dernier contenu envoyé (sans la clé)") {
+            GoalongDisclosureGroup("Voir le dernier contenu envoyé (sans la clé)") {
                 Text(monitor.lastPayload.isEmpty ? "Aucun contenu conservé en mémoire." : monitor.lastPayload)
                     .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
@@ -88,7 +88,7 @@ struct JevRecentChecksView: View {
                             .accessibilityIdentifier("jev-break-\(duration)")
                     }
                 }
-                DisclosureGroup("Autre durée") {
+                GoalongDisclosureGroup("Autre durée") {
                     HStack {
                         Stepper("Durée : \(minutes) min", value: $minutes, in: 1...120)
                         Button("Mettre en pause") { monitor.startBreak(minutes: minutes) }

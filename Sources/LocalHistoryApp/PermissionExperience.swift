@@ -186,7 +186,7 @@ struct PermissionRecoveryView: View {
                 }
                 .buttonStyle(.bordered).disabled(restarting)
             }
-            DisclosureGroup("Résoudre un problème", isExpanded: $expanded) {
+            GoalongDisclosureGroup("Résoudre un problème", isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Vérifiez que l’autorisation correspond à cette application.")
                         .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)

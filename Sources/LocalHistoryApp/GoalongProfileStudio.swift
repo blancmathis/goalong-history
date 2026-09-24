@@ -200,7 +200,7 @@ struct GoalongProfileStudio: View {
                             }
                             Text("Événements, applications, fenêtres, navigation, interactions et contexte disponibles avec leurs timestamps. Les champs protégés et les événements supprimés sont exclus. Les extraits sont bornés ; les absences restent inconnues.").font(.caption).foregroundStyle(.secondary)
                             HStack { Button("Charger les sources choisies") { model.load(start: start, end: end, rich: rich, computer: computer, conversations: conversations, conversationsFrom: conversationsFrom) }; Button("Ajouter des preuves (mesures, IA, historique)…") { importEvidence() } }.disabled(model.busy)
-                            if !model.evidence.isEmpty { DisclosureGroup("Choisir les événements (\(model.selectedEvidence.count)/\(model.evidence.count))") {
+                            if !model.evidence.isEmpty { GoalongDisclosureGroup("Choisir les événements (\(model.selectedEvidence.count)/\(model.evidence.count))") {
                                 HStack { Button("Tout sélectionner") { model.selectedEvidence = Set(model.evidence.map(\.id)); model.invalidate() }; Button("Tout décocher") { model.selectedEvidence = []; model.invalidate() } }
                                 LazyVStack(alignment: .leading) { ForEach(model.evidence, id: \.id) { e in Toggle(isOn: Binding(get: { model.selectedEvidence.contains(e.id) }, set: { yes in if yes { model.selectedEvidence.insert(e.id) } else { model.selectedEvidence.remove(e.id) }; model.invalidate() })) { Text("\(e.start) · \(e.application) · \(e.text)").font(.caption).lineLimit(3) } } }
                             } }
@@ -228,7 +228,7 @@ struct GoalongProfileStudio: View {
                         Text("Période du dossier préparé : \((try? request.context().date) ?? ""). Le prompt précise les timestamps disponibles et les fenêtres de sélection des conversations.").font(.caption)
                         GoalongProfileSection("3. Vérifier et analyser") {
                             VStack(alignment: .leading, spacing: 12) {
-                                DisclosureGroup("Voir le prompt exact — consigne principale fixe") { Text((try? request.prompt()) ?? "Sélection invalide").font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+                                GoalongDisclosureGroup("Voir le prompt exact — consigne principale fixe") { Text((try? request.prompt()) ?? "Sélection invalide").font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                                 HStack { Text(connection.accountLabel).font(.caption); Spacer(); Button(connection.connected ? "Déconnecter ChatGPT" : "Connecter ChatGPT") { if connection.connected { connection.disconnect() } else { connection.connect() } }.disabled(model.busy || connection.busy) }
                                 Toggle("J’autorise l’envoi de ce contexte à l’agent connecté", isOn: $model.consent)
                                 Button("Lancer l’analyse") { model.analyze() }.disabled(model.busy || !connection.connected || !model.consent)
@@ -248,7 +248,7 @@ struct GoalongProfileStudio: View {
                                         TextEditor(text: Binding(get: { item.summary }, set: { model.correct(item.id, field: "summary", text: $0) })).frame(height: 70).accessibilityLabel("Synthèse \(item.title)")
                                         TextField("Limites", text: Binding(get: { item.caveat }, set: { model.correct(item.id, field: "caveat", text: $0) })).textFieldStyle(.roundedBorder)
                                         Text("\(item.status) · \(item.evidence_refs.count) éléments de preuve locaux").font(.caption).foregroundStyle(.secondary)
-                                        DisclosureGroup("Examiner les preuves") { ForEach((try? model.request?.context().evidence.filter { item.evidence_refs.contains($0.id) }) ?? [], id: \.id) { e in Text("\(e.start) · \(e.application)\n\(e.text)").font(.caption).textSelection(.enabled) } }
+                                        GoalongDisclosureGroup("Examiner les preuves") { ForEach((try? model.request?.context().evidence.filter { item.evidence_refs.contains($0.id) }) ?? [], id: \.id) { e in Text("\(e.start) · \(e.application)\n\(e.text)").font(.caption).textSelection(.enabled) } }
                                         Divider()
                                     }
                                 }
@@ -256,7 +256,7 @@ struct GoalongProfileStudio: View {
                                 if !localOnly {
                                 Toggle("J’ai relu les résultats sélectionnés et leur confidentialité", isOn: $model.reviewed)
                                 if let archive = model.archive, let projection = try? GoalongProfileAnalysis.project(archive, selectedIDs: model.selectedItems), let bytes = try? GoalongContextualRhythm.encode(projection) {
-                                    DisclosureGroup("Voir exactement les cartes sélectionnées") { Text(String(decoding: bytes, as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+                                    GoalongDisclosureGroup("Voir exactement les cartes sélectionnées") { Text(String(decoding: bytes, as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                                 }
                                 HStack { Button("Exporter les cartes sélectionnées…") { exportCards() }; Button("Préparer l’envoi à mon compte Goalong") { do { let bytes = try model.projection(); onSend(bytes); closeStudio() } catch { model.error = error.localizedDescription } } }.disabled(!model.reviewed || model.selectedItems.isEmpty || model.busy)
                                 Text("Le partage avec les autres se règle ensuite sur le site, rubrique par rubrique et selon le public choisi.").font(.caption).foregroundStyle(.secondary)

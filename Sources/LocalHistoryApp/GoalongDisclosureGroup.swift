@@ -23,6 +23,13 @@ struct GoalongDisclosureGroup<Label: View, Content: View>: View {
         label = Text(title)
     }
 
+    init<S: StringProtocol>(_ title: S, isExpanded: Binding<Bool>? = nil,
+         @ViewBuilder content: () -> Content) where Label == Text {
+        externalExpansion = isExpanded
+        self.content = content()
+        label = Text(title)
+    }
+
     var body: some View {
         DisclosureGroup(isExpanded: externalExpansion ?? $localExpansion) {
             content

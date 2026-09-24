@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.46 — focus lisible et sections dépliables
+
+- Temps de focus visible dans les indicateurs principaux et en barres turquoise, incluses dans le temps actif sans double comptage.
+- Seuil de 10, 25 ou 50 minutes et définition de la continuité directement accessibles sous le graphique.
+- Absence de séquence qualifiante expliquée, sans assimiler ce résultat à une absence de travail ou de concentration.
+- Aperçu contenant une séquence de focus visible à chaque seuil, y compris les jours de week-end.
+- En-têtes dépliables cliquables sur toute la largeur, avec survol, accès clavier et contenu indépendant, dans toutes les fenêtres.
+
 ## 0.6.44 — appels et lectures au premier plan
 
 - Délai d’inactivité lu sur tous les événements d’entrée macOS, plutôt que sur l’événement null.

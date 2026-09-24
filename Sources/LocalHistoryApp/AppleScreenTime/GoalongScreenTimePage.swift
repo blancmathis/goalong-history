@@ -50,7 +50,7 @@ struct GoalongScreenTimePage: View {
                     if (screenTime.summary?.deviceSummaries.count ?? 0) > 1 {
                         deviceUsageCard
                     }
-                    DisclosureGroup("Source, confidentialité et export") {
+                    GoalongDisclosureGroup("Source, confidentialité et export") {
                         sourceDetails.padding(.top, 14)
                     }.font(.system(size: 13))
                 } else { screenTimeConsentCard }
@@ -307,7 +307,7 @@ struct GoalongScreenTimePage: View {
             screenTimeConsentCard
             Text("Seule la journée en cours est relue dans les sources Apple autorisées. Une copie locale compacte est conservée ; les journées terminées sont consultées depuis cette archive. Aucun réglage Apple n’est modifié et aucune donnée n’est envoyée en consultant cette page.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
-            DisclosureGroup("Diagnostic technique") {
+            GoalongDisclosureGroup("Diagnostic technique") {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(screenTime.status.message)
                     Button("Vérifier les autorisations macOS…") { screenTime.openFullDiskAccessSettings() }

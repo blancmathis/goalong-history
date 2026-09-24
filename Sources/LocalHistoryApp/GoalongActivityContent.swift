@@ -92,10 +92,10 @@ struct GoalongAnalyticsContent: View {
 
     private var metrics: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) { activeMetric; applicationsMetric; continuityMetric }.frame(minWidth: 560)
+            HStack(alignment: .top, spacing: 12) { activeMetric; applicationsMetric; focusMetric }.frame(minWidth: 560)
             VStack(spacing: 12) {
                 activeMetric
-                HStack(alignment: .top, spacing: 12) { applicationsMetric; continuityMetric }
+                HStack(alignment: .top, spacing: 12) { applicationsMetric; focusMetric }
             }
         }.accessibilityIdentifier("activity-primary-metrics")
     }
@@ -150,7 +150,7 @@ struct GoalongAnalyticsContent: View {
                     if hourly || sparse {
                         HStack(spacing: 16) {
                             legend("Temps actif", color: LHTheme.accent)
-                            legend("Focus inclus", color: LHTheme.teal)
+                            legend("Focus ≥ \(focusMinutes) min · inclus", color: LHTheme.teal)
                         }
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), alignment: .leading)], alignment: .leading, spacing: 8) {
@@ -164,7 +164,7 @@ struct GoalongAnalyticsContent: View {
                     Text(fullDay ? "Vue complète · les heures sans données restent non observées."
                         : "Vue centrée sur les heures observées · activez Journée entière pour afficher toute la journée.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
-                    DisclosureGroup("Heures et valeurs") {
+                    GoalongDisclosureGroup("Heures et valeurs") {
                         VStack(spacing: 8) {
                             ForEach(day.hours(minimumMinutes: focusMinutes).filter { $0.seconds > 0 }) { hour in
                                 HStack {
@@ -184,11 +184,11 @@ struct GoalongAnalyticsContent: View {
                         legend("Travail classé", color: LHTheme.accent)
                         legend("Autres usages", color: LHTheme.warning)
                         legend("À préciser", color: LHTheme.secondaryText)
-                        legend("Focus inclus", color: LHTheme.teal)
+                        legend("Focus ≥ \(focusMinutes) min · inclus", color: LHTheme.teal)
                     }
                     Text("Sélectionnez un jour pour l’explorer, puis revenez à cette période.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
-                    DisclosureGroup("Explorer les jours et leurs valeurs") {
+                    GoalongDisclosureGroup("Explorer les jours et leurs valeurs") {
                         VStack(spacing: 0) {
                             ForEach(current.days) { day in
                                 Button { onDay(day.date) } label: {
@@ -203,6 +203,7 @@ struct GoalongAnalyticsContent: View {
                         }.padding(.top, 8)
                     }.font(.system(size: 12))
                 }
+                GoalongFocusExplanation(hasFocus: !focus.isEmpty, minimumMinutes: $focusMinutes)
                 comparison
             }
         }.accessibilityIdentifier("activity-primary-chart")
@@ -250,11 +251,8 @@ struct GoalongAnalyticsContent: View {
                             .foregroundStyle(kindColor(kind)).cornerRadius(2)
                             .accessibilityLabel("\(shortDate(day.date)), \(kindLabel(kind))").accessibilityValue(duration(day.seconds(kind)))
                     }
-                    // Independent points never draw a misleading line over a missing day.
-                    PointMark(x: .value("Jour", middleOfDay(day.date)), y: .value("Focus", day.focusSeconds(minimumMinutes: focusMinutes) / scale.unitSeconds))
-                        .foregroundStyle(LHTheme.teal).symbolSize(28)
-                        .accessibilityLabel("\(shortDate(day.date)), focus inclus")
-                        .accessibilityValue(duration(day.focusSeconds(minimumMinutes: focusMinutes)))
+                    GoalongFocusBar(start: day.date, seconds: day.focusSeconds(minimumMinutes: focusMinutes),
+                        unitSeconds: scale.unitSeconds)
                 } else if day.observedSeconds > 0 && day.state == .ready {
                     PointMark(x: .value("Jour", middleOfDay(day.date)), y: .value("Durée", 0.0))
                         .foregroundStyle(LHTheme.secondaryText).accessibilityLabel("\(shortDate(day.date)), zéro minute active observée")
@@ -284,27 +282,8 @@ struct GoalongAnalyticsContent: View {
     }
 
     private func hourlyChart(_ day: GoalongLocalAnalytics.Day) -> some View {
-        let hours = day.hours(minimumMinutes: focusMinutes)
-        let scale = GoalongAnalyticsChartScale(maximumSeconds: hours.map(\.seconds).max() ?? 0, hourly: true)
-        return Chart {
-            ForEach(hours.filter { $0.seconds > 0 }) { hour in
-                BarMark(x: .value("Heure", hour.start, unit: .hour), y: .value("Activité", hour.seconds / scale.unitSeconds))
-                    .foregroundStyle(LHTheme.accent).cornerRadius(2)
-                    .accessibilityLabel("\(time(hour.start)), activité observée").accessibilityValue(duration(hour.seconds))
-                PointMark(x: .value("Heure", hour.start.addingTimeInterval(hour.end.timeIntervalSince(hour.start) / 2)),
-                          y: .value("Focus", hour.focusSeconds / scale.unitSeconds))
-                    .foregroundStyle(LHTheme.teal).symbolSize(25)
-                    .accessibilityLabel("\(time(hour.start)), focus inclus").accessibilityValue(duration(hour.focusSeconds))
-            }
-        }
-        .chartLegend(.hidden).chartXScale(domain: chartDateRange).chartYScale(domain: 0...scale.upperBound)
-        .chartPlotStyle { plot in plot.clipped() }
-        .chartXAxis { AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
-            AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour()); AxisTick()
-        } }
-        .chartYAxis { AxisMarks(position: .leading) { value in
-            AxisGridLine(); AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
-        } }.frame(height: 200)
+        GoalongHourlyFocusChart(day: day, focusMinutes: focusMinutes,
+            dateRange: chartDateRange, hourStride: hourStride)
     }
 
     private var comparison: some View {
@@ -314,7 +293,7 @@ struct GoalongAnalyticsContent: View {
                 Text("\(delta >= 0 ? "+" : "−")\(duration(abs(delta))) de temps observé par rapport à la période précédente.")
                     .font(.system(size: 12, weight: .medium))
             }
-            DisclosureGroup("Comparaison avec la période précédente") {
+            GoalongDisclosureGroup("Comparaison avec la période précédente") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Période sélectionnée : \(duration(current.activeSeconds)) · \(current.daysWithObservations)/\(current.days.count) jours avec activité mesurée.")
                     Text("Période précédente : \(payload.previous.observedSeconds > 0 ? duration(payload.previous.activeSeconds) : "—") · \(payload.previous.daysWithObservations)/\(payload.previous.days.count) jours avec activité mesurée.")
@@ -356,7 +335,7 @@ struct GoalongAnalyticsContent: View {
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 ForEach(visible) { card in
-                    DisclosureGroup {
+                    GoalongDisclosureGroup {
                         VStack(alignment: .leading, spacing: 9) {
                             Text(.init(card.summary)).textSelection(.enabled)
                             if !card.caveat.isEmpty { Label(card.caveat, systemImage: "info.circle").foregroundStyle(.secondary) }
@@ -388,20 +367,15 @@ struct GoalongAnalyticsContent: View {
 
     private var rhythmDetails: some View {
         LHCard {
-            DisclosureGroup("Détails du rythme et du focus") {
+            GoalongDisclosureGroup("Détails du rythme et du focus") {
                 VStack(alignment: .leading, spacing: 15) {
                     HStack(alignment: .top, spacing: 12) { workMetric; focusMetric }
                     Text("À préciser : \(duration(current.days.reduce(0) { $0 + $1.seconds(.unclassified) })). Le classement du travail reste incomplet tant que ces usages ne sont pas classés.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     Text("Le focus décrit une continuité dans la même application et sur le même domaine, pas la concentration mentale.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
-                    HStack {
-                        Text("Séquence minimale").font(.system(size: 12))
-                        Picker("Séquence minimale de focus", selection: $focusMinutes) {
-                            Text("10 min").tag(10); Text("25 min").tag(25); Text("50 min").tag(50)
-                        }.labelsHidden().pickerStyle(.segmented).frame(width: 225).accessibilityIdentifier("analytics-focus-threshold")
-                        Spacer(minLength: 0)
-                    }
+                    Text("Seuil sélectionné : \(focusMinutes) min · modifiable sous le graphique.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                     HStack(alignment: .top, spacing: 24) {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Plus longue séquence").foregroundStyle(.secondary)
@@ -454,7 +428,7 @@ struct GoalongAnalyticsContent: View {
     }
 
     private var methodology: some View {
-        DisclosureGroup("Comment lire ces chiffres ?") {
+        GoalongDisclosureGroup("Comment lire ces chiffres ?") {
             VStack(alignment: .leading, spacing: 9) {
                 Text("Temps actif = Travail classé + Autres usages + À préciser. Le travail classé et le focus sont inclus dans l’actif ; ce ne sont pas des heures supplémentaires.")
                 Text("Le classement local n’est conservé qu’à partir de 50 % de confiance. Sans classement, le travail reste à préciser, pas à zéro. Autres usages ne signifie pas procrastination.")

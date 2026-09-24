@@ -32,7 +32,7 @@ struct AgentTokenUsageCard: View {
                     Text("\(provider): \(totals.isEmpty ? "Unknown" : totals.reduce(0, +).formatted()) tokens observed")
                         .font(.system(size: 12, weight: .medium))
                 }
-                DisclosureGroup("Provider, model & conversation details") {
+                GoalongDisclosureGroup("Provider, model & conversation details") {
                     VStack(alignment: .leading, spacing: 14) {
                         ForEach(usage.rows) { row in
                             VStack(alignment: .leading, spacing: 4) {

@@ -122,7 +122,7 @@
                         .accessibilityHint("Copies all Goalong CLI instructions for a local agent")
                     }
 
-                    DisclosureGroup("Preview agent instructions", isExpanded: $showsInstructionPreview) {
+                    GoalongDisclosureGroup("Preview agent instructions", isExpanded: $showsInstructionPreview) {
                         Text(Self.agentInstructions)
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)

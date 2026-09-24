@@ -70,6 +70,12 @@ jobs:
             fi
           fi
 
+      - name: Exercise full-row disclosure interactions
+        run: |
+          mkdir -p qa/local-analytics
+          GOALONG_FOCUS_UI_TESTS=1 GOALONG_FOCUS_UI_SNAPSHOT="/qa/local-analytics/disclosures-expanded.png" \
+            swift test --skip-build --filter GoalongDisclosureInteractionTests
+
       - name: Render local analytics with synthetic data
         run: |
           mkdir -p qa/local-analytics

@@ -65,7 +65,7 @@ import AppKit
             }
             if search.isEmpty {
                 BackgroundContinuitySettings()
-                DisclosureGroup("Confidentialité · tout suspendre") {
+                GoalongDisclosureGroup("Confidentialité · tout suspendre") {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une pause détente, utilisez « Faire une pause » dans la barre latérale : l’historique continue.")
                             .font(.callout).foregroundStyle(.secondary)
@@ -117,7 +117,7 @@ import AppKit
             }
             GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording) }
             VisibleContextControl()
-            DisclosureGroup("Confidentialité avancée") {
+            GoalongDisclosureGroup("Confidentialité avancée") {
                 VStack(alignment: .leading, spacing: 14) {
                     Toggle("Inclure les fenêtres privées détectées", isOn: Binding(
                         get: { model.appliedSettings.capturePrivateBrowsing },
@@ -161,7 +161,7 @@ import AppKit
             }
             Text("Les fonctions désactivées ne demandent aucune autorisation.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
-            DisclosureGroup("Résoudre un problème") {
+            GoalongDisclosureGroup("Résoudre un problème") {
                 Button("Ouvrir les diagnostics d’accès") { model.selectSection(.privacy) }.buttonStyle(.bordered).padding(.top, 10)
             }.font(.system(size: 13))
         case .storage:
