@@ -126,7 +126,9 @@ final class GoalongDisclosureInteractionTests: XCTestCase {
             visited += 1
             let node = NativeAccessibilityNode(object: object)
             if node.value("accessibilityRole") as? String == "AXButton",
-               node.value("accessibilityLabel") as? String == label { return node }
+               (node.value("accessibilityLabel") as? String == label
+                || node.value("accessibilityTitle") as? String == label) { return node }
+            print("AX_DISCLOSURE", node.value("accessibilityRole") ?? "nil" as NSString, node.value("accessibilityTitle") ?? "nil" as NSString, node.value("accessibilityLabel") ?? "nil" as NSString)
             pending.append(contentsOf: node.value("accessibilityChildren") as? [Any] ?? [])
             if let child = object as? NSView { pending.append(contentsOf: child.subviews) }
         }
@@ -143,8 +145,15 @@ final class GoalongDisclosureInteractionTests: XCTestCase {
             modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime + 0.01, windowNumber: window.windowNumber,
             context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
         // Only the fixture's own window receives these events; no system pointer movement.
-        NSApplication.shared.postEvent(up, atStart: false)
-        window.sendEvent(down)
+        let app = NSApplication.shared
+        app.postEvent(down, atStart: false)
+        app.postEvent(up, atStart: false)
+        let deadline = Date().addingTimeInterval(0.5)
+        while Date() < deadline {
+            if let event = app.nextEvent(matching: .any, until: Date().addingTimeInterval(0.02), inMode: .default, dequeue: true) {
+                app.sendEvent(event)
+            }
+        }
         pump()
     }
 }

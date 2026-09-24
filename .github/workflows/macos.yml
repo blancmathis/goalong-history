@@ -71,6 +71,7 @@ jobs:
           fi
 
       - name: Exercise full-row disclosure interactions
+        timeout-minutes: 2
         run: |
           mkdir -p qa/local-analytics
           GOALONG_FOCUS_UI_TESTS=1 GOALONG_FOCUS_UI_SNAPSHOT="$PWD/qa/local-analytics/disclosures-expanded.png" \
