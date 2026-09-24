@@ -245,7 +245,7 @@
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    DisclosureGroup("Display options") {
+                    GoalongDisclosureGroup("Display options") {
                         VStack(alignment: .leading, spacing: 8) {
                             Toggle("Group sites by browser", isOn: groupsSitesByBrowser)
                                 .toggleStyle(.switch)
@@ -368,7 +368,7 @@
                 LazyVStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         if item.kind == .browser {
-                            DisclosureGroup(isExpanded: browserExpansionBinding(item.id)) {
+                            GoalongDisclosureGroup(isExpanded: browserExpansionBinding(item.id)) {
                                 breakdownChildren(item.children)
                             } label: {
                                 breakdownLabel(item)

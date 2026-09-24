@@ -35,17 +35,17 @@ struct JevActivationAvailability: Equatable {
                 monitoringCard
                 JevWorkContextControls()
                 JevBreakControls()
-                DisclosureGroup("Configurer les rappels et les effets") {
+                GoalongDisclosureGroup("Configurer les rappels et les effets") {
                     JevInterventionControls().padding(.top, 12)
                 }.accessibilityIdentifier("jev-intervention-settings")
                 if !monitor.recentChecks.isEmpty {
-                    DisclosureGroup("Dernières vérifications · cette session") {
+                    GoalongDisclosureGroup("Dernières vérifications · cette session") {
                         JevRecentChecksView(checks: Array(monitor.recentChecks.prefix(6)))
                             .padding(.top, 12)
                     }
                     .accessibilityIdentifier("jev-recent-checks")
                 }
-                DisclosureGroup("Fonctionnement et confidentialité") {
+                GoalongDisclosureGroup("Fonctionnement et confidentialité") {
                     JevPrivacyControls().padding(.top, 12)
                 }
                 .accessibilityIdentifier("jev-privacy-details")

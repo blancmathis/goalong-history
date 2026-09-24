@@ -158,7 +158,7 @@ struct GoalongHealthImportSheet: View {
                 }.padding(14).background(LHTheme.pageBackground, in: RoundedRectangle(cornerRadius: 10))
             }
             if let payload {
-                DisclosureGroup("Voir les données exactes", isExpanded: $exactData) {
+                GoalongDisclosureGroup("Voir les données exactes", isExpanded: $exactData) {
                     ScrollView([.vertical, .horizontal]) { Text(String(decoding: payload, as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding(10) }.frame(height: 220)
                 }
                 HStack {

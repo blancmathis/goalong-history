@@ -114,7 +114,7 @@ struct GoalongReadableSharePreview: View {
                         Text("Aucune durée de cet appareil n’est transmise.").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     if let hours = device.hourly {
-                        DisclosureGroup("Horaires transmis") {
+                        GoalongDisclosureGroup("Horaires transmis") {
                             ForEach(Array(hours.enumerated()), id: \.offset) { hour, seconds in
                                 if let seconds { value(String(format: "%02d:00", hour), seconds: seconds) }
                             }
@@ -129,7 +129,7 @@ struct GoalongReadableSharePreview: View {
                 Label("Textes non inclus", systemImage: "text.badge.xmark")
                 if !data.devices.contains(where: { $0.hourly != nil }) { Label("Horaires non inclus", systemImage: "clock") }
             }.font(.system(size: 12)).foregroundStyle(.secondary)
-            DisclosureGroup("Informations jointes") {
+            GoalongDisclosureGroup("Informations jointes") {
                 VStack(alignment: .leading, spacing: 9) {
                     ForEach(Array(data.metadata.enumerated()), id: \.offset) { _, item in
                         VStack(alignment: .leading, spacing: 2) {

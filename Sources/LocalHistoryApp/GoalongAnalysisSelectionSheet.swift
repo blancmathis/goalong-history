@@ -123,7 +123,7 @@ import AgentActivity
                     }
                     Text("Une app réglée sur « Durée seulement » ne transmet aucun de ces détails.").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
-                DisclosureGroup("Exclure des sites de l’analyse") {
+                GoalongDisclosureGroup("Exclure des sites de l’analyse") {
                     VStack(alignment: .leading, spacing: 8) {
                         TextField("exemple.fr · un domaine par ligne", text: Binding(get: { scope.wrappedValue.excludedDomains.joined(separator: "\n") },
                             set: { var value = scope.wrappedValue; value.excludedDomains = $0.components(separatedBy: .newlines); scope.wrappedValue = value }), axis: .vertical)

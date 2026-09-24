@@ -148,7 +148,7 @@ struct GoalongWebsiteConnectionSheet: View {
                                 _ = GoalongWorkspaceOpenPolicy.open(URL(string: "https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#settings")!, purpose: .goalongWebsite)
                             }
                         }
-                        DisclosureGroup("Connexion manuelle et options avancées") {
+                        GoalongDisclosureGroup("Connexion manuelle et options avancées") {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Adresse et accès enregistrés").font(.headline)
                         TextField("Website origin, for example https://your-goalong-host", text: $origin)
@@ -166,7 +166,7 @@ struct GoalongWebsiteConnectionSheet: View {
                                     .buttonStyle(.borderless)
                             }
                         }
-                        DisclosureGroup("Autre méthode : coller le chemin du fichier", isExpanded: $showsTokenPath) {
+                        GoalongDisclosureGroup("Autre méthode : coller le chemin du fichier", isExpanded: $showsTokenPath) {
                             VStack(alignment: .leading, spacing: 8) {
                                 TextField("~/Downloads/goalong-token.txt", text: $tokenPathInput)
                                     .textFieldStyle(.roundedBorder)
@@ -212,7 +212,7 @@ struct GoalongWebsiteConnectionSheet: View {
                                 if let interpretation = rhythm.interpretation { Text(interpretation).font(.caption) }
                                 Button("Retirer cette analyse") { contextualRhythm = nil; invalidatePreview() }
                             } else {
-                                DisclosureGroup("Association simple par application, sans analyse du contexte") {
+                                GoalongDisclosureGroup("Association simple par application, sans analyse du contexte") {
                                     TextField("Nom du projet", text: $rhythmProject)
                                     TextField("Applications liées au projet, séparées par des virgules", text: $rhythmApps)
                                 }
@@ -257,7 +257,7 @@ struct GoalongWebsiteConnectionSheet: View {
                             .buttonStyle(.bordered) }
                         if let payload {
                             Text(previewSummary).font(.subheadline)
-                            DisclosureGroup("Review exact data", isExpanded: $showsExactData) {
+                            GoalongDisclosureGroup("Review exact data", isExpanded: $showsExactData) {
                                 ScrollView([.horizontal, .vertical]) {
                                     Text(String(decoding: payload, as: UTF8.self))
                                         .font(.system(.caption, design: .monospaced))
@@ -419,7 +419,7 @@ struct GoalongWebsiteConnectionSheet: View {
                 })) { Text(recapSections[index]).font(.caption).textSelection(.enabled) }
             }
             if !recapNotice.isEmpty { Text(recapNotice).font(.caption).foregroundStyle(.secondary) }
-            DisclosureGroup("Ajouter un commentaire personnel") {
+            GoalongDisclosureGroup("Ajouter un commentaire personnel") {
                 TextEditor(text: $recapExcerpt).frame(height: 70).accessibilityLabel("Commentaire personnel du récap")
             }
             Text("L'analyse utilise les sources autorisées dans l'app. La génération et l'envoi au site sont deux actions distinctes.").font(.caption).foregroundStyle(.secondary)

@@ -671,7 +671,7 @@
                     }
                 }
                 if let diagnostic = sourceDiagnostic {
-                    DisclosureGroup("Technical details") {
+                    GoalongDisclosureGroup("Technical details") {
                         Text(diagnostic)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)

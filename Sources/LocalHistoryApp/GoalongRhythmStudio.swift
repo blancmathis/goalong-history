@@ -143,7 +143,7 @@ struct GoalongRhythmStudio: View {
                         Text("Contexte à analyser").font(.headline)
                         Text("Décochez les éléments privés. Les épisodes sans contexte restent à préciser.").font(.caption)
                         ForEach(selected.rhythm.episodes ?? [], id: \.id) { row in
-                            DisclosureGroup("\(row.application ?? "Non observé") · +\(duration(row.offset_ms)) · \(duration(row.duration_ms))") {
+                            GoalongDisclosureGroup("\(row.application ?? "Non observé") · +\(duration(row.offset_ms)) · \(duration(row.duration_ms))") {
                                 ForEach(model.request?.rhythm.episodes?.first(where: {$0.id == row.id})?.evidence ?? [], id: \.id) { item in
                                     Toggle(isOn: Binding(get: { model.selectedEvidence.contains(item.id) }, set: { include in
                                         if include { model.selectedEvidence.insert(item.id) } else { model.selectedEvidence.remove(item.id) }; model.selectionChanged()
@@ -152,7 +152,7 @@ struct GoalongRhythmStudio: View {
                                 if row.evidence?.isEmpty != false { Text("Contexte non fourni").font(.caption).foregroundStyle(.secondary) }
                             }
                         }
-                        DisclosureGroup("Voir la sélection exacte pour l'agent") { Text(String(decoding: (try? selected.encoded()) ?? Data(), as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+                        GoalongDisclosureGroup("Voir la sélection exacte pour l'agent") { Text(String(decoding: (try? selected.encoded()) ?? Data(), as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                         HStack {
                             Text(connection.accountLabel).font(.caption)
                             Spacer()

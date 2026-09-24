@@ -33,7 +33,7 @@ import LocalHistoryCore
                         Text(model.automaticCleanup ? "Après confirmation, les données plus anciennes pourront être effacées." : "Sans nettoyage automatique, rien n’est effacé.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
-                    DisclosureGroup("Personnaliser par type de données") {
+                    GoalongDisclosureGroup("Personnaliser par type de données") {
                         VStack(spacing: 14) {
                             ForEach(HistoryDataClass.allCases, id: \.self) { kind in
                                 HStack {

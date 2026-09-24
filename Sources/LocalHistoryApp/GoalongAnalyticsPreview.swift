@@ -60,12 +60,12 @@ enum GoalongAnalyticsPreview {
                 url: host.map { URLSnapshot(value: "https://" + $0, host: $0, redactionApplied: true) },
                 classification: .init(category: "Exemple", isWork: work, confidence: 0.9,
                     classifierVersion: "developer-preview-v1"),
-                suppressionReason: suppression, metadata: metadata))
+                suppressionReason: suppression, metadata: metadata ?? ["idle_seconds": "0"]))
         }
         func block(hour: Int, minute: Int, duration: Int, app: String, host: String? = nil,
-                   work: Bool? = true, idle: Bool = false, concealed: Bool = false) {
+                   work: Bool? = true, idle: Bool = false, concealed: Bool = false, minimumDuration: Int = 0) {
             guard let start = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) else { return }
-            let length = max(1, Int(Double(duration) * scale))
+            let length = max(max(1, minimumDuration), Int(Double(duration) * scale))
             for offset in 0..<length {
                 sample(at: start.addingTimeInterval(Double(offset * 60)), app: concealed ? nil : app,
                     host: host, work: work, suppression: concealed ? .manualPause : nil,
@@ -74,7 +74,7 @@ enum GoalongAnalyticsPreview {
             // Explicit end sample closes the last measured minute without extrapolation.
             sample(at: start.addingTimeInterval(Double(length * 60)), app: nil, kind: .recorderStopped)
         }
-        block(hour: 9, minute: 0, duration: 52 + seed % 15, app: "Xcode")
+        block(hour: 9, minute: 0, duration: 52 + seed % 15, app: "Xcode", minimumDuration: 52)
         block(hour: 10, minute: 15, duration: 22 + seed % 9, app: "Safari", host: "docs.example.org")
         block(hour: 10, minute: 55, duration: 48 + seed % 14, app: "Figma")
         block(hour: 12, minute: 5, duration: 18, app: "Notes", work: nil)

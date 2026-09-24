@@ -110,7 +110,7 @@ struct GoalongAnalysisHumanPreview: View {
                                     Text(GoalongReadableSharePreview.duration(row["secondes_actives"] as? Int ?? 0)).monospacedDigit()
                                 }.font(.system(size: 14))
                             } else {
-                                DisclosureGroup(row["application"] as? String ?? row["appareil"] as? String ?? row["titre"] as? String ?? "\(row["outil"] as? String ?? "Élément") \(index + 1)") {
+                                GoalongDisclosureGroup(row["application"] as? String ?? row["appareil"] as? String ?? row["titre"] as? String ?? "\(row["outil"] as? String ?? "Élément") \(index + 1)") {
                                     Text(render(row)).font(.system(size: 13)).textSelection(.enabled)
                                         .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                                 }.font(.system(size: 14))

@@ -53,7 +53,7 @@
                 }
                 Text(localRecordingDraft ? "Valider démarre le suivi local avec ces choix, après les accès macOS nécessaires. Aucun envoi." : "Le suivi ne démarrera pas. Vos choix restent modifiables.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
-                DisclosureGroup("Choisir des exclusions avant de commencer") {
+                GoalongDisclosureGroup("Choisir des exclusions avant de commencer") {
                     GoalongOnboardingExclusions(model: model).padding(.top, 12)
                 }.font(.system(size: 13))
                 if let note { Text(note).font(.system(size: 13)).foregroundStyle(LHTheme.warning) }

@@ -31,7 +31,7 @@
 
                     PrivacyChoicesOverview(model: model)
                     VisibleContextControl()
-                    DisclosureGroup("Build and verification details") {
+                    GoalongDisclosureGroup("Build and verification details") {
                         VStack(spacing: 14) { buildSecurityCard; dataFlowCard }.padding(.top, 12)
                     }
                     permissionsCard
@@ -215,7 +215,7 @@
                         subtitle: "Access is optional for sources you leave off. macOS permission and your choice to enable a source are separate."
                     )
 
-                    DisclosureGroup("Capture diagnostics") { captureHealthPanel.padding(.top, 12) }
+                    GoalongDisclosureGroup("Capture diagnostics") { captureHealthPanel.padding(.top, 12) }
 
                     VStack(spacing: 16) {
                         permissionRow(

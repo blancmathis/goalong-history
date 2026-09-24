@@ -62,7 +62,7 @@ import LocalHistoryQueryCLI
                             .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("sharing-error")
                     }
                     if model.preview == nil {
-                        DisclosureGroup("Outils avancés") {
+                        GoalongDisclosureGroup("Outils avancés") {
                             Button("Récap relu ou connexion manuelle…") { advanced = true }.buttonStyle(.bordered).padding(.top, 10)
                         }.font(.system(size: 13))
                     }
@@ -167,7 +167,7 @@ import LocalHistoryQueryCLI
                         Text("Les domaines sont retirés pour préserver le masquage des applications.").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 }
-                DisclosureGroup("Nom des appareils") {
+                GoalongDisclosureGroup("Nom des appareils") {
                     Toggle("Inclure leurs noms personnels", isOn: $model.draft.includeDeviceNames).toggleStyle(.checkbox).padding(.top, 10)
                 }.font(.system(size: 13))
                 Text("Les textes ne sont pas inclus. Les adresses locales ou non valides sont ignorées.")
@@ -247,7 +247,7 @@ import LocalHistoryQueryCLI
                 Toggle("J’autorise ces données chaque jour, sans élargir la sélection.", isOn: $model.reviewed)
                     .toggleStyle(.checkbox).font(.system(size: 13)).accessibilityIdentifier("sharing-confirm-review")
             }
-            DisclosureGroup("Données techniques", isExpanded: $exactData) {
+            GoalongDisclosureGroup("Données techniques", isExpanded: $exactData) {
                 ScrollView([.horizontal, .vertical]) {
                     Text(String(decoding: approved.payload, as: UTF8.self)).font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled).padding(12)
@@ -309,7 +309,7 @@ struct GoalongSharingSelector: View {
                 Button("Tout décocher") { selection.removeAll() }.disabled(selection.isEmpty)
             }.buttonStyle(.borderless).font(.caption)
             if !absent.isEmpty {
-                DisclosureGroup("\(absent.count) choix enregistrés absents de cette journée") {
+                GoalongDisclosureGroup("\(absent.count) choix enregistrés absents de cette journée") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Ils restent autorisés pour les prochains envois s’ils réapparaissent. Retirez ceux que vous ne souhaitez plus autoriser.")
                             .font(.caption).foregroundStyle(.secondary)
