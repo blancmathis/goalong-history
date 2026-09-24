@@ -39,7 +39,8 @@ final class GoalongDisclosureInteractionTests: XCTestCase {
             throw XCTSkip("Opt-in native interaction test; synthetic window only")
         }
         let app = NSApplication.shared
-        app.setActivationPolicy(.accessory)
+        let previousApplication = NSWorkspace.shared.frontmostApplication
+        app.setActivationPolicy(.regular)
         app.finishLaunching()
         // Materialize only this test process’s SwiftUI accessibility tree.
         app.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
@@ -50,7 +51,12 @@ final class GoalongDisclosureInteractionTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentViewController = controller
         window.makeKeyAndOrderFront(nil)
-        defer { window.orderOut(nil); window.contentViewController = nil }
+        window.orderFrontRegardless()
+        app.activate(ignoringOtherApps: true)
+        defer {
+            window.orderOut(nil); window.contentViewController = nil
+            previousApplication?.activate(options: [.activateIgnoringOtherApps])
+        }
         pump()
 
         let first = try button("Heures et valeurs", in: controller.view)
@@ -127,10 +133,9 @@ final class GoalongDisclosureInteractionTests: XCTestCase {
             guard let object = value as? NSObject, seen.insert(ObjectIdentifier(object)).inserted else { continue }
             visited += 1
             let node = NativeAccessibilityNode(object: object)
-            if node.value("accessibilityRole") as? String == "AXButton",
+            if ["AXButton", "AXDisclosureTriangle"].contains(node.value("accessibilityRole") as? String ?? ""),
                (node.value("accessibilityLabel") as? String == label
                 || node.value("accessibilityTitle") as? String == label) { return node }
-            print("AX_DISCLOSURE", node.value("accessibilityRole") ?? "nil" as NSString, node.value("accessibilityTitle") ?? "nil" as NSString, node.value("accessibilityLabel") ?? "nil" as NSString)
             pending.append(contentsOf: node.value("accessibilityChildren") as? [Any] ?? [])
             if let child = object as? NSView { pending.append(contentsOf: child.subviews) }
         }
