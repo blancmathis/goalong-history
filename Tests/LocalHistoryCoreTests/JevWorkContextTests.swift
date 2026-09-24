@@ -106,8 +106,7 @@ extension JevWorkContextTests {
         XCTAssertEqual(state["content"] as? String, rules.content)
         XCTAssertEqual((state["rows"] as? [[String]])?.count, 2)
         let questions = try XCTUnwrap(object["questions"] as? [String: [String: Any]])
-        let criteria = try XCTUnwrap(questions["activity"]?["criteria"] as? [String: String])
-        XCTAssertTrue(try XCTUnwrap(criteria["productive"]).contains("explicitly allowed media"))
+        XCTAssertTrue(try XCTUnwrap(questions["activity"]?["instructions"] as? String).contains("Explicit content rules"))
         XCTAssertEqual(try JSONDecoder().decode(JevWorkContext.self, from: JSONEncoder().encode(rules)), rules)
     }
     func testApplicationsOrContentsWorkWithoutRequiringAProjectName() throws {

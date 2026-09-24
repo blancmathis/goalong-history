@@ -9,7 +9,7 @@ REQUIRED = {
     'Sources/LocalHistoryCore/JevFocus.swift': [
         'maximumRequestBytes = 1600', 'maximumInputTokens = 999',
         'model = "jev-1.13.0"', 'window.hasActivity',
-        '"avoid": work.procrastination', 'non-exhaustive', 'Unlisted can still distract',
+        'state["avoid"] = work.procrastination', 'non-exhaustive', 'Unlisted can still distract',
         'count >= 1, !warningIssued', 'samples.filter { $0.date >= start && $0.date < end }',
         'response.usage.input_tokens <= JevPayload.maximumInputTokens',
         'response.model == JevPayload.model', 'throw JevError.budget',

@@ -139,6 +139,9 @@ critères productifs déjà enregistrés. **Modifier**, **Enregistrer les critè
 **Annuler** concernent les quatre rubriques ensemble. Un brouillon n'est jamais envoyé.
 Vider puis enregistrer le champ retire ces exemples sans effacer les critères productifs.
 La saisie n'active pas la surveillance et ne déclenche pas d'analyse supplémentaire.
+Lorsque le champ est vide, la requête et les consignes antérieures sont conservées
+à l’identique : le réglage reste un complément facultatif, pas un changement de
+classement pour les personnes qui ne l’utilisent pas.
 
 Le schéma local v3 conserve les trois champs existants et ajoute `procrastination`.
 Les fichiers v1/v2 sont lus avec des exemples vides, sans être réécrits ni enrichis
