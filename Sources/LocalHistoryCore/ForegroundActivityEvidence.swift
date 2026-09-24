@@ -20,6 +20,11 @@ public enum ForegroundActivityEvidence: String, CaseIterable, Sendable {
 
     /// A process-wide display assertion cannot establish which website is in use.
     public static func supportsWebsiteAttribution(_ event: HistoryEvent) -> Bool {
+        if ForegroundUsageObservation.usesPresencePolicy(event) {
+            guard ForegroundUsageObservation.hasVisibleForeground(event) else { return false }
+            if evidence(in: event) != .displayAssertion { return true }
+            return ForegroundUsageObservation.remainingReadingSeconds(event) > 0
+        }
         guard evidence(in: event) == .displayAssertion else { return true }
         // Recent input remains valid tab evidence; only passive process-only
         // intervals need to withhold the website attribution.
@@ -29,6 +34,7 @@ public enum ForegroundActivityEvidence: String, CaseIterable, Sendable {
     }
 
     public static func isInputIdle(_ event: HistoryEvent) -> Bool {
+        if let remaining = ForegroundUsageObservation.remainingActiveSeconds(event) { return remaining == 0 }
         guard evidence(in: event) == nil,
               let raw = event.metadata?["idle_seconds"], let seconds = Double(raw) else { return false }
         return !seconds.isFinite || seconds >= inputIdleThreshold
@@ -37,6 +43,7 @@ public enum ForegroundActivityEvidence: String, CaseIterable, Sendable {
     /// All duration projections must use the same heartbeat policy. Old journals
     /// keep their input-only semantics: never backfill meetings from app names.
     public static func isActiveUsageEvidence(_ event: HistoryEvent) -> Bool {
+        if let remaining = ForegroundUsageObservation.remainingActiveSeconds(event) { return remaining > 0 }
         guard event.suppressionReason == nil, event.element?.isSecure != true else { return false }
         if evidence(in: event) != nil { return true }
         guard event.kind == .heartbeat else { return true }

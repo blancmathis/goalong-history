@@ -931,6 +931,58 @@
             )
         }
 
+        func testQuietReadingParityAcrossAllDiskBackedCounters() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let day = makeDay(year: 2026, month: 8, day: 24)
+            var journal = Data()
+            for index in 0...20 {
+                let date = day.addingTimeInterval(Double(index * 30))
+                let presence = ForegroundUsageObservation(observedAt: date,
+                    idleSeconds: Double(index * 30), isForegroundVisible: true)
+                journal.append(try line(HistoryEvent(schemaVersion: 4, sessionID: "presence",
+                    timestamp: date, kind: .heartbeat,
+                    app: AppSnapshot(name: "Safari", bundleIdentifier: "com.apple.Safari", processIdentifier: 42),
+                    url: URLSnapshot(value: "https://example.org/private?token=secret", host: "example.org", redactionApplied: true),
+                    metadata: presence.metadata(at: date))))
+            }
+            let file = fixture.events.appendingPathComponent("2026-08-24.jsonl")
+            try journal.write(to: file)
+            let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
+            let analytics = GoalongLocalAnalytics.load(root: fixture.root, day: day, now: day.addingTimeInterval(86400))
+            let app = try XCTUnwrap(snapshot.trackedUsage.first { $0.kind == .application })
+            let site = try XCTUnwrap(snapshot.trackedUsage.first { $0.kind == .website })
+            XCTAssertEqual(app.foregroundSeconds, 300)
+            XCTAssertEqual(site.foregroundSeconds, 300)
+            XCTAssertEqual(analytics.activeSeconds, 300)
+            XCTAssertEqual(snapshot.activeMinutes, 5)
+            XCTAssertEqual(snapshot.timeline.reduce(0) { $0 + $1.activeMinutes }, 5)
+            XCTAssertEqual(app.activeMinutes, 0, "Input minutes remain distinct from foreground duration.")
+            XCTAssertEqual(try Data(contentsOf: file), journal, "Reading must not rewrite the source journal.")
+        }
+
+        func testPresenceGapSurvivesDashboardCompaction() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let day = makeDay(year: 2026, month: 8, day: 24)
+            var journal = Data()
+            for index in 0...3 {
+                let date = day.addingTimeInterval(Double(index * 30))
+                let presence = ForegroundUsageObservation(observedAt: date, idleSeconds: 0, isForegroundVisible: true)
+                var metadata = presence.metadata(at: date)
+                if index == 1 { metadata["observation_gap"] = "true" }
+                journal.append(try line(HistoryEvent(schemaVersion: 4, sessionID: "presence", timestamp: date,
+                    kind: index == 1 ? .recorderHealth : .heartbeat,
+                    app: AppSnapshot(name: "Reader", bundleIdentifier: "test.reader", processIdentifier: 42),
+                    metadata: metadata)))
+            }
+            try journal.write(to: fixture.events.appendingPathComponent("2026-08-24.jsonl"))
+            let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
+            XCTAssertEqual(snapshot.trackedUsage.first?.foregroundSeconds, 30)
+            XCTAssertEqual(GoalongLocalAnalytics.load(root: fixture.root, day: day,
+                now: day.addingTimeInterval(86400)).activeSeconds, 30)
+        }
+
         func testPassiveForegroundTimeSurvivesDashboardDiskCompaction() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.root) }

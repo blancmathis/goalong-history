@@ -154,6 +154,8 @@
             let pauseRevision = context?.globalPauseRevision ?? GoalongGlobalPause.load().revision
             let policyStamp = context?.privacyRevision
                 ?? GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory).revision
+            let usageMetadata = Self.metadataForObservation(context: context, kind: kind,
+                timestamp: timestamp, metadata: metadata, inputOrigin: inputOrigin)
             let base = HistoryEvent(
                 schemaVersion: 4,
                 sessionID: sessionID,
@@ -175,7 +177,7 @@
                 ),
                 suppressionReason: suppressionReason ?? context?.suppressionReason,
                 message: message,
-                metadata: metadata,
+                metadata: usageMetadata,
                 integrity: nil
             )
             let violations = PrivacyBoundaryValidator.violations(in: base)
@@ -226,6 +228,19 @@
             writerCondition.unlock()
             completion?.wait()
             return true
+        }
+
+        static func metadataForObservation(context: ContextSnapshot?, kind: EventKind, timestamp: Date,
+                                           metadata: [String: String]?, inputOrigin: InputOriginSnapshot?) -> [String: String]? {
+            guard let context, context.suppressionReason == nil,
+                  context.focusedElement?.isSecure != true, let observation = context.foregroundUsage else { return metadata }
+            let inputKinds: Set<EventKind> = [.mouseClick, .keyPressed, .keyboardShortcut, .typingBurst, .scrollBurst]
+            let directInput = inputKinds.contains(kind) && inputOrigin?.assessment != .softwareAttributed
+            var result = metadata ?? [:]
+            // Expired cached playback must not survive through an older caller's metadata.
+            result.removeValue(forKey: ForegroundActivityEvidence.metadataKey)
+            result.merge(observation.metadata(at: timestamp, directInput: directInput)) { _, current in current }
+            return result
         }
 
         func flush() {

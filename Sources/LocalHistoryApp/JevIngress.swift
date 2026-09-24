@@ -102,18 +102,19 @@ final class JevIngress: @unchecked Sendable {
 
     /// Uses the same fresh foreground evidence as the local time counter. Input
     /// silence does not stop checks during an observed call or playing video.
-    func observeContext(_ context: ContextSnapshot?, foregroundEvidence: ForegroundActivityEvidence?) {
+    func observeContext(_ context: ContextSnapshot?, foregroundEvidence: ForegroundActivityEvidence?,
+                        presence: ForegroundUsageObservation? = nil) {
         lock.lock(); let active = enabled; lock.unlock()
         guard active else { return }
         guard let context, context.suppressionReason == nil, context.focusedElement?.isSecure != true,
               !GoalongGlobalPause.isPaused(), !IsSecureEventInputEnabled() else { boundary(); return }
         let now = Date()
         lock.lock()
-        guard enabled, !privateWindow, foregroundEvidence != nil, foregroundEvidence != .displayAssertion,
+        guard enabled, !privateWindow,
+              Self.shouldSampleForeground(presence: presence, evidence: foregroundEvidence),
               now >= nextPlaybackProbe else { lock.unlock(); return }
         nextPlaybackProbe = now.addingTimeInterval(10)
         lock.unlock()
-        guard let foregroundEvidence else { return }
         let policy = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)
         guard !policy.excludes(appID: context.app.bundleIdentifier, name: context.app.name),
               !policy.excludes(domain: context.url?.host), !GoalongGlobalPause.isPaused(),
@@ -123,9 +124,20 @@ final class JevIngress: @unchecked Sendable {
         blocked = false
         appendLocked(JevSample(date: now, resource: JevPayload.clean(context.url?.host ?? context.app.name, bytes: 36),
             title: Self.redactedText(context.window?.title ?? "", limit: 72),
-            action: foregroundEvidence == .call ? "call" : foregroundEvidence == .mediaPlayback ? "playing" : "presenting",
-            surface: foregroundEvidence == .call ? "meeting" : foregroundEvidence == .mediaPlayback ? "video" : "other",
+            action: foregroundEvidence == .call ? "call" : foregroundEvidence == .mediaPlayback ? "playing" : "foreground",
+            surface: foregroundEvidence == .call ? "meeting" : foregroundEvidence == .mediaPlayback ? "video"
+                : Self.isSocial(context.url?.host) ? "social-feed" : "other",
             isActivity: true))
+    }
+
+    static func shouldSampleForeground(presence: ForegroundUsageObservation?, evidence: ForegroundActivityEvidence?) -> Bool {
+        if let presence, !presence.isForegroundVisible { return false }
+        let reading = presence.map { value in
+            value.isForegroundVisible && (value.idleLimitSeconds == 0
+                || (value.idleSeconds.isFinite && value.idleSeconds >= 0
+                    && value.idleSeconds < Double(value.idleLimitSeconds)))
+        } ?? false
+        return reading || (evidence != nil && evidence != .displayAssertion)
     }
 
     static func sample(_ event: HistoryEvent) -> JevSample? {
@@ -133,6 +145,8 @@ final class JevIngress: @unchecked Sendable {
             .keyboardShortcut, .keyPressed, .applicationActivated, .windowChanged, .urlChanged, .focusChanged]
         guard activeKinds.contains(event.kind) || event.kind == .semanticSnapshot,
               let app = event.app, event.suppressionReason == nil, event.element?.isSecure != true else { return nil }
+        if ForegroundUsageObservation.usesPresencePolicy(event),
+           !ForegroundActivityEvidence.isActiveUsageEvidence(event) { return nil }
         let host = (event.url?.host ?? "").lowercased()
         let typing = event.kind == .typingBurst
         let role = (event.element?.role ?? "").lowercased()

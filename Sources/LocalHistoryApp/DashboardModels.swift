@@ -264,6 +264,7 @@
         var captureURLs: Bool
         var capturePrivateBrowsing: Bool
         var redactAllURLQueryValues: Bool
+        var foregroundIdleSeconds: Int
         var retentionDays: Int
         var verificationEnabled: Bool
         var verificationServerURL: String
@@ -283,6 +284,7 @@
             captureURLs = config.captureURLs
             capturePrivateBrowsing = config.capturePrivateBrowsing == true
             redactAllURLQueryValues = config.redactAllURLQueryValues
+            foregroundIdleSeconds = config.effectiveForegroundIdleSeconds
             retentionDays = config.retentionDays
             verificationEnabled = config.verificationEnabled == true
             verificationServerURL = config.verificationServerURL ?? ""
@@ -304,6 +306,7 @@
             output.captureURLs = captureURLs
             output.capturePrivateBrowsing = capturePrivateBrowsing
             output.redactAllURLQueryValues = redactAllURLQueryValues
+            output.foregroundIdleSeconds = foregroundIdleSeconds
             output.retentionDays = retentionDays
             output.verificationEnabled = verificationEnabled
             output.verificationServerURL = verificationServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
