@@ -41,6 +41,8 @@ final class GoalongDisclosureInteractionTests: XCTestCase {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         app.finishLaunching()
+        // Materialize only this test process’s SwiftUI accessibility tree.
+        app.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
         let state = DisclosureFixtureState()
         let controller = NSHostingController(rootView: DisclosureInteractionFixture(state: state))
         let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 600, height: 500),
