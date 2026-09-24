@@ -24,21 +24,27 @@ final class ForegroundActivityProbe {
         guard context.suppressionReason == nil, context.focusedElement?.isSecure != true,
               !IsSecureEventInputEnabled(), !GoalongGlobalPause.isPaused(),
               let front = NSWorkspace.shared.frontmostApplication,
-              front.processIdentifier == context.app.processIdentifier,
-              context.window != nil, !front.isHidden else { reset(); return nil }
+              Self.isEligibleForeground(context, frontmostPID: front.processIdentifier,
+                                        isHidden: front.isHidden) else { reset(); return nil }
         let now = ProcessInfo.processInfo.systemUptime
         let same = cachedContext.map {
             $0.app == context.app && $0.window == context.window && $0.url == context.url
                 && $0.privacyRevision == context.privacyRevision
                 && $0.globalPauseRevision == context.globalPauseRevision
         } ?? false
-        if same, cachedLabelsEnabled == labelsEnabled, now < nextProbe { return cachedEvidence }
+        if now < nextProbe {
+            if same, cachedLabelsEnabled == labelsEnabled { return cachedEvidence }
+            // A changed app/window/tab invalidates evidence immediately, but must
+            // not turn fast title changes into repeated AX walks on the main thread.
+            cachedContext = nil; cachedEvidence = nil
+            return nil
+        }
         cachedContext = context; cachedLabelsEnabled = labelsEnabled
         nextProbe = now + Self.interval; cachedEvidence = nil
 
         guard Self.hasVisibleWindow(pid: front.processIdentifier) else { return nil }
         let browser = Self.isBrowser(context)
-        let controls = labelsEnabled ? ForegroundPlaybackControls.probe(context) : .unknown
+        let controls = labelsEnabled && AXIsProcessTrusted() ? ForegroundPlaybackControls.probe(context) : .unknown
         let holdsDisplay = Self.holdsDisplayAssertion(pid: front.processIdentifier, bundleURL: front.bundleURL)
         let evidence = Self.resolve(
             isBrowser: browser,
@@ -51,6 +57,13 @@ final class ForegroundActivityProbe {
               !IsSecureEventInputEnabled(), !GoalongGlobalPause.isPaused() else { reset(); return nil }
         cachedEvidence = evidence
         return evidence
+    }
+
+    static func isEligibleForeground(_ context: ContextSnapshot, frontmostPID: pid_t, isHidden: Bool) -> Bool {
+        // OS process evidence does not require permission to read window titles
+        // or controls. A visible window is checked separately through CoreGraphics.
+        context.suppressionReason == nil && context.focusedElement?.isSecure != true
+            && context.app.processIdentifier > 0 && context.app.processIdentifier == frontmostPID && !isHidden
     }
 
     static func resolve(isBrowser: Bool, isCallApplication: Bool,

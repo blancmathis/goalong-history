@@ -6,6 +6,18 @@ import XCTest
 @testable import LocalHistoryApp
 
 final class ForegroundActivityProbeTests: XCTestCase {
+    func testOSEvidenceEligibilityDoesNotRequireControlOrTitlePermission() {
+        func context(_ suppression: SuppressionReason? = nil) -> ContextSnapshot {
+            .init(app: .init(name: "Zoom", bundleIdentifier: "us.zoom.xos", processIdentifier: 42),
+                  window: nil, focusedElement: nil, url: nil, suppressionReason: suppression)
+        }
+        XCTAssertTrue(ForegroundActivityProbe.isEligibleForeground(context(), frontmostPID: 42, isHidden: false))
+        XCTAssertFalse(ForegroundActivityProbe.isEligibleForeground(context(), frontmostPID: 77, isHidden: false))
+        XCTAssertFalse(ForegroundActivityProbe.isEligibleForeground(context(), frontmostPID: 42, isHidden: true))
+        XCTAssertFalse(ForegroundActivityProbe.isEligibleForeground(context(.privateBrowserWindow), frontmostPID: 42, isHidden: false))
+        XCTAssertFalse(ForegroundActivityProbe.isEligibleForeground(context(.excludedApplication), frontmostPID: 42, isHidden: false))
+    }
+
     func testAnOpenMeetingAppAloneIsNotAnActiveCall() {
         XCTAssertNil(ForegroundActivityProbe.resolve(isBrowser: false, isCallApplication: true,
             control: .unknown, holdsDisplayAssertion: false))

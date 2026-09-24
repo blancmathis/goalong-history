@@ -950,6 +950,7 @@
             let app = try XCTUnwrap(snapshot.trackedUsage.first { $0.kind == .application && $0.bundleIdentifier == "com.apple.Safari" })
             let site = try XCTUnwrap(snapshot.trackedUsage.first { $0.kind == .website && $0.name == "youtube.com" })
             XCTAssertEqual(app.foregroundSeconds, 600, accuracy: 0.001)
+            XCTAssertEqual(snapshot.activeMinutes, 10, "Today/Computer History summary must include passive foreground use.")
             XCTAssertEqual(site.foregroundSeconds, 300, accuracy: 0.001)
             XCTAssertEqual(app.activeMinutes, 0)
         }
@@ -969,6 +970,8 @@
             let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
             let app = try XCTUnwrap(snapshot.trackedUsage.first { $0.kind == .application && $0.bundleIdentifier == "us.zoom.xos" })
             XCTAssertEqual(app.foregroundSeconds, 2700, accuracy: 0.001)
+            XCTAssertEqual(snapshot.activeMinutes, 45)
+            XCTAssertEqual(snapshot.timeline.reduce(0) { $0 + $1.activeMinutes }, 45)
         }
 
         func testIdleHeartbeatsStopExtendingWebsiteForegroundTime() throws {

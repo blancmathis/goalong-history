@@ -192,6 +192,11 @@ public enum GoalongLocalAnalytics {
                 // A later idle sample/app switch must not erase an observed call
                 // preceding it; equally, a later call must not revive earlier idle.
                 kind = .idle
+            } else if previous.url?.host != nil,
+                      !ForegroundActivityEvidence.supportsWebsiteAttribution(previous) {
+                // A browser-process wake assertion cannot classify the content
+                // of an unproven tab as productive or unproductive.
+                kind = .unclassified
             } else if let classification = previous.classification, classification.confidence >= 0.5 {
                 kind = classification.isWork.map { $0 ? .work : .other } ?? .unclassified
             } else {

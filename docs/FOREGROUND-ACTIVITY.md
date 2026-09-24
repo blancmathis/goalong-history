@@ -8,7 +8,7 @@ Apple Screen Time reste une source distincte, non modifiée par ce mécanisme.
 
 `ForegroundActivityProbe` ne considère que l’application réellement au premier
 plan, non masquée, avec une fenêtre visible. `IOPMCopyAssertionsByProcess` fournit
-les assertions macOS ; seules les assertions actives `PreventUserIdleDisplaySleep`
+les assertions macOS, y compris avec les libellés/titres désactivés ; seules les assertions actives `PreventUserIdleDisplaySleep`
 du PID de cette app ou de ses helpers embarqués dans ce même bundle sont retenues.
 Les assertions système, téléchargements, audio global, CPU, daemon ou caffeinate
 ne constituent pas un signal pour une autre app. Aucune commande shell n’est
@@ -20,11 +20,12 @@ lecture en cours, Quitter/Terminer l’appel pour une réunion. Un contrôle Lec
 indique une pause et neutralise l’assertion résiduelle. Le nom Zoom seul ne suffit
 jamais. Le budget est de 192 nœuds, 75 ms plus un éventuel appel AX en cours borné
 à 25 ms. Le cache est borné à 10 s et invalidé aux changements de contexte,
-permissions de libellés, révisions de confidentialité et interruptions.
+permissions de libellés, révisions de confidentialité et interruptions. Les
+changements rapides de contexte invalident le cache sans multiplier les sondages.
 
 Un signal navigateur au niveau du processus ne permet pas d’identifier l’onglet
-qui joue. Il contribue au temps de l’app, sans attribuer de site ni alimenter la
-surveillance sémantique. Les contrôles de lecture/appel du contexte focalisé
+qui joue. Sans saisie récente, il contribue au temps de l’app, sans attribuer de
+site, classer son contenu ni alimenter la surveillance sémantique. Les contrôles de lecture/appel du contexte focalisé
 peuvent alimenter la surveillance déjà activée, même sans nouvelle saisie.
 
 ## Durées et confidentialité

@@ -86,6 +86,13 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
         XCTAssertEqual(result.seconds(.other), 1800)
         XCTAssertEqual(GoalongLocalAnalytics.Period(days: [result]).usage(websites: true).first?.seconds, 1800)
     }
+    func testRecentInputStillProvesTheWebsiteWhenBrowserAlsoHoldsAnAssertion() {
+        let metadata = ["idle_seconds": "5", ForegroundActivityEvidence.metadataKey: "display_assertion"]
+        let result = build([event(0, host: "example.org", metadata: metadata), event(60, host: "example.org", metadata: metadata)])
+        XCTAssertEqual(result.activeSeconds, 60)
+        XCTAssertEqual(GoalongLocalAnalytics.Period(days: [result]).usage(websites: true).first?.seconds, 60)
+    }
+
     func testProcessWideEvidenceCountsBrowserButNeverInventsWebsiteTime() {
         let metadata = ["idle_seconds": "3600", ForegroundActivityEvidence.metadataKey: "display_assertion"]
         let result = build([event(0, host: "example.org", metadata: metadata), event(60, metadata: metadata)])

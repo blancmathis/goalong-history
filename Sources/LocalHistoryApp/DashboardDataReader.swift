@@ -499,6 +499,7 @@
                             activeMinuteKeys.insert(minute)
                         }
                         if event.classification?.isWork == true,
+                            (event.url == nil || ForegroundActivityEvidence.supportsWebsiteAttribution(event)),
                             !workMinuteKeys.contains(minute)
                         {
                             try derivedBudget.reserve(16)
@@ -2544,6 +2545,7 @@
         }
 
         private static func isActivityEvent(_ event: HistoryEvent) -> Bool {
+            if ForegroundActivityEvidence.evidence(in: event) != nil { return true }
             switch event.kind {
             case .applicationActivated, .windowChanged, .urlChanged, .mouseClick,
                 .keyboardShortcut, .keyPressed, .typingBurst, .scrollBurst:

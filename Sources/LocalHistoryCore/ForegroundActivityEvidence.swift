@@ -20,7 +20,12 @@ public enum ForegroundActivityEvidence: String, CaseIterable, Sendable {
 
     /// A process-wide display assertion cannot establish which website is in use.
     public static func supportsWebsiteAttribution(_ event: HistoryEvent) -> Bool {
-        evidence(in: event) != .displayAssertion
+        guard evidence(in: event) == .displayAssertion else { return true }
+        // Recent input remains valid tab evidence; only passive process-only
+        // intervals need to withhold the website attribution.
+        guard let raw = event.metadata?["idle_seconds"], let seconds = Double(raw),
+              seconds.isFinite, seconds >= 0 else { return false }
+        return seconds < inputIdleThreshold
     }
 
     public static func isInputIdle(_ event: HistoryEvent) -> Bool {
