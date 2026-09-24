@@ -136,7 +136,7 @@ extension JevWorkContextTests {
     func testLegacyProjectDescriptionMigratesWithoutAddingCriteria() throws {
         let data = Data(#"{"schemaVersion":1,"summary":"Goalong macOS Swift app"}"#.utf8)
         let rules = try JSONDecoder().decode(JevWorkContext.self, from: data)
-        XCTAssertTrue(rules.isValid); XCTAssertEqual(rules.schemaVersion, 2)
+        XCTAssertTrue(rules.isValid); XCTAssertEqual(rules.schemaVersion, 3)
         XCTAssertEqual(rules.summary, "Goalong macOS Swift app")
         XCTAssertTrue(rules.applications.isEmpty); XCTAssertTrue(rules.content.isEmpty)
         XCTAssertThrowsError(try JSONDecoder().decode(JevWorkContext.self,

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.43 — repères personnels de procrastination
+
+- Champ facultatif dans Surveillance temps réel pour donner des exemples certains de procrastination.
+- Exemples transmis séparément aux analyses autorisées, sans limiter la détection à cette liste.
+- Correspondance sur l’usage réel, prioritaire sur une autorisation générale ; les autres usages ne sont pas automatiquement productifs.
+- Critères existants conservés, édition annulable et retrait des exemples sans effacer les projets.
+- Budgets, pauses, exclusions et autorisations inchangés.
+
 ## 0.6.30 — enregistrement complet dès l’activation
 
 - Proposition complète des huit types de détails à la première activation, depuis chaque entrée de l’application.

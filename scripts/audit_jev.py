@@ -9,6 +9,7 @@ REQUIRED = {
     'Sources/LocalHistoryCore/JevFocus.swift': [
         'maximumRequestBytes = 1600', 'maximumInputTokens = 999',
         'model = "jev-1.13.0"', 'window.hasActivity',
+        'state["avoid"] = work.procrastination', 'non-exhaustive', 'Unlisted can still distract',
         'count >= 1, !warningIssued', 'samples.filter { $0.date >= start && $0.date < end }',
         'response.usage.input_tokens <= JevPayload.maximumInputTokens',
         'response.model == JevPayload.model', 'throw JevError.budget',
@@ -50,6 +51,7 @@ REQUIRED = {
     'Sources/LocalHistoryApp/JevControls.swift': ['confirmingText = true'],
     'Sources/LocalHistoryApp/JevWarningPanel.swift': ['.nonactivatingPanel', 'overlay.ignoresMouseEvents = true', 'timeInterval: 30', 'RunLoop.main.add(lease, forMode: .common)', 'func hide(', 'canBecomeKey: Bool { false }'],
     'Sources/LocalHistoryCore/JevInterventions.swift': ['effectsEnabled = false', '(10...40).contains(stage.intensity)', 'appearance > 1', 'filter { $0 != previous }'],
+    'Sources/LocalHistoryCore/JevWorkContext.swift': ['public let procrastination: String', 'hasProductivityCriteria', 'maximumBytes = 800', 'schemaVersion == 3'],
     'Sources/LocalHistoryApp/JevWorkContextStore.swift': ['JevLocalFiles.read("work-context.json"', 'value.isValid', 'revision = UUID()', 'func save('],
     'Sources/LocalHistoryApp/JevMonitoringPage.swift': ['confirming = true', 'Autoriser les envois à TypeSafe', 'monitor.setEnabled(false)', 'availability.canToggle(isEnabled: enabled)'],
     'Sources/LocalHistoryApp/JevConnectionSheet.swift': ['Une clé est enregistrée sur ce Mac', 'SecureField(', 'monitor.saveKey(key)'],

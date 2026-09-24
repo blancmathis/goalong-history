@@ -62,7 +62,7 @@ struct JevActivationAvailability: Equatable {
             Button("Annuler", role: .cancel) {}
             Button("Autoriser les envois à TypeSafe") { monitor.setEnabled(true) }
         } message: {
-            Text("Toutes les 15 secondes avec activité observable, Goalong transmet la référence de travail enregistrée et un extrait compact (applications, domaines, titres et interactions) à api.typesafe.ai. Ces données peuvent être personnelles. L’API est payante. Une détection suffisamment fiable affiche un rappel, sans attendre une deuxième fenêtre. Les autres sources restent inchangées.")
+            Text("Toutes les 15 secondes avec activité observable, Goalong transmet les critères de travail et exemples de procrastination enregistrés, ainsi qu’un extrait compact (applications, domaines, titres et interactions) à api.typesafe.ai. Ces données peuvent être personnelles. L’API est payante. Une détection suffisamment fiable affiche un rappel, sans attendre une deuxième fenêtre. Les autres sources restent inchangées.")
         }
     }
 

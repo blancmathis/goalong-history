@@ -20,14 +20,14 @@ extension Notification.Name {
                 guard value.isValid else { throw JevWorkContextError.tooLong }
                 context = value
             }
-        } catch { self.error = "Critères illisibles : surveillance suspendue. Enregistrez à nouveau ce qui est productif." }
+        } catch { self.error = "Critères illisibles : surveillance suspendue. Enregistrez à nouveau vos repères de surveillance." }
     }
     static func reviewedVerdict(_ verdict: JevVerdict, work: JevWorkContext, window: JevWindow) -> JevVerdict {
         JevEvidencePolicy.reviewed(verdict, work: work, window: window)
     }
     /// Called only by the explicit Save action; editing a draft does not authorize new context.
-    func save(_ summary: String, applications: String = "", content: String = "") throws {
-        let value = try JevWorkContext(summary: summary, applications: applications, content: content)
+    func save(_ summary: String, applications: String = "", content: String = "", procrastination: String = "") throws {
+        let value = try JevWorkContext(summary: summary, applications: applications, content: content, procrastination: procrastination)
         try JevLocalFiles.write(try JSONEncoder().encode(value), name: "work-context.json", root: root)
         context = value; error = nil; revision = UUID()
         NotificationCenter.default.post(name: .jevWorkContextDidChange, object: self)
