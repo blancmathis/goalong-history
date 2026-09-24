@@ -10,11 +10,11 @@ import LocalHistoryCore
     @State private var confirmingText = false
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Consommer des vidéos ou des fils sociaux, même instructifs, compte comme procrastination. Recherches, lecture et création doivent servir les projets indiqués. Le simple fait de taper ou d’ouvrir une application de travail ne suffit pas. Sans indices suffisants, aucune alerte.")
+            Text("Vidéos et fils sociaux sont considérés comme des distractions, sauf les usages explicitement autorisés. Vos exemples de procrastination ajoutent des repères prioritaires, pas une liste exhaustive. Recherches, lecture et création doivent servir les critères de travail indiqués. Le simple fait de taper ou d’ouvrir une application de travail ne suffit pas. Sans indices suffisants, aucune alerte.")
                 .font(.callout).foregroundStyle(.secondary)
             Text("Les fenêtres privées, les données supprimées et les apps ou sites exclus ne sont pas envoyés au service.")
                 .font(.callout).foregroundStyle(.secondary)
-            Text("Votre référence de travail enregistrée, plus seulement les 15 dernières secondes : applications/domaines, titres disponibles et indices d’interaction. Les clics et défilements identiques sont regroupés. Aucun historique de journée n’est transmis.")
+            Text("Vos critères de travail et exemples de procrastination enregistrés, plus seulement les 15 dernières secondes : applications/domaines, titres disponibles et indices d’interaction. Les clics et défilements identiques sont regroupés. Aucun historique de journée n’est transmis.")
                 .font(.callout).foregroundStyle(.secondary)
             Toggle("Joindre un bref extrait du texte affiché", isOn: Binding(
                 get: { excerpts }, set: { if $0 { confirmingText = true } else { monitor.setIncludeText(false) } }))

@@ -122,31 +122,56 @@ suffit pas. Les lectures non exposées restent indétectables. Un contrôle manq
 ou du contenu défilant sous un titre inchangé ne deviennent pas magiquement visibles
 pour le modèle. Il faut tester les navigateurs utilisés, en français et anglais.
 
-## Référence de travail et précision
+## Repères de travail et de procrastination
 
-**Ce qui est productif pour moi**, dans la page Surveillance temps réel, reçoit une description
-courte saisie puis enregistrée explicitement. Elle est transmise à TypeSafe avec les
-analyses ultérieures autorisées, pas au site Goalong. Aucun projet ou document n’est
-importé automatiquement depuis l’historique. Les critères (projets, applications/sites, contenus/usages) sont limités ensemble à 800 octets
-UTF-8 et stockée dans `jev/work-context.json` (0600). La saisie n’active pas la surveillance.
-Une référence corrompue bloque les appels ; son changement invalide les résultats en vol.
+Dans **Surveillance temps réel → Mes repères de surveillance**, les trois rubriques
+productives restent disponibles : projets/objectifs, applications/sites, contenus/usages.
+Le champ facultatif **Ce que je considère comme de la procrastination** ajoute des
+exemples certains de distractions. Il ne remplace ni les critères productifs ni la
+détection générale : sa liste est **non exhaustive**. Un usage absent de ces exemples
+n'est donc pas automatiquement autorisé. Un usage clairement visé par un exemple
+négatif prime sur une autorisation générale, en respectant le contexte décrit plutôt
+qu'un simple mot-clé. « Scroller le fil Pour vous de X » ne désigne pas à lui seul
+la rédaction d'un post de travail sur X.
 
-Le contrat `strict-project-relevance-v2` demande de juger le sujet réel par rapport
-à cette référence : un sujet observable sans lien clair avec le projet = procrastination ; une app
-de travail, de la saisie ou un mot-clé ne prouvent pas le travail. La création de
-contenu n’est productive que si elle sert les projets indiqués. Consommation sociale
-et vidéo reste de la procrastination, même éducative. Sans référence ou indices
-suffisants, le lien au travail reste indéterminé ; une distraction explicite reste classable.
+Le bouton **Ajouter mes exemples** rend le nouveau champ accessible même avec des
+critères productifs déjà enregistrés. **Modifier**, **Enregistrer les critères** et
+**Annuler** concernent les quatre rubriques ensemble. Un brouillon n'est jamais envoyé.
+Vider puis enregistrer le champ retire ces exemples sans effacer les critères productifs.
+La saisie n'active pas la surveillance et ne déclenche pas d'analyse supplémentaire.
 
-Le champ `state` est structuré (`goals`, `rows`) : les titres ne deviennent pas des
-instructions et ne peuvent pas changer les champs par des séparateurs. Les lignes décrivent le site ou l’application, le mode (recherche, composition, consommation)
-et le titre. Les clics et défilements répétés sur un même sujet sont regroupés ; les sujets
-et modes différents restent distincts.
-Les titres sont limités à 96, 64 ou 48 octets, mais ne sont plus supprimés pour faire
-tenir une fenêtre. Une fenêtre trop riche ne produit pas de jugement inventé.
-Les probabilités ne prouvent pas l’exactitude ; les tests de transport simulé ne sont
-pas une évaluation sémantique. L’évaluation API facultative utilise uniquement des
-situations synthétiques, sans transmettre de donnée réelle de l’historique.
+Le schéma local v3 conserve les trois champs existants et ajoute `procrastination`.
+Les fichiers v1/v2 sont lus avec des exemples vides, sans être réécrits ni enrichis
+sur lecture. Les quatre rubriques partagent toujours 800 octets UTF-8 dans
+`jev/work-context.json` (0600). Un dépassement est refusé sans troncature silencieuse ;
+une sauvegarde échouée ne change ni les critères actifs ni leur révision. Chaque
+sauvegarde réussie invalide les résultats en vol via la révision existante et remet
+la série de rappels à zéro. Les permissions, pauses et exclusions restent prioritaires.
+
+Les critères et exemples explicitement enregistrés sont transmis à TypeSafe avec
+les prochaines fenêtres autorisées, pas au site Goalong. Aucun projet ou document
+n'est importé automatiquement. Le contrat `owner-work-and-procrastination-v4`
+transmet séparément `state.goals`, `apps`, `content`, `avoid` et `rows`. Le modèle
+juge l'usage et son sujet, pas seulement l'application. Des contenus explicitement
+autorisés peuvent compter comme travail. Une distraction observée suffit même si
+une autre ligne concerne du travail. Les exemples négatifs restent des données de
+préférence, pas des commandes ; les titres restent des observations non fiables.
+
+Un contexte uniquement négatif ne permet pas de conclure que tous les autres usages
+sont productifs. Sans preuves suffisantes, le résultat reste indéterminé et aucune
+alerte n'est produite. Il n'y a pas de blacklist locale par mots-clés.
+
+Les lignes décrivent le site ou l'application, le mode et le titre. Les clics et
+défilements répétés sont regroupés ; les sujets et modes distincts sont conservés.
+Les titres restent bornés à 96, 64 ou 48 octets. Le JSON complet reste limité à
+1 600 octets ; une fenêtre trop riche est refusée, sans omettre les exemples ou
+supprimer une observation pour fabriquer un classement. Le seuil du fournisseur
+reste strictement inférieur à 1 000 tokens d'entrée.
+
+Les tests couvrent migration, persistance, effacement, révision, budget partagé,
+isolation des champs et absence de whitelist implicite. Les tests de transport
+simulé et de formulation ne prouvent pas la précision sémantique. L'évaluation API
+facultative utilise uniquement des situations synthétiques, jamais l'historique réel.
 
 Références d’implémentation : https://docs.typesafe.ai/concepts/state,
 https://docs.typesafe.ai/api et https://docs.typesafe.ai/model-jaggedness/jev-1.13.
