@@ -9,10 +9,11 @@ REQUIRED = {
     'Sources/LocalHistoryCore/JevFocus.swift': [
         'maximumRequestBytes = 1600', 'maximumInputTokens = 999',
         'model = "jev-1.13.0"', 'window.hasActivity',
-        'state["avoid"] = work.procrastination', 'non-exhaustive', 'Unlisted can still distract',
+        'state["avoid"] = work.procrastination', 'non-exhaustive', 'unlisted can distract',
         'count >= 1, !warningIssued', 'samples.filter { $0.date >= start && $0.date < end }',
         'response.usage.input_tokens <= JevPayload.maximumInputTokens',
         'response.model == JevPayload.model', 'throw JevError.budget',
+        'actions.sorted().joined', 'clean(row.excerpt, bytes: excerptBytes)',
     ],
     'Sources/LocalHistoryApp/JevTransport.swift': [
         'https://api.typesafe.ai/v1/systemone', 'URLSessionConfiguration = { .ephemeral }',
@@ -39,8 +40,18 @@ REQUIRED = {
         'event.element?.isSecure != true', 'sample.date.timeIntervalSince($0.date) > 60',
         'samples.count < 512', '!IsSecureEventInputEnabled()',
         'GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory).permits(event)',
-        'JevPlaybackProbe.isPlaying(context)',
+        'Self.shouldSampleForeground(presence: presence, evidence: foregroundEvidence)',
+        'revision == expected', 'offerVisibleText', 'foregroundSampleInterval: TimeInterval = 5',
+        'guard enabled, includeText, !privateWindow, !blocked',
         'DispatchQueue.main.async { center.post(name: .jevBoundaryChanged',
+    ],
+    'Sources/LocalHistoryApp/JevVisibleContextSampler.swift': [
+        'inbox.wantsVisibleText', 'ActivityAnalysisPreferences.richContextEnabled',
+        'remoteText && localText', 'self.inbox.generation == ingressGeneration',
+        'let current = revalidate()', 'Self.sameBoundary(current, context)',
+        'JevVisibleTextPolicy.permitsTraversal', 'JevVisibleTextPolicy.isVisible(bounds, in: viewport)',
+        'private var pending = false', 'qos: .utility', 'index < 200',
+        'AXProtectedContent', 'AXEditable', 'AXHidden',
     ],
     'Sources/LocalHistoryApp/JevLocalFiles.swift': [
         'O_NOFOLLOW', 'O_CLOEXEC', 'info.st_uid == getuid()', '0o600', '0o700',
@@ -57,26 +68,39 @@ REQUIRED = {
     'Sources/LocalHistoryApp/JevConnectionSheet.swift': ['Une clé est enregistrée sur ce Mac', 'SecureField(', 'monitor.saveKey(key)'],
 }
 
+
 def audit(root=ROOT):
-    errors=[]
+    errors = []
     for relative, fragments in REQUIRED.items():
-        try: text=(root/relative).read_text()
-        except OSError: errors.append(f'Missing {relative}'); continue
+        try:
+            text = (root / relative).read_text()
+        except OSError:
+            errors.append(f'Missing {relative}')
+            continue
         for fragment in fragments:
-            if fragment not in text: errors.append(f'{relative}: missing {fragment!r}')
-    warning = (root/'Sources/LocalHistoryApp/JevWarningPanel.swift').read_text()
+            if fragment not in text:
+                errors.append(f'{relative}: missing {fragment!r}')
+    warning = (root / 'Sources/LocalHistoryApp/JevWarningPanel.swift').read_text()
     for forbidden in ['startBreak(', 'setEnabled(false)', 'jev-warning-disable', 'jev-warning-pause']:
-        if forbidden in warning: errors.append(f'Unexpected popup action {forbidden}')
-    for path in (root/'Sources').rglob('Jev*.swift'):
-        text=path.read_text()
+        if forbidden in warning:
+            errors.append(f'Unexpected popup action {forbidden}')
+    ingress = (root / 'Sources/LocalHistoryApp/JevIngress.swift').read_text()
+    if 'excerpts[payload.id]' in ingress or 'payload.text' in ingress:
+        errors.append('Mixed local semantic payload must not supply remote visible excerpts')
+    for path in (root / 'Sources').rglob('Jev*.swift'):
+        text = path.read_text()
         if path.name != 'JevTransport.swift' and any(v in text for v in ['URLSession', 'URLRequest(', 'HTTPURLResponse']):
             errors.append(f'Unexpected Jev transport in {path.name}')
         for forbidden in ['URLSession.shared', 'NSPasteboard', 'CGWindowListCreateImage', 'CGEventKeyboardGetUnicodeString', 'Process()']:
-            if forbidden in text: errors.append(f'Forbidden Jev primitive {forbidden} in {path.name}')
+            if forbidden in text:
+                errors.append(f'Forbidden Jev primitive {forbidden} in {path.name}')
     return errors
 
+
 if __name__ == '__main__':
-    errors=audit()
-    for error in errors: print(error, file=sys.stderr)
-    if not errors: print('Jev boundary: separate opt-in, recent evidence, bounded transport and cancellation verified in source.')
+    errors = audit()
+    for error in errors:
+        print(error, file=sys.stderr)
+    if not errors:
+        print('Jev boundary: separate opt-in, recent evidence, read-only excerpts, bounded transport and cancellation verified in source.')
     raise SystemExit(bool(errors))

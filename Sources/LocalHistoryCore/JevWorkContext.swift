@@ -68,9 +68,10 @@ public enum JevEvidencePolicy {
         let placeholders: Set<String> = ["", "untitled", "sans titre", "new tab", "nouvel onglet", "home", "accueil", "google search", "recherche google"]
         let hasTopic = window.samples.contains {
             let title = $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return !placeholders.contains(title) && title != $0.resource.lowercased()
+            return !$0.excerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || (!placeholders.contains(title) && title != $0.resource.lowercased())
         }
-        let consumption = window.samples.contains { ["social-feed", "video"].contains($0.surface) && $0.isActivity }
+        let consumption = window.samples.contains { ["social-feed", "video", "video-feed"].contains($0.surface) && $0.isActivity }
         if !hasTopic && !consumption { return .unknown }
         // Negative examples alone never make all other uses productive.
         if verdict == .productive && (!work.hasProductivityCriteria || !hasTopic) { return .unknown }

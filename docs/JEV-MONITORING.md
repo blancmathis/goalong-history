@@ -139,9 +139,9 @@ critères productifs déjà enregistrés. **Modifier**, **Enregistrer les critè
 **Annuler** concernent les quatre rubriques ensemble. Un brouillon n'est jamais envoyé.
 Vider puis enregistrer le champ retire ces exemples sans effacer les critères productifs.
 La saisie n'active pas la surveillance et ne déclenche pas d'analyse supplémentaire.
-Lorsque le champ est vide, la requête et les consignes antérieures sont conservées
-à l’identique : le réglage reste un complément facultatif, pas un changement de
-classement pour les personnes qui ne l’utilisent pas.
+Lorsque le champ est vide, aucun exemple négatif n’est ajouté. Les critères
+productifs restent inchangés. Le contrat d’observation v5 conserve désormais les
+actions et les extraits séparément, que ce champ facultatif soit utilisé ou non.
 
 Le schéma local v3 conserve les trois champs existants et ajoute `procrastination`.
 Les fichiers v1/v2 sont lus avec des exemples vides, sans être réécrits ni enrichis
@@ -153,7 +153,7 @@ la série de rappels à zéro. Les permissions, pauses et exclusions restent pri
 
 Les critères et exemples explicitement enregistrés sont transmis à TypeSafe avec
 les prochaines fenêtres autorisées, pas au site Goalong. Aucun projet ou document
-n'est importé automatiquement. Le contrat `owner-work-and-procrastination-v4`
+n'est importé automatiquement. Le contrat `observed-use-and-topic-v5`
 transmet séparément `state.goals`, `apps`, `content`, `avoid` et `rows`. Le modèle
 juge l'usage et son sujet, pas seulement l'application. Des contenus explicitement
 autorisés peuvent compter comme travail. Une distraction observée suffit même si
@@ -164,9 +164,10 @@ Un contexte uniquement négatif ne permet pas de conclure que tous les autres us
 sont productifs. Sans preuves suffisantes, le résultat reste indéterminé et aucune
 alerte n'est produite. Il n'y a pas de blacklist locale par mots-clés.
 
-Les lignes décrivent le site ou l'application, le mode et le titre. Les clics et
-défilements répétés sont regroupés ; les sujets et modes distincts sont conservés.
-Les titres restent bornés à 96, 64 ou 48 octets. Le JSON complet reste limité à
+Les lignes décrivent le site ou l’application, le mode, le titre, les actions et
+un éventuel extrait visible séparé. Les clics et défilements répétés sont regroupés
+sans effacer les sujets et modes distincts. Les budgets titre/extrait sont réduits
+ensemble si nécessaire : 160/224, 96/160, 64/96 ou 48/64 octets UTF-8. Le JSON complet reste limité à
 1 600 octets ; une fenêtre trop riche est refusée, sans omettre les exemples ou
 supprimer une observation pour fabriquer un classement. Le seuil du fournisseur
 reste strictement inférieur à 1 000 tokens d'entrée.
@@ -263,3 +264,13 @@ autorisés. Une assertion globale du navigateur compte pour le navigateur, mais
 ne déclenche pas de classement sémantique ni n’identifie un site. Les appels
 natifs dont le processus au premier plan maintient l’écran actif peuvent être
 observés sans nouveau consentement ; le nom de l’app seul n’est jamais suffisant.
+
+
+## Continuité et extraits en version 0.6.47
+
+La collecte locale rafraîchit le contexte de surveillance toutes les cinq secondes,
+sans augmenter la cadence réseau de quinze secondes. Le mode vidéo, fil, recherche
+ou compositeur est commun aux événements et aux observations sans clavier. Les
+extraits facultatifs proviennent d’une sonde dédiée en lecture seule, soumise aux
+deux autorisations existantes, et ne réutilisent plus les captures locales mixtes.
+Les contrôles et limites sont détaillés dans `JEV-OBSERVATION-RELIABILITY.md`.

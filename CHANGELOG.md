@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.47 — surveillance continue des vidéos et fils sociaux
+
+- Observations locales rafraîchies toutes les cinq secondes, avec une analyse réseau toutes les quinze secondes.
+- Vidéo, fil social, recherche, messagerie et rédaction distingués également pendant les périodes sans clavier.
+- Actions conservées et extraits visibles séparés du titre pour mieux décrire les contenus consultés.
+- Extraits facultatifs issus uniquement de texte non éditable, avec les deux autorisations existantes et des contrôles de confidentialité avant et après la lecture.
+- Parcours de lecture borné, contrôles de lecteur priorisés et davantage de libellés français et anglais reconnus.
+- Seuil de confiance, budget réseau, pauses, exclusions et signature des mises à jour inchangés.
+
 ## 0.6.46 — focus lisible et sections dépliables
 
 - Temps de focus visible dans les indicateurs principaux et en barres turquoise, incluses dans le temps actif sans double comptage.
