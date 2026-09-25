@@ -23,6 +23,7 @@
         private var previous: ContextSnapshot?
         private var lastHeartbeat = Date.distantPast
         private let foregroundActivityProbe = ForegroundActivityProbe()
+        private let jevVisibleContext = JevVisibleContextSampler()
         private var lastForegroundEvidence: ForegroundActivityEvidence?
         private var lastPresenceActive: Bool?
         private var lastIdleLimit: Int?
@@ -117,6 +118,7 @@
             previous = nil
             setLatest(nil)
             foregroundActivityProbe.reset()
+            jevVisibleContext.invalidate()
             lastForegroundEvidence = nil
             lastPresenceActive = nil
             lastIdleLimit = nil
@@ -154,7 +156,7 @@
             }
             let boundedInterval = min(ForegroundUsageObservation.heartbeatInterval,
                 (JevIngress.shared.isEnabled || lastForegroundEvidence != nil)
-                    ? min(interval, ForegroundActivityProbe.interval) : interval)
+                    ? min(interval, JevIngress.shared.isEnabled ? JevIngress.foregroundSampleInterval : ForegroundActivityProbe.interval) : interval)
             let timer = Timer(timeInterval: boundedInterval, repeats: false) { [weak self] _ in
                 guard let self else { return }
                 self.timer = nil
@@ -262,6 +264,7 @@
             setLatest(current)
             let evidence = presence.evidence
             JevIngress.shared.observeContext(current, foregroundEvidence: evidence, presence: presence)
+            jevVisibleContext.observe(current, presence: presence) { [weak self] in self?.sampleNow() }
             captureHealth.setSuppression(current.suppressionReason)
             if current.suppressionReason == .accessibilityUnavailable {
                 captureHealth.markAXFailure()
