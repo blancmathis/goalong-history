@@ -97,6 +97,14 @@ final class JevObservationRuntimeTests: XCTestCase {
         XCTAssertEqual(window.samples.first?.title, "Quiet video")
         XCTAssertEqual(window.samples.first?.excerpt, "Visible topic about football highlights")
     }
+    func testCommonLocalizedPlayerLabelsRemainExplicitEvidence() {
+        for label in ["Pause (space)", "Pause (espace)", "Mettre la vidéo en pause", "Pause video playback"] {
+            XCTAssertEqual(ForegroundPlaybackControls.state(role: "AXButton", labels: [label]), .playing)
+        }
+        for label in ["Pause my subscription", "How to pause", "Play/Pause", "Playback settings"] {
+            XCTAssertEqual(ForegroundPlaybackControls.state(role: "AXButton", labels: [label]), .unknown)
+        }
+    }
     func testBothConsentsAndSamePublicBoundaryAreRequired() {
         for remote in [false, true] {
             for local in [false, true] {

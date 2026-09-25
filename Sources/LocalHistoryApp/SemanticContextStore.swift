@@ -125,7 +125,6 @@
                 if let identity {
                     remember(payload.reference, identity: identity)
                 }
-                JevIngress.shared.offer(payload)
                 return payload.reference
             }
         }

@@ -19,9 +19,9 @@ import LocalHistoryCore
             Toggle("Joindre un bref extrait du texte affiché", isOn: Binding(
                 get: { excerpts }, set: { if $0 { confirmingText = true } else { monitor.setIncludeText(false) } }))
                 .toggleStyle(.switch).disabled(!richText)
-            Text(richText ? "L’extrait est limité, filtré et transmis uniquement après ce choix supplémentaire." : "Cette option nécessite d’abord le choix local « Texte affiché ». Celui-ci n’est jamais activé par la surveillance.")
+            Text(richText ? "Les extraits visibles sont rafraîchis pendant la surveillance, séparés du titre et filtrés. Les champs de saisie et le texte hors de la zone visible sont exclus." : "Cette option nécessite d’abord le choix local « Texte affiché ». Celui-ci n’est jamais activé par la surveillance.")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("Le service ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. Sans interaction ni lecture vidéo explicitement détectée, aucun appel n’est effectué.")
+            Text("Le service ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. La lecture au premier plan reste suivie pendant le délai d’inactivité choisi. Une lecture vidéo explicitement détectée peut continuer sans clavier ; un onglet d’arrière-plan ne suffit pas.")
                 .font(.caption).foregroundStyle(.secondary)
             Text("Budget borné : requête JSON complète ≤ 1 600 octets UTF-8. Le compteur TypeSafe est aussi contrôlé : toute réponse annonçant 1 000 tokens ou plus suspend la surveillance. Le tokenizer et son surcoût interne ne sont pas publiés.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -41,7 +41,7 @@ import LocalHistoryCore
             Button("Annuler", role: .cancel) {}
             Button("Autoriser ces extraits") { monitor.setIncludeText(true) }
         } message: {
-            Text("De courts passages déjà autorisés à la collecte locale pourront aussi être envoyés à TypeSafe. Ils peuvent contenir des messages ou documents personnels. Aucune nouvelle capture n’est activée.")
+            Text("De courts passages déjà autorisés à la collecte locale pourront aussi être envoyés à TypeSafe. Ils peuvent contenir des messages ou documents personnels. Aucun nouvel accès système n’est demandé. Les champs éditables ne sont pas lus pour ces extraits.")
         }
     }
 }

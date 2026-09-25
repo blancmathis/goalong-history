@@ -197,7 +197,8 @@ enum ForegroundPlaybackControls {
         guard enabled, role.lowercased() == "axbutton" else { return .unknown }
         let labels = labels.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
         if labels.contains(where: { ["pause", "pause (k)", "mettre en pause", "mettre en pause (k)",
-                                     "pause playback", "pause video"].contains($0) }) { return .playing }
+                                     "pause playback", "pause video", "pause (space)", "pause (espace)",
+                                     "mettre la vidéo en pause", "pause video playback"].contains($0) }) { return .playing }
         if labels.contains(where: { ["leave meeting", "leave call", "end call", "end meeting",
                                      "end meeting for all", "quitter la réunion", "quitter la réunion zoom",
                                      "quitter l’appel", "quitter l'appel", "raccrocher", "terminer l’appel",
@@ -222,11 +223,31 @@ enum ForegroundPlaybackControls {
         guard AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &windowValue) == .success,
               let windowValue, CFGetTypeID(windowValue) == AXUIElementGetTypeID() else { return .unknown }
         let window = unsafeBitCast(windowValue, to: AXUIElement.self)
+        let deadline = ProcessInfo.processInfo.systemUptime + 0.10
         var queue: [AXUIElement] = [window]
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.075
+        // Check the focused control/document first, but only after proving its
+        // ancestor chain belongs to this exact focused window. This avoids
+        // exhausting the budget on browser chrome before reaching the player.
+        var focusValue: CFTypeRef?
+        if AXUIElementCopyAttributeValue(application, kAXFocusedUIElementAttribute as CFString, &focusValue) == .success,
+           let focusValue, CFGetTypeID(focusValue) == AXUIElementGetTypeID() {
+            var current = unsafeBitCast(focusValue, to: AXUIElement.self)
+            var seeds: [AXUIElement] = []
+            for _ in 0..<8 {
+                guard ProcessInfo.processInfo.systemUptime < deadline else { break }
+                if CFEqual(current, window) { queue = seeds + [window]; break }
+                seeds.append(current)
+                var parent: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent) == .success,
+                      let parent, CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
+                current = unsafeBitCast(parent, to: AXUIElement.self)
+            }
+        }
+        var seen = Set<CFHashCode>()
         var index = 0, sawStopped = false
         while index < queue.count, index < 192, ProcessInfo.processInfo.systemUptime < deadline {
             let element = queue[index]; index += 1
+            guard seen.insert(CFHash(element)).inserted else { continue }
             func value(_ attribute: String) -> CFTypeRef? {
                 guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
                 var result: CFTypeRef?
@@ -242,8 +263,11 @@ enum ForegroundPlaybackControls {
                 if result == .playing || result == .call { return result }
                 if result == .stopped { sawStopped = true }
             }
-            if let children = value(kAXChildrenAttribute) as? [AXUIElement] {
-                queue.append(contentsOf: children.prefix(max(0, 192 - queue.count)))
+            for key in ["AXContents", "AXVisibleChildren", kAXChildrenAttribute] {
+                if let children = value(key) as? [AXUIElement], !children.isEmpty {
+                    queue.append(contentsOf: children.prefix(max(0, 192 - queue.count)))
+                    break
+                }
             }
         }
         return sawStopped ? .stopped : .unknown

@@ -85,11 +85,6 @@ final class JevIngress: @unchecked Sendable {
         blocked = false
         appendLocked(sample)
     }
-    /// Compatibility hook for local semantic persistence. Mixed local captures
-    /// can contain selected text or editable values and are deliberately NOT sent.
-    /// Only the separately gated read-only sampler below can supply remote excerpts.
-    func offer(_ payload: SemanticContextPayload) {}
-
     func offerVisibleText(_ text: String, context: ContextSnapshot, at date: Date, generation expected: UInt64) {
         guard contextIsPermitted(context) else { return }
         let excerpt = Self.redactedText(text, limit: 224)
