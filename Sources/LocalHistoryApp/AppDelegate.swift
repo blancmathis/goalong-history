@@ -126,6 +126,7 @@
             }
 
             runtimeStarted = true
+            SupportDiagnostics.shared.start()
             LegacyInstallationMigrator.run()
             NSApplication.shared.setActivationPolicy(.accessory)
             GoalongWebsiteAutoSender.shared.start()
@@ -271,10 +272,12 @@
                     onQuit: { [weak self] in self?.requestUserQuit() }
                 )
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .app)
                 presentFatalError(error)
                 return
             }
 
+            SupportDiagnosticsRuntime.shared.start { [weak self] in self?.supportSnapshot() ?? [:] }
             applyDailyRetentionCleanupIfNeeded()
             applyCapabilityConsents(recordTransition: false)
             BackgroundContinuityController.shared.start(hasEnabledSources: hasEnabledBackgroundSources)
@@ -404,6 +407,7 @@
             workspaceObservers.removeAll()
             for observer in screenLockObservers { DistributedNotificationCenter.default().removeObserver(observer) }
             screenLockObservers.removeAll()
+            SupportDiagnosticsRuntime.shared.stop()
         }
 
         func applicationShouldHandleReopen(
@@ -774,6 +778,37 @@
             }
         }
 
+        private func supportSnapshot() -> [SupportKey: SupportValue] {
+            guard let permissions, let health = captureHealthStore?.snapshot else { return [:] }
+            let status = permissions.snapshot
+            var values: [SupportKey: SupportValue] = [
+                .accessibilityPreflight: .flag(status.accessibilityPreflight),
+                .accessibilityFunctional: .flag(status.accessibilityFunctionalProbe),
+                .accessibilityCrossProcess: .flag(status.accessibilityCrossProcessProbe),
+                .inputPreflight: .flag(status.inputMonitoringDirectlyGranted),
+                .tapRunning: .flag(eventTapMonitor?.isRunning ?? false),
+                .callbackObserved: .flag(health.inputCallbackObservedThisLaunch == true),
+                .permissionIdentityChanged: .flag(health.lastKnownWorkingBuild.map { !$0.hasSamePermissionIdentity(as: health.build) } ?? false),
+                .state: .state(SupportState(rawValue: CaptureHealthEvaluator.assess(health).state.rawValue) ?? .unknown),
+                .paused: .flag(health.isManuallyPaused),
+                .globalPause: .flag(GoalongGlobalPause.isPaused()),
+                .localSource: .flag(capabilityConsents?.isEnabled(.localComputerHistory) ?? false),
+                .appleSource: .flag(capabilityConsents?.isEnabled(.appleScreenTime) ?? false),
+                .conversationSource: .flag(capabilityConsents?.isEnabled(.aiConversations) ?? false)
+            ]
+            if let error = status.accessibilityProbeError { values[.axError] = .count(Int(error)) }
+            if let metrics = eventTapMonitor?.ingressMetrics {
+                values[.pendingEvents] = .count(metrics.currentDepth)
+                values[.droppedEvents] = .count(metrics.droppedCount)
+            }
+            if !GoalongGlobalPause.isPaused() {
+                values[.inputCount] = .count(health.recentCounters.inputEventCount)
+                if let date = health.lastAXContextSuccessAt { values[.axSuccessAgeSeconds] = .number(max(0, Date().timeIntervalSince(date))) }
+                if let date = health.lastInputEventAt { values[.callbackAgeSeconds] = .number(max(0, Date().timeIntervalSince(date))) }
+            }
+            return values
+        }
+
         private func schedulePermissionWatchdog() {
             permissionTimer?.invalidate()
             let interval = PermissionWatchdogPolicy.interval(
@@ -837,6 +872,9 @@
 
             let assessment = captureHealthStore.assessment
             if assessment.state != lastRecordedHealthState {
+                SupportDiagnostics.shared.record(.captureHealthChanged, component: .capture,
+                    values: [.state: .state(SupportState(rawValue: assessment.state.rawValue) ?? .unknown),
+                             .captureProven: .flag(assessment.captureProven)])
                 recorder.record(
                     kind: .recorderHealth,
                     message: assessment.detail,
@@ -1184,9 +1222,14 @@
         private func presentFatalError(_ error: Error) {
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert(error: error)
-            alert.messageText = "Goalong History could not start"
-            alert.runModal()
-            NSApplication.shared.terminate(nil)
+            alert.messageText = "Goalong History n’a pas pu démarrer"
+            alert.addButton(withTitle: "Exporter un diagnostic…")
+            alert.addButton(withTitle: "Quitter")
+            if alert.runModal() == .alertFirstButtonReturn {
+                Task { @MainActor in
+                    SupportExportController.shared.export { NSApplication.shared.terminate(nil) }
+                }
+            } else { NSApplication.shared.terminate(nil) }
         }
     }
 #endif

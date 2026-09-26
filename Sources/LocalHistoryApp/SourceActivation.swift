@@ -66,7 +66,12 @@ import LocalHistoryCore
 
         static func check(_ capability: GoalongCapability, completion: @escaping (SourceAccessStatus) -> Void) {
             DispatchQueue.global(qos: .userInitiated).async {
+                let started = ProcessInfo.processInfo.systemUptime
                 let result = probe(capability)
+                SupportDiagnostics.shared.record(.sourceCheck, component: .permissions, values: [
+                    .success: .flag(result == .ready), .permission: .state(PermissionRepair.diagnosticState(for: result)),
+                    .elapsedMS: .number((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                ])
                 DispatchQueue.main.async { completion(result) }
             }
         }
@@ -102,9 +107,9 @@ import LocalHistoryCore
         // Permission and live capture health are separate. An app that cannot answer
         // a focused-window probe must not revoke the user's source consent.
         static func computerHistoryAccess(_ status: PermissionStatus) -> SourceAccessStatus {
-            // A successful AX read can describe our own window after TCC was reset.
-            // Activation requires macOS permission, not merely a functional read.
-            guard status.accessibilityPreflight else { return .accessibility }
+            // A generic/self-window read is not authorization. The manager accepts
+            // only TCC preflight or a protected read proven to target another process.
+            guard status.accessibilityPreflight || status.accessibilityCrossProcessProbe else { return .accessibility }
             return status.canAttemptInputTap ? .ready : .inputMonitoring
         }
 
@@ -181,7 +186,7 @@ import LocalHistoryCore
                 self.result = status
                 guard status == .ready else {
                     self.feedback = status.isMacPermission
-                        ? "Check \(self.completedCheckCount): macOS still denies access to this running copy of Goalong History. The source is not enabled."
+                        ? "Check \(self.completedCheckCount): access is not yet confirmed for this running copy of Goalong History. The source is not enabled."
                         : "Check \(self.completedCheckCount): this source is not ready. Nothing has been enabled."
                     return
                 }

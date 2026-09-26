@@ -534,6 +534,7 @@
                     lastSemanticCaptureDates.removeValue(forKey: oldest)
                 }
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .analysis)
                 Diagnostics.write("Semantic context persistence failed: \(error)")
             }
         }
@@ -2035,6 +2036,7 @@
             do {
                 value = try decoder.decode(T.self, from: line)
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .analysis)
                 if issues.count < 256 {
                     issues.append(
                         HistoryLoadIssue(
@@ -2392,6 +2394,7 @@
             do {
                 try cache.retain(keys: keys)
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .analysis)
                 Diagnostics.write("Could not prune bounded activity-analysis cache: \(error)")
             }
             priorRevisionLock.lock()
@@ -2865,6 +2868,7 @@
                     )
                 )
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .analysis)
                 return .inaccessible(String(describing: error))
             }
         }

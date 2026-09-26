@@ -25,6 +25,7 @@ CLI_HELP_PAGE="$ROOT_DIR/Sources/LocalHistoryApp/CLIHelpPage.swift"
 CLI_DOCS="$ROOT_DIR/docs/CLI.md"
 
 failed=false
+python3 "$ROOT_DIR/scripts/generate_support_source_allowlist.py" --check || failed=true
 
 if grep -R -nE "$CONTENT_FORBIDDEN" "${CODE_ROOTS[@]}"; then
   echo "Forbidden content-capture API found." >&2
@@ -104,17 +105,40 @@ if grep -R -nE "$SHELL_EXECUTION_FORBIDDEN" "${CODE_ROOTS[@]}"; then
 fi
 
 # Match the Swift Process constructor, not public read-only APIs whose names end
-# in ByProcess (for example IOPMCopyAssertionsByProcess). No new launcher exception.
+# in ByProcess (for example IOPMCopyAssertionsByProcess). Each launcher is reviewed below.
 # Process execution is isolated to one reviewed bridge. It may launch only the exact
 # Codex executable discovered from reviewed locations, with the fixed `app-server`
 # argument. No shell, arbitrary command, or user-provided argument vector is allowed.
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$CODEX_BRIDGE" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift" ]]; then
-    echo "Unexpected Process API outside the fixed Codex and self-relaunch boundaries: $match" >&2
+  if [[ "$file" != "$CODEX_BRIDGE" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRepair.swift" ]]; then
+    echo "Unexpected Process API outside the fixed Codex, self-relaunch and user-confirmed TCC reset boundaries: $match" >&2
     failed=true
   fi
 done < <(grep -R -nE '(^|[^[:alnum:]_])Process[[:space:]]*\(' "${CODE_ROOTS[@]}" || true)
+
+# User-confirmed recovery may only DELETE one Goalong approval. No grant, shell,
+# arbitrary executable, environment inheritance, database mutation, or reset All.
+PERMISSION_REPAIR="$ROOT_DIR/Sources/LocalHistoryApp/PermissionRepair.swift"
+if [[ -f "$PERMISSION_REPAIR" ]]; then
+  for fragment in \
+    'process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")' \
+    'return ["reset", service, bundleIdentifier]' \
+    'static let bundleIdentifier = "ai.goalong.localhistory"' \
+    'guard bundleID == bundleIdentifier' \
+    '.confirmationDialog(' \
+    'process.standardOutput = FileHandle.nullDevice' \
+    'process.standardError = FileHandle.nullDevice' \
+    'process.environment = ["PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory()]' \
+    'deadline: .now() + 5'; do
+    if ! grep -Fq "$fragment" "$PERMISSION_REPAIR"; then
+      echo "Permission reset boundary is missing: $fragment" >&2; failed=true
+    fi
+  done
+  if grep -nE 'return "All"|TCC.db|ProcessInfo.processInfo.environment|process.arguments.*CommandLine' "$PERMISSION_REPAIR"; then
+    echo "Permission reset boundary was broadened." >&2; failed=true
+  fi
+fi
 
 if [[ -f "$CODEX_BRIDGE" ]]; then
   if ! grep -Fq 'process.executableURL = executableURL' "$CODEX_BRIDGE" \
@@ -567,4 +591,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge and bundled one-shot self-relauncher; first-party networking is confined to confirmed website pairing, reviewed sends and separately consented bounded Jev classification; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge, bundled one-shot self-relauncher and confirmed single-service Goalong permission reset; first-party networking is confined to confirmed website pairing, reviewed sends and separately consented bounded Jev classification; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."

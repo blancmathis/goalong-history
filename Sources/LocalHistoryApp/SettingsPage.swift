@@ -167,6 +167,7 @@ import AppKit
         case .storage:
             GoalongStorageSettings(model: model)
         case .advanced:
+            SupportDiagnosticsPanel()
             GoalongDeveloperSettings()
             GoalongSettingsGroup(title: "Outils") {
                 GoalongSettingsLink(title: "Outils de partage et analyses", value: "", symbol: "square.and.arrow.up") { pane = .tools }

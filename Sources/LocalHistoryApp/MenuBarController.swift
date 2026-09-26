@@ -260,14 +260,7 @@
         }
 
         @objc private func openDiagnostics() {
-            if !FileManager.default.fileExists(atPath: AppPaths.diagnosticsFile.path) {
-                FileManager.default.createFile(
-                    atPath: AppPaths.diagnosticsFile.path,
-                    contents: Data(),
-                    attributes: [.posixPermissions: 0o600]
-                )
-            }
-            GoalongWorkspaceOpenPolicy.open(AppPaths.diagnosticsFile, purpose: .localFile)
+            Task { @MainActor in SupportExportController.shared.export() }
         }
 
         @objc private func requestPermissions() {

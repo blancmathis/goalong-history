@@ -18,8 +18,10 @@ final class JevTransport: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     private var buffer = Data()
     private var finished = false
     private var cancelled = false
+    private var startedAt = ProcessInfo.processInfo.systemUptime
 
     func classify(body: Data, key: String) async throws -> JevDecision {
+        startedAt = ProcessInfo.processInfo.systemUptime
         guard body.count <= JevPayload.maximumRequestBytes else { throw JevError.budget }
         let data: Data = try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in
@@ -65,6 +67,13 @@ final class JevTransport: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         buffer.removeAll()
         lock.unlock()
         task?.cancel(); session?.invalidateAndCancel()
+        switch result {
+        case .success(let data):
+            SupportDiagnostics.shared.record(.requestFinished, component: .monitoring, values: [
+                .success: .flag(true), .byteCount: .count(data.count),
+                .durationMS: .number((ProcessInfo.processInfo.systemUptime - startedAt) * 1000)])
+        case .failure(let error): SupportDiagnostics.shared.failure(error, component: .monitoring)
+        }
         continuation.resume(with: result)
     }
     func urlSession(_ session: URLSession, task: URLSessionTask,
@@ -78,6 +87,8 @@ final class JevTransport: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         guard let response = response as? HTTPURLResponse, response.url == Self.endpoint else {
             completionHandler(.cancel); finish(.failure(JevError.invalidResponse)); return
         }
+        SupportDiagnostics.shared.record(.requestFinished, component: .monitoring,
+            values: [.httpStatus: .count(response.statusCode)])
         guard response.statusCode == 200 else {
             completionHandler(.cancel)
             switch response.statusCode {

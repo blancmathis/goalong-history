@@ -155,6 +155,7 @@
             do {
                 try controller.updater.start()
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .updates)
                 updaterController = nil
                 statusMessage = "The updater could not start: \(error.localizedDescription)"
                 return
@@ -395,6 +396,7 @@
 
     extension SoftwareUpdateManager: SPUUpdaterDelegate {
         func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+            SupportDiagnostics.shared.record(.updateChanged, component: .updates, values: [.state: .state(.started)])
             isRelaunchingForUpdate = true
             Diagnostics.write("Sparkle is handing off a user-approved update and relaunch")
         }
@@ -402,6 +404,7 @@
         func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
             isRelaunchingForUpdate = false
             if !Self.isNoUpdateResult(error) {
+                SupportDiagnostics.shared.failure(error, component: .updates)
                 Diagnostics.write("Sparkle update aborted: \((error as NSError).domain) \((error as NSError).code)")
             }
         }
@@ -414,6 +417,7 @@
         func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
             // Sparkle finds the appcast item before its standard user driver has prepared the
             // install alert. Remember the version here, but do not expose a clickable badge yet.
+            SupportDiagnostics.shared.record(.updateChanged, component: .updates, values: [.state: .state(.ready)])
             markDetected(item)
         }
 

@@ -96,21 +96,26 @@ public struct CapturePermissionObservation: Codable, Equatable {
     /// the recorder's event tap is actually delivering callbacks.
     public let inputMonitoringPreflight: Bool
     public let observedAt: Date
+    /// New schema field is optional so old health snapshots remain decodable.
+    public let accessibilityCrossProcessProbe: Bool?
+    public var accessibilityGranted: Bool { accessibilityPreflight || accessibilityCrossProcessProbe == true }
 
     public init(
         accessibilityPreflight: Bool,
         accessibilityFunctionalProbe: Bool,
         inputMonitoringPreflight: Bool,
-        observedAt: Date
+        observedAt: Date,
+        accessibilityCrossProcessProbe: Bool? = nil
     ) {
         self.accessibilityPreflight = accessibilityPreflight
         self.accessibilityFunctionalProbe = accessibilityFunctionalProbe
         self.inputMonitoringPreflight = inputMonitoringPreflight
         self.observedAt = observedAt
+        self.accessibilityCrossProcessProbe = accessibilityCrossProcessProbe
     }
 
     public var accessibilityUsable: Bool {
-        accessibilityPreflight && accessibilityFunctionalProbe
+        accessibilityGranted && accessibilityFunctionalProbe
     }
 }
 
@@ -335,7 +340,7 @@ public enum CaptureHealthEvaluator {
             )
         }
 
-        if !snapshot.permissions.accessibilityPreflight {
+        if !snapshot.permissions.accessibilityGranted {
             return CaptureHealthAssessment(
                 state: .permissionRequired,
                 detail: "Accessibility is not enabled for the running app copy.",

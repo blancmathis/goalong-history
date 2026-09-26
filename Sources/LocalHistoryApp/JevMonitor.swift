@@ -58,7 +58,9 @@ struct JevRecentCheck: Identifiable {
                 guard value.isValid else { throw JevError.invalidResponse }
                 timedBreak = value; remainingSeconds = value.remaining(at: Date())
             }
-        } catch { self.error = "Réglages illisibles : surveillance suspendue."; breakStorageInvalid = true }
+        } catch {
+            SupportDiagnostics.shared.failure(error, component: .monitoring)
+                self.error = "Réglages illisibles : surveillance suspendue."; breakStorageInvalid = true }
     }
     func start() {
         guard !started else { return }; started = true
@@ -131,14 +133,18 @@ struct JevRecentCheck: Identifiable {
             try JevLocalFiles.write(Data(key.utf8), name: "api-key")
             apiKey = key; hasKey = true; circuitOpen = false; error = nil
             reconfigure()
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            SupportDiagnostics.shared.failure(error, component: .monitoring)
+                self.error = error.localizedDescription }
     }
     func removeKey() {
         cancelPending(); inbox.configure(enabled: false)
         do {
             try JevLocalFiles.write(nil, name: "api-key")
             apiKey = ""; hasKey = false; circuitOpen = false; error = nil
-        } catch { self.error = error.localizedDescription; circuitOpen = true }
+        } catch {
+            SupportDiagnostics.shared.failure(error, component: .monitoring)
+                self.error = error.localizedDescription; circuitOpen = true }
         reconfigure()
     }
     private static func validKey(_ value: String) -> Bool {
@@ -153,14 +159,18 @@ struct JevRecentCheck: Identifiable {
         do {
             try JevLocalFiles.write(try JSONEncoder().encode(value), name: "break.json")
             breakStorageInvalid = false; error = nil
-        } catch { breakStorageInvalid = true; self.error = error.localizedDescription }
+        } catch {
+            SupportDiagnostics.shared.failure(error, component: .monitoring)
+                breakStorageInvalid = true; self.error = error.localizedDescription }
         reconfigure()
     }
     func endBreak() {
         do {
             try JevLocalFiles.write(nil, name: "break.json")
             timedBreak = nil; remainingSeconds = 0; breakStorageInvalid = false; error = nil
-        } catch { breakStorageInvalid = true; self.error = error.localizedDescription }
+        } catch {
+            SupportDiagnostics.shared.failure(error, component: .monitoring)
+                breakStorageInvalid = true; self.error = error.localizedDescription }
         reconfigure()
     }
     func retry() { circuitOpen = false; retryAfter = .distantPast; error = nil; reconfigure() }
@@ -208,16 +218,18 @@ struct JevRecentCheck: Identifiable {
         let end = boundary.addingTimeInterval(15)
         guard !clockJump, now >= end, now.timeIntervalSince(end) < 3 else { reconfigure(); return }
         let start = boundary; boundary = end
-        guard request == nil else { cancelPending(); status = "Analyse trop lente : série remise à zéro"; return }
+        guard request == nil else { SupportDiagnostics.shared.record(.monitorCycle, component: .monitoring, values: [.state: .state(.timedOut)]); cancelPending(); status = "Analyse trop lente : série remise à zéro"; return }
         guard let window = inbox.take(start: start, end: end), window.hasActivity else {
-            resetInterventions(); status = "Aucune nouvelle activité observable · aucun appel"; return
+            SupportDiagnostics.shared.record(.monitorCycle, component: .monitoring, values: [.state: .state(.skipped)]); resetInterventions(); status = "Aucune nouvelle activité observable · aucun appel"; return
         }
         guard now >= retryAfter else { resetInterventions(); return }
         let body: Data
         let workStore = JevWorkContextStore.shared
         let workRevision = workStore.revision
         do { body = try JevPayload.build(window, work: workStore.context) }
-        catch { resetInterventions(); status = "Fenêtre trop complexe : classement indéterminé"; return }
+        catch {
+            SupportDiagnostics.shared.failure(error, component: .monitoring)
+                resetInterventions(); status = "Fenêtre trop complexe : classement indéterminé"; return }
         let policy = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)
         let pause = GoalongGlobalPause.load()
         guard !policy.blocked, !pause.blocksActivity, gate == nil else { reconfigure(); return }
@@ -240,6 +252,8 @@ struct JevRecentCheck: Identifiable {
                     self.resetInterventions(); return
                 }
                 let verdict = JevWorkContextStore.reviewedVerdict(decision.verdict, work: workStore.context, window: window)
+                SupportDiagnostics.shared.record(.monitorCycle, component: .monitoring, values: [
+                    .state: .state(.ready), .success: .flag(true)])
                 self.lastInputTokens = decision.inputTokens
                 self.recentChecks.insert(JevRecentCheck(start: start, end: end, verdict: verdict,
                                                       inputTokens: decision.inputTokens), at: 0)
@@ -258,6 +272,7 @@ struct JevRecentCheck: Identifiable {
                         settings: JevInterventionPreferences.shared.settings)
                 }
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .monitoring)
                 guard self.epoch == token, !Task.isCancelled else { return }
                 self.request = nil; self.resetInterventions()
                 self.error = (error as? JevError)?.errorDescription ?? "Connexion de surveillance indisponible. Aucun classement inventé."

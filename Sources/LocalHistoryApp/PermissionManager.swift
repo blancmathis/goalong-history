@@ -48,8 +48,13 @@
         let inputMonitoringDirectlyGranted: Bool
         let inputMonitoringProvidedByAccessibility: Bool
 
+        // Only a protected AX read from a different process may override a stale preflight.
+        // Our own window (or an application role) never proves a macOS grant.
+        var accessibilityCrossProcessProbe: Bool = false
+        var accessibilityProbeError: Int32? = nil
+
         var allGranted: Bool { accessibility && inputMonitoring }
-        var accessibilityUsable: Bool { accessibilityPreflight && accessibilityFunctionalProbe }
+        var accessibilityUsable: Bool { accessibility && accessibilityFunctionalProbe }
         var canAttemptInputTap: Bool { accessibility || inputMonitoringDirectlyGranted }
 
         func isGranted(_ permission: MacPermissionKind) -> Bool {
@@ -68,9 +73,11 @@
         static func resolved(
             accessibilityPreflight: Bool,
             accessibilityFunctionalProbe: Bool,
-            inputMonitoringDirectlyGranted: Bool
+            inputMonitoringDirectlyGranted: Bool,
+            accessibilityCrossProcessProbe: Bool = false,
+            accessibilityProbeError: Int32? = nil
         ) -> PermissionStatus {
-            let accessibility = accessibilityPreflight || accessibilityFunctionalProbe
+            let accessibility = accessibilityPreflight || accessibilityCrossProcessProbe
             let inputMonitoringProvidedByAccessibility =
                 accessibility && !inputMonitoringDirectlyGranted
             return PermissionStatus(
@@ -80,7 +87,9 @@
                 accessibilityPreflight: accessibilityPreflight,
                 accessibilityFunctionalProbe: accessibilityFunctionalProbe,
                 inputMonitoringDirectlyGranted: inputMonitoringDirectlyGranted,
-                inputMonitoringProvidedByAccessibility: inputMonitoringProvidedByAccessibility
+                inputMonitoringProvidedByAccessibility: inputMonitoringProvidedByAccessibility,
+                accessibilityCrossProcessProbe: accessibilityCrossProcessProbe,
+                accessibilityProbeError: accessibilityProbeError
             )
         }
     }
@@ -164,27 +173,63 @@
             return value
         }
 
-        /// Activation checks ask macOS about this process only. A focused-window AX
-        /// round trip is capture health, not authorization, and can stall a setup sheet.
+        /// Fast when preflight succeeds; on disagreement, verify a bounded protected
+        /// attribute on another process. Used by setup and the recording watchdog.
         static func activationStatus() -> PermissionStatus {
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
-            return .resolved(
-                accessibilityPreflight: AXIsProcessTrustedWithOptions(options),
-                accessibilityFunctionalProbe: false,
-                inputMonitoringDirectlyGranted: CGPreflightListenEventAccess()
-            )
+            probeStatus(includeFunctionalCheck: false)
         }
 
         private static func liveStatus() -> PermissionStatus {
-            let accessibilityPreflight = AXIsProcessTrusted()
-            let accessibilityFunctionalProbe = Self.canReadFocusedApplication()
-            let directInputMonitoring = CGPreflightListenEventAccess()
-            return .resolved(
-                accessibilityPreflight: accessibilityPreflight,
-                accessibilityFunctionalProbe: accessibilityFunctionalProbe,
-                inputMonitoringDirectlyGranted: directInputMonitoring
-            )
+            probeStatus(includeFunctionalCheck: true)
         }
+
+        private static func probeStatus(includeFunctionalCheck: Bool) -> PermissionStatus {
+            let started = ProcessInfo.processInfo.systemUptime
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
+            let preflight = AXIsProcessTrustedWithOptions(options)
+            let evidence = (!preflight || includeFunctionalCheck) ? crossProcessEvidence() : (false, nil)
+            let input = CGPreflightListenEventAccess()
+            let status = PermissionStatus.resolved(
+                accessibilityPreflight: preflight,
+                accessibilityFunctionalProbe: evidence.0,
+                inputMonitoringDirectlyGranted: input,
+                accessibilityCrossProcessProbe: evidence.0,
+                accessibilityProbeError: evidence.1
+            )
+            var values: [SupportKey: SupportValue] = [
+                .accessibilityPreflight: .flag(preflight), .accessibilityFunctional: .flag(evidence.0),
+                .accessibilityCrossProcess: .flag(evidence.0), .inputPreflight: .flag(input),
+                .state: .state((!preflight || includeFunctionalCheck) ? (evidence.0 ? .ready : .unavailable) : .skipped),
+                .elapsedMS: .number((ProcessInfo.processInfo.systemUptime - started) * 1000)
+            ]
+            if let error = evidence.1 { values[.axError] = .count(Int(error)) }
+            SupportDiagnostics.shared.record(.permissionChecked, component: .permissions, values: values)
+            return status
+        }
+
+        /// Reads only the existence/type of a window list, never its content.
+        /// Self-process AX access remains possible without TCC and must be excluded.
+        private static func crossProcessEvidence() -> (Bool, Int32?) {
+            let currentPID = ProcessInfo.processInfo.processIdentifier
+            var candidates: [NSRunningApplication] = []
+            if let front = NSWorkspace.shared.frontmostApplication,
+               isExternalProbeTarget(pid: front.processIdentifier, ownPID: currentPID) { candidates.append(front) }
+            if let finder = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first,
+               isExternalProbeTarget(pid: finder.processIdentifier, ownPID: currentPID),
+               !candidates.contains(where: { $0.processIdentifier == finder.processIdentifier }) { candidates.append(finder) }
+            var lastError: Int32?
+            for candidate in candidates.prefix(2) {
+                let app = AXUIElementCreateApplication(candidate.processIdentifier)
+                AXUIElementSetMessagingTimeout(app, 0.12)
+                var windows: CFTypeRef?
+                let error = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windows)
+                lastError = error.rawValue
+                if error == .success, let windows, CFGetTypeID(windows) == CFArrayGetTypeID() { return (true, nil) }
+            }
+            return (false, lastError)
+        }
+
+        static func isExternalProbeTarget(pid: Int32, ownPID: Int32) -> Bool { pid > 1 && pid != ownPID }
 
         @discardableResult
         func requestAccessibility() -> Bool {
@@ -283,39 +328,6 @@
             }
 
             openPrivacySettingsDirectly()
-        }
-
-        private static func canReadFocusedApplication() -> Bool {
-            let systemWide = AXUIElementCreateSystemWide()
-            AXUIElementSetMessagingTimeout(systemWide, 0.12)
-            var focusedApplication: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(
-                systemWide,
-                kAXFocusedApplicationAttribute as CFString,
-                &focusedApplication
-            )
-            let systemWideReadable = result == .success && focusedApplication != nil
-            guard !systemWideReadable,
-                AXIsProcessTrusted(),
-                let frontmost = NSWorkspace.shared.frontmostApplication
-            else { return systemWideReadable }
-
-            // macOS can transiently refuse the system-wide focused-application
-            // attribute during app activation even though app-scoped AX reads work.
-            // Reading the foreground application's role is a bounded, content-free
-            // functional fallback and avoids reporting a false permission failure.
-            let application = AXUIElementCreateApplication(frontmost.processIdentifier)
-            AXUIElementSetMessagingTimeout(application, 0.12)
-            var role: CFTypeRef?
-            let appResult = AXUIElementCopyAttributeValue(
-                application,
-                kAXRoleAttribute as CFString,
-                &role
-            )
-            return functionalProbeIsUsable(
-                systemWideReadable: systemWideReadable,
-                frontmostApplicationReadable: appResult == .success && role != nil
-            )
         }
 
         static func functionalProbeIsUsable(

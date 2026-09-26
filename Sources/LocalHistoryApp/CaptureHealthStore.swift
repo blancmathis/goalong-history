@@ -36,11 +36,13 @@
             let accessibilityPreflight: Bool
             let accessibilityFunctionalProbe: Bool
             let inputMonitoringPreflight: Bool
+            let accessibilityCrossProcessProbe: Bool
 
             init(_ status: PermissionStatus) {
                 accessibilityPreflight = status.accessibilityPreflight
                 accessibilityFunctionalProbe = status.accessibilityFunctionalProbe
                 inputMonitoringPreflight = status.inputMonitoringDirectlyGranted
+                accessibilityCrossProcessProbe = status.accessibilityCrossProcessProbe
             }
         }
 
@@ -126,14 +128,17 @@
         }
 
         func markTapCreationFailed(_ error: String) {
+            SupportDiagnostics.shared.record(.inputTapChanged, component: .capture, values: [.state: .state(.creationFailed)])
             mutateAndSchedule { accumulator.markTapCreationFailed(error) }
         }
 
         func markTapEnabled() {
+            SupportDiagnostics.shared.record(.inputTapChanged, component: .capture, values: [.state: .state(.createdEnabled)])
             mutateAndSchedule { accumulator.markTapEnabled() }
         }
 
         func markTapDisabled(_ error: String?) {
+            SupportDiagnostics.shared.record(.inputTapChanged, component: .capture, values: [.state: .state(.createdDisabled)])
             mutateAndSchedule { accumulator.markTapDisabled(error) }
         }
 
@@ -281,6 +286,7 @@
             do {
                 try persistenceWriter(value, fileURL)
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .storage)
                 Diagnostics.write("Capture-health persistence failed: \(error)")
             }
         }
@@ -302,7 +308,8 @@
                 accessibilityPreflight: status.accessibilityPreflight,
                 accessibilityFunctionalProbe: status.accessibilityFunctionalProbe,
                 inputMonitoringPreflight: status.inputMonitoringDirectlyGranted,
-                observedAt: Date()
+                observedAt: Date(),
+                accessibilityCrossProcessProbe: status.accessibilityCrossProcessProbe
             )
         }
 

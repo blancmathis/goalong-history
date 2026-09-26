@@ -390,6 +390,7 @@
                 }
                 directoryDescriptor = opened
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .storage)
                 diagnostics.report(
                     "Computer History recent-memory directory could not be opened safely: "
                         + error.localizedDescription
@@ -754,6 +755,7 @@
                     let codexURL = CodexMarkdownFile(for: day)
                     try writeAtomicallyIfChanged(Data(effectiveMemory.markdown.utf8), to: codexURL)
                 } catch {
+                    SupportDiagnostics.shared.failure(error, component: .storage)
                     // The compact Goalong JSON remains authoritative if a custom CODEX_HOME
                     // is unavailable. Its Markdown can always be regenerated on demand.
                     Diagnostics.write("Could not mirror Computer History memory into Codex: \(error)")
@@ -787,6 +789,7 @@
                 ) else { return nil }
                 return loaded
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .storage)
                 return nil
             }
         }
@@ -916,6 +919,7 @@
                     expectedDirectoryIdentity: loaded.directoryIdentity
                 )
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .storage)
                 Diagnostics.write(
                     "Could not inspect Computer History legacy Markdown "
                         + "\(legacyMarkdownURL.path): \(error)"
@@ -965,12 +969,14 @@
                             to: CodexMarkdownFile(for: loaded.stored.dayStart)
                         )
                     } catch {
+                        SupportDiagnostics.shared.failure(error, component: .storage)
                         Diagnostics.write(
                             "Could not compact the Codex Computer History mirror: \(error)"
                         )
                     }
                 }
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .storage)
                 // A failed migration must never make an otherwise readable memory vanish.
                 Diagnostics.write("Could not compact Computer History memory \(loaded.URL.path): \(error)")
             }
@@ -1303,6 +1309,7 @@
                 }
                 return descriptor
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .storage)
                 Darwin.close(descriptor)
                 throw error
             }
@@ -1768,6 +1775,7 @@
             do {
                 return try decoder.decode(PersistedMemory.self, from: data)
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .storage)
                 // Storage format 1 used ISO-8601 strings. Decode it unchanged so the
                 // next successful read/write can atomically compact it to format 2.
                 let legacyDecoder = JSONDecoder()

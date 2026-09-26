@@ -79,7 +79,9 @@ This abridged tree includes the principal preserved data stores:
 ├── capability-consent.json   # created after a choice; absence fails closed to all-off
 ├── sharing-rules.json
 ├── integrity-state.json
-├── diagnostics.log
+├── diagnostics.log          # legacy only; never included in support exports
+├── SupportDiagnostics/
+│   └── day-YYYY-MM-DD/       # private, bounded technical journal
 ├── events/
 │   └── YYYY-MM-DD.jsonl
 ├── seals/
@@ -198,6 +200,12 @@ verification and detailed capture options remain available without occupying per
 destinations.
 
 A menu-bar control keeps pause/resume, status, dashboard access, and sharing immediately available.
+
+## Privacy-safe support diagnostics
+
+In **Settings → Advanced → Diagnostic et assistance**, mark the moment a problem happens and select **Exporter un diagnostic…**. The readable JSON report contains technical states, numeric errors, version/signature information, timing, bounded counters and structural summaries of Goalong crashes. It never includes raw activity/history, screenshots, conversations, URLs, window titles, secrets, account/device identifiers, personal paths or old raw log files. Nothing is uploaded automatically.
+
+The local journal is enabled by default, can be disabled or erased without affecting activity history, and retains up to seven UTC dates within a 3.5 MiB disk limit. A bounded memory fallback remains available when disk logging fails. Permission screens also offer the export and an explicitly confirmed repair of just one Goalong permission, not a global reset. See [the diagnostic schema, safeguards and limitations](docs/SUPPORT_DIAGNOSTICS.md).
 
 ## Updates and start at login
 

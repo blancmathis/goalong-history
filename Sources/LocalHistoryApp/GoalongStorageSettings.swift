@@ -30,10 +30,10 @@ import Foundation
                 Text("Les originaux Apple, les conversations et les données déjà envoyées restent conservés.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            GoalongDisclosureGroup("Fichiers et diagnostics") {
+            SupportDiagnosticsPanel()
+            GoalongDisclosureGroup("Fichiers locaux") {
                 HStack {
                     Button("Ouvrir le dossier") { model.openDataFolder() }
-                    Button("Diagnostics") { model.openDiagnostics() }
                 }.buttonStyle(.bordered).padding(.top, 12)
             }.font(.system(size: 13))
         }

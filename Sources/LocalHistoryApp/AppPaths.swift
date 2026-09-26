@@ -1982,32 +1982,13 @@
     }
 
     enum Diagnostics {
-        private static let ingress: BoundedDiagnosticsIngress = {
-            let queue = DispatchQueue(
-                label: "ai.goalong.localhistory.diagnostics",
-                qos: .utility
-            )
-            let log = BoundedDiagnosticsLog(
-                directoryURL: AppPaths.applicationSupportDirectory
-            )
-            let formatter = ISO8601DateFormatter()
-            return BoundedDiagnosticsIngress(
-                scheduler: { work in queue.async(execute: work) },
-                sink: { timestamp, message in
-                    let line = "[\(formatter.string(from: timestamp))] \(message)\n"
-                    do {
-                        try log.append(line)
-                    } catch {
-                        if let data = "Goalong History diagnostic failure: \(error)\n".data(using: .utf8) {
-                            try? FileHandle.standardError.write(contentsOf: data)
-                        }
-                    }
-                }
-            )
-        }()
-
-        static func write(_ message: String) {
-            ingress.submit(message, at: Date())
+        // Compatibility bridge for older call sites. Never evaluate or persist the
+        // free-form message: it may contain a URL, an error payload or a personal path.
+        // The exact compiled source location is enough to identify the legacy branch.
+        static func write(_ message: @autoclosure () -> String,
+                          file: StaticString = #fileID, line: UInt = #line) {
+            SupportDiagnostics.shared.legacy(file: file, line: line)
         }
     }
+
 #endif

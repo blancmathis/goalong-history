@@ -131,6 +131,7 @@
                     try integrityJournal.reconcilePersistedTail(tail)
                 }
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .capture)
                 noteFailure(operation: "startup_recovery", error: error)
             }
         }
@@ -247,6 +248,7 @@
             do {
                 try flushAndWait()
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .capture)
                 noteFailure(operation: "flush", error: error)
             }
         }
@@ -262,6 +264,7 @@
             do {
                 try closeAndWait()
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .capture)
                 noteFailure(operation: "close", error: error)
             }
         }
@@ -407,7 +410,9 @@
             beforePersist?(base)
             guard !GoalongGlobalPause.isPaused() else { return }
             if let globalPauseRevision {
-                do { try GoalongGlobalPause.revalidate(globalPauseRevision) } catch { return }
+                do { try GoalongGlobalPause.revalidate(globalPauseRevision) } catch {
+                    SupportDiagnostics.shared.failure(error, component: .capture)
+                return }
             }
             if let writerPoisonReason {
                 noteFailure(
@@ -424,6 +429,7 @@
             do {
                 outcome = try store.appendAndWait(event)
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .capture)
                 noteFailure(operation: "append", error: error)
                 return
             }
@@ -431,6 +437,7 @@
             do {
                 try integrityJournal.commitPersisted(event)
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .capture)
                 // The row exists but the live cursor could not consume it. Continuing
                 // would reuse a sequence, so poison this launch and recover from the
                 // durable tail on restart.
@@ -452,6 +459,7 @@
                 do {
                     try integrityJournal.checkpointPersistedEvents()
                 } catch {
+                    SupportDiagnostics.shared.failure(error, component: .capture)
                     // The JSONL journal is already synchronized. Tail recovery can
                     // rebuild this redundant checkpoint on the next launch.
                     noteFailure(operation: "state_checkpoint", error: error)

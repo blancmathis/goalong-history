@@ -196,8 +196,10 @@ struct PermissionRecoveryView: View {
                         .foregroundStyle(LHTheme.secondaryText).textSelection(.enabled)
                     Text("Relancer ne change ni les sources ni les envois.")
                         .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                    PermissionRepairControl(status: status, capability: capability)
                 }.padding(.top, 8).fixedSize(horizontal: false, vertical: true)
             }.font(.system(size: 11, weight: .medium))
+            if !expanded { SupportDiagnosticsExportButton() }
             if let restartError { Text(restartError).font(.system(size: 12)).foregroundStyle(LHTheme.danger).fixedSize(horizontal: false, vertical: true) }
         }
     }

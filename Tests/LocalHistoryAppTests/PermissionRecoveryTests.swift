@@ -57,12 +57,20 @@
             }
         }
 
-        func testActivationPreflightDoesNotReadFocusedWindowOrGrantPermission() throws {
+        func testActivationUsesSharedBoundedNonPromptingPermissionProbe() throws {
             let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             let source = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryApp/PermissionManager.swift"))
             let block = try XCTUnwrap(source.components(separatedBy: "static func activationStatus()").dropFirst().first)
                 .components(separatedBy: "private static func liveStatus()")[0]
-            XCTAssertTrue(block.contains("as String: false"))
+            XCTAssertTrue(block.contains("probeStatus(includeFunctionalCheck: false)"))
+            let probe = try XCTUnwrap(source.components(separatedBy: "private static func probeStatus").dropFirst().first)
+                .components(separatedBy: "@discardableResult")[0]
+            XCTAssertTrue(probe.contains("as String: false"))
+            XCTAssertTrue(probe.contains("isExternalProbeTarget"))
+            XCTAssertTrue(probe.contains("candidates.prefix(2)"))
+            XCTAssertTrue(probe.contains("AXUIElementSetMessagingTimeout(app, 0.12)"))
+            XCTAssertFalse(probe.contains("kAXTitleAttribute"))
+            XCTAssertFalse(probe.contains("CGRequest"))
             XCTAssertFalse(block.contains("canReadFocusedApplication"))
             XCTAssertFalse(block.contains("AXUIElementCopyAttributeValue"))
             XCTAssertFalse(block.contains("CGRequest"))

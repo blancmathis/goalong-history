@@ -20,7 +20,9 @@ extension Notification.Name {
                 guard value.isValid else { throw JevWorkContextError.tooLong }
                 context = value
             }
-        } catch { self.error = "Critères illisibles : surveillance suspendue. Enregistrez à nouveau vos repères de surveillance." }
+        } catch {
+            SupportDiagnostics.shared.failure(error, component: .monitoring)
+                self.error = "Critères illisibles : surveillance suspendue. Enregistrez à nouveau vos repères de surveillance." }
     }
     static func reviewedVerdict(_ verdict: JevVerdict, work: JevWorkContext, window: JevWindow) -> JevVerdict {
         JevEvidencePolicy.reviewed(verdict, work: work, window: window)

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.49 — autorisations et diagnostics partageables
+
+- Vérification harmonisée des autorisations, avec preuve d’accès interprocessus bornée en cas de résultat macOS incohérent ; une panne AX temporaire ne révoque pas une autorisation accordée.
+- Réparation guidée et confirmée d’une seule ancienne autorisation de Goalong, sans reset global ni modification de l’historique.
+- Journal technique local structuré, limité à sept dates et 3,5 Mio, avec interrupteur, repère de problème, effacement et export JSON volontaire.
+- États, erreurs numériques, délais, mises à jour, files de capture, indices de blocage et résumés structurels des crashes de Goalong ; pas de contenu privé, de secrets ou de messages bruts.
+- Secours mémoire et délais bornés pour préserver le diagnostic et la fermeture même si le journal disque ne répond plus.
+- Export accessible depuis les réglages, les problèmes d’autorisation et les erreurs de démarrage ; aucun envoi automatique.
+
 ## 0.6.48 — rappels et effets renforcés
 
 - La durée de procrastination apparaît seulement à partir de 10 minutes, dans le rappel et le statut.

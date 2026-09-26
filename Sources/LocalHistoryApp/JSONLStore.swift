@@ -146,6 +146,7 @@
                         Diagnostics.write("Failed to synchronize appended event: \(error)")
                     }
                 } catch {
+                    SupportDiagnostics.shared.failure(error, component: .storage)
                     Diagnostics.write("Failed to append event: \(error)")
                 }
             }
@@ -165,6 +166,7 @@
             do {
                 try flushAndWait()
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .storage)
                 Diagnostics.write("Failed to flush event journal: \(error)")
             }
         }
@@ -179,6 +181,7 @@
             do {
                 try closeAndWait()
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .storage)
                 Diagnostics.write("Failed to close event journal: \(error)")
             }
         }
@@ -248,6 +251,7 @@
                     )
                     DispatchQueue.main.async { completion(.success(deleted)) }
                 } catch {
+                    SupportDiagnostics.shared.failure(error, component: .storage)
                     DispatchQueue.main.async { completion(.failure(error)) }
                 }
             }
@@ -295,6 +299,7 @@
                     )
                     DispatchQueue.main.async { completion(.success(outcome)) }
                 } catch {
+                    SupportDiagnostics.shared.failure(error, component: .storage)
                     DispatchQueue.main.async { completion(.failure(error)) }
                 }
             }
@@ -314,6 +319,7 @@
                     )
                     DispatchQueue.main.async { completion(.success(deleted)) }
                 } catch {
+                    SupportDiagnostics.shared.failure(error, component: .storage)
                     DispatchQueue.main.async { completion(.failure(error)) }
                 }
             }
@@ -354,6 +360,7 @@
                 do {
                     try currentHandle.write(contentsOf: data)
                 } catch {
+                    SupportDiagnostics.shared.failure(error, component: .storage)
                     // A failed write may have left a partial row. Reopening on the next
                     // attempt inserts a newline separator before new data, preserving the
                     // corrupt fragment without letting it consume the following valid row.
@@ -378,6 +385,7 @@
                 try synchronizeCurrentHandle()
                 return JSONLAppendOutcome(didSynchronize: true, synchronizationError: nil)
             } catch {
+                SupportDiagnostics.shared.failure(error, component: .storage)
                 // The full row has been accepted by write(2), so reusing its sequence
                 // would create a duplicate. Keep retrying the durability barrier on each
                 // subsequent append/flush and expose the error to the recorder.
@@ -431,6 +439,7 @@
                     try synchronizeCurrentHandle()
                     try handle.close()
                 } catch {
+                    SupportDiagnostics.shared.failure(error, component: .storage)
                     try? handle.close()
                     currentHandle = nil
                     currentFileURL = nil
