@@ -84,6 +84,12 @@ jobs:
             swift test --skip-build --filter GoalongAnalyticsRenderingTests \
             2>&1 | tee qa/local-analytics/native-render.log
 
+      - name: Verify reminder text and strong-effect controls
+        timeout-minutes: 2
+        run: |
+          GOALONG_JEV_EFFECTS_SNAPSHOTS="$PWD/qa/local-analytics" \
+            swift test --skip-build --filter JevEffectsRenderingTests
+
       - name: Upload local analytics evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

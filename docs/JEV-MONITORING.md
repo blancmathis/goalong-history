@@ -37,8 +37,10 @@ La question est : **la fenêtre contient-elle une activité de procrastination ?
 Pas « quel est son usage majoritaire ? ». Dès la première réponse positive exploitable (probabilité du choix ≥ 0,80),
 la fenêtre de 15 secondes déclenche une bannière non activante. Elle ne prend
 pas le focus clavier, ne bloque pas le travail et propose uniquement **Fermer** :
-aucun bouton Pause ou Désactiver. La pause et l’arrêt restent dans Goalong. Le premier message est « Arrête de procrastiner. Ça fait
-15 secondes que tu procrastines. » La durée avance par fenêtres confirmées de 15 s,
+aucun bouton Pause ou Désactiver. La pause et l’arrêt restent dans Goalong. Le premier message est « Arrête de procrastiner. » Aucune durée de procrastination
+n’est affichée avant 10 minutes, dans le rappel comme dans le statut et ses menus.
+À partir de 600 secondes confirmées, le détail apparaît sans déplacer le bouton
+Fermer. Le compteur interne reste actif pour les paliers. La durée avance par fenêtres confirmées de 15 s,
 pas au temps mural : elle ne signifie pas que chaque seconde était improductive.
 **Fermer** masque uniquement la fenêtre jusqu’à la prochaine fenêtre positive,
 sans réinitialiser la durée ni retirer les effets en cours. Leur délai de sécurité
@@ -67,7 +69,11 @@ activer les effets, désactiver chaque palier, choisir ses minutes et son intens
 Deux propositions : 2 min → assombrissement 20 %, puis dès 5 min →
 assombrissement + rouge 20 %. Ce dernier effet reste combiné et se maintient avec
 les rappels, sans nouveau palier à 10 minutes ou plus. Les délais restent croissants, entre 1 et
-60 minutes. L’intensité reste entre 10 et 40 %. Seul le dernier palier actif atteint
+60 minutes. L’intensité est réglable de 10 à 85 %, par pas de 5 dans l’interface.
+Les préréglages Modéré (20/20 %), Fort (45/60 %) et Très fort (65/85 %) changent
+uniquement les intensités, sans modifier les délais, les modes ou l’activation.
+Les réglages restent accessibles lorsque les effets sont désactivés. Au-delà de
+60 %, la lecture devient nettement plus difficile ; le voile reste translucide. Seul le dernier palier actif atteint
 s’applique, sans cumuler plusieurs voiles. Désactiver un palier laisse le précédent.
 
 L’assombrissement est un voile AppKit : aucune écriture de luminosité matérielle,
@@ -79,11 +85,14 @@ Un watchdog de 30 secondes, renouvelé uniquement par un résultat frais, élimi
 les effets si les résultats s’arrêtent. Les fenêtres disparaissent avec le processus.
 
 Les préférences de présentation non sensibles sont locales dans UserDefaults ;
-la clé API reste dans son fichier privé 0600 inchangé. La migration v1 → v2 garde
-l’activation des effets, le déplacement, les délais, intensités et interrupteurs
-des deux premiers paliers ; le deuxième devient combiné et le troisième est retiré.
-L’ancienne configuration est conservée pour un retour à la version précédente.
-Une migration ne réactive jamais Jev ni un palier désactivé. Une configuration absente,
+la clé API reste dans son fichier privé 0600 inchangé. La version v3 élargit le
+plafond sans augmenter les valeurs existantes. La migration v2 vers v3 garde tous
+les choix. La migration v1 vers v3 conserve les deux premiers paliers, combine
+le deuxième et retire le troisième, comme précédemment. Les anciennes données
+sont vérifiées avec leur ancien plafond de 40 % avant migration. Les anciennes
+clés sont conservées pour un retour à la version précédente ; une v3 illisible
+ne réactive jamais une v2 ou v1. Une migration ne réactive jamais Jev ni un palier
+désactivé. Une configuration absente,
 illisible, hors limites ou d’une version inconnue ne permet aucun effet.
 
 ## Deux actions clairement distinctes

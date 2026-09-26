@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.48 — rappels et effets renforcés
+
+- La durée de procrastination apparaît seulement à partir de 10 minutes, dans le rappel et le statut.
+- Intensité réglable jusqu’à 85 %, avec les préréglages Modéré, Fort et Très fort.
+- Les intensités peuvent être préparées sans activer les effets ; les réglages existants sont conservés.
+- Migration des anciennes préférences sans activation ni augmentation automatique.
+- Voiles translucides et non clignotants, clics libres, rappel au-dessus et extinction de sécurité conservée.
+
 ## 0.6.47 — surveillance continue des vidéos et fils sociaux
 
 - Observations locales rafraîchies toutes les cinq secondes, avec une analyse réseau toutes les quinze secondes.
