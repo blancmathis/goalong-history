@@ -249,7 +249,7 @@ struct JevRecentCheck: Identifiable {
                 case .productive: self.status = "Activité classée productive"; self.resetInterventions()
                 case .unknown: self.status = "Activité indéterminée · aucune alerte"; self.resetInterventions()
                 case .procrastination:
-                    self.status = "Procrastination détectée · \(JevInterventionSettings.duration(self.streak.observedSeconds))"
+                    self.status = JevReminderPresentation.status(after: self.streak.observedSeconds)
                 }
                 self.procrastinationSeconds = self.streak.observedSeconds
                 if verdict == .procrastination {

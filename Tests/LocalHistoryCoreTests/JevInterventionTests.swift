@@ -67,7 +67,7 @@ final class JevInterventionTests: XCTestCase {
     }
     func testInvalidConfigurationsNeverApplyEffects() throws {
         let edits: [(inout JevInterventionSettings) -> Void] = [
-            { $0.schemaVersion = 3 }, { $0.stages = [] },
+            { $0.schemaVersion = 4 }, { $0.stages = [] },
             { $0.stages[0].afterMinutes = 0 }, { $0.stages[1].afterMinutes = 61 },
             { $0.stages[1].afterMinutes = 2 }, { $0.stages[1].afterMinutes = 1 },
             { $0.stages[1].effect = .red }, { $0.stages[0].intensity = 9 }, { $0.stages[0].intensity = 100 },
@@ -109,7 +109,7 @@ final class JevInterventionTests: XCTestCase {
         XCTAssertEqual(custom.stage(at: 3600)?.effect, .dim, "Disabled final stage stays disabled")
         legacy.stages[2].intensity = 100
         XCTAssertNil(legacy.migratingLegacy(), "Validate even the retired stage before migration")
-        XCTAssertNil(JevInterventionSettings().migratingLegacy(), "Migration is exclusively v1 to v2")
+        XCTAssertNil(JevInterventionSettings().migratingLegacy(), "A current configuration never migrates again")
     }
     func testCombinedStageHasNoTenMinuteChangeAndClosePreservesIt() {
         var settings = JevInterventionSettings(), streak = JevStreak()

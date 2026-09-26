@@ -110,7 +110,7 @@ import LocalHistoryCore
                 overlays.append(overlay)
             }
         }
-        let opacity = Double(min(40, max(10, stage.intensity))) / 100
+        let opacity = JevInterventionSettings.overlayOpacity(intensity: stage.intensity)
         let red: Double = stage.effect == .dim ? 0 : stage.effect == .red ? 1 : 0.45
         for (overlay, screen) in zip(overlays, NSScreen.screens) {
             overlay.setFrame(screen.frame, display: false)
@@ -148,9 +148,13 @@ private final class JevNonactivatingPanel: NSPanel {
             Text("Arrête de procrastiner.")
                 .font(.system(size: 20, weight: .semibold))
                 .accessibilityAddTraits(.isHeader)
-            Text("Ça fait \(JevInterventionSettings.duration(content.seconds)) que tu procrastines.")
-                .font(.callout).fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("jev-warning-duration")
+            if let detail = JevReminderPresentation.detail(after: content.seconds) {
+                Text(detail)
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("jev-warning-duration")
+            }
+            // Keep Close in the same place when the duration appears at ten minutes.
+            Spacer(minLength: 0)
             HStack {
                 Button("Fermer", action: onClose)
                     .accessibilityIdentifier("jev-warning-close")

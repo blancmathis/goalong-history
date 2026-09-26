@@ -3,14 +3,15 @@ import SwiftUI
 import LocalHistoryCore
 
 @MainActor struct JevInterventionControls: View {
-    @ObservedObject private var preferences = JevInterventionPreferences.shared
+    @ObservedObject private var preferences: JevInterventionPreferences
+    init(preferences: JevInterventionPreferences = .shared) { self.preferences = preferences }
     var body: some View {
         GoalongSettingsGroup(title: "Rappels et paliers") {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Dès la première détection fiable · premier rappel").font(.system(size: 14, weight: .semibold))
-                Text("« Arrête de procrastiner. Ça fait 15 secondes que tu procrastines. »")
+                Text("« Arrête de procrastiner. »")
                     .font(.callout).foregroundStyle(.secondary)
-                Text("Fermer masque seulement le pop-up jusqu’à la prochaine détection. Le compteur et les effets continuent.")
+                Text("La durée ne s’affiche qu’à partir de 10 minutes. Fermer masque seulement le pop-up jusqu’à la prochaine détection ; le suivi interne et les effets continuent.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Toggle("Changer de position à chaque nouveau rappel", isOn: binding(\.moveAfterSecondAppearance))
@@ -20,15 +21,39 @@ import LocalHistoryCore
                 .toggleStyle(.switch).accessibilityIdentifier("jev-effects-enabled")
             Text("Optionnel. Par défaut : assombrissement à 2 min, puis assombrissement + rouge dès 5 min. Ensuite, ce dernier effet et les rappels continuent sans nouveau palier. Retour productif, pause ou arrêt de la surveillance dans Goalong : tout disparaît.")
                 .font(.caption).foregroundStyle(.secondary)
+            strengthPresets
             ForEach(0..<preferences.settings.stages.count, id: \.self) { index in
                 stageRow(index)
                 if index < preferences.settings.stages.count - 1 { Divider() }
             }
-            Text("Assombrissement = voile visuel, pas modification de la luminosité du Mac. Aucun clignotement ni blocage des clics. L’intensité est limitée à 40 %. Si la surveillance ne reçoit plus de résultat, les effets disparaissent sous 30 secondes.")
+            Text("Assombrissement = voile visuel, pas modification de la luminosité du Mac. Aucun clignotement ni blocage des clics. L’intensité peut aller jusqu’à 85 %, sans noir total. Au-delà de 60 %, la lecture de l’écran devient nettement plus difficile. Les rappels restent au-dessus du voile et les commandes de pause et d’arrêt restent dans Goalong. Si la surveillance ne reçoit plus de résultat, les effets disparaissent sous 30 secondes.")
                 .font(.caption).foregroundStyle(.secondary)
             Text("Le compteur additionne des fenêtres de 15 s contenant de la procrastination ; il ne prouve pas que chaque seconde était improductive. Inactivité, contexte privé, erreur ou résultat indéterminé remettent la série à zéro.")
                 .font(.caption).foregroundStyle(.secondary)
             if let error = preferences.error { Text(error).foregroundStyle(LHTheme.warning).font(.caption) }
+        }
+    }
+    private var strengthPresets: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Intensité des effets").font(.system(size: 14, weight: .semibold))
+            HStack(spacing: 10) {
+                ForEach(JevEffectStrength.allCases, id: \.self) { strength in
+                    Button {
+                        preferences.update { $0.applyStrength(strength) }
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text(strength.title).fontWeight(.semibold)
+                            Text("\(strength.intensities[0]) % puis \(strength.intensities[1]) %")
+                                .font(.caption)
+                        }.frame(maxWidth: .infinity).padding(.vertical, 5)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("jev-strength-\(strength.rawValue)")
+                    .accessibilityLabel("\(strength.title) : palier 1 à \(strength.intensities[0]) %, palier 2 à \(strength.intensities[1]) %")
+                }
+            }
+            Text("Ces préréglages changent uniquement les intensités. Les délais et vos choix d’activation sont conservés. Vous pouvez les préparer avant d’activer les effets.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
     private func binding(_ path: WritableKeyPath<JevInterventionSettings, Bool>) -> Binding<Bool> {
@@ -62,10 +87,22 @@ import LocalHistoryCore
                         .accessibilityIdentifier("jev-stage-\(index)-effect")
                 }
                 Spacer(minLength: 0)
-                Stepper("Intensité : \(stages[index].intensity) %", value: stageBinding(index, \.intensity), in: 10...40, step: 5)
-                    .fixedSize().accessibilityIdentifier("jev-stage-\(index)-intensity")
+                Text("\(stages[index].intensity) %")
+                    .font(.system(.body, design: .monospaced).weight(.semibold))
+                    .accessibilityLabel("Intensité du palier \(index + 1) : \(stages[index].intensity) %")
             }.disabled(!stages[index].enabled)
-        }.disabled(!preferences.settings.effectsEnabled)
+            Slider(value: Binding(
+                get: { Double(preferences.settings.stages[index].intensity) },
+                set: { value in
+                    let intensity = Int(value.rounded())
+                    guard intensity != preferences.settings.stages[index].intensity else { return }
+                    preferences.update { $0.stages[index].intensity = intensity }
+                }), in: Double(JevInterventionSettings.intensityRange.lowerBound)...Double(JevInterventionSettings.intensityRange.upperBound), step: 5)
+                .accessibilityLabel("Intensité du palier \(index + 1)")
+                .accessibilityValue("\(stages[index].intensity) %")
+                .accessibilityIdentifier("jev-stage-\(index)-intensity")
+                .disabled(!stages[index].enabled)
+        }
     }
 }
 
