@@ -140,6 +140,7 @@ enum SupportSourceAllowlist {
         "PermissionExperience.swift",
         "PermissionManager.swift",
         "PermissionRecovery.swift",
+        "PermissionRecoveryLedger.swift",
         "PermissionRepair.swift",
         "PrivacyChoicesOverview.swift",
         "PrivacyPage.swift",

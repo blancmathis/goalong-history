@@ -86,6 +86,19 @@
             )
         }
 
+        /// Compare the current executable with its last working requirement using
+        /// the public Security API. This does not read or override macOS consent.
+        static func evaluatePreviousRequirement(_ text: String?) -> Int32? {
+            guard let text, !text.isEmpty, text.utf8.count <= 8192 else { return nil }
+            var requirement: SecRequirement?
+            let parsed = SecRequirementCreateWithString(text as CFString, SecCSFlags(rawValue: 0), &requirement)
+            guard parsed == errSecSuccess, let requirement else { return parsed }
+            var code: SecCode?
+            let copied = SecCodeCopySelf(SecCSFlags(rawValue: 0), &code)
+            guard copied == errSecSuccess, let code else { return copied }
+            return SecCodeCheckValidity(code, SecCSFlags(rawValue: 0), requirement)
+        }
+
         private static func requirementString(_ requirement: SecRequirement) -> String? {
             var text: CFString?
             guard SecRequirementCopyString(requirement, SecCSFlags(rawValue: 0), &text) == errSecSuccess else {

@@ -101,6 +101,7 @@ jobs:
       - name: Test source for supplied build
         if: inputs.signed_stage != ''
         run: |
+          python3 scripts/test_permission_requirement_policy.py
           xcrun swift test
           bash scripts/audit_privacy_boundaries.sh
           bash scripts/test_release_signing_policy.sh

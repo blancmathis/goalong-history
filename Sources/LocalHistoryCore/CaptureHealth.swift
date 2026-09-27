@@ -83,7 +83,14 @@ public struct CaptureBuildIdentity: Codable, Equatable {
     }
 
     public func hasSamePermissionIdentity(as other: CaptureBuildIdentity) -> Bool {
-        permissionIdentityKey == other.permissionIdentityKey
+        guard permissionIdentityKey == other.permissionIdentityKey else { return false }
+        // A certificate/requirement rotation can occur within the same team. This is
+        // a conservative diagnostic comparison, never a substitute for SecCodeCheckValidity.
+        if isStableAcrossUpdates, let requirement = designatedRequirement,
+           let otherRequirement = other.designatedRequirement {
+            return requirement == otherRequirement
+        }
+        return true
     }
 }
 
@@ -98,20 +105,26 @@ public struct CapturePermissionObservation: Codable, Equatable {
     public let observedAt: Date
     /// New schema field is optional so old health snapshots remain decodable.
     public let accessibilityCrossProcessProbe: Bool?
-    public var accessibilityGranted: Bool { accessibilityPreflight || accessibilityCrossProcessProbe == true }
+    /// Optional for backward decoding; only the explicit API-disabled error sets it.
+    public let accessibilityProbeDenied: Bool?
+    public var accessibilityGranted: Bool {
+        accessibilityCrossProcessProbe == true || (accessibilityPreflight && accessibilityProbeDenied != true)
+    }
 
     public init(
         accessibilityPreflight: Bool,
         accessibilityFunctionalProbe: Bool,
         inputMonitoringPreflight: Bool,
         observedAt: Date,
-        accessibilityCrossProcessProbe: Bool? = nil
+        accessibilityCrossProcessProbe: Bool? = nil,
+        accessibilityProbeDenied: Bool? = nil
     ) {
         self.accessibilityPreflight = accessibilityPreflight
         self.accessibilityFunctionalProbe = accessibilityFunctionalProbe
         self.inputMonitoringPreflight = inputMonitoringPreflight
         self.observedAt = observedAt
         self.accessibilityCrossProcessProbe = accessibilityCrossProcessProbe
+        self.accessibilityProbeDenied = accessibilityProbeDenied
     }
 
     public var accessibilityUsable: Bool {
@@ -257,7 +270,7 @@ public enum CaptureHealthState: String, Codable, CaseIterable {
         case .ready: return "Ready"
         case .permissionRequired: return "Permission required"
         case .permissionAppearsEnabledButStaleForBuild:
-            return "Permission appears enabled but is stale for this build"
+            return "Permission may refer to an older app identity"
         case .inputTapUnavailable: return "Input tap unavailable"
         case .accessibilityContextUnavailable: return "Accessibility context unavailable"
         case .paused: return "Paused"
@@ -303,16 +316,6 @@ public enum CaptureHealthEvaluator {
             )
         }
 
-        if let suppression = snapshot.currentSuppressionReason,
-            [.excludedApplication, .excludedDomain, .privateBrowserWindow, .secureInput].contains(suppression)
-        {
-            return CaptureHealthAssessment(
-                state: .excludedPrivateOrSecure,
-                detail: "Detailed capture is intentionally suppressed: \(suppression.rawValue).",
-                captureProven: snapshot.inputCallbackObservedThisLaunch == true
-            )
-        }
-
         let buildChanged = snapshot.lastKnownWorkingBuild.map {
             !$0.hasSamePermissionIdentity(as: snapshot.build)
         } ?? false
@@ -324,17 +327,16 @@ public enum CaptureHealthEvaluator {
             return input < expected
         }()
 
-        if snapshot.build.signatureKind == .adHoc,
-            buildChanged,
-            snapshot.permissions.accessibilityPreflight,
-            (!snapshot.permissions.accessibilityFunctionalProbe || expectedInputMissed)
+        if buildChanged,
+            (!snapshot.permissions.accessibilityGranted
+             || (snapshot.permissions.accessibilityPreflight && !snapshot.permissions.accessibilityFunctionalProbe))
         {
             return CaptureHealthAssessment(
                 state: .permissionAppearsEnabledButStaleForBuild,
-                detail: "macOS still shows approval, but this ad-hoc build has a different code identity and the controlled probe did not work.",
+                detail: "The running app differs from the last known working permission identity and Accessibility is unavailable. An older approval may no longer match; this is a diagnostic clue, not proof of the macOS consent record.",
                 captureProven: false,
                 limitations: [
-                    "Ad-hoc updates can require a new Accessibility or Input Monitoring approval.",
+                    "Identity migrations can require one new explicit approval, including migrations to certificate-signed builds.",
                     "Existing recorded data remains available.",
                 ]
             )
@@ -345,6 +347,16 @@ public enum CaptureHealthEvaluator {
                 state: .permissionRequired,
                 detail: "Accessibility is not enabled for the running app copy.",
                 captureProven: false
+            )
+        }
+
+        if let suppression = snapshot.currentSuppressionReason,
+            [.excludedApplication, .excludedDomain, .privateBrowserWindow, .secureInput].contains(suppression)
+        {
+            return CaptureHealthAssessment(
+                state: .excludedPrivateOrSecure,
+                detail: "Detailed capture is intentionally suppressed: \(suppression.rawValue).",
+                captureProven: snapshot.inputCallbackObservedThisLaunch == true
             )
         }
 
@@ -475,7 +487,7 @@ public final class CaptureHealthAccumulator {
         self.build = build
         self.lastKnownWorkingBuild = lastKnownWorkingBuild
             ?? previous?.lastKnownWorkingBuild
-            ?? (previous?.lastInputEventAt == nil ? nil : previous?.build)
+            ?? (previous?.inputCallbackObservedThisLaunch == true && previous?.permissions.accessibilityUsable == true ? previous?.build : nil)
         self.permissions = permissions
         lastCallbackAt = previous?.lastCallbackAt
         lastInputEventAt = previous?.lastInputEventAt
@@ -533,7 +545,7 @@ public final class CaptureHealthAccumulator {
             lastCallbackAt = date
             lastInputEventAt = date
             inputCallbackObservedThisLaunch = true
-            if lifecycle == .createdEnabled { lastKnownWorkingBuild = build }
+            if lifecycle == .createdEnabled && permissions.accessibilityUsable { lastKnownWorkingBuild = build }
             if let expectedInputAfter, date >= expectedInputAfter {
                 self.expectedInputAfter = nil
             }

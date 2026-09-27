@@ -62,7 +62,7 @@
             let source = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryApp/PermissionManager.swift"))
             let block = try XCTUnwrap(source.components(separatedBy: "static func activationStatus()").dropFirst().first)
                 .components(separatedBy: "private static func liveStatus()")[0]
-            XCTAssertTrue(block.contains("probeStatus(includeFunctionalCheck: false)"))
+            XCTAssertTrue(block.contains("shared.refresh(minimumInterval: 0.5)"))
             let probe = try XCTUnwrap(source.components(separatedBy: "private static func probeStatus").dropFirst().first)
                 .components(separatedBy: "@discardableResult")[0]
             XCTAssertTrue(probe.contains("as String: false"))

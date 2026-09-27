@@ -1,3 +1,5 @@
+> Mise à jour du cycle de vie : [Permission lifecycle and recovery](PERMISSION_LIFECYCLE.md).
+
 # Diagnostic local et assistance
 
 ## Parcours utilisateur

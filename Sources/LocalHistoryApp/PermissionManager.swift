@@ -52,8 +52,12 @@
         // Our own window (or an application role) never proves a macOS grant.
         var accessibilityCrossProcessProbe: Bool = false
         var accessibilityProbeError: Int32? = nil
+        var observationPending: Bool = false
 
-        var allGranted: Bool { accessibility && inputMonitoring }
+        var accessibilityProbeDenied: Bool {
+            accessibilityProbeError == AXError.apiDisabled.rawValue && !accessibilityCrossProcessProbe
+        }
+        var allGranted: Bool { !observationPending && accessibility && inputMonitoring }
         var accessibilityUsable: Bool { accessibility && accessibilityFunctionalProbe }
         var canAttemptInputTap: Bool { accessibility || inputMonitoringDirectlyGranted }
 
@@ -77,7 +81,8 @@
             accessibilityCrossProcessProbe: Bool = false,
             accessibilityProbeError: Int32? = nil
         ) -> PermissionStatus {
-            let accessibility = accessibilityPreflight || accessibilityCrossProcessProbe
+            let accessibility = accessibilityCrossProcessProbe
+                || (accessibilityPreflight && accessibilityProbeError != AXError.apiDisabled.rawValue)
             let inputMonitoringProvidedByAccessibility =
                 accessibility && !inputMonitoringDirectlyGranted
             return PermissionStatus(
@@ -114,14 +119,25 @@
     /// state requires a functional AX read and a real click/key/scroll callback in this process.
     final class PermissionManager {
         typealias StatusProbe = () -> PermissionStatus
+        static let shared = PermissionManager()
 
-        private let statusLock = NSLock()
+        private let statusLock = NSCondition()
         private let statusProbe: StatusProbe
         private let clock: () -> Date
         private var cachedStatus: PermissionStatus
         private var lastRefreshAt: Date
         private var refreshInFlight = false
-        private(set) var probeCount = 0
+        private var completedProbeCount = 0
+        private var generation: UInt64 = 0
+        private var repairInProgress = false
+        var isRepairInProgress: Bool { statusLock.lock(); defer { statusLock.unlock() }; return repairInProgress }
+        var observationRevision: UInt64 { statusLock.lock(); defer { statusLock.unlock() }; return generation }
+        private var inputCreationFailed = false
+        var inputTapCreationFailed: Bool { statusLock.lock(); defer { statusLock.unlock() }; return inputCreationFailed }
+        func recordInputTapCreationFailure(_ failed: Bool) {
+            statusLock.lock(); inputCreationFailed = failed; statusLock.unlock()
+        }
+        var probeCount: Int { statusLock.lock(); defer { statusLock.unlock() }; return completedProbeCount }
 
         init(
             statusProbe: @escaping StatusProbe = PermissionManager.liveStatus,
@@ -132,7 +148,7 @@
             let initial = statusProbe()
             cachedStatus = initial
             lastRefreshAt = clock()
-            probeCount = 1
+            completedProbeCount = 1
         }
 
         /// Shared, zero-probe snapshot used by AX readers, dashboard and menu.
@@ -152,31 +168,88 @@
         ) -> PermissionStatus {
             let now = clock()
             statusLock.lock()
-            if refreshInFlight
-                || (!force && now.timeIntervalSince(lastRefreshAt) < max(0, minimumInterval))
-            {
+            if repairInProgress {
+                let value = Self.pendingStatus
+                statusLock.unlock()
+                return value
+            }
+            if refreshInFlight {
+                // Join the in-flight observation, never mistake an old cached grant for
+                // the result of a new user check. Only worker threads wait.
+                let deadline = Date().addingTimeInterval(0.8)
+                while refreshInFlight && !Thread.isMainThread {
+                    if !statusLock.wait(until: deadline) { break }
+                }
+                var value = cachedStatus
+                if refreshInFlight { value.observationPending = true }
+                statusLock.unlock()
+                return value
+            }
+            let age = now.timeIntervalSince(lastRefreshAt)
+            if !force && age >= 0 && age < max(0, minimumInterval) {
                 let value = cachedStatus
                 statusLock.unlock()
                 return value
             }
             refreshInFlight = true
+            let requestGeneration = generation
             statusLock.unlock()
 
             let value = statusProbe()
 
             statusLock.lock()
-            cachedStatus = value
-            lastRefreshAt = clock()
+            if requestGeneration == generation {
+                cachedStatus = value
+                lastRefreshAt = clock()
+            }
             refreshInFlight = false
-            probeCount += 1
+            completedProbeCount += 1
+            statusLock.broadcast()
+            let result = cachedStatus
             statusLock.unlock()
-            return value
+            return result
+        }
+
+        /// Invalidates pre-reset observations. A late probe cannot restore a grant
+        /// which was observed before the user explicitly reset it.
+        func invalidate() {
+            statusLock.lock()
+            generation &+= 1
+            cachedStatus = Self.pendingStatus
+            lastRefreshAt = .distantPast
+            statusLock.unlock()
+        }
+
+        /// No observations can authorize a source while the confirmed reset is
+        /// in progress, including observations started after its first invalidation.
+        func setRepairInProgress(_ value: Bool) {
+            statusLock.lock()
+            repairInProgress = value
+            generation &+= 1
+            cachedStatus = Self.pendingStatus
+            lastRefreshAt = .distantPast
+            statusLock.broadcast()
+            statusLock.unlock()
+        }
+
+        static var pendingStatus: PermissionStatus {
+            var result = PermissionStatus.resolved(accessibilityPreflight: false,
+                accessibilityFunctionalProbe: false, inputMonitoringDirectlyGranted: false)
+            result.observationPending = true
+            return result
+        }
+
+        func refreshAsync(completion: @escaping (PermissionStatus) -> Void) {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = self.refresh(minimumInterval: 0.5)
+                DispatchQueue.main.async { completion(result) }
+            }
         }
 
         /// Fast when preflight succeeds; on disagreement, verify a bounded protected
         /// attribute on another process. Used by setup and the recording watchdog.
         static func activationStatus() -> PermissionStatus {
-            probeStatus(includeFunctionalCheck: false)
+            shared.refresh(minimumInterval: 0.5)
         }
 
         private static func liveStatus() -> PermissionStatus {
@@ -223,7 +296,7 @@
                 AXUIElementSetMessagingTimeout(app, 0.12)
                 var windows: CFTypeRef?
                 let error = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windows)
-                lastError = error.rawValue
+                if error == .apiDisabled || lastError != AXError.apiDisabled.rawValue { lastError = error.rawValue }
                 if error == .success, let windows, CFGetTypeID(windows) == CFArrayGetTypeID() { return (true, nil) }
             }
             return (false, lastError)
@@ -246,7 +319,7 @@
         func requestInputMonitoring() -> Bool {
             // Input Monitoring preflight is reported independently from Accessibility.
             // A successful callback remains the authoritative runtime proof.
-            if snapshot.inputMonitoring { return true }
+            if refresh(force: true).inputMonitoringDirectlyGranted { return true }
             let requested = CGRequestListenEventAccess()
             _ = refresh(force: true)
             return requested
@@ -256,7 +329,7 @@
             let status = refresh(force: true)
             if !status.accessibility {
                 _ = requestAccessibility()
-            } else if !status.inputMonitoring {
+            } else if !status.inputMonitoring || (inputTapCreationFailed && !status.inputMonitoringDirectlyGranted) {
                 _ = requestInputMonitoring()
             }
         }
@@ -269,7 +342,7 @@
         }
 
         func openInputMonitoringSettings() {
-            if !refresh(force: true).inputMonitoring {
+            if !refresh(force: true).inputMonitoringDirectlyGranted {
                 _ = requestInputMonitoring()
             }
             openSettingsDirectly(for: .inputMonitoring)

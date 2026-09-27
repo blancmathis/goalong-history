@@ -2,6 +2,7 @@
 import AppKit
 import Foundation
 import Security
+import CryptoKit
 import Darwin
 import LocalHistoryCore
 
@@ -14,6 +15,10 @@ struct SupportBuild: Codable {
     let signatureValidation: Int32
     let installation: Installation
     let runningCopies: Int
+    let designatedRequirementSHA256: String?
+    let previousSignatureKind: BuildSignatureKind?
+    let previousVersion: String?
+    let previousRequirementValidation: Int32?
     enum Installation: String, Codable { case applications, userApplications, diskImage, translocated, other }
 
     static func installation(path: String, home: String = NSHomeDirectory()) -> Installation {
@@ -27,7 +32,7 @@ struct SupportBuild: Codable {
         guard let value, value.utf8.count <= 128, value.range(of: pattern, options: .regularExpression) != nil else { return nil }
         return value
     }
-    static func current() -> SupportBuild {
+    static func current(previousWorkingBuild: CaptureBuildIdentity? = nil) -> SupportBuild {
         let identity = BuildIdentityReader.current()
         var code: SecCode?
         let copied = SecCodeCopySelf(SecCSFlags(rawValue: 0), &code)
@@ -39,7 +44,13 @@ struct SupportBuild: Codable {
             signatureKind: identity.signatureKind,
             codeHash: validated(identity.codeDirectoryHash, pattern: #"^[0-9a-f]{40,64}$"#),
             signatureValidation: validity, installation: installation(path: Bundle.main.bundleURL.path),
-            runningCopies: NSRunningApplication.runningApplications(withBundleIdentifier: "ai.goalong.localhistory").count)
+            runningCopies: NSRunningApplication.runningApplications(withBundleIdentifier: "ai.goalong.localhistory").count,
+            designatedRequirementSHA256: identity.designatedRequirement.map { text in
+                SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+            },
+            previousSignatureKind: previousWorkingBuild?.signatureKind,
+            previousVersion: validated(previousWorkingBuild?.displayVersion, pattern: #"^[0-9]+(?:\.[0-9]+){1,3}$"#),
+            previousRequirementValidation: BuildIdentityReader.evaluatePreviousRequirement(previousWorkingBuild?.designatedRequirement))
     }
 }
 
@@ -137,7 +148,7 @@ struct SupportReport: Codable {
     let crashSummaries: [SupportCrash]
     let timeline: [SupportRecord]
 
-    static func build(journal: SupportDiagnostics = .shared, live: [SupportKey: SupportValue], crashLoader: () -> [SupportCrash] = { SupportCrash.recent() }) -> Self {
+    static func build(journal: SupportDiagnostics = .shared, live: [SupportKey: SupportValue], previousWorkingBuild: CaptureBuildIdentity? = nil, crashLoader: () -> [SupportCrash] = { SupportCrash.recent() }) -> Self {
         let snapshot = journal.snapshot()
         return Self(schema: 1, createdAt: Date(), reportID: UUID(), privacy: [
             "Rapport technique local. Aucun envoi automatique.",
@@ -152,8 +163,9 @@ struct SupportReport: Codable {
             "Les résumés de crash couvrent jusqu’à cinq rapports IPS récents de Goalong accessibles sans permission supplémentaire. Une liste vide ne prouve pas l’absence de crash.",
             "Si le disque échoue ou reste bloqué, diskSnapshotIncomplete est vrai et le rapport conserve les derniers événements disponibles en mémoire (128 au maximum). Un arrêt ou un export n’attend pas indéfiniment le journal.",
             "Les délais de réponse et arrêts anormaux sont des indices, pas une preuve de leur cause. La veille peut retarder les minuteries.",
-            "Ce rapport aide à diagnostiquer les pannes ; il ne garantit pas de reproduire tous les bugs."
-        ], build: .current(), environment: .current(),
+            "Ce rapport aide à diagnostiquer les pannes ; il ne garantit pas de reproduire tous les bugs.",
+            "previousRequirementValidation compare la signature actuelle à l’ancienne identité ; ce résultat ne prouve pas qu’un accès a été accordé par macOS."
+        ], build: .current(previousWorkingBuild: previousWorkingBuild), environment: .current(),
         current: Dictionary(uniqueKeysWithValues: live.map { ($0.key.rawValue, $0.value) }),
         diagnosticsEnabled: snapshot.enabled, droppedEvents: snapshot.dropped, rejectedRecords: snapshot.rejected,
         writeFailures: snapshot.writeFailures, diskSnapshotIncomplete: snapshot.diskSnapshotIncomplete, crashSummaries: crashLoader(), timeline: snapshot.records)
@@ -170,6 +182,7 @@ struct SupportReport: Codable {
     private let responsiveness = SupportResponsivenessMonitor()
     private var lastTick = ProcessInfo.processInfo.systemUptime
     var provider: (() -> [SupportKey: SupportValue])?
+    var previousWorkingBuildProvider: (() -> CaptureBuildIdentity?)?
 
     func start(provider: @escaping () -> [SupportKey: SupportValue]) {
         self.provider = provider

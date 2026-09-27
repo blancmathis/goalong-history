@@ -18,6 +18,15 @@ import Foundation
 import Darwin
 
 enum GoalongCapability: String { case localComputerHistory, appleScreenTime, aiConversations, chatGPTAnalysis }
+// The recovery ledger has deterministic unit coverage. This isolated executable
+// exercises the unchanged real handshake without touching the app's defaults.
+enum SourceAccessStatus { case accessibility }
+enum PermissionRecoveryLedger {
+    enum Action { case relaunchPrepared }
+    static func activePermission() -> SourceAccessStatus? { nil }
+    static func record(_ action: Action, for permission: SourceAccessStatus) {}
+}
+
 let base = Bundle.main.bundleURL.deletingLastPathComponent()
 let events = base.appendingPathComponent("events.jsonl")
 func log(_ kind: String) {

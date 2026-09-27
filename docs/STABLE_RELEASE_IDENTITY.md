@@ -1,3 +1,5 @@
+> Mise à jour du cycle de vie : [Permission lifecycle and recovery](PERMISSION_LIFECYCLE.md).
+
 # Stable macOS permission identity
 
 The former rolling and tagged release workflows forced ad-hoc signing, while the

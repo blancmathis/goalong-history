@@ -7,13 +7,14 @@ import Darwin
 enum SupportComponent: String, Codable { case app, permissions, capture, monitoring, storage, updates, analysis, sharing, interface, support }
 enum SupportEvent: String, Codable {
     case appStarted, appStopped, heartbeat, mainThreadDelayed, mainThreadUnresponsive, mainThreadRecovered, legacyLocation
-    case permissionChecked, permissionRepairStarted, permissionRepairFinished
+    case permissionChecked, permissionRepairStarted, permissionRepairFinished, permissionRecoveryAction
     case captureHealthChanged, inputTapChanged, monitorCycle, requestFinished
     case operationFailed, updateChanged, sourceCheck, userMarkedIssue, reportExported
 }
 enum SupportLevel: String, Codable { case info, warning, error }
 enum SupportKey: String, Codable {
     case accessibilityPreflight, accessibilityFunctional, accessibilityCrossProcess, inputPreflight, axError
+    case permissionObservationPending, axEvidenceThisLaunch, inputTapState, previousWorkingIdentityAvailable, capability
     case elapsedMS, errorCode, errorKind, enabled, paused, tapRunning, captureProven, state
     case previousExitUnclean, droppedEvents, writeFailures, consentEnabled, httpStatus
     case itemCount, byteCount, attempt, durationMS, decision, permission, success
@@ -29,6 +30,8 @@ enum SupportState: String, Codable {
     case permissionRequired, permissionAppearsEnabledButStaleForBuild, inputTapUnavailable
     case accessibilityContextUnavailable, paused, excludedPrivateOrSecure, healthyButIdle, awaitingInputEvidence
     case skipped, allowed, blocked
+    case settingsOpened, relaunchPrepared, resetSucceeded
+    case localComputerHistory, appleScreenTime, aiConversations
 }
 
 enum SupportValue: Codable, Equatable {

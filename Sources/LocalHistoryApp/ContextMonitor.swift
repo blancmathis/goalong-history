@@ -268,7 +268,7 @@
             captureHealth.setSuppression(current.suppressionReason)
             if current.suppressionReason == .accessibilityUnavailable {
                 captureHealth.markAXFailure()
-            } else if current.suppressionReason == nil {
+            } else if current.suppressionReason == nil, provider.lastCaptureProvedExternalAX {
                 captureHealth.markAXSuccess(urlAvailable: current.url != nil)
             }
 
