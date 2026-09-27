@@ -176,6 +176,25 @@ final class PermissionLifecycleTests: XCTestCase {
         XCTAssertEqual(PermissionRecoveryAdvice.resolve(accessAvailable: false, stableInstallation: true, signatureValid: true, runningCopies: 1, identityChanged: true, progress: .init()), .repair)
     }
 
+    func testFullDiskAccessFooterCannotReintroduceRepeatedRelaunchLoop() {
+        XCTAssertTrue(PermissionRecoveryAdvice.prefersPrimaryRelaunch(status: .fullDiskAccess,
+            openedSettings: true, ready: false, resumedAfterRestart: false, progress: .init()))
+        for resumed in [false, true] {
+            for progress in [PermissionRecoveryLedger.Progress(relaunches: 1),
+                             PermissionRecoveryLedger.Progress(resets: 1),
+                             PermissionRecoveryLedger.Progress(relaunches: 2, resets: 1, relaunchesAfterReset: 1)] {
+                XCTAssertFalse(PermissionRecoveryAdvice.prefersPrimaryRelaunch(status: .fullDiskAccess,
+                    openedSettings: true, ready: false, resumedAfterRestart: resumed, progress: progress))
+            }
+        }
+        XCTAssertFalse(PermissionRecoveryAdvice.prefersPrimaryRelaunch(status: .fullDiskAccess,
+            openedSettings: true, ready: false, resumedAfterRestart: true, progress: .init()))
+        XCTAssertFalse(PermissionRecoveryAdvice.prefersPrimaryRelaunch(status: .fullDiskAccess,
+            openedSettings: true, ready: true, resumedAfterRestart: false, progress: .init()))
+        XCTAssertFalse(PermissionRecoveryAdvice.prefersPrimaryRelaunch(status: .accessibility,
+            openedSettings: true, ready: false, resumedAfterRestart: false, progress: .init()))
+    }
+
     func testRepairRejectsTemporaryAndPathTraversalLocations() {
         for path in ["/tmp/Goalong.app", "/Applications/../tmp/Goalong.app", "/ApplicationsFake/Goalong.app", "/Volumes/Goalong/Goalong.app"] {
             XCTAssertFalse(PermissionRepair.canResetInstallation(path: path), path)

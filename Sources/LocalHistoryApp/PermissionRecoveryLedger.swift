@@ -87,6 +87,15 @@ enum PermissionRecoveryAdvice: Equatable {
     case checking, available, installStableCopy, closeOtherCopy, replaceInvalidBuild
     case grant, relaunch, repair, reauthorize, manualRepair
 
+    /// The sheet footer must not override the recovery step with another forced
+    /// Full Disk Access relaunch after one has already been attempted.
+    static func prefersPrimaryRelaunch(status: SourceAccessStatus, openedSettings: Bool,
+                                      ready: Bool, resumedAfterRestart: Bool,
+                                      progress: PermissionRecoveryLedger.Progress) -> Bool {
+        status == .fullDiskAccess && openedSettings && !ready && !resumedAfterRestart
+            && progress.relaunches == 0 && progress.resets == 0
+    }
+
     static func resolve(accessAvailable: Bool, observationPending: Bool = false,
                         stableInstallation: Bool, signatureValid: Bool?, runningCopies: Int,
                         identityChanged: Bool, progress: PermissionRecoveryLedger.Progress) -> Self {

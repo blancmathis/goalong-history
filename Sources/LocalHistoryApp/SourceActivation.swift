@@ -413,7 +413,11 @@ import LocalHistoryCore
         private var access: SourceAccessStatus { flow.result ?? (capability == .appleScreenTime ? .fullDiskAccess : .accessibility) }
         private var copy: PermissionSetupCopy { PermissionSetupCopy(capability: capability, status: access) }
         private var ready: Bool { flow.result == .ready }
-        private var needsRestart: Bool { openedSettings && access == .fullDiskAccess && !ready }
+        private var needsRestart: Bool {
+            PermissionRecoveryAdvice.prefersPrimaryRelaunch(status: access, openedSettings: openedSettings,
+                ready: ready, resumedAfterRestart: resumingAfterRestart,
+                progress: PermissionRecoveryLedger.load(access))
+        }
         private var primaryTitle: String {
             if restarting { return "Preparing restart…" }
             if flow.checking { return "Checking access…" }
