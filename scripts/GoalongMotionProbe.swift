@@ -62,6 +62,8 @@ private struct ProbePage: View {
     var failures = [String]()
     var activeA = Data(), restA = Data(), reducedA = Data()
     var pageA = Data(), loadedA = Data(), pageReducedA = Data()
+    private var steps: [(Double, @MainActor () throws -> Void)] = []
+    private var lastStepOffset = 0.0
 
     init(folder: URL) { self.folder = folder }
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -138,7 +140,13 @@ private struct ProbePage: View {
             self.fixture.reduced = true
             self.fixture.pageLoading = true
         }
-        after(6.4) { self.pageReducedA = try self.capture("page-access-reduced-dark", view: self.window.contentView!) }
+        after(6.4) {
+            self.pageReducedA = try self.capture("page-access-reduced-dark", view: self.window.contentView!)
+            self.expect(self.motionCount(self.window.contentView!) == 1,
+                        "Reduced page wait has actually mounted")
+            self.expect(self.pageReducedA != self.loadedA,
+                        "Reduced page capture is not the previous ready page")
+        }
         after(6.85) {
             self.expect(self.pageReducedA == (try self.capture("page-access-reduced-stable", view: self.window.contentView!)), "Reduced page wait stays fixed")
             self.window.appearance = NSAppearance(named: .aqua)
@@ -147,10 +155,20 @@ private struct ProbePage: View {
             _ = try self.capture("page-access-reduced-light", view: self.window.contentView!)
             try self.finish()
         }
+        runNextStep()
     }
-    func after(_ delay: Double, _ operation: @escaping @MainActor () throws -> Void) {
+    func after(_ offset: Double, _ operation: @escaping @MainActor () throws -> Void) {
+        // Keep the intended sampling intervals, but schedule each step only after
+        // the previous one completed. On a busy runner, absolute deadlines can
+        // all expire inside one bitmap capture, before SwiftUI commits a new state.
+        steps.append((max(0, offset - lastStepOffset), operation))
+        lastStepOffset = offset
+    }
+    private func runNextStep() {
+        guard !steps.isEmpty else { return }
+        let (delay, operation) = steps.removeFirst()
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            do { try operation() }
+            do { try operation(); self.runNextStep() }
             catch { self.failures.append(String(describing: error)); try? self.finish() }
         }
     }

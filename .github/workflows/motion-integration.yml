@@ -18,6 +18,8 @@ jobs:
           persist-credentials: false
       - name: Privacy boundaries
         run: ./scripts/audit_privacy_boundaries.sh
+      - name: Fixture preference restoration policy
+        run: python3 scripts/test_motion_fixture_policy.py
       - name: Native activity under the AppKit event loop
         timeout-minutes: 3
         run: |
@@ -25,11 +27,13 @@ jobs:
           # Exercise both real OS preferences; do not override them in the app.
           original=$(defaults read com.apple.universalaccess reduceMotion 2>/dev/null || true)
           restore_preference() {
-            if [ -n "$original" ]; then
-              defaults write com.apple.universalaccess reduceMotion -bool "$original"
-            else
-              defaults delete com.apple.universalaccess reduceMotion 2>/dev/null || true
-            fi
+            # `defaults read` returns 0/1; `write -bool` expects true/false.
+            case "$original" in
+              1|true|TRUE|yes|YES) defaults write com.apple.universalaccess reduceMotion -bool true ;;
+              0|false|FALSE|no|NO) defaults write com.apple.universalaccess reduceMotion -bool false ;;
+              "") defaults delete com.apple.universalaccess reduceMotion 2>/dev/null || true ;;
+              *) echo 'Unexpected original Reduce Motion value; refusing to invent a replacement.' >&2; return 1 ;;
+            esac
           }
           trap restore_preference EXIT
           set +e
