@@ -18,7 +18,13 @@ security set-keychain-settings -lut 3600 "$KEYCHAIN"
 security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
 security import "$ARCHIVE" -k "$KEYCHAIN" -P "$MACOS_SIGNING_CERTIFICATE_PASSWORD" -T /usr/bin/codesign >/dev/null
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
-security list-keychains -d user -s "$KEYCHAIN"
+# Keep the runner's existing keychains searchable: tests store and delete their own items there.
+EXISTING_KEYCHAINS=()
+while IFS= read -r line; do
+  line="${line//\"/}"; line="${line#"${line%%[![:space:]]*}"}"
+  [[ -n "$line" && "$line" != "$KEYCHAIN" ]] && EXISTING_KEYCHAINS+=("$line")
+done < <(security list-keychains -d user)
+security list-keychains -d user -s "$KEYCHAIN" "${EXISTING_KEYCHAINS[@]}"
 IDENTITY="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["certificateSHA1"])' "$ROOT/Distribution/release-signing.json")"
 security find-identity -v -p codesigning "$KEYCHAIN" | grep -Fq "$IDENTITY"
 echo "LOCALHISTORY_CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
