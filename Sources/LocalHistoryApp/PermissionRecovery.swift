@@ -88,7 +88,7 @@
         }
 
         @MainActor static func prepareRelaunch(permission: SourceAccessStatus? = nil, completion: @escaping (String?) -> Void) {
-            guard relaunch == nil else { completion("Goalong is already preparing to reopen."); return }
+            guard relaunch == nil else { completion("Goalong prépare déjà sa réouverture."); return }
             let handshake = PermissionRelaunchHandshake()
             relaunch = handshake
             handshake.start { error in
@@ -125,7 +125,7 @@
                   helper.resolvingSymlinksInPath() == helper.standardizedFileURL,
                   FileManager.default.isExecutableFile(atPath: helper.path),
                   let launched = NSRunningApplication.current.launchDate else {
-                completion("The restart component is unavailable. Goalong has stayed open; install the latest update and try again.")
+                completion("Le composant de redémarrage est indisponible. Goalong est resté ouvert ; installez la dernière mise à jour puis réessayez.")
                 return
             }
             let child = Process()
@@ -147,17 +147,17 @@
                     if self.received == Data("READY\n".utf8) {
                         self.finish(error: nil, completion: completion)
                     } else if bytes.isEmpty || self.received.count > 32 {
-                        self.finish(error: "Restart could not be prepared. Goalong has stayed open. Please try again.", completion: completion)
+                        self.finish(error: "Le redémarrage n’a pas pu être préparé. Goalong est resté ouvert. Réessayez.", completion: completion)
                     }
                 }
             }
             let deadline = DispatchWorkItem { [weak self] in
-                self?.finish(error: "The restart component did not respond. Goalong has stayed open. Please try again.", completion: completion)
+                self?.finish(error: "Le composant de redémarrage n’a pas répondu. Goalong est resté ouvert. Réessayez.", completion: completion)
             }
             timeout = deadline
             DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: deadline)
             do { try child.run() }
-            catch { finish(error: "Restart could not be prepared: \(error.localizedDescription)", completion: completion) }
+            catch { finish(error: "Le redémarrage n’a pas pu être préparé : \(error.localizedDescription)", completion: completion) }
         }
 
         private func finish(error: String?, completion: (String?) -> Void) {

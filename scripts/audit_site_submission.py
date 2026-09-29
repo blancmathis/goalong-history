@@ -66,7 +66,7 @@ def audit(root: Path) -> list[str]:
             'archive.storedRecord(for: requestedDay)',
         ],
         "ui": [
-            'Button("Send reviewed data", action: sendReviewedData)',
+            'Button("Envoyer les données vérifiées", action: sendReviewedData)',
             'guard let reviewedPayload = payload else { return }',
             'payload: reviewedPayload, origin: target, tokenFile: tokenFile',
         ],

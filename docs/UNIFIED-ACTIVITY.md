@@ -34,6 +34,28 @@ agrégat Apple : elle fournit un accès explicite à une journée. Les défauts 
 restent visibles après l’arrêt de lecture. Le rafraîchissement manuel met également
 à jour la source Apple lorsque celle-ci est activée.
 
+## Lire une période en trente secondes (septembre 2026)
+
+Le haut de la page répond d’abord aux questions simples, les détails restent dessous.
+
+- **Quatre indicateurs** : Temps actif (total du jour, ou moyenne par jour observé sur 7/28 jours, avec heures de début et de fin), Travail (durée et part du temps actif, ou « À classer » tant que moins de la moitié du temps est classée), Concentration (plus long bloc de travail, ou à défaut plus longue période dans une même app ou un même site) et Changements d’app (par heure active, et intervalle moyen entre deux changements).
+- **Comparaison honnête** : aujourd’hui est comparé à hier *à la même heure* ; un jour passé, à la veille ; une période, à la moyenne par jour observé de la période précédente. Les jours sans données ne comptent jamais comme des zéros.
+- **À retenir** : jusqu’à sept constats chiffrés (amplitude ou horaires habituels médians, meilleure journée, créneau le plus actif, usage principal, rythme de changement, écart avec la période précédente, plus forte variation, part du travail).
+- **Classement en un clic** : tant qu’au moins 15 % du temps reste à classer, une carte propose les principaux usages non classés avec *Travail* / *Hors travail*. Chaque ligne d’Applications et sites porte aussi une étiquette cliquable (Travail, Hors travail, automatique).
+- **Rythme** : par heure, empilé Travail / Hors travail / À classer ; ou chronologie en couloirs (six usages principaux + Autres) pour voir quoi et quand. Sur 7/28 jours : barres par jour avec la moyenne en pointillés, et la carte **Quand êtes-vous actif ?** (minutes actives moyennes par jour de la semaine et par heure ; un jour de semaine sans observation reste vide).
+- **Détail d’un usage** : classement modifiable, temps total et part, jours d’utilisation, séances (interruptions de plus de 2 min), durée moyenne, plus longue séance, évolution, heures d’utilisation et détail par jour.
+- **Export** : *Exporter* enregistre un CSV (séparateur `;`, UTF-8 avec BOM) d’une ligne par jour et par app ou site : durées active, travail, hors travail, à classer, et classement appliqué. Aucun titre, adresse complète ni contenu ; les cellules commençant par `= + - @` sont neutralisées.
+
+## Classement personnel
+
+`GoalongUsageClassificationRules` associe une app (identifiant de bundle, sinon nom) ou un site (hôte, sous-domaines inclus) à *Travail* ou *Hors travail*. Le fichier privé `activity-classification.json` (0600) est lu par la page ; les journaux ne sont jamais réécrits. Les règles sont appliquées à chaque lecture sur les jours mis en cache : changer un choix met à jour tout l’historique instantanément, et le retirer restaure le classement automatique. Une règle de site prime sur celle de son navigateur ; l’hôte le plus précis gagne. Réglages → Apps et sites liste les choix et permet de tout réinitialiser. L’aperçu développeur n’applique jamais les règles réelles.
+
+Un **bloc de travail** regroupe le temps classé Travail tant que les interruptions (autre usage, pause, absence d’observation) durent au plus deux minutes ; seules les secondes de travail sont comptées. Le **focus observé** historique (même app et même site sans interruption) reste disponible dans les détails.
+
+## Journées très chargées
+
+Une journée réelle peut dépasser 40 000 observations. La projection Activité, compacte, dispose désormais de son propre plafond (262 144 lignes, 384 Mio estimés) au lieu de celui de l’historique détaillé (32 768 lignes) qui rejetait ces journées entières comme « illisibles ». La lecture reste bornée, une journée à la fois, et les journées passées sont mises en cache après leur première lecture.
+
 ## Données et confidentialité
 
 GoalongLocalAnalytics est le moteur commun, sans changement de collecte. Les

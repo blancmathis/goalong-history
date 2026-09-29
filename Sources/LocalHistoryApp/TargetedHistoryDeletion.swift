@@ -162,19 +162,19 @@
         var errorDescription: String? {
             switch self {
             case .invalidInterval:
-                return "The selected local-history interval is invalid."
+                return "La période choisie est invalide."
             case .sourceIncomplete:
                 return
-                    "Goalong could not read the complete original source safely, so no targeted deletion was attempted."
+                    "Goalong n’a pas pu lire toute la source d’origine en sécurité : aucune suppression n’a été tentée."
             case .selectionNoLongerExists:
                 return
-                    "The selected item no longer matches the current source. Refresh Computer History and try again."
+                    "L’élément choisi ne correspond plus à la source actuelle. Actualisez l’historique et réessayez."
             case .selectionExceedsLimit(let actual, let maximum):
                 return
-                    "The selected item contains \(actual) source events, above the bounded deletion limit of \(maximum)."
+                    "L’élément choisi contient \(actual) événements, au-delà de la limite de suppression de \(maximum)."
             case .sourceChangedDuringCommit:
                 return
-                    "The selected source changed before every exact event could be removed. Goalong invalidated derived views; refresh before retrying."
+                    "La source a changé avant la fin de la suppression. Goalong a invalidé les vues dérivées ; actualisez avant de réessayer."
             }
         }
     }

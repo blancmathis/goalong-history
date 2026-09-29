@@ -42,10 +42,10 @@
                     LHCard {
                         EmptyStateView(
                             symbol: "switch.2",
-                            title: model.snapshot.trackedUsage.isEmpty ? "No apps or websites yet" : "No matches",
+                            title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site pour l’instant" : "Aucun résultat",
                             message: model.snapshot.trackedUsage.isEmpty
-                                ? "Keep Goalong running. Every observed app and website will appear here with its own monitoring control."
-                                : "Try another search or filter."
+                                ? "Laissez Goalong actif : chaque app et site observé apparaîtra ici avec son propre réglage."
+                                : "Essayez une autre recherche ou un autre filtre."
                         )
                         .frame(minHeight: 320)
                     }
@@ -57,7 +57,7 @@
                                 symbol: "square.grid.2x2.fill",
                                 items: applications
                             )
-                            subjectSection(title: "Websites", symbol: "globe", items: websites)
+                            subjectSection(title: "Sites web", symbol: "globe", items: websites)
                         }
                         .padding(.bottom, 8)
                     }
@@ -75,10 +75,10 @@
                         .frame(width: 40, height: 40)
                         .background(LHTheme.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Choose what Goalong monitors")
+                        Text("Choisir ce que Goalong suit")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
-                            "Turning monitoring off affects future details only. Existing history is not rewritten, Goalong itself always stays excluded, and sharing rules remain separate."
+                            "Désactiver le suivi ne concerne que les détails futurs. L’historique existant n’est pas modifié, Goalong reste toujours exclu et les règles de partage sont distinctes."
                         )
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -99,7 +99,7 @@
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                    TextField("Search an app, website or category", text: $query)
+                    TextField("Rechercher une app, un site ou une catégorie", text: $query)
                         .textFieldStyle(.plain)
                     if !query.isEmpty {
                         Button {
@@ -237,26 +237,26 @@
                     return MonitoringState(
                         enabled: false,
                         editable: false,
-                        help: "Goalong never records its own window."
+                        help: "Goalong n’enregistre jamais sa propre fenêtre."
                     )
                 }
                 return MonitoringState(
                     enabled: !model.isApplicationExcludedFromCapture(bundleIdentifier),
                     editable: true,
-                    help: "Controls whether future details from this app may be recorded locally."
+                    help: "Détermine si les détails futurs de cette app peuvent être enregistrés."
                 )
             case .website:
                 guard let host = item.host, !host.isEmpty else {
                     return MonitoringState(
                         enabled: true,
                         editable: false,
-                        help: "This website has no stable host, so Goalong cannot save a persistent site rule."
+                        help: "Ce site n’a pas d’adresse stable : Goalong ne peut pas lui associer une règle permanente."
                     )
                 }
                 return MonitoringState(
                     enabled: !model.isDomainExcludedFromCapture(host),
                     editable: true,
-                    help: "Controls whether future details from this website may be recorded locally."
+                    help: "Détermine si les détails futurs de ce site peuvent être enregistrés."
                 )
             }
         }
@@ -291,7 +291,7 @@
             switch self {
             case .all: return "All"
             case .applications: return "Applications"
-            case .websites: return "Websites"
+            case .websites: return "Sites web"
             }
         }
     }

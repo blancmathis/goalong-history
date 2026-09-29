@@ -53,10 +53,10 @@ fi
 /usr/bin/plutil -replace CFBundleDisplayName -string "$DISPLAY_NAME" "$INFO_PLIST"
 /usr/bin/plutil -replace CFBundleName -string "$DISPLAY_NAME" "$INFO_PLIST"
 /usr/bin/plutil -replace NSAccessibilityUsageDescription -string \
-  "$DISPLAY_NAME uses Accessibility only to read foreground app and window context for Computer History. Screen Time is read directly from Apple-owned files in the background; Goalong never opens or controls System Settings or sends input." \
+  "$DISPLAY_NAME utilise l’accessibilité uniquement pour reconnaître l’app et la fenêtre au premier plan dans votre historique. Le Temps d’écran est lu directement dans les fichiers d’Apple, en arrière-plan ; Goalong ne pilote jamais Réglages Système et n’envoie aucune saisie." \
   "$INFO_PLIST"
 /usr/bin/plutil -replace NSInputMonitoringUsageDescription -string \
-  "$DISPLAY_NAME uses event-listening access to count clicks, scrolling, coarse shortcut or navigation activity, and typing duration. It never stores typed characters, exact keys, passwords, or clipboard contents." \
+  "$DISPLAY_NAME utilise la surveillance de l’entrée pour compter les clics, défilements, raccourcis et la durée de frappe. Il ne conserve jamais les caractères tapés, les touches exactes, les mots de passe ni le presse-papiers." \
   "$INFO_PLIST"
 /usr/bin/plutil -lint "$INFO_PLIST" >/dev/null
 

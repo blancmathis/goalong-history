@@ -11,25 +11,25 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
-                SectionTitle(title: "Background recording", subtitle: "Keep Goalong available without leaving its window open.")
+                SectionTitle(title: "Enregistrement en arrière-plan", subtitle: "Goalong reste actif sans garder sa fenêtre ouverte.")
                 LHCard {
                     VStack(alignment: .leading, spacing: 14) {
-                        Toggle("Keep Goalong running in the background", isOn: $keepRunning)
+                        Toggle("Garder Goalong actif en arrière-plan", isOn: $keepRunning)
                             .toggleStyle(.switch)
-                        Text("On by default. Closing the window keeps your enabled sources running; Quit asks before stopping. Turn this off to quit when the last window closes. No extra service is installed, and your Mac can still sleep.")
+                        Text("Activé par défaut. Fermer la fenêtre laisse vos sources actives ; Quitter demande confirmation avant d’arrêter. Désactivez pour quitter à la fermeture de la dernière fenêtre. Aucun service supplémentaire n’est installé et votre Mac peut toujours se mettre en veille.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                         Divider()
-                        Toggle("Start Goalong when I log in", isOn: Binding(
+                        Toggle("Ouvrir Goalong à l’ouverture de session", isOn: Binding(
                             get: { login.isRegistered },
                             set: { _ = login.setUserPreference($0, surface: .settings) }
                         )).toggleStyle(.switch).disabled(login.isChanging)
                         Text(login.statusDetail).font(.system(size: 12)).foregroundStyle(.secondary)
                         if consents.isEnabled(.launchAtLogin) && !login.isEnabled {
-                            Text("Automatic startup needs attention. Goalong will not override a change made in macOS Settings.")
+                            Text("Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système.")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                         }
                         if login.requiresApproval || login.state == .unavailable {
-                            Button("Open Login Items") { login.openLoginItemsSettings() }
+                            Button("Ouvrir « Ouverture »") { login.openLoginItemsSettings() }
                                 .buttonStyle(.bordered)
                         }
                         if let message = login.message {
@@ -38,10 +38,10 @@
                         if let notice = continuity.interruptionNotice {
                             Divider()
                             Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
-                            Button("Dismiss notice") { continuity.dismissInterruptionNotice() }
+                            Button("Masquer") { continuity.dismissInterruptionNotice() }
                                 .buttonStyle(.bordered)
                         }
-                        Text("Startup and background options do not enable additional data sources or resume a pause. A complete crash or Force Quit still requires reopening Goalong.")
+                        Text("Ces options n’activent aucune source supplémentaire et ne reprennent pas une pause. Après un plantage ou une fermeture forcée, il faut rouvrir Goalong.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }.fixedSize(horizontal: false, vertical: true)
                 }

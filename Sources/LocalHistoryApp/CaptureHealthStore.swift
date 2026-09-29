@@ -144,6 +144,14 @@
             mutateAndSchedule { accumulator.markTapDisabled(error) }
         }
 
+        func markStorageInterrupted(_ kind: CaptureStorageFailureKind, at date: Date = Date()) {
+            mutateAndSchedule { accumulator.markStorageInterrupted(kind, at: date) }
+        }
+
+        func markStorageRestored() {
+            mutateAndSchedule { accumulator.markStorageRestored() }
+        }
+
         func markInputCallback(at date: Date = Date()) {
             mutateAndSchedule { accumulator.markInputCallback(at: date) }
         }

@@ -29,10 +29,10 @@
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     PageHeader(
-                        eyebrow: "Agent access",
+                        eyebrow: "Accès pour les agents",
                         title: "Goalong CLI",
                         subtitle:
-                            "Query local history from Terminal, or give an agent one safe brief. Data and errors use JSON; human help uses text."
+                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre. Données et erreurs en JSON ; aide en texte."
                     ) {
                         StatusPill(
                             title: statusTitle,
@@ -73,7 +73,7 @@
                         .font(.subheadline.weight(.semibold))
                     Text(
                         cliIsReady
-                            ? "The stable link resolves to this exact installed Goalong executable. Queries exit after each response and start no extra background process."
+                            ? "Le lien pointe vers cette version installée de Goalong. Chaque requête se termine après sa réponse, sans processus supplémentaire."
                             : installationReport.detail
                     )
                     .font(.caption)
@@ -87,8 +87,8 @@
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.borderless)
-                .help("Check the Goalong CLI link again")
-                .accessibilityLabel("Check CLI link again")
+                .help("Vérifier de nouveau le lien de la commande goalong")
+                .accessibilityLabel("Vérifier le lien")
             }
             .padding(14)
             .background(LHTheme.accent.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -106,7 +106,7 @@
                             Text("Give Goalong to an agent")
                                 .font(.title3.weight(.bold))
                             Text(
-                                "Copy one complete brief covering commands, safe data handling, pagination, provenance and missing-data rules. Paste it as-is into your agent."
+                                "Copiez une consigne complète (commandes, traitement sûr des données, pagination, provenance, données manquantes) et collez-la telle quelle dans votre agent."
                             )
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -119,7 +119,7 @@
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
                         .controlSize(.large)
-                        .accessibilityHint("Copies all Goalong CLI instructions for a local agent")
+                        .accessibilityHint("Copie toutes les instructions de la commande goalong pour un agent local")
                     }
 
                     GoalongDisclosureGroup("Preview agent instructions", isExpanded: $showsInstructionPreview) {
@@ -138,9 +138,9 @@
             LHCard(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Start in Terminal")
+                        Text("Commencer dans le Terminal")
                             .font(.system(size: 15, weight: .semibold))
-                        Text("These four commands are enough to discover the CLI and ask a first question.")
+                        Text("Ces quatre commandes suffisent pour découvrir l’outil et poser une première question.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -193,24 +193,24 @@
         private var evidenceCard: some View {
             LHCard {
                 VStack(alignment: .leading, spacing: 11) {
-                    Text("What the agent receives")
+                    Text("Ce que reçoit l’agent")
                         .font(.system(size: 15, weight: .semibold))
                     evidenceRow(
                         symbol: "curlybraces",
-                        title: "Clear JSON",
-                        detail: "Data and failures are structured JSON. Human help is text; `help --json` exposes the machine contract."
+                        title: "JSON clair",
+                        detail: "Données et erreurs sont en JSON structuré. L’aide est en texte ; `help --json` décrit le contrat machine."
                     )
                     evidenceRow(
                         symbol: "lock.shield",
-                        title: "Originals stay read-only",
+                        title: "Les originaux restent en lecture seule",
                         detail:
-                            "Original sources are never changed. Today's Screen Time may update one Goalong record; only an explicit proof export creates a new file."
+                            "Les sources d’origine ne sont jamais modifiées. Le Temps d’écran du jour peut mettre à jour un enregistrement Goalong ; seul un export de preuve explicite crée un fichier."
                     )
                     evidenceRow(
                         symbol: "externaldrive",
-                        title: "Original-source boundaries",
+                        title: "Limites des sources d’origine",
                         detail:
-                            "AI conversations stay in provider storage; only prompts and final answers are read on demand."
+                            "Les conversations IA restent chez leur outil ; seuls les messages et réponses finales sont lus à la demande."
                     )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -276,7 +276,7 @@
                 announce("Goalong agent instructions copied")
             } else {
                 copyState = .failed
-                announce("Goalong agent instructions could not be copied")
+                announce("Les instructions pour l’agent n’ont pas pu être copiées")
             }
         }
 
@@ -286,7 +286,7 @@
                 announce("Command copied: \(item.title)")
             } else {
                 copiedCommandID = nil
-                announce("Command could not be copied")
+                announce("La commande n’a pas pu être copiée")
             }
         }
 

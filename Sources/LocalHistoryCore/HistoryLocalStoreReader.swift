@@ -160,6 +160,14 @@ package struct ComputerHistoryEvidenceLoadLimits: Equatable {
         maximumRetainedRows: 32_768,
         maximumRetainedBytes: 64 * 1_024 * 1_024
     )
+    /// Activité keeps only a compact projection per row (no window, element or semantic
+    /// payload). A busy real day reaches 40 000+ rows; rejecting it hid the most active
+    /// days from every total. This ceiling covers several such days of growth while the
+    /// read stays one day at a time and is released once the day is summarised.
+    package static let localAnalytics = ComputerHistoryEvidenceLoadLimits(
+        maximumRetainedRows: 262_144,
+        maximumRetainedBytes: 384 * 1_024 * 1_024
+    )
 
     package var maximumRetainedRows: Int
     package var maximumRetainedBytes: Int64
@@ -172,15 +180,17 @@ package struct ComputerHistoryEvidenceLoadLimits: Equatable {
         self.maximumRetainedBytes = maximumRetainedBytes
     }
 
-    package var validated: ComputerHistoryEvidenceLoadLimits {
+    package var validated: ComputerHistoryEvidenceLoadLimits { validated(ceiling: .production) }
+
+    package func validated(ceiling: ComputerHistoryEvidenceLoadLimits) -> ComputerHistoryEvidenceLoadLimits {
         ComputerHistoryEvidenceLoadLimits(
             maximumRetainedRows: min(
                 max(0, maximumRetainedRows),
-                Self.production.maximumRetainedRows
+                ceiling.maximumRetainedRows
             ),
             maximumRetainedBytes: min(
                 max(0, maximumRetainedBytes),
-                Self.production.maximumRetainedBytes
+                ceiling.maximumRetainedBytes
             )
         )
     }
@@ -1452,10 +1462,12 @@ public struct HistoryLocalStoreReader {
 
     /// Analytics retains no window titles, rich text, conversation or input payloads.
     package func loadLocalAnalyticsEvidence(
-        start: Date, endExclusive: Date, shouldContinue: () -> Bool = { true }
+        start: Date, endExclusive: Date,
+        limits: ComputerHistoryEvidenceLoadLimits = .localAnalytics,
+        shouldContinue: () -> Bool = { true }
     ) -> ComputerHistoryEvidenceLoad {
         loadBoundedDerivedEvidence(start: start, endExclusive: endExclusive,
-            projection: .localAnalytics, limits: .production, shouldContinue: shouldContinue)
+            projection: .localAnalytics, limits: limits, shouldContinue: shouldContinue)
     }
 
     /// Loads a persisted bounded day memory only when it contains every episode
@@ -1725,7 +1737,7 @@ public struct HistoryLocalStoreReader {
         var evidenceBudgetExceeded = false
         var retainedEvidenceRowCount = 0
         var retainedEvidenceBytes: Int64 = 0
-        let limits = rawLimits.validated
+        let limits = rawLimits.validated(ceiling: projection == .localAnalytics ? .localAnalytics : .production)
         let rowDecoder = decoder(compactEventIntegrity: true)
         let evidenceEncoder = JSONEncoder()
         evidenceEncoder.dateEncodingStrategy = .iso8601

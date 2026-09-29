@@ -27,6 +27,33 @@ final class CaptureHealthTests: XCTestCase {
         XCTAssertNil(accumulator.snapshot(now: now).lastInputEventAt)
     }
 
+    func testStorageInterruptionIsReportedUntilWritingResumes() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let accumulator = CaptureHealthAccumulator(
+            launchedAt: now.addingTimeInterval(-60),
+            build: fixtureBuild(cdHash: "same"),
+            permissions: fixturePermissions(at: now)
+        )
+        accumulator.markTapEnabled(at: now.addingTimeInterval(-50))
+        accumulator.markCallback(kind: .mouseClick, at: now.addingTimeInterval(-1))
+        accumulator.markStorageInterrupted(.unavailable, at: now.addingTimeInterval(-30))
+        accumulator.markStorageInterrupted(.diskFull, at: now)
+
+        let interrupted = accumulator.snapshot(now: now)
+        XCTAssertEqual(interrupted.storageInterruptedSince, now.addingTimeInterval(-30), "The first failure time is kept")
+        XCTAssertEqual(interrupted.storageFailureKind, .diskFull)
+        let assessment = CaptureHealthEvaluator.assess(interrupted, now: now)
+        XCTAssertEqual(assessment.state, .storageUnavailable)
+        XCTAssertFalse(assessment.captureProven, "Callbacks do not prove anything is being saved")
+
+        accumulator.setPaused(true)
+        XCTAssertEqual(CaptureHealthEvaluator.assess(accumulator.snapshot(now: now), now: now).state, .paused)
+        accumulator.setPaused(false)
+
+        accumulator.markStorageRestored()
+        XCTAssertEqual(CaptureHealthEvaluator.assess(accumulator.snapshot(now: now), now: now).state, .ready)
+    }
+
     func testRealCallbackMakesCaptureReady() {
         let snapshot = fixtureHealth(callback: fixtureStart.addingTimeInterval(-2))
         let assessment = CaptureHealthEvaluator.assess(snapshot, now: fixtureStart)

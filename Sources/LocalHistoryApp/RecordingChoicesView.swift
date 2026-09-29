@@ -84,7 +84,7 @@ struct RecordingChoicesView: View {
 enum PrivacyScopeInput {
     static func domains(_ text: String) throws -> [String] {
         let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        guard lines.count <= 512 else { throw invalid("Use at most 512 domains per list.") }
+        guard lines.count <= 512 else { throw invalid("512 domaines au maximum par liste.") }
         var output: [String] = []
         for line in lines {
             let raw = line.hasPrefix("*.") ? String(line.dropFirst(2)) : line
@@ -97,7 +97,7 @@ enum PrivacyScopeInput {
                   host.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({
                       !$0.isEmpty && $0.count <= 63 && !$0.hasPrefix("-") && !$0.hasSuffix("-")
                       && $0.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
-                  }) else { throw invalid("Use a domain or website URL on each line, such as example.com. Invalid entry: \(line.prefix(100))") }
+                  }) else { throw invalid("Indiquez un domaine ou une adresse de site par ligne, par exemple example.com. Entrée invalide : \(line.prefix(100))") }
             if !output.contains(host) { output.append(host) }
         }
         return output
@@ -120,7 +120,7 @@ extension DashboardSettingsDraft {
     }
     var recordingSummary: String {
         let enabled = RecordingSignal.allCases.filter { self[keyPath: $0.keyPath] }.map(\.title)
-        return enabled.isEmpty ? "Baseline app activity; optional detail fields off." : "Baseline app activity, plus: " + enabled.joined(separator: ", ") + "."
+        return enabled.isEmpty ? "Activité des apps uniquement ; détails facultatifs désactivés." : "Baseline app activity, plus: " + enabled.joined(separator: ", ") + "."
     }
 }
 /// Native app selection avoids requiring people to discover bundle identifiers.
@@ -131,7 +131,7 @@ struct ApplicationScopePickerButton: View {
         Button("Choisir des applications…", action: chooseApplications)
             .buttonStyle(.bordered)
             .help("Choose applications without opening them. Their identifiers are added to this unsaved recording scope.")
-            .alert("Application could not be added", isPresented: Binding(
+            .alert("L’application n’a pas pu être ajoutée", isPresented: Binding(
                 get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("OK", role: .cancel) { error = nil }
             } message: { Text(error ?? "") }

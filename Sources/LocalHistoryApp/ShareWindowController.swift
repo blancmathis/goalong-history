@@ -132,7 +132,7 @@
         private let tableView = NSTableView()
         private let statusLabel = NSTextField(labelWithString: "")
         private let exportButton = NSButton(
-            title: "Export locally signed share package…",
+            title: "Exporter un paquet de partage signé…",
             target: nil,
             action: nil
         )
@@ -149,7 +149,7 @@
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Share locally signed Goalong History"
+            window.title = "Partager un historique signé"
             window.center()
             super.init(window: window)
             window.delegate = self
@@ -169,7 +169,7 @@
 
             let explanation = NSTextField(
                 wrappingLabelWithString:
-                    "Nothing is uploaded by this window until you export/share the package. Choose what each sealed minute may reveal. Completely private reveals only the existence/time/coverage proof; it cannot be counted as disclosed work."
+                    "Rien n’est envoyé tant que vous n’exportez pas le paquet. Choisissez ce que chaque minute scellée peut révéler. « Entièrement privé » ne révèle que l’existence et l’heure, sans compter comme travail divulgué."
             )
             explanation.translatesAutoresizingMaskIntoConstraints = false
 
@@ -179,22 +179,22 @@
             scroll.autohidesScrollers = true
 
             let timeColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("time"))
-            timeColumn.title = "Time"
+            timeColumn.title = "Heure"
             timeColumn.width = 120
             tableView.addTableColumn(timeColumn)
 
             let appColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("app"))
-            appColumn.title = "Local app summary"
+            appColumn.title = "Résumé de l’app"
             appColumn.width = 260
             tableView.addTableColumn(appColumn)
 
             let categoryColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("category"))
-            categoryColumn.title = "Local category"
+            categoryColumn.title = "Catégorie"
             categoryColumn.width = 180
             tableView.addTableColumn(categoryColumn)
 
             let privacyColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("privacy"))
-            privacyColumn.title = "Share"
+            privacyColumn.title = "Partage"
             privacyColumn.width = 220
             tableView.addTableColumn(privacyColumn)
 
@@ -206,7 +206,7 @@
 
             let setAll = NSPopUpButton()
             setAll.translatesAutoresizingMaskIntoConstraints = false
-            setAll.addItems(withTitles: ["Set all…"] + selectableLevels.map(\.title))
+            setAll.addItems(withTitles: ["Tout régler…"] + selectableLevels.map(\.title))
             setAll.target = self
             setAll.action = #selector(setAllChanged(_:))
 
@@ -251,7 +251,7 @@
             let day = day
             reloadWork.start(
                 onStart: { [weak self] in
-                    self?.statusLabel.stringValue = "Loading sealed minutes…"
+                    self?.statusLabel.stringValue = "Chargement des minutes scellées…"
                     self?.exportButton.isEnabled = false
                 },
                 work: { cancellation in
@@ -361,7 +361,7 @@
                     self.exportButton.isEnabled = !self.rows.isEmpty
                     switch result {
                     case .success(let destination):
-                        self.statusLabel.stringValue = "Locally signed package exported"
+                        self.statusLabel.stringValue = "Paquet signé exporté"
                         NSWorkspace.shared.activateFileViewerSelecting([destination])
                     case .failure(let error):
                         if let buildError = error as? ShareBuildError,
@@ -371,7 +371,7 @@
                         }
                         self.statusLabel.stringValue = String(describing: error)
                         let alert = NSAlert(error: error)
-                        alert.messageText = "Could not export locally signed share package"
+                        alert.messageText = "Le paquet signé n’a pas pu être exporté"
                         alert.runModal()
                     }
                 }

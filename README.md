@@ -81,7 +81,8 @@ This abridged tree includes the principal preserved data stores:
 ├── integrity-state.json
 ├── diagnostics.log          # legacy only; never included in support exports
 ├── SupportDiagnostics/
-│   └── day-YYYY-MM-DD/       # private, bounded technical journal
+│   └── day-YYYY-MM-DD/       # private, bounded technical journal (+ important/ for errors)
+├── SupportReports/           # the last five reports prepared by “Signaler un problème…”
 ├── events/
 │   └── YYYY-MM-DD.jsonl
 ├── seals/

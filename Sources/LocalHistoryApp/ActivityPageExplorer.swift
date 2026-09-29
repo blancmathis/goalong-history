@@ -20,11 +20,11 @@
             }
             .alert(item: $sessionPendingDeletion) { session in
                 Alert(
-                    title: Text("Delete this app session?"),
+                    title: Text("Supprimer cette session d’application ?"),
                     message: Text(
-                        "Only the exact local source events and linked semantic snapshots for this session will be removed. Derived views for the affected day are rebuilt; seals, receipts, Screen Time and Agent Activity remain."
+                        "Seuls les événements locaux de cette session et les instantanés liés seront supprimés. Les vues de la journée seront reconstruites ; sceaux, reçus, Temps d’écran et conversations IA sont conservés."
                     ),
-                    primaryButton: .destructive(Text("Delete session")) {
+                    primaryButton: .destructive(Text("Supprimer la session")) {
                         model.deleteActivitySession(session)
                     },
                     secondaryButton: .cancel()
@@ -37,7 +37,7 @@
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                    TextField("Search app, window, website or category", text: $model.activitySearch)
+                    TextField("Rechercher une app, une fenêtre, un site ou une catégorie", text: $model.activitySearch)
                         .textFieldStyle(.plain)
                     if !model.activitySearch.isEmpty {
                         Button {
@@ -77,10 +77,10 @@
                 if model.filteredSessions.isEmpty {
                     EmptyStateView(
                         symbol: "line.3.horizontal.decrease.circle",
-                        title: model.snapshot.sessions.isEmpty ? "No activity found" : "No matching sessions",
+                        title: model.snapshot.sessions.isEmpty ? "Aucune activité trouvée" : "Aucune session correspondante",
                         message: model.snapshot.sessions.isEmpty
-                            ? "Keep Goalong History running and activity will appear here."
-                            : "Try another search or filter."
+                            ? "Laissez Goalong actif : l’activité apparaîtra ici."
+                            : "Essayez une autre recherche ou un autre filtre."
                     )
                 } else {
                     ScrollView {
@@ -123,7 +123,7 @@
                     EmptyStateView(
                         symbol: "rectangle.and.hand.point.up.left",
                         title: "Select a session",
-                        message: "Choose a session to inspect its local context, category and integrity signals."
+                        message: "Choisissez une session pour voir son contexte, sa catégorie et ses signaux d’intégrité."
                     )
                 }
             }
@@ -154,7 +154,7 @@
                             )
                         }
                     }
-                    Text(session.windowTitle ?? session.host ?? "No detailed context available")
+                    Text(session.windowTitle ?? session.host ?? "Aucun contexte détaillé disponible")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
@@ -175,7 +175,7 @@
                 Button(role: .destructive) {
                     sessionPendingDeletion = session
                 } label: {
-                    Label("Delete session…", systemImage: "trash")
+                    Label("Supprimer la session…", systemImage: "trash")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -194,7 +194,7 @@
                     symbol: "app"
                 )
                 detailValue(
-                    title: "Local category",
+                    title: "Catégorie",
                     value: session.category.map(CategoryBadge.prettyCategory) ?? "Unclassified",
                     symbol: "tag"
                 )
@@ -210,7 +210,7 @@
                 )
                 detailValue(
                     title: "Classification confidence",
-                    value: session.confidence.map { "\(Int(($0 * 100).rounded()))%" } ?? "Not available",
+                    value: session.confidence.map { "\(Int(($0 * 100).rounded()))%" } ?? "Indisponible",
                     symbol: "gauge.with.dots.needle.50percent"
                 )
                 detailValue(
@@ -253,7 +253,7 @@
                     Text("Details intentionally unavailable")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "Goalong History preserved only the coverage state for this period. It cannot later reveal the hidden URL, title or input details."
+                        "Goalong n’a conservé que l’état de couverture pour cette période : l’adresse, le titre et la saisie masqués ne pourront jamais être révélés."
                     )
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -273,7 +273,7 @@
                     Text("Software-attributed input detected")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "macOS attributed \(session.softwareAttributedEventCount) input event(s) to a userspace process. This is an integrity signal, not automatic proof of cheating."
+                        "macOS a attribué \(session.softwareAttributedEventCount) événement(s) de saisie à un logiciel. C’est un signal d’intégrité, pas une preuve de triche."
                     )
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -288,7 +288,7 @@
             VStack(alignment: .leading, spacing: 12) {
                 SectionTitle(
                     title: "Event breakdown",
-                    subtitle: "Counts only — raw typed characters are never stored"
+                    subtitle: "Nombres uniquement — les caractères tapés ne sont jamais conservés"
                 )
                 let sorted = session.kindCounts.sorted { left, right in
                     if left.value == right.value { return left.key < right.key }

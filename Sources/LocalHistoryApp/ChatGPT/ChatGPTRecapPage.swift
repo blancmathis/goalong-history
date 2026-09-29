@@ -39,18 +39,18 @@
                         metricsBand(overview)
                         HStack(alignment: .top, spacing: 14) {
                             usagePanel(
-                                title: "Computer applications",
+                                title: "Applications de l’ordinateur",
                                 subtitle: "Represented foreground activity",
                                 symbol: "macbook",
                                 values: overview.computerApplications,
-                                emptyMessage: "No computer application activity is available."
+                                emptyMessage: "Aucune activité d’application disponible."
                             )
                             usagePanel(
                                 title: "Apple devices",
-                                subtitle: "Screen Time totals can overlap across devices",
+                                subtitle: "Les totaux Temps d’écran peuvent se chevaucher entre appareils",
                                 symbol: "macbook.and.iphone",
                                 values: overview.screenTimeDevices,
-                                emptyMessage: "No Apple Screen Time device is available."
+                                emptyMessage: "Aucun appareil Temps d’écran disponible."
                             )
                         }
                         .frame(maxWidth: .infinity, alignment: .top)
@@ -121,13 +121,13 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Label("Analysis proof", systemImage: "checkmark.shield")
+                        Label("Preuve d’analyse", systemImage: "checkmark.shield")
                             .font(.system(size: 13, weight: .semibold))
                         Spacer()
                         Button {
                             recapRuntime.exportProofPackage()
                         } label: {
-                            Label("Export proof", systemImage: "square.and.arrow.up")
+                            Label("Exporter la preuve", systemImage: "square.and.arrow.up")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -136,7 +136,7 @@
                             .foregroundStyle(.secondary)
                     }
                     Text(
-                        "Each check is independent. A local signature does not imply that ChatGPT, Apple or a verification server signed the analysis."
+                        "Chaque vérification est indépendante. Une signature locale ne signifie pas que ChatGPT, Apple ou un serveur de vérification ont signé l’analyse."
                     )
                     .font(.system(size: 9))
                     .foregroundStyle(.secondary)
@@ -148,7 +148,7 @@
                             positive: (report?.runSignature ?? proof.localSignatureStatus) == "valid"
                         )
                         proofPill(
-                            "Source commitments",
+                            "Engagements des sources",
                             state: report?.sourceCommitments ?? proof.contextStatus,
                             positive: (report?.sourceCommitments ?? proof.contextStatus).contains("valid")
                         )
@@ -174,7 +174,7 @@
                         Image(systemName: "lock.doc")
                             .foregroundStyle(LHTheme.success)
                         Text(
-                            "Prompt: hash only · source conversations: original storage only · generated response: encrypted locally for 30 days"
+                            "Consigne : empreinte uniquement · conversations : stockage d’origine uniquement · réponse générée : chiffrée localement 30 jours"
                         )
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -204,23 +204,23 @@
 
         private var header: some View {
             PageHeader(
-                eyebrow: "Daily analysis",
+                eyebrow: "Analyse de la journée",
                 title: "Activity",
                 subtitle:
-                    "Understand the shape and outcomes of a day from Computer History, Screen Time and AI conversations."
+                    "Comprendre le déroulé et les résultats d’une journée à partir de l’historique, du Temps d’écran et des conversations IA."
             ) {
                 HStack(spacing: 10) {
                     DateSelectionControl(date: recapRuntime.selectedDay, onChange: recapRuntime.selectDay)
                     Button {
                         recapRuntime.revealRecapFiles()
                     } label: {
-                        Label("Report files", systemImage: "doc.text.magnifyingglass")
+                        Label("Fichiers de rapport", systemImage: "doc.text.magnifyingglass")
                     }
                     .buttonStyle(.bordered)
                     .help(
                         recapRuntime.recap?.verifiesLocalAttestation == true
-                            ? "Share the JSON report file to preserve its signature. A recipient can verify it offline with: goalong verify-recap PATH"
-                            : "Open the local report files. Legacy reports do not contain a local signature."
+                            ? "Partagez le fichier JSON pour conserver sa signature. Le destinataire peut le vérifier hors ligne avec : goalong verify-recap CHEMIN"
+                            : "Ouvrir les fichiers de rapport. Les anciens rapports n’ont pas de signature locale."
                     )
                     Button {
                         recapRuntime.generateRecap()
@@ -243,10 +243,10 @@
                         ProgressView()
                             .controlSize(.regular)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("GPT-5.6 Luna is analyzing this day")
+                            Text("GPT-5.6 Luna analyse cette journée")
                                 .font(.system(size: 14, weight: .semibold))
                             Text(
-                                "High reasoning · isolated temporary Codex thread · no transcript copy is stored"
+                                "Raisonnement élevé · fil Codex temporaire et isolé · aucune copie des conversations"
                             )
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
@@ -276,7 +276,7 @@
                             Label("\(confidence)% evidence confidence", systemImage: "checkmark.shield")
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(.secondary)
-                            Text(isToday ? "Today is still in progress" : "Completed-day assessment")
+                            Text(isToday ? "La journée est encore en cours" : "Bilan de la journée terminée")
                                 .font(.system(size: 9, weight: .medium))
                                 .foregroundStyle(isToday ? LHTheme.warning : LHTheme.success)
                         }
@@ -291,12 +291,12 @@
                                 Spacer()
                                 if recap.verifiesLocalAttestation {
                                     StatusPill(
-                                        title: "Locally signed",
+                                        title: "Signé localement",
                                         symbol: "signature",
                                         tint: LHTheme.success
                                     )
                                     .help(
-                                        "The saved result, prompt hash, source-count hash, model claim and context digest match a P-256 signature from this Mac. This is not provider or App Attest proof."
+                                        "Le résultat, l’empreinte de la consigne, le décompte des sources, le modèle déclaré et le contexte correspondent à une signature de ce Mac. Ce n’est pas une preuve du fournisseur ni d’App Attest."
                                     )
                                 } else {
                                     StatusPill(
@@ -304,7 +304,7 @@
                                         symbol: "clock.arrow.circlepath",
                                         tint: LHTheme.warning
                                     )
-                                    .help("This report predates locally signed analysis runs. Regenerate it to add tamper detection.")
+                                    .help("Ce rapport est antérieur aux analyses signées. Régénérez-le pour détecter toute modification.")
                                 }
                                 Text(recap.generatedAt.formatted(date: .abbreviated, time: .shortened))
                                     .font(.system(size: 9))
@@ -330,7 +330,7 @@
                         Text("Legacy daily recap")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
-                            "This older report predates the five-line Activity format. Regenerate it to get a score, confidence and structured summary."
+                            "Ce rapport est antérieur au format en cinq lignes. Régénérez-le pour obtenir un score, un niveau de confiance et un résumé structuré."
                         )
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -344,12 +344,12 @@
                         Image(systemName: "chart.bar.xaxis")
                             .font(.system(size: 30, weight: .medium))
                             .foregroundStyle(LHTheme.accent.opacity(0.78))
-                        Text("No Activity report for this day")
+                        Text("Aucun rapport pour ce jour")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
                             isConnected
-                                ? "Generate it now, or leave automatic daily analysis enabled for completed days."
-                                : "Connect ChatGPT in Settings to generate the five-line assessment."
+                                ? "Générez-le maintenant, ou laissez l’analyse automatique des journées terminées."
+                                : "Connectez ChatGPT dans les réglages pour générer le bilan en cinq lignes."
                         )
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -363,7 +363,7 @@
             LHCard {
                 HStack(spacing: 0) {
                     metric(
-                        title: "Computer activity",
+                        title: "Activité de l’ordinateur",
                         value: duration(overview.activeSeconds),
                         detail: "\(overview.focusBlockCount) focus blocks"
                     )
@@ -375,13 +375,13 @@
                     )
                     bandDivider
                     metric(
-                        title: "Screen Time",
+                        title: "Temps d’écran",
                         value: duration(overview.screenTimeSeconds),
                         detail: "\(overview.screenTimeDevices.count) Apple devices"
                     )
                     bandDivider
                     metric(
-                        title: "AI conversations",
+                        title: "Conversations IA",
                         value: "\(overview.agentSessions)",
                         detail: "\(overview.agentMessages) messages"
                     )
@@ -481,7 +481,7 @@
                         Label("AI collaboration", systemImage: "bubble.left.and.bubble.right")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
-                            "Conversation bodies are read transiently from Codex, Claude, OpenCode and configured local sources. Only the five-line report is saved."
+                            "Les conversations sont lues ponctuellement dans Codex, Claude, OpenCode et les sources configurées. Seul le rapport en cinq lignes est conservé."
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
@@ -491,7 +491,7 @@
                     collaborationMetric("Sessions", overview.agentSessions)
                     collaborationMetric("Messages", overview.agentMessages)
                     collaborationMetric("Tool calls", overview.agentToolCalls)
-                    collaborationMetric("Errors", overview.agentErrors)
+                    collaborationMetric("Erreurs", overview.agentErrors)
                 }
             }
         }
@@ -516,13 +516,13 @@
                         Text("Evidence coverage")
                             .font(.system(size: 11, weight: .semibold))
                         Text(
-                            "\(overview.sourceEventCount.formatted()) Computer History events · \(overview.privateMinutes) private/suppressed min · \(overview.analyzedAgentSessions)/\(overview.agentSessions) AI sessions analyzed directly"
+                            "\(overview.sourceEventCount.formatted()) événements · \(overview.privateMinutes) min privées ou masquées · \(overview.analyzedAgentSessions)/\(overview.agentSessions) sessions IA analysées"
                         )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text("Missing evidence lowers confidence, not the score")
+                    Text("Des données manquantes baissent la confiance, pas le score")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
@@ -541,7 +541,7 @@
             LHCard {
                 HStack(spacing: 12) {
                     ProgressView().controlSize(.small)
-                    Text("Reading the selected day from its local source stores…")
+                    Text("Lecture de la journée dans les sources locales…")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
@@ -555,11 +555,11 @@
                     Image(systemName: "clock.badge.questionmark")
                         .font(.system(size: 25))
                         .foregroundStyle(.secondary)
-                    Text(recapRuntime.dayOverviewError ?? "No source activity is available for this day.")
+                    Text(recapRuntime.dayOverviewError ?? "Aucune activité source pour ce jour.")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                    Button("Read sources again") {
+                    Button("Relire les sources") {
                         recapRuntime.refreshDayOverview()
                     }
                     .buttonStyle(.bordered)
@@ -578,7 +578,7 @@
         }
 
         private var generationButtonTitle: String {
-            recapRuntime.recap == nil ? "Analyze day" : "Analyze again"
+            recapRuntime.recap == nil ? "Analyser la journée" : "Analyser à nouveau"
         }
 
         private var isToday: Bool {

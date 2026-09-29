@@ -11,9 +11,9 @@
         private let onQuit: () -> Void
 
         private let servicesMenu = NSMenu(title: "Services")
-        private let windowMenu = NSMenu(title: "Window")
+        private let windowMenu = NSMenu(title: "Fenêtre")
         private let checkForUpdatesItem = NSMenuItem(
-            title: "Check for Updates…",
+            title: "Rechercher les mises à jour…",
             action: #selector(checkForUpdates),
             keyEquivalent: ""
         )
@@ -46,10 +46,13 @@
         private func buildMainMenu() -> NSMenu {
             let menu = NSMenu(title: "Main Menu")
             menu.addItem(rootItem(title: ProductIdentity.displayName, submenu: applicationMenu()))
-            menu.addItem(rootItem(title: "File", submenu: fileMenu()))
-            menu.addItem(rootItem(title: "Edit", submenu: editMenu()))
-            menu.addItem(rootItem(title: "View", submenu: viewMenu()))
-            menu.addItem(rootItem(title: "Window", submenu: windowMenu))
+            menu.addItem(rootItem(title: "Fichier", submenu: fileMenu()))
+            menu.addItem(rootItem(title: "Édition", submenu: editMenu()))
+            menu.addItem(rootItem(title: "Présentation", submenu: viewMenu()))
+            menu.addItem(rootItem(title: "Fenêtre", submenu: windowMenu))
+            let help = helpMenu()
+            menu.addItem(rootItem(title: "Aide", submenu: help))
+            NSApplication.shared.helpMenu = help
             return menu
         }
 
@@ -57,11 +60,11 @@
             let menu = NSMenu(title: ProductIdentity.displayName)
             menu.delegate = self
 
-            menu.addItem(item("About \(ProductIdentity.displayName)", action: #selector(showAbout)))
+            menu.addItem(item("À propos de \(ProductIdentity.displayName)", action: #selector(showAbout)))
             checkForUpdatesItem.target = self
             menu.addItem(checkForUpdatesItem)
             menu.addItem(.separator())
-            menu.addItem(item("Settings…", action: #selector(openSettings), keyEquivalent: ","))
+            menu.addItem(item("Réglages…", action: #selector(openSettings), keyEquivalent: ","))
             menu.addItem(.separator())
 
             let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
@@ -71,24 +74,24 @@
 
             menu.addItem(
                 responderItem(
-                    "Hide \(ProductIdentity.displayName)",
+                    "Masquer \(ProductIdentity.displayName)",
                     action: #selector(NSApplication.hide(_:)),
                     keyEquivalent: "h"
                 ))
             let hideOthers = responderItem(
-                "Hide Others",
+                "Masquer les autres",
                 action: #selector(NSApplication.hideOtherApplications(_:)),
                 keyEquivalent: "h"
             )
             hideOthers.keyEquivalentModifierMask = [.command, .option]
             menu.addItem(hideOthers)
             menu.addItem(
-                responderItem("Show All", action: #selector(NSApplication.unhideAllApplications(_:))))
+                responderItem("Tout afficher", action: #selector(NSApplication.unhideAllApplications(_:))))
             menu.addItem(.separator())
-            menu.addItem(item("Quit & Reopen Goalong History", action: #selector(restart)))
+            menu.addItem(item("Quitter et rouvrir \(ProductIdentity.displayName)", action: #selector(restart)))
             menu.addItem(
                 item(
-                    "Quit \(ProductIdentity.displayName)",
+                    "Quitter \(ProductIdentity.displayName)",
                     action: #selector(quit),
                     keyEquivalent: "q"
                 ))
@@ -96,10 +99,10 @@
         }
 
         private func fileMenu() -> NSMenu {
-            let menu = NSMenu(title: "File")
+            let menu = NSMenu(title: "Fichier")
             menu.addItem(
                 responderItem(
-                    "Close Window",
+                    "Fermer la fenêtre",
                     action: #selector(NSWindow.performClose(_:)),
                     keyEquivalent: "w"
                 ))
@@ -107,24 +110,24 @@
         }
 
         private func editMenu() -> NSMenu {
-            let menu = NSMenu(title: "Edit")
-            menu.addItem(responderItem("Undo", action: Selector(("undo:")), keyEquivalent: "z"))
-            let redo = responderItem("Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+            let menu = NSMenu(title: "Édition")
+            menu.addItem(responderItem("Annuler", action: Selector(("undo:")), keyEquivalent: "z"))
+            let redo = responderItem("Rétablir", action: Selector(("redo:")), keyEquivalent: "Z")
             redo.keyEquivalentModifierMask = [.command, .shift]
             menu.addItem(redo)
             menu.addItem(.separator())
-            menu.addItem(responderItem("Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
-            menu.addItem(responderItem("Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
-            menu.addItem(responderItem("Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+            menu.addItem(responderItem("Couper", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+            menu.addItem(responderItem("Copier", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+            menu.addItem(responderItem("Coller", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
             menu.addItem(
-                responderItem("Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+                responderItem("Tout sélectionner", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
             return menu
         }
 
         private func viewMenu() -> NSMenu {
-            let menu = NSMenu(title: "View")
+            let menu = NSMenu(title: "Présentation")
             let fullScreen = responderItem(
-                "Enter Full Screen",
+                "Passer en plein écran",
                 action: #selector(NSWindow.toggleFullScreen(_:)),
                 keyEquivalent: "f"
             )
@@ -137,17 +140,26 @@
             guard windowMenu.items.isEmpty else { return }
             windowMenu.addItem(
                 responderItem(
-                    "Minimize",
+                    "Placer dans le Dock",
                     action: #selector(NSWindow.performMiniaturize(_:)),
                     keyEquivalent: "m"
                 ))
-            windowMenu.addItem(responderItem("Zoom", action: #selector(NSWindow.performZoom(_:))))
+            windowMenu.addItem(responderItem("Réduire/agrandir", action: #selector(NSWindow.performZoom(_:))))
             windowMenu.addItem(.separator())
             windowMenu.addItem(
                 responderItem(
-                    "Bring All to Front",
+                    "Tout ramener au premier plan",
                     action: #selector(NSApplication.arrangeInFront(_:))
                 ))
+        }
+
+        private func helpMenu() -> NSMenu {
+            let menu = NSMenu(title: "Aide")
+            menu.addItem(item("Signaler un problème…", action: #selector(reportProblem)))
+            menu.addItem(.separator())
+            menu.addItem(item("Guide d’utilisation", action: #selector(openGuide)))
+            menu.addItem(item("Notes de version", action: #selector(openReleaseNotes)))
+            return menu
         }
 
         private func rootItem(title: String, submenu: NSMenu) -> NSMenuItem {
@@ -193,12 +205,24 @@
                 PermissionRecovery.restart { error in
                     guard let error else { return }
                     let alert = NSAlert()
-                    alert.messageText = "Goalong stayed open"
+                    alert.messageText = "Goalong est resté ouvert"
                     alert.informativeText = error
                     alert.addButton(withTitle: "OK")
                     alert.runModal()
                 }
             }
+        }
+
+        @objc private func reportProblem() {
+            Task { @MainActor in SupportRequestController.shared.present() }
+        }
+
+        @objc private func openGuide() {
+            GoalongWorkspaceOpenPolicy.open(ProductIdentity.guideURL, purpose: .documentation)
+        }
+
+        @objc private func openReleaseNotes() {
+            GoalongWorkspaceOpenPolicy.open(ProductIdentity.rollingReleasePageURL, purpose: .updatePage)
         }
 
         @objc private func quit() {

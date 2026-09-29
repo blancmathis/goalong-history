@@ -18,9 +18,9 @@
             alert.alertStyle = .informational
             alert.messageText = "Finish installing Goalong History"
             alert.informativeText =
-                "Goalong History should live in Applications so permissions, start-at-login, and updates keep working reliably. Move it there now?"
-            alert.addButton(withTitle: "Move and Continue")
-            alert.addButton(withTitle: "Quit")
+                "Goalong History doit se trouver dans Applications pour que les autorisations, l’ouverture à la connexion et les mises à jour fonctionnent de façon fiable. Le déplacer maintenant ?"
+            alert.addButton(withTitle: "Déplacer et continuer")
+            alert.addButton(withTitle: "Quitter")
 
             guard alert.runModal() == .alertFirstButtonReturn else { return true }
 
@@ -34,11 +34,11 @@
             } catch {
                 let failure = NSAlert()
                 failure.alertStyle = .warning
-                failure.messageText = "Goalong History could not be moved"
+                failure.messageText = "Goalong History n’a pas pu être déplacé"
                 failure.informativeText =
-                    "\(error.localizedDescription) Copy Goalong History to your Applications folder, then open that copy. No data has been created yet."
-                failure.addButton(withTitle: "Show Applications")
-                failure.addButton(withTitle: "Quit")
+                    "\(error.localizedDescription) Copiez Goalong History dans votre dossier Applications, puis ouvrez cette copie. Aucune donnée n’a encore été créée."
+                failure.addButton(withTitle: "Afficher Applications")
+                failure.addButton(withTitle: "Quitter")
                 if failure.runModal() == .alertFirstButtonReturn {
                     GoalongWorkspaceOpenPolicy.open(
                         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications"),
@@ -99,9 +99,9 @@
         var errorDescription: String? {
             switch self {
             case .destinationOccupied:
-                return "Another application already uses the Goalong History destination."
+                return "Une autre application occupe déjà l’emplacement de Goalong History."
             case .couldNotRelaunch:
-                return "The copied application could not be opened."
+                return "La copie de l’application n’a pas pu être ouverte."
             }
         }
     }

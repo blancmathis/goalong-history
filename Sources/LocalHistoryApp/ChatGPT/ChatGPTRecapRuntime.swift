@@ -678,7 +678,7 @@
                     }
                 } catch {
                     let message = ActivitySemanticTextSanitizer.redact(error.localizedDescription)
-                        ?? "The selected day could not be loaded."
+                        ?? "La journée choisie n’a pas pu être chargée."
                     DispatchQueue.main.async {
                         guard Calendar.current.isDate(self.selectedDay, inSameDayAs: requestedDay) else {
                             return
@@ -729,9 +729,9 @@
             guard GoalongBuildCapabilities.permitsRemoteAnalysis else {
                 connectionState = .codexUnavailable
                 alert = ChatGPTRecapAlert(
-                    title: "Not included in this edition",
+                    title: "Non inclus dans cette version",
                     message:
-                        "ChatGPT analysis is not available in this build."
+                        "L’analyse ChatGPT n’est pas disponible dans cette version."
                 )
                 return
             }
@@ -770,7 +770,7 @@
                         self.isConnecting = false
                         self.connectionState = .failed(error.localizedDescription)
                         self.alert = ChatGPTRecapAlert(
-                            title: "ChatGPT could not be connected",
+                            title: "ChatGPT n’a pas pu être connecté",
                             message: error.localizedDescription
                         )
                     }
@@ -794,15 +794,15 @@
                     DispatchQueue.main.async {
                         self.connectionState = .signedOut
                         self.alert = ChatGPTRecapAlert(
-                            title: "ChatGPT disconnected",
+                            title: "ChatGPT déconnecté",
                             message:
-                                "Codex removed the managed ChatGPT credentials from Goalong's isolated account directory. Your normal Codex CLI login was not changed."
+                                "Codex a retiré les identifiants ChatGPT du dossier isolé de Goalong. Votre connexion habituelle à Codex n’a pas changé."
                         )
                     }
                 } catch {
                     DispatchQueue.main.async {
                         self.alert = ChatGPTRecapAlert(
-                            title: "ChatGPT could not be disconnected",
+                            title: "ChatGPT n’a pas pu être déconnecté",
                             message: error.localizedDescription
                         )
                     }
@@ -834,15 +834,15 @@
                 }
             } catch {
                 alert = ChatGPTRecapAlert(
-                    title: "Recap folder could not be opened", message: error.localizedDescription)
+                    title: "Le dossier des rapports n’a pas pu être ouvert", message: error.localizedDescription)
             }
         }
 
         func exportProofPackage() {
             guard let proof = recap?.proof else {
                 alert = ChatGPTRecapAlert(
-                    title: "No standalone proof",
-                    message: "Regenerate this day with the current Goalong build first."
+                    title: "Aucune preuve autonome",
+                    message: "Régénérez d’abord cette journée avec la version actuelle de Goalong."
                 )
                 return
             }
@@ -855,20 +855,20 @@
             panel.nameFieldStringValue =
                 "\(AppPaths.localDayString(for: selectedDay))-\(String(proof.executionID.prefix(8))).goalong-proof"
             panel.message =
-                "Exports signed hashes, source commitments and the five-line result. Conversation bodies, the complete prompt and the private encrypted response capsule are excluded."
-            panel.prompt = "Export proof"
+                "Exporte les empreintes signées, les engagements des sources et le résultat en cinq lignes. Le contenu des conversations, la consigne complète et la réponse chiffrée sont exclus."
+            panel.prompt = "Exporter la preuve"
             guard panel.runModal() == .OK, let destination = panel.url else { return }
             do {
                 let report = try proofStore.export(reference: proof, to: destination)
                 alert = ChatGPTRecapAlert(
-                    title: "Standalone proof exported",
+                    title: "Preuve exportée",
                     message: report.isLocallyValid
-                        ? "The .goalong-proof package passed offline verification after it was written."
-                        : "The package was written but did not pass local verification."
+                        ? "Le fichier .goalong-proof a passé la vérification hors ligne après son écriture."
+                        : "Le fichier a été écrit mais n’a pas passé la vérification locale."
                 )
             } catch {
                 alert = ChatGPTRecapAlert(
-                    title: "Proof could not be exported",
+                    title: "La preuve n’a pas pu être exportée",
                     message: error.localizedDescription
                 )
             }
@@ -882,8 +882,8 @@
             guard analysisConsentProvider() else {
                 if !automatic {
                     alert = ChatGPTRecapAlert(
-                        title: "AI analysis is off",
-                        message: "Enable ChatGPT analysis in Settings before starting a run."
+                        title: "L’analyse IA est désactivée",
+                        message: "Activez l’analyse ChatGPT dans les réglages avant de lancer une analyse."
                     )
                 }
                 return
@@ -900,9 +900,9 @@
             guard GoalongBuildCapabilities.permitsRemoteAnalysis else {
                 if !automatic {
                     alert = ChatGPTRecapAlert(
-                        title: "Remote analysis is absent",
+                        title: "Analyse distante absente",
                         message:
-                            "This Local binary contains no Codex process bridge. Existing reports remain readable and verifiable."
+                            "Cette version ne contient pas de pont vers Codex. Les rapports existants restent lisibles et vérifiables."
                     )
                 }
                 return
@@ -911,8 +911,8 @@
             guard !deviceID.isEmpty else {
                 if !automatic {
                     alert = ChatGPTRecapAlert(
-                        title: "Goalong is still starting",
-                        message: "The local device identity is not available yet."
+                        title: "Goalong démarre encore",
+                        message: "L’identité locale de l’appareil n’est pas encore disponible."
                     )
                 }
                 return
@@ -921,7 +921,7 @@
                 connectionState = .codexUnavailable
                 if !automatic {
                     alert = ChatGPTRecapAlert(
-                        title: "Codex is required",
+                        title: "Codex est nécessaire",
                         message: CodexAppServerError.executableUnavailable.localizedDescription
                     )
                 }
@@ -1102,7 +1102,7 @@
                             self.alert = ChatGPTRecapAlert(
                                 title: "Daily activity report generated",
                                 message:
-                                    "The five-line report is stored with a chained local ES256 proof, source commitments and an encrypted copy of the bounded generated response. The complete prompt remains hash-only; Goalong did not create another transcript copy."
+                                    "Le rapport en cinq lignes est conservé avec une preuve locale chaînée, les engagements des sources et une copie chiffrée de la réponse. La consigne complète n’est gardée que sous forme d’empreinte ; aucune copie des conversations n’a été créée."
                             )
                         }
                     }
@@ -1134,7 +1134,7 @@
                         }
                         if !automatic {
                             self.alert = ChatGPTRecapAlert(
-                                title: "The recap could not be generated",
+                                title: "Le rapport n’a pas pu être généré",
                                 message: error.localizedDescription
                             )
                         } else {

@@ -35,14 +35,14 @@
                         state: .conflict,
                         linkPath: linkPath,
                         resolvedTargetPath: nil,
-                        detail: "A non-link item already exists at the Goalong CLI path. Goalong will never replace it automatically."
+                        detail: "Un autre élément occupe déjà l’emplacement de la commande goalong. Goalong ne le remplacera jamais automatiquement."
                     )
                 }
                 return GoalongCLIInstallationReport(
                     state: .missing,
                     linkPath: linkPath,
                     resolvedTargetPath: nil,
-                    detail: "The stable Goalong CLI link is missing. Reinstall Goalong to create it safely."
+                    detail: "Le lien de la commande goalong est absent. Réinstallez Goalong pour le créer en toute sécurité."
                 )
             }
 
@@ -61,7 +61,7 @@
                     state: .conflict,
                     linkPath: linkPath,
                     resolvedTargetPath: resolvedTarget.path,
-                    detail: "Goalong could not identify the executable for this running app. The CLI link was not trusted."
+                    detail: "Goalong n’a pas pu identifier son exécutable ; le lien de la commande n’est pas considéré fiable."
                 )
             }
             let expectedTarget = expectedExecutableURL.standardizedFileURL.resolvingSymlinksInPath()
@@ -70,7 +70,7 @@
                     state: .conflict,
                     linkPath: linkPath,
                     resolvedTargetPath: resolvedTarget.path,
-                    detail: "The CLI link targets a different executable. Reinstall Goalong instead of using this command."
+                    detail: "Le lien de la commande pointe vers un autre exécutable. Réinstallez Goalong plutôt que d’utiliser cette commande."
                 )
             }
             guard fileManager.isExecutableFile(atPath: resolvedTarget.path) else {
@@ -78,14 +78,14 @@
                     state: .conflict,
                     linkPath: linkPath,
                     resolvedTargetPath: resolvedTarget.path,
-                    detail: "The CLI link targets the running Goalong app, but its executable is not runnable."
+                    detail: "Le lien pointe vers l’app Goalong ouverte, mais son exécutable ne peut pas être lancé."
                 )
             }
             return GoalongCLIInstallationReport(
                 state: .ready,
                 linkPath: linkPath,
                 resolvedTargetPath: resolvedTarget.path,
-                detail: "The stable CLI link resolves to this exact installed Goalong executable."
+                detail: "Le lien de la commande pointe vers cette version installée de Goalong."
             )
         }
     }

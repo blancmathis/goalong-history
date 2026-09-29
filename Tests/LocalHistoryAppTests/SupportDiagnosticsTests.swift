@@ -46,6 +46,7 @@ final class SupportDiagnosticsTests: XCTestCase {
         let encoded = try SupportDiagnostics.encoder().encode(first)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         let file = root.appendingPathComponent(SupportDiagnostics.day(Date())).appendingPathComponent("diagnostics.log")
+        let fd = open(file.path, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600); XCTAssertGreaterThanOrEqual(fd, 0); close(fd)
         let h = try FileHandle(forWritingTo: file); defer { try? h.close() }; try h.seekToEnd()
         for mutation in 0..<3 {
             var record = object
@@ -70,7 +71,11 @@ final class SupportDiagnosticsTests: XCTestCase {
         XCTAssertEqual(journal.snapshot().records.count, before)
         XCTAssertFalse(journal.snapshot().enabled)
         var s = stat(); XCTAssertEqual(lstat(root.path, &s), 0); XCTAssertEqual(s.st_mode & 0o777, 0o700)
-        let file = root.appendingPathComponent(SupportDiagnostics.day(Date())).appendingPathComponent("diagnostics.log")
+        // Lifecycle and user markers use the priority stream; both streams are private.
+        let bucket = root.appendingPathComponent(SupportDiagnostics.day(Date()))
+        let important = bucket.appendingPathComponent(SupportDiagnostics.importantDirectoryName)
+        XCTAssertEqual(lstat(important.path, &s), 0); XCTAssertEqual(s.st_mode & 0o777, 0o700)
+        let file = important.appendingPathComponent("diagnostics.log")
         XCTAssertEqual(lstat(file.path, &s), 0); XCTAssertEqual(s.st_mode & 0o777, 0o600)
         journal.setEnabled(true); journal.record(.userMarkedIssue, component: .support)
         XCTAssertEqual(journal.snapshot().records.count, before + 1)

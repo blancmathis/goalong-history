@@ -78,13 +78,16 @@
         private let beforeDeletionCommit: (() -> Void)?
         private let beforeDeleteAllUnlink: ((URL) -> Void)?
         private let eventFilePermissionSetter: (Int32, mode_t) -> Int32
+        private let rowWriter: (FileHandle, Data) throws -> Void
 
         private var currentFileURL: URL?
         private var currentHandle: FileHandle?
         private var writesSinceSync = 0
         private var appendedLineCount = 0
         private var synchronizationCount = 0
-        private var requiresRestartRecovery = false
+        /// Set after a write whose partial outcome is unknown. Appends stay refused until
+        /// `recoverAfterUncertainWrite` has reconciled the live chain with the durable tail.
+        private var requiresWriteRecovery = false
         private var latestDeletionMetrics = JSONLDeletionMetrics()
 
         /// `HistoryRetentionStore` is the only automatic purge authority. The
@@ -100,12 +103,14 @@
             beforeScavengerUnlink: ((URL) -> Void)? = nil,
             eventFilePermissionSetter: @escaping (Int32, mode_t) -> Int32 = {
                 Darwin.fchmod($0, $1)
-            }
+            },
+            rowWriter: @escaping (FileHandle, Data) throws -> Void = { try $0.write(contentsOf: $1) }
         ) throws {
             self.eventsDirectory = Self.normalizedDirectoryURL(eventsDirectory)
             self.beforeDeletionCommit = beforeDeletionCommit
             self.beforeDeleteAllUnlink = beforeDeleteAllUnlink
             self.eventFilePermissionSetter = eventFilePermissionSetter
+            self.rowWriter = rowWriter
 
             encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
@@ -208,33 +213,51 @@
         /// Reads only the bounded tail of each event file. This is used at startup to
         /// recover a state checkpoint that lagged a successfully appended event.
         func latestPersistedEvent() throws -> HistoryEvent? {
+            try queue.sync { try latestPersistedEventOnQueue() }
+        }
+
+        var needsWriteRecovery: Bool {
+            queue.sync { requiresWriteRecovery }
+        }
+
+        /// Performs, without a restart, the same bounded tail reconciliation as launch.
+        /// `reconcile` receives the latest complete durable row, which may be the row
+        /// whose write reported an error. The store accepts appends again only after it
+        /// returns; a thrown error (for example a still-full disk) keeps appends refused.
+        func recoverAfterUncertainWrite(reconcile: (HistoryEvent?) throws -> Void) throws {
             try queue.sync {
-                let directory = try Self.openVerifiedDirectory(at: eventsDirectory)
-                defer { _ = Darwin.close(directory.descriptor) }
-                return try Self.withSharedCommitLock(
-                    in: directory.descriptor,
-                    directoryURL: eventsDirectory
-                ) {
-                    try Self.requireCurrentDirectory(directory, at: eventsDirectory)
-                    var latest: HistoryEvent?
-                    for fileName in try Self.eventFileNames(in: directory.descriptor) {
-                        guard
-                            let candidate = try Self.lastDecodableEvent(
-                                named: fileName,
-                                in: directory.descriptor,
-                                directoryURL: eventsDirectory,
-                                decoder: decoder
-                            )
-                        else {
-                            continue
-                        }
-                        guard let sequence = candidate.integrity?.sequence else { continue }
-                        if latest?.integrity?.sequence ?? 0 < sequence {
-                            latest = candidate
-                        }
+                guard requiresWriteRecovery else { return }
+                try reconcile(try latestPersistedEventOnQueue())
+                requiresWriteRecovery = false
+            }
+        }
+
+        private func latestPersistedEventOnQueue() throws -> HistoryEvent? {
+            let directory = try Self.openVerifiedDirectory(at: eventsDirectory)
+            defer { _ = Darwin.close(directory.descriptor) }
+            return try Self.withSharedCommitLock(
+                in: directory.descriptor,
+                directoryURL: eventsDirectory
+            ) {
+                try Self.requireCurrentDirectory(directory, at: eventsDirectory)
+                var latest: HistoryEvent?
+                for fileName in try Self.eventFileNames(in: directory.descriptor) {
+                    guard
+                        let candidate = try Self.lastDecodableEvent(
+                            named: fileName,
+                            in: directory.descriptor,
+                            directoryURL: eventsDirectory,
+                            decoder: decoder
+                        )
+                    else {
+                        continue
                     }
-                    return latest
+                    guard let sequence = candidate.integrity?.sequence else { continue }
+                    if latest?.integrity?.sequence ?? 0 < sequence {
+                        latest = candidate
+                    }
                 }
+                return latest
             }
         }
 
@@ -326,8 +349,8 @@
         }
 
         private func appendOnQueue(_ event: HistoryEvent) throws -> JSONLAppendOutcome {
-            guard !requiresRestartRecovery else {
-                throw JSONLStoreError.writeOutcomeRequiresRestartRecovery
+            guard !requiresWriteRecovery else {
+                throw JSONLStoreError.writeOutcomeRequiresRecovery
             }
             let destination = eventsDirectory.appendingPathComponent(
                 AppPaths.localDayString(for: event.timestamp) + ".jsonl"
@@ -358,7 +381,7 @@
                 }
 
                 do {
-                    try currentHandle.write(contentsOf: data)
+                    try rowWriter(currentHandle, data)
                 } catch {
                     SupportDiagnostics.shared.failure(error, component: .storage)
                     // A failed write may have left a partial row. Reopening on the next
@@ -368,7 +391,7 @@
                     self.currentHandle = nil
                     currentFileURL = nil
                     writesSinceSync = 0
-                    requiresRestartRecovery = true
+                    requiresWriteRecovery = true
                     throw error
                 }
 
@@ -1592,7 +1615,7 @@
             case targetedDeletionExceedsLimit(Int, Int)
             case unclassifiableTargetedDeletionRow(URL)
             case targetedEventsUnavailable(Int)
-            case writeOutcomeRequiresRestartRecovery
+            case writeOutcomeRequiresRecovery
 
             var errorDescription: String? {
                 switch self {
@@ -1645,9 +1668,9 @@
                 case .targetedEventsUnavailable(let missingCount):
                     return
                         "The current source is missing \(missingCount) selected event identifier(s); no exact targeted deletion was committed."
-                case .writeOutcomeRequiresRestartRecovery:
+                case .writeOutcomeRequiresRecovery:
                     return
-                        "A previous event write had an unknown partial outcome; restart is required before appending another sequence."
+                        "A previous event write had an unknown partial outcome; the durable tail must be reconciled before appending another sequence."
                 }
             }
         }

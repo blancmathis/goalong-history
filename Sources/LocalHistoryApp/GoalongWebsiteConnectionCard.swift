@@ -123,12 +123,12 @@ struct GoalongWebsiteConnectionSheet: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Connect to your Goalong account").font(.title2.weight(.semibold))
+                    Text("Relier votre compte Goalong").font(.title2.weight(.semibold))
                     Text("Envoi dans votre compte. Les règles de partage configurées sur le site s’appliquent aux dates et champs autorisés.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Done") { dismiss() }.disabled(busy)
+                Button("Terminé") { dismiss() }.disabled(busy)
                     .keyboardShortcut(.cancelAction)
             }
             .padding(24)
@@ -158,11 +158,11 @@ struct GoalongWebsiteConnectionSheet: View {
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack {
-                            Button("Choose token file…", action: chooseTokenFile)
+                            Button("Choisir le fichier d’accès…", action: chooseTokenFile)
                             if !tokenFilePath.isEmpty {
                                 Text(URL(fileURLWithPath: tokenFilePath).lastPathComponent)
                                     .font(.caption).lineLimit(1).truncationMode(.middle)
-                                Button("Forget file") { tokenFilePath = ""; status = nil }
+                                Button("Oublier le fichier") { tokenFilePath = ""; status = nil }
                                     .buttonStyle(.borderless)
                             }
                         }
@@ -179,7 +179,7 @@ struct GoalongWebsiteConnectionSheet: View {
                             }
                             .padding(.top, 6)
                         }
-                        Button("Open website Sources", action: openWebsite)
+                        Button("Ouvrir « Sources » sur le site", action: openWebsite)
                             .buttonStyle(.borderless)
                     }
                         }
@@ -187,15 +187,15 @@ struct GoalongWebsiteConnectionSheet: View {
                     Divider()
                     if preparedAnalysis == nil {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("2. Choose your data").font(.headline)
-                        DatePicker("Saved day", selection: $date, in: ...Date(), displayedComponents: .date)
-                        Text("Device names and screen-time totals are included. Source permissions must still be enabled in Goalong. Nothing is collected or analyzed during export.")
+                        Text("2. Choisir vos données").font(.headline)
+                        DatePicker("Journée enregistrée", selection: $date, in: ...Date(), displayedComponents: .date)
+                        Text("Les noms d’appareils et les totaux de temps d’écran sont inclus. Les sources doivent être activées dans Goalong. Rien n’est collecté ni analysé pendant l’export.")
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        Toggle("Application names and durations", isOn: $includeApps)
+                        Toggle("Noms des applications et durées", isOn: $includeApps)
                         Toggle("Hourly breakdown, when recorded", isOn: $includeHourly)
-                        Toggle("Website domains observed on this Mac", isOn: $includeWebsites)
-                        Toggle("Saved analysis summary", isOn: $includeRecap)
+                        Toggle("Sites observés sur ce Mac", isOn: $includeWebsites)
+                        Toggle("Résumé d’analyse enregistré", isOn: $includeRecap)
                         if includeRecap {
                             recapSelection
                         }
@@ -203,7 +203,7 @@ struct GoalongWebsiteConnectionSheet: View {
                         if !maskedApps.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Text("Leurs noms et identifiants sont neutralisés ; leurs durées sont conservées. Les domaines et le récap sont exclus pour éviter de réintroduire ces noms.").font(.caption)
                         }
-                        Toggle("Structured report for productivity", isOn: $structuredReport)
+                        Toggle("Rapport structuré de productivité", isOn: $structuredReport)
                         Toggle("Calculer le rythme à partir de Computer History", isOn: $includeRhythm)
                         if includeRhythm {
                             Button(contextualRhythm == nil ? "Analyser le contexte d'une session…" : "Choisir une autre session…") { showsRhythmStudio = true }
@@ -223,13 +223,13 @@ struct GoalongWebsiteConnectionSheet: View {
                             Text("Agrégats, épisodes, contexte et horaires sont des choix distincts. Relisez l'aperçu final avant de transmettre.").font(.caption)
                         }
                         if structuredReport {
-                            Text("The same selected durations become an editable report. Applications are not automatically considered productive: qualify their context on the website, or let your chosen agent prepare the report before importing it. Raw events and conversations stay outside this export.")
+                            Text("Les mêmes durées deviennent un rapport modifiable. Une application n’est pas considérée productive d’office : précisez son contexte sur le site, ou laissez votre agent préparer le rapport avant l’import. Les événements bruts et les conversations restent hors de cet export.")
                                 .font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         if !devices.isEmpty {
                             VStack(alignment: .leading, spacing: 7) {
-                                Text("Devices from the saved day").font(.subheadline.weight(.medium))
+                                Text("Appareils de la journée enregistrée").font(.subheadline.weight(.medium))
                                 ForEach(devices, id: \.id) { device in
                                     Toggle(device.name, isOn: Binding(
                                         get: { !excludedDevices.contains(device.id) },
@@ -252,12 +252,12 @@ struct GoalongWebsiteConnectionSheet: View {
                     Divider()
                     }
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("3. Review before sending").font(.headline)
-                        if preparedAnalysis == nil { Button(payload == nil ? "Prepare offline preview" : "Refresh offline preview", action: preparePreview)
+                        Text("3. Vérifier avant l’envoi").font(.headline)
+                        if preparedAnalysis == nil { Button(payload == nil ? "Prepare offline preview" : "Actualiser l’aperçu", action: preparePreview)
                             .buttonStyle(.bordered) }
                         if let payload {
                             Text(previewSummary).font(.subheadline)
-                            GoalongDisclosureGroup("Review exact data", isExpanded: $showsExactData) {
+                            GoalongDisclosureGroup("Voir les données exactes", isExpanded: $showsExactData) {
                                 ScrollView([.horizontal, .vertical]) {
                                     Text(String(decoding: payload, as: UTF8.self))
                                         .font(.system(.caption, design: .monospaced))
@@ -287,10 +287,10 @@ struct GoalongWebsiteConnectionSheet: View {
             Divider()
             HStack {
                 if busy { ProgressView().controlSize(.small) }
-                Text("Sharing audiences stay under your control on the website.")
+                Text("Vous gardez le contrôle des destinataires sur le site.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Send reviewed data", action: sendReviewedData)
+                Button("Envoyer les données vérifiées", action: sendReviewedData)
                     .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(busy || payload == nil || tokenFilePath.isEmpty || origin.isEmpty)
             }
@@ -325,11 +325,11 @@ struct GoalongWebsiteConnectionSheet: View {
 
     private func chooseTokenFile() {
         guard let window = windowHost.window else {
-            error = "Reopen the website connection window before choosing a token file."
+            error = "Rouvrez la fenêtre de connexion au site avant de choisir un fichier d’accès."
             return
         }
         let panel = NSOpenPanel()
-        panel.title = "Choose your Goalong upload-only token file"
+        panel.title = "Choisissez votre fichier d’accès Goalong (envoi uniquement)"
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
@@ -370,7 +370,7 @@ struct GoalongWebsiteConnectionSheet: View {
 
     private func validateTokenPath() {
         guard let window = windowHost.window else {
-            error = "Reopen the website connection window before choosing a token file."
+            error = "Rouvrez la fenêtre de connexion au site avant de choisir un fichier d’accès."
             return
         }
         do {
@@ -397,7 +397,7 @@ struct GoalongWebsiteConnectionSheet: View {
             parts.path = "/goalong.dc.html"
             parts.fragment = "sources"
             if let url = parts.url, !GoalongWorkspaceOpenPolicy.open(url, purpose: .goalongWebsite) {
-                error = "The configured website could not be opened. Check its origin and try again."
+                error = "Le site configuré n’a pas pu être ouvert. Vérifiez son adresse et réessayez."
             }
         } catch { self.error = String(describing: error) }
     }
@@ -476,7 +476,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     }
                 }
                 let applications = rows.reduce(0) { $0 + (($1["apps"] as? [Any])?.count ?? 0) }
-                previewSummary = "\(day) · \(rows.count) devices · \(applications) application rows · \(result.count) bytes. Review the exact fields below."
+                previewSummary = "\(day) · \(rows.count) appareil(s) · \(applications) ligne(s) d’applications · \(result.count) octets. Vérifiez les champs exacts ci-dessous."
                 payload = result
             } catch { self.error = String(describing: error) }
             busy = false

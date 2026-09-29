@@ -20,11 +20,11 @@ struct AgentTokenUsageCard: View {
                 Text("Local logs · \(TimeZone.current.identifier). Tokens are not subscription quotas or a bill.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 if let analyzedAt {
-                    Text("Analyzed \(analyzedAt.formatted(date: .omitted, time: .shortened)) · Refresh the day to update")
+                    Text("Analysé à \(analyzedAt.formatted(date: .omitted, time: .shortened)) · actualisez la journée pour mettre à jour")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 if usage.partial || usage.rows.isEmpty {
-                    Text("Partial coverage: missing counters and unavailable sources remain unknown. Forks with replayed history may be excluded.")
+                    Text("Couverture partielle : les compteurs manquants et sources indisponibles restent inconnus. Les copies de conversations rejouées peuvent être exclues.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 ForEach(Array(Set(usage.rows.map { $0.provider.rawValue })).sorted(), id: \.self) { provider in

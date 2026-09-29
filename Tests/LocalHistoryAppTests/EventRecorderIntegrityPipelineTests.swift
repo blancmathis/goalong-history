@@ -83,10 +83,15 @@
             try components.recorder.flushAndWait()
             components.sealer.waitUntilIdleForTesting()
 
+            // Writing resumes on the next event without a restart, and the refused event
+            // is recorded as an explicit gap rather than silently missing.
             let events = try decodeEvents(at: eventFile)
-            XCTAssertEqual(events.map { $0.integrity?.sequence }, [1])
-            XCTAssertEqual(components.state.snapshot.nextEventSequence, 2)
-            XCTAssertEqual(components.sealer.runtimeSnapshot.pendingRootCount, 1)
+            XCTAssertEqual(events.map { $0.integrity?.sequence }, [1, 2])
+            XCTAssertEqual(events.first?.metadata?["gap_reason"], "storage_unavailable")
+            XCTAssertEqual(events.first?.metadata?["dropped_event_count"], "1")
+            XCTAssertEqual(components.state.snapshot.nextEventSequence, 3)
+            XCTAssertEqual(components.sealer.runtimeSnapshot.pendingRootCount, 2)
+            XCTAssertNil(components.recorder.persistenceSnapshot.storageInterruptedSince)
             try components.recorder.closeAndWait()
         }
 

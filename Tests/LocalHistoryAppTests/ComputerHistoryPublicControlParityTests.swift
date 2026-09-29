@@ -32,10 +32,10 @@
                 encoding: .utf8
             )
 
-            XCTAssertTrue(source.contains("Last 10 minutes…"))
-            XCTAssertTrue(source.contains("Last hour…"))
-            XCTAssertTrue(source.contains("Last day…"))
-            XCTAssertTrue(source.contains("All detailed history…"))
+            XCTAssertTrue(source.contains("10 dernières minutes…"))
+            XCTAssertTrue(source.contains("Dernière heure…"))
+            XCTAssertTrue(source.contains("Dernières 24 heures…"))
+            XCTAssertTrue(source.contains("Tout l’historique détaillé…"))
             XCTAssertTrue(source.contains("Date().addingTimeInterval(-24 * 60 * 60)"))
         }
 
@@ -70,17 +70,17 @@
                 encoding: .utf8
             )
 
-            XCTAssertTrue(computerHistory.contains("Delete this item…"))
-            XCTAssertTrue(computerHistory.contains("exact source events"))
+            XCTAssertTrue(computerHistory.contains("Supprimer cet élément…"))
+            XCTAssertTrue(computerHistory.contains("uniquement ses événements exacts"))
             XCTAssertTrue(computerHistory.contains("Journal original"))
             XCTAssertTrue(computerHistory.contains("Enregistré sur ce Mac"))
             XCTAssertTrue(computerHistory.contains("Historique local conservé"))
             XCTAssertTrue(computerHistory.contains("Détails de la journée indisponibles"))
-            XCTAssertTrue(computerHistory.contains("Other days are unchanged"))
+            XCTAssertTrue(computerHistory.contains("Les autres jours sont inchangés"))
             XCTAssertTrue(computerHistory.contains(".disabled(!canRevealSourceData)"))
             XCTAssertTrue(computerHistory.contains("@StateObject private var timelineModel"))
-            XCTAssertTrue(timeline.contains("Delete session…"))
-            XCTAssertTrue(privacy.contains("Most recent app session"))
+            XCTAssertTrue(timeline.contains("Supprimer la session…"))
+            XCTAssertTrue(privacy.contains("Dernière session d’application"))
             XCTAssertTrue(activity.contains("openSourceJSON: model.revealTodayJSON"))
             XCTAssertTrue(activity.contains("snapshotGeneration: model.snapshotGeneration"))
             XCTAssertTrue(activity.contains("isSnapshotLoading: model.isRefreshing"))
@@ -154,7 +154,7 @@
             XCTAssertTrue(agentActivity.contains("case history"))
             XCTAssertTrue(agentActivity.contains("conversationHistoryList"))
             XCTAssertFalse(agentActivity.contains("Text(\"Conversations\")"))
-            XCTAssertTrue(agentActivity.contains("Original sources"))
+            XCTAssertTrue(agentActivity.contains("Sources d’origine"))
             XCTAssertTrue(agentActivity.contains("final repl"))
             XCTAssertTrue(agentActivity.contains("availableProviders.count > 1"))
 
@@ -163,8 +163,8 @@
                     .appendingPathComponent("Sources/LocalHistoryApp/DashboardComponents.swift"),
                 encoding: .utf8
             )
-            XCTAssertTrue(components.contains("Button(\"Today\")"))
-            XCTAssertTrue(components.contains(".help(\"Return to today\")"))
+            XCTAssertTrue(components.contains("Button(\"Aujourd’hui\")"))
+            XCTAssertTrue(components.contains(".help(\"Revenir à aujourd’hui\")"))
         }
 
         func testCLIPageProvidesOneCompleteSafeAgentBrief() {

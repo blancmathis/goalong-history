@@ -11,9 +11,25 @@ import Foundation
         VStack(alignment: .leading, spacing: 20) {
             GoalongSettingsGroup(title: "Sur ce Mac") {
                 HStack {
-                    Text("Espace utilisé")
+                    Text("Espace utilisé par Goalong")
                     Spacer()
                     Text(ByteCountFormatter.string(fromByteCount: model.snapshot.storageBytes, countStyle: .file))
+                }
+                if let free = model.freeDiskBytes {
+                    Divider()
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Espace libre sur le disque")
+                            if StorageHealth.isLow(free) {
+                                Text("Sous 1 Go environ, macOS peut empêcher l’enregistrement. Goalong reprendra tout seul dès qu’il y aura de la place.")
+                                    .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Spacer()
+                        Text(StorageHealth.formatted(free))
+                            .foregroundStyle(StorageHealth.isLow(free) ? LHTheme.warning : LHTheme.text)
+                    }
                 }
                 Divider()
                 HStack {

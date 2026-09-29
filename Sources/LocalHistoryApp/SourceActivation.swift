@@ -13,11 +13,11 @@ import LocalHistoryCore
 
         var actionTitle: String {
             switch self {
-            case .accessibility: return "Allow Accessibility"
-            case .inputMonitoring: return "Allow Input Monitoring"
-            case .fullDiskAccess: return "Open System Settings"
-            case .screenTimeSetup: return "Open Screen Time"
-            case .ready, .unavailable: return "Try again"
+            case .accessibility: return "Autoriser l’accessibilité"
+            case .inputMonitoring: return "Autoriser la surveillance de l’entrée"
+            case .fullDiskAccess: return "Ouvrir Réglages Système"
+            case .screenTimeSetup: return "Ouvrir Temps d’écran"
+            case .ready, .unavailable: return "Réessayer"
             }
         }
 
@@ -37,11 +37,11 @@ import LocalHistoryCore
 
         var message: String {
             switch self {
-            case .ready: return "The required access is available."
-            case .accessibility: return "Allow Goalong History in Privacy & Security → Accessibility. Return to Goalong to finish connecting this source. Your sharing settings are unchanged."
-            case .inputMonitoring: return "Allow Input Monitoring for Goalong in System Settings, then return here to verify access."
-            case .fullDiskAccess: return "Allow Goalong History in Privacy & Security → Full Disk Access. If macOS asks, choose Quit & Reopen; Goalong will return to setup. You can continue without this source."
-            case .screenTimeSetup: return "No Apple Screen Time source is available yet. Turn on App & Website Activity in macOS Screen Time, then check again."
+            case .ready: return "L’accès nécessaire est disponible."
+            case .accessibility: return "Autorisez Goalong History dans Confidentialité et sécurité → Accessibilité, puis revenez dans Goalong pour terminer. Vos réglages de partage sont inchangés."
+            case .inputMonitoring: return "Autorisez Goalong dans Réglages Système → Surveillance de l’entrée, puis revenez ici pour vérifier l’accès."
+            case .fullDiskAccess: return "Autorisez Goalong History dans Confidentialité et sécurité → Accès complet au disque. Si macOS le propose, choisissez Quitter et rouvrir : Goalong reviendra à cette étape. Vous pouvez continuer sans cette source."
+            case .screenTimeSetup: return "Aucune donnée Temps d’écran n’est encore disponible. Activez « Activité des apps et des sites web » dans Temps d’écran de macOS, puis vérifiez à nouveau."
             case .unavailable(let message): return message
             }
         }
@@ -51,12 +51,12 @@ import LocalHistoryCore
         var accessExplanation: String {
             switch self {
             case .localComputerHistory:
-                return "To build your activity timeline, Goalong needs Accessibility access to identify the app and window you use. Input access lets it count interactions without recording what you type. Recording is local. Optional analysis and website sharing have separate controls."
+                return "Pour construire votre historique, Goalong a besoin de l’accès Accessibilité afin de reconnaître l’app et la fenêtre utilisées. L’accès aux entrées lui permet de compter les interactions sans enregistrer ce que vous tapez. Tout reste sur ce Mac ; l’analyse et l’envoi au site se règlent séparément."
             case .appleScreenTime:
-                return "To show time spent in your apps, Goalong reads Apple’s Screen Time files. macOS protects these files with Full Disk Access, a broad permission you control in System Settings."
+                return "Pour afficher le temps passé dans vos apps, Goalong lit les fichiers Temps d’écran d’Apple. macOS les protège par l’accès complet au disque, une autorisation large que vous contrôlez dans Réglages Système."
             case .aiConversations:
-                return "Goalong needs to read the conversation folders you selected to show your local AI history. Conversation bodies stay in their original files."
-            default: return "Goalong needs access to this source to show its activity."
+                return "Goalong doit lire les dossiers de conversations choisis pour afficher votre historique IA local. Le contenu des conversations reste dans ses fichiers d’origine."
+            default: return "Goalong a besoin d’accéder à cette source pour afficher son activité."
             }
         }
     }
@@ -110,13 +110,13 @@ import LocalHistoryCore
             case .aiConversations:
                 // Only validate folders the person has already selected; do not discover or scan transcripts.
                 guard let store = try? AgentActivityStore(rootDirectory: AppPaths.agentActivityDirectory) else {
-                    return .unavailable("Conversation settings could not be opened. Try again before enabling this source.")
+                    return .unavailable("Les réglages des conversations n’ont pas pu être ouverts. Réessayez avant d’activer cette source.")
                 }
                 for folder in store.loadConfiguration().watchedFolders where folder.isEnabled {
                     let descriptor = folder.path.withCString { Darwin.open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC) }
                     if descriptor >= 0 { Darwin.close(descriptor) }
                     else if errno == EPERM || errno == EACCES { return .fullDiskAccess }
-                    else { return .unavailable("A selected conversation folder is unavailable. Review its location in Settings → Sources, then try again.") }
+                    else { return .unavailable("Un dossier de conversations choisi est introuvable. Vérifiez son emplacement dans Réglages → Sources, puis réessayez.") }
                 }
                 return .ready
             default: return .ready
@@ -195,7 +195,7 @@ import LocalHistoryCore
                 self.generation += 1
                 self.checking = false
                 self.completedCheckCount += 1
-                let message = "The access check did not finish. Nothing has been enabled. Restart Goalong History and try again."
+                let message = "La vérification d’accès n’a pas abouti. Rien n’a été activé. Relancez Goalong History puis réessayez."
                 self.feedback = message
                 if self.result == nil { self.result = .unavailable(message) }
             }
@@ -211,18 +211,18 @@ import LocalHistoryCore
                 self.result = status
                 guard status == .ready else {
                     self.feedback = status.isMacPermission
-                        ? "Check \(self.completedCheckCount): access is not yet confirmed for this running copy of Goalong History. The source is not enabled."
-                        : "Check \(self.completedCheckCount): this source is not ready. Nothing has been enabled."
+                        ? "Vérification \(self.completedCheckCount) : l’accès n’est pas encore confirmé pour cette copie de Goalong History. La source n’est pas activée."
+                        : "Vérification \(self.completedCheckCount) : cette source n’est pas prête. Rien n’a été activé."
                     return
                 }
                 guard enable else { return }
                 do { if !self.store.isEnabled(capability) { try prepare() } }
                 catch {
-                    self.result = .unavailable("Settings could not be saved: \(error.localizedDescription)")
+                    self.result = .unavailable("Les réglages n’ont pas pu être enregistrés : \(error.localizedDescription)")
                     return
                 }
                 guard self.store.set(capability, enabled: true, surface: surface) else {
-                    self.result = .unavailable("Your choice could not be saved. Nothing has been enabled. Try again.")
+                    self.result = .unavailable("Votre choix n’a pas pu être enregistré. Rien n’a été activé. Réessayez.")
                     return
                 }
                 self.completed = true
@@ -330,12 +330,12 @@ import LocalHistoryCore
             }
             .onChange(of: consents.isEnabled(capability)) { _ in validation = UUID() }
             .onDisappear { validation = UUID(); checking = false; onCheckingChanged(false) }
-            .alert("Access needs attention", isPresented: Binding(
+            .alert("Accès à vérifier", isPresented: Binding(
                 get: { accessIssue != nil }, set: { if !$0 { accessIssue = nil } }
             )) { Button("OK", role: .cancel) {} } message: { Text(accessIssue ?? "") }
-            .alert("Could not save this change", isPresented: $saveFailed) {
+            .alert("Modification non enregistrée", isPresented: $saveFailed) {
                 Button("OK", role: .cancel) {}
-            } message: { Text("The source is still enabled. Try turning it off again.") }
+            } message: { Text("La source est toujours activée. Essayez de la désactiver à nouveau.") }
         }
         private func beginActivation() {
             // A valid macOS permission must not bypass the initial recording choice.
@@ -359,9 +359,9 @@ import LocalHistoryCore
                 onCheckingChanged(false)
                 if status == .ready {
                     do { try prepare() }
-                    catch { accessIssue = "Settings could not be saved: \(error.localizedDescription)"; return }
+                    catch { accessIssue = "Les réglages n’ont pas pu être enregistrés : \(error.localizedDescription)"; return }
                     if !consents.set(capability, enabled: true, surface: surface) {
-                        accessIssue = "This setting could not be saved. Please try again."
+                        accessIssue = "Ce réglage n’a pas pu être enregistré. Réessayez."
                     }
                 } else {
                     activationStatus = status
@@ -380,7 +380,7 @@ import LocalHistoryCore
                       status != .ready else { return }
                 guard activationStatus != status else { return }
                 activationStatus = status
-                accessIssue = status.message + " Your saved source choice is unchanged. No new data is available until access works again."
+                accessIssue = status.message + " Votre choix de source est inchangé. Aucune nouvelle donnée tant que l’accès ne fonctionne pas."
             }
         }
     }
@@ -419,12 +419,12 @@ import LocalHistoryCore
                 progress: PermissionRecoveryLedger.load(access))
         }
         private var primaryTitle: String {
-            if restarting { return "Preparing restart…" }
-            if flow.checking { return "Checking access…" }
-            if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Done" : "Enable \(capability.title)" }
-            if needsRestart { return "Quit & reopen" }
-            if !openedSettings && access.hasSettingsAction { return "Open System Settings" }
-            return "Check access"
+            if restarting { return "Préparation du redémarrage…" }
+            if flow.checking { return "Vérification de l’accès…" }
+            if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Terminé" : "Activer \(capability.title)" }
+            if needsRestart { return "Quitter et rouvrir" }
+            if !openedSettings && access.hasSettingsAction { return "Ouvrir Réglages Système" }
+            return "Vérifier l’accès"
         }
 
         var body: some View {
@@ -435,10 +435,10 @@ import LocalHistoryCore
                         PermissionSetupStatusCard(copy: copy, checking: flow.checking, ready: ready)
                         if ready {
                             VStack(alignment: .leading, spacing: 7) {
-                                Text("Access confirmed").font(.system(size: 15, weight: .semibold))
+                                Text("Accès confirmé").font(.system(size: 15, weight: .semibold))
                                 Text(GoalongCapabilityConsentStore.shared.isEnabled(capability)
-                                     ? "Your saved source choice is unchanged. You can return to your history."
-                                     : "Enable this source to finish. Your recording preferences, exclusions and sharing choices stay unchanged.")
+                                     ? "Votre choix de source est inchangé. Vous pouvez revenir à votre historique."
+                                     : "Activez cette source pour terminer. Vos préférences d’enregistrement, exclusions et choix de partage restent inchangés.")
                                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                                     .fixedSize(horizontal: false, vertical: true)
                             }.frame(maxWidth: .infinity, alignment: .leading)
@@ -449,13 +449,13 @@ import LocalHistoryCore
                                     .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                                     .fixedSize(horizontal: false, vertical: true)
                             } else if openedSettings && !flow.checking {
-                                Label(needsRestart ? "Restart to apply access, then finish here." : "Waiting for macOS. We’ll check again when you return.",
+                                Label(needsRestart ? "Relancez Goalong pour appliquer l’accès, puis terminez ici." : "En attente de macOS. Nouvelle vérification à votre retour.",
                                       systemImage: needsRestart ? "arrow.clockwise.circle" : "clock")
                                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     .accessibilityIdentifier("source-access-check-result")
                             }
                             if manualChecks > 0, !flow.checking, flow.feedback != nil {
-                                Text("Access is not available to this copy yet. Nothing has been enabled.")
+                                Text("L’accès n’est pas encore disponible pour cette copie. Rien n’a été activé.")
                                     .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -472,12 +472,12 @@ import LocalHistoryCore
                 .frame(maxHeight: min(ready ? 250 : 465, (NSScreen.main?.visibleFrame.height ?? 900) * 0.53))
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 HStack(spacing: 12) {
-                    Button("Not now", role: .cancel) { PermissionRecovery.clearSetup(); flow.cancel(); dismiss() }
+                    Button("Plus tard", role: .cancel) { PermissionRecovery.clearSetup(); flow.cancel(); dismiss() }
                         .keyboardShortcut(.cancelAction).buttonStyle(.plain)
                         .foregroundStyle(LHTheme.secondaryText).disabled(restarting)
                     Spacer(minLength: 8)
                     if openedSettings && !ready {
-                        Button(needsRestart ? "Check again" : "Open settings") {
+                        Button(needsRestart ? "Vérifier à nouveau" : "Ouvrir les réglages") {
                             if needsRestart { manualChecks += 1; check() } else { openSettings() }
                         }.buttonStyle(.bordered).disabled(flow.checking || restarting)
                     }
@@ -613,18 +613,18 @@ import LocalHistoryCore
                 case .issue(let status):
                     LHCard {
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("Access for \(capability.title)").font(.system(size: 15, weight: .semibold))
+                            Text("Accès pour \(capability.title)").font(.system(size: 15, weight: .semibold))
                             Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
                             Text(status.message).font(.system(size: 13))
                             if status.isMacPermission { PermissionRecoveryView(status: status, capability: capability) }
-                            Text("Your source choice is unchanged. Missing access is not evidence of inactivity.")
+                            Text("Votre choix de source est inchangé. Un accès manquant ne signifie pas une absence d’activité.")
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                             HStack(spacing: 12) {
                                 if status.hasSettingsAction {
                                     Button(status.actionTitle) { PermissionRecovery.rememberSetup(capability); SourceAccessService.openAccess(status) }
                                         .buttonStyle(LHPrimaryButtonStyle())
                                 }
-                                Button("Check access again") { validate() }.buttonStyle(.bordered)
+                                Button("Vérifier l’accès à nouveau") { validate() }.buttonStyle(.bordered)
                             }
                         }.fixedSize(horizontal: false, vertical: true)
                     }.padding(LHTheme.pageInset)
@@ -648,12 +648,12 @@ import LocalHistoryCore
             LHCard {
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Computer History is off").font(.system(size: 15, weight: .semibold))
-                        Text("Enable local activity recording to view this timeline. We will explain and verify the required macOS access first.")
+                        Text("L’historique de ce Mac est désactivé").font(.system(size: 15, weight: .semibold))
+                        Text("Activez l’enregistrement local pour afficher cette chronologie. Goalong vous explique et vérifie d’abord les accès macOS nécessaires.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    SourceActivationToggle(capability: .localComputerHistory) { Text("Computer History") }
+                    SourceActivationToggle(capability: .localComputerHistory) { Text("Historique de ce Mac") }
                         .labelsHidden()
                 }
             }

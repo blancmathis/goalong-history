@@ -7,15 +7,15 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 14) {
                     SectionTitle(
-                        title: "What you worked on",
-                        subtitle: "Continuous activity is grouped by task, app, site and semantic similarity"
+                        title: "Ce sur quoi vous avez travaillé",
+                        subtitle: "L’activité continue est regroupée par tâche, app, site et proximité de contenu"
                     )
 
                     if analysis.focusBlocks.isEmpty {
                         EmptyStateView(
                             symbol: "rectangle.3.group",
-                            title: "No focus blocks",
-                            message: "Meaningful foreground activity will appear here after it is recorded."
+                            title: "Aucune période de concentration",
+                            message: "L’activité significative apparaîtra ici une fois enregistrée."
                         )
                         .frame(height: 260)
                     } else {
@@ -86,7 +86,7 @@
                         Divider()
                         VStack(alignment: .leading, spacing: 9) {
                             if let request = block.requestSnippets.first {
-                                detailLine(symbol: "text.bubble", title: "Request", value: request)
+                                detailLine(symbol: "text.bubble", title: "Demande", value: request)
                             }
                             if let context = block.contextSnippets.first {
                                 detailLine(symbol: "text.quote", title: "Visible context", value: context)
@@ -142,11 +142,11 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 13) {
                     SectionTitle(
-                        title: "Underlying local evidence",
-                        subtitle: "Recent raw sessions remain available for inspection; they are not sent to the agent brief"
+                        title: "Éléments locaux sous-jacents",
+                        subtitle: "Les sessions brutes récentes restent consultables ; elles ne sont pas transmises aux agents"
                     )
                     if model.snapshot.sessions.isEmpty {
-                        compactEmpty(symbol: "list.bullet.rectangle", title: "No session evidence")
+                        compactEmpty(symbol: "list.bullet.rectangle", title: "Aucune session")
                     } else {
                         LazyVGrid(
                             columns: [GridItem(.adaptive(minimum: 260), spacing: 8)],

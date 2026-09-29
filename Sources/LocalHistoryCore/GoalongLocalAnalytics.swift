@@ -46,7 +46,11 @@ public enum GoalongLocalAnalytics {
         public let end: Date
         public let seconds: TimeInterval
         public let focusSeconds: TimeInterval
+        /// Parts of `seconds`; the remainder is still to be classified.
+        public var workSeconds: TimeInterval = 0
+        public var otherSeconds: TimeInterval = 0
         public var id: Date { start }
+        public var unclassifiedSeconds: TimeInterval { max(0, seconds - workSeconds - otherSeconds) }
     }
     public struct Day: Identifiable, Equatable, Sendable {
         public let date: Date
@@ -91,11 +95,15 @@ public enum GoalongLocalAnalytics {
             while cursor < end, result.count < 26 {
                 guard let hourEnd = calendar.dateInterval(of: .hour, for: cursor)?.end, hourEnd > cursor else { break }
                 let stop = min(end, hourEnd)
-                let active = segments.filter { $0.kind.isActive }.reduce(0.0) {
-                    $0 + Self.overlap($1.start, $1.end, cursor, stop)
+                var active = 0.0, work = 0.0, other = 0.0
+                for segment in segments where segment.kind.isActive && segment.end > cursor && segment.start < stop {
+                    let seconds = Self.overlap(segment.start, segment.end, cursor, stop)
+                    active += seconds
+                    if segment.kind == .work { work += seconds } else if segment.kind == .other { other += seconds }
                 }
                 let focus = blocks.reduce(0.0) { $0 + Self.overlap($1.start, $1.end, cursor, stop) }
-                result.append(Hour(start: cursor, end: stop, seconds: active, focusSeconds: focus))
+                result.append(Hour(start: cursor, end: stop, seconds: active, focusSeconds: focus,
+                                   workSeconds: work, otherSeconds: other))
                 cursor = stop
             }
             return result

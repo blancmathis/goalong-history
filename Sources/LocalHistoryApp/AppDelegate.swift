@@ -126,7 +126,8 @@
             }
 
             runtimeStarted = true
-            SupportDiagnostics.shared.start()
+            let buildIdentity = BuildIdentityReader.current()
+            SupportDiagnostics.shared.start(version: buildIdentity.displayVersion, build: buildIdentity.buildNumber)
             LegacyInstallationMigrator.run()
             NSApplication.shared.setActivationPolicy(.accessory)
             GoalongWebsiteAutoSender.shared.start()
@@ -330,10 +331,10 @@
             quitAlertIsVisible = true
             defer { quitAlertIsVisible = false }
             let alert = NSAlert()
-            alert.messageText = "Quit Goalong and stop recording?"
-            alert.informativeText = "Your enabled sources will stop until you reopen Goalong or its next enabled login. Close the window instead to keep recording in the background. Activity while Goalong is closed cannot be recovered."
-            alert.addButton(withTitle: "Keep running")
-            alert.addButton(withTitle: "Quit and stop recording")
+            alert.messageText = "Quitter Goalong et arrêter l’enregistrement ?"
+            alert.informativeText = "Vos sources activées s’arrêteront jusqu’à la prochaine ouverture de Goalong. Pour continuer l’enregistrement, fermez plutôt la fenêtre : Goalong reste actif en arrière-plan. L’activité pendant la fermeture ne pourra pas être récupérée."
+            alert.addButton(withTitle: "Continuer en arrière-plan")
+            alert.addButton(withTitle: "Quitter et arrêter")
             NSApplication.shared.activate(ignoringOtherApps: true)
             return alert.runModal() == .alertSecondButtonReturn
         }
@@ -804,6 +805,13 @@
                 .conversationSource: .flag(capabilityConsents?.isEnabled(.aiConversations) ?? false)
             ]
             if let error = status.accessibilityProbeError { values[.axError] = .count(Int(error)) }
+            if let persistence = recorder?.persistenceSnapshot {
+                values[.storageInterrupted] = .flag(persistence.storageInterruptedSince != nil)
+                if let kind = persistence.storageFailureKind {
+                    values[.storageFailure] = .state(SupportState(rawValue: kind.rawValue) ?? .unavailable)
+                }
+                values[.lostEvents] = .count(Int(clamping: persistence.storageLostEventCount))
+            }
             if let metrics = eventTapMonitor?.ingressMetrics {
                 values[.pendingEvents] = .count(metrics.currentDepth)
                 values[.droppedEvents] = .count(metrics.droppedCount)
@@ -1240,11 +1248,14 @@
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert(error: error)
             alert.messageText = "Goalong History n’a pas pu démarrer"
-            alert.addButton(withTitle: "Exporter un diagnostic…")
+            alert.informativeText = StorageHealth.failureKind(for: error) == .diskFull
+                ? "Le disque est plein. Libérez de l’espace puis relancez Goalong : votre historique n’a pas été modifié."
+                : "Votre historique n’a pas été modifié. Envoyez un rapport pour qu’on puisse corriger le problème, puis relancez Goalong."
+            alert.addButton(withTitle: "Signaler le problème…")
             alert.addButton(withTitle: "Quitter")
             if alert.runModal() == .alertFirstButtonReturn {
                 Task { @MainActor in
-                    SupportExportController.shared.export { NSApplication.shared.terminate(nil) }
+                    SupportRequestController.shared.present { NSApplication.shared.terminate(nil) }
                 }
             } else { NSApplication.shared.terminate(nil) }
         }

@@ -221,7 +221,7 @@
                     encoding: .utf8
                 )
                 XCTAssertFalse(source.contains("navigate Apple's visible Screen Time page"))
-                XCTAssertTrue(source.contains("Screen Time is read directly from Apple-owned files"))
+                XCTAssertTrue(source.contains("Le Temps d’écran est lu directement dans les fichiers d’Apple"))
             }
         }
 

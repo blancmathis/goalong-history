@@ -161,6 +161,7 @@ struct GoalongApplicationChoice: Identifiable, Equatable {
                 }
             }
             if let notice { Text(notice).font(.system(size: 12)).foregroundStyle(.secondary) }
+            GoalongUsageClassificationSettings()
             GoalongDisclosureGroup("Règles avancées d’enregistrement") {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Les anciennes listes « autoriser uniquement » restent conservées.").font(.system(size: 12)).foregroundStyle(.secondary)

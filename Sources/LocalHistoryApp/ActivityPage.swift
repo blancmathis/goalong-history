@@ -47,7 +47,7 @@
                 }
 
                 if showsModePicker {
-                    Picker("Activity view", selection: $mode) {
+                    Picker("Vue de l’activité", selection: $mode) {
                         ForEach(ActivityMode.allCases) { item in
                             Text(item.title).tag(item)
                         }
@@ -120,9 +120,9 @@
             .onChange(of: model.historyDeletionGeneration) { _ in
                 refreshVisibleAnalysis(day: model.selectedDay, forceRebuild: true)
             }
-            .alert("Enable Rich Context?", isPresented: $showRichContextConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Enable Rich Context") {
+            .alert("Activer le texte affiché ?", isPresented: $showRichContextConfirmation) {
+                Button("Annuler", role: .cancel) {}
+                Button("Activer le texte affiché") {
                     richContextEnabled = true
                 }
             } message: {
@@ -165,9 +165,9 @@
         var header: some View {
             PageHeader(
                 eyebrow: Calendar.current.isDateInToday(model.selectedDay)
-                    ? "Today"
-                    : "Daily history",
-                title: mode == .computerHistory ? "Computer History" : "Activity",
+                    ? "Aujourd’hui"
+                    : "Historique du jour",
+                title: mode == .computerHistory ? "Historique de ce Mac" : "Activity",
                 subtitle: headerSubtitle
             ) {
                 HStack(spacing: 10) {
@@ -201,20 +201,20 @@
 
         private var refreshHelp: String {
             mode == .dayRecap
-                ? "Refresh activity and rebuild the day recap"
-                : "Refresh recorded activity"
+                ? "Actualiser l’activité et reconstruire le récapitulatif"
+                : "Actualiser l’activité enregistrée"
         }
 
         private var headerSubtitle: String {
             switch mode {
             case .appsAndSites:
-                return "See every observed app and website, then choose what Goalong may monitor in future."
+                return "Voyez chaque app et site observé, puis choisissez ce que Goalong peut suivre à l’avenir."
             case .computerHistory:
-                return "Review recorded activity in factual 10-minute windows, without an AI-generated summary."
+                return "Consultez l’activité enregistrée par tranches de 10 minutes, sans résumé généré par IA."
             case .dayRecap:
-                return "Review the compact daily digest used by recap agents alongside full causal history."
+                return "Consultez le résumé compact utilisé par les agents, à côté de l’historique complet."
             case .timeline:
-                return "Inspect the exact chronological source events, gaps, classifications, and integrity signals."
+                return "Inspectez les événements exacts, les coupures, les catégories et les signaux d’intégrité, dans l’ordre chronologique."
             }
         }
 
@@ -253,7 +253,7 @@
                             .font(.system(size: 18, weight: .bold, design: .rounded))
                             .fixedSize(horizontal: false, vertical: true)
                         Text(
-                            "\(analysis.coverage.sourceEventCount.formatted()) raw events were reduced to \(analysis.coverage.representativeMinuteCount.formatted()) meaningful minute records for the compact digest. Full causal history remains available in its own tab."
+                            "\(analysis.coverage.sourceEventCount.formatted()) événements bruts résumés en \(analysis.coverage.representativeMinuteCount.formatted()) minutes significatives. L’historique complet reste disponible dans son onglet."
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -273,7 +273,7 @@
                 MetricCard(
                     title: "ACTIVE",
                     value: duration(analysis.activeSeconds),
-                    detail: "Representative foreground minutes",
+                    detail: "Minutes représentatives au premier plan",
                     symbol: "clock.fill",
                     tint: LHTheme.teal
                 )
@@ -287,7 +287,7 @@
                 MetricCard(
                     title: "SITES / PAGES",
                     value: "\(analysis.sites.count) / \(analysis.sites.reduce(0) { $0 + $1.pageCount })",
-                    detail: "Every detected site and sanitized page",
+                    detail: "Chaque site détecté et page nettoyée",
                     symbol: "globe",
                     tint: LHTheme.privateTint
                 )
@@ -303,8 +303,8 @@
 
         var loadingState: some View {
             LHCard {
-                GoalongPageLoadingView(title: "Building the compact day analysis…",
-                    message: "Events are being deduplicated into representative minutes, sites, pages and focus blocks locally.")
+                GoalongPageLoadingView(title: "Préparation du résumé de la journée…",
+                    message: "Les événements sont regroupés localement en minutes, sites, pages et périodes de concentration.")
                     .accessibilityIdentifier("day-analysis-page-loading")
             }
         }
@@ -313,10 +313,10 @@
             LHCard {
                 EmptyStateView(
                     symbol: "sparkles.rectangle.stack",
-                    title: "No analyzable activity yet",
+                    title: "Pas encore d’activité à analyser",
                     message: analysisModel.errorMessage
-                        ?? "Keep Goalong running. The recap and agent brief will be generated automatically as activity appears.",
-                    buttonTitle: "Try again",
+                        ?? "Laissez Goalong actif : le récapitulatif se construira automatiquement avec votre activité.",
+                    buttonTitle: "Réessayer",
                     action: { analysisModel.refresh(day: model.selectedDay) }
                 )
                 .frame(minHeight: 320)
@@ -355,7 +355,7 @@
         var title: String {
             switch self {
             case .appsAndSites: return "Apps & websites"
-            case .computerHistory: return "Computer History"
+            case .computerHistory: return "Historique de ce Mac"
             case .dayRecap: return "Day recap"
             case .timeline: return "Raw timeline"
             }

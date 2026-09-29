@@ -10,10 +10,10 @@ struct PermissionSetupCopy {
     var symbol: String { capability == .appleScreenTime ? "chart.bar.xaxis" : capability == .aiConversations ? "bubble.left.and.bubble.right" : "desktopcomputer" }
     var permission: String {
         switch status {
-        case .inputMonitoring: return "Input Monitoring"
-        case .fullDiskAccess: return "Full Disk Access"
-        case .screenTimeSetup: return "App & Website Activity"
-        default: return capability == .appleScreenTime ? "Full Disk Access" : "Accessibility"
+        case .inputMonitoring: return "Surveillance de l’entrée"
+        case .fullDiskAccess: return "Accès complet au disque"
+        case .screenTimeSetup: return "Activité des apps et des sites web"
+        default: return capability == .appleScreenTime ? "Accès complet au disque" : "Accessibilité"
         }
     }
     var permissionSymbol: String {
@@ -46,7 +46,7 @@ struct PermissionSetupCopy {
         default: return "Pas de captures d’écran ni de caractères tapés. Cet accès n’autorise aucun envoi."
         }
     }
-    var settingsPath: String { status == .screenTimeSetup ? "System Settings  ›  Screen Time" : "Privacy & Security  ›  \(permission)" }
+    var settingsPath: String { status == .screenTimeSetup ? "Réglages Système  ›  Temps d’écran" : "Confidentialité et sécurité  ›  \(permission)" }
 }
 
 struct PermissionSetupHeader: View {

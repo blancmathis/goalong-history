@@ -23,10 +23,13 @@ Aucun résultat n’est envoyé au site depuis ce mode.
 - Le temps actif est l’union, sans chevauchement, des intervalles entre événements
   consécutifs autorisés dans une même journée. Une observation ne prolonge jamais
   le temps avant la première trace ou après la dernière.
-- Travail classé, Autres usages et À préciser partitionnent le temps actif. La
-  classification existante est conservée seulement si sa confiance atteint 50 %.
-  Autres usages ne signifie pas procrastination. Les versions du classificateur
+- Travail, Hors travail et À classer partitionnent le temps actif. La
+  classification automatique est conservée seulement si sa confiance atteint 50 % ;
+  un choix de l’utilisateur (app ou site) la remplace à la lecture, sans réécrire le
+  journal. Hors travail ne signifie pas procrastination. Les versions du classificateur
   accompagnent les mesures pour limiter les comparaisons trompeuses.
+- Un bloc de travail réunit le temps classé Travail séparé par au plus deux minutes
+  d’autre chose ; seules les secondes de travail sont comptées.
 - Une séquence de **focus observé** conserve la même application et le même
   domaine, avec une durée minimale de 10, 25 ou 50 minutes. La durée de la séquence
   entière est comptée, et non seulement la partie après le seuil. C’est un proxy

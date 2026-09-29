@@ -166,7 +166,7 @@
             XCTAssertFalse(browser.sourceDetail.contains("+"))
             XCTAssertEqual(
                 browser.sourceDetail,
-                "Apple Screen Time · Goalong independently observed 20m on this Mac"
+                "Temps d’écran Apple · Goalong a observé 20\u{00A0}min sur ce Mac"
             )
         }
 
@@ -306,10 +306,10 @@
         }
 
         func testDurationLabelMakesSubMinuteUsageExplicit() {
-            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 0), "0m")
-            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 1), "<1m")
-            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 59.9), "<1m")
-            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 60), "1m")
+            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 0), "0\u{00A0}min")
+            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 1), "<\u{00A0}1\u{00A0}min")
+            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 59.9), "<\u{00A0}1\u{00A0}min")
+            XCTAssertEqual(OverviewUsageProjection.durationLabel(seconds: 60), "1\u{00A0}min")
         }
 
         func testUnifiedBreakdownReplacesBrowsersWithSitesAndReconcilesTotal() throws {

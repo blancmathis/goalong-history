@@ -28,6 +28,7 @@
         static let rollingReleasePageURL = URL(
             string: "https://github.com/blancmathis/goalong-history/releases/tag/\(rollingReleaseTag)"
         )!
+        static let guideURL = URL(string: "https://github.com/blancmathis/goalong-history/blob/main/GUIDE_FR.md")!
         static var installationPath: String {
             Bundle.main.bundleURL.path
         }

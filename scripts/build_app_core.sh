@@ -205,13 +205,18 @@ if [[ -f "$ICON_SOURCE" ]]; then
   iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/LocalHistory.icns"
 fi
 
+# The interface is written in French. Declaring it as the only localization makes
+# macOS format dates and numbers in French and localize standard panels (Save,
+# Share, alerts) to match, while keeping the user's region conventions.
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
+    <string>fr</string>
+    <key>CFBundleLocalizations</key>
+    <array><string>fr</string></array>
     <key>CFBundleDisplayName</key>
     <string>$APP_NAME</string>
     <key>CFBundleExecutable</key>
@@ -249,9 +254,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>LSUIElement</key>
     <true/>
     <key>NSAccessibilityUsageDescription</key>
-    <string>Goalong History uses Accessibility only to read foreground app and window context for Computer History. Screen Time is read directly from Apple-owned files in the background; Goalong never opens or controls System Settings or sends input.</string>
+    <string>Goalong History utilise l’accessibilité uniquement pour reconnaître l’app et la fenêtre au premier plan dans votre historique. Le Temps d’écran est lu directement dans les fichiers d’Apple, en arrière-plan ; Goalong ne pilote jamais Réglages Système et n’envoie aucune saisie.</string>
     <key>NSInputMonitoringUsageDescription</key>
-    <string>Goalong History uses Input Monitoring to count clicks, scrolling, shortcuts, navigation keys, and typing duration. It never stores typed characters, passwords, or clipboard contents.</string>
+    <string>Goalong History utilise la surveillance de l’entrée pour compter les clics, défilements, raccourcis et la durée de frappe. Il ne conserve jamais les caractères tapés, les mots de passe ni le presse-papiers.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

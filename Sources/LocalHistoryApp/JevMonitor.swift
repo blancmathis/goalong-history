@@ -36,6 +36,9 @@ struct JevRecentCheck: Identifiable {
     private var previousUptime = ProcessInfo.processInfo.systemUptime
     private var previousWall = Date()
     private var circuitOpen = false
+    /// Why monitoring stopped calling the service; shown instead of a generic message.
+    private var circuitReason: JevError?
+    private var consecutiveFailures = 0
     @Published private(set) var breakStorageInvalid = false
     private var sessionAvailable = true
     private var retryAfter = Date.distantPast
@@ -107,7 +110,7 @@ struct JevRecentCheck: Identifiable {
         if !enabled { return "Surveillance désactivée" }
         if let issue = JevWorkContextStore.shared.error { return issue }
         if !hasKey { return "Configurez la connexion API pour activer la surveillance" }
-        if circuitOpen { return "Surveillance suspendue après erreur : vérifiez la connexion" }
+        if circuitOpen { return circuitReason?.errorDescription ?? "Surveillance suspendue après erreur : vérifiez la connexion" }
         if GoalongGlobalPause.isPaused() { return "Arrêt de confidentialité : historique et surveillance suspendus" }
         if !GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) { return "Activez l’historique de ce Mac pour utiliser la surveillance" }
         if BackgroundContinuityPreferences().manuallyPaused { return "Enregistrement en pause : aucune analyse temps réel" }
@@ -131,7 +134,7 @@ struct JevRecentCheck: Identifiable {
         guard Self.validKey(key) else { error = "La clé TypeSafe doit être une valeur ASCII sans espace (8 à 1 024 caractères)."; return }
         do {
             try JevLocalFiles.write(Data(key.utf8), name: "api-key")
-            apiKey = key; hasKey = true; circuitOpen = false; error = nil
+            apiKey = key; hasKey = true; circuitOpen = false; circuitReason = nil; consecutiveFailures = 0; error = nil
             reconfigure()
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
@@ -173,7 +176,10 @@ struct JevRecentCheck: Identifiable {
                 breakStorageInvalid = true; self.error = error.localizedDescription }
         reconfigure()
     }
-    func retry() { circuitOpen = false; retryAfter = .distantPast; error = nil; reconfigure() }
+    func retry() {
+        circuitOpen = false; circuitReason = nil; consecutiveFailures = 0
+        retryAfter = .distantPast; error = nil; reconfigure()
+    }
     func dismissWarning() {
         streak.dismissWarning()
         JevWarningPanel.shared.dismissPopup()
@@ -218,9 +224,9 @@ struct JevRecentCheck: Identifiable {
         let end = boundary.addingTimeInterval(15)
         guard !clockJump, now >= end, now.timeIntervalSince(end) < 3 else { reconfigure(); return }
         let start = boundary; boundary = end
-        guard request == nil else { SupportDiagnostics.shared.record(.monitorCycle, component: .monitoring, values: [.state: .state(.timedOut)]); cancelPending(); status = "Analyse trop lente : série remise à zéro"; return }
+        guard request == nil else { SupportDiagnostics.shared.record(.monitorCycle, component: .monitoring, level: .warning, values: [.state: .state(.timedOut)]); cancelPending(); status = "Analyse trop lente : série remise à zéro"; return }
         guard let window = inbox.take(start: start, end: end), window.hasActivity else {
-            SupportDiagnostics.shared.record(.monitorCycle, component: .monitoring, values: [.state: .state(.skipped)]); resetInterventions(); status = "Aucune nouvelle activité observable · aucun appel"; return
+            SupportDiagnostics.shared.recordIfChanged(.monitorCycle, component: .monitoring, values: [.state: .state(.skipped)]); resetInterventions(); status = "Aucune nouvelle activité observable · aucun appel"; return
         }
         guard now >= retryAfter else { resetInterventions(); return }
         let body: Data
@@ -252,7 +258,8 @@ struct JevRecentCheck: Identifiable {
                     self.resetInterventions(); return
                 }
                 let verdict = JevWorkContextStore.reviewedVerdict(decision.verdict, work: workStore.context, window: window)
-                SupportDiagnostics.shared.record(.monitorCycle, component: .monitoring, values: [
+                self.consecutiveFailures = 0
+                SupportDiagnostics.shared.recordIfChanged(.monitorCycle, component: .monitoring, values: [
                     .state: .state(.ready), .success: .flag(true)])
                 self.lastInputTokens = decision.inputTokens
                 self.recentChecks.insert(JevRecentCheck(start: start, end: end, verdict: verdict,
@@ -277,13 +284,20 @@ struct JevRecentCheck: Identifiable {
                 self.request = nil; self.resetInterventions()
                 self.error = (error as? JevError)?.errorDescription ?? "Connexion de surveillance indisponible. Aucun classement inventé."
                 self.status = self.error ?? "Service de surveillance indisponible"
+                self.consecutiveFailures += 1
+                // 30 s, 1 min, 2 min… up to 10 min: a failing service is not called every cycle.
+                let backoff = min(600, 30 * pow(2, Double(min(self.consecutiveFailures - 1, 5))))
                 if let error = error as? JevError {
                     switch error {
-                    case .authentication, .budget: self.circuitOpen = true; self.reconfigure()
-                    case .rateLimited(let seconds): self.retryAfter = Date().addingTimeInterval(Double(seconds))
-                    default: self.retryAfter = Date().addingTimeInterval(30)
+                    case .authentication, .budget, .paymentRequired:
+                        self.circuitOpen = true; self.circuitReason = error
+                        SupportDiagnostics.shared.record(.monitorPaused, component: .monitoring, level: .warning,
+                            values: [.state: .state(error == .paymentRequired ? .paymentRequired : error == .authentication ? .authentication : .blocked)])
+                        self.reconfigure()
+                    case .rateLimited(let seconds): self.retryAfter = Date().addingTimeInterval(max(Double(seconds), backoff))
+                    default: self.retryAfter = Date().addingTimeInterval(backoff)
                     }
-                } else { self.retryAfter = Date().addingTimeInterval(30) }
+                } else { self.retryAfter = Date().addingTimeInterval(backoff) }
             }
         }
     }
