@@ -311,8 +311,8 @@
                     Image(systemName: "chevron.left").frame(width: 24, height: 24)
                 }
                 .buttonStyle(.borderless)
-                .help("Previous day")
-                .accessibilityLabel("Previous day")
+                .help("Jour précédent")
+                .accessibilityLabel("Jour précédent")
 
                 Button {
                     calendarDate = date
@@ -324,16 +324,16 @@
                         .padding(.horizontal, 4)
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Choose day")
+                .accessibilityLabel("Choisir un jour")
                 .accessibilityValue(date.formatted(date: .complete, time: .omitted))
-                .help("Choose a day from the calendar")
+                .help("Choisir un jour dans le calendrier")
                 .popover(isPresented: $showsCalendar, arrowEdge: .bottom) {
                     VStack(alignment: .trailing, spacing: 12) {
-                        DatePicker("Day", selection: $calendarDate, in: ...Date(), displayedComponents: .date)
+                        DatePicker("Jour", selection: $calendarDate, in: ...Date(), displayedComponents: .date)
                             .labelsHidden()
                             .datePickerStyle(.graphical)
                             .fixedSize()
-                        Button("Show day") {
+                        Button("Afficher le jour") {
                             onChange(Calendar.current.startOfDay(for: calendarDate))
                             showsCalendar = false
                         }
@@ -344,12 +344,12 @@
                 }
 
                 if !Calendar.current.isDateInToday(date) {
-                    Button("Today") {
+                    Button("Aujourd’hui") {
                         onChange(Date())
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
-                    .help("Return to today")
+                    .help("Revenir à aujourd’hui")
                 }
 
                 Button {
@@ -361,8 +361,8 @@
                 }
                 .buttonStyle(.borderless)
                 .disabled(Calendar.current.isDateInToday(date))
-                .help("Next day")
-                .accessibilityLabel("Next day")
+                .help("Jour suivant")
+                .accessibilityLabel("Jour suivant")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -410,8 +410,17 @@
                 .background(tint.opacity(0.11), in: Capsule())
         }
 
+        private static let frenchCategories: [String: String] = [
+            "software_development": "Développement", "web": "Web", "research": "Recherche",
+            "media": "Médias", "document_productivity": "Documents", "design": "Design",
+            "communication": "Communication", "other": "Autre", "private_browsing": "Navigation privée",
+            "secure_input": "Saisie sécurisée", "excluded": "Exclu", "paused": "En pause",
+            "session_unavailable": "Session inactive", "accessibility_unavailable": "Non accessible",
+        ]
+
         static func prettyCategory(_ raw: String) -> String {
-            raw
+            if let french = frenchCategories[raw] { return french }
+            return raw
                 .split(separator: "_")
                 .map { word in
                     let lower = word.lowercased()
@@ -439,6 +448,19 @@
     }
 
     extension RuntimePresentation {
+        /// True when the user needs to act or should know that nothing is being recorded.
+        var needsAttention: Bool {
+            switch state {
+            case .permissionsMissing, .inputTapUnavailable, .storageUnavailable: return true
+            default: return false
+            }
+        }
+
+        var storageFailure: CaptureStorageFailureKind? {
+            if case .storageUnavailable(let kind) = state { return kind }
+            return nil
+        }
+
         private var isBackgroundPrivacyRule: Bool {
             switch state {
             case .suppressed(.privateBrowserWindow), .suppressed(.excludedApplication),
@@ -453,12 +475,14 @@
             if isBackgroundPrivacyRule { return "Suivi local actif" }
             switch state {
             case .recording: return "Suivi local actif"
-            case .paused: return "Enregistrement en pause"
+            case .paused: return "Suivi en pause"
             case .permissionsMissing: return "Accès à configurer"
             case .inputTapUnavailable: return "Interactions indisponibles"
+            case .storageUnavailable(.diskFull): return "Disque plein"
+            case .storageUnavailable: return "Suivi interrompu"
             case .suppressed(let reason):
                 switch reason {
-                case .manualPause: return "Enregistrement en pause"
+                case .manualPause: return "Suivi en pause"
                 case .sessionUnavailable: return "Session Mac inactive"
                 case .accessibilityUnavailable: return "Navigateur non accessible"
                 case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput:
@@ -481,6 +505,12 @@
                 return "Vérifiez les accès macOS nécessaires aux enregistrements choisis."
             case .inputTapUnavailable:
                 return "Les interactions clavier et souris ne sont pas encore disponibles."
+            case .storageUnavailable(.diskFull):
+                return "Le disque est plein : rien n’est enregistré pour l’instant. Libérez de l’espace, l’enregistrement reprendra tout seul et la coupure sera signalée dans l’historique."
+            case .storageUnavailable(.permissionDenied):
+                return "macOS refuse l’écriture dans le dossier d’historique. Goalong réessaie automatiquement ; envoyez un diagnostic si cela persiste."
+            case .storageUnavailable:
+                return "L’historique ne peut pas être écrit pour l’instant. Goalong réessaie automatiquement ; envoyez un diagnostic si cela persiste."
             case .suppressed(let reason):
                 switch reason {
                 case .manualPause:
@@ -488,9 +518,9 @@
                 case .sessionUnavailable:
                     return "Le Mac est verrouillé, en veille ou indisponible."
                 case .accessibilityUnavailable:
-                    return "Goalong cannot safely inspect this browser window, so it records no details."
+                    return "Goalong ne peut pas lire cette fenêtre de navigateur en toute sécurité : aucun détail n’est enregistré."
                 case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput:
-                    return "Goalong keeps recording eligible activity while your privacy rules run in the background."
+                    return "Goalong continue d’enregistrer l’activité autorisée pendant que vos règles de confidentialité s’appliquent."
                 }
             }
         }
@@ -502,6 +532,7 @@
             case .paused: return "pause.circle.fill"
             case .permissionsMissing: return "exclamationmark.triangle.fill"
             case .inputTapUnavailable: return "keyboard.badge.ellipsis"
+            case .storageUnavailable: return "externaldrive.badge.exclamationmark"
             case .suppressed: return "eye.slash.fill"
             }
         }
@@ -511,7 +542,7 @@
             switch state {
             case .recording: return LHTheme.success
             case .paused: return LHTheme.warning
-            case .permissionsMissing, .inputTapUnavailable: return LHTheme.danger
+            case .permissionsMissing, .inputTapUnavailable, .storageUnavailable: return LHTheme.danger
             case .suppressed: return LHTheme.privateTint
             }
         }
@@ -520,7 +551,7 @@
     enum DashboardFormatters {
         static let dayTitle: DateFormatter = {
             let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE, MMMM d"
+            formatter.setLocalizedDateFormatFromTemplate("EEEEMMMMd")
             return formatter
         }()
 
@@ -543,13 +574,14 @@
             return formatter
         }()
 
+        /// French notation with non-breaking spaces: « 42 min », « 2 h », « 5 h 07 ».
         static func duration(minutes: Int) -> String {
-            guard minutes > 0 else { return "0m" }
+            guard minutes > 0 else { return "0\u{00A0}min" }
             let hours = minutes / 60
             let remainder = minutes % 60
-            if hours == 0 { return "\(remainder)m" }
-            if remainder == 0 { return "\(hours)h" }
-            return "\(hours)h \(remainder)m"
+            if hours == 0 { return "\(remainder)\u{00A0}min" }
+            if remainder == 0 { return "\(hours)\u{00A0}h" }
+            return "\(hours)\u{00A0}h\u{00A0}" + String(format: "%02d", remainder)
         }
 
         static func duration(seconds: TimeInterval) -> String {

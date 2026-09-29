@@ -38,9 +38,9 @@
             case .enabled:
                 return "Starts automatically"
             case .requiresApproval:
-                return "Approval required"
+                return "Autorisation requise"
             case .disabled:
-                return "Starts only when opened"
+                return "Démarre seulement à l’ouverture"
             case .unavailable:
                 return "Status unavailable"
             }
@@ -49,13 +49,13 @@
         var statusDetail: String {
             switch state {
             case .enabled:
-                return "\(ProductIdentity.displayName) will be ready after each Mac login."
+                return "\(ProductIdentity.displayName) sera prêt après chaque ouverture de session."
             case .requiresApproval:
-                return "Allow \(ProductIdentity.displayName) in System Settings → General → Login Items."
+                return "Autorisez \(ProductIdentity.displayName) dans Réglages Système → Général → Ouverture."
             case .disabled:
-                return "You can still open \(ProductIdentity.displayName) manually at any time."
+                return "Vous pouvez toujours ouvrir \(ProductIdentity.displayName) vous-même à tout moment."
             case .unavailable:
-                return "macOS could not read the login-item status."
+                return "macOS n’a pas pu lire l’état d’ouverture à la connexion."
             }
         }
 
@@ -124,7 +124,7 @@
         @discardableResult
         func setUserPreference(_ enabled: Bool, surface: GoalongConsentSurface) -> Bool {
             guard GoalongCapabilityConsentStore.shared.set(.launchAtLogin, enabled: enabled, surface: surface) else {
-                message = "Your startup preference could not be saved. Please try again."
+                message = "Votre préférence de démarrage n’a pas pu être enregistrée. Réessayez."
                 return false
             }
             // Save explicit opt-outs even when the previous consent was already off.

@@ -131,44 +131,219 @@ struct SupportCrash: Codable {
     }
 }
 
+/// Sizes of Goalong's own top-level stores (fixed names, never user paths) and the
+/// free space of their volume. A full disk is the most common cause of silent gaps.
+struct SupportStorage: Codable {
+    let freeMB: Int?
+    let lowSpace: Bool
+    let storesMB: [String: Int]
+    let eventDayFiles: Int
+    let enumerationTruncated: Bool
+
+    static let knownStores = [
+        "events", "seals", "receipts", "semantic", "analysis", "memories", "computer-history",
+        "apple-screen-time", "agent-activity-v2", "chatgpt", "shares", "app-backups", "setup-backups",
+        "SupportDiagnostics", "jev",
+    ]
+
+    static func current(root: URL = AppPaths.applicationSupportDirectory, fileBudget: Int = 60_000) -> SupportStorage {
+        let free = StorageHealth.availableBytes(at: root)
+        var stores: [String: Int] = [:]
+        var remaining = fileBudget
+        var truncated = false
+        for name in knownStores {
+            let url = root.appendingPathComponent(name, isDirectory: true)
+            var status = stat()
+            guard lstat(url.path, &status) == 0, status.st_mode & S_IFMT == S_IFDIR else { continue }
+            var bytes: Int64 = 0
+            if let enumerator = FileManager.default.enumerator(at: url,
+                includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isSymbolicLinkKey], options: [], errorHandler: { _, _ in true }) {
+                for case let file as URL in enumerator {
+                    remaining -= 1
+                    if remaining < 0 { truncated = true; break }
+                    let values = try? file.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .isSymbolicLinkKey])
+                    if values?.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+                    bytes += Int64(values?.totalFileAllocatedSize ?? 0)
+                }
+            }
+            stores[name] = Int((bytes + 1_048_575) / 1_048_576)
+            if truncated { break }
+        }
+        let eventFiles = (try? FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("events").path))?
+            .filter { $0.hasSuffix(".jsonl") }.count ?? 0
+        return SupportStorage(freeMB: free.map { Int($0 / 1_048_576) }, lowSpace: StorageHealth.isLow(free),
+                              storesMB: stores, eventDayFiles: eventFiles, enumerationTruncated: truncated)
+    }
+}
+
+/// A plain-language problem detected automatically. `code` is a fixed identifier for
+/// tooling; title and detail are French templates filled with numbers and codes only.
+struct SupportFinding: Codable, Equatable {
+    enum Code: String, Codable {
+        case recordingInterrupted, recordingWasInterrupted, lowDiskSpace, uncleanExit, crashes
+        case updateFailed, monitoringPaymentRequired, monitoringAuthentication, monitoringUnavailable
+        case repeatedError, permissionMissing, interfaceFroze, diagnosticsDisabled, noProblemDetected
+    }
+    let severity: SupportLevel
+    let code: Code
+    let title: String
+    let detail: String
+}
+
+enum SupportFindings {
+    static func detect(live: [String: SupportValue], timeline: [SupportRecord], storage: SupportStorage?,
+                       crashes: [SupportCrash], diagnosticsEnabled: Bool) -> [SupportFinding] {
+        var findings: [SupportFinding] = []
+        func flag(_ key: SupportKey) -> Bool { if case .flag(let v)? = live[key.rawValue] { return v }; return false }
+        func count(_ values: [String: SupportValue], _ key: SupportKey) -> Int? {
+            if case .count(let v)? = values[key.rawValue] { return v }; return nil
+        }
+        func state(_ values: [String: SupportValue], _ key: SupportKey) -> SupportState? {
+            if case .state(let v)? = values[key.rawValue] { return v }; return nil
+        }
+        func symbol(_ values: [String: SupportValue], _ key: SupportKey) -> String? {
+            if case .symbol(let v)? = values[key.rawValue] { return v }; return nil
+        }
+
+        if flag(.storageInterrupted) {
+            let cause = state(live, .storageFailure) == .diskFull ? "le disque est plein" : "le dossier d’historique refuse l’écriture"
+            findings.append(SupportFinding(severity: .error, code: .recordingInterrupted,
+                title: "L’enregistrement est interrompu",
+                detail: "Goalong ne peut plus écrire son historique : \(cause). Il reprendra automatiquement dès que l’écriture sera de nouveau possible."))
+        }
+        let interruptions = timeline.filter { $0.event == .storageInterrupted }
+        if !interruptions.isEmpty {
+            let lost = timeline.filter { $0.event == .storageRecovered }.compactMap { count($0.values, .lostEvents) }.reduce(0, +)
+            let diskFull = interruptions.contains { state($0.values, .state) == .diskFull }
+            findings.append(SupportFinding(severity: .warning, code: .recordingWasInterrupted,
+                title: "Enregistrement interrompu \(interruptions.count) fois",
+                detail: (diskFull ? "Au moins une coupure venait d’un disque plein. " : "")
+                    + "\(lost) observation(s) n’ont pas pu être enregistrées ; chaque coupure est marquée dans l’historique."))
+        }
+        if let storage, storage.lowSpace, let free = storage.freeMB {
+            findings.append(SupportFinding(severity: .warning, code: .lowDiskSpace,
+                title: "Espace disque faible",
+                detail: "Il reste \(free) Mo sur le disque. Sous environ 1 Go, macOS peut refuser les écritures de Goalong."))
+        }
+        let unclean = timeline.filter { $0.event == .appStarted && $0.values[SupportKey.previousExitUnclean.rawValue] == .flag(true) }.count
+        if unclean > 0 {
+            findings.append(SupportFinding(severity: .warning, code: .uncleanExit,
+                title: "Arrêt inattendu \(unclean) fois",
+                detail: "Goalong ne s’est pas fermé normalement avant un lancement : plantage, arrêt forcé ou extinction du Mac."))
+        }
+        if !crashes.isEmpty {
+            findings.append(SupportFinding(severity: .error, code: .crashes,
+                title: "\(crashes.count) rapport(s) de plantage récent(s)",
+                detail: "Types : " + Set(crashes.map(\.type.rawValue)).sorted().joined(separator: ", ") + "."))
+        }
+        let updateFailures = timeline.filter { $0.component == .updates && $0.event == .operationFailed }
+        if let last = updateFailures.last {
+            findings.append(SupportFinding(severity: .warning, code: .updateFailed,
+                title: "Échec de mise à jour (\(updateFailures.count))",
+                detail: "Dernier code : \(symbol(last.values, .errorType) ?? "erreur") \(count(last.values, .errorCode) ?? 0)."))
+        }
+        let statuses = timeline.filter { $0.component == .monitoring && $0.event == .requestFinished }
+            .compactMap { count($0.values, .httpStatus) }
+        if statuses.contains(402) {
+            findings.append(SupportFinding(severity: .warning, code: .monitoringPaymentRequired,
+                title: "Surveillance temps réel : crédit épuisé",
+                detail: "Le service d’analyse a répondu 402 (paiement requis) : la surveillance s’est mise en pause. Rechargez le compte TypeSafe puis cliquez sur Réessayer."))
+        } else if statuses.contains(where: { $0 == 401 || $0 == 403 }) {
+            findings.append(SupportFinding(severity: .warning, code: .monitoringAuthentication,
+                title: "Surveillance temps réel : clé refusée", detail: "Le service d’analyse refuse la clé configurée."))
+        } else if statuses.contains(where: { $0 >= 500 }) {
+            findings.append(SupportFinding(severity: .info, code: .monitoringUnavailable,
+                title: "Surveillance temps réel : service indisponible",
+                detail: "\(statuses.filter { $0 >= 500 }.count) réponse(s) serveur en erreur."))
+        }
+        var repeated: [String: Int] = [:]
+        for record in timeline where record.level == .error {
+            let label = [symbol(record.values, .errorType)?.split(separator: ".").last.map(String.init),
+                         symbol(record.values, .errorCase)].compactMap { $0 }.joined(separator: ".")
+            let key = "\(record.component.rawValue) · " + (label.isEmpty ? "\(record.event.rawValue) \(count(record.values, .errorCode) ?? 0)" : label)
+            let extra = record.event == .repeatSummary ? (count(record.values, .suppressedCount) ?? 0) - 1 : 0
+            repeated[key, default: 0] += 1 + max(0, extra)
+        }
+        for (label, total) in repeated.sorted(by: { $0.value > $1.value }).prefix(3) where total >= 10 {
+            findings.append(SupportFinding(severity: .warning, code: .repeatedError,
+                title: "Erreur répétée \(total) fois", detail: label))
+        }
+        if let current = state(live, .state), [.permissionRequired, .permissionAppearsEnabledButStaleForBuild,
+                                                 .accessibilityContextUnavailable].contains(current), flag(.localSource) {
+            findings.append(SupportFinding(severity: .warning, code: .permissionMissing,
+                title: "Autorisation macOS à vérifier", detail: "État de capture : \(current.rawValue)."))
+        }
+        let froze = timeline.filter { $0.event == .mainThreadUnresponsive }.count
+        if froze > 0 {
+            findings.append(SupportFinding(severity: .warning, code: .interfaceFroze,
+                title: "L’interface a cessé de répondre \(froze) fois", detail: "Blocage de plus de 30 secondes détecté."))
+        }
+        if !diagnosticsEnabled {
+            findings.append(SupportFinding(severity: .info, code: .diagnosticsDisabled,
+                title: "Journal technique désactivé", detail: "Le rapport ne contient que l’état actuel."))
+        }
+        if findings.isEmpty {
+            findings.append(SupportFinding(severity: .info, code: .noProblemDetected,
+                title: "Aucun problème détecté automatiquement",
+                detail: "Décrivez ce que vous avez fait et ce que vous attendiez dans votre message."))
+        }
+        return findings
+    }
+}
+
 struct SupportReport: Codable {
     let schema: Int
     let createdAt: Date
     let reportID: UUID
+    let summary: [SupportFinding]
     let privacy: [String]
     let limitations: [String]
     let build: SupportBuild
     let environment: SupportEnvironment
+    let storage: SupportStorage?
     let current: [String: SupportValue]
     let diagnosticsEnabled: Bool
     let droppedEvents: Int
     let rejectedRecords: Int
     let writeFailures: Int
+    let suppressedRepeats: Int
     let diskSnapshotIncomplete: Bool
     let crashSummaries: [SupportCrash]
     let timeline: [SupportRecord]
 
-    static func build(journal: SupportDiagnostics = .shared, live: [SupportKey: SupportValue], previousWorkingBuild: CaptureBuildIdentity? = nil, crashLoader: () -> [SupportCrash] = { SupportCrash.recent() }) -> Self {
+    static func build(journal: SupportDiagnostics = .shared, live: [SupportKey: SupportValue], previousWorkingBuild: CaptureBuildIdentity? = nil,
+                      crashLoader: () -> [SupportCrash] = { SupportCrash.recent() },
+                      storageLoader: () -> SupportStorage? = { SupportStorage.current() }) -> Self {
+        journal.flushRepeatSummaries(force: true)
+        journal.flush(timeout: 1)
         let snapshot = journal.snapshot()
-        return Self(schema: 1, createdAt: Date(), reportID: UUID(), privacy: [
-            "Rapport technique local. Aucun envoi automatique.",
+        let current = Dictionary(uniqueKeysWithValues: live.map { ($0.key.rawValue, $0.value) })
+        let crashes = crashLoader()
+        let storage = storageLoader()
+        return Self(schema: 2, createdAt: Date(), reportID: UUID(),
+        summary: SupportFindings.detect(live: current, timeline: snapshot.records, storage: storage,
+                                        crashes: crashes, diagnosticsEnabled: snapshot.enabled),
+        privacy: [
+            "Rapport technique local. Aucun envoi automatique : vous choisissez à qui l’envoyer.",
             "Exclus : historique d’activité, noms d’apps tierces, URLs, titres, texte visible ou saisi, conversations, captures d’écran, audio, presse-papiers.",
             "Exclus : noms d’utilisateur, chemins personnels, e-mails, clés, jetons, cookies, identifiants de compte ou d’appareil, configuration brute.",
             "Les anciens diagnostics.log, bases de données, journaux système et rapports de crash bruts ne sont jamais joints.",
-            "Inclus : horaires techniques, compteurs, états, version et signature de Goalong, version de macOS, erreurs numériques, emplacements dans le code et résumés structurels de crash."
+            "Inclus : horaires techniques, compteurs, états, version et signature de Goalong, version de macOS, codes d’erreur numériques avec leur type et leur cas (identifiants du code source de Goalong), emplacements dans le code, espace disque libre, taille des dossiers internes de Goalong, sources activées (oui/non) et résumés structurels de crash."
         ], limitations: [
-            "Au maximum sept dates UTC, deux segments de 256 Kio par jour. La rotation peut raccourcir la période disponible.",
+            "Au maximum sept dates UTC. Par jour : deux segments de 256 Kio pour les événements courants et deux de 128 Kio réservés aux avertissements, erreurs et changements d’état.",
+            "Les répétitions identiques sont regroupées : trois occurrences par tranche de dix minutes, puis un résumé repeatSummary avec le nombre exact.",
             "Un arrêt sans fermeture propre peut être un crash, une fermeture forcée ou une extinction ; ce signal ne tranche pas entre ces causes.",
             "Un événement legacyLocation donne l’emplacement du code, jamais le texte potentiellement privé de l’ancien message.",
             "Les résumés de crash couvrent jusqu’à cinq rapports IPS récents de Goalong accessibles sans permission supplémentaire. Une liste vide ne prouve pas l’absence de crash.",
             "Si le disque échoue ou reste bloqué, diskSnapshotIncomplete est vrai et le rapport conserve les derniers événements disponibles en mémoire (128 au maximum). Un arrêt ou un export n’attend pas indéfiniment le journal.",
             "Les délais de réponse et arrêts anormaux sont des indices, pas une preuve de leur cause. La veille peut retarder les minuteries.",
-            "Ce rapport aide à diagnostiquer les pannes ; il ne garantit pas de reproduire tous les bugs.",
+            "Le résumé est une détection automatique ; il ne remplace pas la description du problème.",
             "previousRequirementValidation compare la signature actuelle à l’ancienne identité ; ce résultat ne prouve pas qu’un accès a été accordé par macOS."
-        ], build: .current(previousWorkingBuild: previousWorkingBuild), environment: .current(),
-        current: Dictionary(uniqueKeysWithValues: live.map { ($0.key.rawValue, $0.value) }),
+        ], build: .current(previousWorkingBuild: previousWorkingBuild), environment: .current(), storage: storage,
+        current: current,
         diagnosticsEnabled: snapshot.enabled, droppedEvents: snapshot.dropped, rejectedRecords: snapshot.rejected,
-        writeFailures: snapshot.writeFailures, diskSnapshotIncomplete: snapshot.diskSnapshotIncomplete, crashSummaries: crashLoader(), timeline: snapshot.records)
+        writeFailures: snapshot.writeFailures, suppressedRepeats: snapshot.suppressedRepeats,
+        diskSnapshotIncomplete: snapshot.diskSnapshotIncomplete, crashSummaries: crashes, timeline: snapshot.records)
     }
     func data() throws -> Data {
         let encoder = SupportDiagnostics.encoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -201,17 +376,44 @@ struct SupportReport: Codable {
         values[.liveSnapshotAvailable] = .flag(provider != nil)
         values[.lowPower] = .flag(ProcessInfo.processInfo.isLowPowerModeEnabled)
         values[.thermalState] = .count(ProcessInfo.processInfo.thermalState.rawValue)
-        values[.updateConfigured] = .flag(SoftwareUpdateManager.shared.isConfigured)
-        values[.updateChecking] = .flag(SoftwareUpdateManager.shared.isChecking)
+        let updates = SoftwareUpdateManager.shared
+        values[.updateConfigured] = .flag(updates.isConfigured)
+        values[.updateChecking] = .flag(updates.isChecking)
+        values[.automaticChecks] = .flag(updates.automaticallyChecksForUpdates)
+        values[.updateResult] = .state(updates.lastCheckResult)
+        if let available = updates.availableVersion { values[.availableVersion] = .symbol(available) }
+        if let free = StorageHealth.availableBytes() { values[.freeSpaceMB] = .count(Int(free / 1_048_576)) }
+        values[.monitoringEnabled] = .flag(GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring))
+        values[.websiteAutoSend] = .flag(GoalongWebsiteAutoSender.shared.enabled)
+        let connections = AppPaths.applicationSupportDirectory.appendingPathComponent("website-connections").path
+        values[.websiteLinked] = .flag(((try? FileManager.default.contentsOfDirectory(atPath: connections)) ?? [])
+            .contains { !$0.hasPrefix(".") })
         return values
     }
     private func heartbeat() {
         let now = ProcessInfo.processInfo.systemUptime
         let delay = max(0, now - lastTick - 60); lastTick = now
         var values = snapshot(); values[.elapsedMS] = .number(delay * 1000)
-        SupportDiagnostics.shared.record(delay > 15 ? .mainThreadDelayed : .heartbeat,
-            component: .app, level: delay > 15 ? .warning : .info, values: values)
         // A delayed timer is evidence only; sleep and App Nap can also cause this.
+        if delay > 15 {
+            SupportDiagnostics.shared.record(.mainThreadDelayed, component: .app, level: .warning, values: values)
+        } else {
+            SupportDiagnostics.shared.recordIfChanged(.heartbeat, component: .app, values: values)
+        }
+        SupportDiagnostics.shared.flushRepeatSummaries()
+        checkDiskSpace(values[.freeSpaceMB])
+    }
+
+    private var lowSpaceReported = false
+    /// Warns once per crossing, before the journal starts refusing writes.
+    private func checkDiskSpace(_ value: SupportValue?) {
+        guard case .count(let freeMB)? = value else { return }
+        let low = Int64(freeMB) * 1_048_576 < StorageHealth.lowSpaceThreshold
+        if low && !lowSpaceReported {
+            SupportDiagnostics.shared.record(.lowDiskSpace, component: .storage, level: .warning,
+                values: [.freeSpaceMB: .count(freeMB)])
+        }
+        lowSpaceReported = low
     }
     func stop() { responsiveness.stop(); timer?.invalidate(); timer = nil; SupportDiagnostics.shared.stop() }
 }

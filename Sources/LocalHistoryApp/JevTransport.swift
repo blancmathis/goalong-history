@@ -69,7 +69,7 @@ final class JevTransport: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         task?.cancel(); session?.invalidateAndCancel()
         switch result {
         case .success(let data):
-            SupportDiagnostics.shared.record(.requestFinished, component: .monitoring, values: [
+            SupportDiagnostics.shared.recordIfChanged(.requestFinished, component: .monitoring, values: [
                 .success: .flag(true), .byteCount: .count(data.count),
                 .durationMS: .number((ProcessInfo.processInfo.systemUptime - startedAt) * 1000)])
         case .failure(let error): SupportDiagnostics.shared.failure(error, component: .monitoring)
@@ -87,12 +87,18 @@ final class JevTransport: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         guard let response = response as? HTTPURLResponse, response.url == Self.endpoint else {
             completionHandler(.cancel); finish(.failure(JevError.invalidResponse)); return
         }
-        SupportDiagnostics.shared.record(.requestFinished, component: .monitoring,
-            values: [.httpStatus: .count(response.statusCode)])
+        if response.statusCode == 200 {
+            SupportDiagnostics.shared.recordIfChanged(.requestFinished, component: .monitoring,
+                values: [.httpStatus: .count(response.statusCode)])
+        } else {
+            SupportDiagnostics.shared.record(.requestFinished, component: .monitoring, level: .warning,
+                values: [.httpStatus: .count(response.statusCode)])
+        }
         guard response.statusCode == 200 else {
             completionHandler(.cancel)
             switch response.statusCode {
             case 401, 403: finish(.failure(JevError.authentication))
+            case 402: finish(.failure(JevError.paymentRequired))
             case 429:
                 let value = response.value(forHTTPHeaderField: "Retry-After") ?? ""
                 let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")

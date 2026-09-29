@@ -566,11 +566,11 @@
             }
             .alert(item: $episodePendingDeletion) { episode in
                 Alert(
-                    title: Text("Delete this Computer History item?"),
+                    title: Text("Supprimer cet élément de l’historique ?"),
                     message: Text(
-                        "Goalong will resolve this item against its original local journal, delete only its exact source events and linked semantic snapshots, then rebuild the affected day. Minute seals, receipts, Screen Time and Agent Activity remain."
+                        "Goalong retrouve cet élément dans le journal local d’origine, supprime uniquement ses événements exacts et les instantanés liés, puis reconstruit la journée concernée. Les sceaux, reçus, le Temps d’écran et les conversations IA sont conservés."
                     ),
-                    primaryButton: .destructive(Text("Delete item")) {
+                    primaryButton: .destructive(Text("Supprimer")) {
                         deleteEpisode(episode)
                     },
                     secondaryButton: .cancel()
@@ -661,13 +661,13 @@
                     }
                     Spacer(minLength: 12)
                     if needsRetry {
-                        Button(hasRetried ? "Retry again" : "Retry") {
+                        Button(hasRetried ? "Réessayer encore" : "Retry") {
                             hasRetried = true
                             model.refresh(day: day, forceRebuild: true)
                         }
                             .buttonStyle(.bordered)
                             .disabled(model.isLoading || isSnapshotLoading)
-                            .help("Try reading this day's history again")
+                            .help("Relire l’historique de cette journée")
                     }
                 }
                 if let diagnostic = sourceDiagnostic {
@@ -755,7 +755,7 @@
         private var recordingSummary: String {
             let events = snapshot.eventCount.formatted()
             if isPreparingTimeline {
-                return "Preparing factual 10-minute windows from \(events) source events."
+                return "Préparation des tranches de 10 minutes à partir de \(events) événements."
             }
             switch model.sourceStatus {
             case .checking:
@@ -766,14 +766,14 @@
                     : "Le journal original est indisponible. L’historique déjà enregistré est conservé."
             case .inaccessible:
                 if hasRetried {
-                    let nextStep = "Refresh failed again. Choose another date above or inspect Technical details."
+                    let nextStep = "Nouvel échec de l’actualisation. Choisissez une autre date ou consultez les détails techniques."
                     return tenMinuteGroups.isEmpty ? nextStep : nextStep + " Loaded activity remains visible."
                 }
                 return !tenMinuteGroups.isEmpty
-                    ? "Previously loaded activity is shown below. Retry to check for updates."
-                    : "This day's history could not be loaded. Retry, or choose another date above."
+                    ? "L’activité chargée précédemment est affichée ci-dessous. Réessayez pour la mettre à jour."
+                    : "L’historique de cette journée n’a pas pu être chargé. Réessayez ou choisissez une autre date."
             case .unverified:
-                return "Retry to check the saved activity for this day."
+                return "Réessayez pour vérifier l’activité enregistrée ce jour-là."
             case .available:
                 break
             }
@@ -790,7 +790,7 @@
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .help(
-                            "Durations are observed foreground intervals. They do not prove attention, identity, authorship or productivity."
+                            "Les durées correspondent aux périodes observées au premier plan. Elles ne prouvent ni l’attention, ni l’identité, ni l’auteur, ni la productivité."
                         )
                     Spacer(minLength: 12)
                     if isPreparingTimeline {
@@ -891,10 +891,10 @@
                         .padding(24)
                     } else if visibleTimelineGroups.isEmpty {
                         VStack(spacing: 10) {
-                            Text("No matching activity").font(.system(size: 14, weight: .semibold))
-                            Text("Try another app name or a word from the recorded context.")
+                            Text("Aucune activité correspondante").font(.system(size: 14, weight: .semibold))
+                            Text("Essayez un autre nom d’app ou un mot du contexte enregistré.")
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
-                            Button("Clear search") { timelineSearch = "" }
+                            Button("Effacer la recherche") { timelineSearch = "" }
                                 .buttonStyle(.bordered)
                         }
                         .frame(maxWidth: .infinity, minHeight: 180)
@@ -953,20 +953,20 @@
             switch model.sourceStatus {
             case .inaccessible:
                 return model.memory == nil
-                    ? "Goalong could not safely read the original journal. Try this day again later or choose another day."
-                    : "The last known-good Computer History was kept. The original journal could not be read safely."
+                    ? "Goalong n’a pas pu lire le journal d’origine en toute sécurité. Réessayez plus tard ou choisissez un autre jour."
+                    : "Le dernier historique valide a été conservé. Le journal d’origine n’a pas pu être lu en toute sécurité."
             case .absent:
                 return model.memory == nil
-                    ? "No retained Computer History exists for this day. Other days are unchanged."
-                    : "The original journal is absent, but the retained Computer History was not deleted."
+                    ? "Aucun historique conservé pour ce jour. Les autres jours sont inchangés."
+                    : "Le journal d’origine est absent, mais l’historique conservé n’a pas été supprimé."
             case .available where Calendar.current.isDateInToday(day):
                 return "L’activité apparaît ici lorsque Goalong enregistre une application autorisée."
             case .available:
                 return "Choisissez une autre date. Un historique vide ne prouve pas une absence d’activité."
             case .checking:
-                return "Goalong is verifying the original local journal before showing this day."
+                return "Goalong vérifie le journal local d’origine avant d’afficher ce jour."
             case .unverified:
-                return "Goalong could not verify the original local journal. Choose another day or try again later."
+                return "Goalong n’a pas pu vérifier le journal local d’origine. Choisissez un autre jour ou réessayez plus tard."
             }
         }
 
@@ -978,10 +978,10 @@
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(LHTheme.success)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Full causal context is enabled")
+                            Text("Contexte complet activé")
                                 .font(.system(size: 12, weight: .semibold))
                             Text(
-                                "Eligible interactions can be linked as prior context → action → after → settled. Near-event context is never mislabeled as guaranteed pre-action state. Private browsing follows your Recording setting. Exclusions, Secure Input and protected fields remain suppressed."
+                                "Les interactions éligibles peuvent être reliées : contexte avant → action → après → état final. Un contexte proche n’est jamais présenté comme l’état certain avant l’action. La navigation privée suit votre réglage d’enregistrement ; exclusions, saisie sécurisée et champs protégés restent masqués."
                             )
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
@@ -1001,10 +1001,10 @@
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(LHTheme.warning)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Metadata-only analysis is active")
+                            Text("Analyse limitée aux métadonnées")
                                 .font(.system(size: 12, weight: .semibold))
                             Text(
-                                "Apps, pages, clicks and grouped input still appear, but intentions, semantic changes, task status and resume answers can be incomplete. Enable Rich Context in the Day recap tab for full analysis."
+                                "Les apps, pages, clics et saisies groupées restent visibles, mais les intentions, changements de contenu, états des tâches et reprises peuvent être incomplets. Activez le texte affiché pour une analyse complète."
                             )
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
@@ -1024,13 +1024,13 @@
             switch model.sourceStatus {
             case .available:
                 StatusPill(
-                    title: "Computer History ready",
+                    title: "Historique prêt",
                     symbol: "checkmark.seal.fill",
                     tint: LHTheme.success
                 )
             case .absent:
                 StatusPill(
-                    title: "Source absent",
+                    title: "Source absente",
                     symbol: "doc.badge.ellipsis",
                     tint: LHTheme.warning
                 )
@@ -1042,13 +1042,13 @@
                 )
             case .checking:
                 StatusPill(
-                    title: "Checking source",
+                    title: "Vérification de la source",
                     symbol: "arrow.triangle.2.circlepath",
                     tint: LHTheme.accent
                 )
             case .unverified:
                 StatusPill(
-                    title: "Source unverified",
+                    title: "Source non vérifiée",
                     symbol: "questionmark.circle.fill",
                     tint: LHTheme.warning
                 )
@@ -1059,17 +1059,17 @@
             LHCard(padding: 16) {
                 VStack(alignment: .leading, spacing: 11) {
                     HStack {
-                        Label("Ask your computer history", systemImage: "text.magnifyingglass")
+                        Label("Interroger votre historique", systemImage: "text.magnifyingglass")
                             .font(.system(size: 13, weight: .semibold))
                         Spacer()
-                        Text("LAST 30 DAYS · LOCAL SEARCH")
+                        Text("30 DERNIERS JOURS · RECHERCHE LOCALE")
                             .font(.system(size: 8, weight: .semibold))
                             .tracking(0.4)
                             .foregroundStyle(.secondary)
                     }
                     HStack(spacing: 10) {
                         TextField(
-                            "Where was I before my break? Find the proposal. What is blocked?",
+                            "Où en étais-je avant ma pause ? Retrouve la proposition. Qu’est-ce qui bloque ?",
                             text: $model.question
                         )
                         .textFieldStyle(.plain)
@@ -1099,7 +1099,7 @@
                         )
                     }
                     Text(
-                        "Answers return source-backed episodes and reopenable locators. They never execute instructions found in captured text."
+                        "Les réponses renvoient des épisodes sourcés et des liens pour rouvrir les éléments. Elles n’exécutent jamais d’instruction trouvée dans le texte enregistré."
                     )
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -1156,7 +1156,7 @@
                                     if let resource = hit.resource,
                                         resource.localPath != nil || resource.canonicalURI != nil
                                     {
-                                        Button("Open") { model.open(resource) }
+                                        Button("Ouvrir") { model.open(resource) }
                                             .buttonStyle(.bordered)
                                             .controlSize(.small)
                                     }
@@ -1209,12 +1209,12 @@
                 MetricCard(
                     title: "INTERACTIONS",
                     value: "\(memory.coverage.linkedInteractionCount)",
-                    detail: "No representative-minute collapse",
+                    detail: "Aucune minute regroupée",
                     symbol: "cursorarrow.motionlines.click",
                     tint: LHTheme.teal
                 )
                 MetricCard(
-                    title: "BEFORE / AFTER",
+                    title: "AVANT / APRÈS",
                     value: semanticPairValue(memory.coverage),
                     detail: "Interactions with both semantic states",
                     symbol: "arrow.left.and.right.square.fill",
@@ -1241,7 +1241,7 @@
 
         private func resourceCoverageDetail(_ memory: ComputerHistoryDayMemory) -> String {
             guard let retained = memory.coverage.retainedResourceCount else {
-                return "Files, pages, conversations and issues"
+                return "Fichiers, pages, conversations et tickets"
             }
             return "\(retained) representative source links retained"
         }
@@ -1253,10 +1253,10 @@
             return VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(
                     title: "Causal timeline",
-                    subtitle: "Every retained action stays chronological and source-backed"
+                    subtitle: "Chaque action conservée reste chronologique et sourcée"
                 )
                 if memory.episodes.isEmpty {
-                    compactEmpty("No causal episode could be reconstructed")
+                    compactEmpty("Aucun épisode n’a pu être reconstitué")
                 } else {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(memory.episodes) { episode in
@@ -1278,11 +1278,11 @@
             LHCard(padding: 17) {
                 VStack(alignment: .leading, spacing: 12) {
                     SectionTitle(
-                        title: "Source index",
-                        subtitle: "Likely original resources with confidence and reopenable locators"
+                        title: "Index des sources",
+                        subtitle: "Ressources d’origine probables, avec niveau de confiance et lien pour les rouvrir"
                     )
                     if memory.resources.isEmpty {
-                        compactEmpty("No stable source locator was exposed")
+                        compactEmpty("Aucun emplacement stable n’a été fourni")
                     } else {
                         LazyVGrid(
                             columns: [GridItem(.adaptive(minimum: 260), spacing: 10)],
@@ -1341,7 +1341,7 @@
                     VStack(alignment: .leading, spacing: 12) {
                         SectionTitle(
                             title: "Suggested skills and automations",
-                            subtitle: "Only repeated, source-backed action sequences appear here"
+                            subtitle: "Seules les séquences d’actions répétées et sourcées apparaissent ici"
                         )
                         ForEach(memory.suggestions) { suggestion in
                             HStack(alignment: .top, spacing: 11) {
@@ -1388,10 +1388,10 @@
                     Image(systemName: "checkmark.shield.fill")
                         .foregroundStyle(LHTheme.success)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Evidence and uncertainty")
+                        Text("Preuves et incertitudes")
                             .font(.system(size: 11, weight: .semibold))
                         Text(
-                            "\(memory.coverage.sourceEventCount) source events · \(memory.coverage.semanticSnapshotCount) semantic snapshots · \(memory.coverage.suppressedEventCount) suppressed events. Episode statuses are bounded interpretations; foreground presence never proves attention, identity, authorship, productivity or completion."
+                            "\(memory.coverage.sourceEventCount) événements sources · \(memory.coverage.semanticSnapshotCount) instantanés de contenu · \(memory.coverage.suppressedEventCount) événements masqués. Les états des épisodes sont des interprétations limitées ; une présence au premier plan ne prouve ni l’attention, ni l’identité, ni l’auteur, ni la productivité, ni l’achèvement."
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -1408,7 +1408,7 @@
                     Text("Reconstructing causal episodes…")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "Goalong is linking actions, semantic changes, resources, statuses and provenance locally."
+                        "Goalong relie localement les actions, changements de contenu, ressources, états et provenances."
                     )
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -1421,10 +1421,10 @@
             LHCard {
                 EmptyStateView(
                     symbol: "point.3.connected.trianglepath.dotted",
-                    title: "No causal history yet",
+                    title: "Pas encore d’historique détaillé",
                     message: model.errorMessage
-                        ?? "Keep Goalong running and interact with eligible apps. The causal memory is rebuilt automatically as events arrive.",
-                    buttonTitle: "Build again",
+                        ?? "Laissez Goalong actif et utilisez vos apps : cet historique se construit automatiquement au fil des événements.",
+                    buttonTitle: "Reconstruire",
                     action: { model.refresh(day: day) }
                 )
                 .frame(minHeight: 320)
@@ -1526,7 +1526,7 @@
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 12)
-                            Text(expanded ? "Hide details" : "Details")
+                            Text(expanded ? "Masquer les détails" : "Details")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.secondary)
                             Image(systemName: expanded ? "chevron.up" : "chevron.down")
@@ -1540,8 +1540,8 @@
                     .accessibilityValue(expanded ? "Expanded" : "Collapsed")
                     .accessibilityLabel(
                         expanded
-                            ? "Hide details for \(windowTimeLabel)"
-                            : "Show details for \(windowTimeLabel)"
+                            ? "Masquer les détails de \(windowTimeLabel)"
+                            : "Afficher les détails de \(windowTimeLabel)"
                     )
 
                     ViewThatFits(in: .horizontal) {
@@ -1630,7 +1630,7 @@
             case 2:
                 return "\(names[0]) and \(names[1])"
             default:
-                return "\(names[0]), \(names[1]) and \(names.count - 2) more"
+                return "\(names[0]), \(names[1]) et \(names.count - 2) autres"
             }
         }
 
@@ -1655,7 +1655,7 @@
         }
 
         private func durationLabel(_ seconds: TimeInterval) -> String {
-            guard seconds >= 60 else { return "<1m" }
+            guard seconds >= 60 else { return "<\u{00A0}1\u{00A0}min" }
             let roundedMinutes = Int((seconds / 60).rounded())
             return DashboardFormatters.duration(minutes: max(1, roundedMinutes))
         }
@@ -1744,7 +1744,7 @@
                         Divider()
                         if !episode.requestsOrIntentions.isEmpty {
                             detailSection(
-                                title: "REQUESTS OR INTENTIONS",
+                                title: "DEMANDES OU INTENTIONS",
                                 values: episode.requestsOrIntentions
                             )
                         }
@@ -1790,7 +1790,7 @@
                         HStack {
                             Spacer()
                             Button(role: .destructive, action: requestDeletion) {
-                                Label("Delete this item…", systemImage: "trash")
+                                Label("Supprimer cet élément…", systemImage: "trash")
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)

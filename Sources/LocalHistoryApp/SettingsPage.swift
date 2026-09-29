@@ -72,13 +72,19 @@ import AppKit
                         GoalongGlobalPauseControl(model: model)
                     }.padding(.top, 12)
                 }.accessibilityIdentifier("settings-privacy-stop")
-                VStack(alignment: .trailing, spacing: 14) {
+                VStack(alignment: .leading, spacing: 14) {
                     GoalongSettingsLink(title: "Avancé", value: "Outils et diagnostics", symbol: "slider.horizontal.3") { pane = .advanced }
                         .accessibilityIdentifier("settings-advanced")
                         .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 12))
                         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(LHTheme.separator))
-                    Button(updates.availableVersion == nil ? "Version \(updates.currentVersion)" : "Mise à jour disponible") { updates.showAvailableUpdate() }
-                        .buttonStyle(.borderless)
+                    GoalongUpdateStatusRow()
+                    HStack(spacing: 6) {
+                        Image(systemName: "stethoscope").foregroundStyle(.secondary)
+                        Text("Un souci ?").foregroundStyle(.secondary)
+                        Button("Signaler un problème…") { SupportRequestController.shared.present() }
+                            .buttonStyle(.link)
+                            .accessibilityIdentifier("settings-report-problem")
+                    }
                 }.font(.system(size: 12))
             }
         case .recording:
@@ -176,9 +182,12 @@ import AppKit
                 Button("Ouvrir config.json") { model.openConfiguration() }.buttonStyle(.bordered)
             }
             GoalongSettingsGroup(title: "Mises à jour") {
-                HStack { Text("Goalong History \(updates.currentVersion)"); Spacer(); Button("Rechercher") { updates.checkForUpdates() } }
+                GoalongUpdateStatusRow()
                 Toggle("Rechercher les mises à jour automatiquement", isOn: Binding(
                     get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.switch)
+                Text("Chaque mise à jour est signée et vérifiée avant installation ; rien ne s’installe sans votre accord. Vos réglages et votre historique sont conservés.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Button("Revoir le démarrage") { model.showWelcome = true }.buttonStyle(.bordered)
         case .tools:
@@ -257,6 +266,70 @@ enum SettingsPane: Hashable {
         case .tools: return "export fichier signé signature preuve santé récapitulatif"
         default: return ""
         }
+    }
+}
+/// Version, last check and the one relevant action, in plain words.
+@MainActor struct GoalongUpdateStatusRow: View {
+    @ObservedObject private var updates = SoftwareUpdateManager.shared
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: symbol).foregroundStyle(tint).font(.system(size: 14))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Goalong History \(updates.currentVersion)").font(.system(size: 13, weight: .medium))
+                Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            if updates.isChecking || updates.isPreparingAvailableUpdate {
+                ProgressView().controlSize(.small)
+            } else if let version = updates.availableVersion {
+                Button("Installer la \(version)") { updates.showAvailableUpdate() }
+                    .buttonStyle(LHPrimaryButtonStyle())
+            } else {
+                // Always enabled: an unavailable updater explains why and links to the releases.
+                Button("Rechercher") { updates.checkForUpdates() }.buttonStyle(.bordered)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("settings-update-status")
+    }
+
+    private var symbol: String {
+        if updates.availableVersion != nil { return "arrow.down.circle.fill" }
+        switch updates.lastCheckResult {
+        case .failed: return "exclamationmark.triangle.fill"
+        case .upToDate: return "checkmark.circle.fill"
+        default: return "arrow.triangle.2.circlepath"
+        }
+    }
+
+    private var tint: Color {
+        if updates.availableVersion != nil { return LHTheme.accent }
+        switch updates.lastCheckResult {
+        case .failed: return LHTheme.warning
+        case .upToDate: return LHTheme.success
+        default: return LHTheme.secondaryText
+        }
+    }
+
+    private var detail: String {
+        if updates.requiresSignedBuild { return "Version compilée sans mises à jour intégrées." }
+        if updates.isChecking { return "Recherche en cours…" }
+        if let version = updates.availableVersion { return "La version \(version) est prête à être installée." }
+        let when = updates.lastCheckedAt.map { " · vérifié " + Self.relative($0) } ?? ""
+        switch updates.lastCheckResult {
+        case .failed: return updates.statusMessage
+        case .upToDate: return "À jour" + when
+        default: return updates.automaticallyChecksForUpdates ? "Vérification automatique activée" + when : "Vérification automatique désactivée" + when
+        }
+    }
+
+    private static func relative(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "fr_FR")
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 #endif

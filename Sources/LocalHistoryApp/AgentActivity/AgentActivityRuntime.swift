@@ -215,7 +215,7 @@
                 discovered: discovered,
                 reallowSuppressedSources: true
             )
-            save(merged, successMessage: "Available local agent sources were added.")
+            save(merged, successMessage: "Les sources locales disponibles ont été ajoutées.")
         }
 
         func chooseFolder() {
@@ -225,7 +225,7 @@
             panel.canChooseDirectories = true
             panel.allowsMultipleSelection = true
             panel.canCreateDirectories = false
-            panel.message = "Choose folders containing original agent conversations, sessions or logs."
+            panel.message = "Choisissez des dossiers contenant des conversations, sessions ou journaux d’agents."
             panel.prompt = "Watch folders"
             guard panel.runModal() == .OK else { return }
             addFolders(panel.urls)
@@ -290,18 +290,18 @@
 
             guard didChange else {
                 alert = AgentActivityAlert(
-                    title: "Folder already monitored",
+                    title: "Dossier déjà suivi",
                     message: urls.count == 1
                         ? urls[0].standardizedFileURL.path
-                        : "Every selected folder is already monitored."
+                        : "Tous les dossiers choisis sont déjà suivis."
                 )
                 return
             }
 
             let message =
                 activatedCount == 1
-                ? "The folder is now monitored locally."
-                : "\(activatedCount) folders are now monitored locally."
+                ? "Le dossier est maintenant suivi localement."
+                : "\(activatedCount) dossiers sont maintenant suivis localement."
             save(next, successMessage: message)
         }
 
@@ -378,12 +378,12 @@
                         self.alert = AgentActivityAlert(
                             title: "\(kind.displayName) installed",
                             message: kind == .codexHooks
-                                ? "Hooks now send only a rescan signal. Conversation text stays in Codex’s original storage. Restart Codex, then approve the Goalong hook from Codex’s /hooks interface if it asks for trust."
-                                : "Hooks now send only a rescan signal. Conversation text stays in the provider’s original storage. Restart the agent application if it is already open."
+                                ? "Les hooks n’envoient qu’un signal de relance ; le texte des conversations reste dans Codex. Relancez Codex, puis approuvez le hook Goalong depuis /hooks si Codex le demande."
+                                : "Les hooks n’envoient qu’un signal de relance ; le texte des conversations reste chez l’outil d’origine. Relancez l’agent s’il est déjà ouvert."
                         )
                     }
                 } catch {
-                    self.publish(error: error, title: "Integration could not be installed")
+                    self.publish(error: error, title: "L’intégration n’a pas pu être installée")
                 }
             }
         }
@@ -399,11 +399,11 @@
                         self.alert = AgentActivityAlert(
                             title: "\(kind.displayName) removed",
                             message:
-                                "The lightweight source index remains available; no transcript copy is stored by Goalong History."
+                                "L’index léger reste disponible ; Goalong ne conserve aucune copie des conversations."
                         )
                     }
                 } catch {
-                    self.publish(error: error, title: "Integration could not be removed")
+                    self.publish(error: error, title: "L’intégration n’a pas pu être retirée")
                 }
             }
         }
@@ -432,8 +432,8 @@
         func openOriginal(_ record: AgentCaptureRecord) {
             guard AgentSourceAccessAuthority.allows(record.index, configuration: configuration) else {
                 alert = AgentActivityAlert(
-                    title: "Original source access denied",
-                    message: "This index reference is not authorized by an active monitored folder."
+                    title: "Accès à la source d’origine refusé",
+                    message: "Cette référence n’appartient à aucun dossier suivi et autorisé."
                 )
                 return
             }
@@ -445,14 +445,14 @@
                 alert = AgentActivityAlert(
                     title: "Original OpenCode database",
                     message:
-                        "Conversation \(record.index.stableConversationID) is read directly from this database. Goalong History does not materialize a copy."
+                        "La conversation \(record.index.stableConversationID) est lue directement dans cette base ; Goalong n’en fait aucune copie."
                 )
             } else if FileManager.default.fileExists(atPath: url.path) {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             } else {
                 alert = AgentActivityAlert(
-                    title: "Original file is no longer present",
-                    message: "Goalong History keeps only a missing-source state; there is no transcript copy."
+                    title: "Le fichier d’origine n’existe plus",
+                    message: "Goalong ne garde que l’indication « source absente » ; il n’existe aucune copie."
                 )
             }
         }
@@ -479,10 +479,10 @@
                         ? "complete original source"
                         : "selected-day source projection"
                     self.alert = AgentActivityAlert(
-                        title: valid ? "Original source verified" : "Original source changed or unavailable",
+                        title: valid ? "Source d’origine vérifiée" : "Source d’origine modifiée ou indisponible",
                         message: valid
                             ? "The provider’s current \(verifiedScope) matches SHA-256 \(record.sha256)."
-                            : "The provider’s original source no longer matches this index entry or cannot be read."
+                            : "La source d’origine ne correspond plus à cette entrée ou ne peut pas être lue."
                     )
                 }
             }
@@ -539,7 +539,7 @@
                 scanNow(forceFullDiscovery: false)
             } catch {
                 alert = AgentActivityAlert(
-                    title: "Agent monitoring settings could not be saved",
+                    title: "Les réglages de suivi n’ont pas pu être enregistrés",
                     message: error.localizedDescription
                 )
             }
@@ -592,7 +592,7 @@
             if shouldRefreshDerivedState {
                 // A bounded selected-day pass may need several cycles. Publishing any earlier
                 // cycle mixes complete index counts with not-yet-rehydrated titles, causing the
-                // intermittent "Codex conversation" rows reported by users.
+                // intermittent "Conversation Codex" rows reported by users.
                 nextOverview = (request.analyzeSelectedDay && result.analysisIncomplete)
                     || (!request.analyzeSelectedDay && snapshot.selectedDayRequiresAnalysis)
                     ? nil
@@ -643,10 +643,10 @@
                 if let validIndex { self.indexIsValid = validIndex }
                 if let first = failures.first {
                     self.alert = AgentActivityAlert(
-                        title: "Some agent files could not be read",
+                        title: "Certains fichiers d’agents n’ont pas pu être lus",
                         message: failures.count == 1
                             ? first
-                            : "\(first)\n\nAnd \(failures.count - 1) other read error(s)."
+                            : "\(first)\n\nEt \(failures.count - 1) autre(s) erreur(s) de lecture."
                     )
                 }
             }

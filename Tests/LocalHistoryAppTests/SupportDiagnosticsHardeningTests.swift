@@ -29,11 +29,14 @@ final class SupportDiagnosticsHardeningTests: XCTestCase {
         let journal = SupportDiagnostics(root: directory, defaults: defaults)
         journal.start(); XCTAssertTrue(journal.flush())
         let bucket = directory.appendingPathComponent(SupportDiagnostics.day(Date()))
-        let fd = open(bucket.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
-        XCTAssertGreaterThanOrEqual(fd, 0)
-        guard fd >= 0 else { journal.stop(); return }
-        XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), 0)
-        defer { _ = flock(fd, LOCK_UN); _ = close(fd); journal.stop() }
+        // Lock both the routine and the priority stream of the day.
+        let fds = [bucket, bucket.appendingPathComponent(SupportDiagnostics.importantDirectoryName)].map {
+            open($0.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        }
+        XCTAssertTrue(fds.allSatisfy { $0 >= 0 })
+        guard fds.allSatisfy({ $0 >= 0 }) else { journal.stop(); return }
+        for fd in fds { XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), 0) }
+        defer { for fd in fds { _ = flock(fd, LOCK_UN); _ = close(fd) }; journal.stop() }
         journal.record(.userMarkedIssue, component: .support)
         let before = ProcessInfo.processInfo.systemUptime
         XCTAssertFalse(journal.flush(timeout: 0.05))

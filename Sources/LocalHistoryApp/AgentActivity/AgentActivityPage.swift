@@ -89,7 +89,7 @@
                     } else if presentation == .history {
                         AgentTokenUsageCard(usage: agents.tokenUsageSnapshot ?? AgentDailyTokenUsage(records: [], day: agents.selectedDay), scanning: agents.isScanning, analyzedAt: agents.tokenUsageAnalyzedAt)
                         conversationHistoryList
-                        GoalongDisclosureGroup("Source & privacy") {
+                        GoalongDisclosureGroup("Source et confidentialité") {
                             sourceConsentCard.padding(.top, 12)
                         }
                         .font(.system(size: 12))
@@ -140,9 +140,9 @@
         private var managementHeader: some View {
             PageHeader(
                 eyebrow: "Sources",
-                title: "AI conversation sources",
+                title: "Sources des conversations IA",
                 subtitle:
-                    "Choose the original local sources Goalong may read. Conversation bodies are never copied into Goalong storage."
+                    "Choisissez les sources locales que Goalong peut lire. Le contenu des conversations n’est jamais copié dans Goalong."
             ) {
                 if consents.isEnabled(.aiConversations) {
                     HStack(spacing: 9) {
@@ -153,7 +153,7 @@
                                 analyzeSelectedDay: true
                             )
                         } label: {
-                            Label(agents.isScanning ? "Scanning…" : "Scan now", systemImage: "arrow.clockwise")
+                            Label(agents.isScanning ? "Scanning…" : "Analyser maintenant", systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(.bordered)
                         .disabled(agents.isScanning)
@@ -161,7 +161,7 @@
                         Button {
                             agents.chooseFolder()
                         } label: {
-                            Label("Add folder", systemImage: "folder.badge.plus")
+                            Label("Ajouter un dossier", systemImage: "folder.badge.plus")
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
                     }
@@ -181,7 +181,7 @@
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                         )
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(consents.isEnabled(.aiConversations) ? "Local conversation reading enabled" : "Local conversation reading is off")
+                        Text(consents.isEnabled(.aiConversations) ? "Lecture des conversations locales activée" : "Lecture des conversations locales désactivée")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
                             "Goalong reads only sources you authorize, directly at their original location. It keeps a bounded metadata index and never stores a second copy of transcript bodies."
@@ -194,7 +194,7 @@
                     SourceActivationToggle(capability: .aiConversations) { Text("aiConversations") }
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .accessibilityLabel("Read local AI conversations")
+                    .accessibilityLabel("Lire les conversations IA locales")
                 }
             }
         }
@@ -202,10 +202,10 @@
         private var disabledSourceExplanation: some View {
             LHCard {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("No provider source is being scanned", systemImage: "pause.circle.fill")
+                    Label("Aucune source n’est analysée", systemImage: "pause.circle.fill")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "Existing Goalong events and proofs stay available. Turn this source on only if you want the app to inspect Codex, Claude, OpenCode or another folder you explicitly add."
+                        "Les événements et preuves existants restent disponibles. Activez cette source seulement si vous voulez que Goalong lise Codex, Claude, OpenCode ou un dossier que vous ajoutez."
                     )
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -235,9 +235,9 @@
                             if agents.isScanning {
                                 ProgressView()
                                     .controlSize(.mini)
-                                Text("Updating changed sources…")
+                                Text("Mise à jour des sources modifiées…")
                             } else {
-                                Label("Original sources", systemImage: "internaldrive")
+                                Label("Sources d’origine", systemImage: "internaldrive")
                             }
                         }
                         .font(.system(size: 12, weight: .medium))
@@ -246,7 +246,7 @@
                     Spacer()
                     if availableProviders.count > 1 {
                         Picker("Provider", selection: $providerFilter) {
-                            Text("All providers").tag(nil as AgentProvider?)
+                            Text("Tous les outils").tag(nil as AgentProvider?)
                             ForEach(availableProviders) { provider in
                                 Text(provider.displayName).tag(provider as AgentProvider?)
                             }
@@ -254,7 +254,7 @@
                         .labelsHidden()
                         .frame(width: 150)
                     }
-                    TextField("Search conversations", text: $search)
+                    TextField("Rechercher dans les conversations", text: $search)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 240)
                 }
@@ -272,7 +272,7 @@
                         if let title = sourceHealth.actionTitle {
                             Button(title) { agents.scanNow(analyzeSelectedDay: true) }.disabled(agents.isScanning)
                         }
-                        if let onManageSources { Button("Review sources", action: onManageSources) }
+                        if let onManageSources { Button("Vérifier les sources", action: onManageSources) }
                     }.padding(14)
                     .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityIdentifier("conversation-source-health")
@@ -284,22 +284,22 @@
                             EmptyStateView(
                                 symbol: agents.isScanning
                                     ? "arrow.triangle.2.circlepath" : "bubble.left.and.bubble.right",
-                                title: agents.isScanning ? "Reading conversations"
-                                    : (!search.isEmpty || providerFilter != nil) ? "No matching conversations"
-                                    : hasSourceIssue ? "Conversations unavailable" : "No conversations for this day",
+                                title: agents.isScanning ? "Lecture des conversations"
+                                    : (!search.isEmpty || providerFilter != nil) ? "Aucune conversation correspondante"
+                                    : hasSourceIssue ? "Conversations indisponibles" : "Aucune conversation ce jour-là",
                                 message: agents.isScanning
-                                    ? "Goalong is checking changed original sources."
+                                    ? "Goalong vérifie les sources modifiées."
                                     : (!search.isEmpty || providerFilter != nil)
-                                        ? "Clear the search or choose another provider."
-                                        : hasSourceIssue ? "Review the source status above to restore access." : "Try another day or review your conversation folders."
+                                        ? "Effacez la recherche ou choisissez un autre outil."
+                                        : hasSourceIssue ? "Vérifiez l’état des sources ci-dessus pour rétablir l’accès." : "Essayez un autre jour ou vérifiez vos dossiers de conversations."
                             )
                             .frame(minHeight: 190)
                             if search.isEmpty, providerFilter == nil, !hasSourceIssue, let onManageSources {
-                                Button("Review sources", action: onManageSources)
+                                Button("Vérifier les sources", action: onManageSources)
                                     .buttonStyle(.bordered).frame(maxWidth: .infinity).padding(.bottom, 20)
                             }
                             if !search.isEmpty || providerFilter != nil {
-                                Button("Clear filters") { search = ""; providerFilter = nil }
+                                Button("Effacer les filtres") { search = ""; providerFilter = nil }
                                     .buttonStyle(.bordered)
                                     .frame(maxWidth: .infinity)
                                     .padding(.bottom, 20)
@@ -312,7 +312,7 @@
                                 }
                             }
                             if captures.count > 120 {
-                                Text("Showing the 120 newest matching conversations")
+                                Text("Affichage des 120 conversations les plus récentes")
                                     .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity)
@@ -352,22 +352,22 @@
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)
                 } else if !record.projectionIsComplete {
-                    Label("Partial day", systemImage: "exclamationmark.triangle.fill")
+                    Label("Journée partielle", systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)
-                        .help("The selected day exceeded the bounded direct-read limit; older messages from that day may be absent.")
+                        .help("Ce jour dépasse la limite de lecture directe ; les messages les plus anciens peuvent manquer.")
                 }
 
                 Menu {
-                    Button("Reveal original source") { agents.openOriginal(record) }
-                    Button("Verify original SHA-256") { agents.verify(record) }
+                    Button("Afficher la source d’origine") { agents.openOriginal(record) }
+                    Button("Vérifier l’empreinte SHA-256") { agents.verify(record) }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 24, height: 24)
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 30)
-                .accessibilityLabel("Conversation actions")
+                .accessibilityLabel("Actions sur la conversation")
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 11)
@@ -424,16 +424,16 @@
                 .frame(width: 38, height: 38)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Direct source analysis")
+                    Text("Lecture directe des sources")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "Conversation bodies are read in place from Codex, Claude Code, OpenCode and configured folders. The local index contains only provider, stable ID, source reference, timestamps, size, offsets and SHA-256."
+                        "Le contenu des conversations est lu sur place dans Codex, Claude Code, OpenCode et les dossiers configurés. L’index local ne contient que l’outil, l’identifiant, la référence de la source, les horodatages, la taille, les positions et l’empreinte SHA-256."
                     )
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     Text(
-                        "No blob, snapshot, materialized copy or hook payload is stored by Goalong History."
+                        "Goalong ne conserve aucune copie, aucun instantané ni contenu transmis par les hooks."
                     )
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(LHTheme.privateTint)
@@ -484,13 +484,13 @@
                     title: "Tool calls",
                     value: String(agents.overview.toolCallCount),
                     detail: agents.overview.errorCount == 0
-                        ? "No error messages observed"
+                        ? "Aucun message d’erreur observé"
                         : "\(agents.overview.errorCount) error message(s) observed",
                     symbol: "wrench.and.screwdriver.fill",
                     tint: agents.overview.errorCount == 0 ? LHTheme.success : LHTheme.warning
                 )
                 MetricCard(
-                    title: "Indexed sources",
+                    title: "Sources indexées",
                     value: String(agents.overview.captures.count),
                     detail: formatBytes(agents.overview.indexBytes) + " total index",
                     symbol: "list.bullet.rectangle.fill",
@@ -508,10 +508,10 @@
                             tint: LHTheme.accent,
                             title: "Live agent integrations",
                             subtitle:
-                                "Optional hooks only wake incremental discovery. Their stdin is discarded and never added to the index."
+                                "Les hooks facultatifs ne font que relancer la détection. Leur contenu est ignoré et jamais ajouté à l’index."
                         )
                         Spacer()
-                        Button("Open rescan signals") {
+                        Button("Ouvrir les signaux de relance") {
                             agents.openSignalsFolder()
                         }
                         .buttonStyle(.bordered)
@@ -531,10 +531,10 @@
             HStack(spacing: 12) {
                 providerIcon(.codex)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Codex local history")
+                    Text("Historique local de Codex")
                         .font(.system(size: 11, weight: .semibold))
                     Text(
-                        "Goalong monitors Codex sessions, history and logs under `~/.codex` when that directory exists."
+                        "Goalong suit les sessions, l’historique et les journaux de Codex dans `~/.codex` lorsque ce dossier existe."
                     )
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -544,10 +544,10 @@
                     title: agents.configuration.watchedFolders.contains(where: {
                         $0.provider == .codex && !$0.isManaged && $0.isEnabled
                     })
-                        ? "Folder active"
+                        ? "Dossier actif"
                         : agents.configuration.watchedFolders.contains(where: {
                             $0.provider == .codex && !$0.isManaged
-                        }) ? "Detected — off" : "Not detected",
+                        }) ? "Détecté — désactivé" : "Non détecté",
                     symbol: agents.configuration.watchedFolders.contains(where: {
                         $0.provider == .codex && !$0.isManaged && $0.isEnabled
                     })
@@ -579,7 +579,7 @@
                 }
                 Spacer()
                 StatusPill(
-                    title: status.isInstalled ? "Rescan signal installed" : "Periodic discovery",
+                    title: status.isInstalled ? "Signal de relance installé" : "Periodic discovery",
                     symbol: status.isInstalled ? "bolt.shield.fill" : "bolt.slash",
                     tint: status.isInstalled ? LHTheme.success : Color.secondary
                 )
@@ -589,7 +589,7 @@
                     }
                     .buttonStyle(.bordered)
                 } else {
-                    Button("Install") {
+                    Button("Installer") {
                         agents.installIntegration(kind)
                     }
                     .buttonStyle(LHPrimaryButtonStyle())
@@ -604,9 +604,9 @@
                         sectionHeader(
                             symbol: "folder.badge.gearshape",
                             tint: LHTheme.teal,
-                            title: "Conversation folders",
+                            title: "Dossiers de conversations",
                             subtitle:
-                                "Stopped default sources stay stopped after relaunch. Detect or add one explicitly to allow it again. Goalong stores only lightweight references."
+                                "Une source arrêtée le reste après un redémarrage ; ajoutez-la de nouveau pour l’autoriser. Goalong ne conserve que des références légères."
                         )
                         Spacer()
                         Button("Detect common folders") {
@@ -617,7 +617,7 @@
                         Button {
                             agents.chooseFolder()
                         } label: {
-                            Label("Add folder", systemImage: "plus")
+                            Label("Ajouter un dossier", systemImage: "plus")
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
                     }
@@ -625,10 +625,10 @@
                     if agents.userWatchedFolders.isEmpty {
                         EmptyStateView(
                             symbol: "folder.badge.plus",
-                            title: "No agent folders are monitored yet",
+                            title: "Aucun dossier suivi pour l’instant",
                             message:
-                                "Choose a folder containing local conversations. Reading starts only after AI conversations is enabled.",
-                            buttonTitle: "Choose folder",
+                                "Choisissez un dossier contenant des conversations locales. La lecture ne commence qu’une fois la source activée.",
+                            buttonTitle: "Choisir un dossier",
                             action: agents.chooseFolder
                         )
                         .frame(minHeight: 190)
@@ -680,21 +680,21 @@
                     Image(systemName: "folder")
                 }
                 .buttonStyle(.bordered)
-                .help("Open source folder")
+                .help("Ouvrir le dossier source")
                 Button {
                     editingFolder = folder
                 } label: {
                     Image(systemName: "slider.horizontal.3")
                 }
                 .buttonStyle(.bordered)
-                .help("Edit monitoring settings")
+                .help("Modifier le suivi")
                 Button(role: .destructive) {
                     agents.removeFolder(id: folder.id)
                 } label: {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.bordered)
-                .help("Stop monitoring this folder")
+                .help("Arrêter de suivre ce dossier")
             }
             .padding(.vertical, 4)
         }
@@ -706,13 +706,13 @@
                         sectionHeader(
                             symbol: "clock.arrow.circlepath",
                             tint: LHTheme.privateTint,
-                            title: "Indexed original conversations",
+                            title: "Conversations d’origine indexées",
                             subtitle:
-                                "One replaceable index entry per stable conversation. Selecting or analyzing it reads the provider’s original source directly."
+                                "Une entrée d’index par conversation. L’ouvrir ou l’analyser lit directement la source d’origine."
                         )
                         Spacer()
                         Picker("Provider", selection: $providerFilter) {
-                            Text("All providers").tag(nil as AgentProvider?)
+                            Text("Tous les outils").tag(nil as AgentProvider?)
                             ForEach(AgentProvider.allCases) { provider in
                                 Text(provider.displayName).tag(provider as AgentProvider?)
                             }
@@ -726,10 +726,10 @@
                     if filteredCaptures.isEmpty {
                         EmptyStateView(
                             symbol: agents.isScanning ? "arrow.triangle.2.circlepath" : "cpu",
-                            title: agents.isScanning ? "Checking agent sources" : "No matching indexed source",
+                            title: agents.isScanning ? "Vérification des sources" : "Aucune source indexée correspondante",
                             message: agents.isScanning
-                                ? "Known sources are checked incrementally; changed originals are re-read in place."
-                                : "Launch an agent, install an optional rescan signal, or add its original history folder."
+                                ? "Les sources connues sont vérifiées progressivement ; les originaux modifiés sont relus sur place."
+                                : "Lancez un agent, installez un signal de relance facultatif ou ajoutez son dossier d’historique."
                         )
                         .frame(minHeight: 210)
                     } else {
@@ -738,7 +738,7 @@
                             if index < min(filteredCaptures.count, 120) - 1 { Divider() }
                         }
                         if filteredCaptures.count > 120 {
-                            Text("Showing the 120 newest matching source references.")
+                            Text("Affichage des 120 références les plus récentes.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .center)
@@ -781,9 +781,9 @@
                     }
                 }
                 Menu {
-                    Button("Reveal original source") { agents.openOriginal(record) }
+                    Button("Afficher la source d’origine") { agents.openOriginal(record) }
                     Divider()
-                    Button("Verify original SHA-256") { agents.verify(record) }
+                    Button("Vérifier l’empreinte SHA-256") { agents.verify(record) }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -800,13 +800,13 @@
                         sectionHeader(
                             symbol: "lock.square.stack.fill",
                             tint: LHTheme.success,
-                            title: "Lightweight source index",
+                            title: "Index léger des sources",
                             subtitle:
                                 "Only bounded source metadata is stored in Goalong History’s private Application Support folder."
                         )
                         detailLine("Agent Activity total", value: formatBytes(agents.storageBytes))
-                        detailLine("Index file", value: formatBytes(agents.overview.indexBytes))
-                        detailLine("Original bytes read today", value: formatBytes(agents.overview.sourceBytes))
+                        detailLine("Fichier d’index", value: formatBytes(agents.overview.indexBytes))
+                        detailLine("Octets d’origine lus aujourd’hui", value: formatBytes(agents.overview.sourceBytes))
                         detailLine("Index structure", value: agents.indexIsValid ? "Valid" : "Invalid")
                         Button("Open Agent Activity metadata") {
                             agents.openRootFolder()
@@ -821,14 +821,14 @@
                         sectionHeader(
                             symbol: "checkmark.shield.fill",
                             tint: LHTheme.privateTint,
-                            title: "What Goalong adds",
+                            title: "Ce que Goalong ajoute",
                             subtitle:
-                                "Provider-independent analysis without becoming another transcript repository."
+                                "Une analyse indépendante de l’outil, sans créer une copie de plus des conversations."
                         )
-                        privacyBullet("Conversation bodies stay exclusively in each provider’s original storage.")
-                        privacyBullet("A changed source replaces its prior fingerprint instead of creating a version.")
+                        privacyBullet("Le contenu des conversations reste uniquement dans le stockage d’origine de chaque outil.")
+                        privacyBullet("Une source modifiée remplace son empreinte précédente au lieu de créer une version.")
                         privacyBullet("Missing and unreadable originals remain explicit index states.")
-                        privacyBullet("Hooks overwrite one tiny signal per provider and discard their stdin.")
+                        privacyBullet("Les hooks réécrivent un petit signal par outil et ignorent leur contenu.")
                         privacyBullet(
                             "Full discovery is periodic; ordinary checks use the known index and provider metadata."
                         )
@@ -972,7 +972,7 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Edit monitored folder")
+                    Text("Modifier le dossier suivi")
                         .font(.system(size: 20, weight: .bold))
                     Text(draft.path)
                         .font(.system(size: 11, design: .monospaced))
@@ -993,15 +993,15 @@
                             Text(mode.displayName).tag(mode)
                         }
                     }
-                    Toggle("Monitor this folder", isOn: $draft.isEnabled)
+                    Toggle("Suivre ce dossier", isOn: $draft.isEnabled)
                     Toggle("Include subfolders", isOn: $draft.includeSubdirectories)
                 }
                 .formStyle(.grouped)
 
                 Text(
                     draft.captureMode == .everyFile
-                        ? "Every supported regular file is indexed in place except common credential stores, cookies, private keys and caches."
-                        : "Goalong directly reads common transcript, chat, log, trace and state formats without copying them."
+                        ? "Chaque fichier pris en charge est indexé sur place, sauf les coffres d’identifiants, cookies, clés privées et caches."
+                        : "Goalong lit directement les formats courants de conversations, journaux et traces, sans les copier."
                 )
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -1009,9 +1009,9 @@
 
                 HStack {
                     Spacer()
-                    Button("Cancel", action: onCancel)
+                    Button("Annuler", action: onCancel)
                         .keyboardShortcut(.cancelAction)
-                    Button("Save") {
+                    Button("Enregistrer") {
                         onSave(draft)
                     }
                     .buttonStyle(LHPrimaryButtonStyle())

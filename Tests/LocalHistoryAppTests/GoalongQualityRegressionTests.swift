@@ -106,7 +106,7 @@ final class AgentConversationSourceHealthTests: XCTestCase {
             scan: .init(analysisIncomplete: true, capacityLimitedFolderCount: 3))
         XCTAssertEqual(health, .invalidIndex)
         XCTAssertTrue(health.hasReadFailure)
-        XCTAssertEqual(health.actionTitle, "Retry")
+        XCTAssertEqual(health.actionTitle, "Réessayer")
     }
 
     func testActualSourceFailuresRemainVisibleWithoutLeakingRawSourcePaths() {
@@ -115,16 +115,16 @@ final class AgentConversationSourceHealthTests: XCTestCase {
                 failures: ["/private/fixture-one", "/private/fixture-two"]))
         XCTAssertEqual(health, .readFailures(2))
         XCTAssertTrue(health.hasReadFailure)
-        XCTAssertTrue(health.message.contains("2 source-read"))
+        XCTAssertTrue(health.message.contains("2 problème(s) de lecture"))
         XCTAssertFalse(health.message.contains("/private/"))
-        XCTAssertEqual(health.actionTitle, "Retry")
+        XCTAssertEqual(health.actionTitle, "Réessayer")
     }
 
     func testBoundedAnalysisIsNotMisreportedAsUnavailable() {
         let health = AgentConversationSourceHealth(indexIsValid: true, scan: .init(analysisIncomplete: true))
         XCTAssertEqual(health, .analysisPending)
         XCTAssertFalse(health.hasReadFailure)
-        XCTAssertEqual(health.actionTitle, "Resume analysis")
+        XCTAssertEqual(health.actionTitle, "Reprendre l’analyse")
     }
 
     func testCapacityLimitDoesNotOfferAnIneffectiveRetry() {
@@ -132,8 +132,8 @@ final class AgentConversationSourceHealthTests: XCTestCase {
         XCTAssertEqual(health, .capacityLimited(2))
         XCTAssertFalse(health.hasReadFailure)
         XCTAssertNil(health.actionTitle)
-        XCTAssertTrue(health.message.contains("2 folder(s)"))
-        XCTAssertTrue(health.message.contains("retrying alone"))
+        XCTAssertTrue(health.message.contains("2 dossier(s)"))
+        XCTAssertTrue(health.message.contains("réessayer ne lève pas"))
     }
 
     func testSuccessfulRetryClearsTheFailureState() {

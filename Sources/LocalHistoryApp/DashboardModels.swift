@@ -59,6 +59,7 @@
         case suppressed(SuppressionReason)
         case permissionsMissing
         case inputTapUnavailable
+        case storageUnavailable(CaptureStorageFailureKind)
     }
 
     struct RuntimePresentation: Equatable {

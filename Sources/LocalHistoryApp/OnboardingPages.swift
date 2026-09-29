@@ -15,22 +15,22 @@
             VStack(alignment: .leading, spacing: 24) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 40, weight: .light)).foregroundStyle(LHTheme.accent)
-                Text("Find your way back to what you were doing.")
+                Text("Retrouvez le fil de ce que vous faisiez.")
                     .font(.system(size: 28, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Bring together your activity, screen time and local AI conversations. Choose the sources you want; you can add the rest later.")
+                Text("Réunissez votre activité, votre temps d’écran et vos conversations IA locales. Choisissez vos sources ; vous pourrez ajouter les autres plus tard.")
                     .font(.system(size: 14)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 LHCard {
                     VStack(alignment: .leading, spacing: 16) {
-                        introduction("Local first. Sharing is a separate choice", symbol: "internaldrive",
-                            detail: "Recording stays on your Mac. ChatGPT analysis and sharing to the Goalong website require separate choices. You can use the app without either.")
+                        introduction("Local d’abord. Le partage est un choix séparé", symbol: "internaldrive",
+                            detail: "L’enregistrement reste sur votre Mac. L’analyse ChatGPT et l’envoi au site Goalong sont des choix séparés ; l’app fonctionne sans eux.")
                         Divider()
-                        introduction("Only the access you need", symbol: "hand.raised",
-                            detail: "Goalong checks existing permissions first. If a source needs access, you will see why and how to grant it.")
+                        introduction("Seulement les accès nécessaires", symbol: "hand.raised",
+                            detail: "Goalong vérifie d’abord les autorisations existantes. Si une source a besoin d’un accès, vous verrez pourquoi et comment l’accorder.")
                         Divider()
-                        introduction("No screenshots or keystroke decoding", symbol: "lock",
-                            detail: "Computer History uses foreground context and activity counts. Optional visible-text capture has its own consent. Detected private windows are excluded by default.")
+                        introduction("Ni captures d’écran, ni touches reconstituées", symbol: "lock",
+                            detail: "L’historique utilise l’app au premier plan et des compteurs d’activité. La lecture du texte affiché, facultative, a son propre accord. Les fenêtres privées détectées sont exclues par défaut.")
                     }
                 }
             }

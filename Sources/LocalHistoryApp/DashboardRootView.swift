@@ -18,15 +18,20 @@
                             .fill(LHTheme.separator)
                             .frame(width: 1)
                         page
-                            .safeAreaInset(edge: .top, spacing: 0) { GoalongGlobalPauseBanner(model: model) }
+                            .safeAreaInset(edge: .top, spacing: 0) {
+                                VStack(spacing: 0) {
+                                    GoalongGlobalPauseBanner(model: model)
+                                    GoalongAttentionBanner(model: model)
+                                }
+                            }
                             .safeAreaInset(edge: .bottom, spacing: 0) {
                                 if model.settingsHaveChanges && model.selectedSection != .settings {
                                     HStack(spacing: 12) {
-                                        Label("Recording changes are not saved", systemImage: "pencil.circle")
+                                        Label("Modifications d’enregistrement non appliquées", systemImage: "pencil.circle")
                                             .font(.system(size: 12, weight: .medium))
                                         Spacer()
-                                        Button("Discard draft") { model.discardSettingsChanges() }
-                                        Button("Review changes") { model.openRecordingSettings() }
+                                        Button("Abandonner") { model.discardSettingsChanges() }
+                                        Button("Vérifier les modifications") { model.openRecordingSettings() }
                                             .buttonStyle(LHPrimaryButtonStyle())
                                     }.padding(14).background(LHTheme.cardBackground)
                                 }
@@ -158,7 +163,7 @@
                     )
                     .frame(width: 30, height: 21)
                     .frame(width: 32, height: 32)
-                    .accessibilityLabel("Goalong logo")
+                    .accessibilityLabel("Logo Goalong")
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Goalong")
@@ -217,17 +222,20 @@
                     model.openRecordingSettings()
                 } else if model.runtime.state == .permissionsMissing || model.runtime.state == .inputTapUnavailable {
                     model.selectSection(.settings); model.settingsPane = .permissions
+                } else if model.runtime.storageFailure != nil {
+                    model.selectSection(.settings); model.settingsPane = .storage
                 } else { model.selectSection(.overview) }
             } label: {
                 HStack(spacing: 9) {
                     Circle()
                         .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : Color.secondary)
                         .frame(width: 7, height: 7)
-                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Enregistrement désactivé")
+                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Suivi désactivé")
                         .font(.system(size: 11, weight: .semibold))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                     Spacer()
-                    if model.runtime.state == .permissionsMissing || model.runtime.state == .inputTapUnavailable {
+                    if model.runtime.needsAttention {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(.tertiary)
@@ -253,9 +261,9 @@
                             .font(.system(size: 14, weight: .semibold))
                     }
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(updates.isPreparingAvailableUpdate ? "Preparing update…" : "Update available")
+                        Text(updates.isPreparingAvailableUpdate ? "Préparation…" : "Mise à jour disponible")
                             .font(.system(size: 11, weight: .semibold))
-                        Text("\(ProductIdentity.displayName) \(version)")
+                        Text("Version \(version) · installer")
                             .font(.system(size: 11, weight: .medium))
                             .opacity(0.76)
                     }
@@ -295,8 +303,8 @@
                 .disabled(!updates.isConfigured || updates.isPreparingAvailableUpdate)
                 .help(
                     updates.isConfigured
-                        ? "Check for updates"
-                        : "Updates are disabled in this privacy-audited source build"
+                        ? "Rechercher les mises à jour"
+                        : "Mises à jour désactivées dans cette version compilée localement"
                 )
             }
             .font(.system(size: 11, weight: .medium))
@@ -317,13 +325,13 @@
             case .overview, .analytics: return "Activité"
             case .history: return "Historique"
             case .monitoring: return "Surveillance temps réel"
-            case .activity: return "Computer History"
-            case .screenTime: return "Screen Time"
-            case .agentActivity: return "AI conversations"
-            case .chatGPTRecap: return "Activity"
-            case .share: return "Share"
-            case .privacy: return "Privacy"
-            case .cli: return "CLI"
+            case .activity: return "Historique de ce Mac"
+            case .screenTime: return "Temps d’écran"
+            case .agentActivity: return "Conversations IA"
+            case .chatGPTRecap: return "Activité"
+            case .share: return "Partager"
+            case .privacy: return "Confidentialité"
+            case .cli: return "Terminal"
             case .settings: return "Réglages"
             }
         }

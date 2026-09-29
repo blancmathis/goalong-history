@@ -640,7 +640,7 @@
 
         private var screenTimeValue: String {
             guard let duration = displayedScreenTimeSummary?.totalScreenOnDuration else {
-                return screenTime.unfilteredSummary == nil ? "—" : "0m"
+                return screenTime.unfilteredSummary == nil ? "—" : "0\u{00A0}min"
             }
             return formattedDuration(duration)
         }
@@ -732,7 +732,7 @@
 
         var sourceDetail: String {
             if screenTimeSeconds > 0, goalongSeconds > 0 {
-                return "Apple Screen Time · Goalong independently observed \(DashboardFormatters.duration(seconds: goalongSeconds)) on this Mac"
+                return "Temps d’écran Apple · Goalong a observé \(DashboardFormatters.duration(seconds: goalongSeconds)) sur ce Mac"
             }
             if screenTimeSeconds > 0 { return "Apple Screen Time" }
             return "Goalong observed foreground on this Mac"
@@ -744,8 +744,8 @@
         static let conciseMaximumItems = 6
 
         static func durationLabel(seconds: TimeInterval) -> String {
-            guard seconds > 0 else { return "0m" }
-            if seconds < 60 { return "<1m" }
+            guard seconds > 0 else { return "0\u{00A0}min" }
+            if seconds < 60 { return "<\u{00A0}1\u{00A0}min" }
             return DashboardFormatters.duration(seconds: seconds)
         }
 

@@ -1,70 +1,19 @@
 #if os(macOS)
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
-@MainActor final class SupportExportController: ObservableObject {
-    static let shared = SupportExportController()
-    @Published private(set) var isPreparing = false
-    @Published var message: String?
-
-    func export(completion: (() -> Void)? = nil) {
-        guard !isPreparing else { completion?(); return }
-        isPreparing = true; message = nil
-        let live = SupportDiagnosticsRuntime.shared.snapshot()
-        let previousBuild = SupportDiagnosticsRuntime.shared.previousWorkingBuildProvider?()
-        Task {
-            let result = await Task.detached(priority: .utility) { () -> Result<Data, Error> in
-                Result { try SupportReport.build(live: live, previousWorkingBuild: previousBuild).data() }
-            }.value
-            switch result {
-            case .failure(let error):
-                SupportDiagnostics.shared.failure(error, component: .support)
-                message = "Le rapport n’a pas pu être préparé. Aucune donnée n’a été envoyée."
-                isPreparing = false; completion?()
-            case .success(let data):
-                let panel = NSSavePanel()
-                panel.title = "Exporter le diagnostic de Goalong"
-                panel.message = "Fichier technique lisible avant partage : états, erreurs numériques, version, chronologie et résumés de crash. Aucun historique, contenu privé ou envoi automatique."
-                panel.nameFieldStringValue = "Goalong-diagnostic-\(SupportDiagnostics.day(Date()).dropFirst(4)).json"
-                panel.allowedContentTypes = [.json]; panel.canCreateDirectories = true
-                NSApplication.shared.activate(ignoringOtherApps: true)
-                panel.begin { response in
-                    Task { @MainActor in
-                        defer { self.isPreparing = false; completion?() }
-                        guard response == .OK, let url = panel.url else { return }
-                        let saved = await Task.detached(priority: .utility) {
-                            Result { try SupportReportWriter.write(data, to: url) }
-                        }.value
-                        switch saved {
-                        case .success:
-                            SupportDiagnostics.shared.record(.reportExported, component: .support,
-                                values: [.byteCount: .count(data.count)])
-                            self.message = "Rapport enregistré. Vous pouvez le lire puis le joindre à votre message au support. Rien n’a été envoyé."
-                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                        case .failure(let error):
-                            SupportDiagnostics.shared.failure(error, component: .support)
-                            self.message = "Le fichier n’a pas pu être enregistré. Essayez un autre dossier."
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
+/// Contextual shortcut used by permission recovery and error states.
 @MainActor struct SupportDiagnosticsExportButton: View {
-    @ObservedObject private var controller = SupportExportController.shared
+    @ObservedObject private var controller = SupportRequestController.shared
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Button(controller.isPreparing ? "Préparation du diagnostic…" : "Exporter un diagnostic…") { controller.export() }
-                .buttonStyle(.bordered).disabled(controller.isPreparing)
-                .accessibilityIdentifier("support-export-diagnostics")
-            if let message = controller.message {
-                Text(message).font(.system(size: 11)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        Button {
+            controller.present()
+        } label: {
+            Label("Signaler un problème…", systemImage: "stethoscope")
         }
+        .buttonStyle(.bordered)
+        .disabled(controller.isPreparing)
+        .accessibilityIdentifier("support-export-diagnostics")
     }
 }
 
@@ -73,19 +22,26 @@ import UniformTypeIdentifiers
     @State private var confirmClear = false
     @State private var feedback: String?
     var body: some View {
-        GoalongSettingsGroup(title: "Diagnostic et assistance") {
+        GoalongSettingsGroup(title: "Aide et diagnostic") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Un souci ? Envoyez un rapport en un clic.").font(.system(size: 13, weight: .semibold))
+                Text("Goalong résume ce qu’il a détecté et prépare un fichier technique que vous relisez avant de l’envoyer. Il ne contient ni votre historique, ni les sites visités, ni aucun texte.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            SupportDiagnosticsExportButton()
+            Divider()
             Toggle("Conserver les journaux techniques sur ce Mac", isOn: $enabled)
                 .toggleStyle(.switch).onChange(of: enabled) { SupportDiagnostics.shared.setEnabled($0) }
-            Text("Autorisations, état des services, erreurs, mises à jour et indices de crash. Aucun contenu d’écran, historique, conversation, adresse web, mot de passe ou identifiant de compte. Aucun envoi automatique.")
+            Text("Recommandé : sans journal, un rapport ne peut décrire que l’instant présent. Conservation locale de 7 jours au plus, 5,3 Mio maximum, aucun envoi automatique.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
-            Text("Conservation : jusqu’à 7 jours, au maximum 3,5 Mio de journaux. Vous choisissez quand exporter et à qui transmettre le fichier.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
-            SupportDiagnosticsExportButton()
+                .fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("Marquer le problème maintenant") {
+                Button("Ajouter un repère") {
                     SupportDiagnostics.shared.record(.userMarkedIssue, component: .support)
-                    feedback = enabled ? "Repère ajouté. Reproduisez le problème puis exportez le diagnostic." : "Activez les journaux pour ajouter un repère."
+                    feedback = "Repère ajouté. Reproduisez le problème puis signalez-le."
                 }.disabled(!enabled)
+                    .help("Marque l’instant où le problème se produit pour le retrouver dans le rapport.")
                 Button("Effacer les journaux…") { confirmClear = true }
             }.buttonStyle(.bordered)
             if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(.secondary) }
@@ -97,7 +53,7 @@ import UniformTypeIdentifiers
                     feedback = success ? "Journaux effacés. Votre historique et vos réglages sont inchangés." : "Certains journaux n’ont pas pu être effacés."
                 }
             }
-        } message: { Text("Les rapports déjà exportés restent dans le dossier où vous les avez enregistrés. L’historique d’activité n’est pas modifié.") }
+        } message: { Text("Les rapports déjà envoyés ne sont pas concernés. L’historique d’activité n’est pas modifié.") }
     }
 }
 #endif

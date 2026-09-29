@@ -10,12 +10,12 @@
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     PageHeader(
-                        eyebrow: "Local-first by design",
+                        eyebrow: "Local par conception",
                         title: "Privacy & security",
-                        subtitle: "Understand exactly what is captured, what is hidden and what can leave your Mac."
+                        subtitle: "Voyez exactement ce qui est enregistré, ce qui est masqué et ce qui peut quitter votre Mac."
                     ) {
                         HStack(spacing: 10) {
-                            Button("Open data folder") {
+                            Button("Ouvrir le dossier des données") {
                                 model.openDataFolder()
                             }
                             .buttonStyle(.bordered)
@@ -57,7 +57,7 @@
                 Alert(
                     title: Text(scope.title),
                     message: Text(scope.message),
-                    primaryButton: .destructive(Text("Delete")) {
+                    primaryButton: .destructive(Text("Supprimer")) {
                         model.deleteDetails(since: scope.cutoff)
                     },
                     secondaryButton: .cancel()
@@ -70,8 +70,8 @@
             return LHCard {
                 VStack(alignment: .leading, spacing: 14) {
                     SectionTitle(
-                        title: "This exact build",
-                        subtitle: "Capabilities are selected at compile time, not hidden behind a preference."
+                        title: "Cette version précise",
+                        subtitle: "Les capacités sont fixées à la compilation, pas cachées derrière un réglage."
                     )
 
                     HStack(alignment: .top, spacing: 12) {
@@ -84,7 +84,7 @@
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                             )
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Goalong History · one public app")
+                            Text("Goalong History · une seule app publique")
                                 .font(.system(size: 13, weight: .semibold))
                             Text(capabilities.summary)
                                 .font(.system(size: 11))
@@ -105,25 +105,25 @@
                         spacing: 10
                     ) {
                         capabilityRow(
-                            "Website submission after review",
+                            "Envoi au site après vérification",
                             present: capabilities.permitsFirstPartyNetworking
                         )
                         capabilityRow(
-                            "Automatic update framework",
+                            "Module de mise à jour automatique",
                             present: capabilities.permitsAutomaticUpdates
                         )
                         capabilityRow(
                             "Managed ChatGPT analysis bridge",
                             present: capabilities.permitsRemoteAnalysis
                         )
-                        capabilityRow("Direct local source readers", present: true)
+                        capabilityRow("Lecteurs directs des sources locales", present: true)
                     }
 
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "exclamationmark.shield.fill")
                             .foregroundStyle(LHTheme.warning)
                         Text(
-                            "Full Disk Access remains a broad macOS permission. Provider readers are read-only and audited, but they still run inside the main app process; a separately sandboxed reader service has not yet been proven or shipped."
+                            "L’accès complet au disque reste une autorisation macOS large. Les lecteurs sont en lecture seule et audités, mais s’exécutent dans l’app principale ; un service de lecture isolé n’est pas encore livré."
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -152,22 +152,22 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 18) {
                     SectionTitle(
-                        title: "What happens to your data",
+                        title: "Ce que deviennent vos données",
                         subtitle: GoalongBuildCapabilities.permitsRemoteVerification
-                            ? "The detailed record and the cryptographic proof follow separate paths"
-                            : "Detailed records and integrity proofs stay separate and local"
+                            ? "L’enregistrement détaillé et la preuve cryptographique suivent des chemins séparés"
+                            : "Enregistrements détaillés et preuves d’intégrité restent séparés et locaux"
                     )
 
                     HStack(alignment: .center, spacing: 12) {
                         flowNode(
                             symbol: "macwindow",
                             title: "1. Observe",
-                            message: "Apps, windows, clicks and non-content input activity"
+                            message: "Apps, fenêtres, clics et activité de saisie sans contenu"
                         )
                         flowArrow
                         flowNode(
                             symbol: "internaldrive.fill",
-                            title: "2. Keep local",
+                            title: "2. Conservé localement",
                             message: "Detailed JSONL events and private commitment salts"
                         )
                         flowArrow
@@ -176,15 +176,15 @@
                             title: "3. Anchor",
                             message: GoalongBuildCapabilities.permitsRemoteVerification
                                 ? (model.runtime.verificationEnabled
-                                    ? "Opaque signed commitments only"
-                                    : "Stored locally until verification is enabled")
-                                : "Local commitments never leave this build"
+                                    ? "Uniquement des engagements signés opaques"
+                                    : "Conservés localement tant que la vérification n’est pas activée")
+                                : "Les engagements locaux ne quittent jamais cette version"
                         )
                         flowArrow
                         flowNode(
                             symbol: "eye.slash.fill",
-                            title: "4. Share selectively",
-                            message: "Only fields you explicitly reveal with their proofs"
+                            title: "4. Partage sélectif",
+                            message: "Uniquement les champs que vous révélez, avec leurs preuves"
                         )
                     }
 
@@ -194,7 +194,7 @@
                         Text(
                             GoalongBuildCapabilities.permitsRemoteVerification
                                 ? "An opaque commitment does not contain the application, URL, window title, clicks or category. Your server necessarily sees connection metadata such as arrival time and IP when commitments are enabled."
-                                : "Local commitments verify integrity without exposing the detailed record or contacting a server. This Local build contains no commitment transport."
+                                : "Les engagements locaux vérifient l’intégrité sans exposer l’enregistrement détaillé ni contacter de serveur. Cette version ne transmet aucun engagement."
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -212,7 +212,7 @@
                 VStack(alignment: .leading, spacing: 15) {
                     SectionTitle(
                         title: "macOS permissions",
-                        subtitle: "Access is optional for sources you leave off. macOS permission and your choice to enable a source are separate."
+                        subtitle: "Aucun accès n’est nécessaire pour les sources désactivées. L’autorisation macOS et votre choix d’activer une source sont distincts."
                     )
 
                     GoalongDisclosureGroup("Capture diagnostics") { captureHealthPanel.padding(.top, 12) }
@@ -220,28 +220,28 @@
                     VStack(spacing: 16) {
                         permissionRow(
                             title: "Accessibility",
-                            message: "Reads eligible foreground context for Computer History. Goalong opens System Settings only on your request and never changes macOS permissions for you.",
+                            message: "Lit le contexte au premier plan pour l’historique. Goalong n’ouvre Réglages Système qu’à votre demande et ne modifie jamais les autorisations à votre place.",
                             granted: model.runtime.accessibilityGranted,
-                            grantedLabel: "Granted",
-                            buttonTitle: "Guided setup",
+                            grantedLabel: "Accordé",
+                            buttonTitle: "Configuration guidée",
                             action: model.openAccessibilitySettings
                         )
                         permissionRow(
                             title: "Activity input",
-                            message: "Reports the direct Input Monitoring switch. A real event callback is still required before capture is called healthy.",
+                            message: "Indique l’état de la surveillance de l’entrée. Un vrai événement reste nécessaire avant de considérer l’enregistrement comme fonctionnel.",
                             granted: model.runtime.inputMonitoringGranted,
-                            grantedLabel: "Available",
-                            buttonTitle: "Guided setup",
+                            grantedLabel: "Disponible",
+                            buttonTitle: "Configuration guidée",
                             action: model.openInputMonitoringSettings
                         )
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Full Disk Access").font(.system(size: 13, weight: .semibold))
-                        Text("Screen Time is read directly from Apple-owned files. Full Disk Access is a broad macOS permission, not access to just one folder. You can leave Apple Screen Time off. If Goalong is missing from a permission list, use + to add Goalong History from Applications, then return and check access for the source.")
+                        Text("Accès complet au disque").font(.system(size: 13, weight: .semibold))
+                        Text("Le Temps d’écran est lu directement dans les fichiers d’Apple. L’accès complet au disque est une autorisation large, pas limitée à un dossier ; vous pouvez laisser cette source désactivée. Si Goalong manque dans la liste, ajoutez Goalong History depuis Applications avec +, puis revenez vérifier l’accès.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Open Full Disk Access settings") {
+                        Button("Ouvrir les réglages d’accès complet au disque") {
                             SourceAccessService.openAccess(.fullDiskAccess)
                         }.buttonStyle(.bordered)
                     }
@@ -255,13 +255,13 @@
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(LHTheme.warning)
                             Spacer()
-                            Button("Open guided setup") { model.requestPermissions() }
+                            Button("Ouvrir la configuration guidée") { model.requestPermissions() }
                                 .buttonStyle(LHPrimaryButtonStyle())
                         }
                     } else if model.runtime.captureHealth?.captureProven != true {
                         HStack {
                             Label(
-                                "The switches or tap object may exist, but this process has not received a real input callback yet.",
+                                "Les autorisations semblent présentes, mais aucun vrai événement de saisie n’a encore été reçu.",
                                 systemImage: "waveform.path.ecg"
                             )
                             .font(.system(size: 12, weight: .medium))
@@ -274,7 +274,7 @@
                         HStack(spacing: 8) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(LHTheme.success)
-                            Text("A real input callback and Accessibility context have been observed for this running process.")
+                            Text("Un vrai événement de saisie et le contexte d’accessibilité ont été observés.")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
@@ -293,13 +293,13 @@
                     VStack(alignment: .leading, spacing: 3) {
                         Text(assessment?.state.title ?? "Capture health unavailable")
                             .font(.system(size: 12, weight: .semibold))
-                        Text(assessment?.detail ?? "No persisted capture-health evidence is available yet.")
+                        Text(assessment?.detail ?? "Aucun indicateur d’état d’enregistrement n’est encore disponible.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    Button("Validate input now") { model.beginCaptureValidation() }
+                    Button("Vérifier la saisie maintenant") { model.beginCaptureValidation() }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                 }
@@ -329,7 +329,7 @@
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     if snapshot.build.signatureKind == .adHoc {
-                        Text("Ad-hoc updates can change the app identity recognized by TCC and may require approval again. Existing history remains readable.")
+                        Text("Une mise à jour non signée par Apple peut changer l’identité reconnue par macOS et redemander une autorisation. L’historique existant reste lisible.")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(LHTheme.warning)
                     }
@@ -349,27 +349,27 @@
                     symbol: "person.fill.questionmark",
                     title: "Private browsing",
                     message:
-                        "Your saved private-window choice is shown above. Detection varies by browser; Pause is available for sensitive activity.",
+                        "Votre choix pour les fenêtres privées est indiqué ci-dessus. La détection dépend du navigateur ; utilisez la pause pour une activité sensible.",
                     tint: LHTheme.privateTint
                 )
                 protectionCard(
                     symbol: "key.fill",
                     title: "Passwords and secure fields",
-                    message: "Secure text input suppresses keyboard activity. Review password-manager exclusions in Recording.",
+                    message: "La saisie sécurisée masque l’activité clavier. Vérifiez les exclusions des gestionnaires de mots de passe dans Enregistrement.",
                     tint: LHTheme.success
                 )
                 protectionCard(
                     symbol: "keyboard.badge.ellipsis",
                     title: "No raw typed text",
-                    message: "\(ProductIdentity.displayName) stores typing counts and duration plus generic shortcut/navigation activity, never characters or exact keys.",
+                    message: "\(ProductIdentity.displayName) conserve le nombre de frappes, leur durée et l’usage générique des raccourcis, jamais les caractères ni les touches exactes.",
                     tint: LHTheme.teal
                 )
                 protectionCard(
                     symbol: "link.badge.plus",
                     title: "Sanitized URLs",
                     message: model.appliedSettings.redactAllURLQueryValues
-                        ? "URL query values and fragments are removed before local storage."
-                        : "Sensitive query names are redacted; full-query redaction is currently disabled.",
+                        ? "Les paramètres et fragments d’adresse sont retirés avant l’enregistrement."
+                        : "Les paramètres sensibles sont masqués ; le masquage complet est désactivé.",
                     tint: LHTheme.accent
                 )
             }
@@ -379,8 +379,8 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 14) {
                     SectionTitle(
-                        title: "Local storage",
-                        subtitle: "Readable files protected by your macOS user account"
+                        title: "Stockage local",
+                        subtitle: "Fichiers lisibles, protégés par votre compte macOS"
                     )
 
                     infoRow(
@@ -391,23 +391,23 @@
                     infoRow(
                         symbol: "calendar",
                         title: "Retention policy",
-                        value: "See retention by data type above"
+                        value: "Voir la conservation par type ci-dessus"
                     )
                     infoRow(
                         symbol: "doc.text",
-                        title: "Available days",
+                        title: "Jours disponibles",
                         value: "\(model.snapshot.availableDays.count)"
                     )
                     infoRow(
                         symbol: "lock.fill",
-                        title: "File permissions",
+                        title: "Permissions des fichiers",
                         value: "Folders 0700 · files 0600"
                     )
 
                     HStack {
-                        Button("Open folder") { model.openDataFolder() }
+                        Button("Ouvrir le dossier") { model.openDataFolder() }
                             .buttonStyle(.bordered)
-                        Button("Open JSONL") { model.openTodayJSON() }
+                        Button("Ouvrir le JSONL") { model.openTodayJSON() }
                             .buttonStyle(.bordered)
                         Button("Diagnostics") { model.openDiagnostics() }
                             .buttonStyle(.bordered)
@@ -421,7 +421,7 @@
                 VStack(alignment: .leading, spacing: 14) {
                     SectionTitle(
                         title: "Verification identity",
-                        subtitle: "Used to sign minute commitments without exposing activity"
+                        subtitle: "Sert à signer les engagements minute par minute sans exposer l’activité"
                     )
 
                     HStack(spacing: 13) {
@@ -458,7 +458,7 @@
 
                     HStack {
                         StatusPill(
-                            title: model.runtime.verificationEnabled ? "Verification enabled" : "No external verification",
+                            title: model.runtime.verificationEnabled ? "Vérification activée" : "Aucune vérification externe",
                             symbol: model.runtime.verificationEnabled ? "checkmark.seal.fill" : "internaldrive",
                             tint: model.runtime.verificationEnabled ? LHTheme.accent : Color.secondary
                         )
@@ -472,10 +472,10 @@
             LHCard {
                 HStack(alignment: .top, spacing: 18) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Delete local activity and derived memories")
+                        Text("Supprimer l’activité locale et les souvenirs dérivés")
                             .font(.system(size: 14, weight: .semibold))
                         Text(
-                            "Deleting activity also removes its local semantic context, Activity Analysis, Activity Memory and Computer History projections. Agent Activity's source index, Screen Time, minute commitments and server receipts remain."
+                            "Supprimer l’activité retire aussi son contexte, ses analyses et ses vues dérivées. L’index des conversations IA, le Temps d’écran, les engagements et les reçus sont conservés."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -484,23 +484,23 @@
                     Spacer(minLength: 20)
                     Menu {
                         if let recent = model.mostRecentActivitySession {
-                            Button("Most recent app session", role: .destructive) {
+                            Button("Dernière session d’application", role: .destructive) {
                                 sessionPendingDeletion = recent
                             }
                             Divider()
                         }
-                        Button("Last 10 minutes", role: .destructive) {
+                        Button("10 dernières minutes", role: .destructive) {
                             deletionScope = .lastTenMinutes
                         }
-                        Button("Last hour", role: .destructive) {
+                        Button("Dernière heure", role: .destructive) {
                             deletionScope = .lastHour
                         }
                         Divider()
-                        Button("All local activity and memories", role: .destructive) {
+                        Button("Toute l’activité locale et les souvenirs", role: .destructive) {
                             deletionScope = .all
                         }
                     } label: {
-                        Label("Delete details…", systemImage: "trash")
+                        Label("Supprimer les détails…", systemImage: "trash")
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
@@ -508,11 +508,11 @@
             }
             .alert(item: $sessionPendingDeletion) { session in
                 Alert(
-                    title: Text("Delete the most recent app session?"),
+                    title: Text("Supprimer la dernière session d’application ?"),
                     message: Text(
-                        "Goalong will remove only the exact local events and linked semantic snapshots for \(session.appName) from \(DashboardFormatters.shortTime.string(from: session.start)) to \(DashboardFormatters.shortTime.string(from: session.end)). Seals, receipts, Screen Time and Agent Activity remain."
+                        "Goalong supprimera uniquement les événements locaux de \(session.appName) entre \(DashboardFormatters.shortTime.string(from: session.start)) et \(DashboardFormatters.shortTime.string(from: session.end)), ainsi que les instantanés liés. Sceaux, reçus, Temps d’écran et conversations IA sont conservés."
                     ),
-                    primaryButton: .destructive(Text("Delete session")) {
+                    primaryButton: .destructive(Text("Supprimer la session")) {
                         model.deleteActivitySession(session)
                     },
                     secondaryButton: .cancel()

@@ -1,5 +1,26 @@
 # Changelog
 
+## À publier — Activité : lire et analyser ses données
+
+- **Les journées très chargées ne disparaissent plus** : au-delà de 32 768 observations (plus de 40 000 un jour ordinaire de travail intensif), toute la journée était exclue des totaux comme « illisible ». Activité a désormais son propre plafond de lecture.
+- **Quatre indicateurs lisibles** en tête : temps actif (moyenne par jour sur 7/28 jours, horaires de début et de fin), travail, concentration (plus long bloc de travail) et changements d’app par heure, avec la comparaison adaptée (hier à la même heure, veille, moyenne de la période précédente).
+- **À retenir** : les constats clés en phrases courtes (meilleure journée, créneau le plus actif, usage principal, rythme de changement, plus forte variation…).
+- **Classement Travail / Hors travail en un clic** par app ou par site, appliqué à tout l’historique sans réécrire les journaux ; carte des usages à classer, étiquette sur chaque ligne, gestion dans Réglages → Apps et sites.
+- **Nouveaux graphiques** : heures empilées par classement, chronologie en couloirs par usage, jours avec ligne de moyenne, carte « Quand êtes-vous actif ? » par jour de semaine et par heure.
+- **Détail d’un usage** : séances, durée moyenne, plus longue séance, évolution, heures d’utilisation.
+- **Export CSV** des durées par jour et par app ou site, prêt pour Numbers ou Excel.
+- Durées au format français (« 5 h 07 », « 42 min »).
+
+## À publier — fiabilité, assistance et confiance
+
+- **L’enregistrement reprend tout seul après un disque plein.** Une seule écriture refusée arrêtait l’historique jusqu’au prochain lancement (constaté les 26 et 28/09 : près de 22 h perdues sans alerte). Goalong réessaie désormais de façon espacée, réconcilie sa chaîne d’intégrité sans redémarrer et inscrit la coupure dans l’historique.
+- **Coupure visible immédiatement** : bannière « Enregistrement interrompu : le disque est plein » avec *Gérer le stockage…*, état « Disque plein » dans la barre latérale et le menu, alerte dès qu’il reste moins de 2 Go, espace libre affiché dans Réglages → Stockage.
+- **Signaler un problème en un clic** depuis le menu Aide, la barre des menus, les Réglages et chaque écran d’erreur : résumé en français de ce qui a été détecté, contenu du rapport expliqué, envoi par e-mail avec le fichier joint ou partage macOS. Toujours aucun envoi automatique.
+- **Journaux qui expliquent vraiment les erreurs** : type et cas de l’erreur, code système sous-jacent (ex. errno 28), version précédente après une mise à jour, espace disque et taille des dossiers internes ; répétitions regroupées avec leur nombre exact, événements périodiques écrits seulement quand ils changent, et flux réservé aux erreurs pour qu’elles ne soient plus évincées. Toujours sans contenu privé.
+- **Mises à jour plus claires** : messages en français avec la cause (hors ligne, signature invalide, app lancée depuis l’image disque…), état « À jour · vérifié il y a 5 minutes » dans les Réglages, confirmation après installation, cycle complet dans le journal.
+- **Surveillance temps réel** : un crédit TypeSafe épuisé (HTTP 402) met la surveillance en pause avec un message clair au lieu de relancer une requête toutes les 45 secondes ; les autres erreurs du service sont réessayées de façon espacée.
+- **Interface entièrement en français** : plus de 650 textes anglais traduits (historique, autorisations, sources, Temps d’écran, conversations IA, partage, menus), menus de l’app et de la barre des menus simplifiés, dates et panneaux système en français même sur un Mac réglé en anglais.
+
 ## À publier — cycle de vie des autorisations
 
 - Vérifications partagées et bornées ; les résultats en cours ou antérieurs à une réparation ne peuvent plus valider une activation.

@@ -28,6 +28,8 @@
         private let permissionMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let globalPauseItem = NSMenuItem(title: "Arrêt de confidentialité", action: #selector(toggleGlobalPause), keyEquivalent: "")
         private let pauseMenuItem = NSMenuItem(title: "", action: #selector(togglePause), keyEquivalent: "p")
+        private let technicalStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        private let updateMenuItem = NSMenuItem(title: "Rechercher les mises à jour…", action: #selector(checkForUpdates), keyEquivalent: "")
 
         init(
             state: CaptureState,
@@ -83,35 +85,33 @@
             let health = captureHealth()
 
             let display: (title: String, symbol: String, description: String)
+            let localEnabled = GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
             if GoalongGlobalPause.isPaused() {
                 display = ("Arrêt de confidentialité", "pause.circle.fill", "Sources et envois suspendus")
+            } else if !localEnabled {
+                display = ("Enregistrement désactivé", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
+            } else if health.state == .storageUnavailable {
+                display = ("Enregistrement interrompu", "externaldrive.badge.exclamationmark",
+                           "L’historique ne peut pas être écrit (disque plein ?). Reprise automatique dès que possible")
             } else if health.state == .permissionRequired
                 || health.state == .permissionAppearsEnabledButStaleForBuild
                 || health.state == .accessibilityContextUnavailable
             {
-                display = (
-                    health.state.title, "exclamationmark.triangle.fill", health.detail
-                )
+                display = ("Autorisation macOS à vérifier", "exclamationmark.triangle.fill",
+                           "Ouvrez Goalong pour rétablir l’accès : rien n’est enregistré en attendant")
             } else if !recording {
-                display = ("Recording paused", "pause.circle.fill", "\(ProductIdentity.displayName) is paused")
+                display = ("Enregistrement en pause", "pause.circle.fill", "\(ProductIdentity.displayName) est en pause")
             } else if let suppression, suppression == .accessibilityUnavailable {
-                display = (
-                    "Browser context unavailable", "exclamationmark.shield.fill",
-                    "This browser context cannot be inspected safely"
-                )
+                display = ("Navigateur non accessible", "exclamationmark.shield.fill",
+                           "Cette fenêtre ne peut pas être lue en toute sécurité : aucun détail enregistré")
             } else if let suppression, suppression == .sessionUnavailable {
-                display = (
-                    "Mac session unavailable", "lock.fill",
-                    "The Mac is locked, asleep or otherwise unavailable"
-                )
+                display = ("Session Mac inactive", "lock.fill", "Le Mac est verrouillé, en veille ou indisponible")
             } else if health.state == .inputTapUnavailable || health.state == .awaitingInputEvidence {
-                display = (health.state.title, "waveform.path.ecg", health.detail)
+                display = ("Interactions en attente", "waveform.path.ecg",
+                           "Les clics et la frappe seront comptés dès le premier événement reçu")
             } else {
-                display = (
-                    "Recording locally",
-                    "record.circle.fill",
-                    "Goalong is running. Monitoring and privacy rules are applied in the background."
-                )
+                display = ("Enregistrement local actif", "record.circle.fill",
+                           "Votre activité reste sur ce Mac")
             }
 
             statusMenuItem.title = display.title
@@ -120,12 +120,18 @@
                 accessibilityDescription: display.description
             )
             statusMenuItem.toolTip = display.description
-            permissionMenuItem.title =
-                "Accessibility: \(permissionStatus.accessibility ? "on" : "off")  •  Direct input: \(permissionStatus.inputMonitoringStatusLabel)  •  Tap object: \(eventTapStatus() ? "on" : "off")  •  Evidence: \(health.captureProven ? "yes" : "no")"
+            permissionMenuItem.title = display.description
+            technicalStatusItem.title =
+                "Accessibilité : \(permissionStatus.accessibility ? "oui" : "non") · Surveillance de l’entrée : \(permissionStatus.inputMonitoringStatusLabel) · Interactions : \(eventTapStatus() ? "actives" : "inactives") · Preuve : \(health.captureProven ? "oui" : "non")"
             globalPauseItem.title = GoalongGlobalPause.isPaused() ? "Reprendre tout le suivi" : "Tout suspendre pour confidentialité…"
-            pauseMenuItem.title = !GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
-                ? "Set up Computer History…"
+            pauseMenuItem.title = !localEnabled
+                ? "Configurer l’enregistrement…"
                 : (state.isManuallyPaused ? "Reprendre l’enregistrement local" : "Arrêter l’enregistrement local…")
+            Task { @MainActor in
+                let updates = SoftwareUpdateManager.shared
+                self.updateMenuItem.title = updates.availableVersion.map { "Installer la version \($0)…" }
+                    ?? "Rechercher les mises à jour…"
+            }
 
             if let button = statusItem.button {
                 button.image = GoalongBrandAssets.menuBarImage
@@ -148,7 +154,7 @@
         }
 
         private func buildMenu() {
-            let openItem = makeItem("Open \(ProductIdentity.displayName)", action: #selector(openDashboard), keyEquivalent: "o")
+            let openItem = makeItem("Ouvrir \(ProductIdentity.displayName)", action: #selector(openDashboard), keyEquivalent: "o")
             openItem.image = GoalongBrandAssets.menuBarImage
             menu.addItem(openItem)
             menu.addItem(.separator())
@@ -168,36 +174,52 @@
             privacyItem.submenu = privacyMenu
             menu.addItem(privacyItem)
             Task { @MainActor in JevMenuController.shared.install(in: self.menu, onOpenMonitoring: self.onOpenMonitoring) }
-            menu.addItem(makeItem("Share signed day…", action: #selector(openShare)))
             menu.addItem(.separator())
+            updateMenuItem.target = self
+            menu.addItem(updateMenuItem)
+            menu.addItem(makeItem("Signaler un problème…", action: #selector(openDiagnostics)))
 
-            menu.addItem(makeItem("Open today's JSONL", action: #selector(openTodayFile)))
-            menu.addItem(makeItem("Open data folder", action: #selector(openDataFolder)))
-            menu.addItem(makeItem("Open configuration", action: #selector(openConfiguration)))
+            // Tools for inspection and recovery stay available without cluttering the
+            // everyday menu.
+            let advanced = NSMenu(title: "Avancé")
+            technicalStatusItem.isEnabled = false
+            advanced.addItem(technicalStatusItem)
+            advanced.addItem(.separator())
+            advanced.addItem(makeItem("Partager une journée signée…", action: #selector(openShare)))
+            advanced.addItem(makeItem("Ouvrir le fichier du jour (JSONL)", action: #selector(openTodayFile)))
+            advanced.addItem(makeItem("Ouvrir le dossier des données", action: #selector(openDataFolder)))
+            advanced.addItem(makeItem("Ouvrir la configuration", action: #selector(openConfiguration)))
+            advanced.addItem(makeItem("Recharger la configuration", action: #selector(reloadConfiguration)))
+            advanced.addItem(.separator())
 
-            let permissionsMenu = NSMenu(title: "Permissions")
-            permissionsMenu.addItem(makeItem("Request required access", action: #selector(requestPermissions)))
-            permissionsMenu.addItem(
-                makeItem("Guided Accessibility setup", action: #selector(openAccessibilitySettings)))
-            permissionsMenu.addItem(
-                makeItem("Guided Input Monitoring setup", action: #selector(openInputMonitoringSettings)))
-            let permissionsItem = NSMenuItem(title: "Permissions", action: nil, keyEquivalent: "")
+            let permissionsMenu = NSMenu(title: "Autorisations")
+            permissionsMenu.addItem(makeItem("Demander les accès nécessaires", action: #selector(requestPermissions)))
+            permissionsMenu.addItem(makeItem("Réglage Accessibilité…", action: #selector(openAccessibilitySettings)))
+            permissionsMenu.addItem(makeItem("Réglage Surveillance de l’entrée…", action: #selector(openInputMonitoringSettings)))
+            let permissionsItem = NSMenuItem(title: "Autorisations", action: nil, keyEquivalent: "")
             permissionsItem.submenu = permissionsMenu
-            menu.addItem(permissionsItem)
+            advanced.addItem(permissionsItem)
 
-            let clearMenu = NSMenu(title: "Clear history")
-            clearMenu.addItem(makeItem("Last 10 minutes…", action: #selector(clearLastTenMinutes)))
-            clearMenu.addItem(makeItem("Last hour…", action: #selector(clearLastHour)))
-            clearMenu.addItem(makeItem("Last day…", action: #selector(clearLastDay)))
-            clearMenu.addItem(makeItem("All detailed history…", action: #selector(clearAllHistory)))
-            let clearItem = NSMenuItem(title: "Clear detailed history", action: nil, keyEquivalent: "")
+            let clearMenu = NSMenu(title: "Effacer l’historique détaillé")
+            clearMenu.addItem(makeItem("10 dernières minutes…", action: #selector(clearLastTenMinutes)))
+            clearMenu.addItem(makeItem("Dernière heure…", action: #selector(clearLastHour)))
+            clearMenu.addItem(makeItem("Dernières 24 heures…", action: #selector(clearLastDay)))
+            clearMenu.addItem(makeItem("Tout l’historique détaillé…", action: #selector(clearAllHistory)))
+            let clearItem = NSMenuItem(title: "Effacer l’historique détaillé", action: nil, keyEquivalent: "")
             clearItem.submenu = clearMenu
-            menu.addItem(clearItem)
-
-            menu.addItem(makeItem("Reload configuration", action: #selector(reloadConfiguration)))
-            menu.addItem(makeItem("Open diagnostics", action: #selector(openDiagnostics)))
+            advanced.addItem(clearItem)
+            let advancedItem = NSMenuItem(title: "Avancé", action: nil, keyEquivalent: "")
+            advancedItem.submenu = advanced
+            menu.addItem(advancedItem)
             menu.addItem(.separator())
-            menu.addItem(makeItem("Quit \(ProductIdentity.displayName)", action: #selector(quit), keyEquivalent: "q"))
+            menu.addItem(makeItem("Quitter \(ProductIdentity.displayName)", action: #selector(quit), keyEquivalent: "q"))
+        }
+
+        @objc private func checkForUpdates() {
+            Task { @MainActor in
+                let updates = SoftwareUpdateManager.shared
+                if updates.availableVersion != nil { updates.showAvailableUpdate() } else { updates.checkForUpdates() }
+            }
         }
 
         private func makeItem(_ title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
@@ -260,7 +282,7 @@
         }
 
         @objc private func openDiagnostics() {
-            Task { @MainActor in SupportExportController.shared.export() }
+            Task { @MainActor in SupportRequestController.shared.present() }
         }
 
         @objc private func requestPermissions() {
@@ -278,29 +300,29 @@
         @objc private func reloadConfiguration() {
             onReloadConfig()
             showInformation(
-                title: "Configuration reloaded",
-                message: "\(ProductIdentity.displayName) reloaded config.json and refreshed verification settings."
+                title: "Configuration rechargée",
+                message: "\(ProductIdentity.displayName) a relu config.json et actualisé ses réglages."
             )
         }
 
         @objc private func clearLastTenMinutes() {
-            clearHistory(since: Date().addingTimeInterval(-10 * 60), label: "last 10 minutes")
+            clearHistory(since: Date().addingTimeInterval(-10 * 60), label: "des 10 dernières minutes")
         }
 
         @objc private func clearLastHour() {
-            clearHistory(since: Date().addingTimeInterval(-60 * 60), label: "last hour")
+            clearHistory(since: Date().addingTimeInterval(-60 * 60), label: "de la dernière heure")
         }
 
         @objc private func clearLastDay() {
-            clearHistory(since: Date().addingTimeInterval(-24 * 60 * 60), label: "last day")
+            clearHistory(since: Date().addingTimeInterval(-24 * 60 * 60), label: "des dernières 24 heures")
         }
 
         @objc private func clearAllHistory() {
             guard
                 confirmDestructiveAction(
-                    title: "Delete all detailed \(ProductIdentity.displayName) events?",
+                    title: "Effacer tout l’historique détaillé ?",
                     message:
-                        "This removes detailed local JSONL events. Cryptographic minute seals and server receipts are kept, so anchored periods remain visible but can only be shared as private when their details are gone."
+                        "Les événements détaillés enregistrés sur ce Mac seront supprimés. Les sceaux cryptographiques sont conservés : les périodes concernées restent visibles, mais ne pourront plus être partagées qu’en mode privé."
                 )
             else { return }
 
@@ -308,8 +330,8 @@
                 switch result {
                 case .success(let itemCount):
                     self?.showInformation(
-                        title: "Detailed history deleted",
-                        message: "Deleted \(itemCount) detailed event or semantic item(s). Existing seals and receipts remain."
+                        title: "Historique détaillé effacé",
+                        message: "\(itemCount) élément(s) détaillé(s) supprimé(s). Les sceaux existants sont conservés."
                     )
                 case .failure(let error):
                     self?.showError(error)
@@ -324,9 +346,9 @@
         private func clearHistory(since cutoff: Date, label: String) {
             guard
                 confirmDestructiveAction(
-                    title: "Delete the \(label)?",
+                    title: "Effacer l’historique \(label) ?",
                     message:
-                        "Matching detailed events will be removed locally. Existing cryptographic seals are kept; deleted intervals cannot later be revealed and will fall back to private."
+                        "Les événements détaillés correspondants seront supprimés de ce Mac. Les sceaux cryptographiques sont conservés ; les périodes effacées apparaîtront comme privées."
                 )
             else { return }
 
@@ -334,8 +356,8 @@
                 switch result {
                 case .success(let count):
                     self?.showInformation(
-                        title: "Detailed history deleted",
-                        message: "Deleted \(count) detailed event or semantic item(s) from the \(label). Existing seals remain."
+                        title: "Historique détaillé effacé",
+                        message: "\(count) élément(s) détaillé(s) supprimé(s). Les sceaux existants sont conservés."
                     )
                 case .failure(let error):
                     self?.showError(error)
@@ -349,8 +371,8 @@
             alert.alertStyle = .warning
             alert.messageText = title
             alert.informativeText = message
-            alert.addButton(withTitle: "Delete")
-            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Effacer")
+            alert.addButton(withTitle: "Annuler")
             return alert.runModal() == .alertFirstButtonReturn
         }
 

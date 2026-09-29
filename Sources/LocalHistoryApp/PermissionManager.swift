@@ -11,8 +11,8 @@
 
         var title: String {
             switch self {
-            case .accessibility: return "Accessibility"
-            case .inputMonitoring: return "Input Monitoring"
+            case .accessibility: return "Accessibilité"
+            case .inputMonitoring: return "Surveillance de l’entrée"
             }
         }
 
@@ -276,7 +276,7 @@
                 .elapsedMS: .number((ProcessInfo.processInfo.systemUptime - started) * 1000)
             ]
             if let error = evidence.1 { values[.axError] = .count(Int(error)) }
-            SupportDiagnostics.shared.record(.permissionChecked, component: .permissions, values: values)
+            SupportDiagnostics.shared.recordIfChanged(.permissionChecked, component: .permissions, values: values, refreshAfter: 1_800)
             return status
         }
 

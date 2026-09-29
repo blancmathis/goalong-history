@@ -141,10 +141,10 @@ final class SourceActivationTests: XCTestCase {
         let flow = SourceActivationFlow(store: consent, check: { _, done in done(.accessibility) }, initialStatus: .accessibility)
         flow.checkAndEnable(.localComputerHistory, surface: .settings) {}
         XCTAssertEqual(flow.completedCheckCount, 1)
-        XCTAssertTrue(flow.feedback?.contains("Check 1") == true)
+        XCTAssertTrue(flow.feedback?.contains("Vérification 1") == true)
         flow.checkAndEnable(.localComputerHistory, surface: .settings) {}
         XCTAssertEqual(flow.completedCheckCount, 2)
-        XCTAssertTrue(flow.feedback?.contains("Check 2") == true)
+        XCTAssertTrue(flow.feedback?.contains("Vérification 2") == true)
         XCTAssertFalse(consent.isEnabled(.localComputerHistory))
     }
 

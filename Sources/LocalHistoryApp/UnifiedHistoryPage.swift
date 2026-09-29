@@ -26,7 +26,7 @@
             VStack(alignment: .leading, spacing: 0) {
                 header
 
-                Picker("History source", selection: $source) {
+                Picker("Source de l’historique", selection: $source) {
                     ForEach(HistorySource.allCases) { item in
                         Text(item.title).tag(item)
                     }

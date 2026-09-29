@@ -53,17 +53,17 @@
                     LHCard {
                         EmptyStateView(
                             symbol: "app.dashed",
-                            title: model.snapshot.trackedUsage.isEmpty ? "No observed apps or sites" : "No matches",
+                            title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
                             message: model.snapshot.trackedUsage.isEmpty
-                                ? "Keep Goalong History running. Apps and websites will appear as context is observed."
-                                : "Try a different app, website or category."
+                                ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
+                                : "Essayez une autre app, un autre site ou une autre catégorie."
                         )
                         .frame(minHeight: 320)
                     }
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 16) {
-                            subjectSection(title: "Websites", symbol: "globe", items: websites)
+                            subjectSection(title: "Sites web", symbol: "globe", items: websites)
                             subjectSection(title: "Applications", symbol: "square.grid.2x2", items: applications)
                         }
                         .padding(.bottom, 8)
@@ -77,7 +77,7 @@
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                    TextField("Search apps, websites, pages or categories", text: $model.usageSearch)
+                    TextField("Rechercher des apps, sites, pages ou catégories", text: $model.usageSearch)
                         .textFieldStyle(.plain)
                     if !model.usageSearch.isEmpty {
                         Button {
@@ -102,7 +102,7 @@
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
                     Picker(
-                        "Default sharing rule",
+                        "Règle de partage par défaut",
                         selection: Binding(
                             get: { model.defaultSharingVisibility },
                             set: model.setDefaultSharingVisibility
@@ -138,15 +138,15 @@
                                 .padding(.vertical, 2)
                                 .background(Color.primary.opacity(0.06), in: Capsule())
                             Spacer()
-                            Text("TIME OBSERVED")
-                                .help("Estimated foreground time from context snapshots. Unobserved gaps are never filled beyond 75 seconds.")
+                            Text("TEMPS OBSERVÉ")
+                                .help("Temps au premier plan estimé d’après les observations. Les périodes non observées ne sont jamais comblées au-delà de 75 secondes.")
                                 .frame(width: 96, alignment: .trailing)
                             Text("INPUT ACTIVE")
-                                .help("Distinct minutes containing observed click, keyboard or scroll activity.")
+                                .help("Minutes distinctes avec des clics, frappes ou défilements observés.")
                                 .frame(width: 82, alignment: .trailing)
-                            Text("ALWAYS WHEN SHARING")
+                            Text("TOUJOURS LORS DU PARTAGE")
                                 .frame(width: 142, alignment: .trailing)
-                            if title == "Websites" {
+                            if title == "Sites web" {
                                 Text("DETAILS")
                                     .frame(width: 46, alignment: .trailing)
                             }
@@ -274,7 +274,7 @@
                                 .frame(width: 22, height: 22)
                         }
                         .buttonStyle(.plain)
-                        .help(expanded ? "Hide website details" : "Show every observed page and web interaction")
+                        .help(expanded ? "Masquer les détails du site" : "Afficher chaque page et interaction observée")
                     }
                     .frame(width: 46, alignment: .trailing)
                 }
@@ -287,18 +287,18 @@
         private var siteActionsMenu: some View {
             Menu {
                 if let host = item.host {
-                    Button("Hide in every share") {
+                    Button("Masquer dans tous les partages") {
                         model.hideWebsiteInEveryShare(host)
                     }
-                    Button("Share category only") {
+                    Button("Partager seulement la catégorie") {
                         model.setSharingVisibility(.categoryOnly, for: item.id)
                     }
-                    Button("Show site name in shares") {
+                    Button("Afficher le nom du site dans les partages") {
                         model.setSharingVisibility(.identity, for: item.id)
                     }
                     Divider()
                     if model.isDomainExcludedFromCapture(host) {
-                        Button("Allow future details again") {
+                        Button("Autoriser de nouveau les détails") {
                             model.setDomainCaptureEnabled(true, host: host)
                         }
                     } else {
@@ -314,7 +314,7 @@
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("Persistent website rules")
+            .help("Règles permanentes du site")
         }
 
         @ViewBuilder
@@ -333,7 +333,7 @@
                 HStack(spacing: 9) {
                     Image(systemName: "info.circle")
                         .foregroundStyle(.secondary)
-                    Text("Detailed pages and interactions are generated by the Day recap analysis.")
+                    Text("Les pages et interactions détaillées proviennent de l’analyse de la journée.")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -354,7 +354,7 @@
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Remember future site details")
                                 .font(.system(size: 10, weight: .semibold))
-                            Text("Turn off to keep only a private coverage gap for this domain from now on.")
+                            Text("Désactivez pour ne garder désormais qu’une période privée pour ce domaine.")
                                 .font(.system(size: 8))
                                 .foregroundStyle(.secondary)
                         }
@@ -369,7 +369,7 @@
                         onEnableRichContext()
                     }
                     .buttonStyle(.bordered)
-                    .help("Required to remember accessible ChatGPT-style discussions and visible page text")
+                    .help("Nécessaire pour mémoriser les discussions et le texte visible des pages")
                 } else if richContextEnabled {
                     Label(
                         "\(detail.semanticSnapshotCount) visible-memory snapshot\(detail.semanticSnapshotCount == 1 ? "" : "s")",
@@ -429,13 +429,13 @@
         private func pagesSection(_ detail: ActivitySiteSummary) -> some View {
             VStack(alignment: .leading, spacing: 8) {
                 detailHeading(
-                    "Every observed page",
+                    "Toutes les pages observées",
                     subtitle: detail.pagesTruncated
-                        ? "The analysis cache is truncated; source events remain available."
-                        : "Repeated visits to the same sanitized URL are merged."
+                        ? "Le cache d’analyse est tronqué ; les événements d’origine restent disponibles."
+                        : "Les visites répétées d’une même adresse sont regroupées."
                 )
                 if detail.pages.isEmpty {
-                    compactDetailEmpty("No page URL was exposed by this web container.")
+                    compactDetailEmpty("Aucune adresse de page n’a été fournie par ce contenu web.")
                 } else {
                     VStack(spacing: 6) {
                         ForEach(detail.pages) { page in
@@ -483,10 +483,10 @@
                 detailHeading(
                     "Everything clicked",
                     subtitle:
-                        "Identical targets on the same page are grouped with a count; unlabelled clicks keep their position."
+                        "Les clics identiques sur une même page sont regroupés avec leur nombre ; les clics sans libellé gardent leur position."
                 )
                 if clicks.isEmpty {
-                    compactDetailEmpty("No click target was observed for this site on the selected day.")
+                    compactDetailEmpty("Aucun clic observé sur ce site ce jour-là.")
                 } else {
                     VStack(spacing: 6) {
                         ForEach(clicks) { interaction in
@@ -495,7 +495,7 @@
                     }
                     if detail.interactionsTruncated {
                         Label(
-                            "The compact analysis reached its interaction limit. Raw sealed events still contain the remaining clicks.",
+                            "L’analyse compacte a atteint sa limite ; les événements scellés contiennent les autres clics.",
                             systemImage: "ellipsis.circle"
                         )
                         .font(.system(size: 8))
@@ -512,10 +512,10 @@
                 detailHeading(
                     "Other observed web activity",
                     subtitle:
-                        "Typing is represented only as counts and duration; characters are never reconstructed."
+                        "La saisie n’est représentée que par des nombres et des durées ; les caractères ne sont jamais reconstitués."
                 )
                 if actions.isEmpty {
-                    compactDetailEmpty("No typing, scroll or shortcut activity was observed for this site.")
+                    compactDetailEmpty("Aucune frappe, aucun défilement ni raccourci observé sur ce site.")
                 } else {
                     VStack(spacing: 6) {
                         ForEach(actions) { interaction in
@@ -531,12 +531,12 @@
                 detailHeading(
                     "Remembered visible page context",
                     subtitle:
-                        "With Rich Context enabled, accessible page text and web discussions are stored locally, redacted, deduplicated and sealed."
+                        "Avec le texte affiché activé, le texte des pages et les discussions sont conservés localement, masqués si besoin, dédoublonnés et scellés."
                 )
                 if !richContextEnabled {
-                    compactDetailEmpty("Rich Context is off. URLs, titles and click targets are still available, but visible discussions are not remembered.")
+                    compactDetailEmpty("Texte affiché désactivé : adresses, titres et clics restent disponibles, mais les discussions visibles ne sont pas mémorisées.")
                 } else if detail.rememberedContext.isEmpty {
-                    compactDetailEmpty("No accessible visible text was exposed for this site yet.")
+                    compactDetailEmpty("Aucun texte visible n’a encore été lu pour ce site.")
                 } else {
                     VStack(spacing: 6) {
                         ForEach(Array(detail.rememberedContext.enumerated()), id: \.offset) { _, text in
@@ -554,7 +554,7 @@
                     }
                     if detail.rememberedContextTruncated {
                         Label(
-                            "More context exists in the sealed source events than is shown in this compact cache.",
+                            "Les événements scellés contiennent plus de contexte que ce résumé.",
                             systemImage: "ellipsis.circle"
                         )
                         .font(.system(size: 8))
@@ -601,21 +601,21 @@
                         parts.append("via \(detail.sourceApplications.joined(separator: ", "))")
                     }
                 } else if let appName = item.appName {
-                    parts.append("Seen in \(appName)")
+                    parts.append("Vu dans \(appName)")
                 } else {
                     parts.append("Web context observed")
                 }
                 if !item.identityProofAvailable {
-                    parts.append("older entries share category only")
+                    parts.append("les entrées plus anciennes ne partagent que la catégorie")
                 }
                 return parts.joined(separator: " · ")
             }
-            return item.bundleIdentifier ?? "Application observed locally"
+            return item.bundleIdentifier ?? "Application observée localement"
         }
 
         private var identityHelp: String {
             if item.kind == .website, !item.identityProofAvailable {
-                return "Some entries predate website-only proofs. They fall back to Category only instead of revealing a full URL."
+                return "Certaines entrées sont antérieures aux preuves par site : elles ne partagent que la catégorie plutôt que l’adresse complète."
             }
             return model.sharingVisibility(for: item.id).subtitle
         }
@@ -672,7 +672,7 @@
                     HStack(spacing: 8) {
                         Text(DashboardFormatters.shortTime.string(from: interaction.firstSeen))
                         if interaction.lastSeen > interaction.firstSeen {
-                            Text("last \(DashboardFormatters.shortTime.string(from: interaction.lastSeen))")
+                            Text("dernière fois à \(DashboardFormatters.shortTime.string(from: interaction.lastSeen))")
                         }
                         if let role = interaction.role { Text(role) }
                         if let detail = interaction.detail { Text(detail) }

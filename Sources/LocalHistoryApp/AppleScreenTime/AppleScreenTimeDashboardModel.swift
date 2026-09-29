@@ -94,7 +94,7 @@
                     shareLevel: .perDevice
                 )
                 self.alert = AppleScreenTimeDashboardAlert(
-                    title: "Screen Time configuration could not start",
+                    title: "La configuration Temps d’écran n’a pas pu démarrer",
                     message: String(describing: error)
                 )
             }
@@ -119,8 +119,8 @@
                 availableDevices: [],
                 status: AppleSystemScreenTimeStatus(
                     kind: .noAppleData,
-                    title: "Screen Time daily storage is unavailable",
-                    message: "Goalong did not read Apple Screen Time because today's local record could not be opened: \(message)"
+                    title: "Le stockage quotidien Temps d’écran est indisponible",
+                    message: "Goalong n’a pas lu le Temps d’écran car l’enregistrement local du jour n’a pas pu être ouvert : \(message)"
                 ),
                 deviceSourceLabels: [:],
                 latestAppleUpdate: nil,
@@ -274,8 +274,8 @@
                 latestAppleUpdate = nil
                 status = AppleSystemScreenTimeStatus(
                     kind: .noAppleData,
-                    title: "Apple Screen Time is off",
-                    message: "Enable this source before Goalong reads Apple’s protected local stores."
+                    title: "Temps d’écran Apple désactivé",
+                    message: "Activez cette source pour que Goalong lise les données locales protégées d’Apple."
                 )
                 storageState = .directAppleRead
             }
@@ -337,8 +337,8 @@
         func exportSharePayload() {
             guard let store, let summary else {
                 alert = AppleScreenTimeDashboardAlert(
-                    title: "Nothing to export",
-                    message: "No Apple Screen Time data is available for the selected day and device scope."
+                    title: "Rien à exporter",
+                    message: "Aucune donnée Temps d’écran pour ce jour et ces appareils."
                 )
                 return
             }
@@ -361,9 +361,9 @@
                         guard let self else { return }
                         self.isBusy = false
                         self.alert = AppleScreenTimeDashboardAlert(
-                            title: "Apple Screen Time exported",
+                            title: "Temps d’écran exporté",
                             message:
-                                "The file states the exact device scope, Apple data source, per-device totals and chosen application disclosure level."
+                                "Le fichier indique les appareils inclus, la source Apple, les totaux par appareil et le niveau de détail choisi pour les applications."
                         )
                         NSWorkspace.shared.activateFileViewerSelecting([destination])
                     }
@@ -372,7 +372,7 @@
                         guard let self else { return }
                         self.isBusy = false
                         self.alert = AppleScreenTimeDashboardAlert(
-                            title: "Export failed",
+                            title: "Échec de l’export",
                             message: String(describing: error)
                         )
                     }
@@ -442,7 +442,7 @@
                 }
             } catch {
                 alert = AppleScreenTimeDashboardAlert(
-                    title: "Screen Time settings could not be saved",
+                    title: "Les réglages Temps d’écran n’ont pas pu être enregistrés",
                     message: String(describing: error)
                 )
             }

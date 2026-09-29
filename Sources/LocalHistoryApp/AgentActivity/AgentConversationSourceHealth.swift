@@ -39,20 +39,20 @@ enum AgentConversationSourceHealth: Equatable {
         switch self {
         case .ready: return "Error messages inside conversations do not indicate a source-access failure."
         case .invalidIndex:
-            return "Retry to check the local index, or review your authorized source folders. Original conversations have not been modified."
+            return "Réessayez pour vérifier l’index local, ou vérifiez vos dossiers autorisés. Les conversations d’origine n’ont pas été modifiées."
         case .readFailures(let count):
-            return "\(count) source-read issue(s). Readable conversations remain available. Retry, or review the affected source folders and their access."
+            return "\(count) problème(s) de lecture. Les conversations lisibles restent disponibles. Réessayez, ou vérifiez les dossiers concernés et leurs accès."
         case .analysisPending:
-            return "Sources are analyzed in bounded batches. Available conversations remain visible; keep this window active to continue, or resume the analysis."
+            return "Les sources sont analysées par lots. Les conversations disponibles restent visibles ; gardez cette fenêtre active pour continuer, ou relancez l’analyse."
         case .capacityLimited(let count):
-            return "\(count) folder(s) exceed the local index limit. The most recent conversations remain available. Review the source scope; retrying alone does not remove this limit."
+            return "\(count) dossier(s) dépassent la limite de l’index local. Les conversations récentes restent disponibles. Réduisez le périmètre : réessayer ne lève pas cette limite."
         }
     }
 
     var actionTitle: String? {
         switch self {
-        case .invalidIndex, .readFailures: return "Retry"
-        case .analysisPending: return "Resume analysis"
+        case .invalidIndex, .readFailures: return "Réessayer"
+        case .analysisPending: return "Reprendre l’analyse"
         case .ready, .capacityLimited: return nil
         }
     }

@@ -97,7 +97,13 @@
         @Published private(set) var presentationState = SoftwareUpdatePresentationState()
         @Published private(set) var automaticallyChecksForUpdates = false
         @Published private(set) var requiresSignedBuild = false
-        @Published private(set) var statusMessage = "Updates are available in update-enabled release builds."
+        @Published private(set) var statusMessage = "Les mises à jour sont disponibles dans les versions publiées."
+        @Published private(set) var lastCheckResult: SupportState = .unknown
+        @Published private(set) var lastCheckedAt: Date? = UserDefaults.standard.object(forKey: SoftwareUpdateManager.lastCheckedKey) as? Date
+        /// Set on the first launch after an update so the app can confirm it worked.
+        @Published private(set) var updatedFromVersion: String?
+        static let lastCheckedKey = "goalong.updates.lastCheckedAt.v1"
+        static let lastSeenVersionKey = "goalong.updates.lastSeenVersion.v1"
 
         private let updateWindows = SoftwareUpdateWindowCoordinator()
 
@@ -136,6 +142,7 @@
         func start() {
             guard !hasStarted else { return }
             hasStarted = true
+            noteLaunchedVersion()
 
             guard Self.hasValidSparkleConfiguration(in: .main) else {
                 requiresSignedBuild = true
@@ -157,7 +164,7 @@
             } catch {
                 SupportDiagnostics.shared.failure(error, component: .updates)
                 updaterController = nil
-                statusMessage = "The updater could not start: \(error.localizedDescription)"
+                statusMessage = "Le module de mise à jour n’a pas pu démarrer (\(Self.errorSummary(error))). Téléchargez la dernière version depuis la page des versions."
                 return
             }
 
@@ -165,8 +172,8 @@
             requiresSignedBuild = false
             automaticallyChecksForUpdates = controller.updater.automaticallyChecksForUpdates
             statusMessage = automaticallyChecksForUpdates
-                ? "Verified update checks run automatically."
-                : "Automatic update checks are off."
+                ? "Vérification automatique activée."
+                : "Vérification automatique désactivée."
 
             // Sparkle's scheduled interval may not be due yet, especially on a freshly installed
             // build. Start one quiet update session now so the dashboard button reflects the
@@ -193,7 +200,22 @@
             isChecking = false
             automaticallyChecksForUpdates = false
             presentationState = SoftwareUpdatePresentationState()
-            statusMessage = "Automatic update checks are off."
+            statusMessage = "Vérification automatique désactivée."
+        }
+
+        /// Compares the running version with the one seen at the previous launch. A change
+        /// after an in-app update is confirmed once in the interface.
+        private func noteLaunchedVersion() {
+            let defaults = UserDefaults.standard
+            let previous = defaults.string(forKey: Self.lastSeenVersionKey)
+            defaults.set(currentVersion, forKey: Self.lastSeenVersionKey)
+            if let previous, previous != currentVersion, previous.compare(currentVersion, options: .numeric) == .orderedAscending {
+                updatedFromVersion = previous
+            }
+        }
+
+        func acknowledgeUpdateConfirmation() {
+            updatedFromVersion = nil
         }
 
         func refreshAvailableUpdate() {
@@ -214,8 +236,9 @@
             lastBackgroundCheck = Date()
             isChecking = true
             statusMessage = presentationState.availableVersion == nil
-                ? "Checking for updates…"
-                : "Preparing the detected update…"
+                ? "Recherche de mises à jour…"
+                : "Préparation de la mise à jour…"
+            SupportDiagnostics.shared.record(.updateCheckStarted, component: .updates, values: [.userChoice: .flag(false)])
             updater.checkForUpdatesInBackground()
         }
 
@@ -238,7 +261,7 @@
                 presentReadyUpdate()
             case .wait:
                 isChecking = true
-                statusMessage = "Finishing the current update check…"
+                statusMessage = "Fin de la vérification en cours…"
             case .check:
                 startUserInitiatedCheck()
             case .prepare:
@@ -261,10 +284,10 @@
                 // A dismissed Sparkle alert ends its update session even though the release is
                 // still available. Rebuild that session quietly and remember this click. Once
                 // Sparkle reports that its alert is ready, the same click presents it automatically.
-                statusMessage = "Preparing \(ProductIdentity.displayName) \(availableVersion)…"
+                statusMessage = "Préparation de \(ProductIdentity.displayName) \(availableVersion)…"
                 resumePendingRequest()
             case .wait:
-                statusMessage = "Preparing \(ProductIdentity.displayName) \(availableVersion)…"
+                statusMessage = "Préparation de \(ProductIdentity.displayName) \(availableVersion)…"
             case .check:
                 break
             }
@@ -283,8 +306,10 @@
             lastBackgroundCheck = nil
             automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
             statusMessage = automaticallyChecksForUpdates
-                ? "Verified update checks run automatically."
-                : "Automatic update checks are off."
+                ? "Vérification automatique activée."
+                : "Vérification automatique désactivée."
+            SupportDiagnostics.shared.record(.updateChanged, component: .updates,
+                values: [.automaticChecks: .flag(automaticallyChecksForUpdates)])
             if automaticallyChecksForUpdates { refreshAvailableUpdate() }
         }
 
@@ -296,7 +321,7 @@
             let shouldPresent = presentationState.recordReady(version: item.displayVersionString)
             isChecking = false
             userAttendedCurrentUpdate = false
-            statusMessage = "\(ProductIdentity.displayName) \(item.displayVersionString) is available."
+            statusMessage = "\(ProductIdentity.displayName) \(item.displayVersionString) est disponible."
 
             if shouldPresent, presentPendingRequest {
                 DispatchQueue.main.async { [weak self] in
@@ -311,7 +336,7 @@
                 return
             }
             guard !updater.sessionInProgress, updater.canCheckForUpdates else {
-                statusMessage = "The update check is temporarily unavailable."
+                statusMessage = "La vérification est momentanément indisponible. Réessayez dans un instant."
                 presentationState.cancelPendingRequest()
                 return
             }
@@ -319,7 +344,8 @@
             updateWindows.beginExplicitPresentation()
             NSApplication.shared.activate(ignoringOtherApps: true)
             isChecking = true
-            statusMessage = "Checking for updates…"
+            statusMessage = "Recherche de mises à jour…"
+            SupportDiagnostics.shared.record(.updateCheckStarted, component: .updates, values: [.userChoice: .flag(true)])
             updater.checkForUpdates()
         }
 
@@ -334,7 +360,7 @@
                 }
                 guard !updater.sessionInProgress else { return }
                 guard updater.canCheckForUpdates else {
-                    statusMessage = "The detected update is temporarily unavailable. Try again later."
+                    statusMessage = "La mise à jour détectée est momentanément indisponible. Réessayez plus tard."
                     presentationState.cancelPendingRequest()
                     return
                 }
@@ -365,7 +391,57 @@
         private func markUpToDate() {
             presentationState.recordNoUpdate()
             isChecking = false
-            statusMessage = "\(ProductIdentity.displayName) is up to date."
+            statusMessage = "\(ProductIdentity.displayName) est à jour."
+            recordCheckResult(.upToDate)
+        }
+
+        private func recordCheckResult(_ result: SupportState, error: (any Error)? = nil) {
+            lastCheckResult = result
+            let now = Date()
+            lastCheckedAt = now
+            UserDefaults.standard.set(now, forKey: Self.lastCheckedKey)
+            var values: [SupportKey: SupportValue] = [.updateResult: .state(result)]
+            if let version = presentationState.availableVersion, SupportSymbol.isSafe(version, for: .availableVersion) {
+                values[.availableVersion] = .symbol(version)
+            }
+            if let error { values.merge(SupportDiagnostics.errorValues(error)) { _, new in new } }
+            SupportDiagnostics.shared.record(.updateCheckFinished, component: .updates,
+                                             level: result == .failed ? .warning : .info, values: values)
+        }
+
+        /// Plain-language cause for the most common update failures; codes stay in the journal.
+        static func errorSummary(_ error: any Error) -> String {
+            let error = error as NSError
+            if error.domain == NSURLErrorDomain {
+                switch error.code {
+                case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
+                    return "pas de connexion Internet"
+                case NSURLErrorTimedOut: return "le serveur n’a pas répondu à temps"
+                case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed, NSURLErrorCannotConnectToHost:
+                    return "le serveur des mises à jour est injoignable"
+                default: return "erreur réseau \(error.code)"
+                }
+            }
+            if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError, underlying.domain == NSURLErrorDomain {
+                return errorSummary(underlying)
+            }
+            if error.domain == SUSparkleErrorDomain {
+                switch Int32(error.code) {
+                case SUError.appcastError.rawValue, SUError.appcastParseError.rawValue:
+                    return "la liste des versions est illisible"
+                case SUError.signatureError.rawValue, SUError.validationError.rawValue:
+                    return "la signature de la mise à jour n’a pas pu être vérifiée ; rien n’a été installé"
+                case SUError.downloadError.rawValue: return "le téléchargement a échoué"
+                case SUError.installationError.rawValue, SUError.installationCanceledError.rawValue:
+                    return "l’installation n’a pas abouti ; la version actuelle est conservée"
+                case SUError.runningFromDiskImageError.rawValue:
+                    return "Goalong est ouvert depuis l’image disque ; glissez-le d’abord dans Applications"
+                case SUError.installationWriteNoPermissionError.rawValue:
+                    return "macOS n’autorise pas Goalong à remplacer l’app dans Applications"
+                default: return "code Sparkle \(error.code)"
+                }
+            }
+            return "code \(error.code)"
         }
 
         static func isNoUpdateResult(_ error: any Error) -> Bool {
@@ -396,16 +472,18 @@
 
     extension SoftwareUpdateManager: SPUUpdaterDelegate {
         func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
-            SupportDiagnostics.shared.record(.updateChanged, component: .updates, values: [.state: .state(.started)])
+            var values: [SupportKey: SupportValue] = [.state: .state(.relaunchPrepared), .version: .symbol(currentVersion)]
+            if let version = presentationState.availableVersion, SupportSymbol.isSafe(version, for: .availableVersion) {
+                values[.availableVersion] = .symbol(version)
+            }
+            SupportDiagnostics.shared.record(.updateChanged, component: .updates, values: values)
             isRelaunchingForUpdate = true
-            Diagnostics.write("Sparkle is handing off a user-approved update and relaunch")
         }
 
         func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
             isRelaunchingForUpdate = false
             if !Self.isNoUpdateResult(error) {
                 SupportDiagnostics.shared.failure(error, component: .updates)
-                Diagnostics.write("Sparkle update aborted: \((error as NSError).domain) \((error as NSError).code)")
             }
         }
 
@@ -417,8 +495,8 @@
         func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
             // Sparkle finds the appcast item before its standard user driver has prepared the
             // install alert. Remember the version here, but do not expose a clickable badge yet.
-            SupportDiagnostics.shared.record(.updateChanged, component: .updates, values: [.state: .state(.ready)])
             markDetected(item)
+            recordCheckResult(.updateAvailable)
         }
 
         func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: any Error) {
@@ -431,11 +509,19 @@
             forUpdate updateItem: SUAppcastItem,
             state: SPUUserUpdateState
         ) {
+            let recorded: SupportState
+            switch choice {
+            case .install: recorded = .install
+            case .skip: recorded = .skip
+            case .dismiss: recorded = .later
+            @unknown default: recorded = .unknown
+            }
+            SupportDiagnostics.shared.record(.updateChoice, component: .updates, values: [.userChoice: .state(recorded)])
             if choice == .skip {
                 // Sparkle will intentionally stop offering this build. Remove the dashboard badge
                 // at the same time so it never advertises a version the updater will now ignore.
                 presentationState.clear()
-                statusMessage = "\(ProductIdentity.displayName) \(updateItem.displayVersionString) was skipped."
+                statusMessage = "\(ProductIdentity.displayName) \(updateItem.displayVersionString) a été ignorée."
             }
         }
 
@@ -449,16 +535,17 @@
             if let error, !Self.isNoUpdateResult(error) {
                 let hadPendingRequest = presentationState.hasPendingRequest
                 presentationState.cancelPendingRequest()
-                statusMessage = "The update check could not be completed: \(error.localizedDescription)"
+                statusMessage = "La vérification n’a pas abouti : \(Self.errorSummary(error)). Votre version actuelle continue de fonctionner."
+                recordCheckResult(.failed, error: error)
                 if hadPendingRequest && updateCheck != .updates {
                     // A click that was queued behind a background check must still get a visible
                     // result on a network/signature failure, without interrupting passive checks.
                     DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
                         let alert = NSAlert()
-                        alert.messageText = "Unable to check for updates"
+                        alert.messageText = "Impossible de vérifier les mises à jour"
                         alert.informativeText = self.statusMessage
-                        alert.addButton(withTitle: "Try again")
+                        alert.addButton(withTitle: "Réessayer")
                         alert.addButton(withTitle: "Annuler")
                         NSApplication.shared.activate(ignoringOtherApps: true)
                         if alert.runModal() == .alertFirstButtonReturn { self.checkForUpdates() }
@@ -526,7 +613,7 @@
             guard userAttendedCurrentUpdate else { return }
             userAttendedCurrentUpdate = false
             if let availableVersion = presentationState.availableVersion {
-                statusMessage = "\(ProductIdentity.displayName) \(availableVersion) is still available."
+                statusMessage = "\(ProductIdentity.displayName) \(availableVersion) reste disponible."
             }
         }
     }

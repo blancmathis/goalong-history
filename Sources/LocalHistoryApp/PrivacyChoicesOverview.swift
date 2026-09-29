@@ -15,54 +15,54 @@ import LocalHistoryCore
         VStack(alignment: .leading, spacing: 18) {
             LHCard {
                 VStack(alignment: .leading, spacing: 14) {
-                    Label("Your applied choices", systemImage: "slider.horizontal.3")
+                    Label("Vos choix appliqués", systemImage: "slider.horizontal.3")
                         .font(.system(size: 16, weight: .semibold))
-                    Text("This summary shows saved settings, not an unsaved recording draft. Source consent, macOS access and actual data availability are separate.")
+                    Text("Ce résumé montre les réglages enregistrés. Votre accord par source, les accès macOS et la disponibilité réelle des données sont distincts.")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     ForEach([GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations]) { capability in
                         HStack {
                             Text(capability.title).font(.system(size: 13))
                             Spacer()
-                            Text(consents.isEnabled(capability) ? "Source enabled" : "Source off")
+                            Text(consents.isEnabled(capability) ? "Source activée" : "Source désactivée")
                                 .font(.system(size: 12, weight: .medium))
                         }
                     }
                     Divider()
                     Text(model.appliedSettings.recordingSummary).font(.system(size: 13))
                     Text(model.appliedSettings.capturePrivateBrowsing
-                         ? "Detected private windows: included by your saved choice."
-                         : "Detected private windows: excluded. Detection depends on the browser; Pause is the safest control for a sensitive activity.")
+                         ? "Fenêtres privées détectées : incluses selon votre choix."
+                         : "Fenêtres privées détectées : exclues. La détection dépend du navigateur ; la pause reste le plus sûr pour une activité sensible.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     HStack(spacing: 12) {
                         Button("Change recording details & exclusions") { model.openRecordingSettings() }.buttonStyle(LHPrimaryButtonStyle())
-                        Button("Manage sources") { model.selectSection(.settings) }.buttonStyle(.bordered)
+                        Button("Gérer les sources") { model.selectSection(.settings) }.buttonStyle(.bordered)
                     }
-                    Text("Recording filters apply to Computer History, not to Apple's Screen Time data or original AI conversations. Each source and each outgoing share has its own controls.")
+                    Text("Les filtres d’enregistrement s’appliquent à l’historique de ce Mac, pas au Temps d’écran d’Apple ni aux conversations IA d’origine. Chaque source et chaque envoi a ses propres réglages.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }.fixedSize(horizontal: false, vertical: true)
             }
             LHCard {
                 VStack(alignment: .leading, spacing: 13) {
-                    Label("What can leave this Mac", systemImage: "arrow.up.doc")
+                    Label("Ce qui peut quitter ce Mac", systemImage: "arrow.up.doc")
                         .font(.system(size: 16, weight: .semibold))
-                    Text(sender.enabled ? "Daily website sync is enabled." : "Daily website sync is off or paused.")
+                    Text(sender.enabled ? "L’envoi quotidien au site est activé." : "L’envoi quotidien au site est désactivé ou en pause.")
                         .font(.system(size: 13, weight: .semibold))
                     if sender.savedConfiguration != nil {
                         Text(sender.status).font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Text(consents.isEnabled(.chatGPTAnalysis)
-                         ? "ChatGPT analysis is enabled. Runs you start or schedule may send their selected context to the connected provider."
-                         : "ChatGPT analysis is off. Turning it on is a separate choice from local recording.")
+                         ? "L’analyse ChatGPT est activée. Les analyses lancées ou planifiées peuvent envoyer le contexte choisi au service connecté."
+                         : "L’analyse ChatGPT est désactivée. L’activer est un choix distinct de l’enregistrement local.")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
-                    Text("A website upload and sharing with other people are different actions. The website's active audience rules apply after upload. A local export creates a file; anyone you give it to can keep a copy.")
+                    Text("Envoyer au site et partager avec d’autres personnes sont deux actions différentes : les règles de destinataires du site s’appliquent après l’envoi. Un export local crée un fichier ; toute personne qui le reçoit peut en garder une copie.")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     HStack(spacing: 12) {
-                        Button("Review website sharing…") { showingSharing = true }.buttonStyle(.bordered)
+                        Button("Vérifier l’envoi au site…") { showingSharing = true }.buttonStyle(.bordered)
                         if sender.enabled {
-                            Button("Pause daily sync") { sender.stop() }.buttonStyle(.bordered)
+                            Button("Mettre en pause l’envoi quotidien") { sender.stop() }.buttonStyle(.bordered)
                         }
                     }
-                    Text("Pausing, disconnecting or deleting locally does not erase data already received. A transfer already in progress may finish. Manage recipients and remove remote data on the website or provider. Update checks can contact the update service without sending activity contents.")
+                    Text("Mettre en pause, déconnecter ou supprimer localement n’efface pas les données déjà reçues ; un transfert en cours peut se terminer. Gérez les destinataires et supprimez les données distantes sur le site ou chez le service. La recherche de mises à jour contacte le serveur des versions sans envoyer votre activité.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }.fixedSize(horizontal: false, vertical: true)
             }
@@ -70,11 +70,11 @@ import LocalHistoryCore
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Retention is a separate choice", systemImage: "calendar.badge.clock")
                         .font(.system(size: 16, weight: .semibold))
-                    Text(retentionEnabled ? "Automatic cleanup is enabled for the rules below." : "Automatic cleanup is off. Local data stays until explicit deletion.")
+                    Text(retentionEnabled ? "Le nettoyage automatique est activé pour les règles ci-dessous." : "Le nettoyage automatique est désactivé : les données locales restent jusqu’à leur suppression.")
                         .font(.system(size: 13, weight: .medium))
                     if retentionEnabled { Text(retentionSummary).font(.system(size: 13)).foregroundStyle(.secondary) }
-                    Button("Choose retention by data type…") { showingRetention = true }.buttonStyle(.bordered)
-                    Text("Activity files are readable to your macOS account; file permissions are not app-level encryption. Retention does not cover every store: Apple data, AI originals, ChatGPT recap/run history, exports, backups and remote copies need their own controls.")
+                    Button("Choisir la conservation par type de données…") { showingRetention = true }.buttonStyle(.bordered)
+                    Text("Les fichiers d’activité sont lisibles par votre compte macOS : les permissions de fichiers ne sont pas un chiffrement. La conservation ne couvre pas tout : données Apple, conversations IA d’origine, historique des analyses ChatGPT, exports, sauvegardes et copies distantes ont leurs propres réglages.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }.fixedSize(horizontal: false, vertical: true)
             }

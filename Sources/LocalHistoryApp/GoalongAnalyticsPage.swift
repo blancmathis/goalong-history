@@ -10,6 +10,7 @@ struct GoalongAnalyticsPage: View {
     @Binding var navigation: GoalongActivityNavigation
     @StateObject private var analytics = GoalongAnalyticsModel()
     @StateObject private var studio = GoalongProfileWindow()
+    @ObservedObject private var classification = GoalongUsageClassificationStore.shared
     @State private var focusMinutes = 25
     @State private var revision = 0
     @State private var manualRefreshRevision = 0
@@ -19,6 +20,10 @@ struct GoalongAnalyticsPage: View {
     @State private var showingPreview = false
     @State private var previewNavigation = GoalongActivityNavigation()
     private let refreshTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+    /// Automatic refreshes of today wait at least ten times the last read duration, so a
+    /// very busy day never keeps a core busy while the page is simply left open.
+    @State private var lastReadSeconds: TimeInterval = 0
+    @State private var lastAutomaticRefresh = Date.distantPast
 
     private var previewActive: Bool { developerMode && showingPreview }
     private var selection: GoalongActivityNavigation { previewActive ? previewNavigation : navigation }
@@ -126,7 +131,9 @@ struct GoalongAnalyticsPage: View {
             guard request.permitsLoading else { return }
             let force = forceNextRead
             forceNextRead = false
-            await analytics.load(request, force: force)
+            let started = ProcessInfo.processInfo.systemUptime
+            await analytics.load(request, force: force, rules: classification.rules)
+            lastReadSeconds = ProcessInfo.processInfo.systemUptime - started
         }
         .onChange(of: developerMode) { enabled in
             if !enabled { showingPreview = false; previewNavigation = GoalongActivityNavigation() }
@@ -135,6 +142,10 @@ struct GoalongAnalyticsPage: View {
             showingPreview = false
             showingAnalysisChoice = false
             previewNavigation = GoalongActivityNavigation()
+        }
+        .onChange(of: classification.rules) { _ in
+            // Re-applies the choice to cached days; no journal is read again.
+            if !previewActive { revision += 1 }
         }
         .onReceive(NotificationCenter.default.publisher(for: .goalongProfileAnalysisDidSave)) { _ in
             if !previewActive { revision += 1 }
@@ -145,7 +156,9 @@ struct GoalongAnalyticsPage: View {
         .onReceive(refreshTimer) { _ in
             // Visible-page refresh only. Completed days reuse the existing cache.
             guard model.dashboardIsVisible, !previewActive, !analytics.busy,
-                  Calendar.current.isDateInToday(navigation.day) else { return }
+                  Calendar.current.isDateInToday(navigation.day),
+                  Date().timeIntervalSince(lastAutomaticRefresh) >= max(30, lastReadSeconds * 10) else { return }
+            lastAutomaticRefresh = Date()
             revision += 1
         }
     }

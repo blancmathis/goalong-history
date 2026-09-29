@@ -57,7 +57,7 @@ extension HistoryRetentionPolicy {
     var hasChanges: Bool { draft != savedPolicy || automaticCleanup != savedAutomaticCleanup }
     @discardableResult func apply(proofDeletionConfirmed: Bool) -> Bool {
         guard !automaticCleanup || !draft.includesProofExpiry || proofDeletionConfirmed else {
-            error = "Confirm proof deletion separately, or keep seals and receipts indefinitely."
+            error = "Confirmez séparément la suppression des preuves, ou conservez indéfiniment sceaux et reçus."
             return false
         }
         do {
@@ -70,7 +70,7 @@ extension HistoryRetentionPolicy {
             NotificationCenter.default.post(name: .goalongRetentionPolicyDidChange, object: nil)
             return true
         } catch {
-            self.error = "The retention change was not confirmed: \(error.localizedDescription). Reopen this panel to check the saved policy before retrying."
+            self.error = "La modification de conservation n’a pas été confirmée : \(error.localizedDescription). Rouvrez ce panneau pour vérifier la règle enregistrée avant de réessayer."
             return false
         }
     }
@@ -89,39 +89,39 @@ extension HistoryRetentionPolicy {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("How long to keep local data").font(.system(size: 22, weight: .semibold))
-                    Text("Separate rules for details, memories and proofs.").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text("Durée de conservation locale").font(.system(size: 22, weight: .semibold))
+                    Text("Règles distinctes pour les détails, souvenirs et preuves.").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(24)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Toggle("Automatically delete expired local data", isOn: $model.automaticCleanup)
+                    Toggle("Supprimer automatiquement les données expirées", isOn: $model.automaticCleanup)
                         .toggleStyle(.switch).font(.system(size: 14, weight: .semibold))
                         .accessibilityIdentifier("retention-automatic")
                     Text(model.automaticCleanup
-                         ? "After confirmation, expired data can be removed now and during daily cleanup. Reducing a duration affects existing data, not only future recordings."
-                         : "Automatic cleanup is off. Data stays until you delete it manually. Choosing durations below does not activate deletion.")
+                         ? "Après confirmation, les données expirées peuvent être supprimées tout de suite puis lors du nettoyage quotidien. Réduire une durée s’applique aussi aux données existantes."
+                         : "Le nettoyage automatique est désactivé : les données restent jusqu’à ce que vous les supprimiez. Choisir une durée ci-dessous n’active pas la suppression.")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     ForEach(HistoryDataClass.allCases, id: \.self) { kind in
                         HStack(alignment: .center, spacing: 16) {
                             Text(kind.retentionTitle).font(.system(size: 13, weight: .medium))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Picker(kind.retentionTitle, selection: durationBinding(kind)) {
-                                Text("Until I delete it").tag(0)
-                                ForEach(durationOptions(kind), id: \.self) { days in Text("\(days) days").tag(days) }
+                                Text("Jusqu’à ce que je supprime").tag(0)
+                                ForEach(durationOptions(kind), id: \.self) { days in Text("\(days) jours").tag(days) }
                             }.labelsHidden().frame(width: 170)
                                 .accessibilityIdentifier("retention-\(kind.rawValue)")
                         }.padding(12).background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 10))
                     }
                     if model.automaticCleanup && model.draft.includesProofExpiry {
-                        Toggle("I also authorize deleting expired local seals and receipts. Verification of those periods may be lost.", isOn: $proofDeletionConfirmed)
+                        Toggle("J’autorise aussi la suppression des sceaux et reçus expirés. La vérification de ces périodes peut devenir impossible.", isOn: $proofDeletionConfirmed)
                             .font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                             .accessibilityIdentifier("retention-confirm-proofs")
                     }
-                    Text("These rules cover Goalong-managed activity, visible context, derived memories (including its Computer History mirror), analysis caches, seals and receipts. They do not delete Apple Screen Time originals or archives, AI source conversations, ChatGPT recap/run history, exported files, backups or data already sent to a website or provider. Those need separate deletion in their respective controls.")
+                    Text("Ces règles couvrent l’activité gérée par Goalong, le texte affiché, les souvenirs dérivés, les caches d’analyse, les sceaux et les reçus. Elles ne suppriment ni les originaux Temps d’écran d’Apple, ni les conversations IA d’origine, ni l’historique des analyses ChatGPT, ni les fichiers exportés, sauvegardes ou données déjà envoyées à un site ou un service : ceux-ci se suppriment depuis leurs propres réglages.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     if let error = model.error {
                         Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)
@@ -130,9 +130,9 @@ extension HistoryRetentionPolicy {
             }
             Divider()
             HStack {
-                Text("No changes are applied until you confirm.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Rien n’est appliqué avant votre confirmation.").font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer()
-                Button(model.automaticCleanup ? "Review & apply…" : "Save without automatic deletion") {
+                Button(model.automaticCleanup ? "Review & apply…" : "Enregistrer sans suppression automatique") {
                     if model.automaticCleanup { showingConfirmation = true }
                     else if model.apply(proofDeletionConfirmed: false) { dismiss() }
                 }.buttonStyle(LHPrimaryButtonStyle())
@@ -143,12 +143,12 @@ extension HistoryRetentionPolicy {
         .frame(width: 700, height: 670).background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .onChange(of: model.draft) { _ in proofDeletionConfirmed = false }
         .alert("Apply automatic deletion?", isPresented: $showingConfirmation) {
-            Button("Cancel", role: .cancel) {}
+            Button("Annuler", role: .cancel) {}
             Button("Apply these retention rules", role: .destructive) {
                 if model.apply(proofDeletionConfirmed: proofDeletionConfirmed) { dismiss() }
             }
         } message: {
-            Text(model.draft.retentionDescription + "\n\nExpired local artifacts may be deleted immediately. This cannot be undone here. Exports and remote copies are not removed.")
+            Text(model.draft.retentionDescription + "\n\nLes données locales expirées peuvent être supprimées immédiatement, sans retour possible. Les exports et copies distantes ne sont pas concernés.")
         }
     }
     private func durationOptions(_ kind: HistoryDataClass) -> [Int] {

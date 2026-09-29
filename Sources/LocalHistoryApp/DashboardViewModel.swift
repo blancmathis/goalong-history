@@ -108,6 +108,9 @@
         @Published var settingsPane: SettingsPane = .home
         @Published var showingWebsiteShare = false
         @Published private(set) var runtime: RuntimePresentation = .unavailable
+        /// Free space of the history volume, refreshed at most once a minute while visible.
+        @Published private(set) var freeDiskBytes: Int64?
+        private var freeDiskCheckedAt: Date?
         @Published private(set) var snapshot: DashboardDaySnapshot
         @Published private(set) var snapshotGeneration: UInt64 = 0
         @Published private(set) var isRefreshing = false
@@ -289,7 +292,7 @@
             } catch {
                 alert = DashboardAlert(
                     kind: .error,
-                    title: "Sharing rule could not be saved",
+                    title: "La règle de partage n’a pas pu être enregistrée",
                     message: String(describing: error)
                 )
             }
@@ -303,7 +306,7 @@
             } catch {
                 alert = DashboardAlert(
                     kind: .error,
-                    title: "Default sharing rule could not be saved",
+                    title: "La règle de partage par défaut n’a pas pu être enregistrée",
                     message: String(describing: error)
                 )
             }
@@ -467,7 +470,7 @@
         }
 
         func openDiagnostics() {
-            Task { @MainActor in SupportExportController.shared.export() }
+            Task { @MainActor in SupportRequestController.shared.present() }
         }
 
         func selectSession(_ id: String) {
@@ -568,7 +571,7 @@
                         self.shareSegments = []
                         self.alert = DashboardAlert(
                             kind: .error,
-                            title: "Share data could not be loaded",
+                            title: "Les données à partager n’ont pas pu être chargées",
                             message: String(describing: error)
                         )
                     }
@@ -583,8 +586,8 @@
             guard snapshot.sealedMinutes > 0 else {
                 alert = DashboardAlert(
                     kind: .information,
-                    title: "Nothing to export",
-                    message: "No sealed minutes are available for the selected day yet."
+                    title: "Rien à exporter",
+                    message: "Aucune minute scellée n’est encore disponible pour ce jour."
                 )
                 return
             }
@@ -627,9 +630,9 @@
                         self.isExportingShare = false
                         self.alert = DashboardAlert(
                             kind: .information,
-                            title: "Locally signed package exported",
+                            title: "Paquet signé exporté",
                             message:
-                                "Goalong verified every included P-256 device signature and integrity chain before export. The package follows your saved app and website rules; hidden fields remain on this Mac."
+                                "Goalong a vérifié chaque signature de l’appareil et la chaîne d’intégrité avant l’export. Le paquet suit vos règles d’apps et de sites ; les champs masqués restent sur ce Mac."
                         )
                         NSWorkspace.shared.activateFileViewerSelecting([destination])
                     }
@@ -645,7 +648,7 @@
                         }
                         self.alert = DashboardAlert(
                             kind: .error,
-                            title: "Export failed",
+                            title: "Échec de l’export",
                             message: String(describing: error)
                         )
                     }
@@ -665,7 +668,7 @@
                     alert = DashboardAlert(
                         kind: .error,
                         title: "Invalid verification server",
-                        message: "Use an HTTPS URL. HTTP is accepted only for localhost development."
+                        message: "Utilisez une adresse HTTPS. HTTP n’est accepté qu’en développement local."
                     )
                     return
                 }
@@ -686,7 +689,7 @@
             } catch {
                 alert = DashboardAlert(
                     kind: .error,
-                    title: "Settings could not be saved",
+                    title: "Les réglages n’ont pas pu être enregistrés",
                     message: String(describing: error)
                 )
             }
@@ -784,7 +787,7 @@
                 refreshRuntime()
                 return true
             } catch {
-                alert = DashboardAlert(kind: .error, title: "Choices could not be saved", message: error.localizedDescription)
+                alert = DashboardAlert(kind: .error, title: "Les choix n’ont pas pu être enregistrés", message: error.localizedDescription)
                 return false
             }
         }
@@ -801,17 +804,17 @@
                     case .success(let count):
                         self.alert = DashboardAlert(
                             kind: .information,
-                            title: "Local details deleted",
+                            title: "Détails locaux supprimés",
                             message: cutoff == nil
-                                ? "Deleted \(count) local event file(s). Existing seals and receipts remain, so those periods can still be shown as private."
-                                : "Deleted \(count) detailed event(s). Existing seals and receipts remain."
+                                ? "\(count) fichier(s) d’événements supprimé(s). Les sceaux et reçus sont conservés : ces périodes restent visibles comme privées."
+                                : "\(count) événement(s) détaillé(s) supprimé(s). Les sceaux et reçus sont conservés."
                         )
                         self.refreshData(force: true)
                         self.reloadShareSegments()
                     case .failure(let error):
                         self.alert = DashboardAlert(
                             kind: .error,
-                            title: "Deletion failed",
+                            title: "Échec de la suppression",
                             message: String(describing: error)
                         )
                     }
@@ -823,7 +826,7 @@
             deleteTargetedDetails(
                 .computerHistoryEpisode(id: episode.id, day: day),
                 successMessage:
-                    "Deleted the selected Computer History item and its exact local source details. Existing seals and receipts remain."
+                    "L’élément choisi et ses détails locaux ont été supprimés. Les sceaux et reçus sont conservés."
             )
         }
 
@@ -831,7 +834,7 @@
             deleteTargetedDetails(
                 .activitySession(session),
                 successMessage:
-                    "Deleted the selected app session and its exact local source details. Existing seals and receipts remain."
+                    "La session choisie et ses détails locaux ont été supprimés. Les sceaux et reçus sont conservés."
             )
         }
 
@@ -852,7 +855,7 @@
                         self.selectedSessionID = nil
                         self.alert = DashboardAlert(
                             kind: .information,
-                            title: "Local item deleted",
+                            title: "Élément supprimé",
                             message: "\(successMessage) Removed \(count) local item(s)."
                         )
                         self.refreshData(force: true)
@@ -860,7 +863,7 @@
                     case .failure(let error):
                         self.alert = DashboardAlert(
                             kind: .error,
-                            title: "Deletion failed",
+                            title: "Échec de la suppression",
                             message: String(describing: error)
                         )
                     }
@@ -904,6 +907,14 @@
                 runtimeState = .permissionsMissing
             case .inputTapUnavailable, .awaitingInputEvidence:
                 runtimeState = .inputTapUnavailable
+            case .storageUnavailable:
+                runtimeState = .storageUnavailable(healthSnapshot.storageFailureKind ?? .unavailable)
+            }
+
+            if freeDiskCheckedAt.map({ Date().timeIntervalSince($0) >= 60 }) ?? true {
+                freeDiskCheckedAt = Date()
+                let free = StorageHealth.availableBytes()
+                if free != freeDiskBytes { freeDiskBytes = free }
             }
 
             let next = RuntimePresentation(

@@ -10,7 +10,7 @@
                     eyebrow: "Selective disclosure",
                     title: "Exporter un fichier signé",
                     subtitle:
-                        "Set one clear rule for each app and website. Goalong verifies its local device signatures and integrity chain before creating the package."
+                        "Définissez une règle claire pour chaque app et site. Goalong vérifie ses signatures locales et sa chaîne d’intégrité avant de créer le paquet."
                 ) {
                     HStack(spacing: 10) {
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
@@ -51,17 +51,17 @@
                     .frame(width: 36, height: 36)
                     .background(LHTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Your rules persist for future shares")
+                    Text("Vos règles valent pour les prochains partages")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "A website rule takes priority over its browser rule. Show name reveals only the website host in new proofs—not the page title or full URL."
+                        "La règle d’un site prime sur celle du navigateur. « Afficher le nom » ne révèle que le nom du site, pas le titre de la page ni l’adresse complète."
                     )
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                StatusPill(title: "Stored on this Mac", symbol: "internaldrive", tint: LHTheme.teal)
+                StatusPill(title: "Enregistré sur ce Mac", symbol: "internaldrive", tint: LHTheme.teal)
             }
             .padding(14)
             .background(LHTheme.accent.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -74,13 +74,13 @@
         private var ruleSummary: some View {
             HStack(spacing: 10) {
                 summaryItem(
-                    title: "Show name",
+                    title: "Afficher le nom",
                     count: count(for: .identity),
                     symbol: "eye",
                     tint: LHTheme.success
                 )
                 summaryItem(
-                    title: "Category only",
+                    title: "Catégorie seulement",
                     count: count(for: .categoryOnly),
                     symbol: "tag",
                     tint: LHTheme.accent
@@ -95,7 +95,7 @@
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(model.snapshot.sealedMinutes) sealed minute\(model.snapshot.sealedMinutes == 1 ? "" : "s")")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    Text("Rules are evaluated event by event")
+                    Text("Les règles s’appliquent événement par événement")
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                 }
@@ -125,11 +125,11 @@
                     Text(
                         model.snapshot.sealedMinutes > 0
                             ? "Ready to create a rule-based package"
-                            : "No sealed minutes are available for this day"
+                            : "Aucune minute scellée pour ce jour"
                     )
                     .font(.system(size: 11, weight: .semibold))
                     Text(
-                        "Offline checks include commitments, chains, device identities and P-256 signatures. Receipt IDs remain references; nothing is uploaded by this action."
+                        "Les vérifications hors ligne portent sur les engagements, les chaînes, l’identité de l’appareil et les signatures. Rien n’est envoyé par cette action."
                     )
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)

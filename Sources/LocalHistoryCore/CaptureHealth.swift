@@ -163,6 +163,14 @@ public struct CaptureRecentCounters: Codable, Equatable {
     }
 }
 
+/// Why the local event journal stopped accepting rows. Only a coarse category is kept:
+/// the underlying error text can contain personal paths.
+public enum CaptureStorageFailureKind: String, Codable, CaseIterable {
+    case diskFull
+    case permissionDenied
+    case unavailable
+}
+
 public struct CaptureHealthSnapshot: Codable, Equatable {
     public let schemaVersion: Int
     public let generatedAt: Date
@@ -196,6 +204,10 @@ public struct CaptureHealthSnapshot: Codable, Equatable {
     /// process. Historical timestamps are retained for diagnostics but never prove
     /// that a newly launched process is receiving input.
     public let inputCallbackObservedThisLaunch: Bool?
+    /// Set while the event journal refuses writes (for example a full disk). The
+    /// recorder retries on its own; this is never restored from an earlier launch.
+    public let storageInterruptedSince: Date?
+    public let storageFailureKind: CaptureStorageFailureKind?
 
     public init(
         schemaVersion: Int = 1,
@@ -223,7 +235,9 @@ public struct CaptureHealthSnapshot: Codable, Equatable {
         isManuallyPaused: Bool,
         recentCounters: CaptureRecentCounters,
         expectedInputAfter: Date?,
-        inputCallbackObservedThisLaunch: Bool? = nil
+        inputCallbackObservedThisLaunch: Bool? = nil,
+        storageInterruptedSince: Date? = nil,
+        storageFailureKind: CaptureStorageFailureKind? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.generatedAt = generatedAt
@@ -251,6 +265,8 @@ public struct CaptureHealthSnapshot: Codable, Equatable {
         self.recentCounters = recentCounters
         self.expectedInputAfter = expectedInputAfter
         self.inputCallbackObservedThisLaunch = inputCallbackObservedThisLaunch
+        self.storageInterruptedSince = storageInterruptedSince
+        self.storageFailureKind = storageFailureKind
     }
 }
 
@@ -264,6 +280,7 @@ public enum CaptureHealthState: String, Codable, CaseIterable {
     case excludedPrivateOrSecure
     case healthyButIdle
     case awaitingInputEvidence
+    case storageUnavailable
 
     public var title: String {
         switch self {
@@ -277,6 +294,7 @@ public enum CaptureHealthState: String, Codable, CaseIterable {
         case .excludedPrivateOrSecure: return "Excluded, private or secure"
         case .healthyButIdle: return "Capture healthy but currently idle"
         case .awaitingInputEvidence: return "Waiting for the first real input event"
+        case .storageUnavailable: return "Recording interrupted"
         }
     }
 }
@@ -313,6 +331,21 @@ public enum CaptureHealthEvaluator {
                 state: .paused,
                 detail: "Capture is intentionally paused. Existing history remains readable.",
                 captureProven: snapshot.inputCallbackObservedThisLaunch == true
+            )
+        }
+
+        if let since = snapshot.storageInterruptedSince {
+            let cause: String
+            switch snapshot.storageFailureKind ?? .unavailable {
+            case .diskFull: cause = "The disk is full."
+            case .permissionDenied: cause = "The history folder refuses writes."
+            case .unavailable: cause = "The history journal cannot be written."
+            }
+            return CaptureHealthAssessment(
+                state: .storageUnavailable,
+                detail: "\(cause) Nothing has been recorded since \(since). Recording resumes automatically once writing succeeds again.",
+                captureProven: false,
+                limitations: ["Events observed during the interruption are not recoverable; the gap is recorded when writing resumes."]
             )
         }
 
@@ -475,6 +508,8 @@ public final class CaptureHealthAccumulator {
     private var expectedInputAfter: Date?
     private var inputCallbackObservedThisLaunch = false
     private var recentKinds: [TimedKind] = []
+    private var storageInterruptedSince: Date?
+    private var storageFailureKind: CaptureStorageFailureKind?
 
     public init(
         launchedAt: Date = Date(),
@@ -608,6 +643,21 @@ public final class CaptureHealthAccumulator {
         withLock { paused = value }
     }
 
+    /// Keeps the first interruption time; a later, different failure only refines the cause.
+    public func markStorageInterrupted(_ kind: CaptureStorageFailureKind, at date: Date = Date()) {
+        withLock {
+            if storageInterruptedSince == nil { storageInterruptedSince = date }
+            storageFailureKind = kind
+        }
+    }
+
+    public func markStorageRestored() {
+        withLock {
+            storageInterruptedSince = nil
+            storageFailureKind = nil
+        }
+    }
+
     public func snapshot(now: Date = Date(), windowSeconds: Int = 300) -> CaptureHealthSnapshot {
         lock.lock()
         defer { lock.unlock() }
@@ -639,7 +689,9 @@ public final class CaptureHealthAccumulator {
             isManuallyPaused: paused,
             recentCounters: CaptureRecentCounters(windowSeconds: windowSeconds, byEventKind: counts),
             expectedInputAfter: expectedInputAfter,
-            inputCallbackObservedThisLaunch: inputCallbackObservedThisLaunch
+            inputCallbackObservedThisLaunch: inputCallbackObservedThisLaunch,
+            storageInterruptedSince: storageInterruptedSince,
+            storageFailureKind: storageFailureKind
         )
     }
 

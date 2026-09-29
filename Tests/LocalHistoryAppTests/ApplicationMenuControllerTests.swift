@@ -14,7 +14,7 @@
 
             XCTAssertEqual(
                 controller.mainMenu.items.compactMap(\.submenu?.title),
-                [ProductIdentity.displayName, "File", "Edit", "View", "Window"]
+                [ProductIdentity.displayName, "Fichier", "Édition", "Présentation", "Fenêtre", "Aide"]
             )
 
             let applicationMenu = try XCTUnwrap(controller.mainMenu.items.first?.submenu)
@@ -22,21 +22,21 @@
             XCTAssertEqual(
                 titles,
                 [
-                    "About \(ProductIdentity.displayName)",
-                    "Check for Updates…",
-                    "Settings…",
+                    "À propos de \(ProductIdentity.displayName)",
+                    "Rechercher les mises à jour…",
+                    "Réglages…",
                     "Services",
-                    "Hide \(ProductIdentity.displayName)",
-                    "Hide Others",
-                    "Show All",
-                    "Quit & Reopen Goalong History",
-                    "Quit \(ProductIdentity.displayName)",
+                    "Masquer \(ProductIdentity.displayName)",
+                    "Masquer les autres",
+                    "Tout afficher",
+                    "Quitter et rouvrir \(ProductIdentity.displayName)",
+                    "Quitter \(ProductIdentity.displayName)",
                 ]
             )
-            XCTAssertEqual(applicationMenu.item(withTitle: "Settings…")?.keyEquivalent, ",")
-            XCTAssertEqual(applicationMenu.item(withTitle: "Quit & Reopen Goalong History")?.keyEquivalent, "")
+            XCTAssertEqual(applicationMenu.item(withTitle: "Réglages…")?.keyEquivalent, ",")
+            XCTAssertEqual(applicationMenu.item(withTitle: "Quitter et rouvrir \(ProductIdentity.displayName)")?.keyEquivalent, "")
             XCTAssertEqual(
-                applicationMenu.item(withTitle: "Quit \(ProductIdentity.displayName)")?.keyEquivalent,
+                applicationMenu.item(withTitle: "Quitter \(ProductIdentity.displayName)")?.keyEquivalent,
                 "q"
             )
         }
@@ -50,7 +50,7 @@
                 onQuit: {}
             )
             let applicationMenu = try XCTUnwrap(controller.mainMenu.items.first?.submenu)
-            let updateItem = try XCTUnwrap(applicationMenu.item(withTitle: "Check for Updates…"))
+            let updateItem = try XCTUnwrap(applicationMenu.item(withTitle: "Rechercher les mises à jour…"))
 
             controller.menuNeedsUpdate(applicationMenu)
             XCTAssertFalse(updateItem.isEnabled)

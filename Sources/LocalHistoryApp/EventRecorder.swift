@@ -14,6 +14,10 @@
         let writerQueueDepth: Int
         let writerQueueHighWaterMark: Int
         let writerQueueCapacity: Int
+        var storageInterruptedSince: Date? = nil
+        var storageFailureKind: CaptureStorageFailureKind? = nil
+        var storageLostEventCount: UInt64 = 0
+        var storageRecoveryCount: UInt64 = 0
     }
 
     enum EventRecorderPersistenceError: LocalizedError {
@@ -38,6 +42,28 @@
     /// No downstream observer can acknowledge an event that failed to append.
     final class EventRecorder {
         static let defaultWriterQueueCapacity = 256
+        /// Delay before each new attempt after the journal refused a row. The next event
+        /// retries at once (a one-off failure costs nothing); a persisting condition such
+        /// as a full disk is then retried at most every five minutes, only when an event
+        /// arrives.
+        static let defaultStorageRetryDelays: [TimeInterval] = [0, 5, 15, 30, 60, 120, 300]
+
+        /// Writer-queue confined: the journal refused rows and appends are suspended.
+        private struct StorageInterruption {
+            let since: Date
+            var kind: CaptureStorageFailureKind
+            var failedAttempts = 1
+            var nextAttemptAt: Date
+            var lostEventCount: UInt64 = 0
+            var firstLostAt: Date?
+            var lastLostAt: Date?
+
+            mutating func recordLoss(at timestamp: Date) {
+                lostEventCount = lostEventCount == .max ? .max : lostEventCount + 1
+                firstLostAt = firstLostAt.map { min($0, timestamp) } ?? timestamp
+                lastLostAt = lastLostAt.map { max($0, timestamp) } ?? timestamp
+            }
+        }
 
         private struct ObservationGap {
             var droppedEventCount: UInt64 = 0
@@ -71,6 +97,9 @@
         private let writerQueueCapacity: Int
         private let isMainThread: () -> Bool
         private let beforePersist: ((HistoryEvent) -> Void)?
+        private let clock: () -> Date
+        private let storageRetryDelays: [TimeInterval]
+        private var storageInterruption: StorageInterruption?
 
         private let writerQueue = DispatchQueue(
             label: "ai.goalong.localhistory.event-recorder",
@@ -94,6 +123,8 @@
         private var lastFailureOperation: String?
         private var lastFailureDescription: String?
         private var writerPoisonReason: String?
+        private var publishedStorageInterruption: (since: Date, kind: CaptureStorageFailureKind, lost: UInt64)?
+        private var storageRecoveryCount: UInt64 = 0
 
         init(
             store: JSONLStore,
@@ -103,9 +134,14 @@
             persistenceFailureHandler: ((String, Error) -> Void)? = nil,
             writerQueueCapacity: Int = EventRecorder.defaultWriterQueueCapacity,
             isMainThread: @escaping () -> Bool = { Thread.isMainThread },
-            beforePersist: ((HistoryEvent) -> Void)? = nil
+            beforePersist: ((HistoryEvent) -> Void)? = nil,
+            clock: @escaping () -> Date = Date.init,
+            storageRetryDelays: [TimeInterval] = EventRecorder.defaultStorageRetryDelays
         ) {
             precondition((2...512).contains(writerQueueCapacity))
+            precondition(!storageRetryDelays.isEmpty)
+            self.clock = clock
+            self.storageRetryDelays = storageRetryDelays
             self.store = store
             self.integrityJournal = integrityJournal
             self.minuteSealer = minuteSealer
@@ -131,7 +167,6 @@
                     try integrityJournal.reconcilePersistedTail(tail)
                 }
             } catch {
-                SupportDiagnostics.shared.failure(error, component: .capture)
                 noteFailure(operation: "startup_recovery", error: error)
             }
         }
@@ -248,7 +283,6 @@
             do {
                 try flushAndWait()
             } catch {
-                SupportDiagnostics.shared.failure(error, component: .capture)
                 noteFailure(operation: "flush", error: error)
             }
         }
@@ -264,7 +298,6 @@
             do {
                 try closeAndWait()
             } catch {
-                SupportDiagnostics.shared.failure(error, component: .capture)
                 noteFailure(operation: "close", error: error)
             }
         }
@@ -300,7 +333,11 @@
                 pendingEventCount: pendingEventCount,
                 writerQueueDepth: writerQueueDepth,
                 writerQueueHighWaterMark: writerQueueHighWaterMark,
-                writerQueueCapacity: writerQueueCapacity
+                writerQueueCapacity: writerQueueCapacity,
+                storageInterruptedSince: publishedStorageInterruption?.since,
+                storageFailureKind: publishedStorageInterruption?.kind,
+                storageLostEventCount: publishedStorageInterruption?.lost ?? 0,
+                storageRecoveryCount: storageRecoveryCount
             )
         }
 
@@ -405,21 +442,33 @@
             writerCondition.unlock()
         }
 
-        private func persist(_ base: HistoryEvent, isObservationGap: Bool, privacyRevision: String? = nil, globalPauseRevision: String? = nil) {
-            guard !GoalongGlobalPause.isPaused() else { return }
+        @discardableResult
+        private func persist(
+            _ base: HistoryEvent,
+            isObservationGap: Bool,
+            privacyRevision: String? = nil,
+            globalPauseRevision: String? = nil,
+            isStorageGap: Bool = false
+        ) -> Bool {
+            guard !GoalongGlobalPause.isPaused() else { return false }
             beforePersist?(base)
-            guard !GoalongGlobalPause.isPaused() else { return }
+            guard !GoalongGlobalPause.isPaused() else { return false }
             if let globalPauseRevision {
                 do { try GoalongGlobalPause.revalidate(globalPauseRevision) } catch {
                     SupportDiagnostics.shared.failure(error, component: .capture)
-                return }
+                return false }
             }
             if let writerPoisonReason {
                 noteFailure(
                     operation: "append",
                     error: EventRecorderPersistenceError.writerPoisoned(writerPoisonReason)
                 )
-                return
+                return false
+            }
+            guard isStorageGap || resumeStorageIfPossible(before: base.timestamp) else {
+                storageInterruption?.recordLoss(at: base.timestamp)
+                publishStorageInterruption()
+                return false
             }
 
             let privacy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory)
@@ -429,21 +478,20 @@
             do {
                 outcome = try store.appendAndWait(event)
             } catch {
-                SupportDiagnostics.shared.failure(error, component: .capture)
-                noteFailure(operation: "append", error: error)
-                return
+                // The gap marker describes lost events; it is not one of them.
+                handleStorageFailure(error, lostEventAt: isStorageGap ? nil : base.timestamp)
+                return false
             }
 
             do {
                 try integrityJournal.commitPersisted(event)
             } catch {
-                SupportDiagnostics.shared.failure(error, component: .capture)
                 // The row exists but the live cursor could not consume it. Continuing
                 // would reuse a sequence, so poison this launch and recover from the
                 // durable tail on restart.
                 writerPoisonReason = error.localizedDescription
                 noteFailure(operation: "integrity_commit", error: error)
-                return
+                return false
             }
 
             mutateStatus {
@@ -459,7 +507,6 @@
                 do {
                     try integrityJournal.checkpointPersistedEvents()
                 } catch {
-                    SupportDiagnostics.shared.failure(error, component: .capture)
                     // The JSONL journal is already synchronized. Tail recovery can
                     // rebuild this redundant checkpoint on the next launch.
                     noteFailure(operation: "state_checkpoint", error: error)
@@ -469,6 +516,111 @@
             JevIngress.shared.receive(event)
             minuteSealer.receive(event)
             captureHealth?.markRecordedEvent(event.kind, at: event.timestamp)
+            return true
+        }
+
+        /// Returns true when appends may proceed. While the journal is refusing rows,
+        /// events are counted rather than retried one by one; at the next due attempt the
+        /// durable tail is reconciled in-process (what a restart used to do), the gap is
+        /// recorded, and normal writing resumes without any user action.
+        private func resumeStorageIfPossible(before eventTimestamp: Date) -> Bool {
+            guard var interruption = storageInterruption else { return true }
+            let now = clock()
+            guard now >= interruption.nextAttemptAt else { return false }
+            var uncertainRowWasComplete = false
+            do {
+                try store.recoverAfterUncertainWrite { [integrityJournal] tail in
+                    guard let tail else { return }
+                    do {
+                        // True when the row that reported an error was in fact fully written.
+                        uncertainRowWasComplete = try integrityJournal.reconcilePersistedTail(tail)
+                    } catch IntegrityStateError.eventStateAheadOfJournal {
+                        // Explicit deletion can remove the newest rows. Launch keeps the
+                        // live cursor in this case; so does in-process recovery.
+                    }
+                }
+            } catch {
+                handleStorageFailure(error, lostEventAt: nil)
+                return false
+            }
+            if uncertainRowWasComplete, interruption.lostEventCount > 0 {
+                interruption.lostEventCount -= 1
+                storageInterruption = interruption
+            }
+
+            // Dated like writer-overflow gaps: at the last lost observation, so the marker
+            // sits in the same day journal as the events it accounts for.
+            let gap = HistoryEvent(
+                schemaVersion: 4,
+                sessionID: sessionID,
+                timestamp: interruption.lastLostAt ?? eventTimestamp,
+                kind: .recorderHealth,
+                message: "Event persistence observation gap",
+                metadata: [
+                    "observation_gap": "true",
+                    "gap_reason": "storage_unavailable",
+                    "storage_failure": interruption.kind.rawValue,
+                    "dropped_event_count": String(interruption.lostEventCount),
+                    "gap_first_unix_ms": Self.unixMilliseconds(interruption.firstLostAt ?? interruption.since),
+                    "gap_last_unix_ms": Self.unixMilliseconds(interruption.lastLostAt ?? eventTimestamp),
+                    "interrupted_since_unix_ms": Self.unixMilliseconds(interruption.since),
+                ]
+            )
+            guard persist(gap, isObservationGap: true, isStorageGap: true) else { return false }
+
+            storageInterruption = nil
+            mutateStatus {
+                storageRecoveryCount &+= 1
+                publishedStorageInterruption = nil
+            }
+            captureHealth?.markStorageRestored()
+            SupportDiagnostics.shared.record(.storageRecovered, component: .capture, values: [
+                .lostEvents: .count(Int(clamping: interruption.lostEventCount)),
+                .attempt: .count(interruption.failedAttempts),
+                .durationMS: .number(max(0, now.timeIntervalSince(interruption.since)) * 1_000),
+            ])
+            return true
+        }
+
+        private func handleStorageFailure(_ error: Error, lostEventAt timestamp: Date?) {
+            let kind = StorageHealth.failureKind(for: error)
+            let now = clock()
+            if var interruption = storageInterruption {
+                interruption.kind = kind
+                interruption.failedAttempts += 1
+                let delay = storageRetryDelays[min(interruption.failedAttempts - 1, storageRetryDelays.count - 1)]
+                interruption.nextAttemptAt = now.addingTimeInterval(delay)
+                if let timestamp { interruption.recordLoss(at: timestamp) }
+                storageInterruption = interruption
+                SupportDiagnostics.shared.record(.storageRetryFailed, component: .capture, level: .warning,
+                    values: SupportDiagnostics.errorValues(error).merging([
+                        .attempt: .count(interruption.failedAttempts),
+                        .state: .state(SupportState(rawValue: kind.rawValue) ?? .unavailable),
+                    ]) { _, new in new })
+            } else {
+                var interruption = StorageInterruption(
+                    since: now,
+                    kind: kind,
+                    nextAttemptAt: now.addingTimeInterval(storageRetryDelays[0])
+                )
+                if let timestamp { interruption.recordLoss(at: timestamp) }
+                storageInterruption = interruption
+                var values = SupportDiagnostics.errorValues(error)
+                values[.state] = .state(SupportState(rawValue: kind.rawValue) ?? .unavailable)
+                if let free = StorageHealth.availableBytes() { values[.freeSpaceMB] = .count(Int(free / 1_048_576)) }
+                SupportDiagnostics.shared.record(.storageInterrupted, component: .capture, level: .error, values: values)
+                noteFailure(operation: "append", error: error, reportToSupport: false)
+            }
+            publishStorageInterruption()
+        }
+
+        private func publishStorageInterruption() {
+            guard let interruption = storageInterruption else { return }
+            let changedKind = publishedStorageInterruption?.kind != interruption.kind
+            mutateStatus {
+                publishedStorageInterruption = (interruption.since, interruption.kind, interruption.lostEventCount)
+            }
+            if changedKind { captureHealth?.markStorageInterrupted(interruption.kind, at: interruption.since) }
         }
 
         private static func unixMilliseconds(_ date: Date?) -> String {
@@ -484,13 +636,21 @@
             }
         }
 
-        private func noteFailure(operation: String, error: Error) {
+        private func noteFailure(
+            operation: String,
+            error: Error,
+            reportToSupport: Bool = true,
+            file: StaticString = #fileID,
+            line: UInt = #line
+        ) {
+            if reportToSupport {
+                SupportDiagnostics.shared.failure(error, component: .capture, file: file, line: line)
+            }
             mutateStatus {
                 failureCount &+= 1
                 lastFailureOperation = operation
                 lastFailureDescription = error.localizedDescription
             }
-            Diagnostics.write("Event recorder \(operation) failed: \(error)")
             persistenceFailureHandler?(operation, error)
         }
 

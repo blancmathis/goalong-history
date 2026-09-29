@@ -79,6 +79,20 @@ struct GoalongActivityUsageItem: Identifiable, Equatable {
     let bundleIdentifier: String?
     let isWebsite: Bool
     var seconds: TimeInterval
+    /// Parts of `seconds` classified as work / other (automatically or by the user).
+    var workSeconds: TimeInterval = 0
+    var otherSeconds: TimeInterval = 0
+    /// Same usage over the previous period of equal length; nil when not computed.
+    var previousSeconds: TimeInterval? = nil
+
+    var unclassifiedSeconds: TimeInterval { max(0, seconds - workSeconds - otherSeconds) }
+    /// The class that covers most of this usage, if any.
+    var dominantClass: GoalongUsageClass? {
+        guard seconds > 0 else { return nil }
+        if workSeconds >= seconds * 0.5 { return .work }
+        if otherSeconds >= seconds * 0.5 { return .other }
+        return nil
+    }
 }
 
 /// Both groupings partition the very same foreground intervals. A website replaces
@@ -92,7 +106,8 @@ enum GoalongActivityProjection {
     }
 
     static func usage(_ period: GoalongLocalAnalytics.Period,
-                      grouping: GoalongActivityUsageGrouping) -> [GoalongActivityUsageItem] {
+                      grouping: GoalongActivityUsageGrouping,
+                      previous: GoalongLocalAnalytics.Period? = nil) -> [GoalongActivityUsageItem] {
         var result: [String: GoalongActivityUsageItem] = [:]
         for day in period.days {
             for segment in day.segments {
@@ -106,8 +121,20 @@ enum GoalongActivityProjection {
                     seconds: 0
                 )
                 item.seconds += segment.seconds
+                if segment.kind == .work { item.workSeconds += segment.seconds }
+                else if segment.kind == .other { item.otherSeconds += segment.seconds }
                 result[id] = item
             }
+        }
+        if let previous, previous.observedSeconds > 0 {
+            var before: [String: TimeInterval] = [:]
+            for day in previous.days {
+                for segment in day.segments {
+                    guard let id = usageID(segment, grouping: grouping) else { continue }
+                    before[id, default: 0] += segment.seconds
+                }
+            }
+            for key in result.keys { result[key]?.previousSeconds = before[key] ?? 0 }
         }
         return result.values.sorted { a, b in
             a.seconds == b.seconds ? a.id < b.id : a.seconds > b.seconds

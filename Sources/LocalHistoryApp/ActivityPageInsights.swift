@@ -8,11 +8,11 @@
                 VStack(alignment: .leading, spacing: 13) {
                     HStack(alignment: .firstTextBaseline) {
                         SectionTitle(
-                            title: "Websites, pages and actions",
-                            subtitle: "Web activity is attributed to the site, independently of the browser used"
+                            title: "Sites, pages et actions",
+                            subtitle: "L’activité web est attribuée au site, quel que soit le navigateur"
                         )
                         Spacer()
-                        Button("Open all sites") {
+                        Button("Voir tous les sites") {
                             mode = .appsAndSites
                         }
                         .buttonStyle(.link)
@@ -22,7 +22,7 @@
                     if analysis.sites.isEmpty {
                         compactEmpty(
                             symbol: "globe",
-                            title: "No website URL was exposed by the active web container"
+                            title: "Aucune adresse de site n’a été fournie par la page active"
                         )
                     } else {
                         VStack(spacing: 11) {
@@ -37,7 +37,7 @@
                                 mode = .appsAndSites
                             } label: {
                                 Label(
-                                    "View all \(analysis.sites.count) websites and their pages",
+                                    "Voir les \(analysis.sites.count) sites et leurs pages",
                                     systemImage: "arrow.right.circle"
                                 )
                             }
@@ -114,15 +114,15 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 13) {
                     SectionTitle(
-                        title: "Requests and intentions",
-                        subtitle: "Likely user prompts detected in opt-in visible context"
+                        title: "Demandes et intentions",
+                        subtitle: "Demandes probables repérées dans le texte affiché (si activé)"
                     )
                     if analysis.requests.isEmpty {
                         compactEmpty(
                             symbol: "text.bubble",
                             title: richContextEnabled
-                                ? "No clear request detected yet"
-                                : "Rich Context is off"
+                                ? "Aucune demande claire repérée"
+                                : "Texte affiché désactivé"
                         )
                     } else {
                         VStack(spacing: 10) {
@@ -165,7 +165,7 @@
                             Text("Agent-ready daily brief")
                                 .font(.system(size: 15, weight: .semibold))
                             Text(
-                                "Stable Markdown with websites, pages and meaningful actions already deduplicated under a hard token budget."
+                                "Markdown stable avec les sites, pages et actions significatives, dédoublonnés dans une taille limitée."
                             )
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
@@ -190,7 +190,7 @@
                         .pickerStyle(.menu)
                         .frame(width: 190)
 
-                        Button("Open Markdown") {
+                        Button("Ouvrir le Markdown") {
                             analysisModel.openAgentBrief(for: model.selectedDay)
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
@@ -238,13 +238,13 @@
                             Text("Rich Context")
                                 .font(.system(size: 14, weight: .semibold))
                             StatusPill(
-                                title: richContextEnabled ? "Enabled" : "Off by default",
+                                title: richContextEnabled ? "Activé" : "Désactivé par défaut",
                                 symbol: richContextEnabled ? "checkmark.circle.fill" : "circle",
                                 tint: richContextEnabled ? LHTheme.privateTint : Color.secondary
                             )
                         }
                         Text(
-                            "Remembers selected and visible text exposed by macOS Accessibility, including accessible web discussions, so the recap can understand more than a URL or page title."
+                            "Mémorise le texte sélectionné et visible fourni par l’accessibilité macOS, y compris les discussions web, pour que le récapitulatif comprenne plus qu’une adresse ou un titre."
                         )
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -256,7 +256,7 @@
                             Label("Stored locally and sealed", systemImage: "checkmark.seal.fill")
                             if analysis.coverage.semanticSnapshotCount > 0 {
                                 Label(
-                                    "\(analysis.coverage.semanticSnapshotCount) snapshots today",
+                                    "\(analysis.coverage.semanticSnapshotCount) instantanés aujourd’hui",
                                     systemImage: "text.badge.checkmark"
                                 )
                             }

@@ -4,50 +4,76 @@
 
 ## Parcours utilisateur
 
-Dans **Réglages → Avancé → Diagnostic et assistance** (également dans le stockage et dans les écrans d’autorisation), cliquer **Marquer le problème maintenant**, reproduire le problème, puis **Exporter un diagnostic…**. L’utilisateur choisit le fichier JSON, peut le lire et décide lui-même de l’envoyer. Aucun téléversement, collecteur, compte support, SDK de télémétrie ou envoi automatique n’est ajouté.
+**Signaler un problème…** est accessible depuis le menu **Aide**, le menu de la barre des menus, le bas des **Réglages**, **Réglages → Avancé → Aide et diagnostic**, la bannière affichée quand l’enregistrement est interrompu, les écrans d’autorisation et l’alerte d’échec au démarrage.
 
-Un interrupteur arrête la conservation des événements. Le bouton d’effacement ne touche qu’au nouveau journal technique ; il ne supprime ni historique d’activité, ni réglages, ni rapports déjà exportés, ni anciens fichiers bruts. L’export reste possible même avec une source désactivée ou des autorisations manquantes.
+Un clic ouvre une fenêtre qui :
+
+1. prépare le rapport en arrière-plan et l’enregistre dans le dossier privé `SupportReports/` (0700, fichiers 0600, cinq rapports au plus) ;
+2. affiche **Ce que Goalong a détecté** : un résumé en français calculé à partir du journal (enregistrement interrompu, disque presque plein, arrêts inattendus, plantages, échecs de mise à jour, crédit de surveillance épuisé, erreurs répétées, autorisation manquante, interface bloquée) ;
+3. rappelle **Ce que contient le rapport** et ce qu’il ne contient jamais ;
+4. propose **Envoyer par e-mail…** (nouveau message de l’app de messagerie avec le fichier joint et un modèle à compléter), **Partager…** (Messages, AirDrop…) et, dans **Plus**, *Ajouter un repère*, *Actualiser le rapport* et *Enregistrer une copie…*.
+
+Rien n’est envoyé automatiquement : l’utilisateur choisit le destinataire. Il n’existe ni collecteur, ni compte support, ni SDK de télémétrie.
+
+Un interrupteur arrête la conservation des événements (déconseillé : le rapport ne décrit alors que l’instant présent). L’effacement ne touche qu’au journal technique.
 
 ## Contenu autorisé
 
-Le schéma est fermé : composant, événement et état sont des énumérations ; les valeurs sont des booléens, nombres ou états autorisés. Aucun champ libre n’est prévu pour une description de problème. Les événements portent leur date, un UUID aléatoire par lancement, un compteur et un emplacement dans le code (nom public de fichier compilé et ligne, jamais chemin personnel).
+Le schéma est fermé : composant, événement et état sont des énumérations ; les valeurs sont des booléens, nombres, états autorisés ou **symboles**. Un symbole est soit un identifiant du code compilé (type d’erreur Swift, nom du cas d’erreur, nom d’événement résumé), validé par `^[A-Za-z_][A-Za-z0-9_.]{0,127}$`, soit un numéro de version validé par `^[0-9]+(\.[0-9]+){0,3}$`. Les symboles ne sont acceptés que pour les clés prévues (`errorType`, `errorCase`, `repeatedEvent`, `version`, `build`, `previousVersion`, `previousBuild`, `availableVersion`) et sont revalidés à la relecture.
 
-Le rapport contient la version/build de Goalong, sa révision, la catégorie et la validité de sa signature, un hash de son binaire, la catégorie de son emplacement d’installation, le nombre de copies en cours d’exécution, la version de macOS, l’architecture, les états des sources et services, les observations d’autorisation, des compteurs bornés, les codes numériques d’erreur, les réponses HTTP numériques et les durées d’opération instrumentées. Les horaires et métadonnées techniques restent potentiellement sensibles : le fichier doit être transmis volontairement à un interlocuteur de confiance.
+`failure` et `SupportDiagnostics.errorValues` conservent :
 
-Il exclut les contenus d’écran, captures, texte saisi, touches exactes, presse-papiers, audio, conversations, prompts, réponses du modèle, règles personnelles de productivité, historique d’activité, titres, URL, noms d’applications tierces, noms de fichiers utilisateur, chemins personnels, adresses e-mail, clés, jetons, cookies, identifiants de compte/appareil, environnement complet, préférences et bases brutes. Les classifications personnelles de productivité ne sont pas journalisées.
+- le code numérique et une catégorie fixe (`urlError`, `cocoaError`, `posixError`, `osStatusError`, `machError`, `sparkleError`, `swiftError`, `otherError`) ;
+- pour une erreur Swift, son type qualifié (ex. `LocalHistoryApp.JSONLStore.JSONLStoreError`), le nom de son cas lu par réflexion et, si le cas porte un seul entier, cet entier (ex. `JevError.http(402)`). Un type qui fournit sa propre description n’est jamais utilisé comme nom de cas ;
+- pour une erreur Foundation, le nom du domaine uniquement s’il appartient à une liste fixe (Cocoa, POSIX, URL, OSStatus, Mach, Sparkle, CFNetwork) ;
+- jusqu’à trois niveaux d’erreurs sous-jacentes, réduits à leur code et catégorie ; le plus profond est gardé comme `rootErrorCode` (souvent l’errno, par exemple 28 = disque plein).
 
-`failure` ne lit que le code NSError et traduit son domaine vers quatre catégories fixes. Il ignore la description, le domaine inconnu en clair, le dictionnaire `userInfo` et les erreurs imbriquées. Le pont `Diagnostics.write` ne **calcule même pas** les anciens messages libres : seul leur emplacement compilé est conservé. Les anciens `diagnostics.log` ne sont jamais intégrés au rapport.
+La description, les chaînes de `userInfo`, les chemins et les domaines inconnus ne sont jamais lus. Le pont `Diagnostics.write` ne **calcule même pas** les anciens messages libres : seul leur emplacement compilé est conservé.
 
-L’export décode et reconstruit chaque événement avec le schéma fermé. Les enregistrements corrompus, trop gros, trop anciens ou contenant des champs/états/source non autorisés sont rejetés ; les clés supplémentaires ne sont pas recopiées. Le nombre d’enregistrements rejetés, d’événements perdus par surcharge dans le lancement courant et d’échecs d’écriture est indiqué.
+Le rapport contient aussi : version/build/révision et signature de Goalong, hash de son binaire, emplacement d’installation (catégorie), nombre de copies en cours d’exécution, version de macOS et architecture, états des sources et services, observations d’autorisation, espace libre du volume (Mo), taille des dossiers internes de Goalong (noms fixes : `events`, `seals`, `memories`…), état des mises à jour (vérification automatique, dernier résultat, version disponible), état de l’enregistrement (interrompu ou non, cause, observations perdues), sources activées et envoi quotidien au site (oui/non), compteurs bornés, réponses HTTP numériques et durées instrumentées.
+
+Il exclut les contenus d’écran, captures, texte saisi, touches exactes, presse-papiers, audio, conversations, prompts, réponses du modèle, règles personnelles de productivité, historique d’activité, titres, URL, noms d’applications tierces, noms de fichiers utilisateur, chemins personnels, adresses e-mail, clés, jetons, cookies, identifiants de compte/appareil, environnement complet et bases brutes.
+
+## Un journal lisible même pendant un incident
+
+L’incident du 26–28/09/2026 (disque plein puis plus de 900 échecs identiques en quelques heures) a montré que la rotation effaçait la cause d’origine. Le journal applique désormais trois règles :
+
+- **Regroupement des répétitions** : un événement identique (composant, événement, niveau, emplacement, valeurs discrètes) est conservé trois fois par tranche de dix minutes ; les suivants deviennent un seul `repeatSummary` avec `suppressedCount` exact, émis à la fin de la tranche, à l’export et à l’arrêt.
+- **Événements périodiques sur changement** : pulsation, vérifications d’autorisation, cycles de surveillance et requêtes réussies passent par `recordIfChanged`, qui n’écrit que si une valeur discrète change (ou toutes les 15 à 30 minutes). Les délais et compteurs continus accompagnent l’événement sans le rendre nouveau.
+- **Flux prioritaire** : avertissements, erreurs et changements d’état (démarrage, arrêt, mise à jour installée, repère utilisateur, santé de capture, mises à jour, reprise de l’enregistrement) sont écrits dans `day-AAAA-MM-JJ/important/`, qui a son propre budget. Les événements courants ne peuvent donc plus évincer la cause d’un problème.
 
 ## Conservation et sécurité des fichiers
 
-Journal dans le sous-dossier `SupportDiagnostics` du répertoire de données de Goalong. Un dossier par date UTC, avec deux segments au maximum de 256 Kio chacun. Sept dates conservées : plafond de 3,5 Mio hors métadonnées du système de fichiers. La rotation peut raccourcir la période disponible lors d’une journée très active. La purge se fait au démarrage, au changement de date et à l’export, sans parcours de l’historique. Un programme qui ne tourne pas ne peut pas effectuer une purge.
+Journal dans `SupportDiagnostics`, un dossier par date UTC. Par jour : deux segments de 256 Kio pour les événements courants et deux segments de 128 Kio pour le flux prioritaire. Sept dates conservées : plafond de 5,25 Mio hors métadonnées. La purge se fait au démarrage, au changement de date et à l’export, sans parcours de l’historique.
 
-Les producteurs passent par une file bornée (128 éléments, 256 Kio en attente, 8 Kio par message) avec un seul drainage programmé. Aucune opération disque ni attente réseau n’a lieu dans le callback de capture. Les répertoires du journal sont privés (0700), les fichiers sont privés (0600), les liens symboliques et fichiers non réguliers sont refusés et les fichiers à plusieurs liens physiques sont exclus à la lecture. L’effacement ne descend pas récursivement dans des données inconnues.
+Les producteurs passent par une file bornée (128 éléments, 256 Kio en attente, 8 Kio par message) avec un seul drainage programmé. Aucune opération disque ni attente réseau n’a lieu dans le callback de capture. Répertoires privés (0700), fichiers privés (0600), liens symboliques et fichiers non réguliers refusés, fichiers à plusieurs liens physiques exclus à la lecture. L’effacement ne descend pas récursivement dans des données inconnues.
 
 ## Défaillance du journal et interface bloquée
 
-Un tampon de 128 événements techniques reste disponible en mémoire lorsque les écritures échouent. L’export attend au maximum deux secondes le journal disque et indique `diskSnapshotIncomplete` lorsque cette partie n’est pas disponible ou a subi des erreurs. Les demandes répétées ne créent pas une file illimitée de lectures. La fermeture n’attend qu’une seconde le drainage du journal et ne prétend pas avoir correctement finalisé les écritures lorsque ce délai expire. Les sauvegardes explicites utilisent un fichier temporaire privé (0600) dans le dossier choisi, puis un remplacement atomique sans suivre un lien symbolique de destination.
+Un tampon de 128 événements reste disponible en mémoire lorsque les écritures échouent. L’export attend au maximum deux secondes le journal disque et indique `diskSnapshotIncomplete` lorsque cette partie n’est pas disponible. La fermeture n’attend qu’une seconde le drainage. Les copies explicites utilisent un fichier temporaire privé puis un remplacement atomique sans suivre un lien symbolique.
 
-Un contrôle de réactivité hors du thread principal ne garde qu’un ping en attente. Il peut signaler une absence de réponse de 30 secondes et la reprise ultérieure, même si la fenêtre principale était bloquée. Une longue suspension du minuteur de fond ou un retour d’horloge invalide le ping pour limiter les faux positifs de veille. Aucun contenu ou stack de l’utilisateur n’est collecté ; ces indices ne prouvent pas à eux seuls la cause d’un blocage.
+Un contrôle de réactivité hors du thread principal peut signaler une absence de réponse de 30 secondes et la reprise ultérieure. Une longue suspension du minuteur de fond ou un retour d’horloge invalide le ping pour limiter les faux positifs de veille.
 
-## Arrêts et crashes
+## Arrêts, crashes et mises à jour
 
-Une marque d’arrêt propre est persistée. Son absence au prochain lancement signale un arrêt non propre, **pas nécessairement un crash** : fermeture forcée, extinction ou interruption peuvent produire le même résultat. Un retard du minuteur n’est pas non plus une preuve de blocage : veille et App Nap peuvent le retarder.
+Une marque d’arrêt propre est persistée ; son absence signale un arrêt non propre, **pas nécessairement un crash**. Au premier lancement d’une nouvelle version, `appUpdated` enregistre la version et le build précédents et actuels : un rapport montre ainsi exactement quelle mise à jour a précédé un problème.
 
-Seulement lors de l’export, jusqu’à cinq rapports IPS récents de **Goalong** accessibles sans autorisation supplémentaire peuvent être réduits à leur type d’exception, UUID de son binaire et décalages des frames appartenant à ce binaire. Aucun rapport brut, chemin, symbole, registre, adresse mémoire, payload d’exception, rapport d’autre application ou journal système global n’est joint. Une absence de résumé ne prouve pas une absence de crash. Les UUID et offsets servent à corréler le binaire et, lorsqu’ils sont disponibles, les symboles de compilation.
+Le cycle de mise à jour est journalisé : début de vérification (manuelle ou automatique), résultat (`upToDate`, `updateAvailable`, `failed` avec le code Sparkle et l’erreur réseau sous-jacente), choix de l’utilisateur (`install`, `skip`, `later`) et relance d’installation.
+
+Seulement lors de l’export, jusqu’à cinq rapports IPS récents de **Goalong** peuvent être réduits à leur type d’exception, UUID du binaire et décalages des frames de ce binaire. Aucun rapport brut, chemin, symbole, registre ou rapport d’autre application n’est joint.
+
+## Enregistrement interrompu
+
+Si le journal d’événements refuse une écriture (disque plein, dossier non inscriptible), l’enregistreur ne s’arrête plus jusqu’au prochain lancement. Il compte les observations perdues, réessaie à l’événement suivant puis de façon espacée (5 s, 15 s… jusqu’à 5 minutes), réconcilie la chaîne d’intégrité avec la fin du journal durable exactement comme au démarrage, écrit un marqueur `observation_gap` (`gap_reason = storage_unavailable`, nombre et période des observations perdues) puis reprend. Pendant la coupure, la santé de capture passe à `storageUnavailable`, la barre latérale et le menu indiquent « Enregistrement interrompu » ou « Disque plein », et une bannière propose *Gérer le stockage…* et *Signaler le problème…*. Une alerte apparaît aussi quand il reste moins de 2 Go.
 
 ## Autorisations et récupération
 
-L’assistant d’activation et le watchdog partagent le même mécanisme. Une autorisation est confirmée par le préflight de macOS ou, lorsqu’il est négatif, par la réussite d’une lecture **protégée d’un autre processus**. La lecture de sa propre fenêtre ou d’un simple rôle d’application n’est pas une preuve d’autorisation. Deux cibles au maximum sont sondées, avec délai AX borné à 120 ms par cible, sans lecture de titre ou de contenu. Une panne AX temporaire ne révoque pas une autorisation accordée ; la santé de capture reste évaluée séparément. Aucun ancien succès n’est conservé après une nouvelle vérification négative.
-
-Une récupération explicite permet à l’utilisateur de supprimer **une seule** ancienne autorisation de Goalong via `/usr/bin/tccutil reset <service> ai.goalong.localhistory`. Les trois services autorisés sont Accessibility, ListenEvent et SystemPolicyAllFiles. Il n’existe ni reset All, ni modification de base TCC, ni resignature, ni contournement, ni octroi automatique. Le processus reçoit un environnement minimal, aucun shell et aucun argument utilisateur. Après confirmation, l’utilisateur réaccorde l’accès dans les réglages macOS et relance l’application. L’historique et les choix de sources ne sont pas modifiés.
+L’assistant d’activation et le watchdog partagent le même mécanisme. Une autorisation est confirmée par le préflight de macOS ou, lorsqu’il est négatif, par la réussite d’une lecture **protégée d’un autre processus**. Une récupération explicite permet de réinitialiser **une seule** ancienne autorisation de Goalong via `/usr/bin/tccutil reset <service> ai.goalong.localhistory` (Accessibility, ListenEvent, SystemPolicyAllFiles), jamais « All ».
 
 ## Maintenance et limites
 
-Pour instrumenter une nouvelle branche, ajouter un événement/une clé/une valeur catégorielle au schéma puis appeler `SupportDiagnostics.record` ou `failure`. Ne jamais ajouter de champ String libre, de dump de requête, d’Error description, de configuration ou de snapshot de capture complet. Mettre à jour la liste des fichiers avec `python3 scripts/generate_support_source_allowlist.py`.
+Pour instrumenter une nouvelle branche, ajouter l’événement, la clé ou l’état au schéma puis appeler `SupportDiagnostics.shared.record`, `recordIfChanged` (pour tout ce qui est périodique) ou `failure`. Ne jamais ajouter de champ texte libre, de dump de requête, de description d’erreur, de configuration ou de snapshot de capture complet. Un nouveau résumé lisible se déclare dans `SupportFindings.detect`. Mettre à jour la liste des fichiers avec `python3 scripts/generate_support_source_allowlist.py`.
 
-Les tests `SupportDiagnosticsTests` et `PermissionReconciliationTests` couvrent les canaris privés, les erreurs imbriquées, les champs inconnus, l’opt-out, la rotation, la purge, les liens, les résumés de crash, les autorisations incohérentes/révoquées et le périmètre de réparation. Les audits de confidentialité vérifient les frontières de processus.
+Les tests `SupportDiagnosticsTests`, `SupportDiagnosticsHardeningTests`, `SupportDiagnosticsSignalTests`, `EventRecorderStorageRecoveryTests` et `PermissionReconciliationTests` couvrent les canaris privés, les symboles, les erreurs imbriquées, le regroupement, le flux prioritaire, la transition de version, les résumés, la reprise après disque plein, l’opt-out, la rotation, la purge, les liens et les résumés de crash.
 
-Ce diagnostic améliore l’investigation des défaillances instrumentées, mais ne garantit ni la reproduction ni l’explication de tout bug. Pour un signalement, préciser aussi la version utilisée, l’heure approximative, l’action effectuée et le résultat attendu ; ne pas joindre de capture contenant des informations privées.
+Ce diagnostic améliore l’investigation des défaillances instrumentées, mais ne garantit ni la reproduction ni l’explication de tout bug. Le message pré-rempli invite l’utilisateur à décrire ce qu’il faisait et ce qu’il attendait.
