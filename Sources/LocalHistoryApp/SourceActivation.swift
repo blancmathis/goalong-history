@@ -67,20 +67,39 @@ import LocalHistoryCore
         static func check(_ capability: GoalongCapability, completion: @escaping (SourceAccessStatus) -> Void) {
             DispatchQueue.global(qos: .userInitiated).async {
                 let started = ProcessInfo.processInfo.systemUptime
+                let revision = PermissionManager.shared.observationRevision
                 let result = probe(capability)
-                SupportDiagnostics.shared.record(.sourceCheck, component: .permissions, values: [
-                    .success: .flag(result == .ready), .permission: .state(PermissionRepair.diagnosticState(for: result)),
-                    .elapsedMS: .number((ProcessInfo.processInfo.systemUptime - started) * 1000)
-                ])
-                DispatchQueue.main.async { completion(result) }
+                DispatchQueue.main.async {
+                    let invalidated = PermissionManager.shared.isRepairInProgress
+                        || PermissionManager.shared.observationRevision != revision
+                    SupportDiagnostics.shared.record(.sourceCheck, component: .permissions, values: [
+                        .success: .flag(!invalidated && result == .ready),
+                        .capability: .state(SupportState(rawValue: capability.rawValue) ?? .unknown),
+                        .permission: .state(PermissionRepair.diagnosticState(for: result)),
+                        .state: .state(invalidated ? .cancelled : result == .ready ? .ready : .unavailable),
+                        .elapsedMS: .number((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                    ])
+                    guard !invalidated else {
+                        completion(.unavailable("Les autorisations ont changé pendant la vérification. Réessayez ; aucun nouvel accès n’a été confirmé."))
+                        return
+                    }
+                    if result == .ready {
+                        if capability == .localComputerHistory { PermissionRecoveryLedger.clear(.accessibility) }
+                        if capability == .appleScreenTime { PermissionRecoveryLedger.clear(.fullDiskAccess) }
+                    }
+                    completion(result)
+                }
             }
         }
 
         private static func probe(_ capability: GoalongCapability) -> SourceAccessStatus {
+            guard !PermissionManager.shared.isRepairInProgress else {
+                return .unavailable("Une réparation d’autorisation est en cours. Aucun nouvel accès n’est confirmé.")
+            }
             guard !GoalongGlobalPause.isPaused() else { return .unavailable("Pause globale : reprenez Goalong pour vérifier cet accès.") }
             switch capability {
             case .localComputerHistory:
-                return computerHistoryAccess(PermissionManager.activationStatus())
+                return computerHistoryAccess(PermissionManager.activationStatus(), inputTapCreationFailed: PermissionManager.shared.inputTapCreationFailed)
             case .appleScreenTime:
                 switch AppleSystemScreenTimeSource(deviceID: "access-check").activationAccess() {
                 case .available: return .ready
@@ -106,15 +125,21 @@ import LocalHistoryCore
 
         // Permission and live capture health are separate. An app that cannot answer
         // a focused-window probe must not revoke the user's source consent.
-        static func computerHistoryAccess(_ status: PermissionStatus) -> SourceAccessStatus {
+        static func computerHistoryAccess(_ status: PermissionStatus, inputTapCreationFailed: Bool = false) -> SourceAccessStatus {
             // A generic/self-window read is not authorization. The manager accepts
             // only TCC preflight or a protected read proven to target another process.
-            guard status.accessibilityPreflight || status.accessibilityCrossProcessProbe else { return .accessibility }
+            guard !status.observationPending else { return .unavailable("La vérification est encore en cours. Aucun nouvel accès n’a été confirmé ; réessayez.") }
+            guard !status.accessibilityProbeDenied,
+                  status.accessibilityPreflight || status.accessibilityCrossProcessProbe else { return .accessibility }
+            // Accessibility can permit a listen-only tap, but a failed input path
+            // must remain repairable. A direct grant is independent.
+            if inputTapCreationFailed && !status.inputMonitoringDirectlyGranted { return .inputMonitoring }
             return status.canAttemptInputTap ? .ready : .inputMonitoring
         }
 
         static func openAccess(_ status: SourceAccessStatus) {
-            let permissions = PermissionManager()
+            PermissionRecoveryLedger.record(.settingsOpened, for: status)
+            let permissions = PermissionManager.shared
             switch status {
             case .accessibility:
                 permissions.openAccessibilitySettings()
@@ -388,7 +413,11 @@ import LocalHistoryCore
         private var access: SourceAccessStatus { flow.result ?? (capability == .appleScreenTime ? .fullDiskAccess : .accessibility) }
         private var copy: PermissionSetupCopy { PermissionSetupCopy(capability: capability, status: access) }
         private var ready: Bool { flow.result == .ready }
-        private var needsRestart: Bool { openedSettings && access == .fullDiskAccess && !ready }
+        private var needsRestart: Bool {
+            PermissionRecoveryAdvice.prefersPrimaryRelaunch(status: access, openedSettings: openedSettings,
+                ready: ready, resumedAfterRestart: resumingAfterRestart,
+                progress: PermissionRecoveryLedger.load(access))
+        }
         private var primaryTitle: String {
             if restarting { return "Preparing restart…" }
             if flow.checking { return "Checking access…" }
@@ -431,7 +460,7 @@ import LocalHistoryCore
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             if access.isMacPermission && (openedSettings || resumingAfterRestart || manualChecks > 0) {
-                                PermissionRecoveryView(status: access, capability: capability, expandOnFailure: !needsRestart && (manualChecks > 0 || resumingAfterRestart))
+                                PermissionRecoveryView(status: access, capability: capability, expandOnFailure: !needsRestart && (manualChecks > 0 || resumingAfterRestart), resumedAfterRestart: resumingAfterRestart)
                                     .disabled(flow.checking || restarting)
                             }
                         }

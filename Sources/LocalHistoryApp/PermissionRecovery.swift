@@ -87,18 +87,21 @@
             pendingSetup && !alreadyRestarting && senderBundleID == "com.apple.systempreferences"
         }
 
-        @MainActor static func prepareRelaunch(completion: @escaping (String?) -> Void) {
+        @MainActor static func prepareRelaunch(permission: SourceAccessStatus? = nil, completion: @escaping (String?) -> Void) {
             guard relaunch == nil else { completion("Goalong is already preparing to reopen."); return }
             let handshake = PermissionRelaunchHandshake()
             relaunch = handshake
             handshake.start { error in
                 if error != nil { relaunch = nil }
+                else if let permission = permission ?? PermissionRecoveryLedger.activePermission() {
+                    PermissionRecoveryLedger.record(.relaunchPrepared, for: permission)
+                }
                 completion(error)
             }
         }
 
-        @MainActor static func restart(completion: @escaping (String?) -> Void) {
-            prepareRelaunch { error in
+        @MainActor static func restart(permission: SourceAccessStatus? = nil, completion: @escaping (String?) -> Void) {
+            prepareRelaunch(permission: permission) { error in
                 completion(error)
                 guard error == nil else { return }
                 NSApplication.shared.terminate(nil)

@@ -29,13 +29,20 @@ enum PermissionRepair {
     }
 
     static func canResetInstallation(path: String) -> Bool {
-        let location = SupportBuild.installation(path: path)
-        return URL(fileURLWithPath: path).pathExtension == "app" && location != .diskImage && location != .translocated
+        let url = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
+        let location = SupportBuild.installation(path: url.path)
+        return url.pathExtension == "app" && (location == .applications || location == .userApplications)
     }
 
+    @MainActor private static var resetInFlight = false
+
     @MainActor static func reset(_ status: SourceAccessStatus, completion: @escaping (Bool) -> Void) {
-        guard canResetInstallation(path: Bundle.main.bundleURL.path),
+        guard !resetInFlight, canResetInstallation(path: Bundle.main.bundleURL.path),
+              SupportBuild.current().signatureValidation == 0,
+              NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).count == 1,
               let arguments = arguments(for: status, bundleID: Bundle.main.bundleIdentifier) else { completion(false); return }
+        resetInFlight = true
+        PermissionManager.shared.setRepairInProgress(true)
         SupportDiagnostics.shared.record(.permissionRepairStarted, component: .permissions,
             values: [.permission: .state(diagnosticState(for: status))])
         let process = Process()
@@ -47,19 +54,30 @@ enum PermissionRepair {
         // The command is fixed and receives no secret/environment dump.
         process.environment = ["PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory()]
         var finished = false
+        let releaseRepair: () -> Void = {
+            resetInFlight = false
+            PermissionManager.shared.setRepairInProgress(false)
+        }
         let finish: (Bool, Int32) -> Void = { success, code in
             guard !finished else { return }; finished = true
+            if success { PermissionRecoveryLedger.record(.resetSucceeded, for: status) }
             SupportDiagnostics.shared.record(.permissionRepairFinished, component: .permissions,
                 level: success ? .info : .warning,
                 values: [.permission: .state(diagnosticState(for: status)), .success: .flag(success), .errorCode: .count(Int(code))])
             completion(success)
         }
         process.terminationHandler = { process in
-            DispatchQueue.main.async { finish(process.terminationStatus == 0, process.terminationStatus) }
+            DispatchQueue.main.async {
+                // Timeout feedback may already have been delivered. Release only
+                // after the owned process actually exits, never while it can still reset.
+                releaseRepair()
+                finish(process.terminationStatus == 0, process.terminationStatus)
+            }
         }
         do { try process.run() }
         catch {
             SupportDiagnostics.shared.failure(error, component: .permissions)
+            releaseRepair()
             finish(false, -1); return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
@@ -91,7 +109,7 @@ enum PermissionRepair {
                 .accessibilityIdentifier("permission-targeted-repair")
             if resetSucceeded {
                 Button("Relancer Goalong après autorisation") {
-                    PermissionRecovery.restart { error in if let error { result = error } }
+                    PermissionRecovery.restart(permission: status) { error in if let error { result = error } }
                 }.buttonStyle(.bordered)
             }
             if let result { Text(result).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true) }

@@ -53,7 +53,14 @@
             self.permissions = permissions
         }
 
+        // NSWorkspace fallback and reads of our own process are not AX evidence.
+        private(set) var lastCaptureProvedExternalAX = false
+        static func provesExternalAX(pid: Int32, ownPID: Int32, protectedReadSucceeded: Bool) -> Bool {
+            protectedReadSucceeded && PermissionManager.isExternalProbeTarget(pid: pid, ownPID: ownPID)
+        }
+
         func capture() -> ContextSnapshot? {
+            lastCaptureProvedExternalAX = false
             guard let pauseRevision = try? GoalongGlobalPause.admit() else { return nil }
             let policy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory)
             guard let snapshot = capture(privacy: policy) else { return nil }
@@ -111,6 +118,10 @@
                     suppressionReason: isBrowser ? .accessibilityUnavailable : nil
                 )
             }
+
+            lastCaptureProvedExternalAX = Self.provesExternalAX(
+                pid: runningApplication.processIdentifier,
+                ownPID: ProcessInfo.processInfo.processIdentifier, protectedReadSucceeded: true)
 
             let windowIdentity = [
                 String(runningApplication.processIdentifier),

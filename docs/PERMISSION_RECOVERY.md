@@ -1,3 +1,5 @@
+> Mise à jour du cycle de vie : [Permission lifecycle and recovery](PERMISSION_LIFECYCLE.md).
+
 # macOS permissions after a Community update
 
 ## Report and diagnosis

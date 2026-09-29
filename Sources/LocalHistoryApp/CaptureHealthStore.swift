@@ -37,12 +37,14 @@
             let accessibilityFunctionalProbe: Bool
             let inputMonitoringPreflight: Bool
             let accessibilityCrossProcessProbe: Bool
+            let accessibilityProbeDenied: Bool
 
             init(_ status: PermissionStatus) {
                 accessibilityPreflight = status.accessibilityPreflight
                 accessibilityFunctionalProbe = status.accessibilityFunctionalProbe
                 inputMonitoringPreflight = status.inputMonitoringDirectlyGranted
                 accessibilityCrossProcessProbe = status.accessibilityCrossProcessProbe
+                accessibilityProbeDenied = status.accessibilityProbeDenied
             }
         }
 
@@ -91,7 +93,7 @@
             let previous = Self.load(from: fileURL)
             let previousWorkingBuild =
                 previous?.lastKnownWorkingBuild
-                ?? (previous?.lastInputEventAt == nil ? nil : previous?.build)
+                ?? (previous?.inputCallbackObservedThisLaunch == true && previous?.permissions.accessibilityUsable == true ? previous?.build : nil)
             accumulator = CaptureHealthAccumulator(
                 build: BuildIdentityReader.current(),
                 lastKnownWorkingBuild: previousWorkingBuild,
@@ -309,7 +311,8 @@
                 accessibilityFunctionalProbe: status.accessibilityFunctionalProbe,
                 inputMonitoringPreflight: status.inputMonitoringDirectlyGranted,
                 observedAt: Date(),
-                accessibilityCrossProcessProbe: status.accessibilityCrossProcessProbe
+                accessibilityCrossProcessProbe: status.accessibilityCrossProcessProbe,
+                accessibilityProbeDenied: status.accessibilityProbeDenied
             )
         }
 

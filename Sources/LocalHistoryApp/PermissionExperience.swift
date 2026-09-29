@@ -158,50 +158,135 @@ struct PermissionPrivacyNote: View {
     }
 }
 
-/// Recovery is secondary, not the normal path. No demand to remove and re-add an app.
-struct PermissionRecoveryView: View {
+/// Recovery advances according to actions actually taken. It never grants access,
+/// changes source consent, or repeats reset/relaunch loops automatically.
+@MainActor struct PermissionRecoveryView: View {
     let status: SourceAccessStatus
     var capability: GoalongCapability? = nil
     var expandOnFailure = false
+    var resumedAfterRestart = false
     @State private var expanded = false
     @State private var restarting = false
     @State private var restartError: String?
+    @State private var signatureValid: Bool?
+    @State private var advice = PermissionRecoveryAdvice.checking
+    private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if expandOnFailure {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "arrow.clockwise").foregroundStyle(LHTheme.accent).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Déjà autorisé ?").font(.system(size: 12, weight: .semibold))
-                        Text("Relancez Goalong pour appliquer l’accès. Vous reviendrez ici.")
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                Button(restarting ? "Relancement…" : "Relancer Goalong") {
-                    if let capability { PermissionRecovery.rememberSetup(capability) }
-                    restarting = true
-                    PermissionRecovery.restart { error in restartError = error; restarting = error == nil }
-                }
-                .buttonStyle(.bordered).disabled(restarting)
+            Label(title, systemImage: advice == .available ? "checkmark.circle" : "wrench.and.screwdriver")
+                .font(.system(size: 13, weight: .semibold))
+                .accessibilityIdentifier("permission-recovery-diagnosis")
+            Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            switch advice {
+            case .repair:
+                // Deliberately visible here, not hidden in an already-collapsed disclosure.
+                PermissionRepairControl(status: status, capability: capability)
+            case .grant:
+                Button("Ouvrir les réglages") { openSettings() }.buttonStyle(.bordered)
+                Button("J’ai déjà activé cet accès dans macOS") {
+                    // This is a report from the user, not an OS permission result.
+                    PermissionRecoveryLedger.record(.settingsOpened, for: status)
+                    refreshAdvice()
+                }.buttonStyle(.plain).font(.system(size: 11))
+            case .relaunch:
+                restartButton("Relancer et vérifier")
+            case .reauthorize:
+                Button("Ouvrir les réglages pour réautoriser") { openSettings() }.buttonStyle(.bordered)
+                restartButton("Relancer après autorisation")
+            case .manualRepair:
+                Button("Afficher la copie exacte à ajouter") { reveal() }.buttonStyle(.bordered)
+                Button("Ouvrir les réglages") { openSettings() }.buttonStyle(.bordered)
+                restartButton("Relancer après remplacement de l’entrée")
+            case .installStableCopy, .replaceInvalidBuild, .closeOtherCopy:
+                Button("Afficher cette copie dans le Finder") { reveal() }.buttonStyle(.bordered)
+            case .checking, .available: EmptyView()
             }
-            GoalongDisclosureGroup("Résoudre un problème", isExpanded: $expanded) {
+            GoalongDisclosureGroup("Détails de cette installation", isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Vérifiez que l’autorisation correspond à cette application.")
-                        .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
-                    Button("Afficher Goalong dans le Finder") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
-                        .buttonStyle(.bordered)
                     Text(Bundle.main.bundleURL.path).font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(LHTheme.secondaryText).textSelection(.enabled)
-                    Text("Relancer ne change ni les sources ni les envois.")
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    Text("Une autorisation macOS et votre choix d’enregistrer sont deux contrôles distincts. La réparation ne change ni l’historique, ni les sources, ni les envois.")
                         .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
-                    PermissionRepairControl(status: status, capability: capability)
-                }.padding(.top, 8).fixedSize(horizontal: false, vertical: true)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.padding(.top, 8)
             }.font(.system(size: 11, weight: .medium))
-            if !expanded { SupportDiagnosticsExportButton() }
-            if let restartError { Text(restartError).font(.system(size: 12)).foregroundStyle(LHTheme.danger).fixedSize(horizontal: false, vertical: true) }
+            if advice != .repair { SupportDiagnosticsExportButton() }
+            if let restartError {
+                Text(restartError).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .onAppear {
+            refreshAdvice()
+            DispatchQueue.global(qos: .utility).async {
+                let valid = SupportBuild.current().signatureValidation == 0
+                DispatchQueue.main.async { signatureValid = valid; refreshAdvice() }
+            }
+        }
+        .onReceive(timer) { _ in refreshAdvice() }
+        .onChange(of: status) { _ in refreshAdvice() }
+    }
+
+    private var title: String {
+        switch advice {
+        case .checking: return "Vérification en cours"
+        case .available: return "Accès reconnu par Goalong"
+        case .installStableCopy: return "Installer cette copie dans Applications"
+        case .replaceInvalidBuild: return "L’intégrité de cette copie n’est pas confirmée"
+        case .closeOtherCopy: return "Plusieurs copies de Goalong sont ouvertes"
+        case .grant: return "Autoriser cette application"
+        case .relaunch: return "Appliquer l’autorisation au processus actuel"
+        case .repair: return "Réparer l’autorisation de cette copie"
+        case .reauthorize: return "Réautoriser après la réinitialisation"
+        case .manualRepair: return "Le refus persiste après la réparation"
+        }
+    }
+    private var detail: String {
+        switch advice {
+        case .checking: return "La vérification n’est pas encore terminée. Aucun accès n’est déduit d’un ancien résultat."
+        case .available: return "La dernière vérification a reconnu l’accès. Le suivi des interactions est vérifié séparément ; vos choix d’enregistrement restent inchangés."
+        case .installStableCopy: return "Placez Goalong History dans Applications, puis ouvrez cette copie avant de lui accorder l’accès. Ne réinitialisez pas les permissions d’une copie temporaire."
+        case .replaceInvalidBuild: return "Réinstallez la version officielle avant de modifier les autorisations. Une réinitialisation ne répare pas une application dont la signature n’est pas valide."
+        case .closeOtherCopy: return "Quittez les autres copies de Goalong et gardez uniquement celle que vous souhaitez autoriser. Rien ne sera fermé automatiquement."
+        case .grant: return "Ouvrez la rubrique correspondant à cet accès et ajoutez la copie de Goalong affichée dans le Finder. Une case déjà cochée peut appartenir à une ancienne copie."
+        case .relaunch: return "Après avoir activé l’accès dans macOS, relancez une fois Goalong. Si le refus persiste, le dépannage proposera l’étape suivante plutôt que de répéter les mêmes relancements."
+        case .repair: return "L’accès reste indisponible après un relancement ou un changement d’identité de l’app. Une ancienne autorisation est une cause possible, pas une certitude. La réparation ciblée ci-dessous nécessite votre confirmation."
+        case .reauthorize: return "macOS a confirmé la suppression de l’ancienne autorisation, pas l’octroi d’un nouvel accès. Autorisez la copie actuelle avec le bouton + si nécessaire, puis relancez Goalong."
+        case .manualRepair: return "Ne répétez pas les réinitialisations. Dans les réglages, supprimez uniquement l’entrée Goalong avec −, ajoutez la copie exacte avec + puis autorisez-la. Si les commandes sont verrouillées, vérifiez avec l’administrateur du Mac. Si le refus continue, exportez le diagnostic ; l’app ne peut pas déterminer à elle seule la cause interne du refus macOS."
+        }
+    }
+    private func refreshAdvice() {
+        let snapshot = PermissionManager.shared.snapshot
+        var progress = PermissionRecoveryLedger.load(status)
+        if resumedAfterRestart { progress.relaunches = max(1, progress.relaunches) }
+        let available = status == .accessibility ? snapshot.accessibility
+            : status == .inputMonitoring ? snapshot.inputMonitoringDirectlyGranted : false
+        let runtime = SupportDiagnosticsRuntime.shared.snapshot()
+        advice = PermissionRecoveryAdvice.resolve(accessAvailable: available,
+            observationPending: status == .fullDiskAccess ? false : snapshot.observationPending,
+            stableInstallation: PermissionRepair.canResetInstallation(path: Bundle.main.bundleURL.path),
+            signatureValid: signatureValid,
+            runningCopies: NSRunningApplication.runningApplications(withBundleIdentifier: PermissionRepair.bundleIdentifier).count,
+            identityChanged: status == .accessibility && runtime[.permissionIdentityChanged] == .flag(true),
+            progress: progress)
+    }
+    private func reveal() { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
+    private func openSettings() {
+        if let capability { PermissionRecovery.rememberSetup(capability) }
+        SourceAccessService.openAccess(status)
+        refreshAdvice()
+    }
+    private func restartButton(_ title: String) -> some View {
+        Button(restarting ? "Préparation du relancement…" : title) {
+            if let capability { PermissionRecovery.rememberSetup(capability) }
+            restarting = true
+            PermissionRecovery.restart(permission: status) { error in
+                restartError = error; restarting = error == nil
+                refreshAdvice()
+            }
+        }.buttonStyle(.bordered).disabled(restarting)
     }
 }
 #endif

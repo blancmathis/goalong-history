@@ -20,6 +20,19 @@ if grep -q 'cdhash' <<<"$DR"; then
   echo 'Refusing a binary-hash-pinned designated requirement.' >&2; exit 1
 fi
 REQUIREMENT="identifier \"$BUNDLE\" and anchor apple generic and certificate leaf = H\"$IDENTITY\" and certificate leaf[subject.OU] = \"$TEAM\""
-codesign --verify --deep --strict "-R=$REQUIREMENT" "$APP"
-codesign --verify --strict "-R=$REQUIREMENT" "$APP/Contents/MacOS/goalong"
-echo 'Release identity verified: pinned Apple certificate, team, app and CLI; no ad-hoc downgrade.'
+codesign --verify --all-architectures --deep --strict "-R=$REQUIREMENT" "$APP"
+codesign --verify --all-architectures --strict "-R=$REQUIREMENT" "$APP/Contents/MacOS/goalong"
+HELPER_REQUIREMENT="identifier \"$BUNDLE.relauncher\" and anchor apple generic and certificate leaf = H\"$IDENTITY\" and certificate leaf[subject.OU] = \"$TEAM\""
+codesign --verify --all-architectures --strict "-R=$HELPER_REQUIREMENT" "$APP/Contents/MacOS/goalong-relauncher"
+for component in app cli relauncher; do
+  case "$component" in
+    app) target="$APP"; executable="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")" ;;
+    cli) target="$APP/Contents/MacOS/goalong"; executable="$target" ;;
+    relauncher) target="$APP/Contents/MacOS/goalong-relauncher"; executable="$target" ;;
+  esac
+  for architecture in $(/usr/bin/lipo -archs "$executable"); do
+    codesign -d --arch "$architecture" -r- "$target" 2>&1 | python3 "$ROOT/scripts/permission_requirement_policy.py" \
+      --pins "$ROOT/Distribution/permission-requirements.json" --component "$component"
+  done
+done
+echo 'Release identity verified: pinned certificate and unchanged app/CLI/relauncher requirements on every architecture.'

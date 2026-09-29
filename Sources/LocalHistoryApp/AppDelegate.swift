@@ -153,7 +153,7 @@
                 }
                 configManager = ConfigManager()
                 capabilityConsents = GoalongCapabilityConsentStore.shared
-                permissions = PermissionManager()
+                permissions = PermissionManager.shared
                 captureHealthStore = CaptureHealthStore(permissions: permissions)
                 semanticContextStore = SemanticContextStore()
                 memoryStore = LocalActivityMemoryStore()
@@ -277,6 +277,9 @@
                 return
             }
 
+            SupportDiagnosticsRuntime.shared.previousWorkingBuildProvider = { [weak self] in
+                self?.captureHealthStore?.snapshot.lastKnownWorkingBuild
+            }
             SupportDiagnosticsRuntime.shared.start { [weak self] in self?.supportSnapshot() ?? [:] }
             applyDailyRetentionCleanupIfNeeded()
             applyCapabilityConsents(recordTransition: false)
@@ -785,6 +788,10 @@
                 .accessibilityPreflight: .flag(status.accessibilityPreflight),
                 .accessibilityFunctional: .flag(status.accessibilityFunctionalProbe),
                 .accessibilityCrossProcess: .flag(status.accessibilityCrossProcessProbe),
+                .permissionObservationPending: .flag(status.observationPending),
+                .axEvidenceThisLaunch: .flag(health.lastAXContextSuccessAt.map { $0 >= health.launchedAt } ?? false),
+                .inputTapState: .state(SupportState(rawValue: health.eventTapLifecycle.rawValue) ?? .unknown),
+                .previousWorkingIdentityAvailable: .flag(health.lastKnownWorkingBuild != nil),
                 .inputPreflight: .flag(status.inputMonitoringDirectlyGranted),
                 .tapRunning: .flag(eventTapMonitor?.isRunning ?? false),
                 .callbackObserved: .flag(health.inputCallbackObservedThisLaunch == true),
@@ -823,6 +830,8 @@
             permissionTimer = timer
         }
 
+        private var permissionRefreshPending = false
+
         private func checkPermissionsAndStartTap(forceRefresh: Bool = false) {
             guard capabilityConsents.isEnabled(.localComputerHistory), !GoalongGlobalPause.isPaused() else {
                 permissionTimer?.invalidate()
@@ -835,10 +844,17 @@
                 return
             }
             applyDailyRetentionCleanupIfNeeded()
-            let status =
-                forceRefresh
-                ? permissions.refresh(force: true)
-                : permissions.snapshot
+            if forceRefresh {
+                guard !permissionRefreshPending else { return }
+                permissionRefreshPending = true
+                permissions.refreshAsync { [weak self] _ in
+                    guard let self else { return }
+                    self.permissionRefreshPending = false
+                    self.checkPermissionsAndStartTap()
+                }
+                return
+            }
+            let status = permissions.snapshot
             captureHealthStore.updatePermissions(status)
 
             if status != lastPermissionStatus {
@@ -870,6 +886,7 @@
                 eventTapMonitor.stop()
             }
 
+            permissions.recordInputTapCreationFailure(captureHealthStore.snapshot.eventTapLifecycle == .creationFailed)
             let assessment = captureHealthStore.assessment
             if assessment.state != lastRecordedHealthState {
                 SupportDiagnostics.shared.record(.captureHealthChanged, component: .capture,

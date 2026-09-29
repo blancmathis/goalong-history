@@ -1,5 +1,16 @@
 # Changelog
 
+## À publier — cycle de vie des autorisations
+
+- Vérifications partagées et bornées ; les résultats en cours ou antérieurs à une réparation ne peuvent plus valider une activation.
+- Correction des faux succès AX issus du nom d’application ou de la propre fenêtre de Goalong ; un refus réel reste visible même dans un contexte exclu.
+- Détection prudente des migrations d’identité, y compris vers une signature Apple, et conservation rigoureuse de la dernière version réellement fonctionnelle.
+- Dépannage qui mémorise les étapes déjà tentées, expose la réparation ciblée après échec et cesse les boucles de relancement/réinitialisation.
+- Accès direct au réglage Surveillance de l’entrée si le canal d’interactions échoue malgré l’accessibilité.
+- Vérification des règles d’identité de l’app, du CLI et du relanceur sur chaque architecture avant publication ; certificat existant conservé.
+- Diagnostics d’identité enrichis sans export de chemins, texte, contenu d’activité ni secrets.
+- Matrice de régression et limites documentées dans `docs/PERMISSION_LIFECYCLE.md`.
+
 ## 0.6.49 — autorisations et diagnostics partageables
 
 - Vérification harmonisée des autorisations, avec preuve d’accès interprocessus bornée en cas de résultat macOS incohérent ; une panne AX temporaire ne révoque pas une autorisation accordée.

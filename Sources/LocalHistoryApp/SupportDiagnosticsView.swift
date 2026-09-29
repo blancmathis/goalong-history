@@ -12,9 +12,10 @@ import UniformTypeIdentifiers
         guard !isPreparing else { completion?(); return }
         isPreparing = true; message = nil
         let live = SupportDiagnosticsRuntime.shared.snapshot()
+        let previousBuild = SupportDiagnosticsRuntime.shared.previousWorkingBuildProvider?()
         Task {
             let result = await Task.detached(priority: .utility) { () -> Result<Data, Error> in
-                Result { try SupportReport.build(live: live).data() }
+                Result { try SupportReport.build(live: live, previousWorkingBuild: previousBuild).data() }
             }.value
             switch result {
             case .failure(let error):

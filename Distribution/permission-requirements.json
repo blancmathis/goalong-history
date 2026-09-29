@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "requirementsSHA256": {
+    "app": "c7d1e7fd4d50890dd932e405fb6012116646eab2692cc2cbb33a68b2df3d3a83",
+    "cli": "c7d1e7fd4d50890dd932e405fb6012116646eab2692cc2cbb33a68b2df3d3a83",
+    "relauncher": "ebbb572b297e2b82316759fffa37ec6505681a97bf0142fdf9a05b6ef4438a8c"
+  }
+}
