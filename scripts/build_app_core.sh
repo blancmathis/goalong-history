@@ -15,8 +15,11 @@ if [[ ! -f "$CODESIGN_POLICY" ]]; then
 fi
 # shellcheck source=codesign_policy.sh
 source "$CODESIGN_POLICY"
+# shellcheck source=build_number_policy.sh
+source "$ROOT_DIR/scripts/build_number_policy.sh"
 VERSION="${LOCALHISTORY_VERSION:-0.6.0}"
 BUILD_NUMBER="${LOCALHISTORY_BUILD_NUMBER:-1}"
+localhistory_validate_build_number "$BUILD_NUMBER"
 SOURCE_REVISION="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf unknown)"
 ARCHS="${LOCALHISTORY_ARCHS:-$(uname -m)}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
