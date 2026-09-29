@@ -19,6 +19,12 @@ This migration epoch is deliberately higher than legacy date-numbered local buil
 `20260916.084704`; it is not a date and must never be decreased. Version comparisons do not
 mistake a newly published app for an older locally compiled app.
 
+The namespace is reserved: `scripts/build_number_policy.sh` makes every build refuse a
+`CFBundleVersion` at or above `30000000` unless it is the exact number for the current GitHub
+run. A local build that borrowed it (for example `30000000.20260926.1822`) would compare
+higher than every later release, so Sparkle would keep answering "You're up to date".
+Local and source builds therefore stay below the epoch and always receive the next release.
+
 ## Release signing without exporting the developer's private key
 
 The two signatures serve different purposes:
