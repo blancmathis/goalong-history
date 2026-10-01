@@ -133,8 +133,8 @@ struct GoalongRhythmStudio: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Choisissez un projet et une plage de la journée. Les durées viennent des observations ; l'agent explique leur contexte.").foregroundStyle(.secondary)
                     HStack { DatePicker("Début", selection: $start, displayedComponents: .hourAndMinute); DatePicker("Fin", selection: $end, displayedComponents: .hourAndMinute) }
-                    TextField("Projet", text: $project).textFieldStyle(.roundedBorder)
-                    TextField("Ce que vous souhaitiez faire pendant cette session", text: $intent).textFieldStyle(.roundedBorder)
+                    TextField("Projet", text: $project).textFieldStyle(GoalongFieldStyle())
+                    TextField("Ce que vous souhaitiez faire pendant cette session", text: $intent).textFieldStyle(GoalongFieldStyle())
                     Toggle("Inclure les extraits de contexte enrichi déjà autorisés", isOn: $rich)
                     Text("Les titres et domaines disponibles servent de contexte. Le texte enrichi est facultatif et peut contenir des informations personnelles ; relisez les extraits avant analyse.").font(.caption).foregroundStyle(.secondary)
                     Button("Préparer la sélection locale") { model.load(start: start, end: end, project: project, intent: intent, masks: masks, rich: rich) }.disabled(model.busy || project.isEmpty)
@@ -183,7 +183,7 @@ struct GoalongRhythmStudio: View {
                             }
                         }
                         Toggle("Inclure l'interprétation relue", isOn: $model.includeInterpretation)
-                        TextEditor(text: $model.interpretation).frame(height: 100).accessibilityLabel("Interprétation de la session")
+                        GoalongTextArea(text: $model.interpretation, minHeight: 100).accessibilityLabel("Interprétation de la session")
                         Text("L'association et le texte restent des interprétations. Les trous de collecte ne sont jamais changés en pauses.").font(.caption)
                     }
                     if model.busy { HStack { ProgressView(); Text(model.status); Button("Annuler") { model.cancel() } } }

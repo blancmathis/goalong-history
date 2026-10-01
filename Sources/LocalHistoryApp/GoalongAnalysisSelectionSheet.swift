@@ -54,9 +54,9 @@ import AgentActivity
                 Spacer()
                 Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).accessibilityIdentifier("analysis-cancel")
             }.padding(24)
-            Picker("Configuration ChatGPT", selection: $tab) {
-                Text("Données").tag(0); Text("Remplacements").tag(1); Text("Consignes").tag(2); Text("Aperçu").tag(3)
-            }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("analysis-editor-tabs").padding(.horizontal, 24).padding(.bottom, 18)
+            GoalongSegmentedControl("Configuration ChatGPT", selection: $tab, options: [0, 1, 2, 3], fills: true) {
+                ["Données", "Remplacements", "Consignes", "Aperçu"][$0]
+            }.accessibilityIdentifier("analysis-editor-tabs").padding(.horizontal, 24).padding(.bottom, 18)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -68,7 +68,7 @@ import AgentActivity
             HStack(spacing: 16) {
                 Text("Aucun envoi en configurant ces choix.").font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer()
-                if tab != 3 { Button("Vérifier l’aperçu") { tab = 3; preparePreview() }.buttonStyle(.bordered).disabled(catalogLoading || installedApps.loading || !selection.hasSources) }
+                if tab != 3 { Button("Vérifier l’aperçu") { tab = 3; preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(catalogLoading || installedApps.loading || !selection.hasSources) }
                 Button("Enregistrer mes choix") { save() }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.hasSources || previewBusy || catalogLoading || installedApps.loading)
                     .accessibilityIdentifier("analysis-save-selection")
             }.padding(20)
@@ -127,7 +127,7 @@ import AgentActivity
                     VStack(alignment: .leading, spacing: 8) {
                         TextField("exemple.fr · un domaine par ligne", text: Binding(get: { scope.wrappedValue.excludedDomains.joined(separator: "\n") },
                             set: { var value = scope.wrappedValue; value.excludedDomains = $0.components(separatedBy: .newlines); scope.wrappedValue = value }), axis: .vertical)
-                            .textFieldStyle(.roundedBorder).lineLimit(3...6)
+                            .textFieldStyle(GoalongFieldStyle()).lineLimit(3...6)
                         Text("Les durées Apple d’un navigateur peuvent être omises si elles ne permettent pas de retirer ces sites.").font(.system(size: 12)).foregroundStyle(.secondary)
                     }.padding(.top, 10)
                 }.font(.system(size: 13))
@@ -155,7 +155,7 @@ import AgentActivity
     private var applicationChoices: some View {
         GoalongSettingsGroup(title: "Applications autorisées") {
             HStack {
-                TextField("Rechercher une application…", text: $appSearch).textFieldStyle(.roundedBorder)
+                GoalongSearchField("Rechercher une application…", text: $appSearch)
                 Menu("Actions groupées") {
                     Button("Tout autoriser · durées seulement") { setAll(details: false) }
                     Button("Tout autoriser · détails choisis") { setAll(details: true) }
@@ -213,14 +213,14 @@ import AgentActivity
                     Text("Appliqué sur le Mac. L’historique original reste inchangé.").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Ajouter un remplacement") { selection.replacements = (selection.replacements ?? []) + [GoalongTextReplacement()] }.buttonStyle(.bordered).disabled(rules.wrappedValue.count >= 100)
+                Button("Ajouter un remplacement") { selection.replacements = (selection.replacements ?? []) + [GoalongTextReplacement()] }.buttonStyle(LHSecondaryButtonStyle()).disabled(rules.wrappedValue.count >= 100)
             }
             ForEach(rules) { rule in GoalongReplacementRow(rule: rule) { selection.replacements?.removeAll { $0.id == rule.wrappedValue.id } } }
             if rules.wrappedValue.isEmpty {
                 Text("Exemple : Hi Charlie → Projet A").font(.system(size: 14)).foregroundStyle(.secondary).padding(.vertical, 16)
             }
             GoalongSettingsGroup(title: "Tester vos remplacements") {
-                TextField("Texte d’exemple", text: $sampleText, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...4)
+                TextField("Texte d’exemple", text: $sampleText, axis: .vertical).textFieldStyle(GoalongFieldStyle()).lineLimit(2...4)
                 Text(transformedExample).font(.system(size: 14)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             }
             Text("Les remplacements portent sur le texte transmis et vos consignes, jamais sur les fichiers d’origine. Ils ne garantissent pas une anonymisation complète.")
@@ -233,10 +233,8 @@ import AgentActivity
     private var instructions: some View {
         GoalongSettingsGroup(title: "Comment rédiger le bilan") {
             Text("Vos consignes").font(.system(size: 19, weight: .semibold)).accessibilityIdentifier("analysis-guidance-title")
-            TextEditor(text: Binding(get: { selection.outputGuidance ?? "" }, set: { selection.outputGuidance = String($0.prefix(4000)) }))
-                .font(.system(size: 14)).padding(10).frame(minHeight: 190)
-                .background(LHTheme.pageBackground, in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(LHTheme.separator))
+            GoalongTextArea(text: Binding(get: { selection.outputGuidance ?? "" }, set: { selection.outputGuidance = String($0.prefix(4000)) }),
+                            placeholder: "Concentre-toi sur les progrès de mes projets…", minHeight: 190)
                 .accessibilityLabel("Consignes de rédaction pour ChatGPT")
             Text("Exemple : Concentre-toi sur les progrès de mes projets. Ne cite pas les noms de personnes. Évite les détails de mes loisirs.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -255,7 +253,7 @@ import AgentActivity
                     Text(GoalongUIFormat.day(model.selectedDay)).font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(previewText == nil ? "Préparer l’aperçu local" : "Actualiser") { preparePreview() }.buttonStyle(.bordered).disabled(previewBusy || catalogLoading || installedApps.loading)
+                Button(previewText == nil ? "Préparer l’aperçu local" : "Actualiser") { preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(previewBusy || catalogLoading || installedApps.loading)
             }
             if previewBusy { ProgressView("Application des filtres et remplacements sur ce Mac…").padding(.vertical, 30) }
             else if let previewText {
@@ -273,7 +271,7 @@ import AgentActivity
         HStack {
             Text(title).font(.system(size: 14))
             Spacer()
-            Toggle(title, isOn: value).labelsHidden().toggleStyle(.switch).disabled(!consents.isEnabled(capability))
+            Toggle(title, isOn: value).labelsHidden().toggleStyle(.goalongSwitchOnly).disabled(!consents.isEnabled(capability))
             if !consents.isEnabled(capability) {
                 Button("Configurer la source") { dismiss(); model.selectSection(.settings); model.settingsPane = .recording }
                     .buttonStyle(.borderless).font(.system(size: 12))

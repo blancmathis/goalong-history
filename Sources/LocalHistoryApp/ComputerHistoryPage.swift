@@ -665,7 +665,7 @@
                             hasRetried = true
                             model.refresh(day: day, forceRebuild: true)
                         }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(LHSecondaryButtonStyle())
                             .disabled(model.isLoading || isSnapshotLoading)
                             .help("Relire l’historique de cette journée")
                     }
@@ -805,29 +805,14 @@
                     Button(action: openSourceJSON) {
                         Label("Journal original", systemImage: "curlybraces")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
                     .controlSize(.regular)
                     .disabled(!canRevealSourceData)
                     .help(sourceDataHelp)
                 }
 
                 HStack(spacing: 12) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("Rechercher une application ou un contexte", text: $timelineSearch)
-                            .textFieldStyle(.plain)
-                            .accessibilityLabel("Rechercher dans la chronologie")
-                        if !timelineSearch.isEmpty {
-                            Button { timelineSearch = "" } label: {
-                                Image(systemName: "xmark.circle.fill")
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Effacer la recherche")
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: 7))
+                    GoalongSearchField("Rechercher une application ou un contexte", text: $timelineSearch, accessibilityLabel: "Rechercher dans la chronologie")
                     Picker("Ordre de la chronologie", selection: $newestFirst) {
                         Text("Plus récent d’abord").tag(true)
                         Text("Plus ancien d’abord").tag(false)
@@ -895,7 +880,7 @@
                             Text("Essayez un autre nom d’app ou un mot du contexte enregistré.")
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                             Button("Effacer la recherche") { timelineSearch = "" }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(LHSecondaryButtonStyle())
                         }
                         .frame(maxWidth: .infinity, minHeight: 180)
                     } else {
@@ -1157,7 +1142,7 @@
                                         resource.localPath != nil || resource.canonicalURI != nil
                                     {
                                         Button("Ouvrir") { model.open(resource) }
-                                            .buttonStyle(.bordered)
+                                            .buttonStyle(LHSecondaryButtonStyle())
                                             .controlSize(.small)
                                     }
                                 }
@@ -1191,7 +1176,7 @@
                     Button("Afficher les fichiers") {
                         model.revealMemoryFiles(for: day)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
                     .controlSize(.small)
                 }
             }
@@ -1729,7 +1714,7 @@
                                             .font(.system(size: 11, weight: .medium))
                                             .lineLimit(1)
                                     }
-                                    .buttonStyle(.bordered)
+                                    .buttonStyle(LHSecondaryButtonStyle())
                                     .controlSize(.small)
                                     .disabled(
                                         resource.localPath == nil
@@ -1792,7 +1777,7 @@
                             Button(role: .destructive, action: requestDeletion) {
                                 Label("Supprimer cet élément…", systemImage: "trash")
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(LHSecondaryButtonStyle())
                             .controlSize(.small)
                         }
                     }

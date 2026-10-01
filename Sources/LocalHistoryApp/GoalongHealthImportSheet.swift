@@ -169,7 +169,7 @@ struct GoalongHealthImportSheet: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Divider()
                 Text("Envoyer au site Goalong").font(.headline)
-                TextField("Adresse du site Goalong (https://…)", text: $origin).textFieldStyle(.roundedBorder)
+                TextField("Adresse du site Goalong (https://…)", text: $origin).textFieldStyle(GoalongFieldStyle())
                 HStack {
                     Button("Choisir mon fichier d’accès…", action: chooseToken)
                     if !tokenFilePath.isEmpty { Text(URL(fileURLWithPath: tokenFilePath).lastPathComponent).font(.caption); Button("Oublier") { tokenFilePath = "" } }

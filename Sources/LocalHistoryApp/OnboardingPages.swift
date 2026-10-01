@@ -57,7 +57,7 @@
                             }
                             Spacer(minLength: 12)
                             Toggle("Enregistrer l’activité de ce Mac", isOn: $localRecordingDraft)
-                                .labelsHidden().toggleStyle(.switch)
+                                .labelsHidden().toggleStyle(.goalongSwitchOnly)
                                 .accessibilityIdentifier("onboarding-record-local")
                         }
                         Divider()
@@ -157,7 +157,7 @@
                     }
                 }
                 Text("Le nouvel historique apparaîtra avec votre activité.").font(.system(size: 13)).foregroundStyle(.secondary)
-                Toggle("Ouvrir Goalong à la connexion", isOn: $launchAtLoginPreference).toggleStyle(.switch)
+                Toggle("Ouvrir Goalong à la connexion", isOn: $launchAtLoginPreference).toggleStyle(.goalongSwitch)
                 Text("Conseillé et sélectionné par défaut. Vous pouvez le désactiver ici ou dans Réglages. Seules les sources que vous avez activées démarrent.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Text("Les envois à Goalong et les analyses ChatGPT se règlent séparément.")

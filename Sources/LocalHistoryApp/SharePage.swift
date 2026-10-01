@@ -21,7 +21,7 @@
                             Image(systemName: "arrow.clockwise")
                                 .frame(width: 28, height: 28)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                         .disabled(model.isRefreshing)
                     }
                 }

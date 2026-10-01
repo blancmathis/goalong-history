@@ -34,36 +34,10 @@
 
         private var filterBar: some View {
             HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("Rechercher une app, une fenêtre, un site ou une catégorie", text: $model.activitySearch)
-                        .textFieldStyle(.plain)
-                    if !model.activitySearch.isEmpty {
-                        Button {
-                            model.activitySearch = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 11)
-                .frame(height: 34)
-                .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                )
+                GoalongSearchField("Rechercher une app, une fenêtre, un site ou une catégorie", text: $model.activitySearch)
 
-                Picker("Filter", selection: $model.activityFilter) {
-                    ForEach(ActivityFilter.allCases) { filter in
-                        Text(filter.title).tag(filter)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 310)
+                GoalongSegmentedControl("Filtre", selection: $model.activityFilter,
+                                        options: ActivityFilter.allCases) { $0.title }
 
                 Text("\(model.filteredSessions.count) session\(model.filteredSessions.count == 1 ? "" : "s")")
                     .font(.system(size: 10, weight: .medium, design: .rounded))
@@ -177,7 +151,7 @@
                 } label: {
                     Label("Supprimer la session…", systemImage: "trash")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(LHSecondaryButtonStyle())
                 .controlSize(.small)
             }
         }

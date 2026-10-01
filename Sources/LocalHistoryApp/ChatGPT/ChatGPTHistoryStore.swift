@@ -89,9 +89,9 @@
         var errorDescription: String? {
             switch self {
             case .unsafeDirectory(let url):
-                return "Goalong refused an unsafe ChatGPT storage directory at \(url.path)."
+                return "Goalong a refusé un dossier de stockage ChatGPT non sécurisé : \(url.path)."
             case .unsafeFile(let url):
-                return "Goalong refused an unsafe ChatGPT storage file at \(url.path)."
+                return "Goalong a refusé un fichier de stockage ChatGPT non sécurisé : \(url.path)."
             case .posix(let operation, let url, let code):
                 return
                     "Goalong could not \(operation) the ChatGPT storage directory at \(url.path): \(String(cString: strerror(code)))"

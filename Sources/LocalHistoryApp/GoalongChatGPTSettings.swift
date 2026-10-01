@@ -30,13 +30,13 @@ import LocalHistoryCore
                             error = "L’autorisation n’a pas pu être modifiée. Les analyses en cours ont été arrêtées ; réessayez pour enregistrer ce choix."
                         }
                     }
-                })).toggleStyle(.switch)
+                })).toggleStyle(.goalongSwitch)
                 Toggle("Analyser automatiquement la veille", isOn: Binding(
                     get: { runtime.automaticRecapsEnabled && selection.isValid(for: exclusions.policy) },
                     set: { runtime.automaticRecapsEnabled = $0; if $0 { runtime.start() } }))
-                    .toggleStyle(.switch).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis))
+                    .toggleStyle(.goalongSwitch).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis))
                 HStack {
-                    Button("Voir les données qui partiront") { open(3) }.buttonStyle(.bordered).controlSize(.large)
+                    Button("Voir les données qui partiront") { open(3) }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.large)
                     Spacer()
                     Button("Analyser cette journée") {
                         runtime.configure(deviceID: model.deviceID); runtime.selectDay(model.selectedDay)
@@ -50,6 +50,7 @@ import LocalHistoryCore
         .onAppear { selection = .load(); runtime.configure(deviceID: model.deviceID) }
         .sheet(item: $presentation) { request in
             GoalongAnalysisSelectionSheet(model: model, selection: selection, initialTab: request.tab) { selection = $0 }.id(request.id)
+                .goalongControls()
         }
         .alert("Réglage non modifié", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("Fermer", role: .cancel) {}

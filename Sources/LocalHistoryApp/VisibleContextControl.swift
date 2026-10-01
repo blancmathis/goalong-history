@@ -15,7 +15,7 @@ struct VisibleContextControl: View {
                         Text("Texte affiché").font(.system(size: 13, weight: .semibold))
                         Text("Facultatif · sur ce Mac").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
-                }.toggleStyle(.switch).accessibilityIdentifier("recording-visible-text")
+                }.toggleStyle(.goalongSwitch).accessibilityIdentifier("recording-visible-text")
                 Text("Peut contenir des messages et documents personnels.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 if enabled {

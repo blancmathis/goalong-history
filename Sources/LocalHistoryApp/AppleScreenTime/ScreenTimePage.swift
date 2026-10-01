@@ -35,7 +35,7 @@
                                 Image(systemName: "arrow.clockwise")
                                     .frame(width: 28, height: 28)
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(LHSecondaryButtonStyle())
                             .disabled(screenTime.isBusy)
                         }
                     }
@@ -121,7 +121,7 @@
                 Button("Ouvrir les réglages Temps d’écran") {
                     screenTime.openScreenTimeSettings()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(LHSecondaryButtonStyle())
             case .ready, .partial:
                 EmptyView()
             }
@@ -376,7 +376,7 @@
                         } label: {
                             Label("Ouvrir les réglages Temps d’écran", systemImage: "hourglass")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -434,7 +434,7 @@
                     Button("Ouvrir le dossier de configuration") {
                         screenTime.openConfigurationFolder()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
                 }
             }
         }

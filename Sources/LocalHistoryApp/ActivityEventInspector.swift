@@ -96,12 +96,12 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionTitle(
-                    title: "Source events",
-                    subtitle: "Chronological evidence for this session; ordinary typed characters are never reconstructed"
+                    title: "Événements sources",
+                    subtitle: "Preuves chronologiques de cette session ; les caractères tapés ne sont jamais reconstitués"
                 )
 
                 HStack(spacing: 10) {
-                    Picker("Event filter", selection: $filter) {
+                    Picker("Filtre des événements", selection: $filter) {
                         ForEach(ActivityEventInspectorFilter.allCases) { item in
                             Text(item.title).tag(item)
                         }
@@ -112,7 +112,7 @@
                     HStack(spacing: 7) {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(.secondary)
-                        TextField("Filter event context", text: $search)
+                        TextField("Filtrer le contexte des événements", text: $search)
                             .textFieldStyle(.plain)
                     }
                     .padding(.horizontal, 10)
@@ -159,7 +159,7 @@
             HStack(spacing: 9) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .foregroundStyle(.secondary)
-                Text("No source event matches this filter.")
+                Text("Aucun événement ne correspond à ce filtre.")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -238,7 +238,7 @@
                         )
                     }
                 } else {
-                    Text(event.message ?? "Detailed context was intentionally unavailable.")
+                    Text(event.message ?? "Le contexte détaillé n’a volontairement pas été enregistré.")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
@@ -272,7 +272,7 @@
             case .typingBurst:
                 let count = event.metadata?["keystroke_count"] ?? "unknown"
                 let duration = event.metadata?["duration_ms"] ?? "unknown"
-                return "Typing activity: \(count) key event(s), \(duration) ms; content not reconstructed"
+                return "Frappe : \(count) touche(s), \(duration) ms ; contenu non reconstitué"
             case .scrollBurst:
                 guard let scroll = event.scroll else { return nil }
                 return "Scroll: Δx \(Int(scroll.deltaX)), Δy \(Int(scroll.deltaY)), \(scroll.eventCount) event(s)"

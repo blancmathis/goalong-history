@@ -18,14 +18,14 @@
                             Button("Ouvrir le dossier des données") {
                                 model.openDataFolder()
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(LHSecondaryButtonStyle())
                             Button {
                                 model.refreshEverything()
                             } label: {
                                 Image(systemName: "arrow.clockwise")
                                     .frame(width: 28, height: 28)
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(LHSecondaryButtonStyle())
                         }
                     }
 
@@ -46,7 +46,7 @@
 
                     deletionCard
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
                 .padding(.horizontal, LHTheme.pageInset)
                 .padding(.top, 28)
                 .padding(.bottom, 30)
@@ -243,7 +243,7 @@
                             .fixedSize(horizontal: false, vertical: true)
                         Button("Ouvrir les réglages d’accès complet au disque") {
                             SourceAccessService.openAccess(.fullDiskAccess)
-                        }.buttonStyle(.bordered)
+                        }.buttonStyle(LHSecondaryButtonStyle())
                     }
 
                     if let health = model.runtime.captureHealth,
@@ -300,7 +300,7 @@
                     }
                     Spacer()
                     Button("Vérifier la saisie maintenant") { model.beginCaptureValidation() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                         .controlSize(.small)
                 }
                 if let snapshot {
@@ -406,11 +406,11 @@
 
                     HStack {
                         Button("Ouvrir le dossier") { model.openDataFolder() }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(LHSecondaryButtonStyle())
                         Button("Ouvrir le JSONL") { model.openTodayJSON() }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(LHSecondaryButtonStyle())
                         Button("Diagnostics") { model.openDiagnostics() }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(LHSecondaryButtonStyle())
                     }
                 }
             }
@@ -570,7 +570,7 @@
                         .foregroundStyle(LHTheme.success)
                 } else {
                     Button(buttonTitle, action: action)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                         .controlSize(.small)
                 }
             }

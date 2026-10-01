@@ -105,12 +105,12 @@ enum PermissionRepair {
             Text("Toujours bloqué après relancement ? Une ancienne entrée macOS peut correspondre à une autre copie. Réinitialisez uniquement cet accès, puis autorisez à nouveau cette application.")
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button(resetting ? "Réinitialisation…" : "Réinitialiser cet accès…") { confirming = true }
-                .buttonStyle(.bordered).disabled(resetting || !stableLocation || PermissionRepair.service(for: status) == nil)
+                .buttonStyle(LHSecondaryButtonStyle()).disabled(resetting || !stableLocation || PermissionRepair.service(for: status) == nil)
                 .accessibilityIdentifier("permission-targeted-repair")
             if resetSucceeded {
                 Button("Relancer Goalong après autorisation") {
                     PermissionRecovery.restart(permission: status) { error in if let error { result = error } }
-                }.buttonStyle(.bordered)
+                }.buttonStyle(LHSecondaryButtonStyle())
             }
             if let result { Text(result).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true) }
             SupportDiagnosticsExportButton()

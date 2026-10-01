@@ -19,7 +19,7 @@ import LocalHistoryCore
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     GoalongSettingsGroup(title: "Sur ce Mac") {
-                        Toggle("Nettoyage automatique", isOn: $model.automaticCleanup).toggleStyle(.switch)
+                        Toggle("Nettoyage automatique", isOn: $model.automaticCleanup).toggleStyle(.goalongSwitch)
                         HStack {
                             Text("Conserver l’activité")
                             Spacer()
@@ -114,7 +114,7 @@ import LocalHistoryCore
             HStack {
                 Button("Annuler", role: .cancel) { dismiss() }
                 Spacer()
-                Button("Effacer…", role: .destructive) { confirming = true }.buttonStyle(.bordered)
+                Button("Effacer…", role: .destructive) { confirming = true }.buttonStyle(LHSecondaryButtonStyle())
             }
         }.padding(26).frame(width: 520).background(LHTheme.pageBackground)
         .alert("Confirmer la suppression ?", isPresented: $confirming) {

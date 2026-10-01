@@ -80,6 +80,7 @@ struct GoalongAnalyticsContent: View {
                     selectedUsage = nil
                     if !payload.isPreview { onHistoryDay(day) }
                 })
+                .goalongControls()
         }
         .accessibilityIdentifier("activity-content")
     }
@@ -278,7 +279,7 @@ struct GoalongAnalyticsContent: View {
                     Button(workStatus.hasDefinition ? "Ouvrir Mon travail" : "Définir mon travail", action: onWork)
                         .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("activity-define-work")
                 } else {
-                    Button("Classer maintenant", action: onClassify).buttonStyle(.bordered)
+                    Button("Classer maintenant", action: onClassify).buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("activity-classify-now")
                 }
             }
@@ -351,10 +352,9 @@ struct GoalongAnalyticsContent: View {
                     if isDay {
                         Toggle("Journée entière", isOn: $fullDay).toggleStyle(.checkbox)
                             .font(.system(size: 12)).fixedSize().accessibilityIdentifier("activity-full-day")
-                        Picker("Affichage du rythme", selection: $hourly) {
-                            Text("Par heure").tag(true)
-                            Text("Chronologie").tag(false)
-                        }.labelsHidden().pickerStyle(.segmented).fixedSize().disabled(sparse)
+                        GoalongSegmentedControl("Affichage du rythme", selection: $hourly, options: [true, false]) {
+                            $0 ? "Par heure" : "Chronologie"
+                        }.controlSize(.small).disabled(sparse)
                             .accessibilityIdentifier("activity-rhythm-mode")
                     }
                 }
@@ -476,7 +476,7 @@ struct GoalongAnalyticsContent: View {
                         .buttonStyle(.borderless).font(.system(size: 12))
                 }
                 Button(isDay ? "Comprendre mon travail" : "Analyser une journée…", action: onProjects)
-                    .buttonStyle(.bordered).controlSize(.small).disabled(payload.isPreview).accessibilityIdentifier("analytics-projects")
+                    .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).disabled(payload.isPreview).accessibilityIdentifier("analytics-projects")
                 if let notice = payload.archiveNotice {
                     Label(notice, systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(LHTheme.warning)
                 }
@@ -582,7 +582,7 @@ struct GoalongAnalyticsContent: View {
                     : "Choisissez une autre date ou consultez les sources dans l’historique. Une absence de données n’est pas une journée à zéro.")
                     .font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if !isEmptyToday {
-                    Button("Consulter l’historique", action: onHistory).buttonStyle(.bordered).disabled(payload.isPreview)
+                    Button("Consulter l’historique", action: onHistory).buttonStyle(LHSecondaryButtonStyle()).disabled(payload.isPreview)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }

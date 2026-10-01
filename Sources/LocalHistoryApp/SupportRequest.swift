@@ -59,7 +59,7 @@ enum SupportReportStore {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        let host = NSHostingController(rootView: SupportRequestView(controller: self))
+        let host = NSHostingController(rootView: SupportRequestView(controller: self).goalongControls())
         let window = NSWindow(contentViewController: host)
         window.title = "Signaler un problème"
         window.styleMask = [.titled, .closable, .fullSizeContentView]
@@ -232,7 +232,7 @@ struct SupportRequestView: View {
                         Label(message, systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 13)).foregroundStyle(LHTheme.danger)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Réessayer") { controller.prepare() }.buttonStyle(.bordered)
+                        Button("Réessayer") { controller.prepare() }.buttonStyle(LHSecondaryButtonStyle())
                     }
                 case .ready(_, let findings, _, _):
                     VStack(alignment: .leading, spacing: 12) {
@@ -257,7 +257,7 @@ struct SupportRequestView: View {
                                 "Jamais : votre historique, les apps ou sites visités, titres, textes, conversations, captures d’écran, e-mails, mots de passe ou clés.")
                     if case .ready(_, _, let bytes, let events) = controller.phase {
                         HStack(spacing: 12) {
-                            Text("\(events) événements techniques · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")
+                            Text("\(events) événements techniques · \(GoalongUIFormat.bytes(Int64(bytes)))")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             Spacer()
                             Button("Afficher le fichier") { controller.revealReport() }
@@ -294,7 +294,7 @@ struct SupportRequestView: View {
                 ShareLink(item: ready, subject: Text("Goalong History — rapport de diagnostic")) {
                     Label("Partager…", systemImage: "square.and.arrow.up")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(LHSecondaryButtonStyle())
                 .accessibilityIdentifier("support-share")
             }
             Button {

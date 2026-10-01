@@ -77,6 +77,20 @@ Use restrained continuous corners on grouped surfaces and system control shapes.
 
 Keep native buttons, switches, date pickers and segmented controls. Primary actions remain clear; secondary actions stay quiet but visible. Navigation rows have whole-row targets, visibly distinct hover and pressed feedback, keyboard focus and accessible names. Back navigation, selection, switches and copy feedback must be exercised in the actual built app; a screenshot cannot validate interaction. Preserve the account Refresh and Disconnect controls; do not replace them with a new Manage route. Preserve save behavior, permissions, confirmations, data access and background processing. Hover uses a 120 ms ease-out transition and press feedback 100 ms; both are disabled with Reduce Motion. Shared navigation uses adaptive hover, pressed and selected forest/olive surfaces, a visible 3-point selected marker, and a focus outline. Explicit accessible names identify navigation destinations. Native accessibility activation could not be validated in the September brand audit because the XCTest host did not expose SwiftUI descendants. Rendered views and model transaction checks are separate evidence; neither proves pointer or keyboard behavior.
 
+## Controls — October 2026
+
+`GoalongControls.swift` gives every control one Goalong chrome; stock grey AppKit bezels on forest surfaces are no longer used.
+
+- **Buttons**: `LHPrimaryButtonStyle` (ink on lime) for the one main action of a group, `LHSecondaryButtonStyle` (raised `controlBackground`, hairline `controlBorder`, hover/pressed forest tints) for everything else. `.goalongControls()` makes the secondary style and the field style the default at every window root **and inside every `.sheet` closure** — presented sheets do not inherit button styles from the presenting view.
+- **Inputs**: `GoalongFieldStyle` for `TextField` (sunken `fieldBackground`, lime focus ring and halo), `GoalongTextArea` for multi-line editors with an in-field placeholder, `GoalongSearchField` for every search (glass, clear button, optional trailing count). `GoalongFormField` lays out label + one-line help + field.
+- **Switches**: `.goalongSwitch` (label leading, switch on the shared trailing edge), `.goalongSwitchInline` and `.goalongSwitchOnly`. The switch is drawn (lime track, ink knob when on) over a real Button for keyboard focus, and exposes a native toggle through `accessibilityRepresentation`.
+- **Segmented choices**: `GoalongSegmentedControl` replaces `.pickerStyle(.segmented)`; the selected segment is raised on an inset track.
+- **Days**: `DateSelectionControl` (‹ day ›, calendar popover) is the only day picker on pages; Activité passes `onStep` to step by period.
+- **Secondary information**: `GoalongNote` (neutral, privacy, warning) groups privacy and scope statements into one quiet block instead of loose fine print.
+- Content width on Mon travail, Surveillance, Réglages and Confidentialité is `LHTheme.readableWidth`.
+
+Verification: `scripts/verify_design_audit.sh` renders every destination, Settings pane and the main sheets (dark and light, isolated home) and checks a really presented sheet; with that script's environment, `GoalongControlsInteractionTests` sends real click and key events to a styled field and a search field. Synthetic events reach neither SwiftUI tap gestures nor `NSTextView` mouse tracking, so clicking a field's padding and `GoalongTextArea` are checked by hand in the app.
+
 ## Do's and Don'ts
 
 - Keep all three primary destinations and all Settings subpages.

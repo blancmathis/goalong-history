@@ -15,7 +15,7 @@ struct GoalongDeveloperSettings: View {
     var body: some View {
         GoalongSettingsGroup(title: "Développement") {
             Toggle("Mode développeur", isOn: $enabled)
-                .toggleStyle(.switch)
+                .toggleStyle(.goalongSwitch)
                 .accessibilityIdentifier("settings-developer-mode")
             Text("Désactivé par défaut. Ajoute dans Activité un bouton pour explorer un exemple complet avec des données fictives.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)

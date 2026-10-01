@@ -91,13 +91,13 @@ struct GoalongAttentionBanner: View {
             HStack(spacing: 8) {
                 if kind == .diskFull { manageStorageButton(primary: true) }
                 Button("Signaler le problème…") { SupportRequestController.shared.present() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
             }
         case .lowSpace:
             manageStorageButton(primary: false)
         case .updated:
             HStack(spacing: 8) {
-                Button("Nouveautés") { updates.openRollingReleasePage() }.buttonStyle(.bordered)
+                Button("Nouveautés") { updates.openRollingReleasePage() }.buttonStyle(LHSecondaryButtonStyle())
                 Button { updates.acknowledgeUpdateConfirmation() } label: {
                     Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
                 }
@@ -111,7 +111,7 @@ struct GoalongAttentionBanner: View {
         let button = Button("Gérer le stockage…") {
             GoalongWorkspaceOpenPolicy.open(URL(string: "x-apple.systempreferences:com.apple.settings.Storage")!, purpose: .systemSettings)
         }
-        if primary { button.buttonStyle(LHPrimaryButtonStyle()) } else { button.buttonStyle(.bordered) }
+        if primary { button.buttonStyle(LHPrimaryButtonStyle()) } else { button.buttonStyle(LHSecondaryButtonStyle()) }
     }
 }
 #endif

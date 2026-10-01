@@ -74,28 +74,7 @@
 
         private var controls: some View {
             HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("Rechercher des apps, sites, pages ou catégories", text: $model.usageSearch)
-                        .textFieldStyle(.plain)
-                    if !model.usageSearch.isEmpty {
-                        Button {
-                            model.usageSearch = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 11)
-                .frame(height: 34)
-                .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                )
+                GoalongSearchField("Rechercher des apps, sites, pages ou catégories", text: $model.usageSearch)
 
                 if showsDefaultRule {
                     Text("Par défaut")
@@ -359,7 +338,7 @@
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .toggleStyle(.switch)
+                    .toggleStyle(.goalongSwitch)
                 }
 
                 Spacer()
@@ -368,7 +347,7 @@
                     Button("Activer la mémoire des pages") {
                         onEnableRichContext()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
                     .help("Nécessaire pour mémoriser les discussions et le texte visible des pages")
                 } else if richContextEnabled {
                     Label(

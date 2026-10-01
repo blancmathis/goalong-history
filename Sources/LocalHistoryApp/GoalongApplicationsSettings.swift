@@ -148,14 +148,14 @@ enum GoalongKnownApplications {
                     .fixedSize(horizontal: false, vertical: true)
                 GoalongHelpButton(text: "Le suivi détaillé et les prochains envois respectent ces exclusions. Les historiques locaux d’Apple et des outils IA restent séparés ; ils ne sont pas effacés. Les textes et totaux impossibles à filtrer sont bloqués. Une ancienne exclusion limitée au suivi détaillé est indiquée comme telle.")
             }
-            Picker("Type", selection: $sites) { Text("Applications").tag(false); Text("Sites web").tag(true) }.pickerStyle(.segmented)
+            GoalongSegmentedControl("Type", selection: $sites, options: [false, true], fills: true) { $0 ? "Sites web" : "Applications" }
             HStack {
-                TextField("Rechercher par nom…", text: $search).textFieldStyle(.roundedBorder)
+                GoalongSearchField("Rechercher par nom…", text: $search)
                 Toggle("Exclusions seulement", isOn: $excludedOnly).toggleStyle(.checkbox).fixedSize()
             }
             if sites {
                 HStack {
-                    TextField("Ajouter un site · exemple.fr", text: $newDomain).textFieldStyle(.roundedBorder).onSubmit(addDomain)
+                    TextField("Ajouter un site · exemple.fr", text: $newDomain).textFieldStyle(GoalongFieldStyle()).onSubmit(addDomain)
                     Button("Exclure", action: addDomain).disabled(newDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 if let domainError { Text(domainError).font(.system(size: 12)).foregroundStyle(LHTheme.warning) }
@@ -171,7 +171,7 @@ enum GoalongKnownApplications {
                                 Spacer()
                                 Text(domainExcluded(domain) ? "Exclu" : "Autorisé").font(.system(size: 12)).foregroundStyle(.secondary)
                                 Toggle("Autoriser \(domain)", isOn: Binding(get: { !domainExcluded(domain) }, set: { setDomain(domain, enabled: $0) }))
-                                    .labelsHidden().toggleStyle(.switch)
+                                    .labelsHidden().toggleStyle(.goalongSwitchOnly)
                             }.padding(14)
                             Divider().padding(.leading, 55)
                         }
@@ -194,7 +194,7 @@ enum GoalongKnownApplications {
                                 Spacer()
                                 if exclusions.policy.excludes(appID: app.id) { Text("Exclue").font(.system(size: 12)).foregroundStyle(.secondary) }
                                 Toggle("Autoriser \(app.name)", isOn: Binding(get: { !isExcluded(app) }, set: { setApp(app, enabled: $0) }))
-                                    .labelsHidden().toggleStyle(.switch).disabled(app.id == ProductIdentity.bundleIdentifier)
+                                    .labelsHidden().toggleStyle(.goalongSwitchOnly).disabled(app.id == ProductIdentity.bundleIdentifier)
                             }.padding(14)
                             Divider().padding(.leading, 56)
                         }
@@ -205,7 +205,7 @@ enum GoalongKnownApplications {
             GoalongDisclosureGroup("Règles avancées d’enregistrement") {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Les anciennes listes « autoriser uniquement » restent conservées.").font(.system(size: 12)).foregroundStyle(.secondary)
-                    Button("Ouvrir la configuration") { model.openConfiguration() }.buttonStyle(.bordered)
+                    Button("Ouvrir la configuration") { model.openConfiguration() }.buttonStyle(LHSecondaryButtonStyle())
                 }.padding(.top, 10)
             }.font(.system(size: 13))
         }
@@ -268,7 +268,7 @@ enum GoalongKnownApplications {
                     message = "Applications exclues de l’enregistrement détaillé."
                 }
             HStack {
-                TextField("Site à exclure · exemple.fr", text: $website).textFieldStyle(.roundedBorder)
+                TextField("Site à exclure · exemple.fr", text: $website).textFieldStyle(GoalongFieldStyle())
                 Button("Ajouter") {
                     do {
                         let domains = try PrivacyScopeInput.domains(website)

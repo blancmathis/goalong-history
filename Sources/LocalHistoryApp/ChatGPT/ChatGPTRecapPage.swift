@@ -109,7 +109,7 @@
                     }
                     Spacer()
                     Button("Choisir les données") { model.selectSection(.settings); model.settingsPane = .chatGPT }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                 }
             }
         }
@@ -129,7 +129,7 @@
                         } label: {
                             Label("Exporter la preuve", systemImage: "square.and.arrow.up")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                         .controlSize(.small)
                         Text(String(proof.executionID.prefix(8)))
                             .font(.system(size: 9, design: .monospaced))
@@ -216,7 +216,7 @@
                     } label: {
                         Label("Fichiers de rapport", systemImage: "doc.text.magnifyingglass")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
                     .help(
                         recapRuntime.recap?.verifiesLocalAttestation == true
                             ? "Partagez le fichier JSON pour conserver sa signature. Le destinataire peut le vérifier hors ligne avec : goalong verify-recap CHEMIN"
@@ -562,7 +562,7 @@
                     Button("Relire les sources") {
                         recapRuntime.refreshDayOverview()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
                 }
                 .frame(maxWidth: .infinity, minHeight: 130)
             }

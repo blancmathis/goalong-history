@@ -298,79 +298,94 @@
     }
 
     struct DateSelectionControl: View {
-        @Environment(\.colorSchemeContrast) private var contrast
+        let date: Date
+        let onChange: (Date) -> Void
+        /// Steps by a whole period (7 or 28 days in Activité); nil steps one day.
+        var onStep: ((Int) -> Void)?
+        var previousLabel = "Jour précédent"
+        var nextLabel = "Jour suivant"
+        var identifierPrefix: String?
+        var showsToday = true
+
+        var body: some View {
+            HStack(spacing: 8) {
+                stepper
+                if showsToday && !Calendar.current.isDateInToday(date) {
+                    Button("Aujourd’hui") {
+                        onChange(Date())
+                    }
+                    .controlSize(.small)
+                    .help("Revenir à aujourd’hui")
+                }
+            }
+        }
+
+        private var stepper: some View {
+            HStack(spacing: 2) {
+                stepButton(-1, symbol: "chevron.left", label: previousLabel, identifier: "previous-period")
+                GoalongCalendarButton(date: date, onChange: onChange)
+                    .accessibilityIdentifier(identifierPrefix.map { "\($0)-date-picker" } ?? "")
+                stepButton(1, symbol: "chevron.right", label: nextLabel, identifier: "next-period")
+                    .disabled(Calendar.current.isDateInToday(date))
+            }
+            .padding(.horizontal, 3)
+            .frame(minHeight: 30)
+            .goalongControlSurface()
+        }
+
+        private func stepButton(_ direction: Int, symbol: String, label: String, identifier: String) -> some View {
+            Button {
+                if let onStep { onStep(direction) }
+                else if let day = Calendar.current.date(byAdding: .day, value: direction, to: date), day <= Date() { onChange(day) }
+            } label: {
+                Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
+            .help(label)
+            .accessibilityLabel(label)
+            .accessibilityIdentifier(identifierPrefix.map { "\($0)-\(identifier)" } ?? "")
+        }
+    }
+
+    /// The day itself; opens a calendar so any day is two clicks away.
+    struct GoalongCalendarButton: View {
         let date: Date
         let onChange: (Date) -> Void
         @State private var showsCalendar = false
         @State private var calendarDate = Date()
 
         var body: some View {
-            HStack(spacing: 8) {
-                Button {
-                    if let previous = Calendar.current.date(byAdding: .day, value: -1, to: date) {
-                        onChange(previous)
-                    }
-                } label: {
-                    Image(systemName: "chevron.left").frame(width: 24, height: 24)
-                }
-                .buttonStyle(.borderless)
-                .help("Jour précédent")
-                .accessibilityLabel("Jour précédent")
-
-                Button {
-                    calendarDate = date
-                    showsCalendar.toggle()
-                } label: {
-                    Text(date.formatted(.dateTime.day().month(.abbreviated).year().locale(GoalongUIFormat.locale)))
-                        .font(.system(size: 13, weight: .medium))
-                        .fixedSize()
-                        .padding(.horizontal, 4)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Choisir un jour")
-                .accessibilityValue(date.formatted(.dateTime.weekday(.wide).day().month(.wide).year().locale(GoalongUIFormat.locale)))
-                .help("Choisir un jour dans le calendrier")
-                .popover(isPresented: $showsCalendar, arrowEdge: .bottom) {
-                    VStack(alignment: .trailing, spacing: 12) {
-                        DatePicker("Jour", selection: $calendarDate, in: ...Date(), displayedComponents: .date)
-                            .labelsHidden()
-                            .datePickerStyle(.graphical)
-                            .fixedSize()
-                        Button("Afficher le jour") {
-                            onChange(Calendar.current.startOfDay(for: calendarDate))
-                            showsCalendar = false
-                        }
-                        .buttonStyle(LHPrimaryButtonStyle())
-                        .keyboardShortcut(.defaultAction)
-                    }
-                    .padding(12)
-                }
-
-                if !Calendar.current.isDateInToday(date) {
-                    Button("Aujourd’hui") {
-                        onChange(Date())
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .help("Revenir à aujourd’hui")
-                }
-
-                Button {
-                    if let next = Calendar.current.date(byAdding: .day, value: 1, to: date), next <= Date() {
-                        onChange(next)
-                    }
-                } label: {
-                    Image(systemName: "chevron.right").frame(width: 24, height: 24)
-                }
-                .buttonStyle(.borderless)
-                .disabled(Calendar.current.isDateInToday(date))
-                .help("Jour suivant")
-                .accessibilityLabel("Jour suivant")
+            Button {
+                calendarDate = date
+                showsCalendar.toggle()
+            } label: {
+                Text(date.formatted(.dateTime.day().month(.abbreviated).year().locale(GoalongUIFormat.locale)))
+                    .font(.system(size: 13, weight: .medium)).monospacedDigit()
+                    .fixedSize()
+                    .padding(.horizontal, 8).frame(height: 24)
+                    .contentShape(Rectangle())
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius).strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.separator))
+            .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
+            .accessibilityLabel("Choisir un jour")
+            .accessibilityValue(date.formatted(.dateTime.weekday(.wide).day().month(.wide).year().locale(GoalongUIFormat.locale)))
+            .help("Choisir un jour dans le calendrier")
+            .popover(isPresented: $showsCalendar, arrowEdge: .bottom) {
+                VStack(alignment: .trailing, spacing: 12) {
+                    DatePicker("Jour", selection: $calendarDate, in: ...Date(), displayedComponents: .date)
+                        .labelsHidden()
+                        .datePickerStyle(.graphical)
+                        .environment(\.locale, GoalongUIFormat.locale)
+                        .fixedSize()
+                    Button("Afficher le jour") {
+                        onChange(Calendar.current.startOfDay(for: calendarDate))
+                        showsCalendar = false
+                    }
+                    .buttonStyle(LHPrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                }
+                .padding(12)
+            }
         }
     }
 

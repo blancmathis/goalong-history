@@ -99,7 +99,7 @@ extension HistoryRetentionPolicy {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Toggle("Supprimer automatiquement les données expirées", isOn: $model.automaticCleanup)
-                        .toggleStyle(.switch).font(.system(size: 14, weight: .semibold))
+                        .toggleStyle(.goalongSwitch).font(.system(size: 14, weight: .semibold))
                         .accessibilityIdentifier("retention-automatic")
                     Text(model.automaticCleanup
                          ? "Après confirmation, les données expirées peuvent être supprimées tout de suite puis lors du nettoyage quotidien. Réduire une durée s’applique aussi aux données existantes."

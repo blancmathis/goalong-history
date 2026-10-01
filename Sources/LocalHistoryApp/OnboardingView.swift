@@ -48,6 +48,7 @@
                 SourceActivationSheet(capability: .localComputerHistory, surface: .onboarding,
                     prepare: {}, check: checkAccess)
                     .environment(\.goalongRecordingModel, model)
+                    .goalongControls()
             }
             .onAppear {
                 if step == .welcome || !privacyReviewed { step = .privacy }
@@ -107,7 +108,7 @@
             HStack(spacing: 14) {
                 if step != .privacy {
                     Button("Retour") { note = nil; step = step.previous ?? .privacy }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                 }
                 Spacer()
                 if !checkingSources.isEmpty { ProgressView("Vérification des accès…").controlSize(.small) }

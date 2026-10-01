@@ -81,7 +81,7 @@ struct GoalongVisibleTextChoice: View {
                 Text("Peut contenir des messages et documents personnels.").font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Spacer()
-            Toggle("Texte affiché", isOn: $enabled).labelsHidden().toggleStyle(.switch)
+            Toggle("Texte affiché", isOn: $enabled).labelsHidden().toggleStyle(.goalongSwitchOnly)
                 .accessibilityIdentifier("recording-visible-text-draft")
         }.padding(.vertical, 8)
     }
@@ -147,9 +147,9 @@ struct GoalongCompleteRecordingButton: View {
     @State private var showing = false
     var body: some View {
         Button("Configurer le suivi complet") { showing = true }
-            .buttonStyle(.bordered).controlSize(.large)
+            .buttonStyle(LHSecondaryButtonStyle()).controlSize(.large)
             .accessibilityIdentifier("recording-complete-setup")
-            .sheet(isPresented: $showing) { GoalongRecordingSetupSheet(model: model, complete: true) }
+            .sheet(isPresented: $showing) { GoalongRecordingSetupSheet(model: model, complete: true).goalongControls() }
     }
 }
 

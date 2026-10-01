@@ -64,7 +64,7 @@ struct GoalongAnalyticsPage: View {
                                     .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer(minLength: 8)
-                                Button("Réessayer", action: refresh).buttonStyle(.bordered)
+                                Button("Réessayer", action: refresh).buttonStyle(LHSecondaryButtonStyle())
                             }
                         }
                     }
@@ -111,7 +111,7 @@ struct GoalongAnalyticsPage: View {
                                     Button("Consulter le \(navigation.day.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)))") {
                                         model.selectDay(navigation.day)
                                         model.selectSection(.screenTime)
-                                    }.buttonStyle(.bordered).controlSize(.small)
+                                    }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
                                 }
                             }
                         }
@@ -190,7 +190,7 @@ struct GoalongAnalyticsPage: View {
                 Label(previewActive ? "Revenir à mes données" : "Aperçu avec données fictives",
                       systemImage: previewActive ? "arrow.uturn.backward" : "testtube.2")
             }
-            .buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("analytics-preview-toggle")
+            .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).accessibilityIdentifier("analytics-preview-toggle")
             Spacer(minLength: 0)
             Text("Mode développeur").font(.system(size: 11)).foregroundStyle(.secondary)
         }

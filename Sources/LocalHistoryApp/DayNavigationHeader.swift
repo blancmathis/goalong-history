@@ -62,7 +62,7 @@
                 .accessibilityLabel("Actualiser la journée")
                 .help(isRefreshing ? "Actualisation…" : "Actualiser la journée")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(LHSecondaryButtonStyle())
             .controlSize(.regular)
         }
     }

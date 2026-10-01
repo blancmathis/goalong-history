@@ -137,7 +137,8 @@ extension Notification.Name {
             .background(LHTheme.pageBackground)
             .foregroundStyle(LHTheme.text)
             .tint(LHTheme.accent)
-            .accentColor(LHTheme.accent)))
+            .accentColor(LHTheme.accent)
+            .goalongControls()))
         window.title = "Comprendre mon travail — Goalong History"
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(LHTheme.pageBackground)
@@ -213,13 +214,13 @@ struct GoalongProfileStudio: View {
                             }
                             Text("Décochez une rubrique pour que l’agent ne l’analyse pas. La rubrique « Usage de l’IA » est indépendante de la source Conversation History choisie plus haut.").font(.caption)
                             Text("Exclure des applications, projets ou termes — un par ligne").font(.subheadline)
-                            TextEditor(text: $exclusions).frame(height: 60).accessibilityLabel("Termes à exclure")
+                            GoalongTextArea(text: $exclusions, minHeight: 60).accessibilityLabel("Termes à exclure")
                             Text("Les événements contenant ces termes sont retirés avant analyse. Toute réapparition littérale dans un résultat est masquée.").font(.caption).foregroundStyle(.secondary)
                             Text("Remplacer des noms — une ligne « nom privé => alias »").font(.subheadline)
-                            TextEditor(text: $aliases).frame(height: 60).accessibilityLabel("Règles de remplacement")
+                            GoalongTextArea(text: $aliases, minHeight: 60).accessibilityLabel("Règles de remplacement")
                             Text("Exemple : Projet Atlas => Projet secret. Les remplacements s’appliquent avant analyse et avant export.").font(.caption).foregroundStyle(.secondary)
                             Text("Ce que l’agent ne doit pas aborder — complément personnel").font(.subheadline)
-                            TextEditor(text: $instructions).frame(height: 80).accessibilityLabel("Consignes personnelles de confidentialité")
+                            GoalongTextArea(text: $instructions, minHeight: 80).accessibilityLabel("Consignes personnelles de confidentialité")
                             Text("Pour masquer un nom précis, ajoutez-le aussi aux règles ci-dessus. Les consignes libres guident l’agent ; elles ne garantissent pas à elles seules qu’un sujet ne sera jamais évoqué. Relisez les résultats.").font(.caption).foregroundStyle(.secondary)
                             Button("Préparer le prompt protégé") { prepare() }.disabled(model.busy || model.selectedEvidence.isEmpty || modules.isEmpty)
                         }.padding(8)
@@ -244,9 +245,9 @@ struct GoalongProfileStudio: View {
                                 ForEach(result.items, id: \.id) { item in
                                     VStack(alignment: .leading, spacing: 8) {
                                         if !localOnly { Toggle("Transmettre : \(GoalongProfileAnalysis.labels[item.module] ?? item.module)", isOn: Binding(get: { model.selectedItems.contains(item.id) }, set: { yes in if yes { model.selectedItems.insert(item.id) } else { model.selectedItems.remove(item.id) }; model.reviewed = false })) }
-                                        TextField("Titre", text: Binding(get: { item.title }, set: { model.correct(item.id, field: "title", text: $0) })).textFieldStyle(.roundedBorder)
-                                        TextEditor(text: Binding(get: { item.summary }, set: { model.correct(item.id, field: "summary", text: $0) })).frame(height: 70).accessibilityLabel("Synthèse \(item.title)")
-                                        TextField("Limites", text: Binding(get: { item.caveat }, set: { model.correct(item.id, field: "caveat", text: $0) })).textFieldStyle(.roundedBorder)
+                                        TextField("Titre", text: Binding(get: { item.title }, set: { model.correct(item.id, field: "title", text: $0) })).textFieldStyle(GoalongFieldStyle())
+                                        GoalongTextArea(text: Binding(get: { item.summary }, set: { model.correct(item.id, field: "summary", text: $0) }), minHeight: 70).accessibilityLabel("Synthèse \(item.title)")
+                                        TextField("Limites", text: Binding(get: { item.caveat }, set: { model.correct(item.id, field: "caveat", text: $0) })).textFieldStyle(GoalongFieldStyle())
                                         Text("\(item.status) · \(item.evidence_refs.count) éléments de preuve locaux").font(.caption).foregroundStyle(.secondary)
                                         GoalongDisclosureGroup("Examiner les preuves") { ForEach((try? model.request?.context().evidence.filter { item.evidence_refs.contains($0.id) }) ?? [], id: \.id) { e in Text("\(e.start) · \(e.application)\n\(e.text)").font(.caption).textSelection(.enabled) } }
                                         Divider()

@@ -11,7 +11,7 @@ import SwiftUI
         } label: {
             Label("Signaler un problème…", systemImage: "stethoscope")
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(LHSecondaryButtonStyle())
         .disabled(controller.isPreparing)
         .accessibilityIdentifier("support-export-diagnostics")
     }
@@ -32,7 +32,7 @@ import SwiftUI
             SupportDiagnosticsExportButton()
             Divider()
             Toggle("Conserver les journaux techniques sur ce Mac", isOn: $enabled)
-                .toggleStyle(.switch).onChange(of: enabled) { SupportDiagnostics.shared.setEnabled($0) }
+                .toggleStyle(.goalongSwitch).onChange(of: enabled) { SupportDiagnostics.shared.setEnabled($0) }
             Text("Recommandé : sans journal, un rapport ne peut décrire que l’instant présent. Conservation locale de 7 jours au plus, 5,3 Mio maximum, aucun envoi automatique.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -43,7 +43,7 @@ import SwiftUI
                 }.disabled(!enabled)
                     .help("Marque l’instant où le problème se produit pour le retrouver dans le rapport.")
                 Button("Effacer les journaux…") { confirmClear = true }
-            }.buttonStyle(.bordered)
+            }.buttonStyle(LHSecondaryButtonStyle())
             if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(.secondary) }
         }
         .confirmationDialog("Effacer uniquement les journaux techniques ?", isPresented: $confirmClear) {

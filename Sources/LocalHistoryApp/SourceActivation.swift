@@ -298,13 +298,14 @@ import LocalHistoryCore
                     }
                 )) { Text(capability.title) }
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .toggleStyle(.goalongSwitchOnly)
                 .accessibilityIdentifier("source-\(capability.rawValue)")
                 .fixedSize()
             }
             .disabled(checking)
             .sheet(isPresented: $showingActivation) {
                 SourceActivationSheet(capability: capability, surface: surface, prepare: prepare, check: checkAccess, initialStatus: activationStatus, resumingAfterRestart: resumingAfterRestart)
+                    .goalongControls()
             }
             .sheet(isPresented: $showingRecordingReview, onDismiss: {
                 if continueAfterRecordingReview {
@@ -312,11 +313,13 @@ import LocalHistoryCore
                     beginActivation()
                 }
             }) {
+                Group {
                 if let recordingModel {
                     GoalongRecordingSetupSheet(model: recordingModel, activating: true) {
                         continueAfterRecordingReview = true
                     }
                 }
+                }.goalongControls()
             }
             .onAppear {
                 if PermissionRecovery.takeSetupReturn(for: capability) {
@@ -479,7 +482,7 @@ import LocalHistoryCore
                     if openedSettings && !ready {
                         Button(needsRestart ? "Vérifier à nouveau" : "Ouvrir les réglages") {
                             if needsRestart { manualChecks += 1; check() } else { openSettings() }
-                        }.buttonStyle(.bordered).disabled(flow.checking || restarting)
+                        }.buttonStyle(LHSecondaryButtonStyle()).disabled(flow.checking || restarting)
                     }
                     Button(primaryTitle) { primaryAction() }
                         .buttonStyle(LHPrimaryButtonStyle()).controlSize(.large)
@@ -498,9 +501,11 @@ import LocalHistoryCore
             .sheet(isPresented: $showingRecordingReview, onDismiss: {
                 if continueAfterRecordingReview { continueAfterRecordingReview = false; check() }
             }) {
+                Group {
                 if let recordingModel {
                     GoalongRecordingSetupSheet(model: recordingModel, activating: true) { continueAfterRecordingReview = true }
                 }
+                }.goalongControls()
             }
             .onAppear {
                 openedSettings = resumingAfterRestart
@@ -624,7 +629,7 @@ import LocalHistoryCore
                                     Button(status.actionTitle) { PermissionRecovery.rememberSetup(capability); SourceAccessService.openAccess(status) }
                                         .buttonStyle(LHPrimaryButtonStyle())
                                 }
-                                Button("Vérifier l’accès à nouveau") { validate() }.buttonStyle(.bordered)
+                                Button("Vérifier l’accès à nouveau") { validate() }.buttonStyle(LHSecondaryButtonStyle())
                             }
                         }.fixedSize(horizontal: false, vertical: true)
                     }.padding(LHTheme.pageInset)

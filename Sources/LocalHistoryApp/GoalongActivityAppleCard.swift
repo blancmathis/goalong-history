@@ -48,7 +48,7 @@ struct GoalongActivityAppleCard: View {
                     }
                     Button(consents.isEnabled(.appleScreenTime) ? "Ouvrir" : "Configurer") {
                         model.selectDay(day); model.selectSection(.screenTime)
-                    }.buttonStyle(.bordered).controlSize(.small)
+                    }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
                 }
                 if accessDenied || screenTime.needsFullDiskAccess {
                     Label("Lecture Apple arrêtée : accès indisponible. Vérifiez les autorisations pour cette source.", systemImage: "exclamationmark.triangle")

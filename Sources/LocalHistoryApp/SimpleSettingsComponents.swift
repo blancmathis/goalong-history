@@ -110,7 +110,7 @@ struct GoalongSettingsGroup<Content: View>: View {
             if consents.isEnabled(capability) {
                 if validation.checking { ProgressView().controlSize(.small) }
                 else if validation.result == .ready { Label("Autorisé", systemImage: "checkmark.circle").font(.system(size: 12)) }
-                else { Button("Configurer") { showing = true }.buttonStyle(.bordered) }
+                else { Button("Configurer") { showing = true }.buttonStyle(LHSecondaryButtonStyle()) }
             }
         }
         .onAppear { check() }
@@ -118,6 +118,7 @@ struct GoalongSettingsGroup<Content: View>: View {
         .onDisappear { validation.cancel() }
         .sheet(isPresented: $showing, onDismiss: check) {
             SourceActivationSheet(capability: capability, surface: .settings, prepare: {}, check: SourceAccessService.check)
+                .goalongControls()
         }
     }
     private var status: String {

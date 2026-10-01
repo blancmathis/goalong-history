@@ -41,11 +41,11 @@ struct ChatGPTAccountConnectionCard: View {
     @ViewBuilder private var actions: some View {
         switch runtime.connectionState {
         case .connected:
-            Button("Déconnecter") { runtime.disconnectChatGPT() }.buttonStyle(.bordered)
+            Button("Déconnecter") { runtime.disconnectChatGPT() }.buttonStyle(LHSecondaryButtonStyle())
         case .checking:
             ProgressView().controlSize(.small)
         case .codexUnavailable:
-            Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(.bordered)
+            Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHSecondaryButtonStyle())
         default:
             Button(runtime.isConnecting ? "Connexion…" : "Connecter ChatGPT") { runtime.connectChatGPT() }
                 .buttonStyle(LHPrimaryButtonStyle()).disabled(runtime.isConnecting)
