@@ -261,7 +261,7 @@ struct SupportRequestView: View {
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             Spacer()
                             Button("Afficher le fichier") { controller.revealReport() }
-                                .buttonStyle(.link).font(.system(size: 12))
+                                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
                                 .accessibilityIdentifier("support-reveal")
                         }
                     }

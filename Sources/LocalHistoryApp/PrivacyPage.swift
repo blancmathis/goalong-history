@@ -10,7 +10,6 @@
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     PageHeader(
-                        eyebrow: "Local par conception",
                         title: "Confidentialité et sécurité",
                         subtitle: "Voyez exactement ce qui est enregistré, ce qui est masqué et ce qui peut quitter votre Mac."
                     ) {
@@ -52,7 +51,7 @@
                 .padding(.bottom, 30)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .goalongPageBackground()
+            .background(LHTheme.pageBackground)
             .alert(item: $deletionScope) { scope in
                 Alert(
                     title: Text(scope.title),
@@ -307,25 +306,25 @@
                     Text(
                         "Dernière saisie : \(snapshot.lastInputEventAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · clic : \(snapshot.lastClickAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · frappe : \(snapshot.lastTypingBurstAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · défilement : \(snapshot.lastScrollAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · raccourci : \(snapshot.lastShortcutAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais")"
                     )
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
                         "AX : \(snapshot.lastAXContextSuccessAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.rawValue ?? "aucun") à \(snapshot.lastSuppressionAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais")"
                     )
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
                         "Autorisations : interrupteur AX \(snapshot.permissions.accessibilityPreflight ? "activé" : "désactivé") · test AX \(snapshot.permissions.accessibilityFunctionalProbe ? "réussi" : "échoué") · Surveillance de l’entrée \(snapshot.permissions.inputMonitoringPreflight ? "activée" : "désactivée") · capture \(snapshot.eventTapLifecycle.rawValue)"
                     )
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
                         "Version : \(snapshot.build.signatureKind.rawValue) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "sans CDHash") · saisies sur 5 min : \(snapshot.recentCounters.inputEventCount)"
                     )
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     if snapshot.build.signatureKind == .adHoc {
@@ -436,18 +435,17 @@
                             Text(model.deviceProtectionTitle)
                                 .font(.system(size: 13, weight: .semibold))
                             Text(model.deviceAlgorithm)
-                                .font(.system(size: 10, design: .monospaced))
+                                .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("IDENTIFIANT DE L’APPAREIL")
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(0.5)
+                        Text("Identifiant de l’appareil")
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Text(model.deviceID)
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .textSelection(.enabled)

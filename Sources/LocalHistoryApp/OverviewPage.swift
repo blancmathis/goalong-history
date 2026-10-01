@@ -202,7 +202,7 @@
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Text(value)
-                    .font(LHTheme.pageTitleFont)
+                    .font(LHTheme.figureFont(22)).tracking(-0.4)
                     .monospacedDigit()
                 Text(detail)
                     .font(.system(size: 11))
@@ -492,7 +492,7 @@
                     Button { model.selectSection(.history) } label: {
                         Label("Explore History", systemImage: "arrow.right")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(LHQuietButtonStyle())
                     .font(.system(size: 12, weight: .medium))
                 }
 
@@ -549,7 +549,7 @@
                         Button(recapRuntime.recap == nil ? "Configurer" : "Ouvrir le bilan") {
                             model.selectSection(.chatGPTRecap)
                         }
-                        .buttonStyle(.link)
+                        .buttonStyle(LHQuietButtonStyle())
                         .font(.system(size: 11, weight: .semibold))
                     }
                     .padding(.horizontal, 20)

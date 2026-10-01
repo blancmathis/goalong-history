@@ -18,11 +18,12 @@ extension Notification.Name { static let goalongWebsiteConnected = Notification.
     var body: some View {
         GoalongSettingsGroup(title: "Compte Goalong") {
             HStack(spacing: 14) {
-                Image(systemName: "link").font(.system(size: 20)).foregroundStyle(LHTheme.accent)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(credentialAvailable ? "Liaison enregistrée" : "Compte non relié").font(.system(size: 15, weight: .semibold))
+                Image(systemName: "link").font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                    .frame(width: 22).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(credentialAvailable ? "Liaison enregistrée" : "Compte non relié").font(.system(size: 13, weight: .semibold))
                     Text(credentialAvailable ? (URL(string: origin)?.host ?? "Goalong") : "La liaison ne transmet aucune activité.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 if credentialAvailable {
@@ -163,7 +164,7 @@ struct GoalongWebsiteConnectionSheet: View {
                                 Text(URL(fileURLWithPath: tokenFilePath).lastPathComponent)
                                     .font(.caption).lineLimit(1).truncationMode(.middle)
                                 Button("Oublier le fichier") { tokenFilePath = ""; status = nil }
-                                    .buttonStyle(.borderless)
+                                    .buttonStyle(LHQuietButtonStyle())
                             }
                         }
                         GoalongDisclosureGroup("Autre méthode : coller le chemin du fichier", isExpanded: $showsTokenPath) {
@@ -180,7 +181,7 @@ struct GoalongWebsiteConnectionSheet: View {
                             .padding(.top, 6)
                         }
                         Button("Ouvrir « Sources » sur le site", action: openWebsite)
-                            .buttonStyle(.borderless)
+                            .buttonStyle(LHQuietButtonStyle())
                     }
                         }
                     }

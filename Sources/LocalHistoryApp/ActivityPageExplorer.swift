@@ -40,7 +40,7 @@
                                         options: ActivityFilter.allCases) { $0.title }
 
                 Text("\(model.filteredSessions.count) session\(model.filteredSessions.count == 1 ? "" : "s")")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 72, alignment: .trailing)
             }
@@ -113,7 +113,7 @@
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(spacing: 8) {
                         Text(session.appName)
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .font(.system(size: 20, weight: .bold))
                         if let reason = session.suppressionReason {
                             StatusPill(
                                 title: privacyLabel(reason),
@@ -134,14 +134,14 @@
                         .lineLimit(3)
                         .textSelection(.enabled)
                     HStack(spacing: 10) {
-                        CategoryBadge(category: session.category, isWork: session.isWork)
+                        CategoryBadge(category: session.category)
                         Text(
                             "\(DashboardFormatters.shortTime.string(from: session.start))–\(DashboardFormatters.shortTime.string(from: session.end))"
                         )
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                         Text(DashboardFormatters.duration(seconds: session.duration))
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -198,14 +198,12 @@
         private func detailValue(title: String, value: String, symbol: String) -> some View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(LHTheme.accent)
-                    .frame(width: 28, height: 28)
-                    .background(LHTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
+                    .frame(width: 20, height: 16)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title.uppercased())
-                        .font(.system(size: 8, weight: .semibold))
-                        .tracking(0.4)
+                    Text(title)
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
                     Text(value)
                         .font(.system(size: 11, weight: .medium))
@@ -229,7 +227,7 @@
                     Text(
                         "Goalong n’a conservé que l’état de couverture pour cette période : l’adresse, le titre et la saisie masqués ne pourront jamais être révélés."
                     )
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
@@ -249,7 +247,7 @@
                     Text(
                         "macOS a attribué \(session.softwareAttributedEventCount) événement(s) de saisie à un logiciel. C’est un signal d’intégrité, pas une preuve de triche."
                     )
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
@@ -276,10 +274,10 @@
                     ForEach(sorted, id: \.key) { entry in
                         HStack {
                             Text(prettyEventKind(entry.key))
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: 11, weight: .medium))
                             Spacer()
                             Text("\(entry.value)")
-                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 10)
@@ -346,7 +344,7 @@
                             session.windowTitle ?? session.host ?? session.category.map(CategoryBadge.prettyCategory)
                                 ?? "Activity"
                         )
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         HStack(spacing: 6) {
@@ -358,7 +356,7 @@
                                     .foregroundStyle(LHTheme.success)
                             }
                         }
-                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.tertiary)
                     }
                     Spacer(minLength: 6)

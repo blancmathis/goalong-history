@@ -19,10 +19,10 @@
                             .fill(LHTheme.separator)
                             .frame(width: 1)
                         page
-                            // Changing destination is a short crossfade with a slight rise, never a slide.
+                            // Changing destination is a short crossfade, never a slide.
                             .id(model.selectedSection)
-                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
-                            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.selectedSection)
+                            .transition(.opacity)
+                            .animation(reduceMotion ? nil : LHTheme.ease(0.16), value: model.selectedSection)
                             .safeAreaInset(edge: .top, spacing: 0) {
                                 VStack(spacing: 0) {
                                     GoalongGlobalPauseBanner(model: model)
@@ -33,12 +33,15 @@
                                 if model.settingsHaveChanges && model.selectedSection != .settings {
                                     HStack(spacing: 12) {
                                         Label("Modifications d’enregistrement non appliquées", systemImage: "pencil.circle")
-                                            .font(.system(size: 12, weight: .medium))
+                                            .font(.system(size: 13, weight: .medium))
                                         Spacer()
                                         Button("Abandonner") { model.discardSettingsChanges() }
                                         Button("Vérifier les modifications") { model.openRecordingSettings() }
                                             .buttonStyle(LHPrimaryButtonStyle())
-                                    }.padding(14).background(LHTheme.cardBackground)
+                                    }
+                                    .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12)
+                                    .background(LHTheme.cardBackground)
+                                    .overlay(alignment: .top) { Rectangle().fill(LHTheme.separator).frame(height: 1) }
                                 }
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -123,11 +126,11 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
                 brand
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, 20)
                     .padding(.top, 24)
-                    .padding(.bottom, 20)
+                    .padding(.bottom, 24)
 
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     ForEach(primarySections) { section in
                         navigationButton(section)
                     }
@@ -154,8 +157,8 @@
                     .padding(.bottom, 8)
 
                 footer
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 14)
+                    .padding(.horizontal, 26)
+                    .padding(.bottom, 16)
             }
             .background(LHTheme.sidebarBackground)
             .onAppear {
@@ -165,18 +168,18 @@
 
         private var brand: some View {
             HStack(spacing: 11) {
-                GoalongAnimatedMark()
-                    .frame(width: 30, height: 21)
-                    .frame(width: 32, height: 32)
+                GoalongMark()
+                    .stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .frame(width: 28, height: 20)
                     .accessibilityLabel("Logo Goalong")
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text("Goalong")
-                        .font(.system(size: 20, weight: .semibold))
-                        .tracking(-0.6)
+                        .font(.system(size: 17, weight: .bold))
+                        .tracking(-0.5)
                     Text("Historique sur ce Mac")
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
             }
         }
@@ -193,14 +196,14 @@
                 )
             }
             .buttonStyle(LHNavigationButtonStyle())
-            // The selection glides between destinations: a raised leaf with a lime waypoint.
+            // The selection glides between destinations, carrying a short piece of the thread.
             .background {
                 if model.highlightedSidebarSection == section {
                     ZStack(alignment: .leading) {
-                        GoalongSurface(corner: LHTheme.controlRadius, fill: LHTheme.selectionBackground, highlighted: true)
-                        Capsule().fill(LHTheme.accent)
-                            .frame(width: 3, height: 18).padding(.leading, 4)
-                            .shadow(color: LHTheme.accent.opacity(0.6), radius: 4)
+                        RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
+                            .fill(LHTheme.selectionBackground)
+                        RoundedRectangle(cornerRadius: 1.5).fill(LHTheme.accent)
+                            .frame(width: 3, height: 16).padding(.leading, 5)
                     }
                     .matchedGeometryEffect(id: "sidebar-selection", in: selection)
                     .accessibilityHidden(true)
@@ -217,9 +220,9 @@
             selected: Bool,
             wraps: Bool = false
         ) -> some View {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.system(size: 14, weight: selected ? .medium : .regular))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(selected ? LHTheme.accent : LHTheme.secondaryText)
                     .frame(width: 20)
                 Text(title)
@@ -230,8 +233,8 @@
                 Spacer(minLength: 0)
             }
             .foregroundStyle(selected ? LHTheme.text : LHTheme.secondaryText)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: wraps ? 48 : 38)
+            .padding(.leading, 16).padding(.trailing, 10)
+            .frame(maxWidth: .infinity, minHeight: wraps ? 46 : 34)
             .contentShape(Rectangle())
         }
 
@@ -246,11 +249,11 @@
                 } else { model.selectSection(.overview) }
             } label: {
                 HStack(spacing: 9) {
-                    Circle()
-                        .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : Color.secondary)
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : LHTheme.tertiaryText)
                         .frame(width: 7, height: 7)
                     Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Suivi désactivé")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     Spacer()
@@ -261,8 +264,8 @@
                     }
                 }
                 .foregroundStyle(LHTheme.secondaryText)
-                .padding(.horizontal, 12)
-                .frame(height: 34)
+                .padding(.leading, 16).padding(.trailing, 10)
+                .frame(height: 32)
             }
             .buttonStyle(LHNavigationButtonStyle())
         }
@@ -282,7 +285,7 @@
                     VStack(alignment: .leading, spacing: 1) {
                         Text(updates.isPreparingAvailableUpdate ? "Préparation…" : "Mise à jour disponible")
                             .font(.system(size: 11, weight: .semibold))
-                        Text("Version \(version) · installer")
+                        Text("Installer la \(version)")
                             .font(.system(size: 11, weight: .medium))
                             .opacity(0.76)
                     }
@@ -294,10 +297,8 @@
                 .foregroundStyle(LHTheme.accent)
                 .padding(.horizontal, 11)
                 .frame(height: 46)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(LHTheme.accent.opacity(0.10))
-                )
+                .background(LHTheme.selectionBackground,
+                            in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(updates.isPreparingAvailableUpdate)

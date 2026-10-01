@@ -31,9 +31,9 @@ struct GoalongActivityAppleCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .center, spacing: 14) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Temps d’écran Apple").font(.system(size: 14, weight: .semibold)).accessibilityAddTraits(.isHeader)
+                        Text("Temps d’écran Apple").font(.system(size: 13, weight: .semibold)).accessibilityAddTraits(.isHeader)
                         Text(day.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.wide).year()))
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer(minLength: 8)
                     if screenTime.isBusy && consents.isEnabled(.appleScreenTime) {

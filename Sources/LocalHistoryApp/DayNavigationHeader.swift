@@ -24,17 +24,14 @@
                 }
             }
             .padding(.horizontal, LHTheme.pageInset)
-            .padding(.vertical, 22)
+            .padding(.top, 28).padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .goalongPageBackground().clipped()
+            .background(LHTheme.pageBackground).clipped()
         }
 
         private var heading: some View {
             VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(LHTheme.pageTitleFont)
-                    .tracking(-0.5)
-                    .accessibilityAddTraits(.isHeader)
+                Text(title).goalongPageTitle()
                 Text(day.formatted(.dateTime.weekday(.wide).month(.wide).day().locale(Locale(identifier: "fr_FR"))))
                     .font(.system(size: 13))
                     .foregroundStyle(LHTheme.secondaryText)
@@ -45,7 +42,6 @@
         private var actions: some View {
             HStack(spacing: 8) {
                 DateSelectionControl(date: day, onChange: onSelectDay)
-                Divider().frame(height: 20).padding(.horizontal, 4)
                 Button(action: onShare) {
                     Label("Envoyer à Goalong", systemImage: "square.and.arrow.up")
                 }

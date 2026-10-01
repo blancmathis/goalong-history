@@ -47,7 +47,8 @@ final class GoalongDesignAuditRenderingTests: XCTestCase {
 
         func render(_ name: String, _ view: some View, size: NSSize = NSSize(width: 1240, height: 1500)) throws {
             if let only, !only.contains(where: { name.hasPrefix($0) }) { return }
-            let host = NSHostingController(rootView: view)
+            // Still renders: entrance traces are shown complete.
+            let host = NSHostingController(rootView: view.environment(\.goalongReduceMotion, true))
             window.contentViewController = host
             window.setContentSize(size)
             window.makeKeyAndOrderFront(nil)

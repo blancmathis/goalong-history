@@ -56,17 +56,13 @@ struct PermissionSetupHeader: View {
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: ready ? "checkmark" : copy.symbol)
-                .font(.system(size: 23, weight: .medium))
-                .foregroundStyle(LHTheme.accent)
-                .frame(width: 56, height: 56)
-                .background(LHTheme.selectionBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(ready ? LHTheme.success : LHTheme.secondaryText)
+                .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("AUTORISATIONS MACOS")
-                    .font(.system(size: 10, weight: .semibold)).tracking(1.6)
-                    .foregroundStyle(LHTheme.secondaryText)
+            VStack(alignment: .leading, spacing: 5) {
                 Text(ready ? "Accès disponible" : "Autoriser \(copy.capability.title)")
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(LHTheme.sheetTitleFont).tracking(-0.4)
                     .foregroundStyle(LHTheme.text)
                     .accessibilityAddTraits(.isHeader)
                 Text(copy.purpose).font(.system(size: 13))
@@ -85,12 +81,12 @@ struct PermissionSetupStatusCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: copy.permissionSymbol).font(.system(size: 20))
-                .foregroundStyle(LHTheme.secondaryText).frame(width: 26)
+            Image(systemName: copy.permissionSymbol).font(.system(size: 15, weight: .medium))
+                .foregroundStyle(LHTheme.secondaryText).frame(width: 22)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(copy.permission).font(.system(size: 13, weight: .semibold))
-                Text(copy.permissionDetail).font(.system(size: 11))
+                Text(copy.permissionDetail).font(.system(size: 12))
                     .foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
@@ -101,13 +97,12 @@ struct PermissionSetupStatusCard: View {
                     .font(.system(size: 11, weight: .medium))
             }
             .foregroundStyle(ready ? LHTheme.success : LHTheme.secondaryText)
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(ready ? LHTheme.selectionBackground : LHTheme.elevatedBackground, in: Capsule())
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .accessibilityElement(children: .combine)
         }
-        .padding(16)
-        .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LHTheme.separator, lineWidth: 1))
+        .padding(LHTheme.cardInset)
+        .background(GoalongSurface())
     }
 }
 
@@ -135,8 +130,10 @@ struct PermissionSetupSteps: View {
             }
             .frame(width: 26, height: 26)
             .foregroundStyle(done || active ? LHTheme.accent : LHTheme.secondaryText)
-            .background(done || active ? LHTheme.selectionBackground : LHTheme.cardBackground, in: Circle())
-            .overlay(Circle().strokeBorder(done || active ? LHTheme.accent.opacity(0.25) : LHTheme.separator, lineWidth: 1))
+            .background(done || active ? LHTheme.selectionBackground : LHTheme.cardBackground,
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(done || active ? LHTheme.accent.opacity(0.25) : LHTheme.separator, lineWidth: 1))
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.text)
@@ -205,7 +202,7 @@ struct PermissionPrivacyNote: View {
             }
             GoalongDisclosureGroup("Détails de cette installation", isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(Bundle.main.bundleURL.path).font(.system(size: 10, design: .monospaced))
+                    Text(Bundle.main.bundleURL.path).font(.system(size: 11, design: .monospaced))
                         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     Text("Une autorisation macOS et votre choix d’enregistrer sont deux contrôles distincts. La réparation ne change ni l’historique, ni les sources, ni les envois.")
                         .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)

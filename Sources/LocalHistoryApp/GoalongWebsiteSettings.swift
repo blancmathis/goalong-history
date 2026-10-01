@@ -12,12 +12,13 @@ import LocalHistoryQueryCLI
             GoalongSettingsGroup(title: "Fréquence et données") {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(sender.enabled ? "Chaque jour" : sender.savedConfiguration == nil ? "Envoi ponctuel" : "Envoi quotidien en pause").font(LHTheme.cardTitleFont)
+                        Text(sender.enabled ? "Chaque jour" : sender.savedConfiguration == nil ? "Envoi ponctuel" : "Envoi quotidien en pause").font(.system(size: 13, weight: .semibold))
                         Text(sender.enabled ? "La veille, après l’heure choisie" : "Vous vérifiez puis confirmez chaque envoi")
-                            .font(.system(size: 13)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer()
-                    Button("Configurer les envois") { presentation = .init(day: nil) }.buttonStyle(LHPrimaryButtonStyle())
+                    // The page's one lime action is linking the account, in the card above.
+                    Button("Configurer les envois") { presentation = .init(day: nil) }.buttonStyle(LHSecondaryButtonStyle())
                 }
                 if let plan = sender.savedConfiguration {
                     Divider()

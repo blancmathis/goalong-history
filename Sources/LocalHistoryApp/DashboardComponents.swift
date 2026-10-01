@@ -3,6 +3,8 @@
     import SwiftUI
     import LocalHistoryCore
 
+    /// The group surface: only for what is manipulated (a list of settings, a form, a
+    /// clickable list). What is simply read sits on the page, in a `GoalongSection`.
     struct LHCard<Content: View>: View {
         @Environment(\.colorSchemeContrast) private var contrast
         private let padding: CGFloat
@@ -17,6 +19,51 @@
             content
                 .padding(padding)
                 .background(GoalongSurface(corner: LHTheme.cardRadius, increased: contrast == .increased))
+                // Full-bleed rows keep their hover inside the rounded corners.
+                .clipShape(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous))
+        }
+    }
+
+    /// Content that is read, set directly on the page: a title, an optional quiet action,
+    /// then the content with no frame around it.
+    struct GoalongSection<Trailing: View, Content: View>: View {
+        let title: String
+        var subtitle: String?
+        @ViewBuilder var trailing: () -> Trailing
+        @ViewBuilder var content: () -> Content
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title).font(LHTheme.sectionTitleFont).tracking(-0.2)
+                            .accessibilityAddTraits(.isHeader)
+                        if let subtitle {
+                            Text(subtitle).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    trailing()
+                }
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    extension GoalongSection where Trailing == EmptyView {
+        init(title: String, subtitle: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+            self.init(title: title, subtitle: subtitle, trailing: { EmptyView() }, content: content)
+        }
+    }
+
+    extension View {
+        /// The one title of a page.
+        func goalongPageTitle() -> some View {
+            font(LHTheme.pageTitleFont).tracking(LHTheme.pageTitleTracking)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
         }
     }
 
@@ -51,8 +98,8 @@
                 .opacity(isEnabled ? 1 : 0.45)
                 .contentShape(Rectangle())
                 .onHover { isHovered = $0 }
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovered)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: configuration.isPressed)
+                .animation(reduceMotion ? nil : LHTheme.hover, value: isHovered)
+                .animation(reduceMotion ? nil : LHTheme.hover, value: configuration.isPressed)
         }
     }
 
@@ -64,17 +111,20 @@
             HStack {
                 Button(action: onBack) {
                     Label(title, systemImage: "chevron.left")
+                        .foregroundStyle(LHTheme.secondaryText)
+                        .padding(.horizontal, 8).frame(minHeight: 28)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
-                .controlSize(.regular)
+                .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
+                .padding(.leading, -8)
                 .keyboardShortcut("[", modifiers: .command)
                 .accessibilityHint("Revenir à la page précédente")
                 .accessibilityIdentifier("settings-back")
                 Spacer()
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 13, weight: .medium))
             .padding(.horizontal, LHTheme.pageInset)
-            .padding(.vertical, 12)
+            .padding(.vertical, 8)
             .background(LHTheme.pageBackground)
             // An explicit rule: a Divider in an overlay inherits the root HStack's axis
             // and was drawn as a vertical line across the bar.
@@ -83,18 +133,11 @@
     }
 
     struct PageHeader<Trailing: View>: View {
-        let eyebrow: String?
         let title: String
         let subtitle: String
         private let trailing: Trailing
 
-        init(
-            eyebrow: String? = nil,
-            title: String,
-            subtitle: String,
-            @ViewBuilder trailing: () -> Trailing
-        ) {
-            self.eyebrow = eyebrow
+        init(title: String, subtitle: String, @ViewBuilder trailing: () -> Trailing) {
             self.title = title
             self.subtitle = subtitle
             self.trailing = trailing()
@@ -117,31 +160,24 @@
 
         private var heading: some View {
             VStack(alignment: .leading, spacing: 6) {
-                if let eyebrow {
-                    Text(eyebrow.uppercased())
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.2)
+                Text(title).goalongPageTitle()
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 13))
                         .foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(title)
-                    .font(LHTheme.pageTitleFont)
-                    .tracking(-0.5)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-                Text(subtitle)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     extension PageHeader where Trailing == EmptyView {
-        init(eyebrow: String? = nil, title: String, subtitle: String) {
-            self.init(eyebrow: eyebrow, title: title, subtitle: subtitle) { EmptyView() }
+        init(title: String, subtitle: String) {
+            self.init(title: title, subtitle: subtitle) { EmptyView() }
         }
     }
 
+    /// A figure with its label: the label names it, a neutral glyph hints at its kind.
     struct MetricCard: View {
         let title: String
         let value: String
@@ -150,43 +186,42 @@
         let tint: Color
 
         var body: some View {
-            LHCard(padding: 16) {
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack {
-                        Image(systemName: symbol)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(tint)
-                            .frame(width: 30, height: 30)
-                            .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                        Spacer()
-                        Text(title)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
+            LHCard(padding: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: symbol).font(.system(size: 11, weight: .medium)).accessibilityHidden(true)
+                        Text(title).font(.system(size: 12, weight: .medium))
                     }
+                    .foregroundStyle(LHTheme.secondaryText)
                     Text(value)
-                        .font(LHTheme.figureFont(26))
-                        .monospacedDigit()
+                        .font(LHTheme.figureFont(22)).tracking(-0.4)
+                        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
                     Text(detail)
                         .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .accessibilityElement(children: .combine)
         }
     }
 
+    /// A state in one glance: the glyph carries the colour, the words stay in ink.
     struct StatusPill: View {
         let title: String
         let symbol: String
         let tint: Color
 
         var body: some View {
-            Label(title, systemImage: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(tint)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(tint)
+                    .accessibilityHidden(true)
+                Text(title).font(.system(size: 11, weight: .medium)).foregroundStyle(LHTheme.text)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
     }
 
@@ -205,17 +240,13 @@
                 } else {
                     ZStack(alignment: .bottomTrailing) {
                         RoundedRectangle(cornerRadius: size * 0.23, style: .continuous)
-                            .fill(LHTheme.accent.opacity(0.12))
+                            .fill(LHTheme.insetBackground)
+                        RoundedRectangle(cornerRadius: size * 0.23, style: .continuous)
+                            .strokeBorder(LHTheme.separator)
                         Text(Self.initial(for: appName))
-                            .font(.system(size: size * 0.45, weight: .bold, design: .rounded))
-                            .foregroundStyle(LHTheme.accent)
+                            .font(.system(size: size * 0.45, weight: .semibold))
+                            .foregroundStyle(LHTheme.secondaryText)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        Image(systemName: "app.fill")
-                            .font(.system(size: size * 0.22, weight: .semibold))
-                            .foregroundStyle(LHTheme.accent)
-                            .padding(size * 0.07)
-                            .background(.regularMaterial, in: Circle())
-                            .offset(x: size * 0.05, y: size * 0.05)
                     }
                 }
             }
@@ -260,6 +291,8 @@
         }
     }
 
+    /// Centered empty state for a whole pane or list: the thread that has not started,
+    /// what is missing, and the one action that helps.
     struct EmptyStateView: View {
         let symbol: String
         let title: String
@@ -268,26 +301,24 @@
         var action: (() -> Void)?
 
         var body: some View {
-            VStack(spacing: 14) {
-                Image(systemName: symbol)
-                    .font(.system(size: 34, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 62, height: 62)
-                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                Text(title)
-                    .font(.system(size: 16, weight: .semibold))
-                Text(message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+            VStack(spacing: 10) {
+                GoalongThreadPlaceholder(width: 72).padding(.bottom, 6)
+                Label(title, systemImage: symbol)
+                    .font(LHTheme.cardTitleFont)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
+                Text(message)
+                    .font(.system(size: 13))
+                    .foregroundStyle(LHTheme.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
                 if let buttonTitle, let action {
                     Button(buttonTitle, action: action)
                         .buttonStyle(LHPrimaryButtonStyle())
+                        .padding(.top, 6)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(30)
+            .padding(28)
         }
     }
 
@@ -407,19 +438,15 @@
 
     struct CategoryBadge: View {
         let category: String?
-        let isWork: Bool?
 
         var body: some View {
-            let label = category.map(Self.prettyCategory) ?? "Unclassified"
-            let tint =
-                isWork == true
-                ? LHTheme.success : (category?.contains("private") == true ? LHTheme.privateTint : LHTheme.accent)
+            let label = category.map(Self.prettyCategory) ?? "Non classé"
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(tint)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(tint.opacity(0.11), in: Capsule())
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(LHTheme.secondaryText)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
 
         private static let frenchCategories: [String: String] = [
@@ -449,13 +476,13 @@
         var body: some View {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.07))
-                    Capsule()
+                    RoundedRectangle(cornerRadius: 2).fill(LHTheme.separator)
+                    RoundedRectangle(cornerRadius: 2)
                         .fill(tint)
                         .frame(width: max(4, proxy.size.width * min(max(value, 0), 1)))
                 }
             }
-            .frame(height: 6)
+            .frame(height: 4)
         }
     }
 

@@ -33,7 +33,7 @@ struct GoalongScreenTimePage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if showsHeader {
-                    PageHeader(eyebrow: "Source indépendante", title: "Temps d’écran Apple",
+                    PageHeader(title: "Temps d’écran Apple",
                         subtitle: "Les données Apple restent séparées des observations Goalong.") {
                         HStack(spacing: 10) {
                             DateSelectionControl(date: screenTime.selectedDay, onChange: selectDay)
@@ -251,7 +251,7 @@ struct GoalongScreenTimePage: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if matching.count > 8 && search.isEmpty {
                         Button(showsAllUsage ? "Réduire la liste" : "Voir les \(matching.count) usages") { showsAllUsage.toggle() }
-                            .buttonStyle(.borderless).accessibilityIdentifier("screen-time-show-all")
+                            .buttonStyle(LHQuietButtonStyle()).accessibilityIdentifier("screen-time-show-all")
                     }
                     Text("Applications et sites sont deux lectures distinctes. Le temps d’un site peut déjà être inclus dans son navigateur ; les lignes ne sont donc pas additionnées pour recréer le total.")
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -299,7 +299,7 @@ struct GoalongScreenTimePage: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(screenTime.status.message)
                     Button("Vérifier les autorisations macOS…") { screenTime.openFullDiskAccessSettings() }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(LHQuietButtonStyle())
                         .help("L’accès complet au disque ne garantit pas que l’agrégat privé d’Apple soit disponible.")
                     Text("AppUsage : \(screenTime.screenTimeAppUsageIntervalCount) intervalles · knowledgeC : \(screenTime.knowledgeIntervalCount) · Biome : \(screenTime.biomeIntervalCount)")
                     if let provenance = screenTime.summary?.provenance { Text(provenance.api) }

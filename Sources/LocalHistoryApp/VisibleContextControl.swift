@@ -13,11 +13,10 @@ struct VisibleContextControl: View {
                 })) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Texte affiché").font(.system(size: 13, weight: .semibold))
-                        Text("Facultatif · sur ce Mac").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Facultatif, sur ce Mac. Peut contenir des messages et documents personnels.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                 }.toggleStyle(.goalongSwitch).accessibilityIdentifier("recording-visible-text")
-                Text("Peut contenir des messages et documents personnels.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
                 if enabled {
                     Text("Activé · les anciennes données sont conservées après arrêt.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)

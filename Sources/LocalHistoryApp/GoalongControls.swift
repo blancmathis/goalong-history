@@ -5,8 +5,8 @@
     /// Goalong's own control chrome, so forms read as one product instead of stock grey
     /// AppKit bezels on forest surfaces. Actions, roles, focus and accessibility stay native.
 
-    /// Card material: tonal fill, hairline edge and a faint lit rim along the top,
-    /// so surfaces read as layered rather than outlined.
+    /// The one manipulable surface: a tonal fill and a single hairline. No gradient, no rim,
+    /// no shadow; depth comes from tone alone.
     struct GoalongSurface: View {
         var corner: CGFloat = LHTheme.cardRadius
         var fill: Color = LHTheme.cardBackground
@@ -18,10 +18,34 @@
             shape.fill(fill)
                 .overlay(shape.strokeBorder(increased ? LHTheme.strongSeparator
                                             : highlighted ? LHTheme.controlBorder : LHTheme.separator, lineWidth: 1))
-                .overlay(
-                    shape.strokeBorder(LinearGradient(colors: [LHTheme.rimLight.opacity(highlighted ? 0.9 : 0.55), .clear],
-                                                      startPoint: .top, endPoint: .init(x: 0.5, y: 0.22)), lineWidth: 1)
-                )
+        }
+    }
+
+    /// Shared control heights so a primary and a secondary button always sit on one line.
+    enum GoalongControlMetrics {
+        static func height(_ size: ControlSize) -> CGFloat {
+            switch size {
+            case .mini: return 22
+            case .small: return 26
+            case .large: return 36
+            default: return 30
+            }
+        }
+        static func font(_ size: ControlSize) -> CGFloat {
+            switch size {
+            case .mini: return 11
+            case .small: return 12
+            case .large: return 14
+            default: return 13
+            }
+        }
+        static func inset(_ size: ControlSize) -> CGFloat {
+            switch size {
+            case .mini: return 8
+            case .small: return 10
+            case .large: return 18
+            default: return 13
+            }
         }
     }
 
@@ -34,39 +58,56 @@
         @Environment(\.colorSchemeContrast) private var contrast
         @State private var isHovered = false
 
-        private var metrics: (height: CGFloat, font: CGFloat, inset: CGFloat) {
-            switch controlSize {
-            case .mini: return (22, 11, 8)
-            case .small: return (26, 12, 10)
-            case .large: return (38, 14, 16)
-            default: return (30, 13, 13)
-            }
-        }
-
         func makeBody(configuration: Configuration) -> some View {
             let destructive = configuration.role == .destructive
             let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
             configuration.label
-                .font(.system(size: metrics.font, weight: .medium))
+                .font(.system(size: GoalongControlMetrics.font(controlSize), weight: .medium))
                 .lineLimit(1)
-                .padding(.horizontal, metrics.inset)
-                .frame(minHeight: metrics.height)
+                .padding(.horizontal, GoalongControlMetrics.inset(controlSize))
+                .frame(minHeight: GoalongControlMetrics.height(controlSize))
                 .foregroundStyle(!isEnabled ? LHTheme.secondaryText : destructive ? LHTheme.danger : LHTheme.text)
                 .background {
                     GoalongSurface(corner: LHTheme.controlRadius,
                                    fill: configuration.isPressed && isEnabled ? LHTheme.pressedBackground
                                        : isHovered && isEnabled ? LHTheme.hoverBackground : LHTheme.controlBackground,
-                                   increased: contrast == .increased, highlighted: isHovered && isEnabled)
+                                   increased: contrast == .increased, highlighted: true)
                 }
                 .overlay {
                     shape.strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2).padding(-3)
                 }
-                .opacity(isEnabled ? 1 : 0.6)
+                .opacity(isEnabled ? 1 : 0.5)
                 .scaleEffect(configuration.isPressed && isEnabled && !reduceMotion ? 0.97 : 1)
                 .contentShape(shape)
                 .onHover { isHovered = $0 }
                 .animation(reduceMotion ? nil : LHTheme.hover, value: isHovered)
                 .animation(reduceMotion ? nil : LHTheme.press, value: configuration.isPressed)
+        }
+    }
+
+    /// Third-rank actions ("Corriger", "Voir les 12 usages"): accent text, no chrome at rest.
+    /// The hover fill bleeds outside the layout bounds so the label stays on the text column.
+    struct LHQuietButtonStyle: ButtonStyle {
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.isFocused) private var isFocused
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var isHovered = false
+
+        func makeBody(configuration: Configuration) -> some View {
+            let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+            configuration.label
+                .fontWeight(.medium)
+                .foregroundStyle(!isEnabled ? LHTheme.secondaryText
+                                 : configuration.role == .destructive ? LHTheme.danger : LHTheme.accent)
+                .padding(.horizontal, 7).padding(.vertical, 4)
+                .background(configuration.isPressed && isEnabled ? LHTheme.pressedBackground
+                            : isHovered && isEnabled ? LHTheme.hoverBackground : .clear, in: shape)
+                .overlay { shape.strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2) }
+                .contentShape(shape)
+                .padding(.horizontal, -7).padding(.vertical, -4)
+                .opacity(isEnabled ? 1 : 0.6)
+                .onHover { isHovered = $0 }
+                .animation(reduceMotion ? nil : LHTheme.hover, value: isHovered)
         }
     }
 
@@ -189,8 +230,9 @@
         }
     }
 
-    /// Brand switch: lime track and ink knob when on, quiet forest track when off.
-    /// A real Button underneath keeps keyboard focus and Space activation.
+    /// Brand switch: the same corner family as buttons and fields, lime track and ink knob
+    /// when on, quiet forest track when off. A real Button underneath keeps keyboard focus
+    /// and Space activation.
     struct GoalongSwitch: View {
         @Binding var isOn: Bool
         @Environment(\.isEnabled) private var isEnabled
@@ -202,7 +244,7 @@
                 withAnimation(reduceMotion ? nil : LHTheme.press) { isOn.toggle() }
             } label: { EmptyView() }
                 .buttonStyle(GoalongSwitchButtonStyle(isOn: isOn, small: controlSize == .small || controlSize == .mini))
-                .opacity(isEnabled ? 1 : 0.45)
+                .opacity(isEnabled ? 1 : 0.4)
         }
     }
 
@@ -210,32 +252,33 @@
         let isOn: Bool
         let small: Bool
         @Environment(\.isFocused) private var isFocused
+        @Environment(\.isEnabled) private var isEnabled
         @Environment(\.colorSchemeContrast) private var contrast
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var hovered = false
 
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
         func makeBody(configuration: Configuration) -> some View {
-            let width: CGFloat = small ? 30 : 38, height: CGFloat = small ? 18 : 22
+            let width: CGFloat = small ? 30 : 36, height: CGFloat = small ? 18 : 22
             let knob = height - 6
+            let radius = height * 0.32
+            let track = RoundedRectangle(cornerRadius: radius, style: .continuous)
             // The knob stretches toward its destination while pressed, like a finger pushing it.
-            let stretch: CGFloat = configuration.isPressed && !reduceMotion ? 5 : 0
+            let stretch: CGFloat = configuration.isPressed && !reduceMotion ? 4 : 0
             ZStack(alignment: isOn ? .trailing : .leading) {
-                Capsule().fill(isOn ? (hovered ? LHTheme.actionHover : LHTheme.actionBackground)
-                               : (hovered ? LHTheme.hoverBackground : LHTheme.switchTrack))
-                if isOn {
-                    Capsule().fill(LinearGradient(colors: [.white.opacity(0.22), .clear], startPoint: .top, endPoint: .center))
-                } else {
-                    Capsule().strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.controlBorder)
+                track.fill(isOn ? (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground)
+                           : (hovered && isEnabled ? LHTheme.pressedBackground : LHTheme.switchTrack))
+                if !isOn || contrast == .increased {
+                    track.strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.controlBorder)
                 }
-                Capsule().fill(isOn ? LHTheme.onAccent : LHTheme.switchKnob)
+                RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
+                    .fill(isOn ? LHTheme.onAccent : LHTheme.switchKnob)
                     .frame(width: knob + stretch, height: knob)
-                    .shadow(color: .black.opacity(isOn ? 0.12 : 0.22), radius: 1.5, y: 0.5)
                     .padding(.horizontal, 3)
             }
             .frame(width: width, height: height)
-            .overlay { Capsule().strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2).padding(-3) }
-            .contentShape(Capsule())
+            .overlay { RoundedRectangle(cornerRadius: radius + 3, style: .continuous)
+                .strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2).padding(-3) }
+            .contentShape(track)
             .onHover { hovered = $0 }
             .animation(reduceMotion ? nil : LHTheme.press, value: configuration.isPressed)
             .animation(reduceMotion ? nil : LHTheme.hover, value: hovered)
@@ -293,6 +336,58 @@
         static var goalongSwitch: GoalongSwitchStyle { GoalongSwitchStyle() }
         static var goalongSwitchInline: GoalongSwitchStyle { GoalongSwitchStyle(layout: .inline) }
         static var goalongSwitchOnly: GoalongSwitchStyle { GoalongSwitchStyle(layout: .switchOnly) }
+    }
+
+    /// Checkbox in the control family: a small sunken box, lime with an ink check when on.
+    /// The whole label toggles it; assistive technologies see a native toggle.
+    struct GoalongCheckboxStyle: ToggleStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            Button { configuration.isOn.toggle() } label: { configuration.label }
+                .buttonStyle(GoalongCheckboxButtonStyle(isOn: configuration.isOn))
+                .accessibilityRepresentation {
+                    Toggle(isOn: configuration.$isOn) { configuration.label }
+                }
+        }
+    }
+
+    private struct GoalongCheckboxButtonStyle: ButtonStyle {
+        let isOn: Bool
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.isFocused) private var isFocused
+        @Environment(\.colorSchemeContrast) private var contrast
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var hovered = false
+
+        func makeBody(configuration: Configuration) -> some View {
+            let box = RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                ZStack {
+                    box.fill(isOn ? (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground) : LHTheme.fieldBackground)
+                    if !isOn {
+                        box.strokeBorder(contrast == .increased || hovered ? LHTheme.strongSeparator : LHTheme.controlBorder)
+                    } else {
+                        GoalongCheckShape()
+                            .stroke(LHTheme.onAccent, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                            .padding(4)
+                    }
+                }
+                .frame(width: 16, height: 16)
+                .overlay { RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2).padding(-3) }
+                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.9 : 1)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
+                configuration.label.fixedSize(horizontal: false, vertical: true)
+            }
+            .opacity(isEnabled ? 1 : 0.5)
+            .contentShape(Rectangle())
+            .onHover { hovered = $0 }
+            .animation(reduceMotion ? nil : LHTheme.press, value: configuration.isPressed)
+            .animation(reduceMotion ? nil : LHTheme.hover, value: isOn)
+        }
+    }
+
+    extension ToggleStyle where Self == GoalongCheckboxStyle {
+        static var goalongCheckbox: GoalongCheckboxStyle { GoalongCheckboxStyle() }
     }
 
     /// Segmented choice drawn in Goalong's surfaces; the selected segment is raised.
@@ -372,16 +467,21 @@
         }
     }
 
-    /// A field with its own label and an optional one-line help, laid out consistently.
+    /// A field with its own label, an optional one-line help, and a longer explanation
+    /// kept behind an info button rather than printed under the label.
     struct GoalongFormField<Field: View>: View {
         let title: String
         var detail: String?
+        var help: String?
         @ViewBuilder var field: () -> Field
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 13, weight: .semibold))
+                    HStack(spacing: 4) {
+                        Text(title).font(.system(size: 13, weight: .medium))
+                        if let help { GoalongHelpButton(text: help) }
+                    }
                     if let detail {
                         Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -426,6 +526,37 @@
             .padding(.horizontal, 12).padding(.vertical, 10)
             .background(tone == .warning ? LHTheme.warning.opacity(0.08) : LHTheme.insetBackground,
                         in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+        }
+    }
+
+    /// A standing explanation at the top of a tool page: neutral glyph, a title, one or two
+    /// sentences and an optional trailing control. Same quiet block as `GoalongNote`.
+    struct GoalongBanner<Trailing: View>: View {
+        let symbol: String
+        let title: String
+        let detail: String
+        @ViewBuilder var trailing: () -> Trailing
+
+        var body: some View {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                    .frame(width: 22, height: 18).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.system(size: 13, weight: .semibold))
+                    Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                trailing()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+        }
+    }
+
+    extension GoalongBanner where Trailing == EmptyView {
+        init(symbol: String, title: String, detail: String) {
+            self.init(symbol: symbol, title: title, detail: detail) { EmptyView() }
         }
     }
 

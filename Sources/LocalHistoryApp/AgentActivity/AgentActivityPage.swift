@@ -140,7 +140,6 @@
 
         private var managementHeader: some View {
             PageHeader(
-                eyebrow: "Sources",
                 title: "Sources des conversations IA",
                 subtitle:
                     "Choisissez les sources locales que Goalong peut lire. Le contenu des conversations n’est jamais copié dans Goalong."
@@ -174,13 +173,9 @@
             LHCard {
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "cpu")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(LHTheme.accent)
-                        .frame(width: 42, height: 42)
-                        .background(
-                            LHTheme.accent.opacity(0.1),
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        )
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(LHTheme.secondaryText)
+                        .frame(width: 22).accessibilityHidden(true)
                     SourceActivationToggle(capability: .aiConversations) {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(consents.isEnabled(.aiConversations) ? "Lecture des conversations locales activée" : "Lecture des conversations locales désactivée")
@@ -569,7 +564,7 @@
                     Text(kind.frenchName)
                         .font(.system(size: 11, weight: .semibold))
                     Text(status.configurationPath)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -648,14 +643,14 @@
                             .font(.system(size: 11, weight: .semibold))
                             .lineLimit(1)
                         Text(folder.captureMode.frenchName)
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(providerTint(folder.provider))
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
                             .background(providerTint(folder.provider).opacity(0.10), in: Capsule())
                     }
                     Text(folder.path)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -753,7 +748,7 @@
                         .font(.system(size: 11, weight: .semibold))
                         .lineLimit(1)
                     Text("\(record.provider.frenchName) · \(record.watchedFolderName) · \(record.relativePath)")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -767,7 +762,7 @@
                 Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(DashboardFormatters.fullTimestamp.string(from: record.sourceModifiedAt ?? record.capturedAt))
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                     HStack(spacing: 5) {
                         compactPill("\(record.summary.messageCount) msg", symbol: "bubble.left")
@@ -864,7 +859,7 @@
 
         private func compactPill(_ title: String, symbol: String) -> some View {
             Label(title, systemImage: symbol)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)

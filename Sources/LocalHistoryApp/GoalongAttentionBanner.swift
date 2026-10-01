@@ -101,7 +101,7 @@ struct GoalongAttentionBanner: View {
                 Button { updates.acknowledgeUpdateConfirmation() } label: {
                     Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(LHQuietButtonStyle())
                 .accessibilityLabel("Masquer")
             }
         }

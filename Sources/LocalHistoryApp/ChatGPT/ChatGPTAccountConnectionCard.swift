@@ -7,14 +7,11 @@ struct ChatGPTAccountConnectionCard: View {
         LHCard {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 14) {
-                    Image(systemName: "sparkles").font(.system(size: 21)).foregroundStyle(LHTheme.accent)
-                        .frame(width: 40, height: 40)
-                        .background(LHTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 11))
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("ChatGPT").font(LHTheme.cardTitleFont)
-                        Text(status).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text(status).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         if case .failed(let reason) = runtime.connectionState, !reason.isEmpty {
-                            Text(reason).font(.system(size: 11)).foregroundStyle(LHTheme.warning)
+                            Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                                 .lineLimit(3).fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
                         }

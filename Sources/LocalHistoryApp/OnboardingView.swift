@@ -3,6 +3,7 @@
 
     struct LocalHistoryOnboardingView: View {
         @Environment(\.colorSchemeContrast) var contrast
+        @Environment(\.accessibilityReduceMotion) var reduceMotion
         @ObservedObject var model: DashboardViewModel
         @StateObject var launchAtLogin = LaunchAtLoginManager()
         @ObservedObject var consents = GoalongCapabilityConsentStore.shared
@@ -20,24 +21,16 @@
 
         var body: some View {
             HStack(spacing: 0) {
-                sidebar.frame(width: 218)
-                Divider()
+                sidebar.frame(width: 208)
+                Rectangle().fill(LHTheme.separator).frame(width: 1)
                 VStack(spacing: 0) {
-                    HStack {
-                        Text(step.navigationTitle).font(.system(size: 20, weight: .semibold))
-                        Spacer()
-                        Text("\(step.position) / \(SetupStep.allCases.count)")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 28).frame(height: 72)
-                    Divider()
                     ScrollView {
                         page
-                            .frame(maxWidth: 780, alignment: .leading)
-                            .padding(28)
-                            .frame(maxWidth: .infinity, alignment: .top)
+                            .frame(maxWidth: 680, alignment: .leading)
+                            .padding(.horizontal, LHTheme.pageInset).padding(.top, 40).padding(.bottom, 32)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
-                    Divider()
+                    Rectangle().fill(LHTheme.separator).frame(height: 1)
                     footer
                 }
                 .background(LHTheme.pageBackground)
@@ -67,40 +60,50 @@
         }
 
         var sidebar: some View {
-            VStack(alignment: .leading, spacing: 28) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 32) {
+                HStack(spacing: 11) {
                     GoalongMark()
-                        .stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round))
-                        .frame(width: 29, height: 21)
+                        .stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                        .frame(width: 28, height: 20)
                         .accessibilityHidden(true)
                     Text("Goalong")
-                        .font(.system(size: 20, weight: .semibold))
-                        .tracking(-0.6)
+                        .font(.system(size: 17, weight: .bold))
+                        .tracking(-0.5)
                 }
                 .accessibilityLabel(ProductIdentity.displayName)
-                VStack(alignment: .leading, spacing: 18) {
+                // The steps hang on one thread: walked in lime, still to come as a hairline.
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(SetupStep.allCases) { item in
-                        HStack(spacing: 10) {
-                            Image(systemName: item == step ? "circle.inset.filled" : "circle")
-                                .foregroundStyle(item == step ? LHTheme.accent : .secondary)
+                        let done = item.position < step.position, current = item == step
+                        HStack(spacing: 12) {
+                            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                                .fill(done || current ? LHTheme.accent : LHTheme.sidebarBackground)
+                                .overlay(RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                                    .strokeBorder(done || current ? .clear : LHTheme.tertiaryText, lineWidth: 1.5))
+                                .frame(width: 9, height: 9)
                             Text(item.navigationTitle)
-                                .font(.system(size: 13, weight: item == step ? .semibold : .regular))
+                                .font(.system(size: 13, weight: current ? .semibold : .regular))
+                                .foregroundStyle(current ? LHTheme.text : LHTheme.secondaryText)
                         }
-                        .foregroundStyle(item == step ? .primary : .secondary)
-                        .accessibilityLabel("\(item.navigationTitle)\(item == step ? ", étape en cours" : "")")
+                        .frame(height: 20)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(item.navigationTitle), étape \(item.position) sur \(SetupStep.allCases.count)\(current ? ", en cours" : done ? ", terminée" : "")")
+                        if item != SetupStep.allCases.last {
+                            Rectangle().fill(done ? LHTheme.accent : LHTheme.separator)
+                                .frame(width: done ? 2 : 1, height: 18)
+                                .frame(width: 9)
+                                .accessibilityHidden(true)
+                        }
                     }
                 }
+                .animation(reduceMotion ? nil : LHTheme.settle, value: step)
                 Spacer()
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Sur ce Mac", systemImage: "lock")
-                        .font(.system(size: 12, weight: .medium))
-                    Text("Tous ces choix restent modifiables.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text("Tout reste sur ce Mac. Chaque choix se modifie ensuite dans Réglages.")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(24)
-            .frame(maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 20).padding(.vertical, 24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(LHTheme.sidebarBackground)
         }
 
@@ -145,7 +148,7 @@
                 .disabled(!checkingSources.isEmpty)
             }
             .controlSize(.large)
-            .padding(.horizontal, 28).frame(height: 72)
+            .padding(.horizontal, LHTheme.pageInset).frame(height: 68)
         }
 
         func finishSetup() {

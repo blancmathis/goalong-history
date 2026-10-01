@@ -29,7 +29,6 @@
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     PageHeader(
-                        eyebrow: "Accès pour les agents",
                         title: "Commande goalong",
                         subtitle:
                             "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre. Données et erreurs en JSON ; aide en texte."
@@ -55,47 +54,23 @@
             .safeAreaInset(edge: .top, spacing: 0) {
                 SettingsBackBar(onBack: onBack)
             }
-            .goalongPageBackground()
+            .background(LHTheme.pageBackground)
         }
 
         private var readinessBanner: some View {
-            HStack(alignment: .top, spacing: 13) {
-                Image(systemName: "terminal.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(LHTheme.accent)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        LHTheme.accent.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    )
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(readinessTitle)
-                        .font(.subheadline.weight(.semibold))
-                    Text(
-                        cliIsReady
-                            ? "Le lien pointe vers cette version installée de Goalong. Chaque requête se termine après sa réponse, sans processus supplémentaire."
-                            : installationReport.detail
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
+            GoalongBanner(symbol: "terminal", title: readinessTitle,
+                          detail: cliIsReady
+                              ? "Le lien pointe vers cette version installée de Goalong. Chaque requête se termine après sa réponse, sans processus supplémentaire."
+                              : installationReport.detail) {
                 Button {
                     installationReport = GoalongCLIInstallation.inspect()
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .buttonStyle(.borderless)
+                .controlSize(.small)
                 .help("Vérifier de nouveau le lien de la commande goalong")
                 .accessibilityLabel("Vérifier le lien")
             }
-            .padding(14)
-            .background(LHTheme.accent.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(LHTheme.accent.opacity(0.12), lineWidth: 1)
-            )
         }
 
         private var agentCard: some View {
@@ -182,7 +157,7 @@
                 } label: {
                     Image(systemName: copiedCommandID == item.id ? "checkmark" : "doc.on.doc")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(LHQuietButtonStyle())
                 .help("Copier « \(item.command) »")
                 .accessibilityLabel("Copier la commande : \(Self.frenchTitle(item))")
             }

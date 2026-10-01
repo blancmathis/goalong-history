@@ -51,14 +51,10 @@ import LocalHistoryCore
 
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: "briefcase").font(.system(size: 16, weight: .medium)).foregroundStyle(LHTheme.accent)
-                .frame(width: 36, height: 36)
-                .background(LHTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Ma définition du travail").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
                 Text(store.context.isEmpty || editing
-                     ? "Décrivez votre travail avec vos mots. Chaque rubrique est facultative ; une seule phrase précise suffit pour commencer."
+                     ? "Avec vos mots. Chaque rubrique est facultative : une phrase précise suffit pour commencer."
                      : "Appliquée à Activité et à la surveillance temps réel.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
@@ -77,19 +73,18 @@ import LocalHistoryCore
                 GoalongNote("Pré-rempli avec vos anciens choix Travail / Hors travail par app. Précisez à quoi sert chaque app, puis enregistrez.",
                             symbol: "wand.and.stars", tone: .privacy)
             }
-            sectionLabel("Travail", symbol: "checkmark.circle")
+            sectionLabel("Travail", mark: LHTheme.workData)
             field("Projets et objectifs", hint: "Ex. Goalong : app macOS et site. Atlas : préparer le lancement.",
                   text: $draft, identifier: "monitoring-work-goals")
             field("Applications et sites, et pour quoi faire", hint: "Ex. Xcode et GitHub pour Goalong. YouTube seulement pour le cours Swift choisi.",
                   text: $applications, identifier: "monitoring-work-apps")
             field("Contenus et usages qui comptent comme travail",
-                  detail: "Précisez l’usage plutôt que l’app : une même app peut servir au travail puis à autre chose, et c’est ce que vous y faites qui compte.",
+                  detail: "Précisez l’usage plutôt que l’app : c’est ce que vous y faites qui compte.",
                   hint: "Ex. Documentation Swift, recherches liées à mes projets, e-mails clients, rédaction de posts Goalong.",
                   text: $content, identifier: "monitoring-work-content")
-            Rectangle().fill(LHTheme.separator).frame(height: 1)
-            sectionLabel("Hors travail", symbol: "cup.and.saucer")
+            sectionLabel("Hors travail", mark: LHTheme.otherData).padding(.top, 8)
             field("Ce qui n’est pas du travail (procrastination)",
-                  detail: procrastinationText,
+                  detail: "Des exemples certains, pas une liste exhaustive.", help: procrastinationText,
                   hint: "Ex. Scroller le fil Pour vous de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
                   text: $procrastination, identifier: "monitoring-procrastination")
             GoalongNote("Ces critères restent stockés sur ce Mac. Enregistrer autorise leur envoi à votre compte ChatGPT avec les contextes à classer si le classement est activé, et l’envoi de vos critères de travail et exemples de procrastination à TypeSafe avec les prochaines analyses si la surveillance est activée. N’indiquez ni clé API ni information sensible.",
@@ -124,12 +119,9 @@ import LocalHistoryCore
         let ratio = min(1, Double(draftBytes) / Double(JevWorkContext.maximumBytes))
         let over = draftBytes > JevWorkContext.maximumBytes
         return HStack(spacing: 8) {
-            ZStack(alignment: .leading) {
-                Capsule().fill(LHTheme.separator)
-                Capsule().fill(over ? LHTheme.warning : LHTheme.accent.opacity(0.75)).frame(width: 64 * ratio)
-            }.frame(width: 64, height: 4)
+            GoalongShareBar(share: ratio, color: over ? LHTheme.warning : LHTheme.secondaryText).frame(width: 64)
             Text(over ? "Trop long" : ratio > 0.8 ? "Presque plein" : "Longueur")
-                .font(.system(size: 11)).foregroundStyle(over ? LHTheme.warning : LHTheme.secondaryText)
+                .font(.system(size: 12)).foregroundStyle(over ? LHTheme.warning : LHTheme.secondaryText)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Longueur de la définition : \(Int(ratio * 100)) % du maximum")
@@ -157,34 +149,28 @@ import LocalHistoryCore
                     }
                 }
             }
-            .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            procrastinationExplanation
         }
     }
 
-    /// A rubric heading: a waypoint on the trail (lime for work, hollow for the rest).
-    private func sectionLabel(_ title: String, symbol: String) -> some View {
-        HStack(spacing: 9) {
-            Circle().fill(symbol == "checkmark.circle" ? LHTheme.accent : .clear)
-                .overlay(Circle().strokeBorder(symbol == "checkmark.circle" ? .clear : LHTheme.secondaryText, lineWidth: 1.5))
-                .frame(width: 8, height: 8)
-            Text(title).font(.system(size: 15, weight: .semibold, design: .serif))
+    /// A rubric heading carries the mark its time will wear on the thread.
+    private func sectionLabel(_ title: String, mark: Color) -> some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous).fill(mark).frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
         }
         .accessibilityAddTraits(.isHeader)
     }
     private var procrastinationText: String {
         "Des exemples certains, pas une liste exhaustive. La surveillance continue de repérer les autres distractions. Un usage qui correspond clairement à un exemple prime sur une autorisation générale ; précisez l’usage plutôt que seulement le site."
     }
-    private var procrastinationExplanation: some View {
-        GoalongNote(procrastinationText)
-            .accessibilityIdentifier("monitoring-procrastination-explanation")
-    }
     private func loadDraft() {
         draft = store.context.summary; applications = store.context.applications
         content = store.context.content; procrastination = store.context.procrastination
     }
-    private func field(_ title: String, detail: String? = nil, hint: String, text: Binding<String>, identifier: String) -> some View {
-        GoalongFormField(title: title, detail: detail) {
+    private func field(_ title: String, detail: String? = nil, help: String? = nil, hint: String,
+                       text: Binding<String>, identifier: String) -> some View {
+        GoalongFormField(title: title, detail: detail, help: help) {
             TextField(hint, text: text, axis: .vertical)
                 .lineLimit(2...6)
                 .accessibilityIdentifier(identifier).accessibilityLabel(title)
@@ -200,12 +186,12 @@ import LocalHistoryCore
     private func summaryRow<Value: View>(_ title: String, @ViewBuilder value: () -> Value) -> some View {
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 16) {
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                    .frame(width: 168, alignment: .leading)
+                Text(title).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    .frame(width: 160, alignment: .leading)
                 value().frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            if title != "Hors travail" { Rectangle().fill(LHTheme.separator).frame(height: 1).padding(.leading, 14) }
+            .padding(.vertical, 11)
+            if title != "Hors travail" { Rectangle().fill(LHTheme.separator).frame(height: 1) }
         }
     }
 }

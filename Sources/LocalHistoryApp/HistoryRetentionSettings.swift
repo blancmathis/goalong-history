@@ -99,25 +99,31 @@ extension HistoryRetentionPolicy {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Toggle("Supprimer automatiquement les données expirées", isOn: $model.automaticCleanup)
-                        .toggleStyle(.goalongSwitch).font(.system(size: 14, weight: .semibold))
+                        .toggleStyle(.goalongSwitch).font(.system(size: 13, weight: .semibold))
                         .accessibilityIdentifier("retention-automatic")
                     Text(model.automaticCleanup
                          ? "Après confirmation, les données expirées peuvent être supprimées tout de suite puis lors du nettoyage quotidien. Réduire une durée s’applique aussi aux données existantes."
                          : "Le nettoyage automatique est désactivé : les données restent jusqu’à ce que vous les supprimiez. Choisir une durée ci-dessous n’active pas la suppression.")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
-                    ForEach(HistoryDataClass.allCases, id: \.self) { kind in
-                        HStack(alignment: .center, spacing: 16) {
-                            Text(kind.retentionTitle).font(.system(size: 13, weight: .medium))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Picker(kind.retentionTitle, selection: durationBinding(kind)) {
-                                Text("Jusqu’à ce que je supprime").tag(0)
-                                ForEach(durationOptions(kind), id: \.self) { days in Text(days == 1 ? "1 jour" : "\(days) jours").tag(days) }
-                            }.labelsHidden().frame(width: 170)
-                                .accessibilityIdentifier("retention-\(kind.rawValue)")
-                        }.padding(12).background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 10))
+                    LHCard(padding: 0) {
+                        VStack(spacing: 0) {
+                            ForEach(HistoryDataClass.allCases, id: \.self) { kind in
+                                HStack(alignment: .center, spacing: 16) {
+                                    Text(kind.retentionTitle).font(.system(size: 13, weight: .medium))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Picker(kind.retentionTitle, selection: durationBinding(kind)) {
+                                        Text("Jusqu’à ce que je supprime").tag(0)
+                                        ForEach(durationOptions(kind), id: \.self) { days in Text(days == 1 ? "1 jour" : "\(days) jours").tag(days) }
+                                    }.labelsHidden().frame(width: 230)
+                                        .accessibilityIdentifier("retention-\(kind.rawValue)")
+                                }.padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
+                                if kind != HistoryDataClass.allCases.last { GoalongRowDivider(inset: LHTheme.cardInset) }
+                            }
+                        }
                     }
                     if model.automaticCleanup && model.draft.includesProofExpiry {
                         Toggle("J’autorise aussi la suppression des sceaux et reçus expirés. La vérification de ces périodes peut devenir impossible.", isOn: $proofDeletionConfirmed)
+                            .toggleStyle(.goalongCheckbox)
                             .font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                             .accessibilityIdentifier("retention-confirm-proofs")
                     }

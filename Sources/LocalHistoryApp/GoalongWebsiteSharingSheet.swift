@@ -168,7 +168,7 @@ import LocalHistoryQueryCLI
                     }
                 }
                 GoalongDisclosureGroup("Nom des appareils") {
-                    Toggle("Inclure leurs noms personnels", isOn: $model.draft.includeDeviceNames).toggleStyle(.checkbox).padding(.top, 10)
+                    Toggle("Inclure leurs noms personnels", isOn: $model.draft.includeDeviceNames).toggleStyle(.goalongCheckbox).padding(.top, 10)
                 }.font(.system(size: 13))
                 Text("Les textes ne sont pas inclus. Les adresses locales ou non valides sont ignorées.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -194,7 +194,7 @@ import LocalHistoryQueryCLI
                     model.draft.applicationIDs.formUnion(availableApps.filter { appSearch.isEmpty || $0.name.localizedStandardContains(appSearch) }.map(\.id))
                 }
                 Button("Tout exclure") { model.draft.applicationIDs.removeAll(); model.draft.anonymousApplicationIDs.removeAll() }
-            }.buttonStyle(.borderless).font(.system(size: 12))
+            }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
             ScrollView {
                 LazyVStack(spacing: 12) {
                     ForEach(availableApps.filter { appSearch.isEmpty || $0.name.localizedStandardContains(appSearch) }) { app in
@@ -226,7 +226,7 @@ import LocalHistoryQueryCLI
                     Text("\(absent.count) choix d’autres journées conservés").font(.system(size: 12)).foregroundStyle(.secondary)
                     Spacer()
                     Button("Retirer") { model.draft.applicationIDs.subtract(absent); model.draft.anonymousApplicationIDs.subtract(absent) }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(LHQuietButtonStyle())
                 }
             }
         }
@@ -245,7 +245,7 @@ import LocalHistoryQueryCLI
             }
             if model.draft.delivery == .daily {
                 Toggle("J’autorise ces données chaque jour, sans élargir la sélection.", isOn: $model.reviewed)
-                    .toggleStyle(.checkbox).font(.system(size: 13)).accessibilityIdentifier("sharing-confirm-review")
+                    .toggleStyle(.goalongCheckbox).font(.system(size: 13)).accessibilityIdentifier("sharing-confirm-review")
             }
             GoalongDisclosureGroup("Données techniques", isExpanded: $exactData) {
                 ScrollView([.horizontal, .vertical]) {
@@ -307,7 +307,7 @@ struct GoalongSharingSelector: View {
             HStack(spacing: 12) {
                 Button("Sélectionner les résultats") { selection.formUnion(visible.map(\.id)) }.disabled(visible.isEmpty)
                 Button("Tout décocher") { selection.removeAll() }.disabled(selection.isEmpty)
-            }.buttonStyle(.borderless).font(.caption)
+            }.buttonStyle(LHQuietButtonStyle()).font(.caption)
             if !absent.isEmpty {
                 GoalongDisclosureGroup("\(absent.count) choix enregistrés absents de cette journée") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -317,7 +317,7 @@ struct GoalongSharingSelector: View {
                             HStack {
                                 Text(id).font(.caption).lineLimit(2).textSelection(.enabled)
                                 Spacer()
-                                Button("Retirer") { selection.remove(id) }.buttonStyle(.borderless)
+                                Button("Retirer") { selection.remove(id) }.buttonStyle(LHQuietButtonStyle())
                                     .accessibilityLabel("Retirer l’autorisation de \(id)")
                             }
                         }
@@ -342,7 +342,7 @@ struct GoalongSharingSelector: View {
                                     }
                                     Spacer(minLength: 0)
                                 }
-                            }.toggleStyle(.checkbox).padding(.vertical, 8).padding(.horizontal, 9)
+                            }.toggleStyle(.goalongCheckbox).padding(.vertical, 8).padding(.horizontal, 9)
                                 .background(selection.contains(item.id) ? LHTheme.accent.opacity(0.07) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                                 .accessibilityLabel("\(title) : \(item.title)")
                         }

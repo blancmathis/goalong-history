@@ -50,7 +50,7 @@ import LocalHistoryCore
                         }.padding(.top, 14)
                     }.font(.system(size: 13))
                     if model.automaticCleanup && model.draft.includesProofExpiry {
-                        Toggle("Autoriser aussi la suppression des preuves expirées", isOn: $proofConsent).toggleStyle(.checkbox)
+                        Toggle("Autoriser aussi la suppression des preuves expirées", isOn: $proofConsent).toggleStyle(.goalongCheckbox)
                         Text("La vérification des anciennes périodes pourra être perdue.").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Text("Les originaux Apple, conversations, bilans ChatGPT, exports et copies déjà envoyées ne sont pas concernés.")

@@ -141,17 +141,17 @@ enum GoalongKnownApplications {
         }.sorted()
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 4) {
                 Text("Désactivez une app ou un site pour l’exclure du suivi détaillé et des prochains envois.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 GoalongHelpButton(text: "Le suivi détaillé et les prochains envois respectent ces exclusions. Les historiques locaux d’Apple et des outils IA restent séparés ; ils ne sont pas effacés. Les textes et totaux impossibles à filtrer sont bloqués. Une ancienne exclusion limitée au suivi détaillé est indiquée comme telle.")
             }
             GoalongSegmentedControl("Type", selection: $sites, options: [false, true], fills: true) { $0 ? "Sites web" : "Applications" }
             HStack {
                 GoalongSearchField("Rechercher par nom…", text: $search)
-                Toggle("Exclusions seulement", isOn: $excludedOnly).toggleStyle(.checkbox).fixedSize()
+                Toggle("Exclusions seulement", isOn: $excludedOnly).toggleStyle(.goalongCheckbox).fixedSize()
             }
             if sites {
                 HStack {
@@ -166,23 +166,23 @@ enum GoalongKnownApplications {
                         if domains.isEmpty { empty }
                         ForEach(domains, id: \.self) { domain in
                             HStack(spacing: 12) {
-                                Image(systemName: "globe").frame(width: 30).foregroundStyle(.secondary)
-                                Text(domain).font(.system(size: 14))
+                                Image(systemName: "globe").font(.system(size: 13)).frame(width: 24).foregroundStyle(LHTheme.secondaryText)
+                                Text(domain).font(.system(size: 13, weight: .medium))
                                 Spacer()
-                                Text(domainExcluded(domain) ? "Exclu" : "Autorisé").font(.system(size: 12)).foregroundStyle(.secondary)
+                                Text(domainExcluded(domain) ? "Exclu" : "Autorisé").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 Toggle("Autoriser \(domain)", isOn: Binding(get: { !domainExcluded(domain) }, set: { setDomain(domain, enabled: $0) }))
-                                    .labelsHidden().toggleStyle(.goalongSwitchOnly)
-                            }.padding(14)
-                            Divider().padding(.leading, 55)
+                                    .labelsHidden().toggleStyle(.goalongSwitchOnly).controlSize(.small)
+                            }.padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
+                            if domain != domains.last { GoalongRowDivider(inset: LHTheme.cardInset + 36) }
                         }
                     } else {
                         if catalog.loading { ProgressView("Applications installées…").padding(18) }
                         if apps.isEmpty && !catalog.loading { empty }
                         ForEach(apps) { app in
                             HStack(spacing: 12) {
-                                AppIconView(bundleIdentifier: app.id, appName: app.name, size: 30)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(app.name).font(.system(size: 14, weight: .medium))
+                                AppIconView(bundleIdentifier: app.id, appName: app.name, size: 24)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(app.name).font(.system(size: 13, weight: .medium))
                                     if !app.installed {
                                         Text(GoalongKnownApplications.isDefaultExclusion(app.id)
                                              ? "Non installée · protégée par défaut" : "Non installée sur ce Mac")
@@ -194,9 +194,10 @@ enum GoalongKnownApplications {
                                 Spacer()
                                 if exclusions.policy.excludes(appID: app.id) { Text("Exclue").font(.system(size: 12)).foregroundStyle(.secondary) }
                                 Toggle("Autoriser \(app.name)", isOn: Binding(get: { !isExcluded(app) }, set: { setApp(app, enabled: $0) }))
-                                    .labelsHidden().toggleStyle(.goalongSwitchOnly).disabled(app.id == ProductIdentity.bundleIdentifier)
-                            }.padding(14)
-                            Divider().padding(.leading, 56)
+                                    .labelsHidden().toggleStyle(.goalongSwitchOnly).controlSize(.small)
+                                    .disabled(app.id == ProductIdentity.bundleIdentifier)
+                            }.padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
+                            if app.id != apps.last?.id { GoalongRowDivider(inset: LHTheme.cardInset + 36) }
                         }
                     }
                 }

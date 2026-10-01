@@ -12,8 +12,11 @@ struct GoalongHelpButton: View {
     let text: String
     @State private var presented = false
     var body: some View {
-        Button { presented.toggle() } label: { Image(systemName: "info.circle").frame(width: 28, height: 28) }
-            .buttonStyle(.borderless).accessibilityLabel("En savoir plus")
+        Button { presented.toggle() } label: {
+            Image(systemName: "info.circle").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                .frame(width: 24, height: 24).contentShape(Rectangle())
+        }
+            .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6)).accessibilityLabel("En savoir plus")
             .popover(isPresented: $presented) {
                 Text(text).font(.system(size: 13)).padding(18).frame(width: 320, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
@@ -21,24 +24,38 @@ struct GoalongHelpButton: View {
     }
 }
 
+/// A row that leads somewhere: neutral glyph, name, current value, chevron.
 struct GoalongSettingsLink: View {
     let title: String
     let value: String
     let symbol: String
+    var detail: String?
     var action: () -> Void
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(LHTheme.accent)
-                    .frame(width: 34, height: 34)
-                    .background(LHTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
-                Text(title).font(.system(size: 14, weight: .medium))
+            HStack(spacing: 12) {
+                Image(systemName: symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                    .frame(width: 22).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 13, weight: .medium))
+                    if let detail {
+                        Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+                    }
+                }
                 Spacer(minLength: 12)
-                Text(value).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                Text(value).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                 GoalongRowChevron()
-            }.padding(.horizontal, 16).frame(minHeight: 64).contentShape(Rectangle())
+            }.padding(.horizontal, LHTheme.cardInset).frame(minHeight: detail == nil ? 44 : 56).contentShape(Rectangle())
         }.buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
             .accessibilityElement(children: .combine)
+    }
+}
+
+/// Hairline between two rows of a group, aligned on the text column.
+struct GoalongRowDivider: View {
+    var inset: CGFloat = LHTheme.cardInset + 34
+    var body: some View {
+        Rectangle().fill(LHTheme.separator).frame(height: 1).padding(.leading, inset)
     }
 }
 
@@ -46,9 +63,27 @@ struct GoalongSettingsGroup<Content: View>: View {
     let title: String
     @ViewBuilder var content: () -> Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if !title.isEmpty { Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary) }
-            LHCard { VStack(alignment: .leading, spacing: 16, content: content).frame(maxWidth: .infinity, alignment: .leading) }
+        VStack(alignment: .leading, spacing: 8) {
+            if !title.isEmpty {
+                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            LHCard { VStack(alignment: .leading, spacing: 14, content: content).frame(maxWidth: .infinity, alignment: .leading) }
+        }
+    }
+}
+
+/// A titled list of full-width rows (links, switches) with hairlines between them.
+struct GoalongSettingsList<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !title.isEmpty {
+                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            LHCard(padding: 0) { VStack(spacing: 0, content: content) }
         }
     }
 }
@@ -63,32 +98,25 @@ struct GoalongSettingsGroup<Content: View>: View {
     @ObservedObject private var exclusions = GoalongExclusionStore.shared
     @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey) private var visibleText = false
     var body: some View {
-        VStack(spacing: 12) {
-            card("Enregistrement local", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText),
-                 detail: "Ce que Goalong conserve sur ce Mac", symbol: "internaldrive", pane: .recording)
-            card("Envoi à Goalong", status: sender.enabled ? "Chaque jour" : "À la demande",
-                 detail: "Compte, données et fréquence des envois", symbol: "arrow.up.circle", pane: .website)
-            card("Analyse ChatGPT", status: !consents.isEnabled(.chatGPTAnalysis) || !analysisSelection.isValid(for: exclusions.policy) ? "À configurer" : analysis.automaticRecapsEnabled ? "Automatique" : "À la demande",
-                 detail: "Applications, textes, noms masqués et consignes", symbol: "sparkles", pane: .chatGPT)
+        LHCard(padding: 0) {
+            VStack(spacing: 0) {
+                row("Enregistrement local", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText),
+                    detail: "Ce que Goalong conserve sur ce Mac", symbol: "internaldrive", pane: .recording)
+                GoalongRowDivider()
+                row("Envoi à Goalong", status: sender.enabled ? "Chaque jour" : "À la demande",
+                    detail: "Compte, données et fréquence des envois", symbol: "arrow.up.circle", pane: .website)
+                GoalongRowDivider()
+                row("Analyse ChatGPT", status: !consents.isEnabled(.chatGPTAnalysis) || !analysisSelection.isValid(for: exclusions.policy) ? "À configurer" : analysis.automaticRecapsEnabled ? "Automatique" : "À la demande",
+                    detail: "Applications, textes, noms masqués et consignes", symbol: "sparkles", pane: .chatGPT)
+            }
         }.onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }
             .onReceive(NotificationCenter.default.publisher(for: .goalongAnalysisSelectionDidChange)) { _ in analysisSelection = .load() }
     }
-    private func card(_ title: String, status: String, detail: String, symbol: String, pane: SettingsPane) -> some View {
-        Button { model.selectSection(.settings); model.settingsPane = pane } label: {
-            HStack(spacing: 16) {
-                Image(systemName: symbol).font(.system(size: 23)).foregroundStyle(LHTheme.accent)
-                    .frame(width: 48, height: 48).background(LHTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 13))
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title).font(LHTheme.cardTitleFont)
-                    Text(detail).font(.system(size: 13)).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 12)
-                Text(pause.blocksActivity ? "Suspendu" : status).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                GoalongRowChevron(size: 13)
-            }.padding(20).frame(maxWidth: .infinity, minHeight: 92, alignment: .leading).contentShape(Rectangle())
-        }.buttonStyle(LHNavigationButtonStyle(cornerRadius: LHTheme.cardRadius))
-            .background(GoalongSurface(corner: LHTheme.cardRadius))
-            .accessibilityIdentifier("settings-\(pane)")
+    private func row(_ title: String, status: String, detail: String, symbol: String, pane: SettingsPane) -> some View {
+        GoalongSettingsLink(title: title, value: pause.blocksActivity ? "Suspendu" : status, symbol: symbol, detail: detail) {
+            model.selectSection(.settings); model.settingsPane = pane
+        }
+        .accessibilityIdentifier("settings-\(pane)")
     }
 }
 
@@ -100,15 +128,19 @@ struct GoalongSettingsGroup<Content: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: capability == .appleScreenTime ? "hourglass" : capability == .aiConversations ? "folder" : "accessibility")
-                .frame(width: 24).foregroundStyle(LHTheme.accent)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(capability.title).font(.system(size: 14, weight: .medium))
+                .font(.system(size: 14, weight: .medium)).frame(width: 22).foregroundStyle(LHTheme.secondaryText)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(capability.title).font(.system(size: 13, weight: .medium))
                 Text(status).font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Spacer()
             if consents.isEnabled(capability) {
                 if validation.checking { ProgressView().controlSize(.small) }
-                else if validation.result == .ready { Label("Autorisé", systemImage: "checkmark.circle").font(.system(size: 12)) }
+                else if validation.result == .ready {
+                    Label("Autorisé", systemImage: "checkmark").font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LHTheme.success)
+                }
                 else { Button("Configurer") { showing = true }.buttonStyle(LHSecondaryButtonStyle()) }
             }
         }

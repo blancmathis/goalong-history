@@ -23,7 +23,7 @@ struct GoalongAnalysisAppRow: View {
                 }
                 Spacer()
                 if mode == 2 {
-                    Button(expanded ? "Masquer les options" : "Personnaliser") { expanded.toggle() }.buttonStyle(.borderless).font(.system(size: 12))
+                    Button(expanded ? "Masquer les options" : "Personnaliser") { expanded.toggle() }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
                 }
                 Picker("Données de \(app.name)", selection: Binding(get: { mode }, set: setMode)) {
                     Text(excluded ? "Exclue de Goalong" : "Ne rien envoyer").tag(0)
@@ -38,11 +38,11 @@ struct GoalongAnalysisAppRow: View {
                             var chosen = Set(scope.perApplicationFields[app.id] ?? GoalongAnalysisField.allCases.filter { scope[keyPath: $0.keyPath] }.map(\.rawValue))
                             if enabled { chosen.insert(field.rawValue) } else { chosen.remove(field.rawValue) }
                             scope.perApplicationFields[app.id] = chosen.sorted()
-                        })).toggleStyle(.checkbox).font(.system(size: 12))
+                        })).toggleStyle(.goalongCheckbox).font(.system(size: 12))
                     }
                 }.padding(.leading, 42).padding(.bottom, 10)
                 Button("Utiliser les réglages communs") { scope.perApplicationFields.removeValue(forKey: app.id) }
-                    .buttonStyle(.borderless).font(.system(size: 12)).padding(.leading, 42)
+                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12)).padding(.leading, 42)
             }
         }.padding(.vertical, 6).padding(.horizontal, 8)
     }
@@ -75,14 +75,14 @@ struct GoalongReplacementRow: View {
                         Text("Remplacer par").font(.system(size: 12)).foregroundStyle(.secondary)
                         TextField("Projet A · vide pour supprimer", text: $rule.replacement).textFieldStyle(GoalongFieldStyle())
                     }
-                    Button(action: remove) { Image(systemName: "trash").frame(width: 30, height: 30) }.buttonStyle(.borderless).accessibilityLabel("Supprimer le remplacement")
+                    Button(action: remove) { Image(systemName: "trash").frame(width: 30, height: 30) }.buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Supprimer le remplacement")
                 }
                 if rule.search.isEmpty && !rule.replacement.isEmpty {
                     Text("Indiquez le texte à rechercher.").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                 }
                 HStack(spacing: 24) {
-                    Toggle("Respecter la casse", isOn: $rule.caseSensitive).toggleStyle(.checkbox)
-                    Toggle("Mot entier", isOn: $rule.wholeWord).toggleStyle(.checkbox)
+                    Toggle("Respecter la casse", isOn: $rule.caseSensitive).toggleStyle(.goalongCheckbox)
+                    Toggle("Mot entier", isOn: $rule.wholeWord).toggleStyle(.goalongCheckbox)
                 }.font(.system(size: 12))
             }
         }

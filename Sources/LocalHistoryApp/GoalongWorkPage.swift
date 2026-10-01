@@ -20,12 +20,9 @@ import SwiftUI
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Mon travail").font(LHTheme.pageTitleFont).accessibilityAddTraits(.isHeader)
-                    Text("Vous décidez de ce qui compte comme travail. Goalong ne juge jamais une app ou un site : un agent applique votre définition à ce que vous faisiez vraiment, et vous pouvez corriger chaque verdict.")
-                        .font(.system(size: 14)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
+            VStack(alignment: .leading, spacing: 24) {
+                PageHeader(title: "Mon travail",
+                           subtitle: "Vous décidez de ce qui compte comme travail. Goalong ne juge jamais une app ou un site : un agent applique votre définition, et vous corrigez chaque verdict.")
                 JevWorkContextControls(purpose: .workDefinition)
                 if !work.definition.isEmpty {
                     agentCard
@@ -36,10 +33,10 @@ import SwiftUI
             }
             .font(.system(size: 13))
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-            .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 26)
+            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 40)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .goalongPageBackground()
+        .background(LHTheme.pageBackground)
         .accessibilityIdentifier("work-page")
         .onAppear { runtime.refreshAccount() }
         .onReceive(NotificationCenter.default.publisher(for: .jevWorkContextDidChange)) { _ in
@@ -77,10 +74,10 @@ import SwiftUI
     private var agentCard: some View {
         GoalongSettingsGroup(title: "Classement par l’agent") {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: statusSymbol).font(.system(size: 17)).foregroundStyle(statusTint)
+                Image(systemName: statusSymbol).font(.system(size: 14, weight: .medium)).foregroundStyle(statusTint)
                     .frame(width: 22).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(statusTitle).font(.system(size: 14, weight: .semibold))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(statusTitle).font(.system(size: 13, weight: .semibold))
                     if let detail = statusDetail {
                         Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
@@ -100,7 +97,7 @@ import SwiftUI
                     .font(.system(size: 12)).foregroundStyle(LHTheme.warning).fixedSize(horizontal: false, vertical: true)
             }
             if work.hasAgentVerdicts {
-                Button("Tout reclasser…") { confirmingForget = true }.buttonStyle(.borderless)
+                Button("Tout reclasser…") { confirmingForget = true }.buttonStyle(LHQuietButtonStyle())
                     .font(.system(size: 12)).disabled(agent.isRunning)
             }
         }
@@ -302,14 +299,15 @@ import SwiftUI
         let rows = open ? group.rows : Array(group.rows.prefix(6))
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: group.task != nil ? "briefcase" : group.id == "other" ? "cup.and.saucer" : "questionmark.circle")
-                    .foregroundStyle(group.task != nil ? LHTheme.accent : LHTheme.secondaryText).accessibilityHidden(true)
-                Text(group.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(group.task != nil ? LHTheme.workData : group.id == "other" ? LHTheme.otherData : LHTheme.unclassifiedData)
+                    .frame(width: 8, height: 8).accessibilityHidden(true)
+                Text(group.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                 Text(GoalongAnalyticsFormatting.duration(group.seconds)).font(.system(size: 12)).monospacedDigit()
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 if let task = group.task {
-                    Button("Renommer…") { name = task; renaming = task }.buttonStyle(.borderless).font(.system(size: 12))
+                    Button("Renommer…") { name = task; renaming = task }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
                 }
             }
             VStack(spacing: 0) {
@@ -321,7 +319,7 @@ import SwiftUI
             if group.rows.count > 6 {
                 Button(open ? "Réduire" : "Voir les \(group.rows.count) contextes") {
                     if open { expanded.remove(group.id) } else { expanded.insert(group.id) }
-                }.buttonStyle(.borderless).font(.system(size: 12))
+                }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
             }
         }.padding(.top, 4)
     }

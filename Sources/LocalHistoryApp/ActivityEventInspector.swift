@@ -124,7 +124,7 @@
 
                     Spacer(minLength: 8)
                     Text("\(filteredEvents.count)")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
 
@@ -146,7 +146,7 @@
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(LHTheme.warning)
                         Text("\(inspector.loadIssues.count) local row(s) could not be decoded. These remain explicit load gaps rather than being silently ignored.")
-                            .font(.system(size: 9))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -160,7 +160,7 @@
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .foregroundStyle(.secondary)
                 Text("Aucun événement ne correspond à ce filtre.")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
             }
@@ -183,10 +183,10 @@
                         .foregroundStyle(tint(for: event))
                         .frame(width: 22)
                     Text(DashboardFormatters.shortTime.string(from: event.timestamp))
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.secondary)
                     Text(pretty(event.kind.rawValue))
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                     if let reason = event.suppressionReason {
                         StatusPill(
                             title: reason.rawValue,
@@ -197,7 +197,7 @@
                     Spacer()
                     if let sequence = event.integrity?.sequence {
                         Text("seq \(sequence)")
-                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -210,23 +210,22 @@
                     ].compactMap { $0 }
                     if !context.isEmpty {
                         Text(context.joined(separator: " › "))
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
                     if let detail = eventDetail(event), !detail.isEmpty {
                         Text(detail)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .textSelection(.enabled)
                     }
                     if let semantic {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("ACCESSIBILITY TEXT · UNTRUSTED DATA")
-                                .font(.system(size: 7, weight: .bold))
-                                .tracking(0.45)
+                            Text("Texte d’accessibilité, donnée non fiable")
+                                .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(LHTheme.warning)
                             Text(String(semantic.prefix(1_500)))
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -239,13 +238,13 @@
                     }
                 } else {
                     Text(event.message ?? "Le contexte détaillé n’a volontairement pas été enregistré.")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
 
                 if let hash = event.integrity?.eventHash {
                     Text(hash)
-                        .font(.system(size: 7.5, design: .monospaced))
+                        .font(.system(size: 11.5, design: .monospaced))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .textSelection(.enabled)

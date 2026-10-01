@@ -1047,9 +1047,8 @@
                         Label("Interroger votre historique", systemImage: "text.magnifyingglass")
                             .font(.system(size: 13, weight: .semibold))
                         Spacer()
-                        Text("30 DERNIERS JOURS · RECHERCHE LOCALE")
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(0.4)
+                        Text("Recherche locale sur les 30 derniers jours")
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
                     HStack(spacing: 10) {
@@ -1120,9 +1119,8 @@
                         }
                         if !answer.hits.isEmpty {
                             Divider()
-                            Text("SOURCES")
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(0.45)
+                            Text("Sources")
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.secondary)
                             ForEach(answer.hits.prefix(8)) { hit in
                                 HStack(alignment: .top, spacing: 9) {
@@ -1157,7 +1155,7 @@
             LHCard(padding: 20) {
                 HStack(alignment: .top, spacing: 16) {
                     Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(LHTheme.pageTitleFont)
+                        .font(.system(size: 24))
                         .foregroundStyle(LHTheme.privateTint)
                         .frame(width: 56, height: 56)
                         .background(
@@ -1280,12 +1278,9 @@
                                 } label: {
                                     HStack(alignment: .top, spacing: 10) {
                                         Image(systemName: resourceIcon(resource.kind))
-                                            .foregroundStyle(LHTheme.accent)
-                                            .frame(width: 28, height: 28)
-                                            .background(
-                                                LHTheme.accent.opacity(0.09),
-                                                in: RoundedRectangle(cornerRadius: 8)
-                                            )
+                                            .font(.system(size: 13, weight: .medium))
+                                            .foregroundStyle(LHTheme.secondaryText)
+                                            .frame(width: 22, height: 18)
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(resource.title)
                                                 .font(.system(size: 12, weight: .semibold))
@@ -1295,11 +1290,11 @@
                                                     ?? resource.canonicalURI
                                                     ?? "Emplacement indisponible"
                                             )
-                                            .font(.system(size: 10, design: .monospaced))
+                                            .font(.system(size: 11, design: .monospaced))
                                             .foregroundStyle(.secondary)
                                             .lineLimit(2)
                                             Text(resourceConfidenceLabel(resource))
-                                                .font(.system(size: 10, weight: .medium))
+                                                .font(.system(size: 11, weight: .medium))
                                                 .foregroundStyle(.tertiary)
                                         }
                                         Spacer(minLength: 0)
@@ -1740,14 +1735,13 @@
                             )
                         }
                         VStack(alignment: .leading, spacing: 7) {
-                            Text("SÉQUENCE D’ACTIONS")
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(0.45)
+                            Text("Séquence d’actions")
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.secondary)
                             ForEach(episode.interactions) { interaction in
                                 HStack(alignment: .top, spacing: 9) {
                                     Text(timeFormatter.string(from: interaction.start))
-                                        .font(.system(size: 10, design: .monospaced))
+                                        .font(.system(size: 11, design: .monospaced))
                                         .foregroundStyle(.tertiary)
                                         .frame(width: 56, alignment: .leading)
                                     VStack(alignment: .leading, spacing: 2) {
@@ -1759,7 +1753,7 @@
                                                     + interaction.semanticDelta.prefix(3)
                                                     .joined(separator: " · ")
                                             )
-                                            .font(.system(size: 10))
+                                            .font(.system(size: 11))
                                             .foregroundStyle(.secondary)
                                             .fixedSize(horizontal: false, vertical: true)
                                         }
@@ -1770,7 +1764,7 @@
                         Text(
                             "Preuves : \(episode.provenance.sourceEventIDs.count) identifiants d’événements · \(episode.provenance.sourceSequences.count) séquences d’intégrité · confiance \(Int((episode.statusConfidence * 100).rounded()))\u{00A0}%"
                         )
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                         HStack {
                             Spacer()
@@ -1802,8 +1796,7 @@
         private func detailSection(title: String, values: [String]) -> some View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(0.45)
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                 ForEach(values, id: \.self) { value in
                     Text("• \(value)")
