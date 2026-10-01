@@ -4,6 +4,7 @@
 
     enum DashboardSection: String, CaseIterable, Identifiable, Hashable {
         case overview
+        case work
         case history
         case monitoring
         case analytics
@@ -22,6 +23,7 @@
             switch self {
             case .overview: return "Activité"
             case .analytics: return "Activité"
+            case .work: return "Mon travail"
             case .history: return "Historique"
             case .monitoring: return "Surveillance temps réel"
             case .activity: return "Historique de ce Mac"
@@ -39,6 +41,7 @@
             switch self {
             case .overview: return "sun.max"
             case .analytics: return "chart.xyaxis.line"
+            case .work: return "briefcase"
             case .history: return "clock.arrow.circlepath"
             case .monitoring: return "eye.circle"
             case .activity: return "clock.arrow.circlepath"
@@ -63,7 +66,7 @@
         var isSecondary: Bool {
             switch self {
             case .screenTime, .agentActivity, .chatGPTRecap, .share, .privacy, .cli: return true
-            case .overview, .history, .monitoring, .analytics, .activity, .settings: return false
+            case .overview, .work, .history, .monitoring, .analytics, .activity, .settings: return false
             }
         }
 

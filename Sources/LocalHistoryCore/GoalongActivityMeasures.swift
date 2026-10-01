@@ -1,12 +1,13 @@
 import Foundation
 
-/// Continuous work that tolerates brief detours (a message, a lookup, a short pause)
-/// instead of breaking at every application switch. Only intervals classified as work
-/// count towards `workSeconds`; the detours are part of the span, not of the work time.
+/// Continuous work on one task that tolerates brief detours (a message, a lookup, a
+/// short pause) and application switches. Only intervals classified as work count
+/// towards `workSeconds`; the detours are part of the span, not of the work time.
 public struct GoalongWorkBlock: Identifiable, Equatable, Sendable {
     public let start: Date
     public var end: Date
     public var workSeconds: TimeInterval
+    public var task: String? = nil
     public var id: Date { start }
     public var spanSeconds: TimeInterval { max(0, end.timeIntervalSince(start)) }
 }
@@ -15,15 +16,19 @@ extension GoalongLocalAnalytics.Day {
     public var firstActiveStart: Date? { segments.first { $0.kind.isActive && $0.seconds > 0 }?.start }
     public var lastActiveEnd: Date? { segments.last { $0.kind.isActive && $0.seconds > 0 }?.end }
 
-    /// Work separated by at most `toleranceSeconds` of anything else stays in one block.
+    /// Work on one task separated by at most `toleranceSeconds` of anything else stays in
+    /// one block, whichever applications it used. Changing task starts a new block.
     public func workBlocks(minimumMinutes: Int, toleranceSeconds: TimeInterval = 120) -> [GoalongWorkBlock] {
         var blocks: [GoalongWorkBlock] = []
         for segment in segments where segment.kind == .work && segment.seconds > 0 {
-            if let last = blocks.last, segment.start.timeIntervalSince(last.end) <= toleranceSeconds {
+            if let last = blocks.last, segment.start.timeIntervalSince(last.end) <= toleranceSeconds,
+               last.task == nil || segment.task == nil || last.task == segment.task {
                 blocks[blocks.count - 1].end = segment.end
                 blocks[blocks.count - 1].workSeconds += segment.seconds
+                if blocks[blocks.count - 1].task == nil { blocks[blocks.count - 1].task = segment.task }
             } else {
-                blocks.append(GoalongWorkBlock(start: segment.start, end: segment.end, workSeconds: segment.seconds))
+                blocks.append(GoalongWorkBlock(start: segment.start, end: segment.end, workSeconds: segment.seconds,
+                                               task: segment.task))
             }
         }
         let minimum = Double(max(1, minimumMinutes)) * 60

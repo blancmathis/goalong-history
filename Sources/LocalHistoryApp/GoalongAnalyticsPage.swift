@@ -10,7 +10,8 @@ struct GoalongAnalyticsPage: View {
     @Binding var navigation: GoalongActivityNavigation
     @StateObject private var analytics = GoalongAnalyticsModel()
     @StateObject private var studio = GoalongProfileWindow()
-    @ObservedObject private var classification = GoalongUsageClassificationStore.shared
+    @ObservedObject private var work = GoalongWorkStore.shared
+    @ObservedObject private var agent = GoalongWorkAgent.shared
     @State private var focusMinutes = 25
     @State private var revision = 0
     @State private var manualRefreshRevision = 0
@@ -69,7 +70,10 @@ struct GoalongAnalyticsPage: View {
                     }
                     if let payload = analytics.payload, selection.matches(payload, preview: previewActive) {
                         GoalongAnalyticsContent(payload: payload, focusMinutes: $focusMinutes,
+                            workStatus: previewActive ? .preview : workStatus,
                             onDay: { day in updateSelection { $0.openDay(day) } },
+                            onWork: { model.selectSection(.work) },
+                            onClassify: { agent.classify(day: selection.day) },
                             onHistory: { openHistory(selection.day) },
                             onProjects: { if !previewActive { showingAnalysisChoice = true } },
                             onHistoryDay: openHistory,
@@ -135,8 +139,13 @@ struct GoalongAnalyticsPage: View {
             let force = forceNextRead
             forceNextRead = false
             let started = ProcessInfo.processInfo.systemUptime
-            await analytics.load(request, force: force, rules: classification.rules)
+            await analytics.load(request, force: force, verdicts: work.verdicts)
             lastReadSeconds = ProcessInfo.processInfo.systemUptime - started
+            // Contexts seen for the first time are classified in the background, at most
+            // once per day shown (today: every 15 minutes), only with the user's consent.
+            if !request.isPreview, let payload = analytics.payload, !Task.isCancelled {
+                agent.classifyIfNeeded(payload.current.days)
+            }
         }
         .onChange(of: developerMode) { enabled in
             if !enabled { showingPreview = false; previewNavigation = GoalongActivityNavigation() }
@@ -146,8 +155,8 @@ struct GoalongAnalyticsPage: View {
             showingAnalysisChoice = false
             previewNavigation = GoalongActivityNavigation()
         }
-        .onChange(of: classification.rules) { _ in
-            // Re-applies the choice to cached days; no journal is read again.
+        .onChange(of: work.verdicts) { _ in
+            // Re-applies the verdicts to cached days; no journal is read again.
             if !previewActive { revision += 1 }
         }
         .onReceive(NotificationCenter.default.publisher(for: .goalongProfileAnalysisDidSave)) { _ in
@@ -164,6 +173,11 @@ struct GoalongAnalyticsPage: View {
             lastAutomaticRefresh = Date()
             revision += 1
         }
+    }
+
+    private var workStatus: GoalongWorkStatus {
+        GoalongWorkStatus(hasDefinition: !work.definition.isEmpty, isClassifying: agent.isRunning,
+            progress: agent.progress, problem: agent.isRunning ? nil : (agent.lastError ?? (agent.readiness == .ready ? nil : agent.readiness.message)))
     }
 
     private var previewControl: some View {

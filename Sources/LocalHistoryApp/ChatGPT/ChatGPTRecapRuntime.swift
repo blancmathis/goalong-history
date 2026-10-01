@@ -933,6 +933,7 @@
             let runID = UUID()
             let includeScreenTime = GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)
             let includeAgentActivity = GoalongCapabilityConsentStore.shared.isEnabled(.aiConversations)
+            let workDefinition = JevWorkContextStore.savedContext().map(GoalongWorkDefinition.init)
             activateRun(runID)
             isGenerating = true
             streamedMarkdown = ""
@@ -982,10 +983,13 @@
                         throw CodexAppServerError.accountNotChatGPT(account.type)
                     }
 
+                    let masking = try GoalongTextTransformer(selection.replacements ?? [])
                     let prompt = try ChatGPTRecapContextBuilder.prompt(
                         for: context,
                         outputLanguage: Self.outputLanguage,
-                        outputGuidance: try GoalongTextTransformer(selection.replacements ?? []).apply(selection.outputGuidance ?? "", maximumCharacters: 4000)
+                        outputGuidance: try masking.apply(selection.outputGuidance ?? "", maximumCharacters: 4000),
+                        workDefinition: try masking.apply(ChatGPTRecapContextBuilder.workDefinitionText(workDefinition),
+                                                          maximumCharacters: 4000)
                     )
                     guard self.analysisConsentProvider(), self.isRunActive(runID),
                           self.analysisSelectionProvider() == selection,

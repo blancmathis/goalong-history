@@ -1,8 +1,8 @@
 import Foundation
 
-/// The user's own verdict for an application or a website, applied when Activité
-/// reads the journal. Source events are never rewritten: removing a rule restores the
-/// automatic classification for every past and future day.
+/// Former per-application / per-website verdicts. Work is now decided from the user's
+/// definition (`GoalongWorkDefinition`), because one application can serve work or not.
+/// Existing choices are read once to pre-fill that definition; they are no longer applied.
 public enum GoalongUsageClass: String, Codable, CaseIterable, Sendable {
     case work, other
 }
@@ -44,38 +44,5 @@ public struct GoalongUsageClassificationRules: Codable, Equatable, Sendable {
         if let bundleIdentifier, let verdict = applications[bundleIdentifier] { return verdict }
         if let application, let verdict = applications[application] { return verdict }
         return nil
-    }
-}
-
-extension GoalongLocalAnalytics.Day {
-    /// Re-labels active intervals that match a user rule and merges the neighbours that
-    /// become identical. Totals, gaps, idle, private and unobserved time are unchanged.
-    public func applying(_ rules: GoalongUsageClassificationRules) -> GoalongLocalAnalytics.Day {
-        guard !rules.isEmpty else { return self }
-        var result: [GoalongLocalAnalytics.Segment] = []
-        result.reserveCapacity(segments.count)
-        for segment in segments {
-            var kind = segment.kind
-            if kind.isActive, let verdict = rules.verdict(application: segment.application,
-                bundleIdentifier: segment.bundleIdentifier, host: segment.host) {
-                kind = verdict == .work ? .work : .other
-            }
-            if let last = result.last, last.end == segment.start, last.kind == kind,
-               last.application == segment.application, last.bundleIdentifier == segment.bundleIdentifier,
-               last.host == segment.host {
-                result[result.count - 1].end = segment.end
-            } else {
-                result.append(GoalongLocalAnalytics.Segment(start: segment.start, end: segment.end, kind: kind,
-                    application: segment.application, bundleIdentifier: segment.bundleIdentifier, host: segment.host))
-            }
-        }
-        return GoalongLocalAnalytics.Day(date: date, end: end, state: state, segments: result,
-            eventCount: eventCount, classifierVersions: classifierVersions)
-    }
-}
-
-extension GoalongLocalAnalytics.Period {
-    public func applying(_ rules: GoalongUsageClassificationRules) -> GoalongLocalAnalytics.Period {
-        rules.isEmpty ? self : GoalongLocalAnalytics.Period(days: days.map { $0.applying(rules) })
     }
 }

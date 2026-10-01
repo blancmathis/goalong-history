@@ -25,6 +25,7 @@ The macOS app runs throughout the day, records foreground activity, imports Scre
 ## Capabilities and Constraints
 
 - Computer History is factual and grouped into ten-minute windows.
+- Goalong never rates an application or a website as productive. Work is defined by the user in their own words (Mon travail) and applied by an optional agent to each context (application + site + window title); one task stays one focus across applications, and every verdict can be corrected.
 - AI-conversation transcripts are read on demand from their original source and are never copied into Goalong History storage.
 - A daily Activity report may combine Computer History, Screen Time, and AI-conversation evidence.
 - AI analysis is optional and currently uses the user's connected ChatGPT/Codex account. OpenRouter remains a future provider.

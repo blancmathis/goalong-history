@@ -1,9 +1,12 @@
 import Foundation
 
-/// Conservative, versioned, deterministic local classifier.
-/// Important: ambiguous apps (especially browsers) are intentionally NOT automatically counted as work.
+/// Versioned, deterministic description of what kind of tool is in the foreground.
+/// It never says whether something is work: the same application can serve work or not,
+/// so `isWork` is always nil and work is decided from the user's own definition
+/// (see `GoalongWorkDefinition`). Older journal rows may still carry a legacy `isWork`;
+/// readers ignore it.
 public enum LocalClassifier {
-    public static let version = "rules-2026.08-v1"
+    public static let version = "categories-2026.10-v2"
 
     public static func classify(
         app: AppSnapshot?,
@@ -36,20 +39,20 @@ public enum LocalClassifier {
             "com.jetbrains", "jetbrains", "cursor", "zed", "sublime", "nova",
             "terminal", "iterm", "warp", "ghostty",
         ]) {
-            return LocalClassification(category: "software_development", isWork: true, confidence: 0.96, classifierVersion: version)
+            return LocalClassification(category: "software_development", isWork: nil, confidence: 0.96, classifierVersion: version)
         }
 
         if matches(bundle, name, any: [
             "figma", "sketch", "adobe illustrator", "adobe photoshop", "affinity designer",
         ]) {
-            return LocalClassification(category: "design", isWork: true, confidence: 0.88, classifierVersion: version)
+            return LocalClassification(category: "design", isWork: nil, confidence: 0.88, classifierVersion: version)
         }
 
         if matches(bundle, name, any: [
             "microsoft word", "microsoft excel", "microsoft powerpoint", "pages", "numbers", "keynote",
             "notion", "obsidian", "craft",
         ]) {
-            return LocalClassification(category: "document_productivity", isWork: true, confidence: 0.84, classifierVersion: version)
+            return LocalClassification(category: "document_productivity", isWork: nil, confidence: 0.84, classifierVersion: version)
         }
 
         if matches(bundle, name, any: [
@@ -61,7 +64,7 @@ public enum LocalClassifier {
         if bundle.contains("safari") || bundle.contains("chrome") || bundle.contains("firefox") || bundle.contains("browser") || bundle.contains("edge") || bundle.contains("brave") || bundle.contains("opera") || bundle.contains("vivaldi") || bundle.contains("arc") {
             // A few domains are strongly work/tool-oriented, but most web activity is deliberately ambiguous.
             if host == "github.com" || host.hasSuffix(".github.com") || host == "gitlab.com" || host.hasSuffix(".gitlab.com") {
-                return LocalClassification(category: "software_development", isWork: true, confidence: 0.82, classifierVersion: version)
+                return LocalClassification(category: "software_development", isWork: nil, confidence: 0.82, classifierVersion: version)
             }
             if host.contains("docs.") || host == "developer.apple.com" || host == "stackoverflow.com" || host == "learn.microsoft.com" {
                 return LocalClassification(category: "research", isWork: nil, confidence: 0.72, classifierVersion: version)

@@ -66,7 +66,7 @@ private actor GoalongAnalyticsReader {
     init(root: URL) { self.root = root }
 
     func read(ending day: Date, count: Int, force: Bool, preview: Bool,
-              rules: GoalongUsageClassificationRules = GoalongUsageClassificationRules()) throws -> GoalongAnalyticsPayload {
+              verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) throws -> GoalongAnalyticsPayload {
         try Task.checkCancellation()
         // Preview exits before looking at caches, journals, daily reports or project archives.
         if preview { return GoalongAnalyticsPreview.make(ending: day, count: count) }
@@ -96,10 +96,10 @@ private actor GoalongAnalyticsReader {
         let recaps = try readDailyRecaps(days: current, calendar: calendar)
         let cards = (saved.0 + recaps.0).sorted { a, b in a.day == b.day ? a.id < b.id : a.day > b.day }
         let notices = [saved.1, recaps.1].compactMap { $0 }
-        // The cache keeps raw days; the user's classification is applied on every read,
-        // so changing a rule never requires reading the journals again.
-        return GoalongAnalyticsPayload(current: GoalongLocalAnalytics.Period(days: current).applying(rules),
-            previous: GoalongLocalAnalytics.Period(days: previous).applying(rules),
+        // The cache keeps raw days; the verdicts of the user's work definition are applied on
+        // every read, so a new verdict or correction never requires reading the journals again.
+        return GoalongAnalyticsPayload(current: GoalongLocalAnalytics.Period(days: current).applying(verdicts),
+            previous: GoalongLocalAnalytics.Period(days: previous).applying(verdicts),
             cards: cards, archiveNotice: notices.isEmpty ? nil : notices.joined(separator: " "), updatedAt: now)
     }
 
@@ -196,13 +196,13 @@ private actor GoalongAnalyticsReader {
     private var operation = UUID()
     init(root: URL = AppPaths.applicationSupportDirectory) { reader = GoalongAnalyticsReader(root: root) }
     func load(_ request: GoalongAnalyticsLoadRequest, force: Bool = false,
-              rules: GoalongUsageClassificationRules = GoalongUsageClassificationRules()) async {
+              verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) async {
         guard request.permitsLoading, !Task.isCancelled else { return }
-        await load(day: request.day, count: request.count, force: force, preview: request.isPreview, rules: rules)
+        await load(day: request.day, count: request.count, force: force, preview: request.isPreview, verdicts: verdicts)
     }
 
     func load(day: Date, count: Int, force: Bool = false, preview: Bool = false,
-              rules: GoalongUsageClassificationRules = GoalongUsageClassificationRules()) async {
+              verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) async {
         let id = UUID(); operation = id; busy = true; error = nil
         let sameSelection = payload.map {
             $0.isPreview == preview && $0.current.days.count == count
@@ -211,7 +211,7 @@ private actor GoalongAnalyticsReader {
         // Keep a valid same-period snapshot during refresh, never across dates or preview boundaries.
         if !sameSelection { payload = nil }
         do {
-            let value = try await reader.read(ending: day, count: count, force: force, preview: preview, rules: rules)
+            let value = try await reader.read(ending: day, count: count, force: force, preview: preview, verdicts: verdicts)
             try Task.checkCancellation()
             guard operation == id else { return }
             payload = value; busy = false

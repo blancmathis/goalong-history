@@ -91,7 +91,8 @@ final class ForegroundUsageObservationTests: XCTestCase {
     }
     func testProcessOnlyAssertionStopsWebsiteAtExactReadingDeadline() {
         let rows = [row(0, idle: 290, evidence: .displayAssertion), row(30, idle: 320, evidence: .displayAssertion)]
-        let result = analytics(rows)
+        // Work verdict for the site's context: only the proven reading time can carry it.
+        let result = analytics(rows).applying(agentVerdicts(rows))
         XCTAssertEqual(result.activeSeconds, 30)
         XCTAssertEqual(result.seconds(.work), 10)
         XCTAssertEqual(result.seconds(.unclassified), 20)

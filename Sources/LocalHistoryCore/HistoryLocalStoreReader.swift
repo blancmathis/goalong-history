@@ -1461,6 +1461,17 @@ public struct HistoryLocalStoreReader {
     }
 
     /// Analytics retains no window titles, rich text, conversation or input payloads.
+    /// Activité's projection plus bounded window titles, read on demand to classify or
+    /// review one day's contexts. Titles stay in memory.
+    package func loadWorkContextEvidence(
+        start: Date, endExclusive: Date,
+        limits: ComputerHistoryEvidenceLoadLimits = .localAnalytics,
+        shouldContinue: () -> Bool = { true }
+    ) -> ComputerHistoryEvidenceLoad {
+        loadBoundedDerivedEvidence(start: start, endExclusive: endExclusive,
+            projection: .workContext, limits: limits, shouldContinue: shouldContinue)
+    }
+
     package func loadLocalAnalyticsEvidence(
         start: Date, endExclusive: Date,
         limits: ComputerHistoryEvidenceLoadLimits = .localAnalytics,
@@ -1639,6 +1650,7 @@ public struct HistoryLocalStoreReader {
         case computerHistory
         case rhythmWithoutRich
         case localAnalytics
+        case workContext
         case activityMemory
 
         func project(_ event: HistoryEvent) -> HistoryEvent? {
@@ -1652,15 +1664,23 @@ public struct HistoryLocalStoreReader {
                     timestamp: event.timestamp, kind: event.kind, app: event.app, window: event.window,
                     element: event.element, url: event.url, suppressionReason: event.suppressionReason,
                     metadata: event.metadata?["observation_gap"].map { ["observation_gap": $0] }, integrity: event.integrity)
-            case .localAnalytics:
+            case .localAnalytics, .workContext:
                 guard event.isDerivedAnalysisEvidence else { return nil }
                 let keys: Set<String> = Set(["idle_seconds", "observation_gap", "accessibility", "input_monitoring", ForegroundActivityEvidence.metadataKey]).union(ForegroundUsageObservation.metadataKeys)
                 let host = event.url?.host
+                // Activité keeps only a hash of the window's context; the bounded title is
+                // read only when classifying or reviewing a day.
+                var metadata = event.metadata?.filter { keys.contains($0.key) }
+                if self == .localAnalytics, let label = GoalongWorkContext.ownLabel(of: event) {
+                    metadata = (metadata ?? [:]).merging([GoalongWorkContext.metadataKey: label.key]) { $1 }
+                }
                 return HistoryEvent(schemaVersion: event.schemaVersion, id: event.id, sessionID: "",
                     timestamp: event.timestamp, kind: event.kind, app: event.app,
+                    window: self == .workContext
+                        ? event.window.map { WindowSnapshot(title: GoalongWorkContext.displayTitle($0.title), role: nil, subrole: nil) } : nil,
                     url: host.map { URLSnapshot(value: "https://" + $0, host: $0, redactionApplied: true) },
                     classification: event.classification, suppressionReason: event.suppressionReason,
-                    metadata: event.metadata?.filter { keys.contains($0.key) })
+                    metadata: metadata)
             case .activityMemory:
                 guard event.isDerivedAnalysisEvidence else { return nil }
                 return event.compactedForDerivedAnalysis
@@ -1737,7 +1757,7 @@ public struct HistoryLocalStoreReader {
         var evidenceBudgetExceeded = false
         var retainedEvidenceRowCount = 0
         var retainedEvidenceBytes: Int64 = 0
-        let limits = rawLimits.validated(ceiling: projection == .localAnalytics ? .localAnalytics : .production)
+        let limits = rawLimits.validated(ceiling: projection == .localAnalytics || projection == .workContext ? .localAnalytics : .production)
         let rowDecoder = decoder(compactEventIntegrity: true)
         let evidenceEncoder = JSONEncoder()
         evidenceEncoder.dateEncodingStrategy = .iso8601

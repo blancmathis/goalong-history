@@ -53,7 +53,8 @@ extension ActivityAnalysisEngine {
                 URL: value.representative.url?.value,
                 observedContexts: value.observedContexts,
                 category: value.representative.classification?.category,
-                isWork: value.representative.classification?.isWork,
+                // Work is decided from the user's definition, never from the application.
+                isWork: nil,
                 eventCount: value.eventCount,
                 inputEventCount: value.inputEventCount,
                 semanticText: cleanedSemantic,

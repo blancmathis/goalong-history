@@ -35,9 +35,26 @@ enum GoalongAnalyticsPreview {
                 module: example.0, title: example.1, summary: example.2, status: example.3,
                 caveat: "Donnée fictive de démonstration, sans lien avec votre activité réelle.")
         }
-        return GoalongAnalyticsPayload(current: .init(days: Array(days.suffix(count))),
-            previous: .init(days: Array(days.prefix(count))), cards: cards, archiveNotice: nil,
+        return GoalongAnalyticsPayload(current: GoalongLocalAnalytics.Period(days: Array(days.suffix(count))).applying(verdicts),
+            previous: GoalongLocalAnalytics.Period(days: Array(days.prefix(count))).applying(verdicts), cards: cards, archiveNotice: nil,
             updatedAt: now, isPreview: true)
+    }
+
+    /// Fictional verdicts, as the agent would give them: one task spans several apps.
+    static var verdicts: GoalongWorkVerdicts {
+        let tasks: [(String, String?, GoalongWorkVerdict, String?)] = [
+            ("Xcode", nil, .work, "Parcours mobile"), ("Terminal", nil, .work, "Parcours mobile"),
+            ("Safari", "docs.example.org", .work, "Parcours mobile"), ("Figma", nil, .work, "Maquettes"),
+            ("Safari", "design.example.org", .work, "Maquettes"), ("Mail", nil, .work, "Échanges clients"),
+            ("Musique", nil, .other, nil),
+        ]
+        var values: [String: GoalongWorkAssignment] = [:]
+        for (app, host, verdict, task) in tasks {
+            let label = GoalongWorkContext.Label(application: app, bundleIdentifier: previewApplicationIDs[app] ?? "preview." + app,
+                                                 host: host, title: nil)
+            values[label.key] = GoalongWorkAssignment(verdict: verdict, task: task)
+        }
+        return GoalongWorkVerdicts(values)
     }
 
     // Fixed sample identities load local artwork, never real activity or history.

@@ -24,6 +24,12 @@ extension Notification.Name {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
                 self.error = "Critères illisibles : surveillance suspendue. Enregistrez à nouveau vos repères de surveillance." }
     }
+    /// The saved definition, readable off the main actor (daily report).
+    nonisolated static func savedContext(root: URL = AppPaths.applicationSupportDirectory) -> JevWorkContext? {
+        guard let data = try? JevLocalFiles.read("work-context.json", root: root),
+              let value = try? JSONDecoder().decode(JevWorkContext.self, from: data), value.isValid else { return nil }
+        return value
+    }
     static func reviewedVerdict(_ verdict: JevVerdict, work: JevWorkContext, window: JevWindow) -> JevVerdict {
         JevEvidencePolicy.reviewed(verdict, work: work, window: window)
     }
