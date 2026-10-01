@@ -242,6 +242,9 @@
                     onOpenSettings: { [weak self] in
                         self?.dashboardWindowController.show(section: .settings)
                     },
+                    onNavigate: { [weak self] section in
+                        self?.dashboardWindowController.show(section: section)
+                    },
                     onCheckForUpdates: {
                         SoftwareUpdateManager.shared.checkForUpdates()
                     },

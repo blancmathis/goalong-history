@@ -945,7 +945,7 @@
                     operation: "writing a bounded test request"
                 )
             ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("timed out"))
+                XCTAssertTrue(error.localizedDescription.contains("n’a pas répondu à temps"), error.localizedDescription)
             }
             XCTAssertLessThan(Date().timeIntervalSince(startedAt), 1)
         }

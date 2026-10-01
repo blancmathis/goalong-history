@@ -6,6 +6,7 @@
     /// `.regular` in `DashboardWindowController` then reveals this retained menu.
     final class ApplicationMenuController: NSObject, NSMenuDelegate {
         private let onOpenSettings: () -> Void
+        private let onNavigate: (DashboardSection) -> Void
         private let onCheckForUpdates: () -> Void
         private let canCheckForUpdates: () -> Bool
         private let onQuit: () -> Void
@@ -22,11 +23,13 @@
 
         init(
             onOpenSettings: @escaping () -> Void,
+            onNavigate: @escaping (DashboardSection) -> Void = { _ in },
             onCheckForUpdates: @escaping () -> Void,
             canCheckForUpdates: @escaping () -> Bool,
             onQuit: @escaping () -> Void
         ) {
             self.onOpenSettings = onOpenSettings
+            self.onNavigate = onNavigate
             self.onCheckForUpdates = onCheckForUpdates
             self.canCheckForUpdates = canCheckForUpdates
             self.onQuit = onQuit
@@ -126,6 +129,12 @@
 
         private func viewMenu() -> NSMenu {
             let menu = NSMenu(title: "Présentation")
+            for (index, section) in DashboardSection.primarySections.filter({ $0 != .settings }).enumerated() {
+                let entry = item(section.simpleTitle, action: #selector(navigate(_:)), keyEquivalent: "\(index + 1)")
+                entry.representedObject = section.rawValue
+                menu.addItem(entry)
+            }
+            menu.addItem(.separator())
             let fullScreen = responderItem(
                 "Passer en plein écran",
                 action: #selector(NSWindow.toggleFullScreen(_:)),
@@ -194,6 +203,11 @@
 
         @objc private func openSettings() {
             onOpenSettings()
+        }
+
+        @objc private func navigate(_ sender: NSMenuItem) {
+            guard let raw = sender.representedObject as? String, let section = DashboardSection(rawValue: raw) else { return }
+            onNavigate(section)
         }
 
         @objc private func checkForUpdates() {

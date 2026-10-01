@@ -40,20 +40,20 @@
 
         var protectionTitle: String {
             switch trustTier {
-            case "secure_enclave": return "Secure Enclave protected"
-            case "keychain_software": return "Keychain protected"
-            default: return "Local software key"
+            case "secure_enclave": return "Protégée par la Secure Enclave"
+            case "keychain_software": return "Protégée par le Trousseau"
+            default: return "Clé logicielle locale"
             }
         }
 
         var protectionSummary: String {
             switch trustTier {
             case "secure_enclave":
-                return "Minute commitments are signed with a non-exportable Secure Enclave P-256 key."
+                return "Les engagements minute par minute sont signés par une clé P-256 non exportable de la Secure Enclave."
             case "keychain_software":
-                return "Minute commitments are signed with a non-exportable Keychain P-256 key."
+                return "Les engagements minute par minute sont signés par une clé P-256 non exportable du Trousseau."
             default:
-                return "Minute commitments are signed with a user-only local P-256 key for this source build."
+                return "Les engagements minute par minute sont signés par une clé P-256 locale réservée à votre compte (version compilée localement)."
             }
         }
     }

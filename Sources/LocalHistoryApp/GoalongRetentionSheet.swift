@@ -42,7 +42,7 @@ import LocalHistoryCore
                                     Picker(kind.retentionTitle, selection: duration(kind)) {
                                         Text("Sans limite").tag(0)
                                         ForEach(Array(Set([1,7,30,90,365] + [model.draft.duration(for: kind).days].compactMap { $0 })).sorted(), id: \.self) { days in
-                                            Text("\(days) jours").tag(days)
+                                            Text(days == 1 ? "1 jour" : "\(days) jours").tag(days)
                                         }
                                     }.labelsHidden().frame(width: 165)
                                 }

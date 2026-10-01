@@ -31,7 +31,7 @@ REQUIRED = {
         'GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == policy.revision',
         'GoalongGlobalPause.load().revision == pause.revision',
         'timedBreak != nil || breakStorageInvalid', 'self.streak.accept',
-        'self.circuitOpen = true', 'self.retryAfter = Date().addingTimeInterval(Double(seconds))',
+        'self.circuitOpen = true', 'self.retryAfter = Date().addingTimeInterval(max(Double(seconds), backoff))',
         'request?.cancel()',
     ],
     'Sources/LocalHistoryApp/JevIngress.swift': [

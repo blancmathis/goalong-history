@@ -35,6 +35,31 @@ final class GoalongExclusionStore: ObservableObject {
 struct GoalongApplicationChoice: Identifiable, Equatable {
     let id: String
     let name: String
+    /// False for an exclusion whose application is not on this Mac (e.g. a default password manager).
+    var installed = true
+}
+
+/// Readable names for the protected applications excluded by default, even when absent.
+enum GoalongKnownApplications {
+    static let names: [String: String] = [
+        "com.apple.passwords": "Mots de passe",
+        "com.apple.keychainaccess": "Trousseau d’accès",
+        "com.agilebits.onepassword7": "1Password 7",
+        "com.1password.1password": "1Password",
+        "com.bitwarden.desktop": "Bitwarden",
+        "com.lastpass.lastpass": "LastPass",
+        "com.dashlane.dashlane": "Dashlane",
+        "org.keepassxc.keepassxc": "KeePassXC",
+        "in.sinew.enpass-desktop": "Enpass",
+        "com.callpod.keepermac": "Keeper",
+        "org.torproject.torbrowser": "Tor Browser",
+        "net.mullvad.mullvadbrowser": "Mullvad Browser",
+        "com.apple.safaritechnologypreview.passwords": "Mots de passe (Safari Technology Preview)",
+    ]
+    static func name(for bundleIdentifier: String) -> String? { names[bundleIdentifier.lowercased()] }
+    static func isDefaultExclusion(_ bundleIdentifier: String) -> Bool {
+        RecorderConfig.default.excludedBundleIdentifiers.contains { $0.caseInsensitiveCompare(bundleIdentifier) == .orderedSame }
+    }
 }
 
 @MainActor final class GoalongApplicationCatalog: ObservableObject {
@@ -88,14 +113,25 @@ struct GoalongApplicationChoice: Identifiable, Equatable {
         for item in model.snapshot.trackedUsage where item.kind == .application {
             if let id = item.bundleIdentifier { values[id.lowercased()] = .init(id: id, name: item.name) }
         }
-        for (id, name) in exclusions.policy.applications { values[id.lowercased()] = .init(id: id, name: name) }
-        for id in model.appliedSettings.excludedApplicationsText.components(separatedBy: .newlines) where !id.isEmpty && values[id.lowercased()] == nil {
-            let name = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id).map { $0.deletingPathExtension().lastPathComponent } ?? "Application indisponible"
-            values[id.lowercased()] = .init(id: id, name: name)
+        for (id, name) in exclusions.policy.applications where values[id.lowercased()] == nil {
+            values[id.lowercased()] = Self.choice(id: id, storedName: name)
         }
+        for id in model.appliedSettings.excludedApplicationsText.components(separatedBy: .newlines) where !id.isEmpty && values[id.lowercased()] == nil {
+            values[id.lowercased()] = Self.choice(id: id, storedName: nil)
+        }
+        // Absent applications (default password-manager exclusions…) only clutter the
+        // list of this Mac's apps; they stay listed under Exclusions and in search.
         return values.values.filter { item in
-            (search.isEmpty || item.name.localizedStandardContains(search)) && (!excludedOnly || isExcluded(item))
+            (search.isEmpty || item.name.localizedStandardContains(search) || item.id.localizedStandardContains(search))
+                && (!excludedOnly || isExcluded(item))
+                && (item.installed || excludedOnly || !search.isEmpty)
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+    private static func choice(id: String, storedName: String?) -> GoalongApplicationChoice {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+            return .init(id: id, name: storedName ?? url.deletingPathExtension().lastPathComponent)
+        }
+        return .init(id: id, name: storedName ?? GoalongKnownApplications.name(for: id) ?? id, installed: false)
     }
     private var domains: [String] {
         let observed = model.snapshot.trackedUsage.filter { $0.kind == .website }.compactMap(\.host)
@@ -107,14 +143,15 @@ struct GoalongApplicationChoice: Identifiable, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Exclure du suivi détaillé et des prochains envois.")
+                Text("Désactivez une app ou un site pour l’exclure du suivi détaillé et des prochains envois.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 GoalongHelpButton(text: "Le suivi détaillé et les prochains envois respectent ces exclusions. Les historiques locaux d’Apple et des outils IA restent séparés ; ils ne sont pas effacés. Les textes et totaux impossibles à filtrer sont bloqués. Une ancienne exclusion limitée au suivi détaillé est indiquée comme telle.")
             }
             Picker("Type", selection: $sites) { Text("Applications").tag(false); Text("Sites web").tag(true) }.pickerStyle(.segmented)
             HStack {
                 TextField("Rechercher par nom…", text: $search).textFieldStyle(.roundedBorder)
-                Toggle("Exclusions", isOn: $excludedOnly).toggleStyle(.checkbox).fixedSize()
+                Toggle("Exclusions seulement", isOn: $excludedOnly).toggleStyle(.checkbox).fixedSize()
             }
             if sites {
                 HStack {
@@ -146,7 +183,11 @@ struct GoalongApplicationChoice: Identifiable, Equatable {
                                 AppIconView(bundleIdentifier: app.id, appName: app.name, size: 30)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(app.name).font(.system(size: 14, weight: .medium))
-                                    if model.isApplicationExcludedFromCapture(app.id) && !exclusions.policy.excludes(appID: app.id) {
+                                    if !app.installed {
+                                        Text(GoalongKnownApplications.isDefaultExclusion(app.id)
+                                             ? "Non installée · protégée par défaut" : "Non installée sur ce Mac")
+                                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                                    } else if model.isApplicationExcludedFromCapture(app.id) && !exclusions.policy.excludes(appID: app.id) {
                                         Text("Exclue de l’enregistrement détaillé").font(.system(size: 12)).foregroundStyle(.secondary)
                                     }
                                 }

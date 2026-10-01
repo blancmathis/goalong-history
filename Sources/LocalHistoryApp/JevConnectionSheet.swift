@@ -9,13 +9,13 @@ import SwiftUI
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Connexion à Jev").font(.system(size: 22, weight: .semibold))
+            Text("Connexion à TypeSafe").font(.system(size: 22, weight: .semibold))
                 .accessibilityAddTraits(.isHeader)
-            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API TypeSafe pour utiliser Jev.")
+            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API TypeSafe pour utiliser la surveillance temps réel.")
                 .font(.callout).foregroundStyle(.secondary)
             SecureField("Clé API TypeSafe", text: $key)
                 .textFieldStyle(.roundedBorder).accessibilityIdentifier("jev-api-key")
-            Text("L’usage de l’API est facturé par TypeSafe. Enregistrer une clé ne donne aucune nouvelle autorisation d’envoi. Jev respecte votre choix d’activation sur la page Surveillance temps réel.")
+            Text("L’usage de l’API est facturé par TypeSafe. Enregistrer une clé ne donne aucune nouvelle autorisation d’envoi. La surveillance reste soumise à votre choix d’activation sur sa page.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Label("Clé conservée dans un fichier privé (0600), jamais dans l’historique ni les journaux de diagnostic.", systemImage: "lock")
@@ -51,7 +51,7 @@ import SwiftUI
             Button("Annuler", role: .cancel) {}
             Button("Supprimer la clé", role: .destructive) { monitor.removeKey() }
         } message: {
-            Text("Jev ne pourra plus envoyer d’analyse sans une nouvelle clé. Votre historique et vos autres réglages restent inchangés.")
+            Text("La surveillance ne pourra plus rien analyser sans une nouvelle clé. Votre historique et vos autres réglages restent inchangés.")
         }
     }
 }

@@ -98,7 +98,7 @@
                 )
 
                 if showsDefaultRule {
-                    Text("Default")
+                    Text("Par défaut")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
                     Picker(
@@ -132,7 +132,7 @@
                             Label(title, systemImage: symbol)
                                 .font(.system(size: 13, weight: .semibold))
                             Text("\(items.count)")
-                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -141,17 +141,17 @@
                             Text("TEMPS OBSERVÉ")
                                 .help("Temps au premier plan estimé d’après les observations. Les périodes non observées ne sont jamais comblées au-delà de 75 secondes.")
                                 .frame(width: 96, alignment: .trailing)
-                            Text("INPUT ACTIVE")
+                            Text("SAISIE ACTIVE")
                                 .help("Minutes distinctes avec des clics, frappes ou défilements observés.")
                                 .frame(width: 82, alignment: .trailing)
                             Text("TOUJOURS LORS DU PARTAGE")
                                 .frame(width: 142, alignment: .trailing)
                             if title == "Sites web" {
-                                Text("DETAILS")
+                                Text("DÉTAILS")
                                     .frame(width: 46, alignment: .trailing)
                             }
                         }
-                        .font(.system(size: 8, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .tracking(0.35)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 14)
@@ -228,7 +228,7 @@
                         CategoryBadge(category: item.category, isWork: nil)
                         if let host = item.host, model.isDomainExcludedFromCapture(host) {
                             StatusPill(
-                                title: "Future details excluded",
+                                title: "Détails futurs exclus",
                                 symbol: "eye.slash.fill",
                                 tint: LHTheme.privateTint
                             )
@@ -236,7 +236,7 @@
                         }
                     }
                     Text(secondaryLabel)
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -252,7 +252,7 @@
                     .frame(width: 82, alignment: .trailing)
 
                 Picker(
-                    "Visibility for \(item.name)",
+                    "Visibilité de \(item.name)",
                     selection: Binding(
                         get: { model.sharingVisibility(for: item.id) },
                         set: { model.setSharingVisibility($0, for: item.id) }
@@ -270,7 +270,7 @@
                         siteActionsMenu
                         Button(action: onToggleExpanded) {
                             Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: 10, weight: .semibold))
                                 .frame(width: 22, height: 22)
                         }
                         .buttonStyle(.plain)
@@ -302,7 +302,7 @@
                             model.setDomainCaptureEnabled(true, host: host)
                         }
                     } else {
-                        Button("Exclude all future details", role: .destructive) {
+                        Button("Exclure tous les détails futurs", role: .destructive) {
                             model.setDomainCaptureEnabled(false, host: host)
                         }
                     }
@@ -352,10 +352,10 @@
                         )
                     ) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Remember future site details")
+                            Text("Mémoriser les détails futurs du site")
                                 .font(.system(size: 10, weight: .semibold))
                             Text("Désactivez pour ne garder désormais qu’une période privée pour ce domaine.")
-                                .font(.system(size: 8))
+                                .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -365,17 +365,17 @@
                 Spacer()
 
                 if !richContextEnabled, let onEnableRichContext {
-                    Button("Enable visible page memory") {
+                    Button("Activer la mémoire des pages") {
                         onEnableRichContext()
                     }
                     .buttonStyle(.bordered)
                     .help("Nécessaire pour mémoriser les discussions et le texte visible des pages")
                 } else if richContextEnabled {
                     Label(
-                        "\(detail.semanticSnapshotCount) visible-memory snapshot\(detail.semanticSnapshotCount == 1 ? "" : "s")",
+                        "\(detail.semanticSnapshotCount) instantané\(detail.semanticSnapshotCount > 1 ? "s" : "") de texte visible",
                         systemImage: "text.badge.checkmark"
                     )
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(detail.semanticSnapshotCount > 0 ? LHTheme.success : Color.secondary)
                 }
             }
@@ -390,14 +390,14 @@
                 spacing: 8
             ) {
                 websiteMetric("Pages", value: "\(detail.pageCount)", symbol: "doc.on.doc")
-                websiteMetric("Clicks", value: "\(detail.clickCount)", symbol: "cursorarrow.click")
-                websiteMetric("Typing bursts", value: "\(detail.typingBurstCount)", symbol: "keyboard")
-                websiteMetric("Scroll bursts", value: "\(detail.scrollBurstCount)", symbol: "scroll")
-                websiteMetric("Remembered", value: "\(detail.rememberedContext.count)", symbol: "brain.head.profile")
+                websiteMetric("Clics", value: "\(detail.clickCount)", symbol: "cursorarrow.click")
+                websiteMetric("Séquences de frappe", value: "\(detail.typingBurstCount)", symbol: "keyboard")
+                websiteMetric("Défilements", value: "\(detail.scrollBurstCount)", symbol: "scroll")
+                websiteMetric("Mémorisés", value: "\(detail.rememberedContext.count)", symbol: "brain.head.profile")
                 websiteMetric(
-                    "Observed through",
+                    "Observé dans",
                     value: detail.sourceApplications.isEmpty
-                        ? "Web container"
+                        ? "Conteneur web"
                         : detail.sourceApplications.joined(separator: ", "),
                     symbol: "macwindow"
                 )
@@ -417,7 +417,7 @@
                         .tracking(0.3)
                         .foregroundStyle(.tertiary)
                     Text(value)
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .lineLimit(2)
                 }
             }
@@ -451,7 +451,7 @@
                                         .fixedSize(horizontal: false, vertical: true)
                                     if let URL = page.URL {
                                         Text(URL)
-                                            .font(.system(size: 8, design: .monospaced))
+                                            .font(.system(size: 10, design: .monospaced))
                                             .foregroundStyle(.secondary)
                                             .lineLimit(2)
                                             .textSelection(.enabled)
@@ -464,7 +464,7 @@
                                             "\(DashboardFormatters.shortTime.string(from: page.firstSeen))–\(DashboardFormatters.shortTime.string(from: page.lastSeen))"
                                         )
                                     }
-                                    .font(.system(size: 8, weight: .medium, design: .rounded))
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
                                     .foregroundStyle(.tertiary)
                                 }
                                 Spacer()
@@ -481,7 +481,7 @@
             let clicks = detail.interactions.filter { $0.kind == .click }
             return VStack(alignment: .leading, spacing: 8) {
                 detailHeading(
-                    "Everything clicked",
+                    "Tous les clics",
                     subtitle:
                         "Les clics identiques sur une même page sont regroupés avec leur nombre ; les clics sans libellé gardent leur position."
                 )
@@ -498,7 +498,7 @@
                             "L’analyse compacte a atteint sa limite ; les événements scellés contiennent les autres clics.",
                             systemImage: "ellipsis.circle"
                         )
-                        .font(.system(size: 8))
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                     }
                 }
@@ -510,7 +510,7 @@
             let actions = detail.interactions.filter { $0.kind != .click }
             return VStack(alignment: .leading, spacing: 8) {
                 detailHeading(
-                    "Other observed web activity",
+                    "Autres activités web observées",
                     subtitle:
                         "La saisie n’est représentée que par des nombres et des durées ; les caractères ne sont jamais reconstitués."
                 )
@@ -529,7 +529,7 @@
         private func rememberedContextSection(_ detail: ActivitySiteSummary) -> some View {
             VStack(alignment: .leading, spacing: 8) {
                 detailHeading(
-                    "Remembered visible page context",
+                    "Contexte visible mémorisé",
                     subtitle:
                         "Avec le texte affiché activé, le texte des pages et les discussions sont conservés localement, masqués si besoin, dédoublonnés et scellés."
                 )
@@ -541,7 +541,7 @@
                     VStack(spacing: 6) {
                         ForEach(Array(detail.rememberedContext.enumerated()), id: \.offset) { _, text in
                             Text(text)
-                                .font(.system(size: 9))
+                                .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -557,7 +557,7 @@
                             "Les événements scellés contiennent plus de contexte que ce résumé.",
                             systemImage: "ellipsis.circle"
                         )
-                        .font(.system(size: 8))
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                     }
                 }
@@ -569,7 +569,7 @@
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
                 Text(subtitle)
-                    .font(.system(size: 8))
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -580,7 +580,7 @@
                 Image(systemName: "minus.circle")
                     .foregroundStyle(.tertiary)
                 Text(message)
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                 Spacer()
             }
@@ -592,10 +592,10 @@
             if item.kind == .website {
                 var parts: [String] = []
                 if let detail = websiteSummary {
-                    parts.append("\(detail.pageCount) page\(detail.pageCount == 1 ? "" : "s")")
-                    parts.append("\(detail.clickCount) click\(detail.clickCount == 1 ? "" : "s")")
+                    parts.append("\(detail.pageCount) page\(detail.pageCount > 1 ? "s" : "")")
+                    parts.append("\(detail.clickCount) clic\(detail.clickCount > 1 ? "s" : "")")
                     if detail.semanticSnapshotCount > 0 {
-                        parts.append("\(detail.semanticSnapshotCount) memory snapshot\(detail.semanticSnapshotCount == 1 ? "" : "s")")
+                        parts.append("\(detail.semanticSnapshotCount) instantané\(detail.semanticSnapshotCount > 1 ? "s" : "") mémorisé\(detail.semanticSnapshotCount > 1 ? "s" : "")")
                     }
                     if !detail.sourceApplications.isEmpty {
                         parts.append("via \(detail.sourceApplications.joined(separator: ", "))")
@@ -603,7 +603,7 @@
                 } else if let appName = item.appName {
                     parts.append("Vu dans \(appName)")
                 } else {
-                    parts.append("Web context observed")
+                    parts.append("Contexte web observé")
                 }
                 if !item.identityProofAvailable {
                     parts.append("les entrées plus anciennes ne partagent que la catégorie")
@@ -656,7 +656,7 @@
                             .fixedSize(horizontal: false, vertical: true)
                         if interaction.count > 1 {
                             Text("×\(interaction.count)")
-                                .font(.system(size: 8, weight: .bold, design: .rounded))
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
                                 .foregroundStyle(tint)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
@@ -665,7 +665,7 @@
                     }
                     if let pageTitle = interaction.pageTitle {
                         Text(pageTitle)
-                            .font(.system(size: 8))
+                            .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }

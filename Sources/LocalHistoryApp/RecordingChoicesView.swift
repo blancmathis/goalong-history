@@ -114,13 +114,13 @@ extension DashboardSettingsDraft {
         for text in [excludedApplicationsText, includedApplicationsText] {
             let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
             guard lines.count <= 512, lines.allSatisfy({ $0.utf8.count <= 256 && !$0.contains(where: { $0.isWhitespace }) }) else {
-                throw PrivacyScopeInput.invalid("Use one application bundle identifier per line, without spaces; at most 512 entries.")
+                throw PrivacyScopeInput.invalid("Indiquez un identifiant d’application par ligne, sans espace ; 512 au maximum.")
             }
         }
     }
     var recordingSummary: String {
         let enabled = RecordingSignal.allCases.filter { self[keyPath: $0.keyPath] }.map(\.title)
-        return enabled.isEmpty ? "Activité des apps uniquement ; détails facultatifs désactivés." : "Baseline app activity, plus: " + enabled.joined(separator: ", ") + "."
+        return enabled.isEmpty ? "Activité des apps uniquement ; détails facultatifs désactivés." : "Activité des apps, avec : " + enabled.joined(separator: ", ").lowercased() + "."
     }
 }
 /// Native app selection avoids requiring people to discover bundle identifiers.
@@ -130,7 +130,7 @@ struct ApplicationScopePickerButton: View {
     var body: some View {
         Button("Choisir des applications…", action: chooseApplications)
             .buttonStyle(.bordered)
-            .help("Choose applications without opening them. Their identifiers are added to this unsaved recording scope.")
+            .help("Choisissez des applications sans les ouvrir. Leurs identifiants sont ajoutés à cette liste, qui reste à enregistrer.")
             .alert("L’application n’a pas pu être ajoutée", isPresented: Binding(
                 get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("OK", role: .cancel) { error = nil }
@@ -149,7 +149,7 @@ struct ApplicationScopePickerButton: View {
             guard response == .OK else { return }
             let identifiers = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
             guard identifiers.count == panel.urls.count else {
-                error = "One selected app does not expose a bundle identifier. No rule was changed."
+                error = "Une application choisie n’a pas d’identifiant. Aucune règle n’a été modifiée."
                 return
             }
             var lines = text.components(separatedBy: .newlines)

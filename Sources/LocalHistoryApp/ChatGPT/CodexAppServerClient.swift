@@ -20,32 +20,32 @@
         var errorDescription: String? {
             switch self {
             case .executableUnavailable:
-                return "Codex is not installed. Install the Codex CLI, then return here to connect ChatGPT."
+                return "Codex n’est pas installé. Installez Codex (ligne de commande), puis revenez ici pour connecter ChatGPT."
             case .launchFailed(let message):
-                return "Codex app-server could not start: \(Self.boundedDetail(message))"
+                return "Codex n’a pas pu démarrer : \(Self.boundedDetail(message))"
             case .processExited(let message):
                 return message.isEmpty
-                    ? "Codex app-server stopped unexpectedly."
-                    : "Codex app-server stopped unexpectedly: \(Self.boundedDetail(message))"
+                    ? "Codex s’est arrêté de façon inattendue."
+                    : "Codex s’est arrêté de façon inattendue : \(Self.boundedDetail(message))"
             case .timeout(let operation):
-                return "Codex timed out while \(Self.boundedDetail(operation))."
+                return "Codex n’a pas répondu à temps (\(Self.boundedDetail(operation))). Réessayez dans un instant."
             case .protocolLimitExceeded(let message):
-                return "Codex app-server exceeded Goalong's output safety limit: \(Self.boundedDetail(message))"
+                return "La réponse de Codex dépasse la limite de sécurité de Goalong : \(Self.boundedDetail(message))"
             case .malformedResponse(let message):
-                return "Codex returned an invalid response: \(Self.boundedDetail(message))"
+                return "Codex a renvoyé une réponse invalide : \(Self.boundedDetail(message))"
             case .server(let message):
-                return "Codex reported an error: \(Self.boundedDetail(message))"
+                return "Codex a signalé une erreur : \(Self.boundedDetail(message))"
             case .loginFailed(let message):
                 return message.isEmpty
-                    ? "ChatGPT sign-in did not complete."
-                    : "ChatGPT sign-in failed: \(Self.boundedDetail(message))"
+                    ? "La connexion à ChatGPT n’a pas abouti."
+                    : "La connexion à ChatGPT a échoué : \(Self.boundedDetail(message))"
             case .accountNotChatGPT(let mode):
                 return
-                    "Goalong will not use the active \(Self.boundedDetail(mode)) credentials because they may be billed as API usage. Connect with ChatGPT instead."
+                    "Goalong n’utilise pas les identifiants \(Self.boundedDetail(mode)) actifs, car ils peuvent être facturés comme un usage de l’API. Connectez-vous plutôt avec ChatGPT."
             case .generationFailed(let message):
                 return message.isEmpty
-                    ? "The recap agent failed."
-                    : "The recap agent failed: \(Self.boundedDetail(message))"
+                    ? "L’analyse n’a pas abouti."
+                    : "L’analyse n’a pas abouti : \(Self.boundedDetail(message))"
             }
         }
 

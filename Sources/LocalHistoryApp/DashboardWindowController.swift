@@ -130,7 +130,9 @@
         }
 
         func show(section: DashboardSection = .overview) {
-            viewModel.selectSection(section)
+            // Re-showing the current page (Dock click, ⌘, or a relaunch restore) keeps its
+            // navigation, e.g. the Settings pane that was open.
+            if viewModel.selectedSection != section { viewModel.selectSection(section) }
 
             let application = NSApplication.shared
             application.setActivationPolicy(.regular)

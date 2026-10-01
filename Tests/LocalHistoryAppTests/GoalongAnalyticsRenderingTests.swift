@@ -66,6 +66,8 @@ final class GoalongAnalyticsRenderingTests: XCTestCase {
             throw XCTSkip("Opt-in native rendering with synthetic data only")
         }
         let directory = URL(fileURLWithPath: path, isDirectory: true)
+        // Tests run alphabetically: this one may be first, before any directory exists.
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory); app.finishLaunching()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 800),

@@ -34,7 +34,7 @@ import LocalHistoryCore
                          : "Fenêtres privées détectées : exclues. La détection dépend du navigateur ; la pause reste le plus sûr pour une activité sensible.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     HStack(spacing: 12) {
-                        Button("Change recording details & exclusions") { model.openRecordingSettings() }.buttonStyle(LHPrimaryButtonStyle())
+                        Button("Modifier l’enregistrement et les exclusions") { model.openRecordingSettings() }.buttonStyle(LHPrimaryButtonStyle())
                         Button("Gérer les sources") { model.selectSection(.settings) }.buttonStyle(.bordered)
                     }
                     Text("Les filtres d’enregistrement s’appliquent à l’historique de ce Mac, pas au Temps d’écran d’Apple ni aux conversations IA d’origine. Chaque source et chaque envoi a ses propres réglages.")

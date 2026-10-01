@@ -151,10 +151,10 @@ struct GoalongWebsiteConnectionSheet: View {
                         GoalongDisclosureGroup("Connexion manuelle et options avancées") {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Adresse et accès enregistrés").font(.headline)
-                        TextField("Website origin, for example https://your-goalong-host", text: $origin)
+                        TextField("Adresse du site, par exemple https://votre-hote-goalong", text: $origin)
                             .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel("Goalong website HTTPS origin")
-                        Text("Create an upload-only token in the website’s Sources page and choose its downloaded file here. If needed, Goalong offers ‘Protéger ce fichier’ to restrict access to your account. Its file stays on your Mac; the token authorizes explicit sends to your chosen website and can be revoked there.")
+                            .accessibilityLabel("Adresse HTTPS du site Goalong")
+                        Text("Créez un jeton d’envoi seul dans la page Sources du site, puis choisissez ici le fichier téléchargé. Si besoin, Goalong propose « Protéger ce fichier » pour en limiter l’accès à votre compte. Le fichier reste sur votre Mac ; le jeton autorise uniquement les envois que vous demandez vers ce site et peut y être révoqué.")
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack {
@@ -193,7 +193,7 @@ struct GoalongWebsiteConnectionSheet: View {
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Toggle("Noms des applications et durées", isOn: $includeApps)
-                        Toggle("Hourly breakdown, when recorded", isOn: $includeHourly)
+                        Toggle("Répartition par heure, si elle est enregistrée", isOn: $includeHourly)
                         Toggle("Sites observés sur ce Mac", isOn: $includeWebsites)
                         Toggle("Résumé d’analyse enregistré", isOn: $includeRecap)
                         if includeRecap {
@@ -449,7 +449,7 @@ struct GoalongWebsiteConnectionSheet: View {
 
     private func preparePreview() {
         let selected = devices.filter { !excludedDevices.contains($0.id) }.map(\.id)
-        guard devices.isEmpty || !selected.isEmpty else { error = "Select at least one device."; return }
+        guard devices.isEmpty || !selected.isEmpty else { error = "Choisissez au moins un appareil."; return }
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -499,7 +499,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     try GoalongSiteSubmission.send(payload: reviewedPayload, origin: target, tokenFile: tokenFile)
                 }.value
                 let result = try JSONSerialization.jsonObject(with: receipt) as? [String: Any] ?? [:]
-                status = "Received: \(result["imported"] ?? 0) new, \(result["updated"] ?? 0) updated, \(result["skipped"] ?? 0) unchanged. Unverified. Your website sharing rules apply."
+                status = "Reçu par le site : \(result["imported"] ?? 0) nouveau(x), \(result["updated"] ?? 0) mis à jour, \(result["skipped"] ?? 0) inchangé(s). Données non vérifiées ; vos règles de partage du site s’appliquent."
                 payload = nil
             } catch { self.error = String(describing: error) }
             busy = false

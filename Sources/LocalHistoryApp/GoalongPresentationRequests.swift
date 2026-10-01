@@ -12,6 +12,8 @@ struct GoalongAnalysisPresentation: Identifiable {
     let tab: Int
 }
 enum GoalongUIFormat {
+    /// The interface is French-only; never follow an English system region for its text.
+    static let locale = Locale(identifier: "fr_FR")
     static func day(_ date: Date) -> String {
         date.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "fr_FR")))
     }

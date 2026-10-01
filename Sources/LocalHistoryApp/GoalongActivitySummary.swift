@@ -118,6 +118,21 @@ struct GoalongActivitySummary {
         return (best.0, length, best.1 / Double(max(1, observedDays.count)))
     }
 
+    /// Where classified work concentrates (one hour for a day, two for a period), averaged
+    /// per observed day. Only meaningful once work is measurable.
+    var workPeakWindow: (hour: Int, length: Int, averageSeconds: TimeInterval)? {
+        guard workIsMeasurable else { return nil }
+        let totals = period.workSecondsByHourOfDay(calendar: calendar)
+        let length = isDay ? 1 : 2
+        var best: (Int, TimeInterval)?
+        for hour in 0...(24 - length) {
+            let value = totals[hour..<(hour + length)].reduce(0, +)
+            if value > (best?.1 ?? 0) { best = (hour, value) }
+        }
+        guard let best, best.1 >= 600 else { return nil }
+        return (best.0, length, best.1 / Double(max(1, observedDays.count)))
+    }
+
     // MARK: - Comparison
 
     /// Honest reference: the previous day at the same clock time for today, the previous
@@ -163,11 +178,20 @@ struct GoalongActivitySummary {
             result.append(Insight(id: "best-day", symbol: "star",
                 text: "Journée la plus active : \(Self.weekdayDate(best.date)) · \(Self.duration(best.activeSeconds))."))
         }
-        if let peak = peakWindow {
+        let workPeak = workPeakWindow
+        // When work peaks in the same window, the work sentence says more with the same words.
+        if let peak = peakWindow, workPeak.map({ $0.hour != peak.hour || $0.length != peak.length }) ?? true {
             let label = "\(peak.hour) h – \(peak.hour + peak.length) h"
             result.append(Insight(id: "peak", symbol: "chart.bar.fill",
                 text: isDay ? "Heure la plus active : \(label), avec \(Self.duration(peak.averageSeconds)) d’activité."
                     : "Créneau le plus actif : \(label), avec \(Self.duration(peak.averageSeconds)) d’activité par jour en moyenne."))
+        }
+        if let work = workPeak {
+            let label = "\(work.hour) h et \(work.hour + work.length) h"
+            result.append(Insight(id: "work-peak", symbol: "briefcase",
+                text: isDay ? "Votre travail se concentre entre \(label) (\(Self.duration(work.averageSeconds)))."
+                    : "Vous travaillez surtout entre \(label), \(Self.duration(work.averageSeconds)) par jour en moyenne.",
+                tone: .positive))
         }
         if let top = topUsage, activeSeconds > 0 {
             let share = Int((top.seconds / activeSeconds * 100).rounded())

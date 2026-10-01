@@ -42,7 +42,7 @@ struct GoalongActivityUsageList: View {
                         }.labelsHidden().pickerStyle(.menu).fixedSize().accessibilityIdentifier("activity-usage-sort")
                     }
                     HStack(spacing: 8) {
-                        Text(search.isEmpty ? "\(all.count) usages · \(GoalongAnalyticsFormatting.duration(totalSeconds)) observées"
+                        Text(search.isEmpty ? "\(all.count) usage\(all.count > 1 ? "s" : "") · \(GoalongAnalyticsFormatting.duration(totalSeconds)) observées"
                             : "\(matching.count) résultat(s) · \(GoalongAnalyticsFormatting.duration(matching.reduce(0) { $0 + $1.seconds })) dans la sélection")
                         Spacer(minLength: 0)
                         Text("Durée / part du temps actif")

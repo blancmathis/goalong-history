@@ -1,5 +1,19 @@
 # Changelog
 
+## À publier — une app plus claire, plus simple et entièrement en français
+
+- **Activité dit pourquoi rien n’arrive** : enregistrement désactivé, en pause ou autorisation macOS à rétablir sont signalés en tête de page, avec le bouton utile (« Activer… », « Reprendre », « Rétablir l’accès… »).
+- **« À retenir » ne répète plus les tuiles** : les constats déjà affichés (changements d’app, comparaison, travail, part à classer) laissent la place à ce qui est nouveau, dont « Votre travail se concentre entre 10 h et 12 h ».
+- **Bannière « Suivi personnalisé » masquable** sur Activité : un choix de confidentialité délibéré n’est plus relancé à chaque ouverture (elle reste dans Réglages → Enregistrement).
+- **Retour au bon endroit** : Confidentialité, Terminal, Conversations IA, Temps d’écran, Bilan et Export signé reviennent à la page d’origine (y compris Réglages → Avancé) ; « Exporter un fichier signé » a enfin un bouton retour et la barre latérale reste sur la bonne rubrique.
+- **Réglages plus simples** : recherche en haut, « Avancé » dans la liste, un seul réglage de démarrage à l’ouverture de session (le doublon aux états contradictoires est supprimé), « Aide et diagnostic » regroupé dans Avancé, texte du suivi d’écran condensé.
+- **Apps et sites lisibles** : les gestionnaires de mots de passe exclus par défaut portent leur vrai nom (1Password, Bitwarden, Trousseau d’accès…) au lieu de « Application indisponible », et n’encombrent plus la liste s’ils ne sont pas installés (filtre « Exclusions seulement »).
+- **Onboarding motivant** : la première étape montre ce que Goalong apporte (temps actif, travail et concentration, apps et sites) avant les choix de confidentialité, toujours tous proposés et modifiables.
+- **Barre latérale épurée** : « Faire une pause » n’apparaît que si la surveillance temps réel est active ; pied de page « Version x.y.z ». Menu Présentation : ⌘1 Activité, ⌘2 Historique, ⌘3 Surveillance.
+- **Tout en français, y compris les écrans oubliés** : Confidentialité et sécurité (dont les confirmations de suppression), Conversations IA, Historique de ce Mac, Terminal, bilan ChatGPT, export signé, erreurs Codex, dates sur un Mac réglé en anglais. Libellé brut « aiConversations » et titres en double supprimés ; textes de 8–9 pt agrandis.
+- **Corrections** : résumé d’envoi « 0 applications » affiché pour une sélection sans filtre, accords (« 1 usage », « 1 remplacement », « 1 jour »), dates ISO dans les bilans, trait vertical parasite sous la barre de retour, statut ChatGPT qui expliquait mal un échec de connexion, clic sur le Dock ou ⌘, qui ramenait les Réglages à l’accueil, libellés système de l’historique (« Session du Mac », « Veille du Mac »…).
+- **Fiabilité** : une vérification d’autorisations lancée pendant une autre pouvait, selon le timing, relancer une vérification macOS inutile (heure lue avant le verrou) ; test concerné désormais stable (30/30 au lieu de 13/15). L’audit de sécurité Jev, qui échouait sur `main` depuis le délai d’attente renforcé, est réaligné ; un test de rendu qui échouait selon l’ordre d’exécution est corrigé.
+
 ## À publier — Activité : lire et analyser ses données
 
 - **Les journées très chargées ne disparaissent plus** : au-delà de 32 768 observations (plus de 40 000 un jour ordinaire de travail intensif), toute la journée était exclue des totaux comme « illisible ». Activité a désormais son propre plafond de lecture.

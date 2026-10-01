@@ -11,7 +11,7 @@
                 VStack(alignment: .leading, spacing: 18) {
                     PageHeader(
                         eyebrow: "Local par conception",
-                        title: "Privacy & security",
+                        title: "Confidentialité et sécurité",
                         subtitle: "Voyez exactement ce qui est enregistré, ce qui est masqué et ce qui peut quitter votre Mac."
                     ) {
                         HStack(spacing: 10) {
@@ -31,7 +31,7 @@
 
                     PrivacyChoicesOverview(model: model)
                     VisibleContextControl()
-                    GoalongDisclosureGroup("Build and verification details") {
+                    GoalongDisclosureGroup("Version et vérification") {
                         VStack(spacing: 14) { buildSecurityCard; dataFlowCard }.padding(.top, 12)
                     }
                     permissionsCard
@@ -113,7 +113,7 @@
                             present: capabilities.permitsAutomaticUpdates
                         )
                         capabilityRow(
-                            "Managed ChatGPT analysis bridge",
+                            "Passerelle d’analyse ChatGPT",
                             present: capabilities.permitsRemoteAnalysis
                         )
                         capabilityRow("Lecteurs directs des sources locales", present: true)
@@ -142,7 +142,7 @@
             HStack(spacing: 8) {
                 Image(systemName: present ? "checkmark.circle.fill" : "minus.circle.fill")
                     .foregroundStyle(present ? LHTheme.accent : LHTheme.success)
-                Text("\(title): \(present ? "present" : "absent")")
+                Text("\(title) : \(present ? "présent" : "absent")")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
@@ -161,19 +161,19 @@
                     HStack(alignment: .center, spacing: 12) {
                         flowNode(
                             symbol: "macwindow",
-                            title: "1. Observe",
+                            title: "1. Observé",
                             message: "Apps, fenêtres, clics et activité de saisie sans contenu"
                         )
                         flowArrow
                         flowNode(
                             symbol: "internaldrive.fill",
                             title: "2. Conservé localement",
-                            message: "Detailed JSONL events and private commitment salts"
+                            message: "Événements détaillés (JSONL) et sels d’engagement privés"
                         )
                         flowArrow
                         flowNode(
                             symbol: "number.square.fill",
-                            title: "3. Anchor",
+                            title: "3. Ancré",
                             message: GoalongBuildCapabilities.permitsRemoteVerification
                                 ? (model.runtime.verificationEnabled
                                     ? "Uniquement des engagements signés opaques"
@@ -193,7 +193,7 @@
                             .foregroundStyle(LHTheme.accent)
                         Text(
                             GoalongBuildCapabilities.permitsRemoteVerification
-                                ? "An opaque commitment does not contain the application, URL, window title, clicks or category. Your server necessarily sees connection metadata such as arrival time and IP when commitments are enabled."
+                                ? "Un engagement opaque ne contient ni l’application, ni l’adresse, ni le titre de fenêtre, ni les clics, ni la catégorie. Lorsque les engagements sont activés, votre serveur voit nécessairement des métadonnées de connexion comme l’heure d’arrivée et l’adresse IP."
                                 : "Les engagements locaux vérifient l’intégrité sans exposer l’enregistrement détaillé ni contacter de serveur. Cette version ne transmet aucun engagement."
                         )
                         .font(.system(size: 11))
@@ -211,15 +211,15 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 15) {
                     SectionTitle(
-                        title: "macOS permissions",
+                        title: "Autorisations macOS",
                         subtitle: "Aucun accès n’est nécessaire pour les sources désactivées. L’autorisation macOS et votre choix d’activer une source sont distincts."
                     )
 
-                    GoalongDisclosureGroup("Capture diagnostics") { captureHealthPanel.padding(.top, 12) }
+                    GoalongDisclosureGroup("Diagnostic de l’enregistrement") { captureHealthPanel.padding(.top, 12) }
 
                     VStack(spacing: 16) {
                         permissionRow(
-                            title: "Accessibility",
+                            title: "Accessibilité",
                             message: "Lit le contexte au premier plan pour l’historique. Goalong n’ouvre Réglages Système qu’à votre demande et ne modifie jamais les autorisations à votre place.",
                             granted: model.runtime.accessibilityGranted,
                             grantedLabel: "Accordé",
@@ -227,7 +227,7 @@
                             action: model.openAccessibilitySettings
                         )
                         permissionRow(
-                            title: "Activity input",
+                            title: "Surveillance de l’entrée",
                             message: "Indique l’état de la surveillance de l’entrée. Un vrai événement reste nécessaire avant de considérer l’enregistrement comme fonctionnel.",
                             granted: model.runtime.inputMonitoringGranted,
                             grantedLabel: "Disponible",
@@ -251,7 +251,7 @@
                          .accessibilityContextUnavailable].contains(health.state)
                     {
                         HStack {
-                            Label(health.detail, systemImage: "exclamationmark.triangle.fill")
+                            Label(health.state.frenchDetail, systemImage: "exclamationmark.triangle.fill")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(LHTheme.warning)
                             Spacer()
@@ -267,7 +267,7 @@
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(LHTheme.warning)
                             Spacer()
-                            Button("Validate input") { model.beginCaptureValidation() }
+                            Button("Vérifier la saisie") { model.beginCaptureValidation() }
                                 .buttonStyle(LHPrimaryButtonStyle())
                         }
                     } else {
@@ -291,9 +291,9 @@
                     Image(systemName: assessment?.captureProven == true ? "checkmark.shield.fill" : "waveform.path.ecg")
                         .foregroundStyle(assessment?.captureProven == true ? LHTheme.success : LHTheme.warning)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(assessment?.state.title ?? "Capture health unavailable")
+                        Text(assessment?.state.frenchTitle ?? "État de l’enregistrement indisponible")
                             .font(.system(size: 12, weight: .semibold))
-                        Text(assessment?.detail ?? "Aucun indicateur d’état d’enregistrement n’est encore disponible.")
+                        Text(assessment?.state.frenchDetail ?? "Aucun indicateur d’état d’enregistrement n’est encore disponible.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -305,27 +305,27 @@
                 }
                 if let snapshot {
                     Text(
-                        "Last input: \(snapshot.lastInputEventAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · click: \(snapshot.lastClickAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · typing: \(snapshot.lastTypingBurstAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · scroll: \(snapshot.lastScrollAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · shortcut: \(snapshot.lastShortcutAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never")"
+                        "Dernière saisie : \(snapshot.lastInputEventAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · clic : \(snapshot.lastClickAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · frappe : \(snapshot.lastTypingBurstAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · défilement : \(snapshot.lastScrollAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · raccourci : \(snapshot.lastShortcutAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais")"
                     )
-                    .font(.system(size: 8.5, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
-                        "AX: \(snapshot.lastAXContextSuccessAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · URL: \(snapshot.lastURLDetectedAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never") · suppression: \(snapshot.lastSuppressionReason?.rawValue ?? "none") at \(snapshot.lastSuppressionAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "never")"
+                        "AX : \(snapshot.lastAXContextSuccessAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.rawValue ?? "aucun") à \(snapshot.lastSuppressionAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais")"
                     )
-                    .font(.system(size: 8.5, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
-                        "Permissions: AX switch \(snapshot.permissions.accessibilityPreflight ? "on" : "off") · AX probe \(snapshot.permissions.accessibilityFunctionalProbe ? "works" : "fails") · Input Monitoring switch \(snapshot.permissions.inputMonitoringPreflight ? "on" : "off") · tap \(snapshot.eventTapLifecycle.rawValue)"
+                        "Autorisations : interrupteur AX \(snapshot.permissions.accessibilityPreflight ? "activé" : "désactivé") · test AX \(snapshot.permissions.accessibilityFunctionalProbe ? "réussi" : "échoué") · Surveillance de l’entrée \(snapshot.permissions.inputMonitoringPreflight ? "activée" : "désactivée") · capture \(snapshot.eventTapLifecycle.rawValue)"
                     )
-                    .font(.system(size: 8.5, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
-                        "Build: \(snapshot.build.signatureKind.rawValue) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "no CDHash") · 5 min input events: \(snapshot.recentCounters.inputEventCount)"
+                        "Version : \(snapshot.build.signatureKind.rawValue) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "sans CDHash") · saisies sur 5 min : \(snapshot.recentCounters.inputEventCount)"
                     )
-                    .font(.system(size: 8.5, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     if snapshot.build.signatureKind == .adHoc {
@@ -347,26 +347,26 @@
             ) {
                 protectionCard(
                     symbol: "person.fill.questionmark",
-                    title: "Private browsing",
+                    title: "Navigation privée",
                     message:
                         "Votre choix pour les fenêtres privées est indiqué ci-dessus. La détection dépend du navigateur ; utilisez la pause pour une activité sensible.",
                     tint: LHTheme.privateTint
                 )
                 protectionCard(
                     symbol: "key.fill",
-                    title: "Passwords and secure fields",
+                    title: "Mots de passe et champs sécurisés",
                     message: "La saisie sécurisée masque l’activité clavier. Vérifiez les exclusions des gestionnaires de mots de passe dans Enregistrement.",
                     tint: LHTheme.success
                 )
                 protectionCard(
                     symbol: "keyboard.badge.ellipsis",
-                    title: "No raw typed text",
+                    title: "Aucun texte tapé",
                     message: "\(ProductIdentity.displayName) conserve le nombre de frappes, leur durée et l’usage générique des raccourcis, jamais les caractères ni les touches exactes.",
                     tint: LHTheme.teal
                 )
                 protectionCard(
                     symbol: "link.badge.plus",
-                    title: "Sanitized URLs",
+                    title: "Adresses nettoyées",
                     message: model.appliedSettings.redactAllURLQueryValues
                         ? "Les paramètres et fragments d’adresse sont retirés avant l’enregistrement."
                         : "Les paramètres sensibles sont masqués ; le masquage complet est désactivé.",
@@ -385,13 +385,13 @@
 
                     infoRow(
                         symbol: "externaldrive.fill",
-                        title: "Current size",
+                        title: "Taille actuelle",
                         value: DashboardFormatters.byteCount.string(fromByteCount: model.snapshot.storageBytes)
                     )
                     infoRow(
                         symbol: "calendar",
-                        title: "Retention policy",
-                        value: "Voir la conservation par type ci-dessus"
+                        title: "Conservation",
+                        value: "Réglages › Stockage"
                     )
                     infoRow(
                         symbol: "doc.text",
@@ -401,7 +401,7 @@
                     infoRow(
                         symbol: "lock.fill",
                         title: "Permissions des fichiers",
-                        value: "Folders 0700 · files 0600"
+                        value: "Dossiers 0700 · fichiers 0600"
                     )
 
                     HStack {
@@ -420,7 +420,7 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 14) {
                     SectionTitle(
-                        title: "Verification identity",
+                        title: "Identité de vérification",
                         subtitle: "Sert à signer les engagements minute par minute sans exposer l’activité"
                     )
 
@@ -436,18 +436,18 @@
                             Text(model.deviceProtectionTitle)
                                 .font(.system(size: 13, weight: .semibold))
                             Text(model.deviceAlgorithm)
-                                .font(.system(size: 9, design: .monospaced))
+                                .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("DEVICE ID")
-                            .font(.system(size: 8, weight: .semibold))
+                        Text("IDENTIFIANT DE L’APPAREIL")
+                            .font(.system(size: 10, weight: .semibold))
                             .tracking(0.5)
                             .foregroundStyle(.secondary)
                         Text(model.deviceID)
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .textSelection(.enabled)
@@ -638,14 +638,14 @@
 
         var title: String {
             switch self {
-            case .lastTenMinutes: return "Delete the last 10 minutes?"
-            case .lastHour: return "Delete the last hour?"
-            case .all: return "Delete all local activity and derived memories?"
+            case .lastTenMinutes: return "Supprimer les 10 dernières minutes ?"
+            case .lastHour: return "Supprimer la dernière heure ?"
+            case .all: return "Supprimer toute l’activité locale et les souvenirs dérivés ?"
             }
         }
 
         var message: String {
-            "This permanently removes the selected JSONL events, semantic context and the Activity Analysis, Activity Memory and Computer History files derived from them, including Goalong's Codex mirror. Agent Activity's metadata-only source index, Screen Time, cryptographic seals and receipts remain."
+            "Les événements détaillés de la période, leur contexte et toutes les analyses qui en dérivent seront définitivement supprimés de ce Mac. L’index des conversations IA, le Temps d’écran, les sceaux cryptographiques et les reçus sont conservés."
         }
     }
 #endif

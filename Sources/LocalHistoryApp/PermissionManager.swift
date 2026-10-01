@@ -166,7 +166,6 @@
             force: Bool = false,
             minimumInterval: TimeInterval = 1.0
         ) -> PermissionStatus {
-            let now = clock()
             statusLock.lock()
             if repairInProgress {
                 let value = Self.pendingStatus
@@ -185,6 +184,10 @@
                 statusLock.unlock()
                 return value
             }
+            // Read the clock under the lock: a time taken before a concurrent probe
+            // finished would make that fresh result look like it came from the future
+            // (negative age) and start a redundant TCC probe.
+            let now = clock()
             let age = now.timeIntervalSince(lastRefreshAt)
             if !force && age >= 0 && age < max(0, minimumInterval) {
                 let value = cachedStatus

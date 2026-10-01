@@ -19,7 +19,7 @@ final class GoalongFinalUXTests: XCTestCase {
         XCTAssertTrue(SettingsPane.matches("JSON").contains(.advanced))
         XCTAssertTrue(SettingsPane.matches("remplacement").contains(.chatGPT))
         XCTAssertTrue(SettingsPane.matches("quotidien").contains(.website))
-        XCTAssertEqual(SettingsPane.matches("  \n "), [.applications, .permissions, .storage])
+        XCTAssertEqual(SettingsPane.matches("  \n "), [.applications, .permissions, .storage, .advanced])
         XCTAssertTrue(SettingsPane.matches("fichier signé").contains(.tools))
         XCTAssertTrue(SettingsPane.matches("typesafe").isEmpty)
         XCTAssertTrue(SettingsPane.matches("minuterie").isEmpty)

@@ -40,7 +40,7 @@
                         HStack(alignment: .top, spacing: 14) {
                             usagePanel(
                                 title: "Applications de l’ordinateur",
-                                subtitle: "Represented foreground activity",
+                                subtitle: "Activité représentée au premier plan",
                                 symbol: "macbook",
                                 values: overview.computerApplications,
                                 emptyMessage: "Aucune activité d’application disponible."
@@ -306,7 +306,7 @@
                                     )
                                     .help("Ce rapport est antérieur aux analyses signées. Régénérez-le pour détecter toute modification.")
                                 }
-                                Text(recap.generatedAt.formatted(date: .abbreviated, time: .shortened))
+                                Text(recap.generatedAt.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(GoalongUIFormat.locale)))
                                     .font(.system(size: 9))
                                     .foregroundStyle(.secondary)
                             }
@@ -365,19 +365,19 @@
                     metric(
                         title: "Activité de l’ordinateur",
                         value: duration(overview.activeSeconds),
-                        detail: "\(overview.focusBlockCount) focus blocks"
+                        detail: "\(overview.focusBlockCount) bloc\(overview.focusBlockCount > 1 ? "s" : "") de concentration"
                     )
                     bandDivider
                     metric(
-                        title: "Work-classified",
+                        title: "Classé travail",
                         value: duration(overview.workSeconds),
-                        detail: "Observable classification"
+                        detail: "Classement observable"
                     )
                     bandDivider
                     metric(
                         title: "Temps d’écran",
                         value: duration(overview.screenTimeSeconds),
-                        detail: "\(overview.screenTimeDevices.count) Apple devices"
+                        detail: "\(overview.screenTimeDevices.count) appareil\(overview.screenTimeDevices.count > 1 ? "s" : "") Apple"
                     )
                     bandDivider
                     metric(

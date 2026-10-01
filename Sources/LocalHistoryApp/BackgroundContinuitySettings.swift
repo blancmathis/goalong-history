@@ -16,7 +16,7 @@
                     VStack(alignment: .leading, spacing: 14) {
                         Toggle("Garder Goalong actif en arrière-plan", isOn: $keepRunning)
                             .toggleStyle(.switch)
-                        Text("Activé par défaut. Fermer la fenêtre laisse vos sources actives ; Quitter demande confirmation avant d’arrêter. Désactivez pour quitter à la fermeture de la dernière fenêtre. Aucun service supplémentaire n’est installé et votre Mac peut toujours se mettre en veille.")
+                        Text("Recommandé : fermer la fenêtre n’arrête pas l’enregistrement, et Quitter demande confirmation. Aucun service supplémentaire n’est installé ; votre Mac peut toujours se mettre en veille.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                         Divider()
                         Toggle("Ouvrir Goalong à l’ouverture de session", isOn: Binding(
@@ -29,7 +29,7 @@
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                         }
                         if login.requiresApproval || login.state == .unavailable {
-                            Button("Ouvrir « Ouverture »") { login.openLoginItemsSettings() }
+                            Button("Ouvrir les éléments de connexion…") { login.openLoginItemsSettings() }
                                 .buttonStyle(.bordered)
                         }
                         if let message = login.message {
@@ -41,7 +41,7 @@
                             Button("Masquer") { continuity.dismissInterruptionNotice() }
                                 .buttonStyle(.bordered)
                         }
-                        Text("Ces options n’activent aucune source supplémentaire et ne reprennent pas une pause. Après un plantage ou une fermeture forcée, il faut rouvrir Goalong.")
+                        Text("Ces options n’activent aucune source et ne reprennent pas une pause.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }.fixedSize(horizontal: false, vertical: true)
                 }

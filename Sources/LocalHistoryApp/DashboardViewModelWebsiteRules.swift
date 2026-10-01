@@ -120,9 +120,9 @@
             guard !settingsHaveChanges else {
                 alert = DashboardAlert(
                     kind: .information,
-                    title: "Save or discard Settings changes first",
+                    title: "Enregistrez ou abandonnez d’abord vos modifications",
                     message:
-                        "A monitoring rule cannot be changed while the Settings page has unrelated unsaved edits."
+                        "Une règle ne peut pas être modifiée tant que les Réglages contiennent d’autres modifications non enregistrées."
                 )
                 return false
             }

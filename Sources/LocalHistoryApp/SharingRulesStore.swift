@@ -11,17 +11,17 @@
 
         var title: String {
             switch self {
-            case .identity: return "Show name"
-            case .categoryOnly: return "Category only"
-            case .hidden: return "Hidden"
+            case .identity: return "Afficher le nom"
+            case .categoryOnly: return "Catégorie seulement"
+            case .hidden: return "Masqué"
             }
         }
 
         var subtitle: String {
             switch self {
-            case .identity: return "Share the app or website name"
-            case .categoryOnly: return "Share only its local category"
-            case .hidden: return "Reveal no identifying details"
+            case .identity: return "Partage le nom de l’app ou du site"
+            case .categoryOnly: return "Partage seulement sa catégorie locale"
+            case .hidden: return "Ne révèle aucun détail identifiant"
             }
         }
 

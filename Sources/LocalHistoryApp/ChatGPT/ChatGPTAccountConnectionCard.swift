@@ -13,6 +13,11 @@ struct ChatGPTAccountConnectionCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("ChatGPT").font(.system(size: 16, weight: .semibold))
                         Text(status).font(.system(size: 12)).foregroundStyle(.secondary)
+                        if case .failed(let reason) = runtime.connectionState, !reason.isEmpty {
+                            Text(reason).font(.system(size: 11)).foregroundStyle(LHTheme.warning)
+                                .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
                     }
                     Spacer()
                     actions
@@ -30,7 +35,7 @@ struct ChatGPTAccountConnectionCard: View {
         case .codexUnavailable: return "Composant de connexion indisponible"
         case .signedOut: return "Non connecté"
         case .unsupportedCredentialMode: return "Utilisez une connexion ChatGPT, pas une clé API"
-        case .failed: return "Connexion à rétablir"
+        case .failed: return "Connexion non vérifiée · réessayez"
         }
     }
     @ViewBuilder private var actions: some View {

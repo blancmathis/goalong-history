@@ -20,18 +20,18 @@
 
         var title: String {
             switch self {
-            case .overview: return "Today"
-            case .analytics: return "Analyses"
-            case .history: return "History"
+            case .overview: return "Activité"
+            case .analytics: return "Activité"
+            case .history: return "Historique"
             case .monitoring: return "Surveillance temps réel"
-            case .activity: return "Computer History"
-            case .screenTime: return "Apple Screen Time"
-            case .agentActivity: return "Agentic work"
-            case .chatGPTRecap: return "Activity"
-            case .share: return "Share"
-            case .privacy: return "Privacy & security"
-            case .cli: return "Goalong CLI"
-            case .settings: return "Settings"
+            case .activity: return "Historique de ce Mac"
+            case .screenTime: return "Temps d’écran Apple"
+            case .agentActivity: return "Conversations IA"
+            case .chatGPTRecap: return "Bilan quotidien"
+            case .share: return "Partager"
+            case .privacy: return "Confidentialité et sécurité"
+            case .cli: return "Terminal"
+            case .settings: return "Réglages"
             }
         }
 
@@ -49,6 +49,29 @@
             case .privacy: return "hand.raised"
             case .cli: return "terminal"
             case .settings: return "slider.horizontal.3"
+            }
+        }
+    }
+
+    struct DashboardSecondaryReturn: Equatable {
+        let section: DashboardSection
+        let pane: SettingsPane
+    }
+
+    extension DashboardSection {
+        /// Pages opened from another page, with a back bar rather than a sidebar entry.
+        var isSecondary: Bool {
+            switch self {
+            case .screenTime, .agentActivity, .chatGPTRecap, .share, .privacy, .cli: return true
+            case .overview, .history, .monitoring, .analytics, .activity, .settings: return false
+            }
+        }
+
+        /// Used only when a secondary page was opened without a known origin.
+        var defaultReturnSection: DashboardSection {
+            switch self {
+            case .screenTime, .chatGPTRecap: return .overview
+            default: return .settings
             }
         }
     }
@@ -94,10 +117,10 @@
 
         var title: String {
             switch self {
-            case .all: return "All"
-            case .work: return "Work"
-            case .privateOrSuppressed: return "Private"
-            case .flagged: return "Flagged"
+            case .all: return "Tout"
+            case .work: return "Travail"
+            case .privateOrSuppressed: return "Privé"
+            case .flagged: return "Signalé"
             }
         }
     }
@@ -351,26 +374,26 @@
     extension ShareLevel {
         var dashboardTitle: String {
             switch self {
-            case .everything: return "Full details"
-            case .applicationOnly: return "Application only"
-            case .categoryOnly: return "Category only"
-            case .privateOnly: return "Completely private"
-            case .mixed: return "Mixed by app or site"
+            case .everything: return "Tous les détails"
+            case .applicationOnly: return "Application uniquement"
+            case .categoryOnly: return "Catégorie uniquement"
+            case .privateOnly: return "Entièrement privé"
+            case .mixed: return "Selon l’app ou le site"
             }
         }
 
         var dashboardSubtitle: String {
             switch self {
             case .everything:
-                return "Application, context, category and activity proofs"
+                return "Application, contexte, catégorie et preuves d’activité"
             case .applicationOnly:
-                return "Application and time; context stays on this Mac"
+                return "Application et horaires ; le contexte reste sur ce Mac"
             case .categoryOnly:
-                return "Verified local category; application stays private"
+                return "Catégorie locale vérifiée ; l’application reste privée"
             case .privateOnly:
-                return "Only the existence and coverage of the period"
+                return "Seulement l’existence et la couverture de la période"
             case .mixed:
-                return "Each event follows its saved app or website rule"
+                return "Chaque événement suit la règle enregistrée pour son app ou son site"
             }
         }
 

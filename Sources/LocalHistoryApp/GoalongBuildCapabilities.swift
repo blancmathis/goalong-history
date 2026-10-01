@@ -5,7 +5,7 @@
         case unified
 
         var displayName: String {
-            "Single app"
+            "App unique"
         }
     }
 
@@ -23,7 +23,7 @@
         static let permitsHTTPWorkspaceOpening = true
 
         static var summary: String {
-            "One Goalong app · local collection off by default · website sends and opt-in scheduling · signed, user-approved updates"
+            "Une seule app Goalong · collecte locale désactivée par défaut · envois au site sur demande ou programmés · mises à jour signées, installées avec votre accord"
         }
     }
 #endif
