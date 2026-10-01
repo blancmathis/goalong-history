@@ -75,7 +75,7 @@
                 GoalongDisclosureGroup("Choisir des exclusions avant de commencer") {
                     GoalongOnboardingExclusions(model: model).padding(.top, 12)
                 }.font(.system(size: 13))
-                if let note { Text(note).font(.system(size: 13)).foregroundStyle(LHTheme.warning) }
+                if let note { GoalongNote(note, tone: .warning) }
             }
         }
 
@@ -142,10 +142,15 @@
         }
 
         var readyPage: some View {
-            VStack(alignment: .leading, spacing: 24) {
-                Text("Vous pouvez commencer").goalongPageTitle()
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Vous pouvez commencer").goalongPageTitle()
+                    Text("Votre fil apparaîtra dans Activité dès les premières minutes d’utilisation de ce Mac.")
+                        .font(.system(size: 14)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 LHCard {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 14) {
                         ForEach([GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations]) { capability in
                             HStack {
                                 Text(capability.title).font(.system(size: 13, weight: .medium))
@@ -157,13 +162,19 @@
                         }
                     }
                 }
-                Text("Le nouvel historique apparaîtra avec votre activité.").font(.system(size: 13)).foregroundStyle(.secondary)
-                Toggle("Ouvrir Goalong à la connexion", isOn: $launchAtLoginPreference).toggleStyle(.goalongSwitch)
-                Text("Conseillé et sélectionné par défaut. Vous pouvez le désactiver ici ou dans Réglages. Seules les sources que vous avez activées démarrent.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                Text("Les envois à Goalong et les analyses ChatGPT se règlent séparément.")
-                    .font(.system(size: 13)).foregroundStyle(.secondary)
-                if let note { Text(note).font(.system(size: 13)).foregroundStyle(LHTheme.warning) }
+                LHCard {
+                    Toggle(isOn: $launchAtLoginPreference) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Ouvrir Goalong à la connexion").font(.system(size: 13, weight: .medium))
+                            Text("Conseillé et sélectionné par défaut. Seules les sources que vous avez activées démarrent.")
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }.toggleStyle(.goalongSwitch)
+                }
+                Text("Les envois à Goalong et les analyses ChatGPT se règlent séparément, dans Réglages.")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                if let note { GoalongNote(note, tone: .warning) }
                 if launchAtLoginPreference && launchAtLogin.requiresApproval {
                     Button("Ouvrir les éléments de connexion") { launchAtLogin.openLoginItemsSettings() }
                 }

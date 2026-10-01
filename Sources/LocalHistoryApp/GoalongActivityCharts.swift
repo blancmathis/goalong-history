@@ -249,8 +249,11 @@ struct GoalongDailyClassChart: View {
                         .foregroundStyle(LHTheme.text.opacity(0.7))
                         .lineStyle(StrokeStyle(lineWidth: 1))
                         .annotation(position: .top, alignment: .trailing) {
+                            // A patch of page behind the label keeps it readable where bars pass the average.
                             Text("Moyenne \(GoalongAnalyticsFormatting.duration(average))")
                                 .font(.system(size: 11, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                                .padding(.horizontal, 5).padding(.vertical, 2)
+                                .background(LHTheme.pageBackground.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
                         }
                         .accessibilityLabel("Moyenne des jours observés")
                         .accessibilityValue(GoalongAnalyticsFormatting.duration(average))

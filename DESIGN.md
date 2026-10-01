@@ -62,7 +62,8 @@ components:
 
 Document de référence du design de l'app macOS. Les longueurs sont des points AppKit. Le code de référence est
 dans `Sources/LocalHistoryApp/` : `GoalongTheme.swift` (tokens), `GoalongControls.swift` et
-`GoalongButtonStyle.swift` (contrôles), `GoalongSignature.swift` (le fil, états vides, confirmations),
+`GoalongButtonStyle.swift` (contrôles), `GoalongThread.swift` (le fil), `GoalongSignature.swift` (états vides,
+confirmations),
 `DashboardComponents.swift` (surfaces, en-têtes, navigation).
 
 ## 1. Le constat (audit du 2 octobre 2026)
@@ -126,7 +127,7 @@ Trois principes en découlent :
 
 ## 4. L'unique élément mémorable : le fil
 
-`GoalongDayThread` (journée) et `GoalongThreadWeave` (7 ou 28 jours), dans `GoalongSignature.swift`.
+`GoalongDayThread` (journée) et `GoalongThreadWeave` (7 ou 28 jours), dans `GoalongThread.swift`.
 
 - **Journée** : un trait continu d'un point sur toute la largeur, de la première à la dernière observation
   (ou de 0 h à 24 h). Les périodes actives l'épaississent en segments de 14 points aux bouts arrondis :
@@ -208,7 +209,7 @@ qu'en fragments séparés par des points médians.
 Grille de 4 points : 4, 8, 12, 16, 24, 32, 40.
 
 - Marge de page 32. Largeur de lecture 760 pour les pages de réglages et de texte, pleine largeur (jusqu'à
-  1 080) pour Activité et Historique.
+  1 080) pour Activité.
 - Activité : le chiffre héros, puis ses trois chiffres secondaires, puis le fil, toujours dans cet ordre et
   empilés, pour que la page ne change pas de forme entre Jour, 7 jours et 28 jours.
 - 40 entre deux sections posées sur la page, 16 entre un titre de section et son contenu, 12 entre deux
@@ -327,10 +328,56 @@ pendant une attente réelle (`docs/BRAND-MOTION.md`). Avec « Réduire les anima
 
 ## 13. Vérification
 
-`scripts/verify_design_audit.sh <dossier>` rend chaque page, sous-page de Réglages et feuille, en sombre et
-en clair, dans un HOME isolé. `GOALONG_ANALYTICS_SNAPSHOTS=<dossier> swift test --filter
-GoalongAnalyticsRenderingTests` rend Activité avec des données fictives. `scripts/verify_brand_ui.sh` exerce
-de vraies actions d'accessibilité. Les clics simulés n'atteignent pas les gestes SwiftUI : survols, appuis et
-tracés se vérifient à la main dans l'app.
+Outils :
 
-L'état de vérification de la passe « Le fil » est tenu à jour dans `docs/DESIGN-SOUL-VERIFICATION.md`.
+- `scripts/verify_design_audit.sh <dossier>` rend chaque page, sous-page de Réglages et feuille, en sombre et
+  en clair, dans un HOME isolé (58 rendus).
+- `GOALONG_ANALYTICS_SNAPSHOTS=<dossier> swift test --filter GoalongAnalyticsRenderingTests` rend Activité avec
+  des données fictives : jour, 7 et 28 jours, journée vide, traces isolées, journées réalistes non classées,
+  à 640 et 1 000 points, dans les deux thèmes (40 rendus).
+- `scripts/verify_brand_ui.sh <dossier>` rend l'onboarding, les feuilles d'autorisation et de surveillance, le
+  contraste renforcé, et exerce de vraies actions d'accessibilité sur les lignes de Réglages (74 rendus).
+- `GoalongControlsInteractionTests` (avec l'environnement du script d'audit) envoie de vrais clics et frappes
+  dans un champ et une recherche.
+- `GoalongThreadGeometryTests` couvre la géométrie du fil : classe dominante par tranche, seuil d'activité,
+  journée presque vide, fusion des périodes, heures communes d'une trame.
+
+Les rendus sont figés : l'environnement `goalongReduceMotion` affiche le fil complet au lieu d'une image prise
+en cours de tracé.
+
+### État au 2 octobre 2026 (passe « Le fil »)
+
+Vérifié :
+
+- Suite complète en HOME isolé : 1 435 tests, 29 ignorés, 2 échecs, tous deux `keychainFailure(-60006)` dans
+  `ChatGPTRecapTests`, propres au HOME isolé ; les 45 tests `ChatGPTRecapTests` passent avec le HOME normal.
+- `scripts/verify_source_security.sh`, `scripts/generate_support_source_allowlist.py --check` et
+  `scripts/verify_brand_ui.sh` : verts.
+- Tous les rendus ci-dessus ont été regardés un par un, en sombre et en clair. Avant/après dans
+  `docs/visuals/design-soul-20261002/` (`-avant` = `main` 0.6.55, `-apres` = cette passe).
+- Palette de données : validateur `dataviz` sur les deux surfaces de page (section 5).
+- L'étiquette de survol du fil : sa mise en page a été rendue sur une période active et sur un vide, en
+  forçant temporairement la position du pointeur.
+- Rien n'a changé hors de l'interface : aucun fichier de `LocalHistoryCore`, de la CLI, des scripts ou du
+  manifeste n'est modifié ; capture, stockage, consentements et envois sont intacts.
+
+Non vérifié automatiquement (à contrôler à la main dans l'app) :
+
+- Tout ce qui dépend du pointeur ou du temps : survols, appuis à ressort, étirement du curseur des
+  interrupteurs, glissement de la sélection et des onglets, tracé du fil à l'arrivée, apparition des
+  confirmations. Les clics simulés n'atteignent ni les gestes SwiftUI ni le suivi de souris.
+- Le parcours clavier complet (Tab, Espace, anneaux de focus) et la lecture VoiceOver de bout en bout. Les
+  identifiants d'accessibilité existants sont conservés et les nouveaux contrôles exposent une
+  représentation native, mais aucune session VoiceOver n'a été menée.
+- « Réduire les animations » du système : le code suit `accessibilityReduceMotion` partout où un mouvement a
+  été ajouté, mais seul l'équivalent local des tests a été rendu.
+- Les pages qui n'affichent leur contenu qu'avec des données réelles (chronologie détaillée de l'Historique,
+  Temps d'écran Apple, conversations, bilan ChatGPT, règles de partage) : elles héritent des composants et
+  ont reçu la normalisation typographique, mais n'ont été rendues que dans leur état vide.
+- L'app installée n'a été ni remplacée ni relancée ; rien n'est publié tant que la branche n'est pas
+  fusionnée sur `main`.
+
+Un choix assumé à connaître : le test `GoalongBrandRenderingTests` exigeait des cartes de 88 points pour les
+trois entrées principales de Réglages. Elles sont devenues des lignes à deux niveaux de 56 points dans une
+liste ; l'assertion vérifie maintenant 52 points au moins et 400 de large, soit l'intention d'origine (une
+grande cible native qui répond).
