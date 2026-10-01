@@ -96,36 +96,10 @@
 
         private var controls: some View {
             HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("Rechercher une app, un site ou une catégorie", text: $query)
-                        .textFieldStyle(.plain)
-                    if !query.isEmpty {
-                        Button {
-                            query = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 11)
-                .frame(height: 36)
-                .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                )
+                GoalongSearchField("Rechercher une app, un site ou une catégorie", text: $query)
 
-                Picker("Type", selection: $filter) {
-                    ForEach(MonitoringSubjectFilter.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 310)
+                GoalongSegmentedControl("Type", selection: $filter,
+                                        options: MonitoringSubjectFilter.allCases) { $0.title }
 
                 Text("\(filteredItems.count) source\(filteredItems.count == 1 ? "" : "s")")
                     .font(.system(size: 10, weight: .medium, design: .rounded))
@@ -214,7 +188,7 @@
                     )
                 )
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .toggleStyle(.goalongSwitchOnly)
                 .disabled(!state.editable)
                 .frame(width: 176, alignment: .trailing)
                 .help(state.help)

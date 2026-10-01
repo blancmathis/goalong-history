@@ -137,7 +137,7 @@
                                             .font(.system(size: 10, weight: .medium))
                                             .fixedSize(horizontal: false, vertical: true)
                                             .textSelection(.enabled)
-                                        Text(request.host ?? request.application ?? "Accessible context")
+                                        Text(request.host ?? request.application ?? "Contexte accessible")
                                             .font(.system(size: 8))
                                             .foregroundStyle(.tertiary)
                                     }
@@ -181,7 +181,7 @@
                     }
 
                     HStack(spacing: 10) {
-                        Picker("Token budget", selection: $agentTokenBudget) {
+                        Picker("Budget de jetons", selection: $agentTokenBudget) {
                             Text("Compact · 800").tag(800)
                             Text("Balanced · 1,600").tag(1_600)
                             Text("Detailed · 3,000").tag(3_000)
@@ -195,10 +195,10 @@
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
 
-                        Button("Reveal files") {
+                        Button("Afficher les fichiers") {
                             analysisModel.revealAnalysisFiles(for: model.selectedDay)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
 
                         Spacer()
                         Text("analysis/*.agent.md + *.analysis.json")
@@ -250,10 +250,10 @@
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 12) {
-                            Label("No keyboard character decoding", systemImage: "keyboard.badge.ellipsis")
-                            Label("Private and excluded sites stay hidden", systemImage: "eye.slash.fill")
-                            Label("Common credentials redacted", systemImage: "key.slash.fill")
-                            Label("Stored locally and sealed", systemImage: "checkmark.seal.fill")
+                            Label("Aucun caractère tapé n’est décodé", systemImage: "keyboard.badge.ellipsis")
+                            Label("Sites privés et exclus masqués", systemImage: "eye.slash.fill")
+                            Label("Identifiants courants masqués", systemImage: "key.slash.fill")
+                            Label("Stocké sur ce Mac et scellé", systemImage: "checkmark.seal.fill")
                             if analysis.coverage.semanticSnapshotCount > 0 {
                                 Label(
                                     "\(analysis.coverage.semanticSnapshotCount) instantanés aujourd’hui",
@@ -279,8 +279,8 @@
                         )
                     )
                     .labelsHidden()
-                    .toggleStyle(.switch)
-                    .help("Enable optional accessible visible-text context")
+                    .toggleStyle(.goalongSwitchOnly)
+                    .help("Activer le contexte facultatif du texte affiché")
                 }
             }
         }

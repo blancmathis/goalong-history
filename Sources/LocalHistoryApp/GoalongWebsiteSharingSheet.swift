@@ -48,14 +48,14 @@ import LocalHistoryQueryCLI
                                 if let day = autoSender.lastSuccess { Text("Dernière journée reçue : \(day)").font(.system(size: 12)).foregroundStyle(.secondary) }
                             }
                             Spacer()
-                            if autoSender.enabled { Button("Mettre en pause") { autoSender.stop() }.buttonStyle(.bordered) }
+                            if autoSender.enabled { Button("Mettre en pause") { autoSender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
                             GoalongHelpButton(text: autoSender.status)
                         }
                     }
                     if let status = model.status {
                         Label(status, systemImage: "checkmark.circle").font(.system(size: 13)).foregroundStyle(LHTheme.success)
                             .accessibilityIdentifier("sharing-success")
-                        Button("Voir la journée sur le site") { openSite(fragment: "history") }.buttonStyle(.bordered)
+                        Button("Voir la journée sur le site") { openSite(fragment: "history") }.buttonStyle(LHSecondaryButtonStyle())
                     }
                     if let error = model.error {
                         Label(error, systemImage: "exclamationmark.circle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)
@@ -63,7 +63,7 @@ import LocalHistoryQueryCLI
                     }
                     if model.preview == nil {
                         GoalongDisclosureGroup("Outils avancés") {
-                            Button("Récap relu ou connexion manuelle…") { advanced = true }.buttonStyle(.bordered).padding(.top, 10)
+                            Button("Récap relu ou connexion manuelle…") { advanced = true }.buttonStyle(LHSecondaryButtonStyle()).padding(.top, 10)
                         }.font(.system(size: 13))
                     }
                 }.padding(24)
@@ -89,7 +89,7 @@ import LocalHistoryQueryCLI
             if !GoalongGlobalPause.isPaused() { Task { await model.loadCatalog() } }
         }
         .onDisappear { model.cancelPreparation() }
-        .sheet(isPresented: $advanced) { GoalongWebsiteConnectionSheet() }
+        .sheet(isPresented: $advanced) { GoalongWebsiteConnectionSheet().goalongControls() }
     }
     private var account: some View {
         GoalongSettingsGroup(title: "Destination") {
@@ -101,7 +101,7 @@ import LocalHistoryQueryCLI
                 }
                 Spacer()
                 Button(connected ? "Règles du site" : "Relier mon compte") { openSite(fragment: connected ? "privacy" : "settings") }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
             }
             if connected {
                 Text("Visibilité : vos règles du site s’appliquent après l’envoi.")
@@ -112,10 +112,10 @@ import LocalHistoryQueryCLI
     private var connected: Bool { !tokenPath.isEmpty && !origin.isEmpty }
     private var delivery: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Picker("Fréquence", selection: $model.draft.delivery) {
-                Text("Une fois").tag(GoalongWebsiteShareDraft.Delivery.once)
-                Text("Chaque jour").tag(GoalongWebsiteShareDraft.Delivery.daily)
-            }.pickerStyle(.segmented).accessibilityIdentifier("sharing-delivery")
+            GoalongSegmentedControl("Fréquence", selection: $model.draft.delivery,
+                                    options: [GoalongWebsiteShareDraft.Delivery.once, .daily], fills: true) {
+                $0 == .once ? "Une fois" : "Chaque jour"
+            }.accessibilityIdentifier("sharing-delivery")
             if model.draft.delivery == .daily {
                 HStack {
                     DatePicker("La veille, après", selection: scheduleTime, displayedComponents: .hourAndMinute).datePickerStyle(.field)
@@ -148,11 +148,11 @@ import LocalHistoryQueryCLI
                     }, selection: $model.draft.deviceIDs)
                 }
                 GoalongSettingsGroup(title: "Applications") {
-                    Toggle("Inclure des applications", isOn: $model.draft.includeApplications).toggleStyle(.switch)
+                    Toggle("Inclure des applications", isOn: $model.draft.includeApplications).toggleStyle(.goalongSwitch)
                     if model.draft.includeApplications { applicationChoices }
                 }
                 GoalongSettingsGroup(title: "Sites web") {
-                    Toggle("Inclure des sites", isOn: $model.draft.includeWebsites).toggleStyle(.switch)
+                    Toggle("Inclure des sites", isOn: $model.draft.includeWebsites).toggleStyle(.goalongSwitch)
                         .disabled(!model.draft.anonymousApplicationIDs.intersection(model.draft.applicationIDs).isEmpty)
                     if model.draft.includeWebsites {
                         if catalog.websites.isEmpty && !model.draft.applicationIDs.isEmpty {
@@ -174,7 +174,7 @@ import LocalHistoryQueryCLI
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             } else {
                 Text("Aucune donnée disponible pour cette journée.").font(.system(size: 13)).foregroundStyle(.secondary)
-                Button("Réessayer") { Task { await model.loadCatalog() } }.buttonStyle(.bordered)
+                Button("Réessayer") { Task { await model.loadCatalog() } }.buttonStyle(LHSecondaryButtonStyle())
             }
         }
     }
@@ -187,7 +187,7 @@ import LocalHistoryQueryCLI
     }
     private var applicationChoices: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if availableApps.count > 5 { TextField("Rechercher une application…", text: $appSearch).textFieldStyle(.roundedBorder) }
+            if availableApps.count > 5 { GoalongSearchField("Rechercher une application…", text: $appSearch) }
             if availableApps.isEmpty { Text("Choisissez un appareil disposant de données.").font(.system(size: 12)).foregroundStyle(.secondary) }
             HStack {
                 Button("Sélectionner les résultats") {
@@ -236,7 +236,7 @@ import LocalHistoryQueryCLI
             HStack {
                 Text("Aperçu local du \(approved.draft.day)").font(.system(size: 14, weight: .medium))
                 Spacer()
-                Button("Modifier") { model.invalidate() }.buttonStyle(.bordered)
+                Button("Modifier") { model.invalidate() }.buttonStyle(LHSecondaryButtonStyle())
             }
             if let data = try? GoalongReadableShareData(payload: approved.payload) {
                 GoalongReadableSharePreview(data: data)
@@ -302,7 +302,7 @@ struct GoalongSharingSelector: View {
                 Text("\(selection.intersection(Set(items.map(\.id))).count) / \(items.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
             }
             if items.count > 4 {
-                TextField("Rechercher…", text: $search).textFieldStyle(.roundedBorder).accessibilityLabel("Rechercher dans \(title)")
+                GoalongSearchField("Rechercher…", text: $search, accessibilityLabel: "Rechercher dans \(title)")
             }
             HStack(spacing: 12) {
                 Button("Sélectionner les résultats") { selection.formUnion(visible.map(\.id)) }.disabled(visible.isEmpty)

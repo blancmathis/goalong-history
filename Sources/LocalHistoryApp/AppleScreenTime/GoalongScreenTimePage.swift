@@ -115,7 +115,7 @@ struct GoalongScreenTimePage: View {
                 }
                 HStack(spacing: 16) {
                     Button("Voir dans les Réglages Apple") { screenTime.openScreenTimeSettings() }
-                        .buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("screen-time-open-settings")
+                        .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).accessibilityIdentifier("screen-time-open-settings")
                     Text("Aucune modification de vos réglages Apple.").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }.fixedSize(horizontal: false, vertical: true)
@@ -144,7 +144,7 @@ struct GoalongScreenTimePage: View {
                                     Image(systemName: screenTime.selectedDeviceIDs.contains(device.id) ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(screenTime.selectedDeviceIDs.contains(device.id) ? LHTheme.accent : LHTheme.secondaryText)
                                 }.font(.system(size: 12)).padding(10).contentShape(Rectangle())
-                            }.buttonStyle(.bordered)
+                            }.buttonStyle(LHSecondaryButtonStyle())
                         }
                     }
                     if screenTime.selectedDeviceIDs.isEmpty {
@@ -162,11 +162,10 @@ struct GoalongScreenTimePage: View {
         }
     }
     private var scopePicker: some View {
-        Picker("Appareils inclus", selection: Binding(get: { screenTime.configuration.scope.mode }, set: screenTime.setScopeMode)) {
-            Text("Ce Mac").tag(AppleScreenTimeScopeMode.macOnly)
-            Text("Tous").tag(AppleScreenTimeScopeMode.allDevices)
-            Text("Choisir…").tag(AppleScreenTimeScopeMode.selectedDevices)
-        }.labelsHidden().pickerStyle(.segmented).frame(width: 280).accessibilityIdentifier("screen-time-device-scope")
+        GoalongSegmentedControl("Appareils inclus", selection: Binding(get: { screenTime.configuration.scope.mode }, set: screenTime.setScopeMode),
+                                options: [AppleScreenTimeScopeMode.macOnly, .allDevices, .selectedDevices]) {
+            $0 == .macOnly ? "Ce Mac" : $0 == .allDevices ? "Tous" : "Choisir…"
+        }.accessibilityIdentifier("screen-time-device-scope")
     }
 
     private func dayOverview(_ summary: AppleScreenTimeDaySummary) -> some View {
@@ -206,22 +205,13 @@ struct GoalongScreenTimePage: View {
                     HStack {
                         Text("Usages reçus d’Apple").font(.system(size: 16, weight: .semibold))
                         Spacer(minLength: 12)
-                        Picker("Type d’usage Apple", selection: $filter) {
-                            ForEach(GoalongAppleUsageFilter.allCases) { Text($0.title).tag($0) }
-                        }.labelsHidden().pickerStyle(.segmented).frame(width: 230)
+                        GoalongSegmentedControl("Type d’usage Apple", selection: $filter,
+                                                options: GoalongAppleUsageFilter.allCases) { $0.title }
                     }
                     Text("Les durées ne sont ni remplacées ni réparties à partir de l’historique Goalong.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
-                    HStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("Rechercher dans les données Apple", text: $search).textFieldStyle(.plain)
-                            .accessibilityIdentifier("screen-time-search")
-                        if !search.isEmpty {
-                            Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
-                                .buttonStyle(.plain).accessibilityLabel("Effacer la recherche")
-                        }
-                        Text("\(matching.count) résultat(s)").font(.system(size: 12)).foregroundStyle(.secondary)
-                    }.padding(10).background(LHTheme.secondaryText.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
+                    GoalongSearchField("Rechercher dans les données Apple", text: $search, identifier: "screen-time-search",
+                                       trailing: "\(matching.count) résultat(s)")
                 }.padding(18)
                 Divider()
                 if visible.isEmpty && screenTime.isBusy {
@@ -236,7 +226,7 @@ struct GoalongScreenTimePage: View {
                             : "Les données manquantes ne sont pas remplacées par votre historique local.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                         if filter == .websites && search.isEmpty {
-                            Button("Voir mon activité Goalong") { dashboard.selectSection(.overview) }.buttonStyle(.bordered)
+                            Button("Voir mon activité Goalong") { dashboard.selectSection(.overview) }.buttonStyle(LHSecondaryButtonStyle())
                         }
                     }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -320,7 +310,7 @@ struct GoalongScreenTimePage: View {
                     ForEach(AppleScreenTimeShareLevel.allCases, id: \.self) { level in Text(level.displayName).tag(level) }
                 }.frame(maxWidth: 370)
                 Spacer(minLength: 10)
-                Button("Exporter un fichier…") { screenTime.exportSharePayload() }.buttonStyle(.bordered)
+                Button("Exporter un fichier…") { screenTime.exportSharePayload() }.buttonStyle(LHSecondaryButtonStyle())
                     .disabled(screenTime.summary == nil || screenTime.isBusy)
             }
             Text("L’export conserve le périmètre, la provenance et les limites de la source.").font(.system(size: 12)).foregroundStyle(.secondary)

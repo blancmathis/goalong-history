@@ -26,16 +26,7 @@ struct GoalongActivityUsageList: View {
                         VStack(alignment: .leading, spacing: 12) { title; HStack { groupingPicker; exportButton } }
                     }
                     HStack(spacing: 14) {
-                        HStack(spacing: 9) {
-                            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                            TextField("Rechercher une application ou un site", text: $search)
-                                .textFieldStyle(.plain).font(.system(size: 13))
-                                .accessibilityIdentifier("activity-usage-search")
-                            if !search.isEmpty {
-                                Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                                    .buttonStyle(.plain).accessibilityLabel("Effacer la recherche")
-                            }
-                        }.padding(10).background(LHTheme.secondaryText.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
+                        GoalongSearchField("Rechercher une application ou un site", text: $search, identifier: "activity-usage-search")
                         Picker("Trier les usages", selection: $sort) {
                             ForEach(GoalongActivityUsageSort.allCases) { Text($0.title).tag($0) }
                         }.labelsHidden().pickerStyle(.menu).fixedSize().accessibilityIdentifier("activity-usage-sort")
@@ -90,16 +81,15 @@ struct GoalongActivityUsageList: View {
     @ViewBuilder private var exportButton: some View {
         if let onExport {
             Button(action: onExport) { Label("Exporter", systemImage: "square.and.arrow.down") }
-                .buttonStyle(.bordered).controlSize(.small).disabled(isPreview || items.isEmpty)
+                .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).disabled(isPreview || items.isEmpty)
                 .help("Exporter les durées par jour, application et site (CSV)")
                 .accessibilityIdentifier("activity-usage-export")
         }
     }
 
     private var groupingPicker: some View {
-        Picker("Regrouper les usages", selection: $grouping) {
-            ForEach(GoalongActivityUsageGrouping.allCases) { Text($0.title).tag($0) }
-        }.labelsHidden().pickerStyle(.segmented).frame(width: 260)
+        GoalongSegmentedControl("Regrouper les usages", selection: $grouping,
+                                options: GoalongActivityUsageGrouping.allCases) { $0.title }
             .accessibilityIdentifier("activity-usage-grouping")
     }
 }

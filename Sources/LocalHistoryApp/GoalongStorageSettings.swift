@@ -13,7 +13,7 @@ import Foundation
                 HStack {
                     Text("Espace utilisé par Goalong")
                     Spacer()
-                    Text(ByteCountFormatter.string(fromByteCount: model.snapshot.storageBytes, countStyle: .file))
+                    Text(GoalongUIFormat.bytes(model.snapshot.storageBytes))
                 }
                 if let free = model.freeDiskBytes {
                     Divider()
@@ -38,23 +38,23 @@ import Foundation
                         Text(retentionSummary).font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Choisir…") { retention = true }.buttonStyle(.bordered)
+                    Button("Choisir…") { retention = true }.buttonStyle(LHSecondaryButtonStyle())
                 }
             }
             GoalongSettingsGroup(title: "Gestion des données") {
-                Button("Effacer de l’historique…") { deletion = true }.buttonStyle(.bordered)
+                Button("Effacer de l’historique…") { deletion = true }.buttonStyle(LHSecondaryButtonStyle())
                 Text("Les originaux Apple, les conversations et les données déjà envoyées restent conservés.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
             GoalongDisclosureGroup("Fichiers locaux") {
                 HStack {
                     Button("Ouvrir le dossier") { model.openDataFolder() }
-                }.buttonStyle(.bordered).padding(.top, 12)
+                }.buttonStyle(LHSecondaryButtonStyle()).padding(.top, 12)
             }.font(.system(size: 13))
         }
-        .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model) }
+        .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model).goalongControls() }
         .onAppear(perform: refresh)
-        .sheet(isPresented: $retention, onDismiss: refresh) { GoalongRetentionSheet() }
+        .sheet(isPresented: $retention, onDismiss: refresh) { GoalongRetentionSheet().goalongControls() }
     }
     private func refresh() {
         let store = HistoryRetentionStore(legacyRetentionDays: model.appliedSettings.retentionDays)
@@ -71,15 +71,15 @@ import Foundation
     @State private var prepared: Data?
     var body: some View {
         GoalongSettingsGroup(title: "Actions distinctes des envois quotidiens") {
-            Button("Exporter un fichier signé…") { model.selectSection(.share) }.buttonStyle(.bordered)
-            Button("Partager un récap relu…") { prepared = nil; advancedShare = true }.buttonStyle(.bordered)
-            Button("Comprendre mon travail") { profileWindow.show { prepared = $0; advancedShare = true } }.buttonStyle(.bordered)
-            Button("Analyser une demande du site…") { siteAnalysis = true }.buttonStyle(.bordered)
-            Button("Importer Apple Santé…") { health = true }.buttonStyle(.bordered)
+            Button("Exporter un fichier signé…") { model.selectSection(.share) }.buttonStyle(LHSecondaryButtonStyle())
+            Button("Partager un récap relu…") { prepared = nil; advancedShare = true }.buttonStyle(LHSecondaryButtonStyle())
+            Button("Comprendre mon travail") { profileWindow.show { prepared = $0; advancedShare = true } }.buttonStyle(LHSecondaryButtonStyle())
+            Button("Analyser une demande du site…") { siteAnalysis = true }.buttonStyle(LHSecondaryButtonStyle())
+            Button("Importer Apple Santé…") { health = true }.buttonStyle(LHSecondaryButtonStyle())
         }
-        .sheet(isPresented: $advancedShare) { GoalongWebsiteConnectionSheet(preparedAnalysis: prepared) }
-        .sheet(isPresented: $siteAnalysis) { GoalongSiteAnalysisSheet() }
-        .sheet(isPresented: $health) { GoalongHealthImportSheet() }
+        .sheet(isPresented: $advancedShare) { GoalongWebsiteConnectionSheet(preparedAnalysis: prepared).goalongControls() }
+        .sheet(isPresented: $siteAnalysis) { GoalongSiteAnalysisSheet().goalongControls() }
+        .sheet(isPresented: $health) { GoalongHealthImportSheet().goalongControls() }
     }
 }
 #endif

@@ -41,11 +41,12 @@
                 }
             }
             .environment(\.goalongRecordingModel, model)
-            .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay) }
+            .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay).goalongControls() }
             .background(LHTheme.pageBackground)
             .foregroundStyle(LHTheme.text)
             .tint(LHTheme.accent)
             .accentColor(LHTheme.accent)
+            .goalongControls()
             .frame(minWidth: 900, minHeight: 620)
             .alert(item: $model.alert) { item in
                 Alert(

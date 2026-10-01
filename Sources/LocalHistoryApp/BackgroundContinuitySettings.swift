@@ -15,14 +15,14 @@
                 LHCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Toggle("Garder Goalong actif en arrière-plan", isOn: $keepRunning)
-                            .toggleStyle(.switch)
+                            .toggleStyle(.goalongSwitch)
                         Text("Recommandé : fermer la fenêtre n’arrête pas l’enregistrement, et Quitter demande confirmation. Aucun service supplémentaire n’est installé ; votre Mac peut toujours se mettre en veille.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                         Divider()
                         Toggle("Ouvrir Goalong à l’ouverture de session", isOn: Binding(
                             get: { login.isRegistered },
                             set: { _ = login.setUserPreference($0, surface: .settings) }
-                        )).toggleStyle(.switch).disabled(login.isChanging)
+                        )).toggleStyle(.goalongSwitch).disabled(login.isChanging)
                         Text(login.statusDetail).font(.system(size: 12)).foregroundStyle(.secondary)
                         if consents.isEnabled(.launchAtLogin) && !login.isEnabled {
                             Text("Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système.")
@@ -30,7 +30,7 @@
                         }
                         if login.requiresApproval || login.state == .unavailable {
                             Button("Ouvrir les éléments de connexion…") { login.openLoginItemsSettings() }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(LHSecondaryButtonStyle())
                         }
                         if let message = login.message {
                             Text(message).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
@@ -39,7 +39,7 @@
                             Divider()
                             Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                             Button("Masquer") { continuity.dismissInterruptionNotice() }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(LHSecondaryButtonStyle())
                         }
                         Text("Ces options n’activent aucune source et ne reprennent pas une pause.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)

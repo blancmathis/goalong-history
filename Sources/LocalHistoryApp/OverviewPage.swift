@@ -134,7 +134,7 @@
             default:
                 HStack(spacing: 10) {
                     Button { model.togglePause() } label: { Label("Pause", systemImage: "pause.fill") }
-                        .buttonStyle(.bordered).help("Mettre en pause l’enregistrement détaillé, pas les autres sources ou les envois.")
+                        .buttonStyle(LHSecondaryButtonStyle()).help("Mettre en pause l’enregistrement détaillé, pas les autres sources ou les envois.")
                     StatusPill(
                     title: model.runtime.displayTitle,
                     symbol: model.runtime.displaySymbol,
@@ -185,7 +185,7 @@
                                     .font(.system(size: 12)).foregroundStyle(.secondary)
                                 Spacer()
                                 Button("Review access") { model.selectSection(.screenTime) }
-                                    .buttonStyle(.bordered)
+                                    .buttonStyle(LHSecondaryButtonStyle())
                             }
                             .padding(20)
                         }
@@ -248,7 +248,7 @@
                     GoalongDisclosureGroup("Display options") {
                         VStack(alignment: .leading, spacing: 8) {
                             Toggle("Group sites by browser", isOn: groupsSitesByBrowser)
-                                .toggleStyle(.switch)
+                                .toggleStyle(.goalongSwitchInline)
                                 .controlSize(.small)
                                 .accessibilityHint(
                                     "Changes only how the same usage is grouped. Off lists sites beside apps. On lists browsers that expand into sites."
@@ -268,7 +268,7 @@
                                     "Include login and lock-screen time",
                                     isOn: $includesInactiveSystemTime
                                 )
-                                .toggleStyle(.switch)
+                                .toggleStyle(.goalongSwitchInline)
                                 .controlSize(.small)
                                 .accessibilityHint(
                                     "Adds login screen, lock screen, and screen saver time Apple may report while the device is not actively being used."
@@ -320,7 +320,7 @@
                                         systemImage: showsAllUsage ? "chevron.up" : "chevron.down"
                                     )
                                 }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(LHSecondaryButtonStyle())
                                 .accessibilityValue(showsAllUsage ? "Expanded" : "Collapsed")
                             }
                         }
@@ -561,7 +561,7 @@
         @ViewBuilder private var recapAction: some View {
             if !consents.isEnabled(.chatGPTAnalysis) || !GoalongAnalysisSelection.load().isValid(for: GoalongExclusionStore.shared.policy) {
                 Button("Configurer ChatGPT") { model.selectSection(.settings); model.settingsPane = .chatGPT }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
             } else if recapRuntime.isGenerating {
                 ProgressView()
                     .controlSize(.small)

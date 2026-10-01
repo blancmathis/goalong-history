@@ -18,7 +18,7 @@ struct GoalongGlobalPauseControl: View {
                       systemImage: pause.blocksActivity ? "play.circle" : "pause.circle")
                     .font(.system(size: 12, weight: .medium))
                     .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
-            }.buttonStyle(.bordered).disabled(pause.invalid)
+            }.buttonStyle(LHSecondaryButtonStyle()).disabled(pause.invalid)
                 .accessibilityIdentifier("goalong-global-pause")
                 .help("Suspendre le suivi, les lectures Apple et IA, les analyses et les envois. Les choix autorisés sont conservés.")
             if !compact {

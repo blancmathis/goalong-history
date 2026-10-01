@@ -70,7 +70,7 @@ struct RecordingChoicesView: View {
                                 GoalongHelpButton(text: signal.detail)
                                 Spacer(minLength: 8)
                                 Toggle(signal.title, isOn: Binding(get: { draft[keyPath: signal.keyPath] }, set: { draft[keyPath: signal.keyPath] = $0 }))
-                                    .labelsHidden().toggleStyle(.switch)
+                                    .labelsHidden().toggleStyle(.goalongSwitchOnly)
                                     .accessibilityIdentifier("recording-\(signal.rawValue)")
                             }.frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
                         }
@@ -129,7 +129,7 @@ struct ApplicationScopePickerButton: View {
     @State private var error: String?
     var body: some View {
         Button("Choisir des applications…", action: chooseApplications)
-            .buttonStyle(.bordered)
+            .buttonStyle(LHSecondaryButtonStyle())
             .help("Choisissez des applications sans les ouvrir. Leurs identifiants sont ajoutés à cette liste, qui reste à enregistrer.")
             .alert("L’application n’a pas pu être ajoutée", isPresented: Binding(
                 get: { error != nil }, set: { if !$0 { error = nil } })) {

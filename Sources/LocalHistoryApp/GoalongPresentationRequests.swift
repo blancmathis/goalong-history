@@ -14,6 +14,10 @@ struct GoalongAnalysisPresentation: Identifiable {
 enum GoalongUIFormat {
     /// The interface is French-only; never follow an English system region for its text.
     static let locale = Locale(identifier: "fr_FR")
+    /// « 12,4 Mo », « 0 octet » — French units whatever the system region.
+    static func bytes(_ count: Int64) -> String {
+        count.formatted(.byteCount(style: .file, spellsOutZero: false).locale(locale))
+    }
     static func day(_ date: Date) -> String {
         date.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "fr_FR")))
     }

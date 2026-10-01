@@ -26,7 +26,7 @@ extension Notification.Name { static let goalongWebsiteConnected = Notification.
                 }
                 Spacer()
                 if credentialAvailable {
-                    Button("Déconnecter") { disconnecting = true }.buttonStyle(.bordered)
+                    Button("Déconnecter") { disconnecting = true }.buttonStyle(LHSecondaryButtonStyle())
                 } else {
                     Button("Relier mon compte") { openWebsite() }.buttonStyle(LHPrimaryButtonStyle())
                 }
@@ -38,8 +38,8 @@ extension Notification.Name { static let goalongWebsiteConnected = Notification.
                     if let day = sender.lastSuccess { Text("Dernière journée reçue : \(day)").font(.system(size: 12)).foregroundStyle(.secondary) }
                 }
                 Spacer()
-                if sender.enabled { Button("Mettre en pause") { sender.stop() }.buttonStyle(.bordered) }
-                Button("Choisir les données…") { showsConnection = true }.buttonStyle(.bordered).disabled(!credentialAvailable)
+                if sender.enabled { Button("Mettre en pause") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
+                Button("Choisir les données…") { showsConnection = true }.buttonStyle(LHSecondaryButtonStyle()).disabled(!credentialAvailable)
             }
         }
         .onAppear {
@@ -52,7 +52,7 @@ extension Notification.Name { static let goalongWebsiteConnected = Notification.
             refreshCredential(); UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
         }
         .onChange(of: tokenPath) { _ in refreshCredential() }
-        .sheet(isPresented: $showsConnection) { GoalongWebsiteSharingSheet() }
+        .sheet(isPresented: $showsConnection) { GoalongWebsiteSharingSheet().goalongControls() }
         .alert("Déconnecter ce compte ?", isPresented: $disconnecting) {
             Button("Annuler", role: .cancel) {}
             Button("Déconnecter") {
@@ -152,7 +152,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Adresse et accès enregistrés").font(.headline)
                         TextField("Adresse du site, par exemple https://votre-hote-goalong", text: $origin)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(GoalongFieldStyle())
                             .accessibilityLabel("Adresse HTTPS du site Goalong")
                         Text("Créez un jeton d’envoi seul dans la page Sources du site, puis choisissez ici le fichier téléchargé. Si besoin, Goalong propose « Protéger ce fichier » pour en limiter l’accès à votre compte. Le fichier reste sur votre Mac ; le jeton autorise uniquement les envois que vous demandez vers ce site et peut y être révoqué.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -169,7 +169,7 @@ struct GoalongWebsiteConnectionSheet: View {
                         GoalongDisclosureGroup("Autre méthode : coller le chemin du fichier", isExpanded: $showsTokenPath) {
                             VStack(alignment: .leading, spacing: 8) {
                                 TextField("~/Downloads/goalong-token.txt", text: $tokenPathInput)
-                                    .textFieldStyle(.roundedBorder)
+                                    .textFieldStyle(GoalongFieldStyle())
                                     .accessibilityLabel("Chemin local du fichier de connexion")
                                 Text("Collez le chemin du fichier téléchargé, pas la clé. Seul ce fichier sera lu ; la même protection et la même validation s’appliquent.")
                                     .font(.caption).foregroundStyle(.secondary)
@@ -254,7 +254,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("3. Vérifier avant l’envoi").font(.headline)
                         if preparedAnalysis == nil { Button(payload == nil ? "Prepare offline preview" : "Actualiser l’aperçu", action: preparePreview)
-                            .buttonStyle(.bordered) }
+                            .buttonStyle(LHSecondaryButtonStyle()) }
                         if let payload {
                             Text(previewSummary).font(.subheadline)
                             GoalongDisclosureGroup("Voir les données exactes", isExpanded: $showsExactData) {
@@ -310,7 +310,7 @@ struct GoalongWebsiteConnectionSheet: View {
         .onChange(of: recapSections) { _ in invalidatePreview() }
         .onChange(of: rhythmContext) { _ in invalidatePreview() }
         .onChange(of: recapRuntime.recap?.generatedAt) { _ in if includeRecap { loadSavedRecap() } }
-        .sheet(isPresented: $showsRhythmStudio) { GoalongRhythmStudio(day: date, masks: splitNames(maskedApps)) { rhythm in contextualRhythm = rhythm; invalidatePreview() } }
+        .sheet(isPresented: $showsRhythmStudio) { GoalongRhythmStudio(day: date, masks: splitNames(maskedApps)) { rhythm in contextualRhythm = rhythm; invalidatePreview() }.goalongControls() }
         .onChange(of: recapExcerpt) { _ in invalidatePreview() }
         .onChange(of: includeRhythm) { _ in invalidatePreview() }
         .onChange(of: rhythmProject) { _ in invalidatePreview() }
@@ -420,7 +420,7 @@ struct GoalongWebsiteConnectionSheet: View {
             }
             if !recapNotice.isEmpty { Text(recapNotice).font(.caption).foregroundStyle(.secondary) }
             GoalongDisclosureGroup("Ajouter un commentaire personnel") {
-                TextEditor(text: $recapExcerpt).frame(height: 70).accessibilityLabel("Commentaire personnel du récap")
+                GoalongTextArea(text: $recapExcerpt, minHeight: 70).accessibilityLabel("Commentaire personnel du récap")
             }
             Text("L'analyse utilise les sources autorisées dans l'app. La génération et l'envoi au site sont deux actions distinctes.").font(.caption).foregroundStyle(.secondary)
         }

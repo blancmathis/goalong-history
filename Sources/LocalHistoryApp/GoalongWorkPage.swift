@@ -35,7 +35,7 @@ import SwiftUI
                     .font(.system(size: 13))
             }
             .font(.system(size: 13))
-            .frame(maxWidth: 840, alignment: .leading)
+            .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
             .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 26)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -90,7 +90,7 @@ import SwiftUI
                 statusAction
             }
             Toggle("Classer automatiquement les nouveaux contextes", isOn: $work.automatic)
-                .toggleStyle(.switch).disabled(agent.readiness == .noConsent)
+                .toggleStyle(.goalongSwitch).disabled(agent.readiness == .noConsent)
                 .accessibilityIdentifier("work-automatic")
             Text("Quand vous ouvrez Activité : la journée affichée, au plus toutes les 15 minutes pour aujourd’hui. Aucune minuterie en arrière-plan ; un contexte déjà classé n’est jamais renvoyé.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -138,7 +138,7 @@ import SwiftUI
         if agent.isRunning {
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small)
-                Button("Arrêter") { agent.cancel() }.buttonStyle(.bordered)
+                Button("Arrêter") { agent.cancel() }.buttonStyle(LHSecondaryButtonStyle())
             }
         } else {
             switch agent.readiness {
@@ -147,7 +147,7 @@ import SwiftUI
                     .accessibilityIdentifier("work-allow")
             case .notConnected:
                 if case .codexUnavailable = runtime.connectionState {
-                    Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(.bordered)
+                    Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHSecondaryButtonStyle())
                 } else if case .checking = runtime.connectionState {
                     ProgressView().controlSize(.small)
                 } else {
@@ -158,9 +158,9 @@ import SwiftUI
                         .buttonStyle(LHPrimaryButtonStyle()).disabled(runtime.isConnecting)
                 }
             case .historyOff:
-                Button("Ouvrir les réglages") { model.openRecordingSettings() }.buttonStyle(.bordered)
+                Button("Ouvrir les réglages") { model.openRecordingSettings() }.buttonStyle(LHSecondaryButtonStyle())
             case .ready:
-                Button("Classer aujourd’hui") { agent.classify(day: Date()) }.buttonStyle(.bordered)
+                Button("Classer aujourd’hui") { agent.classify(day: Date()) }.buttonStyle(LHSecondaryButtonStyle())
                     .accessibilityIdentifier("work-classify-today")
             case .paused, .noDefinition:
                 EmptyView()
@@ -259,11 +259,9 @@ import SwiftUI
     var body: some View {
         GoalongSettingsGroup(title: "Vérifier et corriger") {
             HStack(spacing: 12) {
-                DatePicker("Journée", selection: $day, in: ...Date(), displayedComponents: .date)
-                    .datePickerStyle(.field).labelsHidden().fixedSize()
-                    .environment(\.locale, Locale(identifier: "fr_FR"))
+                DateSelectionControl(date: day, onChange: { day = $0 }, showsToday: false)
                 Button(review.loadedDay == nil ? "Afficher le classement" : "Actualiser") { review.load(day: day) }
-                    .buttonStyle(.bordered).disabled(review.loading).accessibilityIdentifier("work-review-load")
+                    .buttonStyle(LHSecondaryButtonStyle()).disabled(review.loading).accessibilityIdentifier("work-review-load")
                 if review.loading { ProgressView().controlSize(.small) }
                 Spacer(minLength: 0)
             }
@@ -396,7 +394,7 @@ import SwiftUI
                 }
                 Spacer(minLength: 8)
                 Button(store.context.isEmpty ? "Définir mon travail" : "Modifier", action: onOpen)
-                    .buttonStyle(.bordered).accessibilityIdentifier("monitoring-open-work")
+                    .buttonStyle(LHSecondaryButtonStyle()).accessibilityIdentifier("monitoring-open-work")
             }
             if let error = store.error {
                 Text(error).font(.caption).foregroundStyle(LHTheme.warning)

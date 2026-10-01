@@ -15,10 +15,10 @@ import LocalHistoryCore
                     .font(.caption).foregroundStyle(.secondary)
             }
             Toggle("Changer de position à chaque nouveau rappel", isOn: binding(\.moveAfterSecondAppearance))
-                .toggleStyle(.switch).accessibilityIdentifier("jev-move-warning")
+                .toggleStyle(.goalongSwitch).accessibilityIdentifier("jev-move-warning")
             Divider()
             Toggle("Activer les effets progressifs", isOn: binding(\.effectsEnabled))
-                .toggleStyle(.switch).accessibilityIdentifier("jev-effects-enabled")
+                .toggleStyle(.goalongSwitch).accessibilityIdentifier("jev-effects-enabled")
             Text("Optionnel. Par défaut : assombrissement à 2 min, puis assombrissement + rouge dès 5 min. Ensuite, ce dernier effet et les rappels continuent sans nouveau palier. Retour productif, pause ou arrêt de la surveillance dans Goalong : tout disparaît.")
                 .font(.caption).foregroundStyle(.secondary)
             strengthPresets
@@ -47,7 +47,7 @@ import LocalHistoryCore
                                 .font(.caption)
                         }.frame(maxWidth: .infinity).padding(.vertical, 5)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
                     .accessibilityIdentifier("jev-strength-\(strength.rawValue)")
                     .accessibilityLabel("\(strength.title) : palier 1 à \(strength.intensities[0]) %, palier 2 à \(strength.intensities[1]) %")
                 }
@@ -69,7 +69,7 @@ import LocalHistoryCore
         let upper = index == stages.count - 1 ? 60 : stages[index + 1].afterMinutes - 1
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Toggle("Palier \(index + 1)", isOn: stageBinding(index, \.enabled)).toggleStyle(.switch)
+                Toggle("Palier \(index + 1)", isOn: stageBinding(index, \.enabled)).toggleStyle(.goalongSwitchInline)
                     .accessibilityIdentifier("jev-stage-\(index)-enabled")
                 Spacer()
                 Stepper("Après \(stages[index].afterMinutes) min", value: stageBinding(index, \.afterMinutes), in: lower...upper)

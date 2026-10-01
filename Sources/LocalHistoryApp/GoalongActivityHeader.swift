@@ -24,12 +24,8 @@ struct GoalongActivityHeader: View {
                         .accessibilityIdentifier("activity-date-range")
                 }
                 Spacer(minLength: 8)
-                Picker("Période", selection: Binding(get: { selection.period }, set: onPeriod)) {
-                    Text("Jour").tag(1)
-                    Text("7 jours").tag(7)
-                    Text("28 jours").tag(28)
-                }
-                .labelsHidden().pickerStyle(.segmented).frame(width: 224)
+                GoalongSegmentedControl("Période", selection: Binding(get: { selection.period }, set: onPeriod),
+                                        options: [1, 7, 28]) { $0 == 1 ? "Jour" : "\($0) jours" }
                 .accessibilityIdentifier("analytics-period")
             }
             ViewThatFits(in: .horizontal) {
@@ -57,20 +53,10 @@ struct GoalongActivityHeader: View {
 
     private var dateControls: some View {
         HStack(spacing: 8) {
-            Button { onStep(-1) } label: {
-                Label(selection.period == 1 ? "Jour précédent" : "Période précédente", systemImage: "chevron.left")
-            }.labelStyle(.iconOnly).accessibilityIdentifier("activity-previous-period")
-            DatePicker(selection.period == 1 ? "Date" : "Dernier jour de la période",
-                       selection: Binding(get: { selection.day }, set: onDay),
-                       in: ...Date(), displayedComponents: .date)
-                .labelsHidden().datePickerStyle(.field).fixedSize()
-                .environment(\.locale, Locale(identifier: "fr_FR"))
-                .accessibilityIdentifier("activity-date-picker")
-            Button { onStep(1) } label: {
-                Label(selection.period == 1 ? "Jour suivant" : "Période suivante", systemImage: "chevron.right")
-            }
-            .labelStyle(.iconOnly).disabled(Calendar.current.isDateInToday(selection.day))
-            .accessibilityIdentifier("activity-next-period")
+            DateSelectionControl(date: selection.day, onChange: onDay, onStep: onStep,
+                                 previousLabel: selection.period == 1 ? "Jour précédent" : "Période précédente",
+                                 nextLabel: selection.period == 1 ? "Jour suivant" : "Période suivante",
+                                 identifierPrefix: "activity", showsToday: false)
             Button("Aujourd’hui", action: onToday)
                 .disabled(selection.period == 1 && Calendar.current.isDateInToday(selection.day))
                 .accessibilityIdentifier("activity-today")

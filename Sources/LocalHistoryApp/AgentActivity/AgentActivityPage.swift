@@ -134,6 +134,7 @@
                 } onCancel: {
                     editingFolder = nil
                 }
+                .goalongControls()
             }
         }
 
@@ -155,7 +156,7 @@
                         } label: {
                             Label(agents.isScanning ? "Analyse…" : "Analyser maintenant", systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                         .disabled(agents.isScanning)
 
                         Button {
@@ -251,8 +252,7 @@
                         .labelsHidden()
                         .frame(width: 150)
                     }
-                    TextField("Rechercher dans les conversations", text: $search)
-                        .textFieldStyle(.roundedBorder)
+                    GoalongSearchField("Rechercher dans les conversations", text: $search)
                         .frame(width: 240)
                 }
 
@@ -293,11 +293,11 @@
                             .frame(minHeight: 190)
                             if search.isEmpty, providerFilter == nil, !hasSourceIssue, let onManageSources {
                                 Button("Vérifier les sources", action: onManageSources)
-                                    .buttonStyle(.bordered).frame(maxWidth: .infinity).padding(.bottom, 20)
+                                    .buttonStyle(LHSecondaryButtonStyle()).frame(maxWidth: .infinity).padding(.bottom, 20)
                             }
                             if !search.isEmpty || providerFilter != nil {
                                 Button("Effacer les filtres") { search = ""; providerFilter = nil }
-                                    .buttonStyle(.bordered)
+                                    .buttonStyle(LHSecondaryButtonStyle())
                                     .frame(maxWidth: .infinity)
                                     .padding(.bottom, 20)
                             }
@@ -511,7 +511,7 @@
                         Button("Ouvrir les signaux de relance") {
                             agents.openSignalsFolder()
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                     }
 
                     providerDirectoryRow
@@ -557,7 +557,7 @@
                 Button("Détecter") {
                     agents.detectCommonSources()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(LHSecondaryButtonStyle())
             }
         }
 
@@ -584,7 +584,7 @@
                     Button("Retirer") {
                         agents.uninstallIntegration(kind)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
                 } else {
                     Button("Installer") {
                         agents.installIntegration(kind)
@@ -609,7 +609,7 @@
                         Button("Détecter les dossiers courants") {
                             agents.detectCommonSources()
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                         .disabled(!consents.isEnabled(.aiConversations))
                         Button {
                             agents.chooseFolder()
@@ -668,7 +668,7 @@
                         set: { agents.setFolderEnabled($0, id: folder.id) }
                     )
                 )
-                .toggleStyle(.switch)
+                .toggleStyle(.goalongSwitchInline)
                 .controlSize(.small)
                 .labelsHidden()
                 Button {
@@ -676,21 +676,21 @@
                 } label: {
                     Image(systemName: "folder")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(LHSecondaryButtonStyle())
                 .help("Ouvrir le dossier source")
                 Button {
                     editingFolder = folder
                 } label: {
                     Image(systemName: "slider.horizontal.3")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(LHSecondaryButtonStyle())
                 .help("Modifier le suivi")
                 Button(role: .destructive) {
                     agents.removeFolder(id: folder.id)
                 } label: {
                     Image(systemName: "trash")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(LHSecondaryButtonStyle())
                 .help("Arrêter de suivre ce dossier")
             }
             .padding(.vertical, 4)
@@ -715,8 +715,7 @@
                             }
                         }
                         .frame(width: 165)
-                        TextField("Rechercher sessions, fichiers, modèles ou outils", text: $search)
-                            .textFieldStyle(.roundedBorder)
+                        GoalongSearchField("Rechercher sessions, fichiers, modèles ou outils", text: $search)
                             .frame(width: 285)
                     }
 
@@ -808,7 +807,7 @@
                         Button("Ouvrir le dossier de l’index") {
                             agents.openRootFolder()
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(LHSecondaryButtonStyle())
                     }
                 }
                 .frame(maxWidth: .infinity)

@@ -68,12 +68,12 @@ struct GoalongReplacementRow: View {
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Rechercher").font(.system(size: 12)).foregroundStyle(.secondary)
-                        TextField("Hi Charlie", text: $rule.search).textFieldStyle(.roundedBorder)
+                        TextField("Hi Charlie", text: $rule.search).textFieldStyle(GoalongFieldStyle())
                     }
                     Image(systemName: "arrow.right").foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Remplacer par").font(.system(size: 12)).foregroundStyle(.secondary)
-                        TextField("Projet A · vide pour supprimer", text: $rule.replacement).textFieldStyle(.roundedBorder)
+                        TextField("Projet A · vide pour supprimer", text: $rule.replacement).textFieldStyle(GoalongFieldStyle())
                     }
                     Button(action: remove) { Image(systemName: "trash").frame(width: 30, height: 30) }.buttonStyle(.borderless).accessibilityLabel("Supprimer le remplacement")
                 }
@@ -123,7 +123,7 @@ struct GoalongAnalysisHumanPreview: View {
                                     .font(.system(size: 12)).foregroundStyle(.secondary)
                                 Spacer()
                                 Button("Afficher les suivants") { visibleLimits[key] = min(rows.count, (visibleLimits[key] ?? 40) + 40) }
-                                    .buttonStyle(.bordered)
+                                    .buttonStyle(LHSecondaryButtonStyle())
                             }
                         }
                     }

@@ -18,7 +18,7 @@ import LocalHistoryCore
                 .font(.callout).foregroundStyle(.secondary)
             Toggle("Joindre un bref extrait du texte affiché", isOn: Binding(
                 get: { excerpts }, set: { if $0 { confirmingText = true } else { monitor.setIncludeText(false) } }))
-                .toggleStyle(.switch).disabled(!richText)
+                .toggleStyle(.goalongSwitch).disabled(!richText)
             Text(richText ? "Les extraits visibles sont rafraîchis pendant la surveillance, séparés du titre et filtrés. Les champs de saisie et le texte hors de la zone visible sont exclus." : "Cette option nécessite d’abord le choix local « Texte affiché ». Celui-ci n’est jamais activé par la surveillance.")
                 .font(.caption).foregroundStyle(.secondary)
             Text("Le service ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. La lecture au premier plan reste suivie pendant le délai d’inactivité choisi. Une lecture vidéo explicitement détectée peut continuer sans clavier ; un onglet d’arrière-plan ne suffit pas.")

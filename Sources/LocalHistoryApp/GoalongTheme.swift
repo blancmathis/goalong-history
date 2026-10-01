@@ -26,6 +26,16 @@
         static let hoverBackground = adaptive(light: 0xE7EADB, dark: 0x253228)
         static let selectionBackground = adaptive(light: 0xE0E8CA, dark: 0x2C3B22, highLight: 0xCFDDAA, highDark: 0x3B502C)
         static let pressedBackground = adaptive(light: 0xD6DFC2, dark: 0x34462A)
+        /// Controls and inputs: raised buttons, sunken fields, quiet inset notes.
+        static let controlBackground = adaptive(light: 0xFFFFFF, dark: 0x1B251E)
+        static let controlBorder = adaptive(light: 0xCDD3C2, dark: 0x2F3F33, highLight: 0x828B76, highDark: 0x718A75)
+        static let fieldBackground = adaptive(light: 0xFFFFFF, dark: 0x0C120E)
+        static let insetBackground = adaptive(light: 0xF0EFE6, dark: 0x18211B)
+        static let segmentSelected = adaptive(light: 0xFFFFFF, dark: 0x2A3A2E)
+        static let segmentSelectedBorder = adaptive(light: 0xC9D0BC, dark: 0x3D5141)
+        static let switchTrack = adaptive(light: 0xE2E4D8, dark: 0x223026)
+        static let switchKnob = adaptive(light: 0xFFFFFF, dark: 0xB4C2B7)
+        static let placeholder = adaptive(light: 0x8A9486, dark: 0x66766A, highLight: 0x5E6859, highDark: 0x93A396)
         static let pageInset: CGFloat = 28
         static let cardInset: CGFloat = 20
         static let cardRadius: CGFloat = 14

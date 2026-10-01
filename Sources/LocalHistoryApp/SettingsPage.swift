@@ -23,7 +23,7 @@ import AppKit
                 Text(pane.title).font(LHTheme.pageTitleFont).accessibilityAddTraits(.isHeader)
                 content
             }
-            .frame(maxWidth: pane == .chatGPT ? 960 : 840, alignment: .leading)
+            .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
             .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 26)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -36,7 +36,7 @@ import AppKit
             }
         }
         .background(LHTheme.pageBackground)
-        .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet() }
+        .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet().goalongControls() }
         .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
             Button("Annuler", role: .cancel) {}
             Button("Inclure") { var next = model.appliedSettings; next.capturePrivateBrowsing = true; _ = model.applyRecordingChoice(next) }
@@ -49,8 +49,7 @@ import AppKit
     @ViewBuilder private var content: some View {
         switch pane {
         case .home:
-            TextField("Rechercher un réglage…", text: $search).textFieldStyle(.roundedBorder)
-                .accessibilityLabel("Rechercher un réglage")
+            GoalongSearchField("Rechercher un réglage…", text: $search, accessibilityLabel: "Rechercher un réglage")
             // While searching, results come first; the three main cards return afterwards.
             if search.isEmpty { GoalongDataStatus(model: model) }
             LHCard(padding: 0) {
@@ -129,14 +128,14 @@ import AppKit
                         set: { value in
                             if value { pendingPrivate = true }
                             else { var next = model.appliedSettings; next.capturePrivateBrowsing = false; _ = model.applyRecordingChoice(next) }
-                        })).toggleStyle(.switch)
+                        })).toggleStyle(.goalongSwitch)
                     Toggle("Masquer les valeurs des paramètres d’URL", isOn: Binding(
                         get: { model.appliedSettings.redactAllURLQueryValues },
                         set: { value in
                             if !value { pendingUnredacted = true }
                             else { var next = model.appliedSettings; next.redactAllURLQueryValues = true; _ = model.applyRecordingChoice(next) }
                         }))
-                        .toggleStyle(.switch)
+                        .toggleStyle(.goalongSwitch)
                     Text("La détection des fenêtres privées dépend du navigateur. Utilisez Pause pour une activité sensible.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }.padding(.top, 12)
@@ -167,7 +166,7 @@ import AppKit
             Text("Les fonctions désactivées ne demandent aucune autorisation.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             GoalongDisclosureGroup("Résoudre un problème") {
-                Button("Ouvrir les diagnostics d’accès") { model.selectSection(.privacy) }.buttonStyle(.bordered).padding(.top, 10)
+                Button("Ouvrir les diagnostics d’accès") { model.selectSection(.privacy) }.buttonStyle(LHSecondaryButtonStyle()).padding(.top, 10)
             }.font(.system(size: 13))
         case .storage:
             GoalongStorageSettings(model: model)
@@ -178,17 +177,17 @@ import AppKit
                 GoalongSettingsLink(title: "Outils de partage et analyses", value: "", symbol: "square.and.arrow.up") { pane = .tools }
                 GoalongSettingsLink(title: "Terminal et agents", value: "CLI", symbol: "terminal") { model.selectSection(.cli) }
                 GoalongSettingsLink(title: "Diagnostic et preuves", value: "", symbol: "checkmark.shield") { model.selectSection(.privacy) }
-                Button("Ouvrir config.json") { model.openConfiguration() }.buttonStyle(.bordered)
+                Button("Ouvrir config.json") { model.openConfiguration() }.buttonStyle(LHSecondaryButtonStyle())
             }
             GoalongSettingsGroup(title: "Mises à jour") {
                 GoalongUpdateStatusRow()
                 Toggle("Rechercher les mises à jour automatiquement", isOn: Binding(
-                    get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.switch)
+                    get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.goalongSwitch)
                 Text("Chaque mise à jour est signée et vérifiée avant installation ; rien ne s’installe sans votre accord. Vos réglages et votre historique sont conservés.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Button("Revoir le démarrage") { model.showWelcome = true }.buttonStyle(.bordered)
+            Button("Revoir le démarrage") { model.showWelcome = true }.buttonStyle(LHSecondaryButtonStyle())
         case .tools:
             GoalongAdvancedTools(model: model)
         }
@@ -306,7 +305,7 @@ enum SettingsPane: Hashable {
                     .buttonStyle(LHPrimaryButtonStyle())
             } else {
                 // Always enabled: an unavailable updater explains why and links to the releases.
-                Button("Rechercher") { updates.checkForUpdates() }.buttonStyle(.bordered)
+                Button("Rechercher") { updates.checkForUpdates() }.buttonStyle(LHSecondaryButtonStyle())
             }
         }
         .accessibilityElement(children: .combine)

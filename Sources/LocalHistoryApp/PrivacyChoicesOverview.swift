@@ -35,7 +35,7 @@ import LocalHistoryCore
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     HStack(spacing: 12) {
                         Button("Modifier l’enregistrement et les exclusions") { model.openRecordingSettings() }.buttonStyle(LHPrimaryButtonStyle())
-                        Button("Gérer les sources") { model.selectSection(.settings) }.buttonStyle(.bordered)
+                        Button("Gérer les sources") { model.selectSection(.settings) }.buttonStyle(LHSecondaryButtonStyle())
                     }
                     Text("Les filtres d’enregistrement s’appliquent à l’historique de ce Mac, pas au Temps d’écran d’Apple ni aux conversations IA d’origine. Chaque source et chaque envoi a ses propres réglages.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -57,9 +57,9 @@ import LocalHistoryCore
                     Text("Envoyer au site et partager avec d’autres personnes sont deux actions différentes : les règles de destinataires du site s’appliquent après l’envoi. Un export local crée un fichier ; toute personne qui le reçoit peut en garder une copie.")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     HStack(spacing: 12) {
-                        Button("Vérifier l’envoi au site…") { showingSharing = true }.buttonStyle(.bordered)
+                        Button("Vérifier l’envoi au site…") { showingSharing = true }.buttonStyle(LHSecondaryButtonStyle())
                         if sender.enabled {
-                            Button("Mettre en pause l’envoi quotidien") { sender.stop() }.buttonStyle(.bordered)
+                            Button("Mettre en pause l’envoi quotidien") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle())
                         }
                     }
                     Text("Mettre en pause, déconnecter ou supprimer localement n’efface pas les données déjà reçues ; un transfert en cours peut se terminer. Gérez les destinataires et supprimez les données distantes sur le site ou chez le service. La recherche de mises à jour contacte le serveur des versions sans envoyer votre activité.")
@@ -68,21 +68,21 @@ import LocalHistoryCore
             }
             LHCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("Retention is a separate choice", systemImage: "calendar.badge.clock")
+                    Label("La conservation est un choix distinct", systemImage: "calendar.badge.clock")
                         .font(.system(size: 16, weight: .semibold))
                     Text(retentionEnabled ? "Le nettoyage automatique est activé pour les règles ci-dessous." : "Le nettoyage automatique est désactivé : les données locales restent jusqu’à leur suppression.")
                         .font(.system(size: 13, weight: .medium))
                     if retentionEnabled { Text(retentionSummary).font(.system(size: 13)).foregroundStyle(.secondary) }
-                    Button("Choisir la conservation par type de données…") { showingRetention = true }.buttonStyle(.bordered)
+                    Button("Choisir la conservation par type de données…") { showingRetention = true }.buttonStyle(LHSecondaryButtonStyle())
                     Text("Les fichiers d’activité sont lisibles par votre compte macOS : les permissions de fichiers ne sont pas un chiffrement. La conservation ne couvre pas tout : données Apple, conversations IA d’origine, historique des analyses ChatGPT, exports, sauvegardes et copies distantes ont leurs propres réglages.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
-                }.fixedSize(horizontal: false, vertical: true)
+                }.fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .onAppear { refreshRetention() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongRetentionPolicyDidChange)) { _ in refreshRetention() }
-        .sheet(isPresented: $showingSharing) { GoalongWebsiteSharingSheet() }
-        .sheet(isPresented: $showingRetention, onDismiss: refreshRetention) { HistoryRetentionSettingsSheet() }
+        .sheet(isPresented: $showingSharing) { GoalongWebsiteSharingSheet().goalongControls() }
+        .sheet(isPresented: $showingRetention, onDismiss: refreshRetention) { HistoryRetentionSettingsSheet().goalongControls() }
     }
     private func refreshRetention() {
         let store = HistoryRetentionStore(legacyRetentionDays: model.appliedSettings.retentionDays)

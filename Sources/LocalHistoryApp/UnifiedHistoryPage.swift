@@ -26,14 +26,8 @@
             VStack(alignment: .leading, spacing: 0) {
                 header
 
-                Picker("Source de l’historique", selection: $source) {
-                    ForEach(HistorySource.allCases) { item in
-                        Text(item.title).tag(item)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize(horizontal: true, vertical: false)
+                GoalongSegmentedControl("Source de l’historique", selection: $source,
+                                        options: HistorySource.allCases) { $0.title }
                 .padding(.horizontal, LHTheme.pageInset)
                 .padding(.bottom, 16)
 

@@ -14,7 +14,7 @@ import SwiftUI
             Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API TypeSafe pour utiliser la surveillance temps réel.")
                 .font(.callout).foregroundStyle(.secondary)
             SecureField("Clé API TypeSafe", text: $key)
-                .textFieldStyle(.roundedBorder).accessibilityIdentifier("jev-api-key")
+                .textFieldStyle(GoalongFieldStyle()).accessibilityIdentifier("jev-api-key")
             Text("L’usage de l’API est facturé par TypeSafe. Enregistrer une clé ne donne aucune nouvelle autorisation d’envoi. La surveillance reste soumise à votre choix d’activation sur sa page.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

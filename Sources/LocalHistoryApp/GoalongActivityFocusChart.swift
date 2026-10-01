@@ -77,12 +77,9 @@ struct GoalongFocusExplanation: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 Text("Focus · séquence minimale").font(.system(size: 12, weight: .medium))
-                Picker("Séquence minimale de focus", selection: $minimumMinutes) {
-                    Text("10 min").tag(10)
-                    Text("25 min").tag(25)
-                    Text("50 min").tag(50)
-                }
-                .labelsHidden().pickerStyle(.segmented).frame(width: 210)
+                GoalongSegmentedControl("Séquence minimale de focus", selection: $minimumMinutes,
+                                        options: [10, 25, 50]) { "\($0) min" }
+                .controlSize(.small)
                 .accessibilityIdentifier("analytics-focus-threshold")
                 Spacer(minLength: 0)
             }

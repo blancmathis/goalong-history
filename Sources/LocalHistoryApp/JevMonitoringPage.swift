@@ -52,13 +52,13 @@ struct JevActivationAvailability: Equatable {
                 .accessibilityIdentifier("jev-privacy-details")
             }
             .font(.system(size: 13))
-            .frame(maxWidth: 840, alignment: .leading)
+            .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
             .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 26)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(LHTheme.pageBackground)
         .accessibilityIdentifier("jev-monitoring-page")
-        .sheet(isPresented: $showingConnection) { JevConnectionSheet() }
+        .sheet(isPresented: $showingConnection) { JevConnectionSheet().goalongControls() }
         .alert("Activer la surveillance du travail ?", isPresented: $confirming) {
             Button("Annuler", role: .cancel) {}
             Button("Autoriser les envois à TypeSafe") { monitor.setEnabled(true) }
@@ -85,7 +85,7 @@ struct JevActivationAvailability: Equatable {
                     Toggle("Activer", isOn: Binding(
                         get: { enabled },
                         set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
-                        .toggleStyle(.switch).fixedSize()
+                        .toggleStyle(.goalongSwitchInline).fixedSize()
                         .disabled(!availability.canToggle(isEnabled: enabled))
                         .accessibilityIdentifier("jev-enabled")
                 }

@@ -186,7 +186,7 @@
                         )
                         .frame(width: 28, height: 28)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(LHSecondaryButtonStyle())
                     .disabled(analysesLoading)
                     .help(refreshHelp)
                 }
