@@ -17,7 +17,7 @@ struct GoalongFocusBar: ChartContent {
                     y: .value("Focus", seconds / unitSeconds),
                     width: .ratio(0.28), stacking: .unstacked)
                 .foregroundStyle(LHTheme.teal)
-                .cornerRadius(2)
+                .cornerRadius(4)
                 .accessibilityLabel("Focus observé, inclus dans le temps actif")
                 .accessibilityValue(GoalongAnalyticsFormatting.duration(seconds))
         }
@@ -37,7 +37,7 @@ struct GoalongHourlyFocusChart: View {
             ForEach(hours) { hour in
                 BarMark(x: .value("Heure", hour.start, unit: .hour),
                         y: .value("Activité", hour.seconds / scale.unitSeconds), stacking: .unstacked)
-                    .foregroundStyle(LHTheme.accent).cornerRadius(2)
+                    .foregroundStyle(LHTheme.accent).cornerRadius(4)
                     .accessibilityLabel("Activité observée")
                     .accessibilityValue(GoalongAnalyticsFormatting.duration(hour.seconds))
             }
@@ -57,7 +57,7 @@ struct GoalongHourlyFocusChart: View {
         }
         .chartYAxis {
             AxisMarks(position: .leading) { value in
-                AxisGridLine()
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4]))
                 AxisValueLabel {
                     if let amount = value.as(Double.self) { Text(scale.label(amount)) }
                 }

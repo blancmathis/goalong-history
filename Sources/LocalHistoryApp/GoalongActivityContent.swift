@@ -183,13 +183,15 @@ struct GoalongAnalyticsContent: View {
     private func metric(_ title: String, value: String, unit: String? = nil, detail: String,
                         comparison: GoalongActivitySummary.Comparison? = nil, primary: Bool = false,
                         compact: Bool = false) -> some View {
-        LHCard(padding: 17) {
+        LHCard(padding: 18) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(value).font(.system(size: compact ? 22 : (primary ? 30 : 26), weight: .semibold))
-                        .tracking(-0.6).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                    Text(value).font(compact ? .system(size: 22, weight: .semibold) : LHTheme.figureFont(primary ? 36 : 30))
+                        .tracking(-0.4).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
                         .foregroundStyle(primary ? LHTheme.accent : LHTheme.text)
+                        .goalongNumericTransition()
+                        .animation(LHTheme.settle, value: value)
                     if let unit { Text(unit).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary) }
                 }
                 if let comparison, abs(comparison.delta) >= 60 {
@@ -200,8 +202,17 @@ struct GoalongAnalyticsContent: View {
                         .lineLimit(1).minimumScaleFactor(0.8)
                 }
                 Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }.frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
-        }.accessibilityElement(children: .combine)
+            }.frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
+        }
+        // The day's headline figure carries a faint lime dawn; the others stay quiet.
+        .overlay(alignment: .topLeading) {
+            if primary {
+                RadialGradient(colors: [LHTheme.accent.opacity(0.10), .clear], center: .topLeading, startRadius: 0, endRadius: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous))
+                    .allowsHitTesting(false)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Insights and classification
@@ -564,7 +575,23 @@ struct GoalongAnalyticsContent: View {
             && current.days.contains { Calendar.current.isDateInToday($0.date) }
     }
 
-    private var emptyState: some View {
+    @ViewBuilder private var emptyState: some View {
+        if current.eventCount == 0 && current.incompleteDays == 0 {
+            GoalongEmptyState(
+                title: isEmptyToday ? "Pas encore d’activité aujourd’hui" : "Pas encore d’enregistrement",
+                message: isEmptyToday
+                    ? "Vos durées, vos apps et votre rythme apparaissent ici dès les premières minutes d’utilisation de ce Mac."
+                    : "Choisissez une autre date ou consultez les sources dans l’historique. Une absence de données n’est pas une journée à zéro.") {
+                if !isEmptyToday {
+                    Button("Consulter l’historique", action: onHistory).buttonStyle(LHSecondaryButtonStyle()).disabled(payload.isPreview)
+                }
+            }
+        } else {
+            observationsState
+        }
+    }
+
+    private var observationsState: some View {
         LHCard {
             VStack(alignment: .leading, spacing: 12) {
                 heading(current.incompleteDays > 0 ? "Lecture incomplète" : current.eventCount > 0 ? "Les premières traces sont reçues"
@@ -616,7 +643,7 @@ struct GoalongAnalyticsContent: View {
         return first...(Calendar.current.date(byAdding: .day, value: 1, to: last) ?? last)
     }
     private func middleOfDay(_ day: Date) -> Date { Calendar.current.date(byAdding: .hour, value: 12, to: day) ?? day }
-    private func heading(_ text: String) -> some View { Text(text).font(.system(size: 16, weight: .semibold)).accessibilityAddTraits(.isHeader) }
+    private func heading(_ text: String) -> some View { Text(text).font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader) }
     private func duration(_ value: Double) -> String { GoalongAnalyticsFormatting.duration(value) }
     private func percent(_ share: Double) -> String { "\(Int((max(0, min(1, share)) * 100).rounded()))\u{00A0}%" }
     private func time(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) }

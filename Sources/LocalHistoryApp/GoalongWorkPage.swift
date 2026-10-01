@@ -39,7 +39,7 @@ import SwiftUI
             .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 26)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .background(LHTheme.pageBackground)
+        .goalongPageBackground()
         .accessibilityIdentifier("work-page")
         .onAppear { runtime.refreshAccount() }
         .onReceive(NotificationCenter.default.publisher(for: .jevWorkContextDidChange)) { _ in
@@ -270,7 +270,8 @@ import SwiftUI
             if let error = review.error {
                 Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
             } else if review.loadedDay != nil && review.rows.isEmpty && !review.loading {
-                Text("Aucune activité attribuable ce jour-là.").font(.system(size: 12)).foregroundStyle(.secondary)
+                GoalongEmptyState(title: "Rien à classer ce jour-là",
+                                  message: "Aucune activité attribuable n’a été observée. Choisissez un autre jour avec le sélecteur ci-dessus.")
             }
             ForEach(groups) { group in groupView(group) }
             if let error = work.lastError {

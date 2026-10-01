@@ -26,7 +26,7 @@
             .padding(.horizontal, LHTheme.pageInset)
             .padding(.vertical, 22)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(LHTheme.pageBackground)
+            .goalongPageBackground().clipped()
         }
 
         private var heading: some View {

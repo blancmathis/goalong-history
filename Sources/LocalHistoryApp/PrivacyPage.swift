@@ -52,7 +52,7 @@
                 .padding(.bottom, 30)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .background(LHTheme.pageBackground)
+            .goalongPageBackground()
             .alert(item: $deletionScope) { scope in
                 Alert(
                     title: Text(scope.title),

@@ -9,7 +9,7 @@ import SwiftUI
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Connexion à TypeSafe").font(.system(size: 22, weight: .semibold))
+            Text("Connexion à TypeSafe").font(LHTheme.sheetTitleFont)
                 .accessibilityAddTraits(.isHeader)
             Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API TypeSafe pour utiliser la surveillance temps réel.")
                 .font(.callout).foregroundStyle(.secondary)

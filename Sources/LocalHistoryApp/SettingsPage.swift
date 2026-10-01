@@ -35,7 +35,7 @@ import AppKit
                 }
             }
         }
-        .background(LHTheme.pageBackground)
+        .goalongPageBackground()
         .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet().goalongControls() }
         .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
             Button("Annuler", role: .cancel) {}

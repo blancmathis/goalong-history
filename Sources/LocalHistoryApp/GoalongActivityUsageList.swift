@@ -74,7 +74,7 @@ struct GoalongActivityUsageList: View {
     }
     private var title: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("Applications et sites").font(.system(size: 17, weight: .semibold)).accessibilityAddTraits(.isHeader)
+            Text("Applications et sites").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
             Text("Où est passé votre temps ?").font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }
@@ -144,8 +144,9 @@ struct GoalongActivityUsageRow: View {
                 .help(item.mainTasks.isEmpty ? "Classement selon votre définition du travail"
                       : "Tâches : " + item.mainTasks.prefix(3).map(\.name).joined(separator: ", "))
                 .accessibilityHidden(true)
-            Image(systemName: "chevron.right").font(.system(size: 11, weight: .medium))
-                .foregroundStyle(hovering ? LHTheme.text : LHTheme.secondaryText).padding(.leading, 2)
+            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(hovering ? LHTheme.accent : LHTheme.secondaryText).padding(.leading, 2)
+                .offset(x: hovering ? 3 : 0).animation(LHTheme.press, value: hovering)
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, 20).padding(.vertical, 14)

@@ -650,14 +650,17 @@ import LocalHistoryCore
     struct ComputerHistoryActivationCard: View {
         @ObservedObject var model: DashboardViewModel
         var body: some View {
-            LHCard {
+            LHCard(padding: 24) {
                 // The explanation is the switch's own label: no second, floating title.
                 SourceActivationToggle(capability: .localComputerHistory) {
+                    HStack(spacing: 24) {
+                    GoalongTrailIllustration()
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("L’historique de ce Mac est désactivé").font(.system(size: 15, weight: .semibold))
+                        Text("L’historique de ce Mac est désactivé").font(.system(size: 19, weight: .semibold, design: .serif))
                         Text("Activez l’enregistrement local pour afficher cette chronologie. Goalong vous explique et vérifie d’abord les accès macOS nécessaires.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 13)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
                     }
                 }
             }

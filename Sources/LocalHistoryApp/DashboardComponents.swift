@@ -16,14 +16,7 @@
         var body: some View {
             content
                 .padding(padding)
-                .background(
-                    RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous)
-                        .fill(LHTheme.cardBackground)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous)
-                                .strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.separator, lineWidth: 1)
-                        )
-                )
+                .background(GoalongSurface(corner: LHTheme.cardRadius, increased: contrast == .increased))
         }
     }
 
@@ -38,6 +31,7 @@
 
         func makeBody(configuration: Configuration) -> some View {
             configuration.label
+                .environment(\.goalongRowHovered, isHovered && isEnabled)
                 .background(
                     !isEnabled ? Color.clear : configuration.isPressed ? LHTheme.pressedBackground
                         : selected ? LHTheme.selectionBackground : isHovered ? LHTheme.hoverBackground : .clear,
@@ -170,7 +164,7 @@
                             .foregroundStyle(.secondary)
                     }
                     Text(value)
-                        .font(.system(size: 25, weight: .semibold))
+                        .font(LHTheme.figureFont(26))
                         .monospacedDigit()
                     Text(detail)
                         .font(.system(size: 12))
@@ -398,7 +392,7 @@
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(LHTheme.cardTitleFont)
                     if let subtitle {
                         Text(subtitle)
                             .font(.system(size: 12))

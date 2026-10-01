@@ -33,15 +33,28 @@
         static let insetBackground = adaptive(light: 0xF0EFE6, dark: 0x18211B)
         static let segmentSelected = adaptive(light: 0xFFFFFF, dark: 0x2A3A2E)
         static let segmentSelectedBorder = adaptive(light: 0xC9D0BC, dark: 0x3D5141)
+        /// Lit top edge of raised surfaces: forest canopy light, not a drop shadow.
+        static let rimLight = adaptive(light: 0xFFFFFF, dark: 0x3E5444)
         static let switchTrack = adaptive(light: 0xE2E4D8, dark: 0x223026)
         static let switchKnob = adaptive(light: 0xFFFFFF, dark: 0xB4C2B7)
         static let placeholder = adaptive(light: 0x8A9486, dark: 0x66766A, highLight: 0x5E6859, highDark: 0x93A396)
         static let pageInset: CGFloat = 28
         static let cardInset: CGFloat = 20
-        static let cardRadius: CGFloat = 14
+        static let cardRadius: CGFloat = 16
         static let controlRadius: CGFloat = 8
         static let readableWidth: CGFloat = 920
-        static let pageTitleFont = Font.system(size: 26, weight: .semibold)
+        /// Display voice: New York, the system serif. Page and sheet titles and hero figures only;
+        /// everything else stays in San Francisco.
+        static let pageTitleFont = Font.system(size: 30, weight: .semibold, design: .serif)
+        static let sheetTitleFont = Font.system(size: 24, weight: .semibold, design: .serif)
+        static func figureFont(_ size: CGFloat) -> Font { .system(size: size, weight: .medium, design: .serif) }
+        static let cardTitleFont = Font.system(size: 18, weight: .semibold, design: .serif)
+        static let sectionTitleFont = Font.system(size: 15, weight: .semibold)
+        static let cardCorner: CGFloat = 16
+        /// One spring for everything that answers a click; one ease for hover.
+        static let press = Animation.spring(response: 0.28, dampingFraction: 0.72)
+        static let settle = Animation.spring(response: 0.42, dampingFraction: 0.86)
+        static let hover = Animation.easeOut(duration: 0.14)
 
         static func rgb(_ hex: UInt32) -> NSColor {
             NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255,

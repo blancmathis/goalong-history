@@ -21,28 +21,39 @@
 
         func makeBody(configuration: Configuration) -> some View {
             let destructive = configuration.role == .destructive
+            let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
+            let base: Color = destructive ? Color(nsColor: LHTheme.rgb(0xA6352F))
+                : configuration.isPressed ? LHTheme.actionPressed
+                : isHovered ? LHTheme.actionHover : LHTheme.actionBackground
             configuration.label
                 .font(.system(size: 13, weight: .semibold))
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 15)
                 .padding(.vertical, 5)
                 .frame(minHeight: height)
                 .foregroundStyle(!isEnabled ? LHTheme.secondaryText : destructive ? .white : LHTheme.onAccent)
-                .background(
-                    !isEnabled ? LHTheme.elevatedBackground
-                        : destructive ? Color(nsColor: LHTheme.rgb(0xA6352F))
-                        : configuration.isPressed ? LHTheme.actionPressed
-                        : isHovered ? LHTheme.actionHover : LHTheme.actionBackground,
-                    in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                )
+                .background {
+                    if isEnabled {
+                        // Sunlit lime: a touch brighter at the top, crisp rim, soft glow on hover.
+                        shape.fill(base)
+                            .overlay(shape.fill(LinearGradient(colors: [.white.opacity(0.22), .clear],
+                                                               startPoint: .top, endPoint: .center)))
+                            .overlay(shape.strokeBorder(Color.black.opacity(0.18), lineWidth: 0.5))
+                            .shadow(color: (destructive ? Color.red : LHTheme.actionBackground)
+                                        .opacity(isHovered && !configuration.isPressed ? 0.32 : 0), radius: 10, y: 2)
+                    } else {
+                        GoalongSurface(corner: LHTheme.controlRadius, fill: LHTheme.controlBackground)
+                    }
+                }
                 .overlay {
-                    RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                        .strokeBorder(isFocused ? LHTheme.text : .clear, lineWidth: 2)
+                    shape.strokeBorder(isFocused ? LHTheme.text : .clear, lineWidth: 2)
                         .padding(-3)
                 }
-                .contentShape(RoundedRectangle(cornerRadius: LHTheme.controlRadius))
+                .opacity(isEnabled ? 1 : 0.7)
+                .scaleEffect(configuration.isPressed && isEnabled && !reduceMotion ? 0.97 : 1)
+                .contentShape(shape)
                 .onHover { isHovered = $0 }
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovered)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: configuration.isPressed)
+                .animation(reduceMotion ? nil : LHTheme.hover, value: isHovered)
+                .animation(reduceMotion ? nil : LHTheme.press, value: configuration.isPressed)
         }
     }
 #endif

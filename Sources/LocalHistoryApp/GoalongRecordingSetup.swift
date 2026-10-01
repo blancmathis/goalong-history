@@ -105,7 +105,7 @@ struct GoalongRecordingSetupSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 7) {
-                Text("Votre enregistrement local").font(.system(size: 24, weight: .semibold))
+                Text("Votre enregistrement local").font(LHTheme.sheetTitleFont)
                 Text("Tout est proposé. Décochez ce que vous ne souhaitez pas conserver.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
@@ -135,6 +135,7 @@ struct GoalongRecordingSetupSheet: View {
                         model.alert = nil; return
                     }
                     onSaved(); dismiss()
+                    if !activating { GoalongToastCenter.shared.show("Choix d’enregistrement mis à jour") }
                 }.buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("recording-setup-confirm")
             }.padding(20)

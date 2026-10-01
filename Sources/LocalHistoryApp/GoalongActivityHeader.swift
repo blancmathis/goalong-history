@@ -18,7 +18,7 @@ struct GoalongActivityHeader: View {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(isPreview ? "Activité · aperçu" : "Activité")
-                        .font(.system(size: 26, weight: .semibold)).tracking(-0.5)
+                        .font(LHTheme.pageTitleFont).tracking(-0.3)
                         .accessibilityAddTraits(.isHeader)
                     Text(rangeLabel).font(.system(size: 13)).foregroundStyle(.secondary)
                         .accessibilityIdentifier("activity-date-range")
@@ -47,7 +47,7 @@ struct GoalongActivityHeader: View {
             }
         }
         .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 18)
-        .background(LHTheme.pageBackground)
+        .goalongPageBackground().clipped()
         .accessibilityIdentifier("activity-header")
     }
 

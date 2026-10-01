@@ -55,6 +55,10 @@ struct GoalongHourlyClassChart: View {
     let dateRange: ClosedRange<Date>
     let hourStride: Int
 
+    /// Bars rise once when the chart first appears: the page's single entrance moment.
+    @State private var grow: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         let hours = day.hours(minimumMinutes: 25).filter { $0.seconds > 0 }
         let scale = GoalongAnalyticsChartScale(maximumSeconds: hours.map(\.seconds).max() ?? 0, hourly: true)
@@ -63,14 +67,18 @@ struct GoalongHourlyClassChart: View {
                 ForEach(GoalongActivityClassStyle.order, id: \.rawValue) { kind in
                     let seconds = value(hour, kind)
                     if seconds > 0 {
-                        BarMark(x: .value("Heure", hour.start, unit: .hour), y: .value("Durée", seconds / scale.unitSeconds))
+                        BarMark(x: .value("Heure", hour.start, unit: .hour), y: .value("Durée", seconds / scale.unitSeconds * grow), width: .ratio(0.62))
                             .foregroundStyle(by: .value("Type", GoalongActivityClassStyle.label(kind)))
-                            .cornerRadius(2)
+                            .cornerRadius(4)
                             .accessibilityLabel("\(GoalongSummaryFormat.hour(hour.start)), \(GoalongActivityClassStyle.label(kind))")
                             .accessibilityValue(GoalongAnalyticsFormatting.duration(seconds))
                     }
                 }
             }
+        }
+        .onAppear {
+            guard grow == 0 else { return }
+            if reduceMotion { grow = 1 } else { withAnimation(.spring(response: 0.55, dampingFraction: 0.86)) { grow = 1 } }
         }
         .chartForegroundStyleScale(GoalongActivityClassStyle.scale)
         .chartLegend(.hidden).chartXScale(domain: dateRange).chartYScale(domain: 0...scale.upperBound)
@@ -83,7 +91,7 @@ struct GoalongHourlyClassChart: View {
         }
         .chartYAxis {
             AxisMarks(position: .leading) { value in
-                AxisGridLine()
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4]))
                 AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
             }
         }
@@ -134,7 +142,7 @@ struct GoalongUsageTimelineChart: View {
         .chartPlotStyle { $0.clipped() }
         .chartXAxis {
             AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
-                AxisGridLine(); AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4])); AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
             }
         }
         .chartYAxis {
@@ -186,6 +194,10 @@ struct GoalongDailyClassChart: View {
     let dateRange: ClosedRange<Date>
     var onDay: (Date) -> Void = { _ in }
 
+    /// Bars rise once when the chart first appears: the page's single entrance moment.
+    @State private var grow: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         let observed = period.observedDays
         let average = observed.isEmpty ? 0 : period.activeSeconds / Double(observed.count)
@@ -196,9 +208,9 @@ struct GoalongDailyClassChart: View {
                     ForEach(GoalongActivityClassStyle.order, id: \.rawValue) { kind in
                         let seconds = day.seconds(kind)
                         if seconds > 0 {
-                            BarMark(x: .value("Jour", day.date, unit: .day), y: .value("Durée", seconds / scale.unitSeconds))
+                            BarMark(x: .value("Jour", day.date, unit: .day), y: .value("Durée", seconds / scale.unitSeconds * grow), width: .ratio(0.62))
                                 .foregroundStyle(by: .value("Type", GoalongActivityClassStyle.label(kind)))
-                                .cornerRadius(2)
+                                .cornerRadius(4)
                                 .accessibilityLabel("\(GoalongSummaryFormat.shortDate(day.date)), \(GoalongActivityClassStyle.label(kind))")
                                 .accessibilityValue(GoalongAnalyticsFormatting.duration(seconds))
                         }
@@ -221,13 +233,17 @@ struct GoalongDailyClassChart: View {
                     .accessibilityValue(GoalongAnalyticsFormatting.duration(average))
             }
         }
+        .onAppear {
+            guard grow == 0 else { return }
+            if reduceMotion { grow = 1 } else { withAnimation(.spring(response: 0.55, dampingFraction: 0.86)) { grow = 1 } }
+        }
         .chartForegroundStyleScale(GoalongActivityClassStyle.scale)
         .chartLegend(.hidden).chartYScale(domain: 0...scale.upperBound).chartXScale(domain: dateRange)
         .chartXAxis { AxisMarks(values: .stride(by: .day, count: period.days.count > 7 ? 4 : 1)) { _ in
             AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).weekday(.abbreviated).day()); AxisTick()
         } }
         .chartYAxis { AxisMarks(position: .leading) { value in
-            AxisGridLine(); AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
+            AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4])); AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
         } }
         .frame(height: 220)
         .chartOverlay { proxy in

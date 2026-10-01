@@ -1157,7 +1157,7 @@
             LHCard(padding: 20) {
                 HStack(alignment: .top, spacing: 16) {
                     Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 26, weight: .semibold))
+                        .font(LHTheme.pageTitleFont)
                         .foregroundStyle(LHTheme.privateTint)
                         .frame(width: 56, height: 56)
                         .background(

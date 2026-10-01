@@ -209,7 +209,7 @@ struct SupportRequestView: View {
                 .frame(width: 44, height: 44)
                 .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 6) {
-                Text("Signaler un problème").font(.system(size: 22, weight: .semibold))
+                Text("Signaler un problème").font(LHTheme.sheetTitleFont)
                 Text("Goalong prépare un rapport technique pour comprendre ce qui s’est passé. Vous le relisez et choisissez à qui l’envoyer : rien ne part automatiquement.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)

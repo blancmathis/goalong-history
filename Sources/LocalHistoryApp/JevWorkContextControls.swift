@@ -56,7 +56,7 @@ import LocalHistoryCore
                 .background(LHTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Ma définition du travail").font(.system(size: 16, weight: .semibold)).accessibilityAddTraits(.isHeader)
+                Text("Ma définition du travail").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
                 Text(store.context.isEmpty || editing
                      ? "Décrivez votre travail avec vos mots. Chaque rubrique est facultative ; une seule phrase précise suffit pour commencer."
                      : "Appliquée à Activité et à la surveillance temps réel.")
@@ -105,6 +105,7 @@ import LocalHistoryCore
                     do {
                         try store.save(draft, applications: applications, content: content, procrastination: procrastination)
                         loadDraft(); editing = false; error = nil; prefilledFromLegacy = false
+                        GoalongToastCenter.shared.show(purpose == .workDefinition ? "Définition enregistrée" : "Critères enregistrés")
                     } catch { self.error = error.localizedDescription }
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
@@ -161,11 +162,15 @@ import LocalHistoryCore
         }
     }
 
+    /// A rubric heading: a waypoint on the trail (lime for work, hollow for the rest).
     private func sectionLabel(_ title: String, symbol: String) -> some View {
-        Label(title.uppercased(), systemImage: symbol)
-            .font(.system(size: 11, weight: .semibold)).tracking(0.6)
-            .foregroundStyle(LHTheme.secondaryText)
-            .accessibilityAddTraits(.isHeader)
+        HStack(spacing: 9) {
+            Circle().fill(symbol == "checkmark.circle" ? LHTheme.accent : .clear)
+                .overlay(Circle().strokeBorder(symbol == "checkmark.circle" ? .clear : LHTheme.secondaryText, lineWidth: 1.5))
+                .frame(width: 8, height: 8)
+            Text(title).font(.system(size: 15, weight: .semibold, design: .serif))
+        }
+        .accessibilityAddTraits(.isHeader)
     }
     private var procrastinationText: String {
         "Des exemples certains, pas une liste exhaustive. La surveillance continue de repérer les autres distractions. Un usage qui correspond clairement à un exemple prime sur une autorisation générale ; précisez l’usage plutôt que seulement le site."

@@ -12,7 +12,7 @@ import LocalHistoryQueryCLI
             GoalongSettingsGroup(title: "Fréquence et données") {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(sender.enabled ? "Chaque jour" : sender.savedConfiguration == nil ? "Envoi ponctuel" : "Envoi quotidien en pause").font(.system(size: 17, weight: .semibold))
+                        Text(sender.enabled ? "Chaque jour" : sender.savedConfiguration == nil ? "Envoi ponctuel" : "Envoi quotidien en pause").font(LHTheme.cardTitleFont)
                         Text(sender.enabled ? "La veille, après l’heure choisie" : "Vous vérifiez puis confirmez chaque envoi")
                             .font(.system(size: 13)).foregroundStyle(.secondary)
                     }

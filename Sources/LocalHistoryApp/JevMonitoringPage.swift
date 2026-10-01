@@ -56,7 +56,7 @@ struct JevActivationAvailability: Equatable {
             .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 26)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .background(LHTheme.pageBackground)
+        .goalongPageBackground()
         .accessibilityIdentifier("jev-monitoring-page")
         .sheet(isPresented: $showingConnection) { JevConnectionSheet().goalongControls() }
         .alert("Activer la surveillance du travail ?", isPresented: $confirming) {

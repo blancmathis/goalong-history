@@ -16,7 +16,7 @@ import LocalHistoryCore
             LHCard {
                 VStack(alignment: .leading, spacing: 14) {
                     Label("Vos choix appliqués", systemImage: "slider.horizontal.3")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(LHTheme.cardTitleFont)
                     Text("Ce résumé montre les réglages enregistrés. Votre accord par source, les accès macOS et la disponibilité réelle des données sont distincts.")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     ForEach([GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations]) { capability in
@@ -44,7 +44,7 @@ import LocalHistoryCore
             LHCard {
                 VStack(alignment: .leading, spacing: 13) {
                     Label("Ce qui peut quitter ce Mac", systemImage: "arrow.up.doc")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(LHTheme.cardTitleFont)
                     Text(sender.enabled ? "L’envoi quotidien au site est activé." : "L’envoi quotidien au site est désactivé ou en pause.")
                         .font(.system(size: 13, weight: .semibold))
                     if sender.savedConfiguration != nil {
@@ -69,7 +69,7 @@ import LocalHistoryCore
             LHCard {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("La conservation est un choix distinct", systemImage: "calendar.badge.clock")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(LHTheme.cardTitleFont)
                     Text(retentionEnabled ? "Le nettoyage automatique est activé pour les règles ci-dessous." : "Le nettoyage automatique est désactivé : les données locales restent jusqu’à leur suppression.")
                         .font(.system(size: 13, weight: .medium))
                     if retentionEnabled { Text(retentionSummary).font(.system(size: 13)).foregroundStyle(.secondary) }

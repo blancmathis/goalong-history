@@ -89,7 +89,7 @@ extension HistoryRetentionPolicy {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Durée de conservation locale").font(.system(size: 22, weight: .semibold))
+                    Text("Durée de conservation locale").font(LHTheme.sheetTitleFont)
                     Text("Règles distinctes pour les détails, souvenirs et preuves.").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()

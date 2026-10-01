@@ -48,7 +48,7 @@ import AgentActivity
         VStack(spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Votre analyse ChatGPT").font(.system(size: 25, weight: .semibold))
+                    Text("Votre analyse ChatGPT").font(LHTheme.sheetTitleFont)
                     Text("Choisissez ce qui sort du Mac, puis la façon de rédiger le bilan.").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -351,6 +351,7 @@ import AgentActivity
             NotificationCenter.default.post(name: .goalongAnalysisSelectionDidChange, object: nil)
             if wasAutomatic { ChatGPTRecapRuntime.shared.automaticRecapsEnabled = true; ChatGPTRecapRuntime.shared.start(checkPreviousDayImmediately: false) }
             onSave(next); dismiss()
+            GoalongToastCenter.shared.show("Choix d’analyse enregistrés")
         } catch { self.error = error.localizedDescription }
     }
     private func runtimeStop() {

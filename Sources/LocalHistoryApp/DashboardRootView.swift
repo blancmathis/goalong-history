@@ -5,6 +5,7 @@
     struct LocalHistoryDashboardView: View {
         @ObservedObject var model: DashboardViewModel
         @State private var activityNavigation = GoalongActivityNavigation()
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             Group {
@@ -18,6 +19,10 @@
                             .fill(LHTheme.separator)
                             .frame(width: 1)
                         page
+                            // Changing destination is a short crossfade with a slight rise, never a slide.
+                            .id(model.selectedSection)
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
+                            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.selectedSection)
                             .safeAreaInset(edge: .top, spacing: 0) {
                                 VStack(spacing: 0) {
                                     GoalongGlobalPauseBanner(model: model)
@@ -40,6 +45,7 @@
                     }
                 }
             }
+            .overlay { GoalongToastHost() }
             .environment(\.goalongRecordingModel, model)
             .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay).goalongControls() }
             .background(LHTheme.pageBackground)
@@ -111,6 +117,8 @@
         @ObservedObject private var monitor = JevMonitor.shared
 
         private let primarySections = DashboardSection.primarySections
+        @Namespace private var selection
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
@@ -119,12 +127,13 @@
                     .padding(.top, 24)
                     .padding(.bottom, 20)
 
-                VStack(spacing: 5) {
+                VStack(spacing: 4) {
                     ForEach(primarySections) { section in
                         navigationButton(section)
                     }
                 }
                 .padding(.horizontal, 10)
+                .animation(reduceMotion ? nil : LHTheme.settle, value: model.highlightedSidebarSection)
 
                 if let version = updates.availableVersion {
                     updateButton(version: version)
@@ -156,11 +165,7 @@
 
         private var brand: some View {
             HStack(spacing: 11) {
-                GoalongMark()
-                    .stroke(
-                        LHTheme.accent,
-                        style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round)
-                    )
+                GoalongAnimatedMark()
                     .frame(width: 30, height: 21)
                     .frame(width: 32, height: 32)
                     .accessibilityLabel("Logo Goalong")
@@ -187,7 +192,20 @@
                     wraps: section == .monitoring
                 )
             }
-            .buttonStyle(LHNavigationButtonStyle(selected: model.highlightedSidebarSection == section))
+            .buttonStyle(LHNavigationButtonStyle())
+            // The selection glides between destinations: a raised leaf with a lime waypoint.
+            .background {
+                if model.highlightedSidebarSection == section {
+                    ZStack(alignment: .leading) {
+                        GoalongSurface(corner: LHTheme.controlRadius, fill: LHTheme.selectionBackground, highlighted: true)
+                        Capsule().fill(LHTheme.accent)
+                            .frame(width: 3, height: 18).padding(.leading, 4)
+                            .shadow(color: LHTheme.accent.opacity(0.6), radius: 4)
+                    }
+                    .matchedGeometryEffect(id: "sidebar-selection", in: selection)
+                    .accessibilityHidden(true)
+                }
+            }
             .accessibilityIdentifier("sidebar-\(section.rawValue)")
             .accessibilityLabel(section.simpleTitle)
             .accessibilityAddTraits(model.highlightedSidebarSection == section ? .isSelected : [])
@@ -201,7 +219,8 @@
         ) -> some View {
             HStack(spacing: 12) {
                 Image(systemName: symbol)
-                    .font(.system(size: 14, weight: .regular))
+                    .font(.system(size: 14, weight: selected ? .medium : .regular))
+                    .foregroundStyle(selected ? LHTheme.accent : LHTheme.secondaryText)
                     .frame(width: 20)
                 Text(title)
                     .font(.system(size: 13, weight: .medium))

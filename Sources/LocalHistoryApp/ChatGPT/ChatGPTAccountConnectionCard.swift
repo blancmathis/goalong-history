@@ -11,7 +11,7 @@ struct ChatGPTAccountConnectionCard: View {
                         .frame(width: 40, height: 40)
                         .background(LHTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 11))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("ChatGPT").font(.system(size: 16, weight: .semibold))
+                        Text("ChatGPT").font(LHTheme.cardTitleFont)
                         Text(status).font(.system(size: 12)).foregroundStyle(.secondary)
                         if case .failed(let reason) = runtime.connectionState, !reason.isEmpty {
                             Text(reason).font(.system(size: 11)).foregroundStyle(LHTheme.warning)

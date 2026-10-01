@@ -11,7 +11,7 @@ import LocalHistoryCore
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Conservation de l’historique").font(.system(size: 23, weight: .semibold))
+                Text("Conservation de l’historique").font(LHTheme.sheetTitleFont)
                 Spacer()
                 Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(24)
@@ -102,7 +102,7 @@ import LocalHistoryCore
     @State private var confirming = false
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Text("Effacer de l’historique").font(.system(size: 23, weight: .semibold))
+            Text("Effacer de l’historique").font(LHTheme.sheetTitleFont)
             Picker("Période", selection: $seconds) {
                 Text("Les dix dernières minutes").tag(600)
                 Text("La dernière heure").tag(3600)

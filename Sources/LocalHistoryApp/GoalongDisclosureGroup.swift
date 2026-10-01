@@ -46,7 +46,7 @@ struct GoalongDisclosureGroupStyle: DisclosureGroupStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                withAnimation(reduceMotion ? nil : LHTheme.settle) {
                     configuration.isExpanded.toggle()
                 }
             } label: {
@@ -73,6 +73,7 @@ struct GoalongDisclosureGroupStyle: DisclosureGroupStyle {
                 configuration.content
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 26)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -6)))
             }
         }
     }

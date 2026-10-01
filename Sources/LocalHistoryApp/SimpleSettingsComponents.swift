@@ -35,7 +35,7 @@ struct GoalongSettingsLink: View {
                 Text(title).font(.system(size: 14, weight: .medium))
                 Spacer(minLength: 12)
                 Text(value).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                GoalongRowChevron()
             }.padding(.horizontal, 16).frame(minHeight: 64).contentShape(Rectangle())
         }.buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
             .accessibilityElement(children: .combine)
@@ -79,16 +79,15 @@ struct GoalongSettingsGroup<Content: View>: View {
                 Image(systemName: symbol).font(.system(size: 23)).foregroundStyle(LHTheme.accent)
                     .frame(width: 48, height: 48).background(LHTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 13))
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(title).font(.system(size: 17, weight: .semibold))
+                    Text(title).font(LHTheme.cardTitleFont)
                     Text(detail).font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
                 Text(pause.blocksActivity ? "Suspendu" : status).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                GoalongRowChevron(size: 13)
             }.padding(20).frame(maxWidth: .infinity, minHeight: 92, alignment: .leading).contentShape(Rectangle())
-        }.buttonStyle(LHNavigationButtonStyle(cornerRadius: 14))
-            .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LHTheme.separator))
+        }.buttonStyle(LHNavigationButtonStyle(cornerRadius: LHTheme.cardRadius))
+            .background(GoalongSurface(corner: LHTheme.cardRadius))
             .accessibilityIdentifier("settings-\(pane)")
     }
 }

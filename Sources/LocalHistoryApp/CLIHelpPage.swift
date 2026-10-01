@@ -55,7 +55,7 @@
             .safeAreaInset(edge: .top, spacing: 0) {
                 SettingsBackBar(onBack: onBack)
             }
-            .background(LHTheme.pageBackground)
+            .goalongPageBackground()
         }
 
         private var readinessBanner: some View {

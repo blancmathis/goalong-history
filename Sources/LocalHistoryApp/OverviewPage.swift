@@ -202,7 +202,7 @@
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Text(value)
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(LHTheme.pageTitleFont)
                     .monospacedDigit()
                 Text(detail)
                     .font(.system(size: 11))

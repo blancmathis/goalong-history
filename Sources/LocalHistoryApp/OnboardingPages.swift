@@ -16,7 +16,7 @@
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 40, weight: .light)).foregroundStyle(LHTheme.accent)
                 Text("Retrouvez le fil de ce que vous faisiez.")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(LHTheme.pageTitleFont)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Réunissez votre activité, votre temps d’écran et vos conversations IA locales. Choisissez vos sources ; vous pourrez ajouter les autres plus tard.")
                     .font(.system(size: 14)).foregroundStyle(.secondary)
@@ -38,7 +38,7 @@
 
         var privacyPage: some View {
             VStack(alignment: .leading, spacing: 22) {
-                Text("Voyez où va votre temps").font(.system(size: 27, weight: .semibold))
+                Text("Voyez où va votre temps").font(LHTheme.pageTitleFont)
                 Text("Goalong observe l’app au premier plan et calcule, sur ce Mac, ce qui compte pour avancer.")
                     .font(.system(size: 14)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -103,7 +103,7 @@
         var sourcesPage: some View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Choisissez vos sources")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(LHTheme.pageTitleFont)
                 Text("Activez seulement ce qui vous intéresse. Les accès macOS nécessaires sont guidés.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -143,7 +143,7 @@
 
         var readyPage: some View {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Vous pouvez commencer").font(.system(size: 27, weight: .semibold))
+                Text("Vous pouvez commencer").font(LHTheme.pageTitleFont)
                 LHCard {
                     VStack(spacing: 16) {
                         ForEach([GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations]) { capability in
