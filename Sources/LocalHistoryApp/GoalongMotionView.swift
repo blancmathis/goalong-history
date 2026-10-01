@@ -96,9 +96,9 @@ struct GoalongPageLoadingView: View {
                 .progressViewStyle(GoalongProgressViewStyle())
                 .controlSize(.regular)
                 .accessibilityHidden(true)
-            Text(title).font(.headline)
+            Text(title).font(LHTheme.cardTitleFont)
             if let message {
-                Text(message).font(.subheadline).foregroundStyle(.secondary)
+                Text(message).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
             }
         }
         .multilineTextAlignment(.center)

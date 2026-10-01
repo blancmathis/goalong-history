@@ -48,9 +48,9 @@ struct GoalongAnalyticsPage: View {
                     model.selectDay(selection.day)
                     model.showingWebsiteShare = true
                 })
-            Divider()
+            Rectangle().fill(LHTheme.separator).frame(height: 1)
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 24) {
                     if !previewActive {
                         GoalongRecordingStateNotice(model: model)
                         GoalongRecordingCoverageNotice(model: model, dismissible: true)
@@ -58,14 +58,9 @@ struct GoalongAnalyticsPage: View {
                     if developerMode { previewControl }
                     if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
                     if let error = analytics.error {
-                        LHCard(padding: 14) {
-                            HStack(alignment: .top, spacing: 12) {
-                                Label(error, systemImage: "exclamationmark.triangle")
-                                    .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Spacer(minLength: 8)
-                                Button("Réessayer", action: refresh).buttonStyle(LHSecondaryButtonStyle())
-                            }
+                        HStack(alignment: .center, spacing: 12) {
+                            GoalongNote(error, tone: .warning)
+                            Button("Réessayer", action: refresh).buttonStyle(LHSecondaryButtonStyle())
                         }
                     }
                     if let payload = analytics.payload, selection.matches(payload, preview: previewActive) {
@@ -80,15 +75,9 @@ struct GoalongAnalyticsPage: View {
                             onRecap: openRecap)
                             .id(selectionID)
                     } else if analytics.error == nil && !loadRequest.permitsLoading {
-                        LHCard(padding: 16) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Label("Lecture en attente", systemImage: "pause.circle")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text("Cliquez dans cette fenêtre pour lire les observations de cette période. Les lectures privées restent suspendues lorsque vous utilisez une autre application.")
-                                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }.accessibilityIdentifier("activity-read-waiting-for-focus")
+                        GoalongNote("Lecture en attente : cliquez dans cette fenêtre pour lire les observations de cette période. Les lectures privées restent suspendues lorsque vous utilisez une autre application.",
+                                    symbol: "pause.circle")
+                            .accessibilityIdentifier("activity-read-waiting-for-focus")
                     } else if analytics.error == nil {
                         GoalongPageLoadingView(title: "Lecture des observations locales…",
                             message: "Les durées sont calculées sur ce Mac, sans envoyer votre historique.")
@@ -102,9 +91,9 @@ struct GoalongAnalyticsPage: View {
                             LHCard(padding: 16) {
                                 HStack(alignment: .center, spacing: 14) {
                                     VStack(alignment: .leading, spacing: 5) {
-                                        Text("Temps d’écran Apple").font(.system(size: 14, weight: .semibold))
-                                        Text("Source distincte · consultation par journée, sans addition aux observations Goalong.")
-                                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                                        Text("Temps d’écran Apple").font(.system(size: 13, weight: .semibold))
+                                        Text("Source distincte, consultée par journée et jamais additionnée aux observations Goalong.")
+                                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                             .fixedSize(horizontal: false, vertical: true)
                                     }
                                     Spacer(minLength: 8)
@@ -117,7 +106,9 @@ struct GoalongAnalyticsPage: View {
                         }
                     }
                 }
-                .frame(maxWidth: 1100).padding(LHTheme.pageInset).frame(maxWidth: .infinity)
+                .frame(maxWidth: 1080, alignment: .leading)
+                .padding(.horizontal, LHTheme.pageInset).padding(.top, 24).padding(.bottom, 40)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
         .background(LHTheme.pageBackground)
@@ -226,10 +217,10 @@ struct GoalongAnalyticsPreviewBanner: View {
         LHCard(padding: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Label("Aperçu développeur · données fictives", systemImage: "testtube.2")
+                    Label("Aperçu développeur, données fictives", systemImage: "testtube.2")
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.warning)
                     Spacer(minLength: 8)
-                    Button("Quitter l’aperçu", action: onExit).buttonStyle(.borderless)
+                    Button("Quitter l’aperçu", action: onExit).buttonStyle(LHQuietButtonStyle())
                         .accessibilityIdentifier("analytics-preview-exit")
                 }
                 Text("Aucune donnée personnelle n’est lue par cet aperçu. Rien n’est ajouté à l’historique ; le partage et l’analyse IA sont désactivés.")

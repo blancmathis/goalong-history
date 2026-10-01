@@ -7,7 +7,6 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(
-                    eyebrow: "Partage sélectif",
                     title: "Exporter un fichier signé",
                     subtitle:
                         "Définissez une règle claire pour chaque app et site. Goalong vérifie ses signatures locales et sa chaîne d’intégrité avant de créer le paquet."
@@ -44,31 +43,10 @@
         }
 
         private var disclosureBanner: some View {
-            HStack(alignment: .top, spacing: 13) {
-                Image(systemName: "lock.shield.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(LHTheme.accent)
-                    .frame(width: 36, height: 36)
-                    .background(LHTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Vos règles valent pour les prochains partages")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(
-                        "La règle d’un site prime sur celle du navigateur. « Afficher le nom » ne révèle que le nom du site, pas le titre de la page ni l’adresse complète."
-                    )
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                StatusPill(title: "Enregistré sur ce Mac", symbol: "internaldrive", tint: LHTheme.teal)
+            GoalongBanner(symbol: "lock.shield", title: "Vos règles valent pour les prochains partages",
+                          detail: "La règle d’un site prime sur celle du navigateur. « Afficher le nom » ne révèle que le nom du site, pas le titre de la page ni l’adresse complète.") {
+                StatusPill(title: "Enregistré sur ce Mac", symbol: "internaldrive", tint: LHTheme.secondaryText)
             }
-            .padding(14)
-            .background(LHTheme.accent.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(LHTheme.accent.opacity(0.12), lineWidth: 1)
-            )
         }
 
         private var ruleSummary: some View {
@@ -94,7 +72,7 @@
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(model.snapshot.sealedMinutes) minute\(model.snapshot.sealedMinutes > 1 ? "s" : "") scellée\(model.snapshot.sealedMinutes > 1 ? "s" : "")")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(.system(size: 11, weight: .semibold))
                     Text("Les règles s’appliquent événement par événement")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -109,7 +87,7 @@
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
                 Text("\(count)")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 11)

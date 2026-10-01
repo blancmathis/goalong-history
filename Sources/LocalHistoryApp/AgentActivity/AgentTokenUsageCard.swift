@@ -16,7 +16,7 @@ struct AgentTokenUsageCard: View {
                     if scanning { ProgressView().controlSize(.small) }
                 }
                 Text(usage.observedTotal.map { $0.formatted(.number.locale(Self.locale)) + " tokens observés" } ?? "Usage indisponible")
-                    .font(.system(size: 25, weight: .semibold, design: .rounded))
+                    .font(LHTheme.figureFont(26))
                 Text("Journaux locaux · fuseau \(TimeZone.current.identifier). Les tokens ne correspondent ni à un quota d’abonnement ni à une facture.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 if let analyzedAt {

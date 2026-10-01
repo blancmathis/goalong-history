@@ -19,12 +19,12 @@ import AppKit
     }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                Text(pane.title).font(LHTheme.pageTitleFont).accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: 24) {
+                Text(pane.title).goalongPageTitle()
                 content
             }
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-            .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 26)
+            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 40)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .id(pane)
@@ -57,10 +57,12 @@ import AppKit
                     ForEach(visiblePanes, id: \.self) { item in
                         GoalongSettingsLink(title: item.title, value: summary(item), symbol: item.symbol) { pane = item }
                             .accessibilityIdentifier("settings-\(item.identifier)")
-                        if item != visiblePanes.last { Divider().padding(.leading, 64) }
+                        if item != visiblePanes.last { GoalongRowDivider() }
                     }
                     if visiblePanes.isEmpty && !SettingsPane.matchesStartup(search) {
-                        Text("Aucun résultat").foregroundStyle(.secondary).padding(20)
+                        Text("Aucun réglage ne correspond à cette recherche.").font(.system(size: 13))
+                            .foregroundStyle(LHTheme.secondaryText)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(LHTheme.cardInset)
                     }
                 }
             }
@@ -73,16 +75,12 @@ import AppKit
                         GoalongGlobalPauseControl(model: model)
                     }.padding(.top, 12)
                 }.accessibilityIdentifier("settings-privacy-stop")
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
                     GoalongUpdateStatusRow()
-                    HStack(spacing: 6) {
-                        Image(systemName: "stethoscope").foregroundStyle(.secondary)
-                        Text("Un souci ?").foregroundStyle(.secondary)
-                        Button("Signaler un problème…") { SupportRequestController.shared.present() }
-                            .buttonStyle(.link)
-                            .accessibilityIdentifier("settings-report-problem")
-                    }
-                }.font(.system(size: 12))
+                    Button("Signaler un problème…") { SupportRequestController.shared.present() }
+                        .buttonStyle(LHQuietButtonStyle())
+                        .accessibilityIdentifier("settings-report-problem")
+                }.font(.system(size: 13))
             }
         case .recording:
             GoalongRecordingCoverageNotice(model: model)
@@ -144,13 +142,18 @@ import AppKit
                 SourceActivationToggle(capability: .appleScreenTime) { Text("Temps d’écran Apple") }
                 Divider()
                 SourceActivationToggle(capability: .aiConversations) { Text("Conversations locales") }
-                Button("Choisir les dossiers de conversations…") { model.selectSection(.agentActivity) }.buttonStyle(.borderless)
+                Button("Choisir les dossiers de conversations…") { model.selectSection(.agentActivity) }.buttonStyle(LHQuietButtonStyle())
             }
         case .applications:
             GoalongApplicationsSettings(model: model)
         case .connections:
-            GoalongSettingsLink(title: "Envoi à Goalong", value: "Compte, données et fréquence", symbol: "arrow.up.circle") { pane = .website }
-            GoalongSettingsLink(title: "Analyse ChatGPT", value: "Données et personnalisation", symbol: "sparkles") { pane = .chatGPT }
+            LHCard(padding: 0) {
+                VStack(spacing: 0) {
+                    GoalongSettingsLink(title: "Envoi à Goalong", value: "Compte, données et fréquence", symbol: "arrow.up.circle") { pane = .website }
+                    GoalongRowDivider()
+                    GoalongSettingsLink(title: "Analyse ChatGPT", value: "Données et personnalisation", symbol: "sparkles") { pane = .chatGPT }
+                }
+            }
         case .website:
             GoalongWebsiteSettings(model: model)
         case .chatGPT:
@@ -173,11 +176,16 @@ import AppKit
         case .advanced:
             SupportDiagnosticsPanel()
             GoalongDeveloperSettings()
-            GoalongSettingsGroup(title: "Outils") {
-                GoalongSettingsLink(title: "Outils de partage et analyses", value: "", symbol: "square.and.arrow.up") { pane = .tools }
-                GoalongSettingsLink(title: "Terminal et agents", value: "CLI", symbol: "terminal") { model.selectSection(.cli) }
-                GoalongSettingsLink(title: "Diagnostic et preuves", value: "", symbol: "checkmark.shield") { model.selectSection(.privacy) }
-                Button("Ouvrir config.json") { model.openConfiguration() }.buttonStyle(LHSecondaryButtonStyle())
+            VStack(alignment: .leading, spacing: 12) {
+                GoalongSettingsList(title: "Outils") {
+                    GoalongSettingsLink(title: "Outils de partage et analyses", value: "", symbol: "square.and.arrow.up") { pane = .tools }
+                    GoalongRowDivider()
+                    GoalongSettingsLink(title: "Terminal et agents", value: "CLI", symbol: "terminal") { model.selectSection(.cli) }
+                    GoalongRowDivider()
+                    GoalongSettingsLink(title: "Diagnostic et preuves", value: "", symbol: "checkmark.shield") { model.selectSection(.privacy) }
+                }
+                Button("Ouvrir config.json") { model.openConfiguration() }.buttonStyle(LHQuietButtonStyle())
+                    .font(.system(size: 13))
             }
             GoalongSettingsGroup(title: "Mises à jour") {
                 GoalongUpdateStatusRow()
@@ -291,10 +299,11 @@ enum SettingsPane: Hashable {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: symbol).foregroundStyle(tint).font(.system(size: 14))
+            Image(systemName: symbol).foregroundStyle(tint).font(.system(size: 14, weight: .medium)).frame(width: 22)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Goalong History \(updates.currentVersion)").font(.system(size: 13, weight: .medium))
-                Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 12)

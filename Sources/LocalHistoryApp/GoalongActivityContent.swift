@@ -33,6 +33,7 @@ struct GoalongAnalyticsContent: View {
     @State private var selectedUsage: GoalongActivityUsageItem?
     @State private var exportMessage: String?
     @State private var allTasks = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var current: GoalongLocalAnalytics.Period { payload.current }
     private var isDay: Bool { current.days.count == 1 }
@@ -51,28 +52,27 @@ struct GoalongAnalyticsContent: View {
         let items = usageItems
         let showsClassification = showsWorkCard(summary)
         let tasks = current.tasks
-        VStack(alignment: .leading, spacing: 20) {
-            coverage
+        VStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
             if current.observedSeconds > 0 {
-                metrics(summary)
+                hero(summary)
                 if showsClassification { workCard(summary) }
-                if !tasks.isEmpty { tasksCard(tasks, summary: summary) }
-                insightsCard(summary, items: items, showsClassification: showsClassification)
-                rhythmCard
-                if !isDay && current.observedDays.count >= 2 { heatmapCard(summary) }
+                if !tasks.isEmpty { tasksSection(tasks) }
+                insightsSection(summary, items: items, showsClassification: showsClassification)
+                rhythmSection
                 usageCard(items)
-                projectsCard
-                rhythmDetails
+                projectsSection
             } else {
                 emptyState
-                projectsCard
+                projectsSection
             }
-            methodology
-            HStack {
-                Label(payload.isPreview ? "Données fictives · non enregistrées" : "Calcul local · aucun envoi", systemImage: "internaldrive")
-                Spacer()
-                Text("Actualisé à \(time(payload.updatedAt))")
-            }.font(.system(size: 11)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                if current.observedSeconds > 0 { rhythmDetails }
+                methodology
+                Text(payload.isPreview ? "Données fictives, non enregistrées."
+                     : "Calculé sur ce Mac, sans envoi. Actualisé à \(time(payload.updatedAt)).")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
+                    .padding(.top, 12).padding(.leading, 6)
+            }
         }
         .sheet(item: $selectedUsage) { item in
             GoalongActivityUsageDetail(item: item, period: current, grouping: grouping,
@@ -85,123 +85,152 @@ struct GoalongAnalyticsContent: View {
         .accessibilityIdentifier("activity-content")
     }
 
-    private var coverage: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline) {
-                Label(payload.isPreview ? "Simulation locale" : "Observations Goalong · Ce Mac", systemImage: "lock.shield")
-                    .font(.system(size: 12, weight: .medium))
-                Spacer(minLength: 8)
-                if !isDay {
-                    Text("\(current.daysWithObservations)/\(current.days.count) jours avec activité mesurée")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-            }
-            if current.incompleteDays > 0 {
-                Label("\(current.incompleteDays) jour(s) illisible(s) ou incomplet(s), exclus des totaux. Actualisez ou consultez l’historique.", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(LHTheme.warning)
-            } else if !isDay && current.daysWithObservations < current.days.count {
-                Label("Les jours sans données restent vides : ils ne sont pas comptés comme des journées à zéro.", systemImage: "info.circle")
-                    .foregroundStyle(.secondary)
-            }
-            if payload.isPreview {
-                Text("Journées complètes simulées, y compris aujourd’hui. Ces chiffres ne représentent pas votre activité.")
-                    .foregroundStyle(LHTheme.warning)
-            } else if current.days.contains(where: { Calendar.current.isDateInToday($0.date) }) {
-                Text("Journée en cours · seules les observations reçues sont incluses.").foregroundStyle(.secondary)
-            }
-            if sparse {
-                Text("Vos premières observations sont déjà visibles. Le graphique adapte son échelle aux petites durées.")
-                    .foregroundStyle(.secondary)
-            }
-        }.font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
-    }
+    // MARK: - Hero: the figure and the thread
 
-    private func metrics(_ summary: GoalongActivitySummary) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) {
-                activeTile(summary); workTile(summary); concentrationTile(summary); switchesTile(summary)
-            }.frame(minWidth: 880)
-            VStack(spacing: 12) {
-                HStack(alignment: .top, spacing: 12) { activeTile(summary); workTile(summary) }
-                HStack(alignment: .top, spacing: 12) { concentrationTile(summary); switchesTile(summary) }
+    /// The one headline of the page: how long, then the day itself as a thread.
+    private func hero(_ summary: GoalongActivitySummary) -> some View {
+        VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 24) {
+                headline(summary)
+                figures(summary)
             }
-        }.accessibilityIdentifier("activity-primary-metrics")
-    }
-
-    private func activeTile(_ summary: GoalongActivitySummary) -> some View {
-        let detail: String
-        if let bounds = summary.dayBounds {
-            detail = "De \(GoalongActivitySummary.time(bounds.start)) à \(GoalongActivitySummary.time(bounds.end))"
-        } else if isDay {
-            detail = "Activité observée au premier plan"
-        } else {
-            detail = "Total \(duration(current.activeSeconds)) · \(current.daysWithObservations)/\(current.days.count) jours observés"
-                + (summary.averageExcludesToday ? " · moyenne sans aujourd’hui, en cours" : "")
+            .accessibilityIdentifier("activity-primary-metrics")
+            if isDay, let day = current.days.first {
+                GoalongDayThread(day: day, range: chartDateRange, hourStride: hourStride)
+            } else {
+                GoalongThreadWeave(period: current, onDay: onDay)
+            }
+            coverage
         }
-        let value = isDay ? duration(current.activeSeconds) : (summary.averageActivePerDay.map(duration) ?? "—")
-        return metric("Temps actif", value: value, unit: isDay ? nil : "/ jour", detail: detail,
-                      comparison: summary.comparison, primary: true)
     }
 
-    private func workTile(_ summary: GoalongActivitySummary) -> some View {
+    private func headline(_ summary: GoalongActivitySummary) -> some View {
+        let value = isDay ? duration(current.activeSeconds) : (summary.averageActivePerDay.map(duration) ?? "—")
+        let details = headlineDetails(summary)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(value).font(LHTheme.heroFont).tracking(LHTheme.heroTracking)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .goalongNumericTransition()
+                    .animation(reduceMotion ? nil : LHTheme.settle, value: value)
+                Text(isDay ? "actives" : "actives par jour")
+                    .font(.system(size: 17, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+            }
+            ForEach(details, id: \.self) { line in
+                Text(line).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Temps actif")
+        .accessibilityValue("\(value)\(isDay ? "" : " par jour"). \(details.joined(separator: ". "))")
+    }
+
+    private func headlineDetails(_ summary: GoalongActivitySummary) -> [String] {
+        var lines: [String] = []
+        if let bounds = summary.dayBounds {
+            lines.append("De \(GoalongActivitySummary.time(bounds.start)) à \(GoalongActivitySummary.time(bounds.end))")
+        } else if isDay {
+            lines.append("Activité observée au premier plan")
+        } else {
+            let days = current.daysWithObservations
+            lines.append("\(duration(current.activeSeconds)) sur \(days) jour\(days > 1 ? "s" : "") observé\(days > 1 ? "s" : "")"
+                + (summary.averageExcludesToday ? ", moyenne sans aujourd’hui" : ""))
+        }
+        if let comparison = summary.comparison, abs(comparison.delta) >= 60 {
+            let reference = comparison.label.hasPrefix("les ") ? "aux " + comparison.label.dropFirst(4) : "à " + comparison.label
+            lines.append("\(comparison.delta > 0 ? "+" : "−")\(duration(abs(comparison.delta))) par rapport \(reference)")
+        }
+        return lines
+    }
+
+    /// The three supporting figures: plain columns, no tiles.
+    private func figures(_ summary: GoalongActivitySummary) -> some View {
+        HStack(alignment: .top, spacing: 24) {
+            workFigure(summary); concentrationFigure(summary); switchesFigure(summary)
+        }
+    }
+
+    private func workFigure(_ summary: GoalongActivitySummary) -> some View {
         if summary.workIsMeasurable {
             let value = isDay ? duration(summary.workSeconds) : (summary.averageWorkPerDay.map(duration) ?? "—")
-            return metric("Travail", value: value, unit: isDay ? nil : "/ jour",
-                          detail: "\(percent(summary.workShare)) du temps actif · \(percent(summary.otherSeconds / max(1, summary.activeSeconds))) hors travail")
+            return figure("Travail", value: value, unit: isDay ? nil : "/ jour", mark: LHTheme.workData,
+                          detail: "\(percent(summary.workShare)) du temps actif",
+                          help: "\(percent(summary.workShare)) du temps actif, \(percent(summary.otherSeconds / max(1, summary.activeSeconds))) hors travail")
         }
         let detail: String
         if summary.activeSeconds == 0 { detail = "Aucune activité à classer" }
-        else if !workStatus.hasDefinition { detail = "Décrivez ce qui compte comme travail pour le mesurer." }
-        else if workStatus.isClassifying { detail = "Classement en cours selon votre définition…" }
-        else { detail = "\(percent(summary.unclassifiedShare)) du temps n’est pas encore classé selon votre définition." }
-        return metric("Travail", value: workStatus.isClassifying ? "En cours" : "À classer", detail: detail, compact: true)
+        else if !workStatus.hasDefinition { detail = "Décrivez votre travail pour le mesurer" }
+        else if workStatus.isClassifying { detail = "Classement selon votre définition" }
+        else { detail = "\(percent(summary.unclassifiedShare)) du temps reste à classer" }
+        return figure("Travail", value: workStatus.isClassifying ? "En cours" : "À classer", mark: LHTheme.workData,
+                      detail: detail, help: nil)
     }
 
-    private func concentrationTile(_ summary: GoalongActivitySummary) -> some View {
+    private func concentrationFigure(_ summary: GoalongActivitySummary) -> some View {
         if summary.workIsMeasurable, let block = summary.longestWorkBlock {
             let blocks = summary.workBlocks.count
-            let task = block.task.map { " · \($0)" } ?? ""
-            return metric("Concentration", value: duration(block.workSeconds),
-                          detail: "Plus longue session sur une même tâche\(task) · \(blocks) session\(blocks > 1 ? "s" : "") de 25 min ou plus")
+            return figure("Concentration", value: duration(block.workSeconds),
+                          detail: block.task.map { "Sur \($0)" } ?? "Plus longue session de travail",
+                          help: "Plus longue session sur une même tâche. \(blocks) session\(blocks > 1 ? "s" : "") de 25 min ou plus.")
         }
         let longest = summary.longestSequence
-        return metric("Concentration", value: longest.map { duration($0.seconds) } ?? "—",
-                      detail: longest.map { "Plus longue période dans \(GoalongActivityPresentation.displayName($0.host ?? $0.application))" }
-                        ?? "Aucune période continue mesurée")
+        return figure("Concentration", value: longest.map { duration($0.seconds) } ?? "—",
+                      detail: longest.map { "Dans \(GoalongActivityPresentation.displayName($0.host ?? $0.application))" }
+                        ?? "Aucune période continue",
+                      help: "Plus longue période continue dans une même app ou un même site.")
     }
 
-    private func switchesTile(_ summary: GoalongActivitySummary) -> some View {
+    private func switchesFigure(_ summary: GoalongActivitySummary) -> some View {
         guard let perHour = summary.changesPerActiveHour, let every = summary.secondsPerChange else {
-            return metric("Changements d’app", value: "—", detail: "Pas assez d’activité pour mesurer les changements")
+            return figure("Changements d’app", value: "—", detail: "Pas assez d’activité", help: nil)
         }
         let sameTask = current.sameTaskChanges
-        return metric("Changements d’app", value: "\(Int(perHour.rounded()))", unit: "/ h",
-                      detail: "Un changement d’app ou de site toutes les \(GoalongActivitySummary.shortInterval(every)) · \(summary.contextChanges) au total"
-                        + (sameTask > 0 ? ", dont \(sameTask) sans quitter la tâche" : ""))
+        return figure("Changements d’app", value: "\(Int(perHour.rounded()))", unit: "/ h",
+                      detail: "Un toutes les \(GoalongActivitySummary.shortInterval(every))",
+                      help: "\(summary.contextChanges) changements d’app ou de site au total"
+                        + (sameTask > 0 ? ", dont \(sameTask) sans quitter la tâche." : "."))
     }
 
-    private func metric(_ title: String, value: String, unit: String? = nil, detail: String,
-                        comparison: GoalongActivitySummary.Comparison? = nil, primary: Bool = false,
-                        compact: Bool = false) -> some View {
-        LHCard(padding: 17) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(value).font(.system(size: compact ? 22 : (primary ? 30 : 26), weight: .semibold))
-                        .tracking(-0.6).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-                        .foregroundStyle(primary ? LHTheme.accent : LHTheme.text)
-                    if let unit { Text(unit).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary) }
+    private func figure(_ title: String, value: String, unit: String? = nil, mark: Color? = nil,
+                        detail: String, help: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                if let mark {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous).fill(mark).frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
                 }
-                if let comparison, abs(comparison.delta) >= 60 {
-                    let up = comparison.delta > 0
-                    Label("\(up ? "+" : "−")\(duration(abs(comparison.delta))) vs \(comparison.label)",
-                          systemImage: up ? "arrow.up.right" : "arrow.down.right")
-                        .font(.system(size: 11, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                        .lineLimit(1).minimumScaleFactor(0.8)
-                }
-                Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }.frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
-        }.accessibilityElement(children: .combine)
+                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value).font(LHTheme.figureFont(22)).tracking(-0.4).lineLimit(1).minimumScaleFactor(0.7)
+                    .goalongNumericTransition()
+                    .animation(reduceMotion ? nil : LHTheme.settle, value: value)
+                if let unit { Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText) }
+            }
+            Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(help ?? detail)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(help ?? "")
+    }
+
+    /// Only what changes how the figures should be read; nothing when the period is complete.
+    @ViewBuilder private var coverage: some View {
+        let today = !payload.isPreview && current.days.contains { Calendar.current.isDateInToday($0.date) }
+        if current.incompleteDays > 0 {
+            GoalongNote("\(current.incompleteDays) jour(s) illisible(s) ou incomplet(s), exclus des totaux. Actualisez ou consultez l’historique.",
+                        tone: .warning)
+        } else if sparse {
+            GoalongNote("Vos premières observations sont déjà visibles. Le graphique adapte son échelle aux petites durées.")
+        } else if !isDay && current.daysWithObservations < current.days.count {
+            GoalongNote("\(current.daysWithObservations) jours sur \(current.days.count) ont une activité mesurée. Les jours sans données restent vides : ils ne comptent pas comme des journées à zéro.")
+        } else if today && isDay {
+            Text("Journée en cours : seules les observations déjà reçues sont incluses.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
+        }
     }
 
     // MARK: - Insights and classification
@@ -212,7 +241,7 @@ struct GoalongAnalyticsContent: View {
         return !workStatus.hasDefinition || workStatus.isClassifying || summary.unclassifiedShare >= 0.15
     }
 
-    /// "À retenir" only adds what the four tiles and the classification card do not already say.
+    /// "À retenir" only adds what the headline figures and the classification card do not already say.
     static func additionalInsights(_ insights: [GoalongActivitySummary.Insight], isDay: Bool,
                                    showsClassification: Bool) -> [GoalongActivitySummary.Insight] {
         insights.filter { insight in
@@ -225,28 +254,27 @@ struct GoalongAnalyticsContent: View {
         }
     }
 
-    private func insightsCard(_ summary: GoalongActivitySummary, items: [GoalongActivityUsageItem],
-                              showsClassification: Bool) -> some View {
+    private func insightsSection(_ summary: GoalongActivitySummary, items: [GoalongActivityUsageItem],
+                                 showsClassification: Bool) -> some View {
         let insights = Self.additionalInsights(
             summary.insights(topUsage: items.first, biggestChange: GoalongActivitySummary.biggestChange(items)),
             isDay: isDay, showsClassification: showsClassification)
         return Group {
             if !insights.isEmpty {
-                LHCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        heading("À retenir")
+                GoalongSection(title: "À retenir") {
+                    VStack(alignment: .leading, spacing: 10) {
                         ForEach(insights) { insight in
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                Image(systemName: insight.symbol).font(.system(size: 12, weight: .semibold))
+                                Image(systemName: insight.symbol).font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(insight.tone == .attention ? LHTheme.warning
-                                        : insight.tone == .positive ? LHTheme.success : LHTheme.accent)
+                                        : insight.tone == .positive ? LHTheme.success : LHTheme.secondaryText)
                                     .frame(width: 18)
                                     .accessibilityHidden(true)
                                 Text(insight.text).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
                                     .textSelection(.enabled)
                             }
                         }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }.accessibilityIdentifier("activity-insights")
             }
         }
@@ -255,15 +283,10 @@ struct GoalongAnalyticsContent: View {
     private func workCard(_ summary: GoalongActivitySummary) -> some View {
         LHCard {
             HStack(alignment: .center, spacing: 16) {
-                Image(systemName: workStatus.isClassifying ? "sparkles" : "briefcase")
-                    .font(.system(size: 20)).foregroundStyle(LHTheme.accent)
-                    .frame(width: 42, height: 42)
-                    .background(LHTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 11))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 4) {
                     if !workStatus.hasDefinition {
                         heading("Qu’est-ce qui compte comme travail pour vous ?")
-                        Text("Goalong ne décide jamais qu’une app ou un site est productif. Décrivez votre travail avec vos mots : un agent classe ensuite chaque moment selon ce que vous faisiez, même dans une app qui sert aussi à autre chose.")
+                        Text("Décrivez votre travail avec vos mots : un agent classe ensuite chaque moment selon ce que vous faisiez. Goalong ne décide jamais qu’une app ou un site est productif.")
                     } else if workStatus.isClassifying {
                         heading("Classement en cours")
                         Text(workStatus.progress ?? "L’agent applique votre définition aux nouveaux contextes de la journée.")
@@ -271,7 +294,7 @@ struct GoalongAnalyticsContent: View {
                         heading("\(percent(summary.unclassifiedShare)) de votre temps reste à classer")
                         Text(workStatus.problem ?? "Seuls les contextes nouveaux sont envoyés ; ceux déjà classés ne repartent pas.")
                     }
-                }.font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }.font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if workStatus.isClassifying {
                     ProgressView().controlSize(.small)
@@ -286,106 +309,87 @@ struct GoalongAnalyticsContent: View {
         }.accessibilityIdentifier("activity-classification")
     }
 
-    private func tasksCard(_ tasks: [GoalongWorkTask], summary: GoalongActivitySummary) -> some View {
+    private func tasksSection(_ tasks: [GoalongWorkTask]) -> some View {
         let total = max(1, tasks.reduce(0) { $0 + $1.seconds })
         let visible = allTasks ? tasks : Array(tasks.prefix(5))
-        return LHCard {
+        return GoalongSection(title: "Tâches", subtitle: "Votre travail par projet, quelles que soient les applications") {
+            if !payload.isPreview {
+                Button("Corriger", action: onWork).buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+                    .accessibilityIdentifier("activity-tasks-review")
+            }
+        } content: {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        heading("Tâches")
-                        Text("Votre travail par projet, quelles que soient les applications utilisées")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    if !payload.isPreview {
-                        Button("Corriger", action: onWork).buttonStyle(.borderless).font(.system(size: 12, weight: .medium))
-                            .accessibilityIdentifier("activity-tasks-review")
-                    }
-                }
                 ForEach(visible) { task in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(task.name).font(.system(size: 13, weight: .medium)).lineLimit(1).help(task.name)
+                            Text(task.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                            Text(taskDetail(task)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                             Spacer(minLength: 8)
                             Text(duration(task.seconds)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
                             Text(percent(task.seconds / total)).font(.system(size: 12)).monospacedDigit()
-                                .foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
+                                .foregroundStyle(LHTheme.secondaryText).frame(width: 42, alignment: .trailing)
                         }
-                        GeometryReader { geometry in
-                            Capsule().fill(LHTheme.separator.opacity(0.6))
-                            Capsule().fill(GoalongActivityClassStyle.color(.work)).frame(width: geometry.size.width * task.seconds / total)
-                        }.frame(height: 4).accessibilityHidden(true)
-                        Text(taskDetail(task)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        GoalongShareBar(share: task.seconds / total, color: LHTheme.workData)
                     }
+                    .help(task.name)
                     .accessibilityElement(children: .combine)
                 }
                 if tasks.count > 5 {
                     Button(allTasks ? "Réduire" : "Voir les \(tasks.count) tâches") { allTasks.toggle() }
-                        .buttonStyle(.borderless).font(.system(size: 12))
+                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                 }
-            }.frame(maxWidth: .infinity, alignment: .leading)
+            }
         }.accessibilityIdentifier("activity-tasks")
     }
 
     private func taskDetail(_ task: GoalongWorkTask) -> String {
-        var parts: [String] = []
-        if task.longestSession >= 60 { parts.append("plus longue session \(duration(task.longestSession))") }
-        let apps = task.mainApplications.prefix(3).map { GoalongActivityPresentation.displayName($0) }
-        if !apps.isEmpty { parts.append(apps.joined(separator: ", ")) }
-        return parts.joined(separator: " · ")
+        task.mainApplications.prefix(3).map { GoalongActivityPresentation.displayName($0) }.joined(separator: ", ")
     }
 
     // MARK: - Rhythm
 
-    private var rhythmCard: some View {
-        LHCard {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        heading(isDay ? "Rythme de la journée" : "Rythme sur \(current.days.count) jours")
-                        Text(isDay ? (hourly || sparse ? "Temps actif par heure, selon son classement" : "Quelle app ou quel site, à quel moment")
-                             : "Temps actif par jour · cliquez sur un jour pour l’ouvrir")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if isDay {
-                        Toggle("Journée entière", isOn: $fullDay).toggleStyle(.checkbox)
-                            .font(.system(size: 12)).fixedSize().accessibilityIdentifier("activity-full-day")
-                        GoalongSegmentedControl("Affichage du rythme", selection: $hourly, options: [true, false]) {
-                            $0 ? "Par heure" : "Chronologie"
-                        }.controlSize(.small).disabled(sparse)
-                            .accessibilityIdentifier("activity-rhythm-mode")
-                    }
+    private var rhythmSection: some View {
+        GoalongSection(title: isDay ? "Heure par heure" : "Jour par jour",
+                       subtitle: isDay ? (hourly || sparse ? nil : "Quelle app ou quel site, à quel moment")
+                           : "Cliquez sur un jour pour l’ouvrir") {
+            if isDay {
+                HStack(spacing: 14) {
+                    Toggle("Journée entière", isOn: $fullDay).toggleStyle(.goalongCheckbox)
+                        .font(.system(size: 12)).fixedSize().accessibilityIdentifier("activity-full-day")
+                    GoalongSegmentedControl("Affichage du rythme", selection: $hourly, options: [true, false]) {
+                        $0 ? "Par heure" : "Par usage"
+                    }.controlSize(.small).disabled(sparse)
+                        .accessibilityIdentifier("activity-rhythm-mode")
                 }
+            }
+        } content: {
+            VStack(alignment: .leading, spacing: 12) {
                 if isDay, let day = current.days.first {
                     if hourly || sparse {
                         GoalongHourlyClassChart(day: day, dateRange: chartDateRange, hourStride: hourStride)
                     } else {
                         GoalongUsageTimelineChart(day: day, grouping: grouping, dateRange: chartDateRange, hourStride: hourStride)
                     }
-                    GoalongActivityClassLegend()
                     GoalongDisclosureGroup("Heures et valeurs") {
                         VStack(spacing: 8) {
                             ForEach(day.hours(minimumMinutes: focusMinutes).filter { $0.seconds > 0 }) { hour in
                                 HStack {
-                                    Text("\(time(hour.start))–\(time(hour.end))")
+                                    Text("\(time(hour.start))–\(time(hour.end))").monospacedDigit()
                                     Spacer()
                                     Text(duration(hour.seconds) + " actives")
-                                    if hour.workSeconds > 0 { Text("· " + duration(hour.workSeconds) + " de travail").foregroundStyle(.secondary) }
+                                    if hour.workSeconds > 0 {
+                                        Text("dont " + duration(hour.workSeconds) + " de travail").foregroundStyle(LHTheme.secondaryText)
+                                    }
                                 }.font(.system(size: 12)).accessibilityElement(children: .combine)
                             }
-                            Text(fullDay ? "Vue complète · les heures sans données restent non observées."
-                                : "Vue centrée sur les heures observées · cochez Journée entière pour afficher 0 h – 24 h.")
-                                .font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                             Button("Examiner cette journée dans l’historique") { onHistoryDay(day.date) }
-                                .buttonStyle(.borderless).disabled(payload.isPreview)
+                                .buttonStyle(LHQuietButtonStyle()).disabled(payload.isPreview)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }.padding(.top, 10)
-                    }.font(.system(size: 12))
+                    }.font(.system(size: 13))
                 } else {
                     GoalongDailyClassChart(period: current, dateRange: dateRange, onDay: onDay)
-                    GoalongActivityClassLegend()
-                    GoalongDisclosureGroup("Explorer les jours et leurs valeurs") {
+                    GoalongDisclosureGroup("Jours et valeurs") {
                         VStack(spacing: 0) {
                             ForEach(current.days) { day in
                                 Button { onDay(day.date) } label: {
@@ -393,31 +397,19 @@ struct GoalongAnalyticsContent: View {
                                         Text(GoalongActivitySummary.weekdayDate(day.date)).frame(width: 110, alignment: .leading)
                                         Text(GoalongActivityProjection.dayLabel(day))
                                         if day.seconds(.work) > 0 {
-                                            Text("· \(duration(day.seconds(.work))) de travail").foregroundStyle(.secondary)
+                                            Text("dont \(duration(day.seconds(.work))) de travail").foregroundStyle(LHTheme.secondaryText)
                                         }
                                         Spacer(minLength: 8)
-                                        Image(systemName: "chevron.right").font(.caption)
-                                    }.font(.system(size: 12)).padding(.vertical, 9).contentShape(Rectangle())
-                                }.buttonStyle(.plain).accessibilityLabel("Explorer le \(shortDate(day.date))")
+                                        GoalongRowChevron(size: 10)
+                                    }.font(.system(size: 12)).padding(.vertical, 8).padding(.horizontal, 6).contentShape(Rectangle())
+                                }.buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
+                                    .accessibilityLabel("Explorer le \(shortDate(day.date))")
                             }
                         }.padding(.top, 8)
-                    }.font(.system(size: 12))
+                    }.font(.system(size: 13))
                 }
             }
         }.accessibilityIdentifier("activity-primary-chart")
-    }
-
-    private func heatmapCard(_ summary: GoalongActivitySummary) -> some View {
-        LHCard {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    heading("Quand êtes-vous actif ?")
-                    Text("Minutes actives en moyenne, par jour de la semaine et par heure")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-                GoalongWeekHourHeatmap(period: current)
-            }
-        }
     }
 
     private func usageCard(_ items: [GoalongActivityUsageItem]) -> some View {
@@ -434,12 +426,15 @@ struct GoalongAnalyticsContent: View {
         }
     }
 
-    private var projectsCard: some View {
+    private var projectsSection: some View {
         let cards = payload.cards.filter { module == "all" || $0.module == module }
         let visible = allCards ? cards : Array(cards.prefix(3))
-        return LHCard {
-            VStack(alignment: .leading, spacing: 14) {
-                heading("Bilan et projets")
+        return GoalongSection(title: "Bilans et projets",
+                              subtitle: payload.cards.isEmpty ? "Aucun bilan enregistré sur cette période. L’analyse par IA est facultative." : nil) {
+            Button(isDay ? "Comprendre mon travail" : "Analyser une journée…", action: onProjects)
+                .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).disabled(payload.isPreview).accessibilityIdentifier("analytics-projects")
+        } content: {
+            VStack(alignment: .leading, spacing: 8) {
                 if !payload.cards.isEmpty {
                     Picker("Rubrique", selection: $module) {
                         Text("Tous les éléments").tag("all")
@@ -447,107 +442,103 @@ struct GoalongAnalyticsContent: View {
                         ForEach(GoalongProfileAnalysis.modules, id: \.self) { key in
                             Text(GoalongProfileAnalysis.labels[key] ?? key).tag(key)
                         }
-                    }.pickerStyle(.menu).labelsHidden().frame(maxWidth: 280, alignment: .leading)
-                }
-                if cards.isEmpty {
-                    Text(payload.cards.isEmpty ? "Aucun bilan enregistré sur cette période. L’analyse IA est facultative." : "Aucun élément enregistré dans cette rubrique.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }.pickerStyle(.menu).labelsHidden().frame(maxWidth: 260, alignment: .leading)
+                    if cards.isEmpty {
+                        Text("Aucun élément enregistré dans cette rubrique.")
+                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    }
                 }
                 ForEach(visible) { card in
                     GoalongDisclosureGroup {
                         VStack(alignment: .leading, spacing: 9) {
                             Text(.init(card.summary)).textSelection(.enabled)
-                            if !card.caveat.isEmpty { Label(card.caveat, systemImage: "info.circle").foregroundStyle(.secondary) }
+                            if !card.caveat.isEmpty { Text(card.caveat).foregroundStyle(LHTheme.secondaryText) }
                             if card.module == "dailyRecap", let day = cardDay(card.day) {
                                 Button("Ouvrir le bilan et ses sources") { onRecap(day) }
-                                    .buttonStyle(.borderless).disabled(payload.isPreview)
+                                    .buttonStyle(LHQuietButtonStyle()).disabled(payload.isPreview)
                             }
-                        }.font(.system(size: 12)).fixedSize(horizontal: false, vertical: true).padding(.vertical, 9)
+                        }.font(.system(size: 13)).fixedSize(horizontal: false, vertical: true).padding(.vertical, 8)
                     } label: {
-                        VStack(alignment: .leading, spacing: 5) {
+                        VStack(alignment: .leading, spacing: 3) {
                             Text(card.title).font(.system(size: 13, weight: .medium))
-                            Text("\(cardDay(card.day).map { GoalongUIFormat.day($0) } ?? card.day) · \(payload.isPreview ? "Exemple fictif · " : "")\(statusLabel(card.status))")
-                                .font(.system(size: 11)).foregroundStyle(.secondary)
-                        }.padding(.vertical, 4)
+                            Text("\(cardDay(card.day).map { GoalongUIFormat.day($0) } ?? card.day), \(payload.isPreview ? "exemple fictif, " : "")\(statusLabel(card.status).lowercased())")
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        }.padding(.vertical, 5)
                     }
                 }
                 if cards.count > 3 {
                     Button(allCards ? "Réduire" : "Voir les \(cards.count) éléments") { allCards.toggle() }
-                        .buttonStyle(.borderless).font(.system(size: 12))
+                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13)).padding(.leading, 6)
                 }
-                Button(isDay ? "Comprendre mon travail" : "Analyser une journée…", action: onProjects)
-                    .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).disabled(payload.isPreview).accessibilityIdentifier("analytics-projects")
                 if let notice = payload.archiveNotice {
-                    Label(notice, systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(LHTheme.warning)
+                    GoalongNote(notice, tone: .warning)
                 }
-            }.frame(maxWidth: .infinity, alignment: .leading)
+            }
         }.accessibilityIdentifier("activity-reports")
     }
 
     private var rhythmDetails: some View {
-        LHCard {
-            GoalongDisclosureGroup("Détails : focus, sessions de travail et comparaison") {
-                VStack(alignment: .leading, spacing: 18) {
-                    GoalongFocusExplanation(hasFocus: !focus.isEmpty, minimumMinutes: $focusMinutes)
-                    HStack(alignment: .top, spacing: 24) {
-                        detailValue("Focus observé", duration(focusSeconds), "\(focus.count) séquence(s) ≥ \(focusMinutes) min")
-                        detailValue("Plus longue séquence", duration(current.days.flatMap(\.sequences).map(\.seconds).max() ?? 0),
-                                    "même tâche, ou même app et même site")
-                        detailValue("Changements de contexte", "\(current.contextChanges)", "app ou site différent")
-                        Spacer(minLength: 0)
-                    }
-                    if !focus.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Plus longues séquences de focus").font(.system(size: 12, weight: .semibold))
-                            ForEach(focus.sorted { $0.seconds > $1.seconds }.prefix(5)) { block in
-                                HStack(spacing: 12) {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(block.task ?? GoalongActivityPresentation.displayName(block.host ?? block.application)).font(.system(size: 13, weight: .medium))
-                                        Text("\(shortDate(block.start)) · \(time(block.start))–\(time(block.end))")
-                                            .font(.system(size: 11)).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Text(duration(block.seconds)).font(.system(size: 13)).monospacedDigit()
-                                }.accessibilityElement(children: .combine)
-                            }
-                        }
-                    }
-                    let blocks = current.workBlocks(minimumMinutes: 25)
+        GoalongDisclosureGroup("Focus, sessions de travail et comparaison") {
+            VStack(alignment: .leading, spacing: 18) {
+                GoalongFocusExplanation(hasFocus: !focus.isEmpty, minimumMinutes: $focusMinutes)
+                HStack(alignment: .top, spacing: 24) {
+                    detailValue("Focus observé", duration(focusSeconds), "\(focus.count) séquence(s) ≥ \(focusMinutes) min")
+                    detailValue("Plus longue séquence", duration(current.days.flatMap(\.sequences).map(\.seconds).max() ?? 0),
+                                "même tâche, ou même app et même site")
+                    detailValue("Changements de contexte", "\(current.contextChanges)", "app ou site différent")
+                    Spacer(minLength: 0)
+                }
+                if !focus.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Sessions de travail").font(.system(size: 12, weight: .semibold))
-                        Text("Au moins 25 minutes sur une même tâche, même en changeant d’application ; un détour de deux minutes au plus (message, recherche, courte pause) ne coupe pas la session.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        if blocks.isEmpty {
-                            Text(current.workSeconds > 0 ? "Aucune session de 25 minutes ou plus sur cette période."
-                                 : "Décrivez votre travail dans Mon travail pour voir apparaître vos sessions.")
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
-                        }
-                        ForEach(blocks.sorted { $0.workSeconds > $1.workSeconds }.prefix(5)) { block in
-                            HStack {
-                                Text("\(shortDate(block.start)) · \(time(block.start))–\(time(block.end))")
-                                if let task = block.task { Text("· " + task).foregroundStyle(.secondary).lineLimit(1) }
+                        Text("Plus longues séquences de focus").font(.system(size: 13, weight: .semibold))
+                        ForEach(focus.sorted { $0.seconds > $1.seconds }.prefix(5)) { block in
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(block.task ?? GoalongActivityPresentation.displayName(block.host ?? block.application)).font(.system(size: 13, weight: .medium))
+                                    Text("\(shortDate(block.start)), \(time(block.start))–\(time(block.end))")
+                                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                }
                                 Spacer()
-                                Text(duration(block.workSeconds)).monospacedDigit()
-                            }.font(.system(size: 12)).accessibilityElement(children: .combine)
+                                Text(duration(block.seconds)).font(.system(size: 13)).monospacedDigit()
+                            }.accessibilityElement(children: .combine)
                         }
                     }
-                    comparisonDetails
-                }.fixedSize(horizontal: false, vertical: true).padding(.top, 14)
-            }.font(.system(size: 14, weight: .medium))
-        }
+                }
+                let blocks = current.workBlocks(minimumMinutes: 25)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Sessions de travail").font(.system(size: 13, weight: .semibold))
+                    Text("Au moins 25 minutes sur une même tâche, même en changeant d’application ; un détour de deux minutes au plus (message, recherche, courte pause) ne coupe pas la session.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                    if blocks.isEmpty {
+                        Text(current.workSeconds > 0 ? "Aucune session de 25 minutes ou plus sur cette période."
+                             : "Décrivez votre travail dans Mon travail pour voir apparaître vos sessions.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    }
+                    ForEach(blocks.sorted { $0.workSeconds > $1.workSeconds }.prefix(5)) { block in
+                        HStack {
+                            Text("\(shortDate(block.start)), \(time(block.start))–\(time(block.end))")
+                            if let task = block.task { Text(task).foregroundStyle(LHTheme.secondaryText).lineLimit(1) }
+                            Spacer()
+                            Text(duration(block.workSeconds)).monospacedDigit()
+                        }.font(.system(size: 12)).accessibilityElement(children: .combine)
+                    }
+                }
+                comparisonDetails
+            }.fixedSize(horizontal: false, vertical: true).padding(.top, 12).padding(.bottom, 8)
+        }.font(.system(size: 13))
     }
 
     private func detailValue(_ title: String, _ value: String, _ caption: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(title).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             Text(value).font(.system(size: 15, weight: .semibold)).monospacedDigit()
-            Text(caption).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(caption).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }.accessibilityElement(children: .combine)
     }
 
     private var comparisonDetails: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Comparaison avec la période précédente").font(.system(size: 12, weight: .semibold))
+            Text("Comparaison avec la période précédente").font(.system(size: 13, weight: .semibold))
             Text("Période sélectionnée : \(duration(current.activeSeconds)) · \(current.daysWithObservations)/\(current.days.count) jours avec activité mesurée.")
             Text("Période précédente : \(payload.previous.observedSeconds > 0 ? duration(payload.previous.activeSeconds) : "—") · \(payload.previous.daysWithObservations)/\(payload.previous.days.count) jours avec activité mesurée.")
             if let first = payload.previous.days.first, let last = payload.previous.days.last {
@@ -564,27 +555,43 @@ struct GoalongAnalyticsContent: View {
             && current.days.contains { Calendar.current.isDateInToday($0.date) }
     }
 
-    private var emptyState: some View {
-        LHCard {
-            VStack(alignment: .leading, spacing: 12) {
-                heading(current.incompleteDays > 0 ? "Lecture incomplète" : current.eventCount > 0 ? "Les premières traces sont reçues"
-                    : isEmptyToday ? "Pas encore d’activité aujourd’hui" : "Pas encore d’enregistrement")
-                if current.eventCount > 0 {
-                    Text("\(current.eventCount) observations reçues").font(.system(size: 15, weight: .medium)).monospacedDigit()
-                        .accessibilityIdentifier("analytics-first-observations")
+    @ViewBuilder private var emptyState: some View {
+        if current.eventCount == 0 && current.incompleteDays == 0 {
+            GoalongEmptyState(
+                title: isEmptyToday ? "Pas encore d’activité aujourd’hui" : "Pas encore d’enregistrement",
+                message: isEmptyToday
+                    ? "Vos durées, vos apps et votre rythme apparaissent ici dès les premières minutes d’utilisation de ce Mac."
+                    : "Choisissez une autre date ou consultez les sources dans l’historique. Une absence de données n’est pas une journée à zéro.") {
+                if !isEmptyToday {
+                    Button("Consulter l’historique", action: onHistory).buttonStyle(LHSecondaryButtonStyle()).disabled(payload.isPreview)
                 }
-                Text(current.incompleteDays > 0
+            }
+        } else {
+            observationsState
+        }
+    }
+
+    private var observationsState: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            GoalongEmptyState(
+                title: current.incompleteDays > 0 ? "Lecture incomplète" : current.eventCount > 0 ? "Les premières traces sont reçues"
+                    : isEmptyToday ? "Pas encore d’activité aujourd’hui" : "Pas encore d’enregistrement",
+                message: current.incompleteDays > 0
                     ? "Certaines sources n’ont pas pu être lues. Cela ne signifie pas une absence d’activité."
                     : current.eventCount > 0
                     ? "La durée devient mesurable dès que deux observations d’activité sont assez proches. Aucune minute n’est inventée entre des traces isolées."
                     : isEmptyToday
                     ? "Vos durées, vos apps et votre rythme apparaissent ici dès les premières minutes d’utilisation de ce Mac."
-                    : "Choisissez une autre date ou consultez les sources dans l’historique. Une absence de données n’est pas une journée à zéro.")
-                    .font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    : "Choisissez une autre date ou consultez les sources dans l’historique. Une absence de données n’est pas une journée à zéro.") {
                 if !isEmptyToday {
                     Button("Consulter l’historique", action: onHistory).buttonStyle(LHSecondaryButtonStyle()).disabled(payload.isPreview)
                 }
-            }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if current.eventCount > 0 {
+                Text(current.eventCount > 1 ? "\(current.eventCount) observations reçues" : "1 observation reçue").font(.system(size: 13, weight: .medium)).monospacedDigit()
+                    .foregroundStyle(LHTheme.secondaryText)
+                    .accessibilityIdentifier("analytics-first-observations")
+            }
         }
     }
 
@@ -598,8 +605,9 @@ struct GoalongAnalyticsContent: View {
                 Text("Un écart de plus de deux minutes entre observations ou une interruption de collecte coupe la continuité. Les appels, lectures et présentations observés au premier plan comptent même sans clavier ni souris. Les périodes sans saisie et sans signal d’usage, privées ou non observées restent distinctes. Rien n’est prolongé avant la première trace ou après la dernière.")
                 Text("Le Temps d’écran Apple garde ses propres sources et appareils. Il n’est jamais additionné aux observations Goalong. Les conversations et le temps machine ne s’ajoutent pas non plus au temps actif.")
                 Text("Les bilans et projets sont des analyses déjà enregistrées. Consulter cette page ne lance aucun agent. Sport, sommeil et travail hors ordinateur ne sont pas déduits de l’activité du Mac.")
-            }.font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 10)
-        }.font(.system(size: 12, weight: .medium))
+            }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 10).padding(.bottom, 8)
+        }.font(.system(size: 13))
     }
 
     private var hourStride: Int {
@@ -615,8 +623,9 @@ struct GoalongAnalyticsContent: View {
         let last = current.days.last?.date ?? first
         return first...(Calendar.current.date(byAdding: .day, value: 1, to: last) ?? last)
     }
-    private func middleOfDay(_ day: Date) -> Date { Calendar.current.date(byAdding: .hour, value: 12, to: day) ?? day }
-    private func heading(_ text: String) -> some View { Text(text).font(.system(size: 16, weight: .semibold)).accessibilityAddTraits(.isHeader) }
+    private func heading(_ text: String) -> some View {
+        Text(text).font(LHTheme.cardTitleFont).foregroundStyle(LHTheme.text).accessibilityAddTraits(.isHeader)
+    }
     private func duration(_ value: Double) -> String { GoalongAnalyticsFormatting.duration(value) }
     private func percent(_ share: Double) -> String { "\(Int((max(0, min(1, share)) * 100).rounded()))\u{00A0}%" }
     private func time(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) }
@@ -625,21 +634,6 @@ struct GoalongAnalyticsContent: View {
         let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian); formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: value)
-    }
-    private func legend(_ title: String, color: Color) -> some View {
-        HStack(spacing: 5) { Circle().fill(color).frame(width: 6, height: 6); Text(title) }.font(.system(size: 11))
-    }
-    private func kindLabel(_ kind: GoalongLocalAnalytics.Kind) -> String {
-        switch kind {
-        case .work: return "Travail classé"; case .other: return "Autres usages"; case .unclassified: return "À préciser"
-        case .idle: return "Sans interaction"; case .concealed: return "Privé / suspendu"; case .unobserved: return "Non observé"
-        }
-    }
-    private func kindColor(_ kind: GoalongLocalAnalytics.Kind) -> Color {
-        switch kind {
-        case .work: return LHTheme.accent; case .other: return LHTheme.warning; case .unclassified: return LHTheme.secondaryText
-        case .idle: return LHTheme.privateTint; case .concealed: return LHTheme.teal.opacity(0.45); case .unobserved: return LHTheme.separator
-        }
     }
     private func statusLabel(_ value: String) -> String {
         switch value { case "observed": return "Observé"; case "inferred": return "Déduit"; case "declared": return "Déclaré"; default: return "À préciser" }

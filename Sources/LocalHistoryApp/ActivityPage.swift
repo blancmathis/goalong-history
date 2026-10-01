@@ -164,9 +164,6 @@
 
         var header: some View {
             PageHeader(
-                eyebrow: Calendar.current.isDateInToday(model.selectedDay)
-                    ? "Aujourd’hui"
-                    : "Historique du jour",
                 title: mode == .computerHistory ? "Historique de ce Mac" : "Activity",
                 subtitle: headerSubtitle
             ) {
@@ -233,24 +230,9 @@
         func headlineCard(_ analysis: ActivityDayAnalysis) -> some View {
             LHCard(padding: 20) {
                 HStack(alignment: .center, spacing: 17) {
-                    Image(systemName: "sparkles.rectangle.stack.fill")
-                        .font(.system(size: 27, weight: .semibold))
-                        .foregroundStyle(LHTheme.accent)
-                        .frame(width: 58, height: 58)
-                        .background(
-                            LinearGradient(
-                                colors: [
-                                    LHTheme.accent.opacity(0.14),
-                                    LHTheme.privateTint.opacity(0.09),
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        )
                     VStack(alignment: .leading, spacing: 6) {
                         Text(analysis.headline)
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .font(LHTheme.sectionTitleFont)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(
                             "\(analysis.coverage.sourceEventCount.formatted()) événements bruts résumés en \(analysis.coverage.representativeMinuteCount.formatted()) minutes significatives. L’historique complet reste disponible dans son onglet."
@@ -328,7 +310,7 @@
                 Image(systemName: symbol)
                     .foregroundStyle(.secondary)
                 Text(title)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
             }

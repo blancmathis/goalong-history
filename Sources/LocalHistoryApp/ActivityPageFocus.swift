@@ -40,9 +40,9 @@
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(DashboardFormatters.shortTime.string(from: block.start))
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .font(.system(size: 11, weight: .bold))
                             Text(duration(block.activeSeconds))
-                                .font(.system(size: 9, weight: .medium, design: .rounded))
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
                         .frame(width: 52, alignment: .leading)
@@ -60,18 +60,18 @@
                                 .fixedSize(horizontal: false, vertical: true)
                             HStack(spacing: 7) {
                                 if let category = block.category {
-                                    CategoryBadge(category: category, isWork: block.isWork)
+                                    CategoryBadge(category: category)
                                 }
                                 if !block.applications.isEmpty {
                                     Text(block.applications.prefix(3).joined(separator: " · "))
-                                        .font(.system(size: 9, weight: .medium))
+                                        .font(.system(size: 11, weight: .medium))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 }
                             }
                             if !block.hosts.isEmpty {
                                 Label(block.hosts.prefix(3).joined(separator: " · "), systemImage: "globe")
-                                    .font(.system(size: 9, weight: .medium))
+                                    .font(.system(size: 11, weight: .medium))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
@@ -102,7 +102,7 @@
                                 Label("\(block.eventCount.formatted()) source events", systemImage: "list.number")
                                 Label("\(block.inputEventCount.formatted()) input events", systemImage: "keyboard")
                             }
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.tertiary)
                         }
                         .padding(.leading, 67)
@@ -125,12 +125,11 @@
                     .foregroundStyle(LHTheme.accent)
                     .frame(width: 14)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title.uppercased())
-                        .font(.system(size: 8, weight: .semibold))
-                        .tracking(0.35)
+                    Text(title)
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.tertiary)
                     Text(value)
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
@@ -162,19 +161,19 @@
                                     )
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(session.appName)
-                                            .font(.system(size: 10, weight: .semibold))
+                                            .font(.system(size: 11, weight: .semibold))
                                             .lineLimit(1)
                                         Text(session.windowTitle ?? session.host ?? "Activity")
-                                            .font(.system(size: 9))
+                                            .font(.system(size: 11))
                                             .foregroundStyle(.secondary)
                                             .lineLimit(1)
                                     }
                                     Spacer()
                                     VStack(alignment: .trailing, spacing: 2) {
                                         Text(DashboardFormatters.shortTime.string(from: session.start))
-                                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                            .font(.system(size: 11, weight: .semibold))
                                         Text(DashboardFormatters.duration(seconds: session.duration))
-                                            .font(.system(size: 8))
+                                            .font(.system(size: 11))
                                             .foregroundStyle(.tertiary)
                                     }
                                 }

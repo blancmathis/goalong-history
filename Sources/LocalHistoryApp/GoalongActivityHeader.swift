@@ -14,41 +14,43 @@ struct GoalongActivityHeader: View {
     var onShare: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(isPreview ? "Activité · aperçu" : "Activité")
-                        .font(.system(size: 26, weight: .semibold)).tracking(-0.5)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(rangeLabel).font(.system(size: 13)).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(isPreview ? "Activité · aperçu" : "Activité").goalongPageTitle()
+                    Text(rangeLabel).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                         .accessibilityIdentifier("activity-date-range")
                 }
                 Spacer(minLength: 8)
-                GoalongSegmentedControl("Période", selection: Binding(get: { selection.period }, set: onPeriod),
-                                        options: [1, 7, 28]) { $0 == 1 ? "Jour" : "\($0) jours" }
-                .accessibilityIdentifier("analytics-period")
+                actions
             }
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
-                    dateControls
+                    period
                     Spacer(minLength: 8)
-                    actions
+                    dateControls
                 }
                 VStack(alignment: .leading, spacing: 12) {
+                    period
                     dateControls
-                    HStack { Spacer(); actions }
                 }
             }
             if let previous = selection.returnContext {
                 Button(action: onReturn) {
                     Label("Retour aux \(previous.period) jours", systemImage: "arrow.uturn.backward")
-                }.buttonStyle(.borderless).font(.system(size: 12))
+                }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                     .accessibilityIdentifier("activity-return-period")
             }
         }
-        .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 18)
+        .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 16)
         .background(LHTheme.pageBackground)
         .accessibilityIdentifier("activity-header")
+    }
+
+    private var period: some View {
+        GoalongSegmentedControl("Période", selection: Binding(get: { selection.period }, set: onPeriod),
+                                options: [1, 7, 28]) { $0 == 1 ? "Jour" : "\($0) jours" }
+            .accessibilityIdentifier("analytics-period")
     }
 
     private var dateControls: some View {
@@ -65,22 +67,18 @@ struct GoalongActivityHeader: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Button(action: onRefresh) {
-                HStack(spacing: 6) {
-                    if isRefreshing { ProgressView().controlSize(.mini) }
+                Group {
+                    if isRefreshing { ProgressView().controlSize(.small) }
                     else { Image(systemName: "arrow.clockwise") }
-                    Text("Actualiser")
-                }
-            }.disabled(isRefreshing).accessibilityIdentifier("activity-refresh")
-            Menu {
-                Button("Partager la journée du \(shortDate(selection.day))", action: onShare)
-                    .disabled(isPreview)
-            } label: {
-                Label("Partager", systemImage: "square.and.arrow.up")
+                }.frame(width: 16, height: 16)
             }
-            .fixedSize().disabled(isPreview)
-            .help("Le partage porte sur la journée sélectionnée et demande votre validation.")
+            .disabled(isRefreshing).accessibilityIdentifier("activity-refresh")
+            .accessibilityLabel("Actualiser").help("Actualiser")
+            Button(action: onShare) { Label("Partager", systemImage: "square.and.arrow.up") }
+                .disabled(isPreview)
+                .help("Partager la journée du \(shortDate(selection.day)). Rien n’est envoyé sans votre validation.")
         }
         .controlSize(.regular)
     }
@@ -88,7 +86,7 @@ struct GoalongActivityHeader: View {
     private var rangeLabel: String {
         if selection.period == 1 {
             return Calendar.current.isDateInToday(selection.day)
-                ? "Aujourd’hui · \(shortDate(selection.day))"
+                ? "Aujourd’hui, \(GoalongUIFormat.day(selection.day))"
                 : GoalongUIFormat.day(selection.day)
         }
         return "\(shortDate(selection.interval().start)) – \(shortDate(selection.day))"

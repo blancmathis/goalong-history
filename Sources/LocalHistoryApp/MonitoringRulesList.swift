@@ -80,7 +80,7 @@
                         Text(
                             "Désactiver le suivi ne concerne que les détails futurs. L’historique existant n’est pas modifié, Goalong reste toujours exclu et les règles de partage sont distinctes."
                         )
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -102,7 +102,7 @@
                                         options: MonitoringSubjectFilter.allCases) { $0.title }
 
                 Text("\(filteredItems.count) source\(filteredItems.count == 1 ? "" : "s")")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 74, alignment: .trailing)
             }
@@ -117,18 +117,18 @@
                             Label(title, systemImage: symbol)
                                 .font(.system(size: 14, weight: .semibold))
                             Text("\(items.count)")
-                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.primary.opacity(0.06), in: Capsule())
                             Spacer()
-                            Text("OBSERVED")
+                            Text("Observé")
                                 .frame(width: 92, alignment: .trailing)
-                            Text("MONITOR FUTURE ACTIVITY")
+                            Text("Surveiller l’activité future")
                                 .frame(width: 176, alignment: .trailing)
                         }
-                        .font(.system(size: 8, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .tracking(0.35)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 16)
@@ -169,14 +169,14 @@
                         .scaleEffect(0.82, anchor: .leading)
                     }
                     Text(secondaryLabel(for: item))
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(DashboardFormatters.duration(seconds: item.foregroundSeconds))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(.system(size: 11, weight: .semibold))
                     .monospacedDigit()
                     .frame(width: 92, alignment: .trailing)
 

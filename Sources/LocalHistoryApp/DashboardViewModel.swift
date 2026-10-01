@@ -701,7 +701,7 @@
                 guard Self.isValidVerificationURL(raw) else {
                     alert = DashboardAlert(
                         kind: .error,
-                        title: "Invalid verification server",
+                        title: "Serveur de vérification invalide",
                         message: "Utilisez une adresse HTTPS. HTTP n’est accepté qu’en développement local."
                     )
                     return
@@ -717,8 +717,7 @@
                 savedSettingsDraft = refreshed
                 refreshRuntime()
                 if showConfirmation {
-                    alert = DashboardAlert(kind: .information, title: "Réglages enregistrés",
-                        message: "Ces choix s’appliquent aux prochaines activités. L’historique est conservé.")
+                    Task { @MainActor in GoalongToastCenter.shared.show("Réglages enregistrés") }
                 }
             } catch {
                 alert = DashboardAlert(

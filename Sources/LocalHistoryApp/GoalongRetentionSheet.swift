@@ -11,7 +11,7 @@ import LocalHistoryCore
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Conservation de l’historique").font(.system(size: 23, weight: .semibold))
+                Text("Conservation de l’historique").font(LHTheme.sheetTitleFont)
                 Spacer()
                 Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(24)
@@ -50,7 +50,7 @@ import LocalHistoryCore
                         }.padding(.top, 14)
                     }.font(.system(size: 13))
                     if model.automaticCleanup && model.draft.includesProofExpiry {
-                        Toggle("Autoriser aussi la suppression des preuves expirées", isOn: $proofConsent).toggleStyle(.checkbox)
+                        Toggle("Autoriser aussi la suppression des preuves expirées", isOn: $proofConsent).toggleStyle(.goalongCheckbox)
                         Text("La vérification des anciennes périodes pourra être perdue.").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Text("Les originaux Apple, conversations, bilans ChatGPT, exports et copies déjà envoyées ne sont pas concernés.")
@@ -102,7 +102,7 @@ import LocalHistoryCore
     @State private var confirming = false
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Text("Effacer de l’historique").font(.system(size: 23, weight: .semibold))
+            Text("Effacer de l’historique").font(LHTheme.sheetTitleFont)
             Picker("Période", selection: $seconds) {
                 Text("Les dix dernières minutes").tag(600)
                 Text("La dernière heure").tag(3600)

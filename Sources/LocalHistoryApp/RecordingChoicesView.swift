@@ -46,11 +46,15 @@ enum RecordingSignal: String, CaseIterable, Identifiable {
 struct RecordingChoicesView: View {
     @Binding var draft: DashboardSettingsDraft
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("Applications et durées").font(.system(size: 14, weight: .medium)); Spacer(); Text("Base").font(.system(size: 12)).foregroundStyle(.secondary) }
-            Divider()
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Applications et durées").font(.system(size: 13, weight: .medium))
+                Spacer()
+                Text("Toujours enregistré").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            }
+            Rectangle().fill(LHTheme.separator).frame(height: 1)
             signalGroup("Interactions", signals: [.clicks, .scrolling, .typing, .shortcuts])
-            Divider()
+            Rectangle().fill(LHTheme.separator).frame(height: 1)
             signalGroup("Titres et adresses", signals: [.windowTitles, .interfaceLabels, .browserURLs])
             if (!draft.excludedDomainsText.isEmpty || !draft.includedDomainsText.isEmpty) && !draft.captureURLs {
                 Label("Les filtres web peuvent bloquer le navigateur. Vérifiez Apps et sites.", systemImage: "info.circle")
@@ -59,20 +63,20 @@ struct RecordingChoicesView: View {
         }
     }
     private func signalGroup(_ title: String, signals: [RecordingSignal]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-            Grid(horizontalSpacing: 22, verticalSpacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+            Grid(horizontalSpacing: 32, verticalSpacing: 0) {
                 ForEach(0..<((signals.count + 1) / 2), id: \.self) { row in
                     GridRow {
                         ForEach(Array(signals[(row * 2)..<min(row * 2 + 2, signals.count)])) { signal in
                             HStack(spacing: 8) {
-                                Text(signal.title).font(.system(size: 14))
+                                Text(signal.title).font(.system(size: 13))
                                 GoalongHelpButton(text: signal.detail)
                                 Spacer(minLength: 8)
                                 Toggle(signal.title, isOn: Binding(get: { draft[keyPath: signal.keyPath] }, set: { draft[keyPath: signal.keyPath] = $0 }))
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly)
                                     .accessibilityIdentifier("recording-\(signal.rawValue)")
-                            }.frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+                            }.frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
                         }
                     }
                 }

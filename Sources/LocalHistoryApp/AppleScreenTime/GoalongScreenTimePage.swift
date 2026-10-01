@@ -33,7 +33,7 @@ struct GoalongScreenTimePage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if showsHeader {
-                    PageHeader(eyebrow: "Source indépendante", title: "Temps d’écran Apple",
+                    PageHeader(title: "Temps d’écran Apple",
                         subtitle: "Les données Apple restent séparées des observations Goalong.") {
                         HStack(spacing: 10) {
                             DateSelectionControl(date: screenTime.selectedDay, onChange: selectDay)
@@ -181,14 +181,14 @@ struct GoalongScreenTimePage: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Applications").font(.system(size: 13)).foregroundStyle(.secondary)
-                    Text("\(rows.filter { !$0.isWebsite }.count)").font(.system(size: 28, weight: .semibold))
+                    Text("\(rows.filter { !$0.isWebsite }.count)").font(LHTheme.figureFont(28))
                         .monospacedDigit().accessibilityIdentifier("screen-time-day-applications")
                     Text("\(summary.deviceSummaries.count) appareil(s) avec des données").font(.system(size: 12)).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Dernière lecture").font(.system(size: 13)).foregroundStyle(.secondary)
                     Text(screenTime.lastRefreshAt.map { $0.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) } ?? "—")
-                        .font(.system(size: 25, weight: .semibold)).monospacedDigit().accessibilityIdentifier("screen-time-day-update")
+                        .font(LHTheme.figureFont(26)).monospacedDigit().accessibilityIdentifier("screen-time-day-update")
                     Text(screenTime.selectedDayIsToday ? "Actualisation locale toutes les 30 s" : "Archive locale · Apple non relu")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading)
@@ -203,7 +203,7 @@ struct GoalongScreenTimePage: View {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Text("Usages reçus d’Apple").font(.system(size: 16, weight: .semibold))
+                        Text("Usages reçus d’Apple").font(LHTheme.cardTitleFont)
                         Spacer(minLength: 12)
                         GoalongSegmentedControl("Type d’usage Apple", selection: $filter,
                                                 options: GoalongAppleUsageFilter.allCases) { $0.title }
@@ -251,7 +251,7 @@ struct GoalongScreenTimePage: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if matching.count > 8 && search.isEmpty {
                         Button(showsAllUsage ? "Réduire la liste" : "Voir les \(matching.count) usages") { showsAllUsage.toggle() }
-                            .buttonStyle(.borderless).accessibilityIdentifier("screen-time-show-all")
+                            .buttonStyle(LHQuietButtonStyle()).accessibilityIdentifier("screen-time-show-all")
                     }
                     Text("Applications et sites sont deux lectures distinctes. Le temps d’un site peut déjà être inclus dans son navigateur ; les lignes ne sont donc pas additionnées pour recréer le total.")
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -299,7 +299,7 @@ struct GoalongScreenTimePage: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(screenTime.status.message)
                     Button("Vérifier les autorisations macOS…") { screenTime.openFullDiskAccessSettings() }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(LHQuietButtonStyle())
                         .help("L’accès complet au disque ne garantit pas que l’agrégat privé d’Apple soit disponible.")
                     Text("AppUsage : \(screenTime.screenTimeAppUsageIntervalCount) intervalles · knowledgeC : \(screenTime.knowledgeIntervalCount) · Biome : \(screenTime.biomeIntervalCount)")
                     if let provenance = screenTime.summary?.provenance { Text(provenance.api) }

@@ -34,10 +34,12 @@ final class GoalongAnalyticsRenderingTests: XCTestCase {
                         VStack(alignment: .leading, spacing: 20) {
                             if payload.isPreview { GoalongAnalyticsPreviewBanner() }
                             GoalongAnalyticsContent(payload: payload, focusMinutes: .constant(25))
-                        }.padding(24)
+                        }.padding(LHTheme.pageInset)
                     }
                         .frame(width: width).fixedSize(horizontal: false, vertical: true)
                         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
+                        // Still renders: the thread is shown complete instead of mid-trace.
+                        .environment(\.goalongReduceMotion, true).goalongControls()
                     let controller = NSHostingController(rootView: root)
                     window.contentViewController = controller
                     window.setContentSize(NSSize(width: width, height: 900))

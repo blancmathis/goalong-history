@@ -140,7 +140,7 @@ struct GoalongActivityUsageDetail: View {
             }
             if period.days.count == 1 { segmentRows(day) }
             Button("Voir cette journée dans l’historique") { onHistoryDay(day.date) }
-                .buttonStyle(.borderless).disabled(isPreview)
+                .buttonStyle(LHQuietButtonStyle()).disabled(isPreview)
             Divider()
         }
     }

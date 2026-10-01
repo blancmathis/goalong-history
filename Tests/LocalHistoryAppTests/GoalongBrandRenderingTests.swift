@@ -106,8 +106,9 @@ final class GoalongBrandRenderingTests: XCTestCase {
             model.selectSection(.settings); pump()
             let control = try XCTUnwrap(accessibleElement(identifier, within: window), identifier)
             let frame = control.accessibilityFrame()
-            XCTAssertGreaterThanOrEqual(frame.width, 400, "Primary card needs a large clickable area")
-            XCTAssertGreaterThanOrEqual(frame.height, 88)
+            XCTAssertGreaterThanOrEqual(frame.width, 400, "Primary row needs a large clickable area")
+            // Two-line rows of one list since the "Le fil" pass: still well above the 44-point target.
+            XCTAssertGreaterThanOrEqual(frame.height, 52)
             XCTAssertTrue(control.accessibilityPerformPress(), "The real native card must respond")
             pump()
             XCTAssertEqual(model.settingsPane, destination, "Cards must navigate to distinct functional pages")

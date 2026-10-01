@@ -14,11 +14,11 @@ import LocalHistoryCore
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             ChatGPTAccountConnectionCard(runtime: runtime)
-            GoalongSettingsGroup(title: "Votre analyse") {
+            GoalongSettingsList(title: "Votre analyse") {
                 GoalongSettingsLink(title: "Données pour ChatGPT", value: sourceSummary, symbol: "line.3.horizontal.decrease.circle") { open(0) }.accessibilityIdentifier("analysis-open-data")
-                Divider()
+                GoalongRowDivider()
                 GoalongSettingsLink(title: "Masquer des noms", value: replacementSummary, symbol: "text.badge.minus") { open(1) }.accessibilityIdentifier("analysis-open-replacements")
-                Divider()
+                GoalongRowDivider()
                 GoalongSettingsLink(title: "Personnaliser le bilan", value: selection.outputGuidance?.isEmpty == false ? "Consignes ajoutées" : "Ton et informations à omettre", symbol: "text.bubble") { open(2) }.accessibilityIdentifier("analysis-open-guidance")
             }
             GoalongSettingsGroup(title: "Quand analyser") {

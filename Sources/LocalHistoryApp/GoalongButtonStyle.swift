@@ -3,6 +3,7 @@
     import SwiftUI
 
     /// Keeps Button actions, roles and shortcuts with the site's ink-on-lime treatment.
+    /// A flat fill: the colour is the emphasis, so one per group of actions.
     struct LHPrimaryButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.isFocused) private var isFocused
@@ -10,39 +11,35 @@
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var isHovered = false
 
-        private var height: CGFloat {
-            switch controlSize {
-            case .mini: return 24
-            case .small: return 28
-            case .large: return 38
-            default: return 32
-            }
-        }
-
         func makeBody(configuration: Configuration) -> some View {
             let destructive = configuration.role == .destructive
+            let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
+            let base: Color = destructive ? Color(nsColor: LHTheme.rgb(configuration.isPressed ? 0x8E2A25 : isHovered ? 0xB83C35 : 0xA6352F))
+                : configuration.isPressed ? LHTheme.actionPressed
+                : isHovered ? LHTheme.actionHover : LHTheme.actionBackground
             configuration.label
-                .font(.system(size: 13, weight: .semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 5)
-                .frame(minHeight: height)
+                .font(.system(size: GoalongControlMetrics.font(controlSize), weight: .semibold))
+                .lineLimit(1)
+                .padding(.horizontal, GoalongControlMetrics.inset(controlSize) + 2)
+                .frame(minHeight: GoalongControlMetrics.height(controlSize))
                 .foregroundStyle(!isEnabled ? LHTheme.secondaryText : destructive ? .white : LHTheme.onAccent)
-                .background(
-                    !isEnabled ? LHTheme.elevatedBackground
-                        : destructive ? Color(nsColor: LHTheme.rgb(0xA6352F))
-                        : configuration.isPressed ? LHTheme.actionPressed
-                        : isHovered ? LHTheme.actionHover : LHTheme.actionBackground,
-                    in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                )
+                .background {
+                    if isEnabled {
+                        shape.fill(base)
+                    } else {
+                        GoalongSurface(corner: LHTheme.controlRadius, fill: LHTheme.controlBackground, highlighted: true)
+                    }
+                }
                 .overlay {
-                    RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                        .strokeBorder(isFocused ? LHTheme.text : .clear, lineWidth: 2)
+                    shape.strokeBorder(isFocused ? LHTheme.text : .clear, lineWidth: 2)
                         .padding(-3)
                 }
-                .contentShape(RoundedRectangle(cornerRadius: LHTheme.controlRadius))
+                .opacity(isEnabled ? 1 : 0.5)
+                .scaleEffect(configuration.isPressed && isEnabled && !reduceMotion ? 0.97 : 1)
+                .contentShape(shape)
                 .onHover { isHovered = $0 }
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovered)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: configuration.isPressed)
+                .animation(reduceMotion ? nil : LHTheme.hover, value: isHovered)
+                .animation(reduceMotion ? nil : LHTheme.press, value: configuration.isPressed)
         }
     }
 #endif

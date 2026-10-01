@@ -48,7 +48,7 @@ import AgentActivity
         VStack(spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Votre analyse ChatGPT").font(.system(size: 25, weight: .semibold))
+                    Text("Votre analyse ChatGPT").font(LHTheme.sheetTitleFont)
                     Text("Choisissez ce qui sort du Mac, puis la façon de rédiger le bilan.").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -114,7 +114,7 @@ import AgentActivity
                             GridRow {
                                 ForEach(Array(GoalongAnalysisField.allCases[(row * 2)..<min(row * 2 + 2, GoalongAnalysisField.allCases.count)])) { field in
                                     Toggle(field.title, isOn: scope[dynamicMember: field.keyPath])
-                                        .toggleStyle(.checkbox).font(.system(size: 13))
+                                        .toggleStyle(.goalongCheckbox).font(.system(size: 13))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .accessibilityIdentifier("analysis-field-\(field.rawValue)")
                                 }
@@ -145,7 +145,7 @@ import AgentActivity
                             var ids = Set(value.deviceIDs ?? catalog.devices.map(\.id))
                             if enabled { ids.insert(device.id) } else { ids.remove(device.id) }
                             value.deviceIDs = ids.sorted(); scope.wrappedValue = value
-                        })).toggleStyle(.checkbox)
+                        })).toggleStyle(.goalongCheckbox)
                     }
                 }
             }
@@ -186,18 +186,18 @@ import AgentActivity
                 Toggle("\(folder.provider.displayName) · \(folder.displayName)", isOn: Binding(get: { scope.wrappedValue.conversationFolderIDs?.contains(folder.id) ?? true }, set: { enabled in
                     var value = scope.wrappedValue; var ids = Set(value.conversationFolderIDs ?? folders.map(\.id))
                     if enabled { ids.insert(folder.id) } else { ids.remove(folder.id) }; value.conversationFolderIDs = ids.sorted(); scope.wrappedValue = value
-                })).toggleStyle(.checkbox).font(.system(size: 13))
+                })).toggleStyle(.goalongCheckbox).font(.system(size: 13))
             }
             if folders.isEmpty { Text("Aucun dossier activé. Ajoutez une source dans Enregistrement.").font(.system(size: 13)).foregroundStyle(.secondary) }
             Divider()
             Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 14) {
                 GridRow {
-                    Toggle("Nombre de messages", isOn: scope.conversationCounts).toggleStyle(.checkbox)
-                    Toggle("Titres des conversations", isOn: scope.conversationTitles).toggleStyle(.checkbox)
+                    Toggle("Nombre de messages", isOn: scope.conversationCounts).toggleStyle(.goalongCheckbox)
+                    Toggle("Titres des conversations", isOn: scope.conversationTitles).toggleStyle(.goalongCheckbox)
                 }
                 GridRow {
-                    Toggle("Vos messages", isOn: scope.conversationUserMessages).toggleStyle(.checkbox)
-                    Toggle("Réponses finales des assistants", isOn: scope.conversationAssistantMessages).toggleStyle(.checkbox)
+                    Toggle("Vos messages", isOn: scope.conversationUserMessages).toggleStyle(.goalongCheckbox)
+                    Toggle("Réponses finales des assistants", isOn: scope.conversationAssistantMessages).toggleStyle(.goalongCheckbox)
                 }
             }.font(.system(size: 13))
             if exclusions.policy.hasExclusions {
@@ -274,7 +274,7 @@ import AgentActivity
             Toggle(title, isOn: value).labelsHidden().toggleStyle(.goalongSwitchOnly).disabled(!consents.isEnabled(capability))
             if !consents.isEnabled(capability) {
                 Button("Configurer la source") { dismiss(); model.selectSection(.settings); model.settingsPane = .recording }
-                    .buttonStyle(.borderless).font(.system(size: 12))
+                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
             }
         }
     }
@@ -351,6 +351,7 @@ import AgentActivity
             NotificationCenter.default.post(name: .goalongAnalysisSelectionDidChange, object: nil)
             if wasAutomatic { ChatGPTRecapRuntime.shared.automaticRecapsEnabled = true; ChatGPTRecapRuntime.shared.start(checkPreviousDayImmediately: false) }
             onSave(next); dismiss()
+            GoalongToastCenter.shared.show("Choix d’analyse enregistrés")
         } catch { self.error = error.localizedDescription }
     }
     private func runtimeStop() {

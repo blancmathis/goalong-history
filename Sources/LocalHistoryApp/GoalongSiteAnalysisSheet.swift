@@ -275,7 +275,7 @@ struct GoalongSiteAnalysisSheet: View {
                         if let url = URL(string: "https://developers.openai.com/codex/cli") {
                             _ = GoalongWorkspaceOpenPolicy.open(url, purpose: .documentation)
                         }
-                    }.buttonStyle(.borderless)
+                    }.buttonStyle(LHQuietButtonStyle())
                     Text("1. Ouvrez le fichier téléchargé sur le site").font(.headline)
                     Button("Choisir la demande…", action: chooseRequest).disabled(model.busy)
                     if let selected = model.request {

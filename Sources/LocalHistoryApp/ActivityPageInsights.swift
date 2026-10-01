@@ -15,8 +15,8 @@
                         Button("Voir tous les sites") {
                             mode = .appsAndSites
                         }
-                        .buttonStyle(.link)
-                        .font(.system(size: 10, weight: .semibold))
+                        .buttonStyle(LHQuietButtonStyle())
+                        .font(.system(size: 11, weight: .semibold))
                     }
 
                     if analysis.sites.isEmpty {
@@ -42,7 +42,7 @@
                                 )
                             }
                             .buttonStyle(.plain)
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(LHTheme.accent)
                         }
                     }
@@ -58,7 +58,7 @@
                         .lineLimit(1)
                     Spacer()
                     Text(duration(site.activeSeconds))
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
 
@@ -72,12 +72,12 @@
                         Label("\(site.semanticSnapshotCount) memories", systemImage: "brain.head.profile")
                     }
                 }
-                .font(.system(size: 8, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.tertiary)
 
                 if let page = site.pages.first {
                     Text(page.title)
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .textSelection(.enabled)
@@ -87,14 +87,14 @@
                 if !clicks.isEmpty {
                     HStack(spacing: 5) {
                         Text("Clicked:")
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.tertiary)
                         Text(
                             clicks.prefix(2).map {
                                 $0.count > 1 ? "\($0.label) ×\($0.count)" : $0.label
                             }.joined(separator: " · ")
                         )
-                        .font(.system(size: 8))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                     }
@@ -102,7 +102,7 @@
 
                 if let remembered = site.rememberedContext.first {
                     Text(remembered)
-                        .font(.system(size: 8))
+                        .font(.system(size: 11))
                         .foregroundStyle(LHTheme.privateTint)
                         .lineLimit(2)
                         .textSelection(.enabled)
@@ -129,16 +129,16 @@
                             ForEach(analysis.requests.prefix(6)) { request in
                                 HStack(alignment: .top, spacing: 9) {
                                     Text(DashboardFormatters.shortTime.string(from: request.firstSeen))
-                                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                        .font(.system(size: 11, weight: .semibold))
                                         .foregroundStyle(.tertiary)
                                         .frame(width: 34, alignment: .leading)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(request.text)
-                                            .font(.system(size: 10, weight: .medium))
+                                            .font(.system(size: 11, weight: .medium))
                                             .fixedSize(horizontal: false, vertical: true)
                                             .textSelection(.enabled)
                                         Text(request.host ?? request.application ?? "Contexte accessible")
-                                            .font(.system(size: 8))
+                                            .font(.system(size: 11))
                                             .foregroundStyle(.tertiary)
                                     }
                                 }
@@ -167,15 +167,15 @@
                             Text(
                                 "Markdown stable avec les sites, pages et actions significatives, dédoublonnés dans une taille limitée."
                             )
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 5) {
                             Text("~\(analysis.estimatedAgentTokens.formatted()) tokens")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .font(.system(size: 12, weight: .bold))
                             Text("budget \(agentTokenBudget.formatted())")
-                                .font(.system(size: 9))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -202,13 +202,13 @@
 
                         Spacer()
                         Text("analysis/*.agent.md + *.analysis.json")
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(.tertiary)
                     }
 
                     ScrollView(.vertical) {
                         Text(analysis.agentMarkdown)
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(.system(size: 11, design: .monospaced))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                             .padding(13)
@@ -246,7 +246,7 @@
                         Text(
                             "Mémorise le texte sélectionné et visible fourni par l’accessibilité macOS, y compris les discussions web, pour que le récapitulatif comprenne plus qu’une adresse ou un titre."
                         )
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 12) {
@@ -261,7 +261,7 @@
                                 )
                             }
                         }
-                        .font(.system(size: 8, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.tertiary)
                     }
                     Spacer(minLength: 18)

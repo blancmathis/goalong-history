@@ -20,9 +20,9 @@ enum GoalongActivityClassStyle {
 
     static func color(_ kind: GoalongLocalAnalytics.Kind) -> Color {
         switch kind {
-        case .work: return LHTheme.accent
-        case .other: return LHTheme.warning
-        case .unclassified: return LHTheme.secondaryText.opacity(0.55)
+        case .work: return LHTheme.workData
+        case .other: return LHTheme.otherData
+        case .unclassified: return LHTheme.unclassifiedData
         case .idle: return LHTheme.privateTint
         case .concealed: return LHTheme.teal.opacity(0.45)
         case .unobserved: return LHTheme.separator
@@ -34,18 +34,42 @@ enum GoalongActivityClassStyle {
     }
 }
 
+/// Always present next to a chart of classes: identity never rests on colour alone.
 struct GoalongActivityClassLegend: View {
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             ForEach(GoalongActivityClassStyle.order, id: \.rawValue) { kind in
-                HStack(spacing: 5) {
-                    RoundedRectangle(cornerRadius: 2).fill(GoalongActivityClassStyle.color(kind)).frame(width: 10, height: 10)
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous).fill(GoalongActivityClassStyle.color(kind))
+                        .frame(width: 8, height: 8)
                     Text(GoalongActivityClassStyle.label(kind))
                 }
             }
         }
-        .font(.system(size: 11)).foregroundStyle(.secondary)
+        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Stacks the classes of one bar with a hair of page between them instead of a stroke.
+enum GoalongStackedBars {
+    struct Piece: Identifiable {
+        let id: String
+        let kind: GoalongLocalAnalytics.Kind
+        let lower: Double
+        let upper: Double
+        let seconds: Double
+    }
+    /// `gap` is in the chart's own unit: about two points of the plot height.
+    static func pieces(_ values: [(GoalongLocalAnalytics.Kind, Double)], unit: Double, gap: Double, id: String) -> [Piece] {
+        var result: [Piece] = [], cursor = 0.0
+        for (kind, seconds) in values where seconds > 0 {
+            let height = seconds / unit
+            let lower = cursor + (result.isEmpty ? 0 : min(gap, height / 2))
+            result.append(Piece(id: id + kind.rawValue, kind: kind, lower: lower, upper: cursor + height, seconds: seconds))
+            cursor += height
+        }
+        return result
     }
 }
 
@@ -54,48 +78,48 @@ struct GoalongHourlyClassChart: View {
     let day: GoalongLocalAnalytics.Day
     let dateRange: ClosedRange<Date>
     let hourStride: Int
+    private let height: CGFloat = 180
 
     var body: some View {
         let hours = day.hours(minimumMinutes: 25).filter { $0.seconds > 0 }
         let scale = GoalongAnalyticsChartScale(maximumSeconds: hours.map(\.seconds).max() ?? 0, hourly: true)
-        Chart {
-            ForEach(hours) { hour in
-                ForEach(GoalongActivityClassStyle.order, id: \.rawValue) { kind in
-                    let seconds = value(hour, kind)
-                    if seconds > 0 {
-                        BarMark(x: .value("Heure", hour.start, unit: .hour), y: .value("Durée", seconds / scale.unitSeconds))
-                            .foregroundStyle(by: .value("Type", GoalongActivityClassStyle.label(kind)))
-                            .cornerRadius(2)
-                            .accessibilityLabel("\(GoalongSummaryFormat.hour(hour.start)), \(GoalongActivityClassStyle.label(kind))")
-                            .accessibilityValue(GoalongAnalyticsFormatting.duration(seconds))
+        let span = dateRange.upperBound.timeIntervalSince(dateRange.lowerBound) / 3600
+        VStack(alignment: .leading, spacing: 10) {
+            Chart {
+                ForEach(hours) { hour in
+                    let pieces = GoalongStackedBars.pieces(
+                        [(.work, hour.workSeconds), (.other, hour.otherSeconds), (.unclassified, hour.unclassifiedSeconds)],
+                        unit: scale.unitSeconds, gap: scale.upperBound * 2 / Double(height - 30), id: "\(hour.start.timeIntervalSince1970)")
+                    ForEach(pieces) { piece in
+                        BarMark(x: .value("Heure", hour.start, unit: .hour),
+                                yStart: .value("Début", piece.lower), yEnd: .value("Durée", piece.upper),
+                                width: span <= 14 ? .fixed(24) : .ratio(0.6))
+                            .foregroundStyle(by: .value("Type", GoalongActivityClassStyle.label(piece.kind)))
+                            .cornerRadius(LHTheme.markRadius)
+                            .accessibilityLabel("\(GoalongSummaryFormat.hour(hour.start)), \(GoalongActivityClassStyle.label(piece.kind))")
+                            .accessibilityValue(GoalongAnalyticsFormatting.duration(piece.seconds))
                     }
                 }
             }
-        }
-        .chartForegroundStyleScale(GoalongActivityClassStyle.scale)
-        .chartLegend(.hidden).chartXScale(domain: dateRange).chartYScale(domain: 0...scale.upperBound)
-        .chartPlotStyle { $0.clipped() }
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
-                AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
-                AxisTick()
+            .chartForegroundStyleScale(GoalongActivityClassStyle.scale)
+            .chartLegend(.hidden).chartXScale(domain: dateRange).chartYScale(domain: 0...scale.upperBound)
+            .chartPlotStyle { $0.clipped() }
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
+                    AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
+                        .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                }
             }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { value in
-                AxisGridLine()
-                AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(LHTheme.separator)
+                    AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
+                        .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                }
             }
-        }
-        .frame(height: 200)
-        .accessibilityIdentifier("activity-hourly-class-chart")
-    }
-
-    private func value(_ hour: GoalongLocalAnalytics.Hour, _ kind: GoalongLocalAnalytics.Kind) -> Double {
-        switch kind {
-        case .work: return hour.workSeconds
-        case .other: return hour.otherSeconds
-        default: return hour.unclassifiedSeconds
+            .frame(height: height)
+            .accessibilityIdentifier("activity-hourly-class-chart")
+            GoalongActivityClassLegend()
         }
     }
 }
@@ -120,10 +144,12 @@ struct GoalongUsageTimelineChart: View {
         let lanes = laneNames
         let bars = self.bars(lanes: lanes)
         let order = lanes.map(\.1) + (bars.contains { $0.lane == Self.otherLane } ? [Self.otherLane] : [])
+        VStack(alignment: .leading, spacing: 10) {
         Chart(bars) { bar in
             RectangleMark(xStart: .value("Début", bar.start), xEnd: .value("Fin", bar.end),
-                          y: .value("Usage", bar.lane), height: .ratio(0.62))
+                          y: .value("Usage", bar.lane), height: .fixed(10))
                 .foregroundStyle(by: .value("Type", GoalongActivityClassStyle.label(bar.kind)))
+                .cornerRadius(LHTheme.markRadius)
                 .accessibilityLabel("\(bar.lane), \(GoalongSummaryFormat.time(bar.start))–\(GoalongSummaryFormat.time(bar.end))")
                 .accessibilityValue(GoalongAnalyticsFormatting.duration(bar.end.timeIntervalSince(bar.start)))
         }
@@ -134,16 +160,21 @@ struct GoalongUsageTimelineChart: View {
         .chartPlotStyle { $0.clipped() }
         .chartXAxis {
             AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
-                AxisGridLine(); AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(LHTheme.separator)
+                AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
+                    .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
             }
         }
         .chartYAxis {
             AxisMarks(position: .leading) { value in
                 AxisValueLabel { if let name = value.as(String.self) { Text(name).lineLimit(1).frame(maxWidth: 130, alignment: .leading) } }
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
-        .frame(height: CGFloat(max(3, order.count)) * 30 + 30)
+        .frame(height: CGFloat(max(3, order.count)) * 28 + 30)
         .accessibilityIdentifier("activity-usage-timeline")
+        GoalongActivityClassLegend()
+        }
     }
 
     private static let otherLane = "Autres"
@@ -185,126 +216,94 @@ struct GoalongDailyClassChart: View {
     let period: GoalongLocalAnalytics.Period
     let dateRange: ClosedRange<Date>
     var onDay: (Date) -> Void = { _ in }
+    private let height: CGFloat = 200
 
     var body: some View {
         let observed = period.observedDays
         let average = observed.isEmpty ? 0 : period.activeSeconds / Double(observed.count)
         let scale = GoalongAnalyticsChartScale(maximumSeconds: period.days.map(\.activeSeconds).max() ?? 0)
-        Chart {
-            ForEach(period.days) { day in
-                if day.activeSeconds > 0 {
-                    ForEach(GoalongActivityClassStyle.order, id: \.rawValue) { kind in
-                        let seconds = day.seconds(kind)
-                        if seconds > 0 {
-                            BarMark(x: .value("Jour", day.date, unit: .day), y: .value("Durée", seconds / scale.unitSeconds))
-                                .foregroundStyle(by: .value("Type", GoalongActivityClassStyle.label(kind)))
-                                .cornerRadius(2)
-                                .accessibilityLabel("\(GoalongSummaryFormat.shortDate(day.date)), \(GoalongActivityClassStyle.label(kind))")
-                                .accessibilityValue(GoalongAnalyticsFormatting.duration(seconds))
+        VStack(alignment: .leading, spacing: 10) {
+            Chart {
+                ForEach(period.days) { day in
+                    if day.activeSeconds > 0 {
+                        let pieces = GoalongStackedBars.pieces(
+                            GoalongActivityClassStyle.order.map { ($0, day.seconds($0)) },
+                            unit: scale.unitSeconds, gap: scale.upperBound * 2 / Double(height - 30), id: "\(day.date.timeIntervalSince1970)")
+                        ForEach(pieces) { piece in
+                            BarMark(x: .value("Jour", day.date, unit: .day),
+                                    yStart: .value("Début", piece.lower), yEnd: .value("Durée", piece.upper),
+                                    width: period.days.count <= 10 ? .fixed(24) : .ratio(0.6))
+                                .foregroundStyle(by: .value("Type", GoalongActivityClassStyle.label(piece.kind)))
+                                .cornerRadius(LHTheme.markRadius)
+                                .accessibilityLabel("\(GoalongSummaryFormat.shortDate(day.date)), \(GoalongActivityClassStyle.label(piece.kind))")
+                                .accessibilityValue(GoalongAnalyticsFormatting.duration(piece.seconds))
                         }
+                    } else if day.observedSeconds > 0 && day.state == .ready {
+                        PointMark(x: .value("Jour", day.date, unit: .day), y: .value("Durée", 0.0))
+                            .foregroundStyle(LHTheme.secondaryText)
+                            .accessibilityLabel("\(GoalongSummaryFormat.shortDate(day.date)), zéro minute active observée")
                     }
-                } else if day.observedSeconds > 0 && day.state == .ready {
-                    PointMark(x: .value("Jour", day.date, unit: .day), y: .value("Durée", 0.0))
-                        .foregroundStyle(LHTheme.secondaryText)
-                        .accessibilityLabel("\(GoalongSummaryFormat.shortDate(day.date)), zéro minute active observée")
+                }
+                if observed.count >= 2 {
+                    RuleMark(y: .value("Moyenne", average / scale.unitSeconds))
+                        .foregroundStyle(LHTheme.text.opacity(0.7))
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+                        .annotation(position: .top, alignment: .trailing) {
+                            // A patch of page behind the label keeps it readable where bars pass the average.
+                            Text("Moyenne \(GoalongAnalyticsFormatting.duration(average))")
+                                .font(.system(size: 11, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                                .padding(.horizontal, 5).padding(.vertical, 2)
+                                .background(LHTheme.pageBackground.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
+                        }
+                        .accessibilityLabel("Moyenne des jours observés")
+                        .accessibilityValue(GoalongAnalyticsFormatting.duration(average))
                 }
             }
-            if observed.count >= 2 {
-                RuleMark(y: .value("Moyenne", average / scale.unitSeconds))
-                    .foregroundStyle(LHTheme.text.opacity(0.55))
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                    .annotation(position: .top, alignment: .trailing) {
-                        Text("Moyenne \(GoalongAnalyticsFormatting.duration(average))")
-                            .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
-                    }
-                    .accessibilityLabel("Moyenne des jours observés")
-                    .accessibilityValue(GoalongAnalyticsFormatting.duration(average))
+            .chartForegroundStyleScale(GoalongActivityClassStyle.scale)
+            .chartLegend(.hidden).chartYScale(domain: 0...scale.upperBound).chartXScale(domain: dateRange)
+            .chartXAxis { AxisMarks(values: .stride(by: .day, count: period.days.count > 7 ? 4 : 1)) { _ in
+                AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).weekday(.abbreviated).day())
+                    .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+            } }
+            .chartYAxis { AxisMarks(position: .leading) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(LHTheme.separator)
+                AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
+                    .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+            } }
+            .frame(height: height)
+            .chartOverlay { proxy in
+                GeometryReader { geometry in
+                    Rectangle().fill(.clear).contentShape(Rectangle())
+                        .gesture(SpatialTapGesture().onEnded { value in
+                            let x = value.location.x - geometry[proxy.plotAreaFrame].origin.x
+                            guard x >= 0, x <= geometry[proxy.plotAreaFrame].width,
+                                  let date: Date = proxy.value(atX: x),
+                                  let day = period.days.first(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) else { return }
+                            onDay(day.date)
+                        })
+                }
             }
+            .accessibilityIdentifier("activity-daily-class-chart")
+            GoalongActivityClassLegend()
         }
-        .chartForegroundStyleScale(GoalongActivityClassStyle.scale)
-        .chartLegend(.hidden).chartYScale(domain: 0...scale.upperBound).chartXScale(domain: dateRange)
-        .chartXAxis { AxisMarks(values: .stride(by: .day, count: period.days.count > 7 ? 4 : 1)) { _ in
-            AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).weekday(.abbreviated).day()); AxisTick()
-        } }
-        .chartYAxis { AxisMarks(position: .leading) { value in
-            AxisGridLine(); AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
-        } }
-        .frame(height: 220)
-        .chartOverlay { proxy in
-            GeometryReader { geometry in
-                Rectangle().fill(.clear).contentShape(Rectangle())
-                    .gesture(SpatialTapGesture().onEnded { value in
-                        let x = value.location.x - geometry[proxy.plotAreaFrame].origin.x
-                        guard x >= 0, x <= geometry[proxy.plotAreaFrame].width,
-                              let date: Date = proxy.value(atX: x),
-                              let day = period.days.first(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) else { return }
-                        onDay(day.date)
-                    })
-            }
-        }
-        .accessibilityIdentifier("activity-daily-class-chart")
     }
 }
 
-/// When the user is usually active: average minutes per weekday and clock hour.
-struct GoalongWeekHourHeatmap: View {
-    let period: GoalongLocalAnalytics.Period
-    var calendar: Calendar = .current
-
-    private struct Cell: Identifiable {
-        let id: String
-        let weekday: String
-        let hour: Int
-        let seconds: TimeInterval
-    }
+/// A share of a total as a thin bar: the same mark in tasks, usages and details.
+struct GoalongShareBar: View {
+    let share: Double
+    let color: Color
 
     var body: some View {
-        let grid = period.averageActiveSecondsByWeekdayAndHour(calendar: calendar)
-        let rows = weekdayRows(grid)
-        let cells = rows.flatMap { row in
-            (0..<24).map { Cell(id: "\(row.label)-\($0)", weekday: row.label, hour: $0, seconds: row.values[$0]) }
-        }
-        let maximum = max(60, cells.map(\.seconds).max() ?? 0)
-        VStack(alignment: .leading, spacing: 10) {
-            Chart(cells) { cell in
-                RectangleMark(xStart: .value("Début", Double(cell.hour) + 0.06), xEnd: .value("Fin", Double(cell.hour) + 0.94),
-                              y: .value("Jour", cell.weekday), height: .ratio(0.82))
-                    .foregroundStyle(cell.seconds <= 0 ? LHTheme.separator.opacity(0.35)
-                        : LHTheme.accent.opacity(0.18 + 0.82 * min(1, cell.seconds / maximum)))
-                    .cornerRadius(3)
-                    .accessibilityLabel("\(cell.weekday), \(cell.hour) h")
-                    .accessibilityValue(GoalongAnalyticsFormatting.duration(cell.seconds))
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2).fill(LHTheme.separator)
+                RoundedRectangle(cornerRadius: 2).fill(color)
+                    .frame(width: max(3, geometry.size.width * min(1, max(0, share))))
             }
-            .chartXScale(domain: 0.0...24.0)
-            .chartYScale(domain: rows.map(\.label))
-            .chartXAxis { AxisMarks(values: [0.0, 3, 6, 9, 12, 15, 18, 21, 24]) { value in
-                AxisValueLabel { if let hour = value.as(Double.self) { Text("\(Int(hour)) h") } }
-            } }
-            .chartYAxis { AxisMarks(position: .leading) { value in
-                AxisValueLabel { if let day = value.as(String.self) { Text(day) } }
-            } }
-            .frame(height: CGFloat(rows.count) * 26 + 26)
-            HStack(spacing: 8) {
-                Text("Moins").foregroundStyle(.secondary)
-                ForEach([0.18, 0.4, 0.6, 0.8, 1.0], id: \.self) { opacity in
-                    RoundedRectangle(cornerRadius: 2).fill(LHTheme.accent.opacity(opacity)).frame(width: 14, height: 10)
-                }
-                Text("Plus · jusqu’à \(GoalongAnalyticsFormatting.duration(maximum)) par heure").foregroundStyle(.secondary)
-            }.font(.system(size: 11)).accessibilityHidden(true)
         }
-        .accessibilityIdentifier("activity-week-heatmap")
-    }
-
-    /// Monday first, as in France. Weekdays without any observed day are omitted.
-    private func weekdayRows(_ grid: [[TimeInterval]?]) -> [(label: String, values: [TimeInterval])] {
-        var french = Calendar(identifier: .gregorian); french.locale = Locale(identifier: "fr_FR")
-        let symbols = french.shortWeekdaySymbols
-        let mondayFirst = [1, 2, 3, 4, 5, 6, 0]
-        return mondayFirst.compactMap { index in
-            guard let values = grid[index] else { return nil }
-            let label = symbols[index].replacingOccurrences(of: ".", with: "").capitalized
-            return (label, values)
-        }
+        .frame(height: 4)
+        .accessibilityHidden(true)
     }
 }
 

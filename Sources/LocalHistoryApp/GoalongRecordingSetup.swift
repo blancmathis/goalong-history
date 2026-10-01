@@ -75,15 +75,14 @@ struct GoalongVisibleTextChoice: View {
     @Binding var enabled: Bool
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "text.viewfinder").foregroundStyle(LHTheme.accent).frame(width: 24)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Texte affiché").font(.system(size: 14, weight: .medium))
-                Text("Peut contenir des messages et documents personnels.").font(.system(size: 12)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Texte affiché").font(.system(size: 13, weight: .medium))
+                Text("Peut contenir des messages et documents personnels.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer()
             Toggle("Texte affiché", isOn: $enabled).labelsHidden().toggleStyle(.goalongSwitchOnly)
                 .accessibilityIdentifier("recording-visible-text-draft")
-        }.padding(.vertical, 8)
+        }
     }
 }
 
@@ -105,7 +104,7 @@ struct GoalongRecordingSetupSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 7) {
-                Text("Votre enregistrement local").font(.system(size: 24, weight: .semibold))
+                Text("Votre enregistrement local").font(LHTheme.sheetTitleFont)
                 Text("Tout est proposé. Décochez ce que vous ne souhaitez pas conserver.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
@@ -135,6 +134,7 @@ struct GoalongRecordingSetupSheet: View {
                         model.alert = nil; return
                     }
                     onSaved(); dismiss()
+                    if !activating { GoalongToastCenter.shared.show("Choix d’enregistrement mis à jour") }
                 }.buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("recording-setup-confirm")
             }.padding(20)
@@ -147,7 +147,7 @@ struct GoalongCompleteRecordingButton: View {
     @State private var showing = false
     var body: some View {
         Button("Configurer le suivi complet") { showing = true }
-            .buttonStyle(LHSecondaryButtonStyle()).controlSize(.large)
+            .buttonStyle(LHSecondaryButtonStyle())
             .accessibilityIdentifier("recording-complete-setup")
             .sheet(isPresented: $showing) { GoalongRecordingSetupSheet(model: model, complete: true).goalongControls() }
     }
@@ -186,12 +186,12 @@ struct GoalongRecordingStateNotice: View {
             if let kind {
                 LHCard(padding: 16) {
                     HStack(alignment: .center, spacing: 14) {
-                        Image(systemName: symbol(kind)).font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(kind == .permissions ? LHTheme.warning : LHTheme.accent)
-                            .frame(width: 28).accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(title(kind)).font(.system(size: 14, weight: .semibold))
-                            Text(detail(kind)).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Image(systemName: symbol(kind)).font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(kind == .permissions ? LHTheme.warning : LHTheme.secondaryText)
+                            .frame(width: 22).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(title(kind)).font(.system(size: 13, weight: .semibold))
+                            Text(detail(kind)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 12)
@@ -260,9 +260,9 @@ struct GoalongRecordingCoverageNotice: View {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(count == 0 ? "Seules les applications sont enregistrées" : "Suivi personnalisé · \(count)/8 types de détails")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                         Text("Certains clics, interactions ou textes ne sont pas enregistrés selon vos choix. Vos durées et vos apps restent mesurées.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
@@ -271,7 +271,7 @@ struct GoalongRecordingCoverageNotice: View {
                         Button { dismissedProfile = profile } label: {
                             Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(LHQuietButtonStyle())
                         .help("Garder mes choix et masquer ce message")
                         .accessibilityLabel("Garder mes choix et masquer ce message")
                         .accessibilityIdentifier("recording-incomplete-dismiss")

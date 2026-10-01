@@ -26,13 +26,9 @@ struct JevActivationAvailability: Equatable {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Surveillance temps réel")
-                        .font(LHTheme.pageTitleFont).accessibilityAddTraits(.isHeader)
-                    Text("Des rappels pour rester sur vos projets de travail. Vos pauses n’arrêtent pas l’historique.")
-                        .font(.system(size: 14)).foregroundStyle(.secondary)
-                }
+            VStack(alignment: .leading, spacing: 24) {
+                PageHeader(title: "Surveillance temps réel",
+                           subtitle: "Des rappels pour rester sur vos projets de travail. Vos pauses n’arrêtent pas l’historique.")
                 monitoringCard
                 GoalongWorkDefinitionSummary(onOpen: onOpenWork)
                 JevBreakControls()
@@ -53,7 +49,7 @@ struct JevActivationAvailability: Equatable {
             }
             .font(.system(size: 13))
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-            .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 26)
+            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 40)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(LHTheme.pageBackground)
@@ -70,22 +66,18 @@ struct JevActivationAvailability: Equatable {
     private var monitoringCard: some View {
         LHCard {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 14) {
-                    Image(systemName: "eye.circle")
-                        .font(.system(size: 25)).foregroundStyle(LHTheme.accent)
-                        .frame(width: 46, height: 46)
-                        .background(LHTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Surveillance du travail").font(.system(size: 19, weight: .semibold))
-                        Text("Facultatif · désactivé par défaut")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Surveillance du travail").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
+                        Text("Facultative. Toutes les 15 secondes, Goalong vérifie que vous restez sur vos projets et affiche un rappel dès qu’une distraction est détectée de façon fiable.")
+                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
                     Toggle("Activer", isOn: Binding(
                         get: { enabled },
                         set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
-                        .toggleStyle(.goalongSwitchInline).fixedSize()
+                        .toggleStyle(.goalongSwitchOnly).fixedSize()
                         .disabled(!availability.canToggle(isEnabled: enabled))
                         .accessibilityIdentifier("jev-enabled")
                 }
@@ -94,15 +86,12 @@ struct JevActivationAvailability: Equatable {
                     .font(.system(size: 13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("jev-status")
-                Text("Pendant votre activité, Goalong vérifie toutes les 15 secondes si vous restez sur vos projets et affiche un rappel dès qu’une distraction est détectée de façon fiable. Pauses, arrêt et effets se règlent sur cette page.")
-                    .font(.system(size: 13)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Divider()
+                Rectangle().fill(LHTheme.separator).frame(height: 1)
                 connectionRow
                 if !availability.localHistoryEnabled {
                     HStack(alignment: .top, spacing: 12) {
                         Text("L’historique de ce Mac doit aussi être activé. Aucun accès n’est modifié à votre place.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
                         Button("Configurer l’historique", action: onOpenRecording)
@@ -124,11 +113,11 @@ struct JevActivationAvailability: Equatable {
 
     private var connectionRow: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(monitor.hasKey ? "Clé TypeSafe enregistrée" : "Connexion API nécessaire")
                     .font(.system(size: 13, weight: .medium))
                 Text(monitor.hasKey ? "Usage facturé par TypeSafe." : "Votre clé API reste sur ce Mac. L’API TypeSafe est payante.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 8)
             Button(monitor.hasKey ? "Gérer la connexion" : "Connecter l’API") { showingConnection = true }
