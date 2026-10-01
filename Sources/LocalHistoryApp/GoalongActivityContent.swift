@@ -4,11 +4,23 @@ import SwiftUI
 import Charts
 import LocalHistoryCore
 
+/// Where the classification of work stands, as Activité should explain it.
+struct GoalongWorkStatus: Equatable {
+    var hasDefinition = true
+    var isClassifying = false
+    var progress: String? = nil
+    var problem: String? = nil
+    static let preview = GoalongWorkStatus()
+}
+
 /// Pure presentation. Native snapshot tests render this without opening user stores.
 struct GoalongAnalyticsContent: View {
     let payload: GoalongAnalyticsPayload
     @Binding var focusMinutes: Int
+    var workStatus = GoalongWorkStatus.preview
     var onDay: (Date) -> Void = { _ in }
+    var onWork: () -> Void = {}
+    var onClassify: () -> Void = {}
     var onHistory: () -> Void = {}
     var onProjects: () -> Void = {}
     var onHistoryDay: (Date) -> Void = { _ in }
@@ -19,9 +31,8 @@ struct GoalongAnalyticsContent: View {
     @State private var hourly = true
     @State private var fullDay = false
     @State private var selectedUsage: GoalongActivityUsageItem?
-    @State private var showingAllToClassify = false
     @State private var exportMessage: String?
-    @ObservedObject private var classification = GoalongUsageClassificationStore.shared
+    @State private var allTasks = false
 
     private var current: GoalongLocalAnalytics.Period { payload.current }
     private var isDay: Bool { current.days.count == 1 }
@@ -34,24 +45,19 @@ struct GoalongAnalyticsContent: View {
     private var usageItems: [GoalongActivityUsageItem] {
         GoalongActivityProjection.usage(current, grouping: grouping, previous: payload.previous)
     }
-    /// Main usages that are neither ruled nor classified automatically, by time.
-    private var itemsToClassify: [GoalongActivityUsageItem] {
-        guard !payload.isPreview else { return [] }
-        return usageItems.filter { $0.classificationKey != nil && classification.verdict(for: $0) == nil && $0.dominantClass == nil
-            && $0.unclassifiedSeconds >= 60 }
-            .sorted { $0.unclassifiedSeconds > $1.unclassifiedSeconds }
-    }
 
     var body: some View {
         let summary = self.summary
         let items = usageItems
-        let showsClassification = showsClassificationCard(summary)
+        let showsClassification = showsWorkCard(summary)
+        let tasks = current.tasks
         VStack(alignment: .leading, spacing: 20) {
             coverage
             if current.observedSeconds > 0 {
                 metrics(summary)
+                if showsClassification { workCard(summary) }
+                if !tasks.isEmpty { tasksCard(tasks, summary: summary) }
                 insightsCard(summary, items: items, showsClassification: showsClassification)
-                if showsClassification { classificationCard(summary) }
                 rhythmCard
                 if !isDay && current.observedDays.count >= 2 { heatmapCard(summary) }
                 usageCard(items)
@@ -75,7 +81,6 @@ struct GoalongAnalyticsContent: View {
                     if !payload.isPreview { onHistoryDay(day) }
                 })
         }
-        .sheet(isPresented: $showingAllToClassify) { classificationSheet }
         .accessibilityIdentifier("activity-content")
     }
 
@@ -143,16 +148,20 @@ struct GoalongAnalyticsContent: View {
             return metric("Travail", value: value, unit: isDay ? nil : "/ jour",
                           detail: "\(percent(summary.workShare)) du temps actif · \(percent(summary.otherSeconds / max(1, summary.activeSeconds))) hors travail")
         }
-        return metric("Travail", value: "À classer", detail: summary.activeSeconds > 0
-            ? "\(percent(summary.unclassifiedShare)) du temps n’est pas encore classé. Classez vos usages ci-dessous."
-            : "Aucune activité à classer", compact: true)
+        let detail: String
+        if summary.activeSeconds == 0 { detail = "Aucune activité à classer" }
+        else if !workStatus.hasDefinition { detail = "Décrivez ce qui compte comme travail pour le mesurer." }
+        else if workStatus.isClassifying { detail = "Classement en cours selon votre définition…" }
+        else { detail = "\(percent(summary.unclassifiedShare)) du temps n’est pas encore classé selon votre définition." }
+        return metric("Travail", value: workStatus.isClassifying ? "En cours" : "À classer", detail: detail, compact: true)
     }
 
     private func concentrationTile(_ summary: GoalongActivitySummary) -> some View {
         if summary.workIsMeasurable, let block = summary.longestWorkBlock {
             let blocks = summary.workBlocks.count
+            let task = block.task.map { " · \($0)" } ?? ""
             return metric("Concentration", value: duration(block.workSeconds),
-                          detail: "Plus long bloc de travail · \(blocks) bloc\(blocks > 1 ? "s" : "") de 25 min ou plus")
+                          detail: "Plus longue session sur une même tâche\(task) · \(blocks) session\(blocks > 1 ? "s" : "") de 25 min ou plus")
         }
         let longest = summary.longestSequence
         return metric("Concentration", value: longest.map { duration($0.seconds) } ?? "—",
@@ -164,8 +173,10 @@ struct GoalongAnalyticsContent: View {
         guard let perHour = summary.changesPerActiveHour, let every = summary.secondsPerChange else {
             return metric("Changements d’app", value: "—", detail: "Pas assez d’activité pour mesurer les changements")
         }
+        let sameTask = current.sameTaskChanges
         return metric("Changements d’app", value: "\(Int(perHour.rounded()))", unit: "/ h",
-                      detail: "Un changement d’app ou de site toutes les \(GoalongActivitySummary.shortInterval(every)) · \(summary.contextChanges) au total")
+                      detail: "Un changement d’app ou de site toutes les \(GoalongActivitySummary.shortInterval(every)) · \(summary.contextChanges) au total"
+                        + (sameTask > 0 ? ", dont \(sameTask) sans quitter la tâche" : ""))
     }
 
     private func metric(_ title: String, value: String, unit: String? = nil, detail: String,
@@ -194,8 +205,10 @@ struct GoalongAnalyticsContent: View {
 
     // MARK: - Insights and classification
 
-    private func showsClassificationCard(_ summary: GoalongActivitySummary) -> Bool {
-        !itemsToClassify.isEmpty && summary.unclassifiedShare >= 0.15
+    /// Explains why work is not measured yet and offers the one useful next step.
+    private func showsWorkCard(_ summary: GoalongActivitySummary) -> Bool {
+        guard !payload.isPreview, summary.activeSeconds > 0 else { return false }
+        return !workStatus.hasDefinition || workStatus.isClassifying || summary.unclassifiedShare >= 0.15
     }
 
     /// "À retenir" only adds what the four tiles and the classification card do not already say.
@@ -238,69 +251,88 @@ struct GoalongAnalyticsContent: View {
         }
     }
 
-    private func classificationCard(_ summary: GoalongActivitySummary) -> some View {
-        let pending = itemsToClassify
-        return LHCard {
-            VStack(alignment: .leading, spacing: 14) {
+    private func workCard(_ summary: GoalongActivitySummary) -> some View {
+        LHCard {
+            HStack(alignment: .center, spacing: 16) {
+                Image(systemName: workStatus.isClassifying ? "sparkles" : "briefcase")
+                    .font(.system(size: 20)).foregroundStyle(LHTheme.accent)
+                    .frame(width: 42, height: 42)
+                    .background(LHTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 11))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 5) {
-                    heading("Classez vos usages pour mesurer votre travail")
-                    Text("\(percent(summary.unclassifiedShare)) de votre temps actif n’est pas encore classé. Un clic suffit : le choix s’applique à tout votre historique, passé et futur, et reste modifiable dans la liste des applications.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                VStack(spacing: 0) {
-                    ForEach(Array(pending.prefix(6))) { item in
-                        classificationRow(item)
-                        if item.id != pending.prefix(6).last?.id { Divider() }
+                    if !workStatus.hasDefinition {
+                        heading("Qu’est-ce qui compte comme travail pour vous ?")
+                        Text("Goalong ne décide jamais qu’une app ou un site est productif. Décrivez votre travail avec vos mots : un agent classe ensuite chaque moment selon ce que vous faisiez, même dans une app qui sert aussi à autre chose.")
+                    } else if workStatus.isClassifying {
+                        heading("Classement en cours")
+                        Text(workStatus.progress ?? "L’agent applique votre définition aux nouveaux contextes de la journée.")
+                    } else {
+                        heading("\(percent(summary.unclassifiedShare)) de votre temps reste à classer")
+                        Text(workStatus.problem ?? "Seuls les contextes nouveaux sont envoyés ; ceux déjà classés ne repartent pas.")
                     }
-                }
-                if pending.count > 6 {
-                    Button("Voir les \(pending.count) usages à classer") { showingAllToClassify = true }
-                        .buttonStyle(.borderless).font(.system(size: 12, weight: .medium))
+                }.font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                if workStatus.isClassifying {
+                    ProgressView().controlSize(.small)
+                } else if !workStatus.hasDefinition || workStatus.problem != nil {
+                    Button(workStatus.hasDefinition ? "Ouvrir Mon travail" : "Définir mon travail", action: onWork)
+                        .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("activity-define-work")
+                } else {
+                    Button("Classer maintenant", action: onClassify).buttonStyle(.bordered)
+                        .accessibilityIdentifier("activity-classify-now")
                 }
             }
         }.accessibilityIdentifier("activity-classification")
     }
 
-    private func classificationRow(_ item: GoalongActivityUsageItem) -> some View {
-        HStack(spacing: 12) {
-            GoalongActivityUsageIcon(item: item, size: 26).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.displayName).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text("\(duration(item.unclassifiedSeconds)) à classer · \(item.isWebsite ? "site web" : "application")")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
-            Button { classification.set(.work, for: item) } label: { Label("Travail", systemImage: "briefcase") }
-                .buttonStyle(.bordered).controlSize(.small)
-                .accessibilityLabel("Classer \(item.displayName) comme travail")
-            Button { classification.set(.other, for: item) } label: { Label("Hors travail", systemImage: "cup.and.saucer") }
-                .buttonStyle(.bordered).controlSize(.small)
-                .accessibilityLabel("Classer \(item.displayName) hors travail")
-        }.padding(.vertical, 8)
-    }
-
-    private var classificationSheet: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Usages à classer").font(.system(size: 18, weight: .semibold))
-                Spacer()
-                Button("Terminé") { showingAllToClassify = false }.keyboardShortcut(.defaultAction)
-            }
-            Text("Travail ou hors travail : le choix s’applique à tout l’historique et reste modifiable.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(itemsToClassify) { item in
-                        classificationRow(item)
-                        Divider()
+    private func tasksCard(_ tasks: [GoalongWorkTask], summary: GoalongActivitySummary) -> some View {
+        let total = max(1, tasks.reduce(0) { $0 + $1.seconds })
+        let visible = allTasks ? tasks : Array(tasks.prefix(5))
+        return LHCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        heading("Tâches")
+                        Text("Votre travail par projet, quelles que soient les applications utilisées")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
-                    if itemsToClassify.isEmpty {
-                        Label("Tous vos usages de cette période sont classés.", systemImage: "checkmark.circle")
-                            .foregroundStyle(LHTheme.success).padding(.vertical, 20)
+                    Spacer(minLength: 8)
+                    if !payload.isPreview {
+                        Button("Corriger", action: onWork).buttonStyle(.borderless).font(.system(size: 12, weight: .medium))
+                            .accessibilityIdentifier("activity-tasks-review")
                     }
                 }
-            }.frame(maxHeight: 460)
-        }.padding(24).frame(width: 560)
+                ForEach(visible) { task in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(task.name).font(.system(size: 13, weight: .medium)).lineLimit(1).help(task.name)
+                            Spacer(minLength: 8)
+                            Text(duration(task.seconds)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                            Text(percent(task.seconds / total)).font(.system(size: 12)).monospacedDigit()
+                                .foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
+                        }
+                        GeometryReader { geometry in
+                            Capsule().fill(LHTheme.separator.opacity(0.6))
+                            Capsule().fill(GoalongActivityClassStyle.color(.work)).frame(width: geometry.size.width * task.seconds / total)
+                        }.frame(height: 4).accessibilityHidden(true)
+                        Text(taskDetail(task)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                if tasks.count > 5 {
+                    Button(allTasks ? "Réduire" : "Voir les \(tasks.count) tâches") { allTasks.toggle() }
+                        .buttonStyle(.borderless).font(.system(size: 12))
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.accessibilityIdentifier("activity-tasks")
+    }
+
+    private func taskDetail(_ task: GoalongWorkTask) -> String {
+        var parts: [String] = []
+        if task.longestSession >= 60 { parts.append("plus longue session \(duration(task.longestSession))") }
+        let apps = task.mainApplications.prefix(3).map { GoalongActivityPresentation.displayName($0) }
+        if !apps.isEmpty { parts.append(apps.joined(separator: ", ")) }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - Rhythm
@@ -394,7 +426,7 @@ struct GoalongAnalyticsContent: View {
             GoalongActivityUsageList(items: items, totalSeconds: current.activeSeconds, grouping: $grouping,
                 isPreview: payload.isPreview,
                 onExport: {
-                    exportMessage = GoalongActivityExport.save(period: current, grouping: grouping, rules: classification.rules)
+                    exportMessage = GoalongActivityExport.save(period: current, grouping: grouping)
                 }) { selectedUsage = $0 }
             if let exportMessage {
                 Label(exportMessage, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
@@ -454,13 +486,13 @@ struct GoalongAnalyticsContent: View {
 
     private var rhythmDetails: some View {
         LHCard {
-            GoalongDisclosureGroup("Détails : focus, blocs de travail et comparaison") {
+            GoalongDisclosureGroup("Détails : focus, sessions de travail et comparaison") {
                 VStack(alignment: .leading, spacing: 18) {
                     GoalongFocusExplanation(hasFocus: !focus.isEmpty, minimumMinutes: $focusMinutes)
                     HStack(alignment: .top, spacing: 24) {
                         detailValue("Focus observé", duration(focusSeconds), "\(focus.count) séquence(s) ≥ \(focusMinutes) min")
                         detailValue("Plus longue séquence", duration(current.days.flatMap(\.sequences).map(\.seconds).max() ?? 0),
-                                    "même application et même site")
+                                    "même tâche, ou même app et même site")
                         detailValue("Changements de contexte", "\(current.contextChanges)", "app ou site différent")
                         Spacer(minLength: 0)
                     }
@@ -470,7 +502,7 @@ struct GoalongAnalyticsContent: View {
                             ForEach(focus.sorted { $0.seconds > $1.seconds }.prefix(5)) { block in
                                 HStack(spacing: 12) {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(GoalongActivityPresentation.displayName(block.host ?? block.application)).font(.system(size: 13, weight: .medium))
+                                        Text(block.task ?? GoalongActivityPresentation.displayName(block.host ?? block.application)).font(.system(size: 13, weight: .medium))
                                         Text("\(shortDate(block.start)) · \(time(block.start))–\(time(block.end))")
                                             .font(.system(size: 11)).foregroundStyle(.secondary)
                                     }
@@ -482,17 +514,18 @@ struct GoalongAnalyticsContent: View {
                     }
                     let blocks = current.workBlocks(minimumMinutes: 25)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Blocs de travail").font(.system(size: 12, weight: .semibold))
-                        Text("Travail continu d’au moins 25 minutes ; un détour de deux minutes au plus (message, recherche, courte pause) ne coupe pas le bloc.")
+                        Text("Sessions de travail").font(.system(size: 12, weight: .semibold))
+                        Text("Au moins 25 minutes sur une même tâche, même en changeant d’application ; un détour de deux minutes au plus (message, recherche, courte pause) ne coupe pas la session.")
                             .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         if blocks.isEmpty {
-                            Text(current.workSeconds > 0 ? "Aucun bloc de 25 minutes ou plus sur cette période."
-                                 : "Classez vos usages de travail pour voir apparaître vos blocs.")
+                            Text(current.workSeconds > 0 ? "Aucune session de 25 minutes ou plus sur cette période."
+                                 : "Décrivez votre travail dans Mon travail pour voir apparaître vos sessions.")
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                         ForEach(blocks.sorted { $0.workSeconds > $1.workSeconds }.prefix(5)) { block in
                             HStack {
                                 Text("\(shortDate(block.start)) · \(time(block.start))–\(time(block.end))")
+                                if let task = block.task { Text("· " + task).foregroundStyle(.secondary).lineLimit(1) }
                                 Spacer()
                                 Text(duration(block.workSeconds)).monospacedDigit()
                             }.font(.system(size: 12)).accessibilityElement(children: .combine)
@@ -559,9 +592,9 @@ struct GoalongAnalyticsContent: View {
         GoalongDisclosureGroup("Comment lire ces chiffres ?") {
             VStack(alignment: .leading, spacing: 9) {
                 Text("Temps actif = Travail + Hors travail + À classer. Le travail et le focus sont inclus dans l’actif ; ce ne sont pas des heures supplémentaires.")
-                Text("Vos choix (Travail / Hors travail) priment sur le classement automatique, qui n’est retenu qu’à partir de 50 % de confiance. Sans classement, le temps reste à classer, pas à zéro. Hors travail ne signifie pas procrastination.")
+                Text("Goalong ne décide jamais qu’une app ou un site est productif. Un agent applique votre définition (Mon travail) à chaque contexte — app, site et titre de fenêtre — et vos corrections priment. Sans verdict, le temps reste à classer, pas à zéro. Hors travail ne signifie pas procrastination.")
                 Text("Les moyennes par jour ne comptent que les jours observés. Aujourd’hui est comparé à hier à la même heure ; une période, à la moyenne de la précédente.")
-                Text("Une séquence de focus conserve la même application et le même domaine. Changer d’outil pour un même projet peut interrompre cette mesure ; elle ne mesure ni l’attention ni l’efficacité.")
+                Text("Une séquence de focus suit une même tâche, même en changeant d’application ; sans tâche connue, elle suit la même application et le même domaine. Elle ne mesure ni l’attention ni l’efficacité.")
                 Text("Un écart de plus de deux minutes entre observations ou une interruption de collecte coupe la continuité. Les appels, lectures et présentations observés au premier plan comptent même sans clavier ni souris. Les périodes sans saisie et sans signal d’usage, privées ou non observées restent distinctes. Rien n’est prolongé avant la première trace ou après la dernière.")
                 Text("Le Temps d’écran Apple garde ses propres sources et appareils. Il n’est jamais additionné aux observations Goalong. Les conversations et le temps machine ne s’ajoutent pas non plus au temps actif.")
                 Text("Les bilans et projets sont des analyses déjà enregistrées. Consulter cette page ne lance aucun agent. Sport, sommeil et travail hors ordinateur ne sont pas déduits de l’activité du Mac.")

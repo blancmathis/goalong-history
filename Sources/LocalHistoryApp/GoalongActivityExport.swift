@@ -12,7 +12,7 @@ enum GoalongActivityExport {
                          "secondes_travail", "secondes_hors_travail", "secondes_a_classer"]
 
     static func csv(period: GoalongLocalAnalytics.Period, grouping: GoalongActivityUsageGrouping,
-                    rules: GoalongUsageClassificationRules, calendar: Calendar = .current) -> String {
+                    calendar: Calendar = .current) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
@@ -20,17 +20,7 @@ enum GoalongActivityExport {
         for day in period.days where day.state == .ready && day.activeSeconds > 0 {
             let date = formatter.string(from: day.date)
             for item in GoalongActivityProjection.usage(.init(days: [day]), grouping: grouping) {
-                let rule = item.classificationKey.flatMap { key in
-                    item.isWebsite ? rules.websites[key] : rules.applications[key]
-                }
-                let label: String
-                switch (rule, item.dominantClass) {
-                case (.work?, _): label = "travail"
-                case (.other?, _): label = "hors travail"
-                case (nil, .work?): label = "travail (auto)"
-                case (nil, .other?): label = "hors travail (auto)"
-                case (nil, nil): label = "à classer"
-                }
+                let label = item.classLabel.lowercased()
                 let fields = [date, item.isWebsite ? "site" : "application", item.displayName,
                               item.isWebsite ? item.name : (item.bundleIdentifier ?? ""), label,
                               seconds(item.seconds), seconds(item.workSeconds), seconds(item.otherSeconds),
@@ -41,8 +31,7 @@ enum GoalongActivityExport {
         return lines.joined(separator: "\r\n") + "\r\n"
     }
 
-    @MainActor static func save(period: GoalongLocalAnalytics.Period, grouping: GoalongActivityUsageGrouping,
-                                rules: GoalongUsageClassificationRules) -> String? {
+    @MainActor static func save(period: GoalongLocalAnalytics.Period, grouping: GoalongActivityUsageGrouping) -> String? {
         let panel = NSSavePanel()
         panel.title = "Exporter l’activité"
         panel.message = "Durées par jour et par application ou site. Aucun titre, adresse complète ni contenu."
@@ -55,7 +44,7 @@ enum GoalongActivityExport {
         NSApplication.shared.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         // A BOM lets Excel read accents correctly; Numbers and scripts ignore it.
-        let data = Data([0xEF, 0xBB, 0xBF]) + Data(csv(period: period, grouping: grouping, rules: rules).utf8)
+        let data = Data([0xEF, 0xBB, 0xBF]) + Data(csv(period: period, grouping: grouping).utf8)
         do {
             try SupportReportWriter.write(data, to: url)
             NSWorkspace.shared.activateFileViewerSelecting([url])

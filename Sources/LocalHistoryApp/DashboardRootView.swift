@@ -60,10 +60,13 @@
             switch model.selectedSection {
             case .overview, .analytics:
                 GoalongAnalyticsPage(model: model, navigation: $activityNavigation)
+            case .work:
+                GoalongWorkPage(model: model)
             case .history:
                 UnifiedHistoryPage(model: model)
             case .monitoring:
-                JevMonitoringPage(onOpenRecording: { model.openRecordingSettings() })
+                JevMonitoringPage(onOpenRecording: { model.openRecordingSettings() },
+                                  onOpenWork: { model.selectSection(.work) })
             case .activity:
                 ActivityPage(
                     model: model,
@@ -312,11 +315,12 @@
     }
 
     extension DashboardSection {
-        static let primarySections: [DashboardSection] = [.overview, .history, .monitoring, .settings]
+        static let primarySections: [DashboardSection] = [.overview, .work, .history, .monitoring, .settings]
 
         var simpleTitle: String {
             switch self {
             case .overview, .analytics: return "Activité"
+            case .work: return "Mon travail"
             case .history: return "Historique"
             case .monitoring: return "Surveillance temps réel"
             case .activity: return "Historique de ce Mac"
@@ -336,6 +340,8 @@
                 return .overview
             case .monitoring:
                 return .monitoring
+            case .work:
+                return .work
             case .history, .activity, .screenTime:
                 return .history
             case .agentActivity, .privacy, .cli, .settings:

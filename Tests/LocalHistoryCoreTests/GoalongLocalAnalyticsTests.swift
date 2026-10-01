@@ -20,9 +20,11 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
     }
     private func build(_ events: [HistoryEvent], now: Double = 86400) -> GoalongLocalAnalytics.Day {
         GoalongLocalAnalytics.build(events: events, day: day, now: day.addingTimeInterval(now), calendar: calendar)
+            .applying(agentVerdicts(events))
     }
     func testConservationAndNoLeadingOrTrailingExtrapolation() {
-        let result = build([event(3600), event(3660), event(3720, work: false), event(3780, work: nil), event(3840)])
+        let result = build([event(3600), event(3660), event(3720, app: "Video", work: false), event(3780, app: "Notes", work: nil),
+                            event(3840)])
         XCTAssertEqual(result.activeSeconds, 240)
         XCTAssertEqual(result.seconds(.work), 120)
         XCTAssertEqual(result.seconds(.other), 60)
@@ -39,13 +41,16 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
         XCTAssertEqual(result.focusSeconds(minimumMinutes: 50), 0)
         XCTAssertEqual(result.contextChanges, 0)
     }
-    func testAppAndDomainChangesBreakFocus() {
-        let events = [event(0, host: "a.test"), event(60, host: "a.test"), event(120, host: "b.test"),
-                      event(180, app: "Other"), event(240, app: "Other")]
+    func testAppAndDomainChangesBreakFocusUnlessTheTaskIsTheSame() {
+        let events = [event(0, host: "a.test", work: nil), event(60, host: "a.test", work: nil), event(120, host: "b.test", work: nil),
+                      event(180, app: "Other", work: nil), event(240, app: "Other", work: nil)]
         let result = build(events)
         XCTAssertEqual(result.contextChanges, 2)
         XCTAssertEqual(result.sequences.count, 3)
         XCTAssertEqual(result.sequences.map(\.seconds), [120, 60, 60])
+        let oneTask = build(events.map { event($0.timestamp.timeIntervalSince(day), app: $0.app?.name, host: $0.url?.host, work: true) })
+        XCTAssertEqual(oneTask.contextChanges, 2, "Switches stay factual")
+        XCTAssertEqual(oneTask.sequences.map(\.seconds), [240], "…but one task keeps one focus across apps and sites")
     }
     func testGapsNeverBecomeRestOrContinuousFocus() {
         let result = build([event(0), event(60), event(3600), event(3660)])
@@ -155,9 +160,10 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
             XCTAssertEqual(result.sequences.count, 2, "\(kind)")
         }
     }
-    func testUncertainClassificationStaysUnclassified() {
-        let result = build([event(0, confidence: 0.2), event(60)])
-        XCTAssertEqual(result.seconds(.work), 0)
+    func testLegacyApplicationVerdictsAreNeverWork() {
+        let result = GoalongLocalAnalytics.build(events: [event(0, confidence: 1), event(60)], day: day,
+                                                 now: day.addingTimeInterval(86400), calendar: calendar)
+        XCTAssertEqual(result.seconds(.work), 0, "Only the user's definition, applied by context, can make time work")
         XCTAssertEqual(result.seconds(.unclassified), 60)
     }
     func testMissingFutureAndSingleEventDoNotInventDurations() {
@@ -210,6 +216,7 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
         XCTAssertEqual(load.events.first?.metadata?["idle_seconds"], "0")
         XCTAssertEqual(load.events.first?.metadata?[ForegroundActivityEvidence.metadataKey], "media_playback")
         XCTAssertNil(load.events.first?.window)
+        XCTAssertEqual(load.events.first?.metadata?[GoalongWorkContext.metadataKey]?.count, 16, "Only a hash of the context")
         XCTAssertNil(load.events.first?.metadata?["analysis.semantic_text"])
         XCTAssertEqual(load.events.first?.url?.value, "https://example.org")
         XCTAssertTrue(load.semanticSnapshots.isEmpty)

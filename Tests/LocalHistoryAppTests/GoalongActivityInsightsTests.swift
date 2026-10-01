@@ -4,6 +4,25 @@ import XCTest
 @testable import LocalHistoryApp
 @testable import LocalHistoryCore
 
+/// Simulates the agent: each context of a fixture event carrying a legacy work flag gets
+/// that verdict (one task, "Projet"). The application itself never decides.
+private func agentVerdicts(_ events: [HistoryEvent], task: String = "Projet") -> GoalongWorkVerdicts {
+    var tracker = GoalongWorkContext.Tracker()
+    var values: [String: GoalongWorkAssignment] = [:]
+    for event in events {
+        guard let key = tracker.context(for: event)?.key, let work = event.classification?.isWork else { continue }
+        values[key] = GoalongWorkAssignment(verdict: work ? .work : .other, task: work ? task : nil)
+    }
+    return GoalongWorkVerdicts(values)
+}
+
+private func verdicts(_ apps: [String: GoalongWorkVerdict], host: String? = nil, task: String = "Projet") -> GoalongWorkVerdicts {
+    GoalongWorkVerdicts(Dictionary(uniqueKeysWithValues: apps.map { app, verdict in
+        (GoalongWorkContext.Label(application: app, bundleIdentifier: "fixture." + app, host: host, title: nil).key,
+         GoalongWorkAssignment(verdict: verdict, task: verdict == .work ? task : nil))
+    }))
+}
+
 final class GoalongActivityInsightsTests: XCTestCase {
     private var calendar: Calendar {
         var value = Calendar(identifier: .gregorian); value.timeZone = TimeZone(secondsFromGMT: 0)!; return value
@@ -21,7 +40,7 @@ final class GoalongActivityInsightsTests: XCTestCase {
                 classification: .init(category: "fixture", isWork: work, confidence: 0.9, classifierVersion: "fixture-v1"))
         }
         return GoalongLocalAnalytics.build(events: events, day: base,
-            now: now ?? base.addingTimeInterval(86400), calendar: calendar)
+            now: now ?? base.addingTimeInterval(86400), calendar: calendar).applying(agentVerdicts(events))
     }
 
     func testTodayIsComparedWithYesterdayAtTheSameClockTime() {
@@ -70,13 +89,13 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertFalse(unclassified.workIsMeasurable)
         XCTAssertTrue(unclassified.insights(topUsage: nil, biggestChange: nil).contains { $0.id == "classify" })
 
-        let rules = GoalongUsageClassificationRules(applications: ["fixture.Editor": .work])
-        let classified = GoalongActivitySummary(period: GoalongLocalAnalytics.Period(days: [day(10, from: 9 * 3600, minutes: 90)]).applying(rules),
+        let classified = GoalongActivitySummary(period: GoalongLocalAnalytics.Period(days: [day(10, from: 9 * 3600, minutes: 90)])
+                                                    .applying(verdicts(["Editor": .work])),
                                                 previous: .init(days: []), calendar: calendar, now: date(20))
         XCTAssertTrue(classified.workIsMeasurable)
         XCTAssertEqual(classified.workShare, 1, accuracy: 0.001)
         let insights = classified.insights(topUsage: nil, biggestChange: nil)
-        XCTAssertTrue(insights.contains { $0.id == "work" && $0.text.contains("plus long bloc de travail") })
+        XCTAssertTrue(insights.contains { $0.id == "work" && $0.text.contains("plus longue session sur une même tâche") })
         XCTAssertFalse(insights.contains { $0.id == "classify" })
     }
 
@@ -114,35 +133,49 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertGreaterThan(hours[9], 0); XCTAssertGreaterThan(hours[15], 0); XCTAssertEqual(hours[12], 0)
     }
 
-    @MainActor func testClassificationStorePersistsPrivatelyAndRemovesRules() throws {
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("classification-\(UUID().uuidString).json")
+    @MainActor func testWorkStoreKeepsCorrectionsAcrossDefinitionsAndDropsStaleAgentVerdicts() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: file) }
-        let store = GoalongUsageClassificationStore(fileURL: file)
-        let site = GoalongActivityUsageItem(id: "site:docs.example.org", name: "Docs.Example.org", bundleIdentifier: nil, isWebsite: true, seconds: 60)
-        let app = GoalongActivityUsageItem(id: "app:fixture.Editor", name: "Editor", bundleIdentifier: "fixture.Editor", isWebsite: false, seconds: 60)
-        store.set(.work, for: site)
-        store.set(.other, for: app)
-        XCTAssertEqual(store.rules.websites["docs.example.org"], .work, "Hosts are case-insensitive")
-        XCTAssertEqual(store.rules.applications["fixture.Editor"], .other)
+        var definition = GoalongWorkDefinition(goals: "Goalong")
+        let store = GoalongWorkStore(fileURL: file, definition: { definition })
+        let docs = GoalongWorkContext.Label(application: "Browser", bundleIdentifier: "fixture.Browser",
+                                            host: "docs.example.org", title: "Swift concurrency")
+        let video = GoalongWorkContext.Label(application: "Browser", bundleIdentifier: "fixture.Browser",
+                                             host: "video.example.org", title: "Bêtisier")
+        store.merge([docs.key: GoalongWorkAssignment(verdict: .work, task: "Goalong"),
+                     video.key: GoalongWorkAssignment(verdict: .other)], revision: store.revision, day: "2026-09-10")
+        XCTAssertEqual(store.verdicts.assignment(for: docs.key)?.task, "Goalong")
+        XCTAssertEqual(store.knownTasks, ["Goalong"])
+        store.merge([video.key: GoalongWorkAssignment(verdict: .work, task: "X")], revision: "stale", day: "2026-09-10")
+        XCTAssertEqual(store.verdicts.assignment(for: video.key)?.verdict, .other, "An answer for an older definition is ignored")
+
+        store.correct(key: video.key, label: video, verdict: .work, task: "Veille", day: "2026-09-10")
+        store.merge([video.key: GoalongWorkAssignment(verdict: .other)], revision: store.revision, day: "2026-09-10")
+        XCTAssertEqual(store.verdicts.assignment(for: video.key)?.task, "Veille", "The user's correction always wins")
+        XCTAssertEqual(store.examples.map(\.title), ["Bêtisier"])
         var status = stat()
         XCTAssertEqual(lstat(file.path, &status), 0); XCTAssertEqual(status.st_mode & 0o777, 0o600)
-        let reloaded = GoalongUsageClassificationStore(fileURL: file)
-        XCTAssertEqual(reloaded.rules, store.rules)
-        reloaded.set(nil, for: app)
-        XCTAssertNil(reloaded.rules.applications["fixture.Editor"])
-        XCTAssertEqual(GoalongUsageClassificationStore(fileURL: file).verdict(for: site), .work)
+
+        definition = GoalongWorkDefinition(goals: "Goalong et Atlas")
+        let reloaded = GoalongWorkStore(fileURL: file, definition: { definition })
+        XCTAssertNil(reloaded.verdicts.assignment(for: docs.key), "A new definition drops the agent's verdicts")
+        XCTAssertEqual(reloaded.verdicts.assignment(for: video.key)?.byOwner, true)
+        reloaded.renameTask("Veille", to: "Goalong")
+        XCTAssertEqual(reloaded.verdicts.assignment(for: video.key)?.task, "Goalong")
+        reloaded.correct(key: video.key, label: video, verdict: nil, task: nil, day: "2026-09-10")
+        XCTAssertNil(reloaded.verdicts.assignment(for: video.key))
+        XCTAssertTrue(reloaded.examples.isEmpty)
     }
 
     func testCSVExportHasOneRowPerDayAndUsageAndNeutralisesFormulas() {
         let hostile = day(10, from: 9 * 3600, minutes: 10, app: "=HYPERLINK(\"x\";\"y\")")
         let second = day(11, from: 9 * 3600, minutes: 30, app: "Editor", work: true)
-        let csv = GoalongActivityExport.csv(period: .init(days: [hostile, second]), grouping: .sites,
-                                            rules: GoalongUsageClassificationRules(), calendar: calendar)
+        let csv = GoalongActivityExport.csv(period: .init(days: [hostile, second]), grouping: .sites, calendar: calendar)
         let lines = csv.split(separator: "\r\n").map(String.init)
         XCTAssertEqual(lines.first, GoalongActivityExport.header.joined(separator: ";"))
         XCTAssertEqual(lines.count, 3)
         XCTAssertTrue(lines[1].hasPrefix("2026-09-10;application;\"'=HYPERLINK"), lines[1])
-        XCTAssertTrue(lines[2].hasPrefix("2026-09-11;application;Editor;fixture.Editor;travail (auto);1800;1800;0;0"), lines[2])
+        XCTAssertTrue(lines[2].hasPrefix("2026-09-11;application;Editor;fixture.Editor;travail;1800;1800;0;0"), lines[2])
     }
 
     private func mergedSegments(_ a: GoalongLocalAnalytics.Day, _ b: GoalongLocalAnalytics.Day) -> [GoalongLocalAnalytics.Segment] {

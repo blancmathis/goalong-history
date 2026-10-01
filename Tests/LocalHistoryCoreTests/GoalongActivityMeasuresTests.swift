@@ -2,7 +2,26 @@ import Foundation
 import XCTest
 @testable import LocalHistoryCore
 
-/// User classification, work blocks, hourly split and the weekday × hour profile are all
+/// Simulates the agent: each context of a fixture event carrying a legacy work flag gets
+/// that verdict (one task, "Projet"). The application itself never decides.
+func agentVerdicts(_ events: [HistoryEvent], task: String = "Projet") -> GoalongWorkVerdicts {
+    var tracker = GoalongWorkContext.Tracker()
+    var values: [String: GoalongWorkAssignment] = [:]
+    for event in events {
+        guard let key = tracker.context(for: event)?.key, let work = event.classification?.isWork else { continue }
+        values[key] = GoalongWorkAssignment(verdict: work ? .work : .other, task: work ? task : nil)
+    }
+    return GoalongWorkVerdicts(values)
+}
+
+func verdicts(_ apps: [String: GoalongWorkVerdict], host: String? = nil, task: String = "Projet") -> GoalongWorkVerdicts {
+    GoalongWorkVerdicts(Dictionary(uniqueKeysWithValues: apps.map { app, verdict in
+        (GoalongWorkContext.Label(application: app, bundleIdentifier: "fixture." + app, host: host, title: nil).key,
+         GoalongWorkAssignment(verdict: verdict, task: verdict == .work ? task : nil))
+    }))
+}
+
+/// Work verdicts, work blocks, hourly split and the weekday × hour profile are all
 /// projections of the same intervals: they must conserve totals and never invent time.
 final class GoalongActivityMeasuresTests: XCTestCase {
     private var calendar: Calendar {
@@ -26,23 +45,29 @@ final class GoalongActivityMeasuresTests: XCTestCase {
     private func build(_ events: [HistoryEvent], on date: Date? = nil) -> GoalongLocalAnalytics.Day {
         let start = date ?? day
         return GoalongLocalAnalytics.build(events: events, day: start, now: start.addingTimeInterval(86400), calendar: calendar)
+            .applying(agentVerdicts(events))
     }
 
-    func testUserRulesReclassifyActiveTimeOnlyAndKeepEveryTotal() {
+    func testWorkVerdictsReclassifyActiveTimeOnlyAndKeepEveryTotal() {
         let events = minutes(0...10, from: 36_000, app: "Browser", host: "chat.example.org")
             + minutes(11...20, from: 36_000, app: "Browser", host: "news.example.com")
             + minutes(21...30, from: 36_000, app: "Messages")
         let raw = build(events)
         XCTAssertEqual(raw.seconds(.work), 0)
-        let rules = GoalongUsageClassificationRules(applications: ["fixture.Messages": .other],
-                                                   websites: ["example.org": .work, "news.example.com": .other])
-        let ruled = raw.applying(rules)
+        let label = { (app: String, host: String?) in
+            GoalongWorkContext.Label(application: app, bundleIdentifier: "fixture." + app, host: host, title: nil).key
+        }
+        let ruled = raw.applying(GoalongWorkVerdicts([
+            label("Messages", nil): GoalongWorkAssignment(verdict: .other),
+            label("Browser", "chat.example.org"): GoalongWorkAssignment(verdict: .work, task: "Recherche"),
+            label("Browser", "news.example.com"): GoalongWorkAssignment(verdict: .other),
+        ]))
         XCTAssertEqual(ruled.activeSeconds, raw.activeSeconds)
         XCTAssertEqual(ruled.segments.reduce(0) { $0 + $1.seconds }, raw.segments.reduce(0) { $0 + $1.seconds })
-        XCTAssertEqual(ruled.seconds(.work), 660, "A parent-domain rule covers its subdomain")
+        XCTAssertEqual(ruled.seconds(.work), 660, "Only the context judged as work counts, not the whole browser")
         XCTAssertEqual(ruled.seconds(.other), raw.activeSeconds - 660)
         XCTAssertEqual(ruled.seconds(.unobserved), raw.seconds(.unobserved))
-        XCTAssertEqual(raw.applying(GoalongUsageClassificationRules()), raw, "No rule, no change")
+        XCTAssertEqual(raw.applying(GoalongWorkVerdicts()), raw, "No verdict, no change")
         XCTAssertTrue(zip(ruled.segments, ruled.segments.dropFirst()).allSatisfy { $0.end == $1.start })
     }
 

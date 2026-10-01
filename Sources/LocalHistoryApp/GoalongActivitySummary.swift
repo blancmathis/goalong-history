@@ -217,12 +217,12 @@ struct GoalongActivitySummary {
         if workIsMeasurable {
             var text = "Travail : \(Self.duration(workSeconds)) (\(Int((workShare * 100).rounded())) % du temps actif)"
             if let block = longestWorkBlock, block.workSeconds >= 600 {
-                text += " · plus long bloc de travail \(Self.duration(block.workSeconds))"
+                text += " · plus longue session sur une même tâche \(Self.duration(block.workSeconds))"
             }
             result.append(Insight(id: "work", symbol: "briefcase", text: text + ".", tone: .positive))
         } else if unclassifiedShare >= 0.3 {
             result.append(Insight(id: "classify", symbol: "tag",
-                text: "\(Int((unclassifiedShare * 100).rounded())) % de votre temps n’est pas encore classé. Classez vos principaux usages ci-dessous pour mesurer votre travail.",
+                text: "\(Int((unclassifiedShare * 100).rounded())) % de votre temps n’est pas encore classé. Décrivez votre travail dans Mon travail pour le mesurer.",
                 tone: .attention))
         }
         return result

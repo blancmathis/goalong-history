@@ -509,12 +509,8 @@
                             try derivedBudget.reserve(16)
                             activeMinuteKeys.insert(activeMinute)
                         }
-                        if event.classification?.isWork == true,
-                            (event.url == nil || ForegroundActivityEvidence.supportsWebsiteAttribution(event)),
-                            !workMinuteKeys.contains(activeMinute) {
-                            try derivedBudget.reserve(16)
-                            workMinuteKeys.insert(activeMinute)
-                        }
+                        // Work minutes are never inferred from the application or site:
+                        // only the user's work definition (Activité) decides what is work.
                     }
                     if event.suppressionReason != nil,
                         !privateMinuteKeys.contains(minute)
@@ -2263,7 +2259,6 @@
                     if windowTitle == nil { windowTitle = event.window?.title }
                     if host == nil { host = event.url?.host }
                     if category == nil { category = event.classification?.category }
-                    if isWork == nil { isWork = event.classification?.isWork }
                     if confidence == nil { confidence = event.classification?.confidence }
                 }
 
@@ -2325,7 +2320,7 @@
                         windowTitle: event.window?.title,
                         host: event.url?.host,
                         category: category,
-                        isWork: event.classification?.isWork,
+                        isWork: nil,
                         confidence: event.classification?.confidence,
                         suppressionReason: suppression,
                         eventCount: 0,

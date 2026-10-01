@@ -32,8 +32,9 @@ final class GoalongUXOptimizationTests: XCTestCase {
         XCTAssertNil(unclassified.workPeakWindow, "Unclassified time is never presented as work")
         XCTAssertFalse(unclassified.insights(topUsage: nil, biggestChange: nil).contains { $0.id == "work-peak" })
 
-        let rules = GoalongUsageClassificationRules(applications: ["fixture.Editor": .work])
-        let classified = GoalongActivitySummary(period: GoalongLocalAnalytics.Period(days: [morning]).applying(rules),
+        let editor = GoalongWorkContext.Label(application: "Editor", bundleIdentifier: "fixture.Editor", host: nil, title: nil)
+        let classified = GoalongActivitySummary(period: GoalongLocalAnalytics.Period(days: [morning])
+                                                    .applying(GoalongWorkVerdicts([editor.key: GoalongWorkAssignment(verdict: .work, task: "Projet")])),
                                                 previous: .init(days: []), calendar: calendar, now: date(20))
         let peak = try XCTUnwrap(classified.workPeakWindow)
         XCTAssertEqual(peak.hour, 9)

@@ -900,11 +900,25 @@
                 schema: schema, workingDirectory: workingDirectory, maximumResponseBytes: 256 * 1024))
         }
 
+        /// Labels contexts against the user's work definition. The prompt was built from
+        /// contexts already filtered by the current exclusions, whose revision must not change
+        /// before sending.
+        func generateWorkClassification(prompt: String, privacyRevision: String,
+                                        workingDirectory: URL) throws -> GoalongWorkClassification.Response {
+            try GoalongWorkClassification.parse(generateSelectedAnalysisJSON(prompt: prompt,
+                schema: GoalongWorkClassification.outputSchema, workingDirectory: workingDirectory,
+                maximumResponseBytes: 128 * 1024, filteredForPrivacyRevision: privacyRevision))
+        }
+
         private func generateSelectedAnalysisJSON(prompt: String, schema: [String: Any], workingDirectory: URL,
-                                                  maximumResponseBytes: Int = 32 * 1024) throws -> Data {
+                                                  maximumResponseBytes: Int = 32 * 1024,
+                                                  filteredForPrivacyRevision: String? = nil) throws -> Data {
             let pauseTicket = try GoalongGlobalPause.admit()
             let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
-            guard !GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).hasExclusions else {
+            if let filteredForPrivacyRevision, filteredForPrivacyRevision != privacyRevision {
+                throw CodexAppServerError.generationFailed("Les exclusions ont changé. L’analyse a été arrêtée avant l’envoi.")
+            }
+            guard filteredForPrivacyRevision != nil || !GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).hasExclusions else {
                 throw CodexAppServerError.generationFailed("Les exclusions bloquent cette analyse de texte. Utilisez le bilan par applications dans Connexions.")
             }
             guard siteAnalysisOnly else {

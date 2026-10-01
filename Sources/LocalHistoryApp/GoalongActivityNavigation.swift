@@ -79,9 +79,11 @@ struct GoalongActivityUsageItem: Identifiable, Equatable {
     let bundleIdentifier: String?
     let isWebsite: Bool
     var seconds: TimeInterval
-    /// Parts of `seconds` classified as work / other (automatically or by the user).
+    /// Parts of `seconds` classified as work / other by the user's work definition.
     var workSeconds: TimeInterval = 0
     var otherSeconds: TimeInterval = 0
+    /// Work seconds per task: one application can serve several tasks, or none.
+    var tasks: [String: TimeInterval] = [:]
     /// Same usage over the previous period of equal length; nil when not computed.
     var previousSeconds: TimeInterval? = nil
 
@@ -92,6 +94,19 @@ struct GoalongActivityUsageItem: Identifiable, Equatable {
         if workSeconds >= seconds * 0.5 { return .work }
         if otherSeconds >= seconds * 0.5 { return .other }
         return nil
+    }
+    /// How this usage was classified: an application often serves work and other things.
+    var classLabel: String {
+        guard seconds > 0 else { return "À classer" }
+        if workSeconds >= seconds * 0.8 { return "Travail" }
+        if otherSeconds >= seconds * 0.8 { return "Hors travail" }
+        if workSeconds > 0 && otherSeconds > 0 { return "Mixte" }
+        if workSeconds >= seconds * 0.5 { return "Surtout travail" }
+        if otherSeconds >= seconds * 0.5 { return "Surtout hors travail" }
+        return "À classer"
+    }
+    var mainTasks: [(name: String, seconds: TimeInterval)] {
+        tasks.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.map { ($0.key, $0.value) }
     }
 }
 
@@ -121,8 +136,10 @@ enum GoalongActivityProjection {
                     seconds: 0
                 )
                 item.seconds += segment.seconds
-                if segment.kind == .work { item.workSeconds += segment.seconds }
-                else if segment.kind == .other { item.otherSeconds += segment.seconds }
+                if segment.kind == .work {
+                    item.workSeconds += segment.seconds
+                    if let task = segment.task { item.tasks[task, default: 0] += segment.seconds }
+                } else if segment.kind == .other { item.otherSeconds += segment.seconds }
                 result[id] = item
             }
         }

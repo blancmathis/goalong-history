@@ -10,7 +10,6 @@ struct GoalongActivityUsageList: View {
     var isPreview = false
     var onExport: (() -> Void)? = nil
     let onSelect: (GoalongActivityUsageItem) -> Void
-    @ObservedObject private var classification = GoalongUsageClassificationStore.shared
     @State private var search = ""
     @State private var showsAll = false
     @State private var sort: GoalongActivityUsageSort = .duration
@@ -59,11 +58,7 @@ struct GoalongActivityUsageList: View {
                 } else {
                     LazyVStack(spacing: 0) {
                         ForEach(visible) { item in
-                            GoalongActivityUsageRow(item: item, total: totalSeconds,
-                                rule: isPreview ? nil : classification.verdict(for: item),
-                                canClassify: !isPreview && item.classificationKey != nil,
-                                onClassify: { classification.set($0, for: item) },
-                                onSelect: { onSelect(item) })
+                            GoalongActivityUsageRow(item: item, total: totalSeconds, onSelect: { onSelect(item) })
                             if item.id != visible.last?.id { Divider().padding(.leading, 70).padding(.trailing, 20) }
                         }
                     }
@@ -76,12 +71,9 @@ struct GoalongActivityUsageList: View {
                             .accessibilityIdentifier("activity-usage-show-all")
                     }
                     Text(grouping == .sites
-                        ? "Un site remplace le temps de son navigateur : aucune minute n’est comptée deux fois. Cliquez sur un usage pour voir ses horaires, ou sur son étiquette pour le classer."
+                        ? "Un site remplace le temps de son navigateur : aucune minute n’est comptée deux fois. Cliquez sur un usage pour voir ses horaires et les tâches qu’il a servies."
                         : "Les sites sont inclus dans leur navigateur. Le total reste identique ; seule la répartition change.")
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    if let error = classification.lastError {
-                        Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
-                    }
                 }.padding(20)
             }
         }
@@ -115,15 +107,11 @@ struct GoalongActivityUsageList: View {
 struct GoalongActivityUsageRow: View {
     let item: GoalongActivityUsageItem
     let total: TimeInterval
-    var rule: GoalongUsageClass? = nil
-    var canClassify = false
-    var onClassify: (GoalongUsageClass?) -> Void = { _ in }
     let onSelect: () -> Void
     @State private var hovering = false
     private var share: Double { min(1, max(0, item.seconds / max(1, total))) }
-    private var shownClass: GoalongUsageClass? { rule ?? item.dominantClass }
     private var barColor: Color {
-        switch shownClass {
+        switch item.dominantClass {
         case .work?: return GoalongActivityClassStyle.color(.work)
         case .other?: return GoalongActivityClassStyle.color(.other)
         case nil: return GoalongActivityClassStyle.color(.unclassified)
@@ -162,7 +150,10 @@ struct GoalongActivityUsageRow: View {
             .accessibilityLabel(item.displayName)
             .accessibilityValue("\(GoalongAnalyticsFormatting.duration(item.seconds)), \(Int((share * 100).rounded())) pour cent du temps actif, \(classLabel)")
             .accessibilityHint("Ouvrir les horaires et la répartition par journée")
-            classMenu
+            Text(classLabel).font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText).fixedSize()
+                .help(item.mainTasks.isEmpty ? "Classement selon votre définition du travail"
+                      : "Tâches : " + item.mainTasks.prefix(3).map(\.name).joined(separator: ", "))
+                .accessibilityHidden(true)
             Image(systemName: "chevron.right").font(.system(size: 11, weight: .medium))
                 .foregroundStyle(hovering ? LHTheme.text : LHTheme.secondaryText).padding(.leading, 2)
                 .accessibilityHidden(true)
@@ -185,36 +176,7 @@ struct GoalongActivityUsageRow: View {
             .help("Par rapport à la période précédente de même durée")
     }
 
-    private var classLabel: String {
-        switch (rule, item.dominantClass) {
-        case (.work?, _): return "Travail"
-        case (.other?, _): return "Hors travail"
-        case (nil, .work?): return "Travail · auto"
-        case (nil, .other?): return "Hors travail · auto"
-        case (nil, nil): return "À classer"
-        }
-    }
-
-    @ViewBuilder private var classMenu: some View {
-        if canClassify {
-            // A native pull-down button: visibly clickable, keyboard accessible.
-            Menu {
-                Button { onClassify(.work) } label: { Label("Travail", systemImage: rule == .work ? "checkmark" : "briefcase") }
-                Button { onClassify(.other) } label: { Label("Hors travail", systemImage: rule == .other ? "checkmark" : "cup.and.saucer") }
-                Divider()
-                Button { onClassify(nil) } label: { Label("Classement automatique", systemImage: rule == nil ? "checkmark" : "wand.and.stars") }
-            } label: {
-                Text(classLabel).font(.system(size: 11, weight: rule == nil ? .regular : .semibold))
-            }
-            .menuIndicator(.hidden).controlSize(.small).fixedSize()
-            .help("Classer \(item.displayName) : s’applique à tout votre historique, sans modifier les journaux.")
-            .accessibilityLabel("Classement de \(item.displayName) : \(classLabel)")
-            .accessibilityIdentifier("activity-usage-class")
-        } else {
-            Text(classLabel).font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText).fixedSize()
-                .accessibilityHidden(true)
-        }
-    }
+    private var classLabel: String { item.classLabel }
 }
 
 struct GoalongActivityUsageIcon: View {

@@ -1,5 +1,16 @@
 # Changelog
 
+## À publier — Mon travail : votre définition du travail, appliquée par un agent
+
+- **Goalong ne juge plus aucune app ni aucun site.** Fini « Xcode = travail » ou le classement Travail / Hors travail par app : une même app sert au travail puis à autre chose. L’ancien classement automatique est retiré partout (Activité, bilan quotidien, anciens écrans).
+- **Nouvelle page Mon travail** : décrivez avec vos mots vos projets, à quoi servent vos apps et sites, les contenus qui comptent comme travail et ce qui n’en est pas. Une seule définition, partagée avec la surveillance temps réel.
+- **Un agent classe chaque moment, pas chaque app** : il juge chaque contexte (app + site + titre de fenêtre) selon votre définition, avec l’ordre de la journée pour les cas ambigus, et nomme la tâche servie. Votre compte ChatGPT, sans aucun outil ; exclusions et choix « Données pour ChatGPT » respectés ; un contexte déjà classé n’est jamais renvoyé.
+- **Le focus suit la tâche, pas l’app** : passer de l’éditeur au navigateur pour le même projet garde votre session de travail. Nouvelle carte **Tâches** dans Activité, Concentration = plus longue session sur une même tâche, « N changements d’app sans quitter la tâche ».
+- **Vérifier et corriger** une journée : contextes regroupés par tâche, correction en un clic (tâche existante, nouvelle tâche, hors travail), renommer ou fusionner des tâches. Vos corrections priment et servent d’exemples à l’agent.
+- **Bilan quotidien** : le score de productivité juge désormais selon votre définition du travail.
+- Vos anciens choix Travail / Hors travail par app pré-remplissent la définition (à préciser), sans être appliqués.
+- Menu Présentation : ⌘2 Mon travail ; Historique passe à ⌘3 et Surveillance à ⌘4, dans l’ordre de la barre latérale.
+
 ## À publier — une app plus claire, plus simple et entièrement en français
 
 - **Activité dit pourquoi rien n’arrive** : enregistrement désactivé, en pause ou autorisation macOS à rétablir sont signalés en tête de page, avec le bouton utile (« Activer… », « Reprendre », « Rétablir l’accès… »).

@@ -4,8 +4,8 @@ import SwiftUI
 import Charts
 import LocalHistoryCore
 
-/// One application or website over the selected period: how much, when, how it is
-/// classified and how it evolves. Every figure comes from the same intervals as the list.
+/// One application or website over the selected period: how much, when, which tasks it
+/// served and how it evolves. Every figure comes from the same intervals as the list.
 struct GoalongActivityUsageDetail: View {
     let item: GoalongActivityUsageItem
     let period: GoalongLocalAnalytics.Period
@@ -13,7 +13,6 @@ struct GoalongActivityUsageDetail: View {
     let isPreview: Bool
     let onHistoryDay: (Date) -> Void
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var classification = GoalongUsageClassificationStore.shared
 
     private var visibleDays: [GoalongLocalAnalytics.Day] {
         period.days.filter { GoalongActivityProjection.seconds(for: item, in: $0, grouping: grouping) > 0 }
@@ -35,8 +34,8 @@ struct GoalongActivityUsageDetail: View {
                 Spacer()
                 Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction)
             }
-            if !isPreview, item.classificationKey != nil { classificationPicker }
             statistics
+            if !item.mainTasks.isEmpty { tasks }
             hourChart
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -50,26 +49,18 @@ struct GoalongActivityUsageDetail: View {
         .tint(LHTheme.accent)
     }
 
-    private var classificationPicker: some View {
-        let binding = Binding<Int>(
-            get: {
-                switch classification.verdict(for: item) { case .work?: return 1; case .other?: return 2; case nil: return 0 }
-            },
-            set: { value in classification.set(value == 1 ? .work : value == 2 ? .other : nil, for: item) }
-        )
-        let automatic: String = {
-            switch item.dominantClass { case .work?: return "Auto · travail"; case .other?: return "Auto · hors travail"; case nil: return "Auto · à classer" }
-        }()
-        return VStack(alignment: .leading, spacing: 6) {
-            Picker("Classement", selection: binding) {
-                Text(automatic).tag(0)
-                Text("Travail").tag(1)
-                Text("Hors travail").tag(2)
-            }.pickerStyle(.segmented).labelsHidden().fixedSize()
-                .accessibilityIdentifier("activity-usage-detail-class")
-            Text("S’applique à tout votre historique, sans modifier les journaux.")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-        }
+    /// The same application can serve several tasks: each one is listed with its time.
+    private var tasks: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Tâches servies").font(.system(size: 12, weight: .semibold))
+            ForEach(item.mainTasks.prefix(5), id: \.name) { task in
+                HStack {
+                    Text(task.name).lineLimit(1)
+                    Spacer()
+                    Text(duration(task.seconds)).monospacedDigit().foregroundStyle(.secondary)
+                }.font(.system(size: 12)).accessibilityElement(children: .combine)
+            }
+        }.accessibilityIdentifier("activity-usage-detail-tasks")
     }
 
     private var statistics: some View {
@@ -93,7 +84,7 @@ struct GoalongActivityUsageDetail: View {
                 stat("Évolution", (delta >= 0 ? "+" : "−") + duration(abs(delta)), "vs période précédente (\(duration(before)))")
             }
             if item.workSeconds + item.otherSeconds > 0 {
-                stat("Classé travail", duration(item.workSeconds), item.otherSeconds > 0 ? "\(duration(item.otherSeconds)) hors travail" : "du temps de cet usage")
+                stat("Travail", duration(item.workSeconds), item.otherSeconds > 0 ? "\(duration(item.otherSeconds)) hors travail" : "selon votre définition")
             }
         }
     }

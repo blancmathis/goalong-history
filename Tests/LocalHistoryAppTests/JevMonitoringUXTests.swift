@@ -5,7 +5,7 @@ import XCTest
 
 final class JevMonitoringUXTests: XCTestCase {
     func testMonitoringIsItsOwnPrimaryDestination() {
-        XCTAssertEqual(DashboardSection.primarySections, [.overview, .history, .monitoring, .settings])
+        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .monitoring, .settings])
         XCTAssertEqual(DashboardSection.monitoring.sidebarParent, .monitoring)
         XCTAssertEqual(DashboardSection.monitoring.simpleTitle, "Surveillance temps réel")
         XCTAssertEqual(DashboardSection(rawValue: "monitoring"), .monitoring)

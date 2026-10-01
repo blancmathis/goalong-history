@@ -2,8 +2,13 @@
 import SwiftUI
 import LocalHistoryCore
 
+/// The single definition of work, shared by Activité (through the classification agent)
+/// and real-time monitoring. Edited in Mon travail.
 @MainActor struct JevWorkContextControls: View {
+    enum Purpose { case workDefinition, monitoring }
     @ObservedObject private var store: JevWorkContextStore
+    private let purpose: Purpose
+    @State private var prefilledFromLegacy = false
     @State private var draft = ""
     @State private var applications = ""
     @State private var content = ""
@@ -12,41 +17,46 @@ import LocalHistoryCore
     @State private var error: String?
     private var draftBytes: Int { draft.utf8.count + applications.utf8.count + content.utf8.count + procrastination.utf8.count }
 
-    init(store: JevWorkContextStore? = nil) {
+    init(store: JevWorkContextStore? = nil, purpose: Purpose = .monitoring) {
         _store = ObservedObject(wrappedValue: store ?? .shared)
+        self.purpose = purpose
     }
 
     var body: some View {
-        GoalongSettingsGroup(title: "Mes repères de surveillance") {
+        GoalongSettingsGroup(title: purpose == .workDefinition ? "Ce qui compte comme travail" : "Mes repères de surveillance") {
             VStack(alignment: .leading, spacing: 14) {
                 if store.context.isEmpty || editing || store.error != nil {
-                    Text("Ce qui est productif pour moi").font(.system(size: 14, weight: .semibold))
-                    Text("Décrivez ce qui compte comme du travail. Chaque rubrique est facultative.")
+                    Text("Ma définition du travail").font(.system(size: 14, weight: .semibold))
+                    Text("Décrivez votre travail avec vos mots. Chaque rubrique est facultative ; une seule phrase précise suffit pour commencer.")
                         .font(.callout).foregroundStyle(.secondary)
+                    if prefilledFromLegacy {
+                        Label("Pré-rempli avec vos anciens choix Travail / Hors travail par app. Précisez à quoi sert chaque app, puis enregistrez.", systemImage: "wand.and.stars")
+                            .font(.caption).foregroundStyle(LHTheme.accent).fixedSize(horizontal: false, vertical: true)
+                    }
                     field("Projets et objectifs", hint: "Ex. Goalong : app macOS et site. Atlas : préparer le lancement.",
                           text: $draft, identifier: "monitoring-work-goals")
-                    field("Applications et sites", hint: "Ex. Xcode pour coder, Figma pour le design, GitHub pour les revues.",
+                    field("Applications et sites, et pour quoi faire", hint: "Ex. Xcode et GitHub pour Goalong. YouTube seulement pour le cours Swift choisi.",
                           text: $applications, identifier: "monitoring-work-apps")
-                    field("Contenus et usages productifs", hint: "Ex. Documentation Swift, recherches liées à mes projets, rédaction de posts Goalong. Autoriser les vidéos du cours Swift choisi.",
+                    field("Contenus et usages qui comptent comme travail", hint: "Ex. Documentation Swift, recherches liées à mes projets, e-mails clients, rédaction de posts Goalong.",
                           text: $content, identifier: "monitoring-work-content")
-                    Text("Précisez l’usage prévu : une application ouverte ne suffit pas à prouver du travail. Un contenu explicitement autorisé peut compter comme productif.")
+                    Text("Précisez l’usage plutôt que l’app : une même app peut servir au travail puis à autre chose, et c’est ce que vous y faites qui compte.")
                         .font(.caption).foregroundStyle(.secondary)
                     Divider()
-                    field("Ce que je considère comme de la procrastination",
+                    field("Ce qui n’est pas du travail (procrastination)",
                           hint: "Ex. Scroller le fil Pour vous de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
                           text: $procrastination, identifier: "monitoring-procrastination")
                     procrastinationExplanation
-                    Text("Enregistrer autorise l’envoi de vos critères de travail et exemples de procrastination à TypeSafe avec les prochaines analyses si la surveillance est activée. Ils restent stockés sur ce Mac, sans import automatique de votre historique. N’indiquez ni clé API ni information sensible.")
+                    Text("Ces critères restent stockés sur ce Mac. Enregistrer autorise leur envoi à votre compte ChatGPT avec les contextes à classer si le classement est activé, et l’envoi de vos critères de travail et exemples de procrastination à TypeSafe avec les prochaines analyses si la surveillance est activée. N’indiquez ni clé API ni information sensible.")
                         .font(.caption).foregroundStyle(.secondary)
                     if draftBytes > JevWorkContext.maximumBytes {
                         Text("Description trop longue : les quatre rubriques partagent le même budget. Raccourcissez les exemples pour garder des analyses compactes.")
                             .font(.caption).foregroundStyle(LHTheme.warning)
                     }
                     HStack {
-                        Button("Enregistrer les critères") {
+                        Button(purpose == .workDefinition ? "Enregistrer ma définition" : "Enregistrer les critères") {
                             do {
                                 try store.save(draft, applications: applications, content: content, procrastination: procrastination)
-                                loadDraft(); editing = false; error = nil
+                                loadDraft(); editing = false; error = nil; prefilledFromLegacy = false
                             } catch { self.error = error.localizedDescription }
                         }.accessibilityIdentifier("monitoring-save-goals")
                         if editing {
@@ -57,7 +67,7 @@ import LocalHistoryCore
                 } else {
                     HStack(alignment: .top, spacing: 14) {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Ce qui est productif pour moi").font(.system(size: 14, weight: .semibold))
+                            Text("Ma définition du travail").font(.system(size: 14, weight: .semibold))
                             saved("Projets et objectifs", value: store.context.summary)
                             saved("Applications et sites", value: store.context.applications)
                             saved("Contenus et usages", value: store.context.content)
@@ -68,10 +78,10 @@ import LocalHistoryCore
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Ce que je considère comme de la procrastination")
+                        Text("Ce qui n’est pas du travail (procrastination)")
                             .font(.system(size: 14, weight: .semibold))
                         if store.context.procrastination.isEmpty {
-                            Text("Aucun exemple ajouté. La détection générale reste active lorsque la surveillance est activée.")
+                            Text("Aucun exemple ajouté. Sans exemple, l’agent s’appuie sur votre définition du travail ; la détection générale de la surveillance reste active.")
                                 .font(.callout).foregroundStyle(.secondary)
                             Button("Ajouter mes exemples") { loadDraft(); editing = true }
                                 .accessibilityIdentifier("monitoring-add-procrastination")
@@ -89,7 +99,16 @@ import LocalHistoryCore
                 }
                 if let message = error ?? store.error { Text(message).font(.caption).foregroundStyle(LHTheme.warning) }
             }
-        }.onAppear { if !editing { loadDraft() } }
+        }.onAppear {
+            if !editing { loadDraft() }
+            // Former per-app choices become a starting point, never a silent rule.
+            if purpose == .workDefinition, store.context.isEmpty, draft.isEmpty, applications.isEmpty,
+               let legacy = GoalongWorkStore.legacyDraft() {
+                if !legacy.work.isEmpty { applications = "Travail : " + legacy.work + "." }
+                if !legacy.other.isEmpty { procrastination = legacy.other }
+                prefilledFromLegacy = true
+            }
+        }
     }
     private var procrastinationExplanation: some View {
         Text("Des exemples certains, pas une liste exhaustive. La surveillance continue de repérer les autres distractions. Un usage qui correspond clairement à un exemple prime sur une autorisation générale ; précisez l’usage plutôt que seulement le site.")

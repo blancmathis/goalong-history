@@ -26,6 +26,7 @@ Product behavior, security guarantees or implementation contracts.
 - [Network](NETWORK.md): the single-app boundary, optional Codex analysis and explicit website sends.
 - [Permissions](PERMISSIONS.md): macOS permissions, degradation and revocation.
 - [Data flow](DATA-FLOW.md): current component and information flow.
+- [Mon travail](WORK_DEFINITION.md): the user's definition of work, per-context agent classification and tasks.
 - [Security model](../SECURITY.md) and [cryptography](CRYPTOGRAPHY.md): integrity and selective-disclosure proof.
 - [Build verification](BUILD-VERIFICATION.md): one command for pre-download source review, then exact-bundle inspection.
 - [Reproducible builds](REPRODUCIBLE-BUILDS.md): reproducibility scope and limitations.

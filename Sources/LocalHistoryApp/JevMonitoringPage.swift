@@ -12,6 +12,7 @@ struct JevActivationAvailability: Equatable {
 
 @MainActor struct JevMonitoringPage: View {
     var onOpenRecording: () -> Void
+    var onOpenWork: () -> Void = {}
     @ObservedObject private var monitor = JevMonitor.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @State private var showingConnection = false
@@ -33,7 +34,7 @@ struct JevActivationAvailability: Equatable {
                         .font(.system(size: 14)).foregroundStyle(.secondary)
                 }
                 monitoringCard
-                JevWorkContextControls()
+                GoalongWorkDefinitionSummary(onOpen: onOpenWork)
                 JevBreakControls()
                 GoalongDisclosureGroup("Configurer les rappels et les effets") {
                     JevInterventionControls().padding(.top, 12)

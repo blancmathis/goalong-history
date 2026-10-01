@@ -65,7 +65,9 @@ final class JevProcrastinationStoreTests: XCTestCase {
         }
         XCTAssertFalse(source.contains("setEnabled("))
         XCTAssertFalse(source.contains("JevMonitor.shared"))
-        XCTAssertTrue(try appSource("JevMonitoringPage.swift").contains("JevWorkContextControls()"))
+        // One definition of work: edited in Mon travail, summarised on the monitoring page.
+        XCTAssertTrue(try appSource("JevMonitoringPage.swift").contains("GoalongWorkDefinitionSummary(onOpen: onOpenWork)"))
+        XCTAssertTrue(try appSource("GoalongWorkPage.swift").contains("JevWorkContextControls(purpose: .workDefinition)"))
     }
     private func appSource(_ name: String) throws -> String {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
