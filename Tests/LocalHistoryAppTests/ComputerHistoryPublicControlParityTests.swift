@@ -155,7 +155,7 @@
             XCTAssertTrue(agentActivity.contains("conversationHistoryList"))
             XCTAssertFalse(agentActivity.contains("Text(\"Conversations\")"))
             XCTAssertTrue(agentActivity.contains("Sources d’origine"))
-            XCTAssertTrue(agentActivity.contains("final repl"))
+            XCTAssertTrue(agentActivity.contains("réponse\\(replies > 1 ? \"s\" : \"\") finale"))
             XCTAssertTrue(agentActivity.contains("availableProviders.count > 1"))
 
             let components = try String(
@@ -201,11 +201,12 @@
                     .appendingPathComponent("Sources/LocalHistoryApp/DashboardComponents.swift"),
                 encoding: .utf8
             )
-            XCTAssertTrue(components.contains("Label(\"Retour aux réglages\", systemImage: \"chevron.left\")"))
-            XCTAssertTrue(source.contains("DisclosureGroup(\"Preview agent instructions\""))
+            XCTAssertTrue(components.contains("var title = \"Retour aux réglages\""))
+            XCTAssertTrue(components.contains("Label(title, systemImage: \"chevron.left\")"))
+            XCTAssertTrue(source.contains("DisclosureGroup(\"Aperçu des instructions"))
             XCTAssertTrue(source.contains("copyQuickCommand(item)"))
             XCTAssertTrue(source.contains("NSAccessibility.post("))
-            XCTAssertTrue(source.contains("case .conflict: return \"CLI conflict\""))
+            XCTAssertTrue(source.contains("case .conflict: return \"Conflit de commande\""))
             XCTAssertFalse(source.contains("Every result is structured JSON"))
         }
 

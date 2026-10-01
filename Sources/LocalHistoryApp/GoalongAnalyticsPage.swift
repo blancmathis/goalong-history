@@ -50,7 +50,10 @@ struct GoalongAnalyticsPage: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if !previewActive { GoalongRecordingCoverageNotice(model: model) }
+                    if !previewActive {
+                        GoalongRecordingStateNotice(model: model)
+                        GoalongRecordingCoverageNotice(model: model, dismissible: true)
+                    }
                     if developerMode { previewControl }
                     if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
                     if let error = analytics.error {

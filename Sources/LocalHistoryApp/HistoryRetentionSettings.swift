@@ -33,8 +33,8 @@ extension HistoryRetentionPolicy {
     var includesProofExpiry: Bool { minuteSeals.days != nil || anchorReceipts.days != nil }
     var retentionDescription: String {
         HistoryDataClass.allCases.map { kind in
-            let duration = duration(for: kind).days.map { "\($0) jours" } ?? "sans limite"
-            return "\(kind.retentionTitle): \(duration)"
+            let duration = duration(for: kind).days.map { $0 == 1 ? "1 jour" : "\($0) jours" } ?? "sans limite"
+            return "\(kind.retentionTitle) : \(duration)"
         }.joined(separator: "\n")
     }
 }
@@ -111,7 +111,7 @@ extension HistoryRetentionPolicy {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Picker(kind.retentionTitle, selection: durationBinding(kind)) {
                                 Text("Jusqu’à ce que je supprime").tag(0)
-                                ForEach(durationOptions(kind), id: \.self) { days in Text("\(days) jours").tag(days) }
+                                ForEach(durationOptions(kind), id: \.self) { days in Text(days == 1 ? "1 jour" : "\(days) jours").tag(days) }
                             }.labelsHidden().frame(width: 170)
                                 .accessibilityIdentifier("retention-\(kind.rawValue)")
                         }.padding(12).background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 10))
@@ -132,7 +132,7 @@ extension HistoryRetentionPolicy {
             HStack {
                 Text("Rien n’est appliqué avant votre confirmation.").font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer()
-                Button(model.automaticCleanup ? "Review & apply…" : "Enregistrer sans suppression automatique") {
+                Button(model.automaticCleanup ? "Vérifier et appliquer…" : "Enregistrer sans suppression automatique") {
                     if model.automaticCleanup { showingConfirmation = true }
                     else if model.apply(proofDeletionConfirmed: false) { dismiss() }
                 }.buttonStyle(LHPrimaryButtonStyle())
@@ -142,9 +142,9 @@ extension HistoryRetentionPolicy {
         }
         .frame(width: 700, height: 670).background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .onChange(of: model.draft) { _ in proofDeletionConfirmed = false }
-        .alert("Apply automatic deletion?", isPresented: $showingConfirmation) {
+        .alert("Appliquer la suppression automatique ?", isPresented: $showingConfirmation) {
             Button("Annuler", role: .cancel) {}
-            Button("Apply these retention rules", role: .destructive) {
+            Button("Appliquer ces règles", role: .destructive) {
                 if model.apply(proofDeletionConfirmed: proofDeletionConfirmed) { dismiss() }
             }
         } message: {

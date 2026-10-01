@@ -106,6 +106,9 @@
 
         @Published var selectedSection: DashboardSection = .overview
         @Published var settingsPane: SettingsPane = .home
+        /// Where a secondary page (Temps d’écran, Confidentialité, Terminal…) returns:
+        /// the page, and Settings pane, it was opened from.
+        @Published private(set) var secondaryReturn: DashboardSecondaryReturn?
         @Published var showingWebsiteShare = false
         @Published private(set) var runtime: RuntimePresentation = .unavailable
         /// Free space of the history volume, refreshed at most once a minute while visible.
@@ -331,6 +334,14 @@
 
         func selectSection(_ section: DashboardSection) {
             let previousSection = selectedSection
+            if section.isSecondary {
+                // Re-selecting the same secondary page (e.g. reopening the window) keeps its origin.
+                if !previousSection.isSecondary {
+                    secondaryReturn = DashboardSecondaryReturn(section: previousSection, pane: settingsPane)
+                }
+            } else {
+                secondaryReturn = nil
+            }
             if section == .settings { settingsPane = .home }
             selectedSection = section
             if section == .share {
@@ -349,6 +360,29 @@
         func openRecordingSettings() {
             selectSection(.settings)
             settingsPane = .recording
+        }
+
+        /// Back action of every secondary page.
+        func returnFromSecondaryPage() {
+            let destination = secondaryReturn
+                ?? DashboardSecondaryReturn(section: selectedSection.defaultReturnSection, pane: .home)
+            selectSection(destination.section)
+            if destination.section == .settings { settingsPane = destination.pane }
+        }
+
+        var secondaryReturnTitle: String {
+            switch secondaryReturn?.section ?? selectedSection.defaultReturnSection {
+            case .settings: return "Retour aux réglages"
+            case .history: return "Retour à l’historique"
+            case .monitoring: return "Retour à la surveillance"
+            default: return "Retour à Activité"
+            }
+        }
+
+        /// A secondary page keeps the sidebar on the destination it was opened from.
+        var highlightedSidebarSection: DashboardSection {
+            guard selectedSection.isSecondary else { return selectedSection.sidebarParent }
+            return (secondaryReturn?.section ?? selectedSection.defaultReturnSection).sidebarParent
         }
 
         func refreshEverything() {

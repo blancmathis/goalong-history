@@ -38,14 +38,34 @@
 
         var privacyPage: some View {
             VStack(alignment: .leading, spacing: 22) {
-                Text("Votre activité, sur votre Mac").font(.system(size: 27, weight: .semibold))
-                Text("Tout est proposé. Désactivez ce que vous ne souhaitez pas conserver.").font(.system(size: 14)).foregroundStyle(.secondary)
+                Text("Voyez où va votre temps").font(.system(size: 27, weight: .semibold))
+                Text("Goalong observe l’app au premier plan et calcule, sur ce Mac, ce qui compte pour avancer.")
+                    .font(.system(size: 14)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 12) { benefits }
+                    VStack(alignment: .leading, spacing: 10) { benefits }
+                }
                 LHCard {
                     VStack(spacing: 16) {
-                        Toggle("Enregistrer l’activité de ce Mac", isOn: $localRecordingDraft)
-                            .toggleStyle(.switch).font(.system(size: 15, weight: .semibold))
-                            .accessibilityIdentifier("onboarding-record-local")
+                        HStack(alignment: .center, spacing: 14) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Enregistrer l’activité de ce Mac").font(.system(size: 15, weight: .semibold))
+                                Text("Tout reste sur ce Mac. Aucun envoi, aucune capture d’écran, aucun texte tapé.")
+                                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 12)
+                            Toggle("Enregistrer l’activité de ce Mac", isOn: $localRecordingDraft)
+                                .labelsHidden().toggleStyle(.switch)
+                                .accessibilityIdentifier("onboarding-record-local")
+                        }
                         Divider()
+                        HStack {
+                            Text("Détails enregistrés · tous proposés, modifiables à tout moment")
+                                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                            Spacer()
+                        }
                         GoalongVisibleTextChoice(enabled: $visibleTextDraft)
                         Divider()
                         RecordingChoicesView(draft: $model.settingsDraft)
@@ -60,14 +80,24 @@
             }
         }
 
-        private func scopeInput(_ title: String, text: Binding<String>, applications: Bool = false) -> some View {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(.system(size: 13, weight: .medium))
-                TextEditor(text: text).font(.system(size: 12, design: .monospaced))
-                    .frame(height: 80).padding(6).background(Color.primary.opacity(0.035))
-                    .accessibilityLabel(title)
-                if applications { ApplicationScopePickerButton(text: text) }
+        @ViewBuilder private var benefits: some View {
+            benefit("Temps actif", symbol: "clock", detail: "Heure par heure, jour après jour")
+            benefit("Travail et concentration", symbol: "briefcase", detail: "Vos blocs de travail et vos interruptions")
+            benefit("Apps et sites", symbol: "square.grid.2x2", detail: "Ce qui prend réellement votre temps")
+        }
+
+        private func benefit(_ title: String, symbol: String, detail: String) -> some View {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: symbol).font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(LHTheme.accent).frame(width: 22).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 13, weight: .semibold))
+                    Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
         }
 
         var sourcesPage: some View {

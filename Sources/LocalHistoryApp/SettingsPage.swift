@@ -6,12 +6,10 @@ import AppKit
     @ObservedObject var model: DashboardViewModel
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var updates = SoftwareUpdateManager.shared
-    @StateObject private var launchAtLogin = LaunchAtLoginManager()
     @State private var search = ""
     @State private var showingRetention = false
     @State private var pendingPrivate = false
     @State private var pendingUnredacted = false
-    @State private var startupError: String?
     private var pane: SettingsPane {
         get { model.settingsPane }
         nonmutating set { model.settingsPane = newValue }
@@ -31,10 +29,13 @@ import AppKit
         }
         .id(pane)
         .safeAreaInset(edge: .top, spacing: 0) {
-            if pane != .home { SettingsBackBar { pane = .home } }
+            if pane != .home {
+                SettingsBackBar(title: pane.parent == .home ? "Retour aux réglages" : "Retour à « \(pane.parent.title) »") {
+                    pane = pane.parent
+                }
+            }
         }
         .background(LHTheme.pageBackground)
-        .onAppear { launchAtLogin.refresh() }
         .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet() }
         .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
             Button("Annuler", role: .cancel) {}
@@ -44,39 +45,36 @@ import AppKit
             Button("Annuler", role: .cancel) {}
             Button("Conserver les valeurs") { var next = model.appliedSettings; next.redactAllURLQueryValues = false; _ = model.applyRecordingChoice(next) }
         } message: { Text("Les paramètres peuvent contenir des recherches ou des informations personnelles. Ils seront conservés sur ce Mac lorsque l’enregistrement des adresses est activé.") }
-        .alert("Démarrage non modifié", isPresented: Binding(get: { startupError != nil }, set: { if !$0 { startupError = nil } })) {
-            Button("Fermer", role: .cancel) {}
-        } message: { Text(startupError ?? "") }
     }
     @ViewBuilder private var content: some View {
         switch pane {
         case .home:
-            GoalongDataStatus(model: model)
             TextField("Rechercher un réglage…", text: $search).textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Rechercher un réglage")
+            // While searching, results come first; the three main cards return afterwards.
+            if search.isEmpty { GoalongDataStatus(model: model) }
             LHCard(padding: 0) {
                 VStack(spacing: 0) {
                     ForEach(visiblePanes, id: \.self) { item in
                         GoalongSettingsLink(title: item.title, value: summary(item), symbol: item.symbol) { pane = item }
+                            .accessibilityIdentifier("settings-\(item.identifier)")
                         if item != visiblePanes.last { Divider().padding(.leading, 64) }
                     }
-                    if visiblePanes.isEmpty { Text("Aucun résultat").foregroundStyle(.secondary).padding(20) }
+                    if visiblePanes.isEmpty && !SettingsPane.matchesStartup(search) {
+                        Text("Aucun résultat").foregroundStyle(.secondary).padding(20)
+                    }
                 }
             }
+            if search.isEmpty || SettingsPane.matchesStartup(search) { BackgroundContinuitySettings() }
             if search.isEmpty {
-                BackgroundContinuitySettings()
                 GoalongDisclosureGroup("Confidentialité · tout suspendre") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une pause détente, utilisez « Faire une pause » dans la barre latérale : l’historique continue.")
+                        Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Surveillance temps réel : l’historique continue.")
                             .font(.callout).foregroundStyle(.secondary)
                         GoalongGlobalPauseControl(model: model)
                     }.padding(.top, 12)
                 }.accessibilityIdentifier("settings-privacy-stop")
                 VStack(alignment: .leading, spacing: 14) {
-                    GoalongSettingsLink(title: "Avancé", value: "Outils et diagnostics", symbol: "slider.horizontal.3") { pane = .advanced }
-                        .accessibilityIdentifier("settings-advanced")
-                        .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(LHTheme.separator))
                     GoalongUpdateStatusRow()
                     HStack(spacing: 6) {
                         Image(systemName: "stethoscope").foregroundStyle(.secondary)
@@ -90,14 +88,17 @@ import AppKit
         case .recording:
             GoalongRecordingCoverageNotice(model: model)
             GoalongSettingsGroup(title: "Sur ce Mac") {
-                SourceActivationToggle(capability: .localComputerHistory) { Text("Enregistrer mon activité").font(.system(size: 14, weight: .medium)) }
-                Text("Enregistrer n’autorise aucun envoi.").font(.system(size: 12)).foregroundStyle(.secondary)
-                Toggle("Ouvrir Goalong à la connexion", isOn: Binding(
-                    get: { consents.isEnabled(.launchAtLogin) }, set: { saveStartup($0) }))
-                    .toggleStyle(.switch)
+                SourceActivationToggle(capability: .localComputerHistory) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Enregistrer mon activité").font(.system(size: 14, weight: .medium))
+                        Text("Reste sur ce Mac : enregistrer n’autorise aucun envoi. Le démarrage à l’ouverture de session se règle sur l’accueil des Réglages.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
             GoalongSettingsGroup(title: "Suivi du temps d’écran") {
-                Text("Lire, réfléchir ou regarder sans cliquer compte aussi. Seule la fenêtre au premier plan est suivie ; les apps en arrière-plan ne s’ajoutent pas au total.")
+                Text("Lire, réfléchir ou regarder sans cliquer compte aussi. Seule la fenêtre au premier plan est suivie.")
                     .font(.callout).foregroundStyle(.secondary)
                 Picker("Sans interaction, continuer à compter", selection: recording.foregroundIdleSeconds) {
                     Text("2 minutes").tag(120)
@@ -111,14 +112,12 @@ import AppKit
                             .tag(model.appliedSettings.foregroundIdleSeconds)
                     }
                 }.accessibilityIdentifier("settings-foreground-idle-limit")
-                Text("Les appels et lectures vidéo détectés au premier plan continuent au-delà de ce délai. Le verrouillage, la veille et l’arrêt de confidentialité interrompent toujours le suivi.")
+                Text("Le délai repart à chaque interaction ; augmentez-le pour de longues lectures. Appels et vidéos au premier plan continuent au-delà. Verrouillage, veille et arrêt de confidentialité interrompent toujours le suivi.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if model.appliedSettings.foregroundIdleSeconds == 0 {
                     Label("Ce mode peut compter votre absence si vous laissez une fenêtre visible et le Mac déverrouillé.", systemImage: "exclamationmark.triangle")
-                        .font(.callout).foregroundStyle(.secondary)
-                } else {
-                    Text("Le délai repart après une interaction. Pour une longue lecture immobile, augmentez-le. Une fenêtre ouverte ne permet pas de savoir avec certitude si vous êtes encore devant l’écran.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.callout).foregroundStyle(LHTheme.warning)
                 }
             }
             GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording) }
@@ -206,24 +205,27 @@ import AppKit
         case .chatGPT: return "Données et personnalisation"
         case .permissions: return "Selon vos fonctions"
         case .storage: return "Conservation et effacement"
+        case .advanced: return "Outils et diagnostics"
         default: return ""
         }
-    }
-    private func saveStartup(_ enabled: Bool) {
-        guard launchAtLogin.setUserPreference(enabled, surface: .settings) else {
-            startupError = launchAtLogin.message ?? "Le réglage n’a pas pu être enregistré."
-            return
-        }
-        if enabled && launchAtLogin.requiresApproval { launchAtLogin.openLoginItemsSettings() }
     }
 }
 
 enum SettingsPane: Hashable {
     case home, recording, applications, connections, website, chatGPT, permissions, storage, advanced, tools
     static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .permissions, .storage]
+    /// Start at login and background running live on the Settings home, not in a pane.
+    static func matchesStartup(_ raw: String) -> Bool {
+        let keywords = "démarrage démarrer ouverture session connexion login arrière-plan fermer quitter"
+        let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return false }
+        if keywords.localizedStandardContains(query) { return true }
+        // "ouverture de session": any meaningful word of the query is enough.
+        return query.split(whereSeparator: \.isWhitespace).contains { $0.count >= 4 && keywords.localizedStandardContains(String($0)) }
+    }
     static func matches(_ raw: String) -> [Self] {
         let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty { return [.applications, .permissions, .storage] }
+        if query.isEmpty { return [.applications, .permissions, .storage, .advanced] }
         return (primary + [.advanced, .tools]).filter { ($0.title + " " + $0.keywords).localizedStandardContains(query) }
     }
     var title: String {
@@ -240,7 +242,23 @@ enum SettingsPane: Hashable {
         case .tools: return "Outils de partage"
         }
     }
-    var subtitle: String { "" }
+    /// Stable accessibility identifier of the pane's entry on the Settings home.
+    var identifier: String {
+        switch self {
+        case .home: return "home"
+        case .recording: return "recording"
+        case .applications: return "applications"
+        case .connections: return "connections"
+        case .website: return "website"
+        case .chatGPT: return "chatGPT"
+        case .permissions: return "permissions"
+        case .storage: return "storage"
+        case .advanced: return "advanced"
+        case .tools: return "tools"
+        }
+    }
+    /// Tools are opened from Avancé; every other pane from the Settings home.
+    var parent: SettingsPane { self == .tools ? .advanced : .home }
     var symbol: String {
         switch self {
         case .recording: return "record.circle"
@@ -255,7 +273,7 @@ enum SettingsPane: Hashable {
     }
     var keywords: String {
         switch self {
-        case .recording: return "arrêter pause clavier clic souris texte activité sources démarrage temps écran lecture vidéo réunion zoom inactivité présence"
+        case .recording: return "arrêter pause clavier clic souris texte activité sources temps écran lecture vidéo réunion zoom inactivité présence"
         case .applications: return "ignorer exclure exclusions masquer application navigateur domaine"
         case .connections: return "connexions"
         case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"

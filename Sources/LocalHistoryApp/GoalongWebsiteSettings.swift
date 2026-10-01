@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import LocalHistoryQueryCLI
 
 @MainActor struct GoalongWebsiteSettings: View {
     @ObservedObject var model: DashboardViewModel
@@ -20,7 +21,7 @@ import SwiftUI
                 }
                 if let plan = sender.savedConfiguration {
                     Divider()
-                    Text("\(plan.options.deviceIDs.count) appareils · \(plan.options.selectedApplicationIDs?.count ?? 0) applications · \(plan.options.selectedWebsiteDomains?.count ?? 0) sites")
+                    Text(Self.planSummary(plan.options))
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     if let hour = plan.hour {
                         Text(String(format: "Horaire : %02d:%02d · %@", hour, plan.minute ?? 0, plan.timeZoneIdentifier ?? ""))
@@ -38,6 +39,19 @@ import SwiftUI
             }
         }
         .sheet(item: $presentation) { request in GoalongWebsiteSharingSheet(initialDay: request.day).id(request.id) }
+    }
+
+    /// A nil selection means "no filter" (every app or site), never zero.
+    static func planSummary(_ options: GoalongSiteExportOptions) -> String {
+        func count(_ value: Int, _ singular: String, _ plural: String) -> String {
+            "\(value) \(value > 1 ? plural : singular)"
+        }
+        let devices = options.deviceIDs.isEmpty ? "tous les appareils" : count(options.deviceIDs.count, "appareil", "appareils")
+        let apps = !options.includeApplications ? "sans applications"
+            : options.selectedApplicationIDs.map { count($0.count, "application", "applications") } ?? "toutes les applications"
+        let sites = !options.includeWebsites ? "sans sites"
+            : options.selectedWebsiteDomains.map { count($0.count, "site", "sites") } ?? "tous les sites"
+        return [devices, apps, sites].joined(separator: " · ")
     }
 }
 #endif

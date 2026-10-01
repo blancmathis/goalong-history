@@ -153,7 +153,7 @@
                                 analyzeSelectedDay: true
                             )
                         } label: {
-                            Label(agents.isScanning ? "Scanning…" : "Analyser maintenant", systemImage: "arrow.clockwise")
+                            Label(agents.isScanning ? "Analyse…" : "Analyser maintenant", systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(.bordered)
                         .disabled(agents.isScanning)
@@ -180,21 +180,18 @@
                             LHTheme.accent.opacity(0.1),
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                         )
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(consents.isEnabled(.aiConversations) ? "Lecture des conversations locales activée" : "Lecture des conversations locales désactivée")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(
-                            "Goalong reads only sources you authorize, directly at their original location. It keeps a bounded metadata index and never stores a second copy of transcript bodies."
-                        )
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    SourceActivationToggle(capability: .aiConversations) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(consents.isEnabled(.aiConversations) ? "Lecture des conversations locales activée" : "Lecture des conversations locales désactivée")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(
+                                "Goalong lit seulement les sources que vous autorisez, à leur emplacement d’origine. Il garde un index léger de métadonnées et ne copie jamais le contenu des conversations."
+                            )
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                    Spacer(minLength: 14)
-                    SourceActivationToggle(capability: .aiConversations) { Text("aiConversations") }
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .accessibilityLabel("Lire les conversations IA locales")
                 }
             }
         }
@@ -245,10 +242,10 @@
                     }
                     Spacer()
                     if availableProviders.count > 1 {
-                        Picker("Provider", selection: $providerFilter) {
+                        Picker("Outil", selection: $providerFilter) {
                             Text("Tous les outils").tag(nil as AgentProvider?)
                             ForEach(availableProviders) { provider in
-                                Text(provider.displayName).tag(provider as AgentProvider?)
+                                Text(provider.frenchName).tag(provider as AgentProvider?)
                             }
                         }
                         .labelsHidden()
@@ -348,7 +345,7 @@
                 Spacer(minLength: 16)
 
                 if record.availability != .available {
-                    Label(record.availability.displayName, systemImage: statusSymbol(record.availability))
+                    Label(record.availability.frenchName, systemImage: statusSymbol(record.availability))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)
                 } else if !record.projectionIsComplete {
@@ -381,28 +378,28 @@
                 count + AgentConversationListPresentation.visibleMessageCounts(for: record).replies
             }
             var parts = [
-                "\(prompts) prompt\(prompts == 1 ? "" : "s")",
-                "\(replies) final repl\(replies == 1 ? "y" : "ies")",
+                "\(prompts) demande\(prompts > 1 ? "s" : "")",
+                "\(replies) réponse\(replies > 1 ? "s" : "") finale\(replies > 1 ? "s" : "")",
             ]
-            parts.append(contentsOf: availableProviders.map(\.displayName))
+            parts.append(contentsOf: availableProviders.map(\.frenchName))
             return parts.joined(separator: " · ")
         }
 
         private func conversationTitle(_ record: AgentCaptureRecord) -> String {
             let title = record.summary.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return title.isEmpty ? "\(record.provider.displayName) conversation" : title
+            return title.isEmpty ? "Conversation \(record.provider.frenchName)" : title
         }
 
         private func conversationDetail(_ record: AgentCaptureRecord) -> String {
             guard record.availability == .available else {
-                return record.provider.displayName
+                return record.provider.frenchName
             }
             let counts = AgentConversationListPresentation.visibleMessageCounts(for: record)
             guard counts.prompts + counts.replies > 0 else {
-                return record.provider.displayName
+                return record.provider.frenchName
             }
             return
-                "\(record.provider.displayName) · \(counts.prompts) prompt\(counts.prompts == 1 ? "" : "s") · \(counts.replies) repl\(counts.replies == 1 ? "y" : "ies")"
+                "\(record.provider.frenchName) · \(counts.prompts) demande\(counts.prompts > 1 ? "s" : "") · \(counts.replies) réponse\(counts.replies > 1 ? "s" : "")"
         }
 
         private static let timeFormatter: DateFormatter = {
@@ -439,7 +436,7 @@
                     .foregroundStyle(LHTheme.privateTint)
                     if agents.lastScanResult.capacityLimitedFolderCount > 0 {
                         Text(
-                            "A source exceeded the lightweight index ceiling; Goalong retained its newest bounded metadata projection without retrying an eviction loop."
+                            "Une source dépasse la taille maximale de l’index léger : Goalong garde ses métadonnées les plus récentes, sans relancer de lecture en boucle."
                         )
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(LHTheme.warning)
@@ -451,7 +448,7 @@
                         .controlSize(.small)
                 }
                 StatusPill(
-                    title: agents.indexIsValid ? "Lightweight index valid" : "Index needs attention",
+                    title: agents.indexIsValid ? "Index léger valide" : "Index à vérifier",
                     symbol: agents.indexIsValid ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
                     tint: agents.indexIsValid ? LHTheme.success : LHTheme.danger
                 )
@@ -467,7 +464,7 @@
         private var metrics: some View {
             HStack(spacing: 12) {
                 MetricCard(
-                    title: "Agent sessions",
+                    title: "Sessions d’agents",
                     value: String(agents.overview.sessionCount),
                     detail: DashboardFormatters.dayTitle.string(from: agents.selectedDay),
                     symbol: "cpu",
@@ -476,23 +473,23 @@
                 MetricCard(
                     title: "Messages",
                     value: String(agents.overview.messageCount),
-                    detail: "User, assistant and system turns",
+                    detail: "Messages utilisateur, assistant et système",
                     symbol: "bubble.left.and.bubble.right.fill",
                     tint: LHTheme.teal
                 )
                 MetricCard(
-                    title: "Tool calls",
+                    title: "Appels d’outils",
                     value: String(agents.overview.toolCallCount),
                     detail: agents.overview.errorCount == 0
                         ? "Aucun message d’erreur observé"
-                        : "\(agents.overview.errorCount) error message(s) observed",
+                        : "\(agents.overview.errorCount) message\(agents.overview.errorCount > 1 ? "s" : "") d’erreur observé\(agents.overview.errorCount > 1 ? "s" : "")",
                     symbol: "wrench.and.screwdriver.fill",
                     tint: agents.overview.errorCount == 0 ? LHTheme.success : LHTheme.warning
                 )
                 MetricCard(
                     title: "Sources indexées",
                     value: String(agents.overview.captures.count),
-                    detail: formatBytes(agents.overview.indexBytes) + " total index",
+                    detail: "Index : " + formatBytes(agents.overview.indexBytes),
                     symbol: "list.bullet.rectangle.fill",
                     tint: LHTheme.privateTint
                 )
@@ -506,7 +503,7 @@
                         sectionHeader(
                             symbol: "point.3.connected.trianglepath.dotted",
                             tint: LHTheme.accent,
-                            title: "Live agent integrations",
+                            title: "Signaux de relance des agents",
                             subtitle:
                                 "Les hooks facultatifs ne font que relancer la détection. Leur contenu est ignoré et jamais ajouté à l’index."
                         )
@@ -557,7 +554,7 @@
                     })
                         ? LHTheme.success : Color.secondary
                 )
-                Button("Detect") {
+                Button("Détecter") {
                     agents.detectCommonSources()
                 }
                 .buttonStyle(.bordered)
@@ -569,22 +566,22 @@
             return HStack(spacing: 12) {
                 providerIcon(kind.provider)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(kind.displayName)
+                    Text(kind.frenchName)
                         .font(.system(size: 11, weight: .semibold))
                     Text(status.configurationPath)
-                        .font(.system(size: 8, design: .monospaced))
+                        .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 Spacer()
                 StatusPill(
-                    title: status.isInstalled ? "Signal de relance installé" : "Periodic discovery",
+                    title: status.isInstalled ? "Signal de relance installé" : "Détection périodique",
                     symbol: status.isInstalled ? "bolt.shield.fill" : "bolt.slash",
                     tint: status.isInstalled ? LHTheme.success : Color.secondary
                 )
                 if status.isInstalled {
-                    Button("Remove") {
+                    Button("Retirer") {
                         agents.uninstallIntegration(kind)
                     }
                     .buttonStyle(.bordered)
@@ -609,7 +606,7 @@
                                 "Une source arrêtée le reste après un redémarrage ; ajoutez-la de nouveau pour l’autoriser. Goalong ne conserve que des références légères."
                         )
                         Spacer()
-                        Button("Detect common folders") {
+                        Button("Détecter les dossiers courants") {
                             agents.detectCommonSources()
                         }
                         .buttonStyle(.bordered)
@@ -650,22 +647,22 @@
                         Text(folder.displayName)
                             .font(.system(size: 11, weight: .semibold))
                             .lineLimit(1)
-                        Text(folder.captureMode.displayName)
-                            .font(.system(size: 8, weight: .semibold))
+                        Text(folder.captureMode.frenchName)
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(providerTint(folder.provider))
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
                             .background(providerTint(folder.provider).opacity(0.10), in: Capsule())
                     }
                     Text(folder.path)
-                        .font(.system(size: 8, design: .monospaced))
+                        .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 Spacer(minLength: 14)
                 Toggle(
-                    "Active",
+                    "Suivre ce dossier",
                     isOn: Binding(
                         get: { folder.isEnabled },
                         set: { agents.setFolderEnabled($0, id: folder.id) }
@@ -711,14 +708,14 @@
                                 "Une entrée d’index par conversation. L’ouvrir ou l’analyser lit directement la source d’origine."
                         )
                         Spacer()
-                        Picker("Provider", selection: $providerFilter) {
+                        Picker("Outil", selection: $providerFilter) {
                             Text("Tous les outils").tag(nil as AgentProvider?)
                             ForEach(AgentProvider.allCases) { provider in
-                                Text(provider.displayName).tag(provider as AgentProvider?)
+                                Text(provider.frenchName).tag(provider as AgentProvider?)
                             }
                         }
                         .frame(width: 165)
-                        TextField("Search sessions, files, models or tools", text: $search)
+                        TextField("Rechercher sessions, fichiers, modèles ou outils", text: $search)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 285)
                     }
@@ -756,8 +753,8 @@
                     Text(record.summary.title ?? URL(fileURLWithPath: record.relativePath).lastPathComponent)
                         .font(.system(size: 11, weight: .semibold))
                         .lineLimit(1)
-                    Text("\(record.provider.displayName) · \(record.watchedFolderName) · \(record.relativePath)")
-                        .font(.system(size: 8))
+                    Text("\(record.provider.frenchName) · \(record.watchedFolderName) · \(record.relativePath)")
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -771,12 +768,12 @@
                 Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(DashboardFormatters.fullTimestamp.string(from: record.sourceModifiedAt ?? record.capturedAt))
-                        .font(.system(size: 8, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
                     HStack(spacing: 5) {
                         compactPill("\(record.summary.messageCount) msg", symbol: "bubble.left")
-                        compactPill("\(record.summary.toolCallCount) tools", symbol: "wrench")
-                        compactPill(record.availability.displayName, symbol: statusSymbol(record.availability))
+                        compactPill("\(record.summary.toolCallCount) outils", symbol: "wrench")
+                        compactPill(record.availability.frenchName, symbol: statusSymbol(record.availability))
                         compactPill(formatBytes(record.byteCount), symbol: "doc")
                     }
                 }
@@ -802,13 +799,13 @@
                             tint: LHTheme.success,
                             title: "Index léger des sources",
                             subtitle:
-                                "Only bounded source metadata is stored in Goalong History’s private Application Support folder."
+                                "Seules des métadonnées limitées sont conservées dans le dossier privé de Goalong History."
                         )
-                        detailLine("Agent Activity total", value: formatBytes(agents.storageBytes))
+                        detailLine("Espace total utilisé", value: formatBytes(agents.storageBytes))
                         detailLine("Fichier d’index", value: formatBytes(agents.overview.indexBytes))
                         detailLine("Octets d’origine lus aujourd’hui", value: formatBytes(agents.overview.sourceBytes))
-                        detailLine("Index structure", value: agents.indexIsValid ? "Valid" : "Invalid")
-                        Button("Open Agent Activity metadata") {
+                        detailLine("Structure de l’index", value: agents.indexIsValid ? "Valide" : "Invalide")
+                        Button("Ouvrir le dossier de l’index") {
                             agents.openRootFolder()
                         }
                         .buttonStyle(.bordered)
@@ -827,10 +824,10 @@
                         )
                         privacyBullet("Le contenu des conversations reste uniquement dans le stockage d’origine de chaque outil.")
                         privacyBullet("Une source modifiée remplace son empreinte précédente au lieu de créer une version.")
-                        privacyBullet("Missing and unreadable originals remain explicit index states.")
+                        privacyBullet("Les originaux absents ou illisibles restent signalés comme tels dans l’index.")
                         privacyBullet("Les hooks réécrivent un petit signal par outil et ignorent leur contenu.")
                         privacyBullet(
-                            "Full discovery is periodic; ordinary checks use the known index and provider metadata."
+                            "La recherche complète des sources est périodique ; les vérifications courantes utilisent l’index connu."
                         )
                     }
                 }
@@ -868,7 +865,7 @@
 
         private func compactPill(_ title: String, symbol: String) -> some View {
             Label(title, systemImage: symbol)
-                .font(.system(size: 8, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -982,19 +979,19 @@
                 }
 
                 Form {
-                    TextField("Display name", text: $draft.displayName)
-                    Picker("Agent provider", selection: $draft.provider) {
+                    TextField("Nom affiché", text: $draft.displayName)
+                    Picker("Outil", selection: $draft.provider) {
                         ForEach(AgentProvider.allCases) { provider in
-                            Text(provider.displayName).tag(provider)
+                            Text(provider.frenchName).tag(provider)
                         }
                     }
-                    Picker("Capture", selection: $draft.captureMode) {
+                    Picker("Lecture", selection: $draft.captureMode) {
                         ForEach(AgentCaptureMode.allCases) { mode in
-                            Text(mode.displayName).tag(mode)
+                            Text(mode.frenchName).tag(mode)
                         }
                     }
                     Toggle("Suivre ce dossier", isOn: $draft.isEnabled)
-                    Toggle("Include subfolders", isOn: $draft.includeSubdirectories)
+                    Toggle("Inclure les sous-dossiers", isOn: $draft.includeSubdirectories)
                 }
                 .formStyle(.grouped)
 

@@ -288,17 +288,15 @@ struct GoalongScreenTimePage: View {
     }
     private var screenTimeConsentCard: some View {
         LHCard {
-            HStack(spacing: 14) {
+            SourceActivationToggle(capability: .appleScreenTime) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(consents.isEnabled(.appleScreenTime) ? "Lecture des données Apple activée" : "Temps d’écran Apple désactivé")
                         .font(.system(size: 14, weight: .semibold))
                     Text(accessRevoked ? "La lecture a été arrêtée car macOS refuse l’accès. Réactivez cette source pour vérifier les autorisations."
                         : "Source facultative. L’accès est expliqué et vérifié avant toute lecture.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 10)
-                SourceActivationToggle(capability: .appleScreenTime) { Text("Temps d’écran Apple") }
-                    .labelsHidden().toggleStyle(.switch).accessibilityLabel("Lire les données Temps d’écran Apple")
             }
         }
     }

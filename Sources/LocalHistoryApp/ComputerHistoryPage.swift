@@ -281,11 +281,11 @@
                 for segment in ordered {
                     let suppressed = segment.session.suppressionReason != nil
                     let context = suppressed
-                        ? "Private or suppressed activity"
+                        ? "Activité privée ou masquée"
                         : segment.session.windowTitle
                             ?? segment.session.host
                             ?? segment.session.category.map(CategoryBadge.prettyCategory)
-                            ?? "No detailed context recorded"
+                            ?? "Aucun contexte détaillé enregistré"
                     if
                         previousAppKey == segment.appKey,
                         let previous = sessionSlices.last,
@@ -354,7 +354,7 @@
             adding value: String,
             isSuppressed: Bool
         ) -> [String] {
-            if isSuppressed { return ["Private or suppressed activity"] }
+            if isSuppressed { return ["Activité privée ou masquée"] }
             var values = existing
             if !values.contains(where: {
                 $0.localizedCaseInsensitiveCompare(value) == .orderedSame
@@ -661,7 +661,7 @@
                     }
                     Spacer(minLength: 12)
                     if needsRetry {
-                        Button(hasRetried ? "Réessayer encore" : "Retry") {
+                        Button(hasRetried ? "Réessayer encore" : "Réessayer") {
                             hasRetried = true
                             model.refresh(day: day, forceRebuild: true)
                         }
@@ -671,7 +671,7 @@
                     }
                 }
                 if let diagnostic = sourceDiagnostic {
-                    GoalongDisclosureGroup("Technical details") {
+                    GoalongDisclosureGroup("Détails techniques") {
                         Text(diagnostic)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -767,7 +767,7 @@
             case .inaccessible:
                 if hasRetried {
                     let nextStep = "Nouvel échec de l’actualisation. Choisissez une autre date ou consultez les détails techniques."
-                    return tenMinuteGroups.isEmpty ? nextStep : nextStep + " Loaded activity remains visible."
+                    return tenMinuteGroups.isEmpty ? nextStep : nextStep + " L’activité déjà chargée reste visible."
                 }
                 return !tenMinuteGroups.isEmpty
                     ? "L’activité chargée précédemment est affichée ci-dessous. Réessayez pour la mettre à jour."
@@ -1063,7 +1063,7 @@
                             .font(.system(size: 13, weight: .semibold))
                         Spacer()
                         Text("30 DERNIERS JOURS · RECHERCHE LOCALE")
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .tracking(0.4)
                             .foregroundStyle(.secondary)
                     }
@@ -1136,7 +1136,7 @@
                         if !answer.hits.isEmpty {
                             Divider()
                             Text("SOURCES")
-                                .font(.system(size: 8, weight: .semibold))
+                                .font(.system(size: 10, weight: .semibold))
                                 .tracking(0.45)
                                 .foregroundStyle(.secondary)
                             ForEach(answer.hits.prefix(8)) { hit in
@@ -1188,7 +1188,7 @@
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 12)
-                    Button("Reveal memory files") {
+                    Button("Afficher les fichiers") {
                         model.revealMemoryFiles(for: day)
                     }
                     .buttonStyle(.bordered)
@@ -1200,7 +1200,7 @@
         private func coverage(_ memory: ComputerHistoryDayMemory) -> some View {
             LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 12) {
                 MetricCard(
-                    title: "EPISODES",
+                    title: "ÉPISODES",
                     value: "\(memory.coverage.episodeCount)",
                     detail: episodeCoverageDetail(memory),
                     symbol: "list.bullet.rectangle.portrait.fill",
@@ -1216,7 +1216,7 @@
                 MetricCard(
                     title: "AVANT / APRÈS",
                     value: semanticPairValue(memory.coverage),
-                    detail: "Interactions with both semantic states",
+                    detail: "Interactions avec état avant et après",
                     symbol: "arrow.left.and.right.square.fill",
                     tint: LHTheme.success
                 )
@@ -1234,16 +1234,16 @@
             guard let retained = memory.coverage.retainedEpisodeCount,
                 retained < memory.coverage.episodeCount
             else {
-                return "Task-shaped chronological work"
+                return "Travail chronologique, par tâche"
             }
-            return "\(retained) representative episodes retained"
+            return "\(retained) épisodes représentatifs conservés"
         }
 
         private func resourceCoverageDetail(_ memory: ComputerHistoryDayMemory) -> String {
             guard let retained = memory.coverage.retainedResourceCount else {
                 return "Fichiers, pages, conversations et tickets"
             }
-            return "\(retained) representative source links retained"
+            return "\(retained) liens sources représentatifs conservés"
         }
 
         private func episodes(_ memory: ComputerHistoryDayMemory) -> some View {
@@ -1252,7 +1252,7 @@
             )
             return VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(
-                    title: "Causal timeline",
+                    title: "Chronologie des actions",
                     subtitle: "Chaque action conservée reste chronologique et sourcée"
                 )
                 if memory.episodes.isEmpty {
@@ -1308,13 +1308,13 @@
                                             Text(
                                                 resource.localPath
                                                     ?? resource.canonicalURI
-                                                    ?? "Locator unavailable"
+                                                    ?? "Emplacement indisponible"
                                             )
-                                            .font(.system(size: 8, design: .monospaced))
+                                            .font(.system(size: 10, design: .monospaced))
                                             .foregroundStyle(.secondary)
                                             .lineLimit(2)
                                             Text(resourceConfidenceLabel(resource))
-                                                .font(.system(size: 8, weight: .medium))
+                                                .font(.system(size: 10, weight: .medium))
                                                 .foregroundStyle(.tertiary)
                                         }
                                         Spacer(minLength: 0)
@@ -1340,7 +1340,7 @@
                 LHCard(padding: 17) {
                     VStack(alignment: .leading, spacing: 12) {
                         SectionTitle(
-                            title: "Suggested skills and automations",
+                            title: "Automatisations suggérées",
                             subtitle: "Seules les séquences d’actions répétées et sourcées apparaissent ici"
                         )
                         ForEach(memory.suggestions) { suggestion in
@@ -1405,7 +1405,7 @@
             LHCard {
                 VStack(spacing: 13) {
                     ProgressView()
-                    Text("Reconstructing causal episodes…")
+                    Text("Reconstitution des épisodes…")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
                         "Goalong relie localement les actions, changements de contenu, ressources, états et provenances."
@@ -1477,7 +1477,7 @@
             _ resource: ComputerHistoryResourceReference
         ) -> String {
             let percentage = Int((resource.locatorConfidence * 100).rounded())
-            return "\(resource.kind.rawValue) · \(percentage)% confidence"
+            return "\(resource.kind.rawValue) · confiance \(percentage)\u{00A0}%"
         }
     }
 
@@ -1526,7 +1526,7 @@
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 12)
-                            Text(expanded ? "Masquer les détails" : "Details")
+                            Text(expanded ? "Masquer les détails" : "Détails")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.secondary)
                             Image(systemName: expanded ? "chevron.up" : "chevron.down")
@@ -1537,7 +1537,7 @@
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(LHNavigationButtonStyle())
-                    .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+                    .accessibilityValue(expanded ? "Développé" : "Replié")
                     .accessibilityLabel(
                         expanded
                             ? "Masquer les détails de \(windowTimeLabel)"
@@ -1577,7 +1577,7 @@
                                                 .font(.system(size: 11, weight: .semibold))
                                             if session.isSuppressed {
                                                 Image(systemName: "eye.slash.fill")
-                                                    .font(.system(size: 8))
+                                                    .font(.system(size: 10))
                                                     .foregroundStyle(LHTheme.privateTint)
                                             }
                                         }
@@ -1624,11 +1624,11 @@
             let names = group.apps.map(\.name)
             switch names.count {
             case 0:
-                return "Recorded activity"
+                return "Activité enregistrée"
             case 1:
                 return names[0]
             case 2:
-                return "\(names[0]) and \(names[1])"
+                return "\(names[0]) et \(names[1])"
             default:
                 return "\(names[0]), \(names[1]) et \(names.count - 2) autres"
             }
@@ -1636,14 +1636,14 @@
 
         private var factSummary: String {
             var facts = [
-                "\(durationLabel(group.activeSeconds)) recorded",
-                "\(group.apps.count) \(group.apps.count == 1 ? "app" : "apps")",
-                "\(group.appChangeCount) app \(group.appChangeCount == 1 ? "switch" : "switches")",
+                "\(durationLabel(group.activeSeconds)) enregistrées",
+                "\(group.apps.count) app\(group.apps.count > 1 ? "s" : "")",
+                "\(group.appChangeCount) changement\(group.appChangeCount > 1 ? "s" : "") d’app",
             ]
             if group.inputEventCount > 0 {
-                facts.append("\(group.inputEventCount.formatted()) inputs")
+                facts.append("\(group.inputEventCount.formatted()) interaction\(group.inputEventCount > 1 ? "s" : "")")
             } else if group.recordedEventCount > 0 {
-                facts.append("\(group.recordedEventCount.formatted()) source events")
+                facts.append("\(group.recordedEventCount.formatted()) événement\(group.recordedEventCount > 1 ? "s" : "")")
             }
             return facts.joined(separator: " · ")
         }
@@ -1667,8 +1667,8 @@
                 "\(DashboardFormatters.shortTime.string(from: session.start))–"
                 + DashboardFormatters.shortTime.string(from: session.end)
             let details = session.sourceSessionCount == 1
-                ? "1 recorded segment"
-                : "\(session.sourceSessionCount) recorded segments"
+                ? "1 segment enregistré"
+                : "\(session.sourceSessionCount) segments enregistrés"
             return "\(interval) · \(durationLabel(session.duration)) · \(details)"
         }
     }
@@ -1750,19 +1750,19 @@
                         }
                         if !episode.observableOutcomes.isEmpty {
                             detailSection(
-                                title: "OBSERVABLE OUTCOMES",
+                                title: "RÉSULTATS OBSERVABLES",
                                 values: episode.observableOutcomes
                             )
                         }
                         VStack(alignment: .leading, spacing: 7) {
-                            Text("ACTION SEQUENCE")
-                                .font(.system(size: 8, weight: .semibold))
+                            Text("SÉQUENCE D’ACTIONS")
+                                .font(.system(size: 10, weight: .semibold))
                                 .tracking(0.45)
                                 .foregroundStyle(.secondary)
                             ForEach(episode.interactions) { interaction in
                                 HStack(alignment: .top, spacing: 9) {
                                     Text(timeFormatter.string(from: interaction.start))
-                                        .font(.system(size: 8, design: .monospaced))
+                                        .font(.system(size: 10, design: .monospaced))
                                         .foregroundStyle(.tertiary)
                                         .frame(width: 56, alignment: .leading)
                                     VStack(alignment: .leading, spacing: 2) {
@@ -1770,11 +1770,11 @@
                                             .font(.system(size: 11, weight: .medium))
                                         if !interaction.semanticDelta.isEmpty {
                                             Text(
-                                                "Change: "
+                                                "Changement : "
                                                     + interaction.semanticDelta.prefix(3)
                                                     .joined(separator: " · ")
                                             )
-                                            .font(.system(size: 8))
+                                            .font(.system(size: 10))
                                             .foregroundStyle(.secondary)
                                             .fixedSize(horizontal: false, vertical: true)
                                         }
@@ -1783,9 +1783,9 @@
                             }
                         }
                         Text(
-                            "Evidence: \(episode.provenance.sourceEventIDs.count) event IDs · \(episode.provenance.sourceSequences.count) integrity sequences · status confidence \(Int((episode.statusConfidence * 100).rounded()))%"
+                            "Preuves : \(episode.provenance.sourceEventIDs.count) identifiants d’événements · \(episode.provenance.sourceSequences.count) séquences d’intégrité · confiance \(Int((episode.statusConfidence * 100).rounded()))\u{00A0}%"
                         )
-                        .font(.system(size: 8))
+                        .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                         HStack {
                             Spacer()
@@ -1807,17 +1807,17 @@
             if episode.totalInteractionCount > episode.interactions.count {
                 interactions =
                     "\(episode.totalInteractionCount) interactions "
-                    + "(\(episode.interactions.count) representative)"
+                    + "(\(episode.interactions.count) représentatives)"
             } else {
                 interactions = "\(episode.totalInteractionCount) interactions"
             }
-            return "\(interval) · \(interactions) · \(episode.eventCount) source events"
+            return "\(interval) · \(interactions) · \(episode.eventCount) événements"
         }
 
         private func detailSection(title: String, values: [String]) -> some View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .tracking(0.45)
                     .foregroundStyle(.secondary)
                 ForEach(values, id: \.self) { value in

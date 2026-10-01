@@ -45,12 +45,13 @@ struct GoalongAnalyticsContent: View {
     var body: some View {
         let summary = self.summary
         let items = usageItems
+        let showsClassification = showsClassificationCard(summary)
         VStack(alignment: .leading, spacing: 20) {
             coverage
             if current.observedSeconds > 0 {
                 metrics(summary)
-                insightsCard(summary, items: items)
-                if !itemsToClassify.isEmpty && summary.unclassifiedShare >= 0.15 { classificationCard(summary) }
+                insightsCard(summary, items: items, showsClassification: showsClassification)
+                if showsClassification { classificationCard(summary) }
                 rhythmCard
                 if !isDay && current.observedDays.count >= 2 { heatmapCard(summary) }
                 usageCard(items)
@@ -193,8 +194,28 @@ struct GoalongAnalyticsContent: View {
 
     // MARK: - Insights and classification
 
-    private func insightsCard(_ summary: GoalongActivitySummary, items: [GoalongActivityUsageItem]) -> some View {
-        let insights = summary.insights(topUsage: items.first, biggestChange: GoalongActivitySummary.biggestChange(items))
+    private func showsClassificationCard(_ summary: GoalongActivitySummary) -> Bool {
+        !itemsToClassify.isEmpty && summary.unclassifiedShare >= 0.15
+    }
+
+    /// "À retenir" only adds what the four tiles and the classification card do not already say.
+    static func additionalInsights(_ insights: [GoalongActivitySummary.Insight], isDay: Bool,
+                                   showsClassification: Bool) -> [GoalongActivitySummary.Insight] {
+        insights.filter { insight in
+            switch insight.id {
+            case "switches", "comparison", "work": return false
+            case "bounds": return !isDay
+            case "classify": return !showsClassification
+            default: return true
+            }
+        }
+    }
+
+    private func insightsCard(_ summary: GoalongActivitySummary, items: [GoalongActivityUsageItem],
+                              showsClassification: Bool) -> some View {
+        let insights = Self.additionalInsights(
+            summary.insights(topUsage: items.first, biggestChange: GoalongActivitySummary.biggestChange(items)),
+            isDay: isDay, showsClassification: showsClassification)
         return Group {
             if !insights.isEmpty {
                 LHCard {
@@ -363,10 +384,6 @@ struct GoalongAnalyticsContent: View {
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 GoalongWeekHourHeatmap(period: current)
-                if let peak = summary.peakWindow {
-                    Text("Créneau le plus actif : \(peak.hour) h – \(peak.hour + peak.length) h, \(duration(peak.averageSeconds)) par jour en moyenne.")
-                        .font(.system(size: 12, weight: .medium))
-                }
             }
         }
     }
@@ -417,7 +434,7 @@ struct GoalongAnalyticsContent: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(card.title).font(.system(size: 13, weight: .medium))
-                            Text("\(card.day) · \(payload.isPreview ? "Exemple fictif · " : "")\(statusLabel(card.status))")
+                            Text("\(cardDay(card.day).map { GoalongUIFormat.day($0) } ?? card.day) · \(payload.isPreview ? "Exemple fictif · " : "")\(statusLabel(card.status))")
                                 .font(.system(size: 11)).foregroundStyle(.secondary)
                         }.padding(.vertical, 4)
                     }
@@ -508,10 +525,17 @@ struct GoalongAnalyticsContent: View {
         }.font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
     }
 
+    /// Today with nothing yet is a day that has not started, not a missing archive.
+    private var isEmptyToday: Bool {
+        isDay && current.eventCount == 0 && current.incompleteDays == 0
+            && current.days.contains { Calendar.current.isDateInToday($0.date) }
+    }
+
     private var emptyState: some View {
         LHCard {
             VStack(alignment: .leading, spacing: 12) {
-                heading(current.incompleteDays > 0 ? "Lecture incomplète" : current.eventCount > 0 ? "Les premières traces sont reçues" : "Pas encore d’enregistrement")
+                heading(current.incompleteDays > 0 ? "Lecture incomplète" : current.eventCount > 0 ? "Les premières traces sont reçues"
+                    : isEmptyToday ? "Pas encore d’activité aujourd’hui" : "Pas encore d’enregistrement")
                 if current.eventCount > 0 {
                     Text("\(current.eventCount) observations reçues").font(.system(size: 15, weight: .medium)).monospacedDigit()
                         .accessibilityIdentifier("analytics-first-observations")
@@ -520,9 +544,13 @@ struct GoalongAnalyticsContent: View {
                     ? "Certaines sources n’ont pas pu être lues. Cela ne signifie pas une absence d’activité."
                     : current.eventCount > 0
                     ? "La durée devient mesurable dès que deux observations d’activité sont assez proches. Aucune minute n’est inventée entre des traces isolées."
+                    : isEmptyToday
+                    ? "Vos durées, vos apps et votre rythme apparaissent ici dès les premières minutes d’utilisation de ce Mac."
                     : "Choisissez une autre date ou consultez les sources dans l’historique. Une absence de données n’est pas une journée à zéro.")
                     .font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Button("Consulter l’historique", action: onHistory).buttonStyle(.bordered).disabled(payload.isPreview)
+                if !isEmptyToday {
+                    Button("Consulter l’historique", action: onHistory).buttonStyle(.bordered).disabled(payload.isPreview)
+                }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
     }

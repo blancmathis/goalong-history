@@ -72,39 +72,31 @@
                 )
             case .screenTime:
                 GoalongScreenTimePage(model: model)
-                    .safeAreaInset(edge: .top, spacing: 0) { activityReturnBar }
+                    .safeAreaInset(edge: .top, spacing: 0) { secondaryReturnBar }
             case .agentActivity:
                 AgentActivityPage(agents: model.agentActivityRuntime)
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        SettingsBackBar { model.selectSection(.settings) }
-                    }
+                    .safeAreaInset(edge: .top, spacing: 0) { secondaryReturnBar }
             case .chatGPTRecap:
                 ChatGPTRecapPage(model: model)
-                    .safeAreaInset(edge: .top, spacing: 0) { activityReturnBar }
+                    .safeAreaInset(edge: .top, spacing: 0) { secondaryReturnBar }
             case .share:
                 SharePage(model: model)
+                    .safeAreaInset(edge: .top, spacing: 0) { secondaryReturnBar }
             case .privacy:
                 PrivacyPage(model: model)
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        SettingsBackBar { model.selectSection(.settings) }
-                    }
+                    .safeAreaInset(edge: .top, spacing: 0) { secondaryReturnBar }
             case .cli:
                 CLIHelpPage {
-                    model.selectSection(.settings)
+                    model.returnFromSecondaryPage()
                 }
             case .settings:
                 SettingsPage(model: model)
             }
         }
 
-        private var activityReturnBar: some View {
-            HStack {
-                Button { model.selectSection(.overview) } label: {
-                    Label("Retour à Activité", systemImage: "chevron.left")
-                }.buttonStyle(.borderless).font(.system(size: 12, weight: .medium))
-                Spacer()
-            }.padding(.horizontal, LHTheme.pageInset).padding(.vertical, 10)
-                .background(LHTheme.pageBackground)
+        /// Returns to the page (and Settings pane) the secondary page was opened from.
+        private var secondaryReturnBar: some View {
+            SettingsBackBar(title: model.secondaryReturnTitle) { model.returnFromSecondaryPage() }
         }
     }
 
@@ -112,6 +104,7 @@
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var updates = SoftwareUpdateManager.shared
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+        @ObservedObject private var monitor = JevMonitor.shared
 
         private let primarySections = DashboardSection.primarySections
 
@@ -137,8 +130,11 @@
 
                 Spacer(minLength: 20)
 
-                JevQuickPauseControl()
-                    .padding(.horizontal, 16).padding(.bottom, 12)
+                // Reminder breaks only mean something once real-time monitoring is on.
+                if consents.isEnabled(.jevMonitoring) || monitor.timedBreak != nil {
+                    JevQuickPauseControl()
+                        .padding(.horizontal, 16).padding(.bottom, 12)
+                }
 
                 statusRow
                     .padding(.horizontal, 10)
@@ -183,14 +179,14 @@
                 navigationLabel(
                     title: section.simpleTitle,
                     symbol: section == .overview ? "chart.bar.xaxis" : section.symbol,
-                    selected: model.selectedSection.sidebarParent == section,
+                    selected: model.highlightedSidebarSection == section,
                     wraps: section == .monitoring
                 )
             }
-            .buttonStyle(LHNavigationButtonStyle(selected: model.selectedSection.sidebarParent == section))
+            .buttonStyle(LHNavigationButtonStyle(selected: model.highlightedSidebarSection == section))
             .accessibilityIdentifier("sidebar-\(section.rawValue)")
             .accessibilityLabel(section.simpleTitle)
-            .accessibilityAddTraits(model.selectedSection.sidebarParent == section ? .isSelected : [])
+            .accessibilityAddTraits(model.highlightedSidebarSection == section ? .isSelected : [])
         }
 
         private func navigationLabel(
@@ -286,9 +282,6 @@
 
         private var footer: some View {
             HStack {
-                Text("Historique")
-                    .help(ProductIdentity.displayName)
-                Spacer()
                 Button {
                     updates.checkForUpdates()
                 } label: {
@@ -296,7 +289,7 @@
                         ProgressView()
                             .controlSize(.mini)
                     } else {
-                        Text(Self.version)
+                        Text("Version \(Self.version.dropFirst())")
                     }
                 }
                 .buttonStyle(.plain)
@@ -306,6 +299,7 @@
                         ? "Rechercher les mises à jour"
                         : "Mises à jour désactivées dans cette version compilée localement"
                 )
+                Spacer()
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(LHTheme.secondaryText)

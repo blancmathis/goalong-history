@@ -63,17 +63,18 @@
     }
 
     struct SettingsBackBar: View {
+        var title = "Retour aux réglages"
         let onBack: () -> Void
 
         var body: some View {
             HStack {
                 Button(action: onBack) {
-                    Label("Retour aux réglages", systemImage: "chevron.left")
+                    Label(title, systemImage: "chevron.left")
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.regular)
                 .keyboardShortcut("[", modifiers: .command)
-                .accessibilityHint("Revenir à la liste des réglages")
+                .accessibilityHint("Revenir à la page précédente")
                 .accessibilityIdentifier("settings-back")
                 Spacer()
             }
@@ -81,7 +82,9 @@
             .padding(.horizontal, LHTheme.pageInset)
             .padding(.vertical, 12)
             .background(LHTheme.pageBackground)
-            .overlay(alignment: .bottom) { Divider().opacity(0.5) }
+            // An explicit rule: a Divider in an overlay inherits the root HStack's axis
+            // and was drawn as a vertical line across the bar.
+            .overlay(alignment: .bottom) { Rectangle().fill(LHTheme.separator).frame(height: 1).opacity(0.5) }
         }
     }
 
@@ -318,14 +321,14 @@
                     calendarDate = date
                     showsCalendar.toggle()
                 } label: {
-                    Text(date.formatted(.dateTime.day().month(.abbreviated).year()))
+                    Text(date.formatted(.dateTime.day().month(.abbreviated).year().locale(GoalongUIFormat.locale)))
                         .font(.system(size: 13, weight: .medium))
                         .fixedSize()
                         .padding(.horizontal, 4)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Choisir un jour")
-                .accessibilityValue(date.formatted(date: .complete, time: .omitted))
+                .accessibilityValue(date.formatted(.dateTime.weekday(.wide).day().month(.wide).year().locale(GoalongUIFormat.locale)))
                 .help("Choisir un jour dans le calendrier")
                 .popover(isPresented: $showsCalendar, arrowEdge: .bottom) {
                     VStack(alignment: .trailing, spacing: 12) {
@@ -551,6 +554,7 @@
     enum DashboardFormatters {
         static let dayTitle: DateFormatter = {
             let formatter = DateFormatter()
+            formatter.locale = GoalongUIFormat.locale
             formatter.setLocalizedDateFormatFromTemplate("EEEEMMMMd")
             return formatter
         }()
@@ -563,6 +567,7 @@
 
         static let fullTimestamp: DateFormatter = {
             let formatter = DateFormatter()
+            formatter.locale = GoalongUIFormat.locale
             formatter.dateStyle = .medium
             formatter.timeStyle = .medium
             return formatter

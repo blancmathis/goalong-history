@@ -93,7 +93,7 @@ struct JevActivationAvailability: Equatable {
                     .font(.system(size: 13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("jev-status")
-                Text("Observation locale rafraîchie toutes les 5 s ; une analyse des 15 dernières secondes, toutes les 15 s avec activité. Un rappel dès la première détection fiable. Fermer masque seulement le rappel, pas les effets. Pause et arrêt de la surveillance se font ici ; les effets sont configurables ci-dessous.")
+                Text("Pendant votre activité, Goalong vérifie toutes les 15 secondes si vous restez sur vos projets et affiche un rappel dès qu’une distraction est détectée de façon fiable. Pauses, arrêt et effets se règlent sur cette page.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Divider()

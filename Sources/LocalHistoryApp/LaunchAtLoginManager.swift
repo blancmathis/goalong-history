@@ -36,13 +36,13 @@
         var statusTitle: String {
             switch state {
             case .enabled:
-                return "Starts automatically"
+                return "Démarre automatiquement"
             case .requiresApproval:
                 return "Autorisation requise"
             case .disabled:
                 return "Démarre seulement à l’ouverture"
             case .unavailable:
-                return "Status unavailable"
+                return "État indisponible"
             }
         }
 

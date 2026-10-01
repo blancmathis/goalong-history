@@ -27,17 +27,17 @@ enum AgentConversationSourceHealth: Equatable {
 
     var title: String {
         switch self {
-        case .ready: return "Original sources available"
-        case .invalidIndex: return "The conversation index could not be read"
-        case .readFailures: return "Some conversation sources could not be read"
-        case .analysisPending: return "Conversation analysis is not finished"
-        case .capacityLimited: return "Recent conversations are shown first"
+        case .ready: return "Sources d’origine disponibles"
+        case .invalidIndex: return "L’index des conversations est illisible"
+        case .readFailures: return "Certaines sources de conversations sont illisibles"
+        case .analysisPending: return "Analyse des conversations en cours"
+        case .capacityLimited: return "Les conversations récentes sont affichées en priorité"
         }
     }
 
     var message: String {
         switch self {
-        case .ready: return "Error messages inside conversations do not indicate a source-access failure."
+        case .ready: return "Les messages d’erreur contenus dans une conversation ne signifient pas que la source est inaccessible."
         case .invalidIndex:
             return "Réessayez pour vérifier l’index local, ou vérifiez vos dossiers autorisés. Les conversations d’origine n’ont pas été modifiées."
         case .readFailures(let count):

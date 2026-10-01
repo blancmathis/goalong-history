@@ -41,6 +41,22 @@
             )
         }
 
+        func testViewMenuNavigatesToEachPrimaryDestinationWithCommandDigits() throws {
+            var opened: [DashboardSection] = []
+            let controller = ApplicationMenuController(
+                onOpenSettings: {}, onNavigate: { opened.append($0) },
+                onCheckForUpdates: {}, canCheckForUpdates: { true }, onQuit: {}
+            )
+            let view = try XCTUnwrap(controller.mainMenu.items.first { $0.submenu?.title == "Présentation" }?.submenu)
+            let entries = view.items.filter { $0.representedObject is String }
+            XCTAssertEqual(entries.map(\.title), ["Activité", "Historique", "Surveillance temps réel"])
+            XCTAssertEqual(entries.map(\.keyEquivalent), ["1", "2", "3"])
+            for entry in entries {
+                _ = (entry.target as? NSObject)?.perform(entry.action, with: entry)
+            }
+            XCTAssertEqual(opened, [.overview, .history, .monitoring])
+        }
+
         func testUpdateItemTracksWhetherTheInstalledBuildCanCheck() throws {
             var canCheck = false
             let controller = ApplicationMenuController(

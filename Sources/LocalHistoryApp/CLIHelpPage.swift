@@ -30,7 +30,7 @@
                 VStack(alignment: .leading, spacing: 18) {
                     PageHeader(
                         eyebrow: "Accès pour les agents",
-                        title: "Goalong CLI",
+                        title: "Commande goalong",
                         subtitle:
                             "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre. Données et erreurs en JSON ; aide en texte."
                     ) {
@@ -103,7 +103,7 @@
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center, spacing: 24) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Give Goalong to an agent")
+                            Text("Donner Goalong à un agent")
                                 .font(.title3.weight(.bold))
                             Text(
                                 "Copiez une consigne complète (commandes, traitement sûr des données, pagination, provenance, données manquantes) et collez-la telle quelle dans votre agent."
@@ -122,7 +122,7 @@
                         .accessibilityHint("Copie toutes les instructions de la commande goalong pour un agent local")
                     }
 
-                    GoalongDisclosureGroup("Preview agent instructions", isExpanded: $showsInstructionPreview) {
+                    GoalongDisclosureGroup("Aperçu des instructions (en anglais, pour l’agent)", isExpanded: $showsInstructionPreview) {
                         Text(Self.agentInstructions)
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
@@ -161,9 +161,9 @@
         private func commandRow(_ item: GoalongCLIQuickStartCommand) -> some View {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.title)
+                    Text(Self.frenchTitle(item))
                         .font(.system(size: 12, weight: .semibold))
-                    Text(item.detail)
+                    Text(Self.frenchDetail(item))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -183,8 +183,8 @@
                     Image(systemName: copiedCommandID == item.id ? "checkmark" : "doc.on.doc")
                 }
                 .buttonStyle(.borderless)
-                .help("Copy \(item.title)")
-                .accessibilityLabel("Copy command: \(item.title)")
+                .help("Copier « \(item.command) »")
+                .accessibilityLabel("Copier la commande : \(Self.frenchTitle(item))")
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 13)
@@ -240,25 +240,25 @@
 
         private var statusTitle: String {
             switch installationReport.state {
-            case .ready: return "CLI ready"
-            case .missing: return "CLI missing"
-            case .conflict: return "CLI conflict"
+            case .ready: return "Commande prête"
+            case .missing: return "Commande absente"
+            case .conflict: return "Conflit de commande"
             }
         }
 
         private var readinessTitle: String {
             switch installationReport.state {
-            case .ready: return "Verified for Terminal"
-            case .missing: return "The command link is missing"
-            case .conflict: return "The command link is not trusted"
+            case .ready: return "Vérifiée pour le Terminal"
+            case .missing: return "Le lien de la commande est absent"
+            case .conflict: return "Le lien de la commande n’est pas fiable"
             }
         }
 
         private var copyButtonTitle: String {
             switch copyState {
-            case .idle: return "Copy agent instructions"
-            case .copied: return "Instructions copied"
-            case .failed: return "Copy failed"
+            case .idle: return "Copier les instructions"
+            case .copied: return "Instructions copiées"
+            case .failed: return "Copie impossible"
             }
         }
 
@@ -273,7 +273,7 @@
         private func copyAgentInstructions() {
             if GoalongClipboardWriter.copy(Self.agentInstructions) {
                 copyState = .copied
-                announce("Goalong agent instructions copied")
+                announce("Instructions pour l’agent copiées")
             } else {
                 copyState = .failed
                 announce("Les instructions pour l’agent n’ont pas pu être copiées")
@@ -283,10 +283,31 @@
         private func copyQuickCommand(_ item: GoalongCLIQuickStartCommand) {
             if GoalongClipboardWriter.copy(item.command) {
                 copiedCommandID = item.id
-                announce("Command copied: \(item.title)")
+                announce("Commande copiée : \(Self.frenchTitle(item))")
             } else {
                 copiedCommandID = nil
                 announce("La commande n’a pas pu être copiée")
+            }
+        }
+
+        /// The CLI's own help stays in English for agents; the French page describes it.
+        static func frenchTitle(_ item: GoalongCLIQuickStartCommand) -> String {
+            switch item.command {
+            case "goalong status": return "Vérifier chaque source"
+            case "goalong days": return "Trouver les jours disponibles"
+            case "goalong help": return "Consulter les commandes exactes"
+            default: return item.command.hasPrefix("goalong ask") ? "Poser une question sur votre journée" : item.title
+            }
+        }
+
+        static func frenchDetail(_ item: GoalongCLIQuickStartCommand) -> String {
+            switch item.command {
+            case "goalong status": return "Accord, fraîcheur, couverture et erreurs, sans ouvrir le contenu des conversations."
+            case "goalong days": return "Liste les dates auxquelles Goalong peut répondre avec les données locales."
+            case "goalong help": return "Aide lisible ; ajoutez --json quand un agent a besoin du contrat des commandes."
+            default:
+                return item.command.hasPrefix("goalong ask")
+                    ? "Goalong choisit le plus petit ensemble de données locales utiles." : item.detail
             }
         }
 

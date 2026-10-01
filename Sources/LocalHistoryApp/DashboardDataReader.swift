@@ -2604,11 +2604,11 @@
 
         private static func systemLabel(for event: HistoryEvent) -> String {
             switch event.kind {
-            case .recordingPaused, .recordingResumed: return "Recording control"
-            case .permissionStatus: return "Permissions"
-            case .sessionLocked, .sessionUnlocked: return "Mac session"
-            case .systemSleep, .systemWake: return "Mac power"
-            case .historyCleared: return "Local data"
+            case .recordingPaused, .recordingResumed: return "Contrôle de l’enregistrement"
+            case .permissionStatus: return "Autorisations"
+            case .sessionLocked, .sessionUnlocked: return "Session du Mac"
+            case .systemSleep, .systemWake: return "Veille du Mac"
+            case .historyCleared: return "Données locales"
             default: return "Goalong History"
             }
         }

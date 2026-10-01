@@ -82,7 +82,7 @@ final class GoalongSiteAnalysisModel: ObservableObject {
                         self.operationID == id && self.consent()
                             && GoalongWorkspaceOpenPolicy.open(login.authorizationURL, purpose: .accountAuthorization)
                     }
-                    guard opened else { throw CodexAppServerError.loginFailed("The official login page could not be opened.") }
+                    guard opened else { throw CodexAppServerError.loginFailed("La page de connexion officielle n’a pas pu être ouverte.") }
                     account = try session.waitForChatGPTLogin(loginID: login.loginID)
                 }
                 guard let account, account.isManagedChatGPT else {
@@ -155,7 +155,7 @@ final class GoalongSiteAnalysisModel: ObservableObject {
 
     func reviewedExport() throws -> Data {
         guard !busy, hasDraft, let request else {
-            throw CodexAppServerError.generationFailed("No complete draft is ready to export.")
+            throw CodexAppServerError.generationFailed("Aucun brouillon complet n’est prêt à être exporté.")
         }
         let draft = try GoalongSiteAnalysisDraft(
             title: title, summary: summary,

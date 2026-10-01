@@ -30,19 +30,15 @@ conservés.
 
 ## L’assistant de première ouverture
 
-Le premier lancement est volontairement progressif. Il présente sept étapes :
+Le premier lancement tient en trois étapes :
 
-1. **Bienvenue** — ce que Goalong History apporte concrètement ;
-2. **Confidentialité** — ce qui est enregistré et ce qui ne le sera jamais ;
-3. **Computer History** — choix explicite, désactivé par défaut ;
-4. **Accessibilité et Surveillance de l’entrée** — demandées seulement si Computer History a été choisi ;
-5. **Screen Time Apple** — choix distinct, désactivé par défaut ;
-6. **Conversations IA** — lecture directe optionnelle, désactivée par défaut ;
-7. **Vérification finale** — état des autorisations et choix explicite du lancement à la connexion.
+1. **Vos données** — ce que Goalong vous montre (temps actif, travail et concentration, apps et sites), puis l’enregistrement de ce Mac et le détail de ce qui est conservé. Tout est proposé et modifiable ; aucun envoi n’est autorisé ici ;
+2. **Vos sources** — l’historique de ce Mac, puis, séparément et désactivés par défaut, le Temps d’écran Apple et les conversations IA locales ;
+3. **Prêt** — le récapitulatif de vos sources et le choix explicite d’ouvrir Goalong à l’ouverture de session.
 
-Chaque demande d’autorisation est faite séparément, au moment où son intérêt vient d’être expliqué. L’état se met à jour en direct et un bouton ouvre directement le bon écran des Réglages Système.
+Chaque autorisation macOS est demandée séparément, au moment où son intérêt vient d’être expliqué. L’état se met à jour en direct et un bouton ouvre directement le bon écran des Réglages Système.
 
-Vous pouvez choisir **Configurer plus tard**. Goalong History ouvrira alors son espace Confidentialité et fonctionnera avec des informations plus limitées tant que les autorisations ne sont pas accordées.
+Vous pouvez revoir cet assistant à tout moment depuis **Réglages → Avancé → Revoir le démarrage**.
 
 ## Autorisation Accessibilité
 
@@ -126,27 +122,25 @@ Aucun LaunchAgent caché n’est installé par la nouvelle version.
 L’icône de barre des menus permet de :
 
 - vérifier si l’enregistrement est actif ;
-- mettre en pause ou reprendre ;
-- ouvrir le tableau de bord ;
-- accéder au partage sélectif ;
-- consulter les diagnostics ;
+- mettre en pause ou reprendre, ou tout suspendre pour confidentialité ;
+- ouvrir Goalong ;
+- mettre en pause la surveillance temps réel si vous l’utilisez ;
+- signaler un problème ;
 - quitter l’application.
 
-Le tableau de bord garde trois destinations principales : **Today**, **History**
-et **Settings**. **Today** réunit Screen Time et l’activité Goalong de la journée.
-**History** permet d’ouvrir une date puis de filtrer Computer History, Screen Time
-et Conversations IA. **Settings** regroupe la connexion ChatGPT, les sources,
-les autorisations, la confidentialité et les réglages experts. Les historiques
-IA configurés sont lus directement à leur emplacement d’origine sans seconde
-copie des transcriptions. L’analyse quotidienne optionnelle combine ces sources
-dans un rapport de cinq lignes via le compte ChatGPT connecté.
+La fenêtre principale compte quatre rubriques (raccourcis ⌘1, ⌘2, ⌘3 et ⌘,) :
 
-Dans **Activité → Apps & sites**, toutes les applications et tous les sites observés sont listés avec leur temps estimé au premier plan et leurs minutes d’entrée active. Le temps au premier plan est volontairement prudent : Goalong History n’invente jamais plus de 75 secondes entre deux observations.
+- **Activité** — votre journée, vos 7 ou 28 derniers jours : temps actif, travail, concentration, changements d’app, rythme heure par heure, apps et sites. Si rien n’est enregistré (désactivé, en pause, autorisation à rétablir), la page le dit en tête avec le bouton utile ;
+- **Historique** — la chronologie d’une date, par source : ce Mac, Temps d’écran Apple et conversations locales ;
+- **Surveillance temps réel** — facultative, avec ses rappels, ses pauses et ses effets ;
+- **Réglages** — enregistrement, envoi à Goalong, analyse ChatGPT, apps et sites, autorisations macOS, stockage et options avancées.
 
-Pour chaque application ou site, choisissez la règle utilisée lors d’un partage :
+Pour mesurer votre travail, classez vos principaux usages en **Travail** ou **Hors travail** directement depuis Activité : le choix s’applique à tout l’historique et reste modifiable dans **Réglages → Apps et sites**. Le temps au premier plan est volontairement prudent : Goalong n’invente jamais de minutes entre deux observations éloignées.
+
+Pour chaque application ou site, la règle utilisée lors d’un export signé reste au choix :
 
 - **Afficher le nom** ;
-- **Catégorie uniquement** ;
+- **Catégorie seulement** ;
 - **Masqué**.
 
 La règle d’un site est prioritaire sur celle du navigateur qui le contient. Les nouvelles preuves séparent le nom d’hôte du contexte complet : afficher un site ne révèle donc ni le titre de page ni l’URL complète. Les anciennes données restent vérifiables mais reviennent automatiquement à la catégorie lorsqu’un nom de site ne peut pas être ouvert sans révéler davantage.
@@ -155,14 +149,16 @@ La clé qui signe les preuves est liée à la signature stable de l’applicatio
 
 ## Mises à jour
 
-Goalong History n’intègre aucun mécanisme de mise à jour et ne vérifie pas
-GitHub en arrière-plan. Une mise à jour est un remplacement manuel. L’installateur
-public vérifie le SHA-256, l’identité unique de l’application, sa signature ad
-hoc, les marqueurs de confidentialité et la politique d’app unique avant tout
-remplacement. Chaque release publie aussi le commit source exact, un manifeste
-de capacités, un SBOM et une attestation de provenance GitHub/Sigstore. Cette
-preuve n’est pas une notarisation Apple. L’état courant de la release est indiqué
-dans le [`README`](README.md).
+Goalong History vérifie un flux de versions signé au lancement puis toutes les
+heures (désactivable dans **Réglages → Avancé → Mises à jour**). Lorsqu’une
+version est disponible, cliquez sur **Mise à jour disponible** dans la barre
+latérale ou sur **Rechercher les mises à jour…** : le téléchargement, la
+vérification de signature (Ed25519) et l’installation se font dans l’app, et
+rien ne s’installe sans votre accord. Votre historique et vos réglages sont
+conservés. Une version compilée sans module de mise à jour se remplace à la
+main. Chaque release publie aussi le commit source exact, un manifeste de
+capacités, un SBOM et une attestation de provenance GitHub/Sigstore ; cette
+preuve n’est pas une notarisation Apple.
 
 ## Désinstallation
 

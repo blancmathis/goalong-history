@@ -120,13 +120,15 @@ struct JevRecentChecksView: View {
             menu.addItem(NSMenuItem(title: String(format: "Surveillance en pause : %02d:%02d restantes", seconds / 60, seconds % 60), action: nil, keyEquivalent: ""))
             let item = NSMenuItem(title: "Reprendre la surveillance", action: #selector(endBreak), keyEquivalent: "")
             item.target = self; menu.addItem(item)
-        } else {
+            menu.addItem(.separator())
+        } else if monitor.enabled {
+            // A break is only offered while monitoring runs; otherwise it would pause nothing.
             for minutes in [5, 10, 15, 30] {
                 let item = NSMenuItem(title: "Pause de \(minutes) min (historique inchangé)", action: #selector(startBreak(_:)), keyEquivalent: "")
                 item.tag = minutes; item.target = self; menu.addItem(item)
             }
+            menu.addItem(.separator())
         }
-        menu.addItem(.separator())
         let open = NSMenuItem(title: "Ouvrir la surveillance…", action: #selector(openMonitoring), keyEquivalent: "")
         open.target = self; menu.addItem(open)
         if monitor.enabled {

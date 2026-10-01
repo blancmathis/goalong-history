@@ -17,7 +17,7 @@ import LocalHistoryCore
             GoalongSettingsGroup(title: "Votre analyse") {
                 GoalongSettingsLink(title: "Données pour ChatGPT", value: sourceSummary, symbol: "line.3.horizontal.decrease.circle") { open(0) }.accessibilityIdentifier("analysis-open-data")
                 Divider()
-                GoalongSettingsLink(title: "Masquer des noms", value: "\(selection.replacements?.filter { !$0.search.isEmpty }.count ?? 0) remplacements", symbol: "text.badge.minus") { open(1) }.accessibilityIdentifier("analysis-open-replacements")
+                GoalongSettingsLink(title: "Masquer des noms", value: replacementSummary, symbol: "text.badge.minus") { open(1) }.accessibilityIdentifier("analysis-open-replacements")
                 Divider()
                 GoalongSettingsLink(title: "Personnaliser le bilan", value: selection.outputGuidance?.isEmpty == false ? "Consignes ajoutées" : "Ton et informations à omettre", symbol: "text.bubble") { open(2) }.accessibilityIdentifier("analysis-open-guidance")
             }
@@ -58,8 +58,14 @@ import LocalHistoryCore
     }
     private var sourceSummary: String {
         guard selection.reviewed else { return "Choisir les apps et les types de données" }
-        if let ids = selection.scope?.applicationIDs { return "\(ids.count) applications autorisées" }
+        if let ids = selection.scope?.applicationIDs {
+            return ids.count > 1 ? "\(ids.count) applications autorisées" : "\(ids.count) application autorisée"
+        }
         return "Personnaliser la sélection"
+    }
+    private var replacementSummary: String {
+        let count = selection.replacements?.filter { !$0.search.isEmpty }.count ?? 0
+        return count == 0 ? "Aucun remplacement" : count == 1 ? "1 remplacement" : "\(count) remplacements"
     }
     private func open(_ tab: Int) { presentation = .init(tab: tab) }
 }

@@ -58,6 +58,17 @@ extension GoalongLocalAnalytics.Period {
         return totals
     }
 
+    /// Seconds classified as work per clock hour (0–23) summed over the period.
+    public func workSecondsByHourOfDay(calendar: Calendar = .current) -> [TimeInterval] {
+        var totals = Array(repeating: 0.0, count: 24)
+        for day in days where day.state == .ready {
+            for segment in day.segments where segment.kind == .work && segment.seconds > 0 {
+                Self.distribute(segment, calendar: calendar) { hour, seconds in totals[hour] += seconds }
+            }
+        }
+        return totals
+    }
+
     /// Average active seconds for each weekday × clock hour, over the days of that weekday
     /// that have observations. Rows follow `calendar.weekdaySymbols` order (index 0 = Sunday
     /// in the Gregorian calendar). A weekday without observed days stays nil, never zero.

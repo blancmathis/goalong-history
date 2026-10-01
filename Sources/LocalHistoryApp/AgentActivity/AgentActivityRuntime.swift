@@ -376,7 +376,7 @@
                     DispatchQueue.main.async {
                         self.integrationStatuses = statuses
                         self.alert = AgentActivityAlert(
-                            title: "\(kind.displayName) installed",
+                            title: "\(kind.frenchName) installé",
                             message: kind == .codexHooks
                                 ? "Les hooks n’envoient qu’un signal de relance ; le texte des conversations reste dans Codex. Relancez Codex, puis approuvez le hook Goalong depuis /hooks si Codex le demande."
                                 : "Les hooks n’envoient qu’un signal de relance ; le texte des conversations reste chez l’outil d’origine. Relancez l’agent s’il est déjà ouvert."
@@ -397,7 +397,7 @@
                     DispatchQueue.main.async {
                         self.integrationStatuses = statuses
                         self.alert = AgentActivityAlert(
-                            title: "\(kind.displayName) removed",
+                            title: "\(kind.frenchName) retiré",
                             message:
                                 "L’index léger reste disponible ; Goalong ne conserve aucune copie des conversations."
                         )
@@ -443,7 +443,7 @@
             {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
                 alert = AgentActivityAlert(
-                    title: "Original OpenCode database",
+                    title: "Base OpenCode d’origine",
                     message:
                         "La conversation \(record.index.stableConversationID) est lue directement dans cette base ; Goalong n’en fait aucune copie."
                 )
@@ -476,12 +476,12 @@
                 DispatchQueue.main.async {
                     let verifiedScope =
                         record.digestScope == .fullSource
-                        ? "complete original source"
-                        : "selected-day source projection"
+                        ? "La source d’origine complète"
+                        : "La partie de la source correspondant au jour choisi"
                     self.alert = AgentActivityAlert(
                         title: valid ? "Source d’origine vérifiée" : "Source d’origine modifiée ou indisponible",
                         message: valid
-                            ? "The provider’s current \(verifiedScope) matches SHA-256 \(record.sha256)."
+                            ? "\(verifiedScope) correspond toujours à l’empreinte SHA-256 \(record.sha256)."
                             : "La source d’origine ne correspond plus à cette entrée ou ne peut pas être lue."
                     )
                 }
@@ -531,7 +531,7 @@
                     overview = store.overview(for: selectedDay)
                 }
                 if let successMessage {
-                    alert = AgentActivityAlert(title: "Agent monitoring updated", message: successMessage)
+                    alert = AgentActivityAlert(title: "Sources mises à jour", message: successMessage)
                 }
                 rescheduleTimer()
                 // Newly enabled folders have no discovery cursor and will be fully discovered.

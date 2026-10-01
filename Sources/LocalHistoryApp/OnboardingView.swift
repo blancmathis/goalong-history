@@ -86,7 +86,7 @@
                                 .font(.system(size: 13, weight: item == step ? .semibold : .regular))
                         }
                         .foregroundStyle(item == step ? .primary : .secondary)
-                        .accessibilityLabel("\(item.navigationTitle)\(item == step ? ", current step" : "")")
+                        .accessibilityLabel("\(item.navigationTitle)\(item == step ? ", étape en cours" : "")")
                     }
                 }
                 Spacer()

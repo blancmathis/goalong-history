@@ -105,7 +105,7 @@ import LocalHistoryCore
                 case .available: return .ready
                 case .permissionRequired: return .fullDiskAccess
                 case .noData: return .screenTimeSetup
-                case .unavailable: return .unavailable("The Apple source could not be opened. Check Screen Time in System Settings and try again.")
+                case .unavailable: return .unavailable("La source Apple n’a pas pu être ouverte. Vérifiez Temps d’écran dans Réglages Système, puis réessayez.")
                 }
             case .aiConversations:
                 // Only validate folders the person has already selected; do not discover or scan transcripts.
@@ -646,15 +646,14 @@ import LocalHistoryCore
         @ObservedObject var model: DashboardViewModel
         var body: some View {
             LHCard {
-                HStack(alignment: .top, spacing: 16) {
+                // The explanation is the switch's own label: no second, floating title.
+                SourceActivationToggle(capability: .localComputerHistory) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("L’historique de ce Mac est désactivé").font(.system(size: 15, weight: .semibold))
                         Text("Activez l’enregistrement local pour afficher cette chronologie. Goalong vous explique et vérifie d’abord les accès macOS nécessaires.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer()
-                    SourceActivationToggle(capability: .localComputerHistory) { Text("Historique de ce Mac") }
-                        .labelsHidden()
                 }
             }
         }

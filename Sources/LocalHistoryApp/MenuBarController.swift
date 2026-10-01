@@ -250,7 +250,7 @@
         private func confirmRecordingStop(allSources: Bool) -> Bool {
             let alert = NSAlert()
             alert.messageText = allSources ? "Suspendre tout le suivi ?" : "Arrêter l’enregistrement local ?"
-            alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour une pause détente, utilisez Pause Jev : l’historique continue."
+            alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour suspendre seulement les rappels de surveillance, utilisez plutôt « Faire une pause » : l’historique continue."
             alert.addButton(withTitle: "Annuler")
             alert.addButton(withTitle: "Suspendre le suivi")
             return alert.runModal() == .alertSecondButtonReturn

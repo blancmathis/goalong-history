@@ -7,7 +7,7 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(
-                    eyebrow: "Selective disclosure",
+                    eyebrow: "Partage sélectif",
                     title: "Exporter un fichier signé",
                     subtitle:
                         "Définissez une règle claire pour chaque app et site. Goalong vérifie ses signatures locales et sa chaîne d’intégrité avant de créer le paquet."
@@ -56,7 +56,7 @@
                     Text(
                         "La règle d’un site prime sur celle du navigateur. « Afficher le nom » ne révèle que le nom du site, pas le titre de la page ni l’adresse complète."
                     )
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
@@ -86,17 +86,17 @@
                     tint: LHTheme.accent
                 )
                 summaryItem(
-                    title: "Hidden",
+                    title: "Masqué",
                     count: count(for: .hidden),
                     symbol: "eye.slash",
                     tint: LHTheme.privateTint
                 )
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(model.snapshot.sealedMinutes) sealed minute\(model.snapshot.sealedMinutes == 1 ? "" : "s")")
+                    Text("\(model.snapshot.sealedMinutes) minute\(model.snapshot.sealedMinutes > 1 ? "s" : "") scellée\(model.snapshot.sealedMinutes > 1 ? "s" : "")")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                     Text("Les règles s’appliquent événement par événement")
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -107,9 +107,9 @@
                 Image(systemName: symbol)
                     .foregroundStyle(tint)
                 Text(title)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                 Text("\(count)")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 11)
@@ -124,14 +124,14 @@
                 VStack(alignment: .leading, spacing: 2) {
                     Text(
                         model.snapshot.sealedMinutes > 0
-                            ? "Ready to create a rule-based package"
+                            ? "Prêt à créer un fichier selon vos règles"
                             : "Aucune minute scellée pour ce jour"
                     )
                     .font(.system(size: 11, weight: .semibold))
                     Text(
                         "Les vérifications hors ligne portent sur les engagements, les chaînes, l’identité de l’appareil et les signatures. Rien n’est envoyé par cette action."
                     )
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()

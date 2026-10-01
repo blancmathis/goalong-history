@@ -46,7 +46,6 @@ import Foundation
                 Text("Les originaux Apple, les conversations et les données déjà envoyées restent conservés.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            SupportDiagnosticsPanel()
             GoalongDisclosureGroup("Fichiers locaux") {
                 HStack {
                     Button("Ouvrir le dossier") { model.openDataFolder() }

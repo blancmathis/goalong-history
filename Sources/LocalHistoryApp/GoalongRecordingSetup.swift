@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import Foundation
+import LocalHistoryCore
 
 /// The dormant recorder stays off until consent. Every first-activation surface
 /// uses this complete proposal instead of exposing the dormant defaults as choices.
@@ -152,23 +153,129 @@ struct GoalongCompleteRecordingButton: View {
     }
 }
 
-struct GoalongRecordingCoverageNotice: View {
+/// Says on the landing page why no new activity arrives, with the one useful action.
+/// The global privacy stop and storage failures keep their own banners.
+struct GoalongRecordingStateNotice: View {
     @ObservedObject var model: DashboardViewModel
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
-    @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey) private var visibleText = false
-    private var count: Int { GoalongRecordingSetup.enabledCount(model.appliedSettings, visibleText: visibleText) }
+    @State private var globalPause = GoalongGlobalPause.load()
+
+    enum Kind: Equatable { case off, paused, permissions }
+
+    static func kind(localEnabled: Bool, globallyPaused: Bool, dashboardVisible: Bool,
+                     runtime: RuntimeStateKind) -> Kind? {
+        guard !globallyPaused else { return nil }
+        guard localEnabled else { return .off }
+        // The runtime is only refreshed while the window is visible; never alarm on a stale value.
+        guard dashboardVisible else { return nil }
+        switch runtime {
+        case .paused, .suppressed(.manualPause): return .paused
+        case .permissionsMissing: return .permissions
+        default: return nil
+        }
+    }
+
+    private var kind: Kind? {
+        Self.kind(localEnabled: consents.isEnabled(.localComputerHistory),
+                  globallyPaused: globalPause.blocksActivity,
+                  dashboardVisible: model.dashboardIsVisible, runtime: model.runtime.state)
+    }
+
     var body: some View {
-        if consents.isEnabled(.localComputerHistory) && count < 8 {
+        Group {
+            if let kind {
+                LHCard(padding: 16) {
+                    HStack(alignment: .center, spacing: 14) {
+                        Image(systemName: symbol(kind)).font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(kind == .permissions ? LHTheme.warning : LHTheme.accent)
+                            .frame(width: 28).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(title(kind)).font(.system(size: 14, weight: .semibold))
+                            Text(detail(kind)).font(.system(size: 12)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 12)
+                        Button(actionTitle(kind)) { perform(kind) }
+                            .buttonStyle(LHPrimaryButtonStyle())
+                            .accessibilityIdentifier("activity-recording-action")
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("activity-recording-state")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in globalPause = .load() }
+    }
+
+    private func symbol(_ kind: Kind) -> String {
+        switch kind {
+        case .off: return "record.circle"
+        case .paused: return "pause.circle"
+        case .permissions: return "exclamationmark.triangle"
+        }
+    }
+    private func title(_ kind: Kind) -> String {
+        switch kind {
+        case .off: return "L’enregistrement de ce Mac est désactivé"
+        case .paused: return "Enregistrement en pause"
+        case .permissions: return "Autorisation macOS à rétablir"
+        }
+    }
+    private func detail(_ kind: Kind) -> String {
+        switch kind {
+        case .off: return "Activez-le pour voir ici votre temps actif, vos blocs de travail et vos apps et sites. Tout reste sur ce Mac."
+        case .paused: return "Aucune nouvelle activité n’est enregistrée. L’historique existant reste consultable."
+        case .permissions: return "Rien n’est enregistré tant que l’accès n’est pas rétabli. Goalong vous guide pas à pas."
+        }
+    }
+    private func actionTitle(_ kind: Kind) -> String {
+        switch kind {
+        case .off: return "Activer…"
+        case .paused: return "Reprendre"
+        case .permissions: return "Rétablir l’accès…"
+        }
+    }
+    private func perform(_ kind: Kind) {
+        switch kind {
+        case .off: model.openRecordingSettings()
+        case .paused: model.togglePause()
+        case .permissions: model.selectSection(.settings); model.settingsPane = .permissions
+        }
+    }
+}
+
+struct GoalongRecordingCoverageNotice: View {
+    static let dismissedProfileKey = "goalong.activity.coverageNoticeDismissedProfile"
+    @ObservedObject var model: DashboardViewModel
+    /// On Activité a deliberate custom profile can be acknowledged once; Settings always shows it.
+    var dismissible = false
+    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey) private var visibleText = false
+    @AppStorage(GoalongRecordingCoverageNotice.dismissedProfileKey) private var dismissedProfile = ""
+    private var count: Int { GoalongRecordingSetup.enabledCount(model.appliedSettings, visibleText: visibleText) }
+    private var profile: String { GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText) }
+    var body: some View {
+        if consents.isEnabled(.localComputerHistory) && count < 8 && !(dismissible && dismissedProfile == profile) {
             LHCard {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(count == 0 ? "Seules les applications sont enregistrées" : "Suivi personnalisé · \(count)/8 types de détails")
                             .font(.system(size: 14, weight: .semibold))
-                        Text("Certains clics, interactions ou textes ne sont pas enregistrés selon vos choix.")
+                        Text("Certains clics, interactions ou textes ne sont pas enregistrés selon vos choix. Vos durées et vos apps restent mesurées.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
                     GoalongCompleteRecordingButton(model: model)
+                    if dismissible {
+                        Button { dismissedProfile = profile } label: {
+                            Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Garder mes choix et masquer ce message")
+                        .accessibilityLabel("Garder mes choix et masquer ce message")
+                        .accessibilityIdentifier("recording-incomplete-dismiss")
+                    }
                 }
             }.accessibilityIdentifier("recording-incomplete-notice")
         }

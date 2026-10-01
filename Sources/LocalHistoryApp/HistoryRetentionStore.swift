@@ -93,11 +93,11 @@
         var errorDescription: String? {
             switch self {
             case .unsupportedPolicy:
-                return "The retention policy is not supported for automatic cleanup."
+                return "Cette règle de conservation ne permet pas le nettoyage automatique."
             case let .oversizedMetadata(url):
-                return "Retention metadata is unexpectedly large at \(url.path)."
+                return "Le fichier des règles de conservation est anormalement volumineux (\(url.path))."
             case let .unsafeMetadataPath(url):
-                return "Retention metadata must be a regular file, not a link or directory: \(url.path)."
+                return "Le fichier des règles de conservation doit être un fichier ordinaire, pas un lien ni un dossier : \(url.path)."
             }
         }
     }
