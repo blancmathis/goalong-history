@@ -165,92 +165,16 @@ public enum GoalongLocalAnalytics {
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: start) ?? start
         let end = max(start, min(dayEnd, now))
         let rows = evidenceRows(events, start: start, end: end)
-        var segments: [Segment] = []
-        var tracker = GoalongWorkContext.Tracker()
-        let contextKeys = rows.map { tracker.context(for: $0)?.key }
-        func append(_ a: Date, _ b: Date, _ kind: Kind, _ event: HistoryEvent? = nil,
-                    websiteAllowed: Bool = true, contextKey: String? = nil) {
-            guard b > a else { return }
-            let active = kind.isActive
-            let application = active ? event?.app?.name : nil
-            let bundle = active ? event?.app?.bundleIdentifier : nil
-            let host = active && websiteAllowed && event.map(ForegroundActivityEvidence.supportsWebsiteAttribution) == true
-                ? event?.url?.host : nil
-            let key = active ? contextKey : nil
-            if let last = segments.last, last.end == a, last.kind == kind,
-               last.application == application, last.bundleIdentifier == bundle, last.host == host,
-               last.contextKey == key {
-                segments[segments.count - 1].end = b
-            } else {
-                segments.append(Segment(start: a, end: b, kind: kind, application: application,
-                    bundleIdentifier: bundle, host: host, contextKey: key))
-            }
-        }
         // A genuinely failed or unstable source still must not publish plausible totals.
         if incomplete {
-            append(start, end, .unobserved)
-            return Day(date: start, end: end, state: .incomplete, segments: segments, eventCount: rows.count, classifierVersions: [])
+            return Day(date: start, end: end, state: .incomplete, segments: end > start ? [Segment(start: start, end: end,
+                kind: .unobserved, application: nil, bundleIdentifier: nil, host: nil)] : [],
+                eventCount: rows.count, classifierVersions: [])
         }
-        guard let first = rows.first, let last = rows.last else {
-            append(start, end, .unobserved)
-            return Day(date: start, end: end, state: .noSource, segments: segments, eventCount: 0, classifierVersions: [])
-        }
-        append(start, first.timestamp, .unobserved)
-        for (offset, (previous, next)) in zip(rows, rows.dropFirst()).enumerated() {
-            // Goalong never labels an application as work: active time stays to classify
-            // until the user's own definition is applied to its context.
-            let contextKey = contextKeys[offset]
-            let gap = next.timestamp.timeIntervalSince(previous.timestamp)
-            guard gap > 0 else { continue }
-            let kind: Kind
-            if gap > maximumGap || next.metadata?["observation_gap"] == "true" {
-                kind = .unobserved
-            } else if let reason = previous.suppressionReason {
-                switch reason {
-                case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput, .manualPause:
-                    kind = .concealed
-                case .sessionUnavailable, .accessibilityUnavailable:
-                    kind = .unobserved
-                }
-            } else if previous.isObservationContinuityBoundary || previous.app?.name.isEmpty != false {
-                kind = .unobserved
-            } else if ForegroundUsageObservation.usesPresencePolicy(previous) {
-                let seconds = ForegroundUsageObservation.activeDuration(after: previous,
-                    until: next.timestamp, nextEvent: next)
-                let activeEnd = previous.timestamp.addingTimeInterval(seconds)
-                // A browser-process wake assertion cannot attribute the content of an unproven tab.
-                let attributable = previous.url?.host == nil || ForegroundActivityEvidence.supportsWebsiteAttribution(previous)
-                let siteSeconds = ForegroundUsageObservation.websiteDuration(after: previous,
-                    until: next.timestamp, nextEvent: next)
-                if previous.url?.host != nil && siteSeconds < seconds {
-                    let siteEnd = previous.timestamp.addingTimeInterval(siteSeconds)
-                    append(previous.timestamp, siteEnd, .unclassified, previous, contextKey: attributable ? contextKey : nil)
-                    append(siteEnd, activeEnd, .unclassified, previous, websiteAllowed: false)
-                } else {
-                    append(previous.timestamp, activeEnd, .unclassified, previous, contextKey: attributable ? contextKey : nil)
-                }
-                // Split at the exact reading expiry. A later idle observation
-                // never erases a preceding minute of reading or revives absence.
-                append(activeEnd, next.timestamp,
-                    ForegroundUsageObservation.hasVisibleForeground(previous) ? .idle : .unobserved)
-                continue
-            } else if ForegroundActivityEvidence.isInputIdle(previous)
-                || (ForegroundActivityEvidence.isInputIdle(next)
-                    && ForegroundActivityEvidence.evidence(in: previous) == nil) {
-                // A later idle sample/app switch must not erase an observed call
-                // preceding it; equally, a later call must not revive earlier idle.
-                kind = .idle
-            } else {
-                kind = .unclassified
-            }
-            // A browser-process wake assertion cannot attribute the content of an unproven tab.
-            let attributable = previous.url?.host == nil || ForegroundActivityEvidence.supportsWebsiteAttribution(previous)
-            append(previous.timestamp, next.timestamp, kind, previous, contextKey: attributable ? contextKey : nil)
-        }
-        // A last foreground sample is not evidence that activity continued after that sample.
-        append(last.timestamp, end, .unobserved)
-        return Day(date: start, end: end, state: .ready, segments: segments, eventCount: rows.count,
-                   classifierVersions: [GoalongLocalAnalytics.method])
+        // The same fold refreshes today from its last checkpoint: one definition of a day.
+        var fold = DayFold(start: start)
+        for row in rows { fold.consume(row) }
+        return fold.finish(end: end)
     }
 
     /// Buffered typing/scroll bursts can be appended after newer foreground samples.
