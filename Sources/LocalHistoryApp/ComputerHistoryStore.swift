@@ -204,8 +204,11 @@
             return memory
         }
 
-        func loadRecent(maximumDays: Int = 30) -> ComputerHistoryRecentLoadResult {
-            loadRecent(before: .distantFuture, maximumDays: maximumDays, renderMarkdown: true)
+        func loadRecent(
+            maximumDays: Int = 30,
+            renderMarkdown: Bool = true
+        ) -> ComputerHistoryRecentLoadResult {
+            loadRecent(before: .distantFuture, maximumDays: maximumDays, renderMarkdown: renderMarkdown)
         }
 
         func answer(_ query: String, maximumDays: Int = 30) -> ComputerHistoryAnswer {

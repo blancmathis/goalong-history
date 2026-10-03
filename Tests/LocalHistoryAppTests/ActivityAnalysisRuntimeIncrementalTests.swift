@@ -1530,6 +1530,58 @@
             XCTAssertEqual(try Data(contentsOf: cacheURL), lastKnownGoodCache)
         }
 
+        func testBudgetRefusalIsReusedWhileTheJournalOnlyGrows() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let first = fixtureEvent(at: fixture.day, id: "click-1")
+            _ = try writeEvents(
+                [first, fixtureEvent(at: fixture.day.addingTimeInterval(1), id: "click-2")],
+                fixture: fixture
+            )
+            let coordinator = makeCoordinator(
+                fixture: fixture,
+                dayLoadLimits: ActivityAnalysisDayLoadLimits(
+                    maximumRetainedRows: 1,
+                    maximumEstimatedRetainedBytes: 48 * 1_024 * 1_024
+                )
+            )
+            func process() throws {
+                _ = try coordinator.process(
+                    day: fixture.day,
+                    tokenBudget: 1_600,
+                    forceVerification: true,
+                    includeActivityMemory: true
+                )
+            }
+            func assertBudgetRefusal(file: StaticString = #filePath, line: UInt = #line) {
+                XCTAssertThrowsError(try process(), file: file, line: line) { error in
+                    XCTAssertTrue(
+                        error.localizedDescription.contains("retained-evidence budget"),
+                        "\(error)", file: file, line: line
+                    )
+                }
+            }
+            assertBudgetRefusal()
+
+            // Appended rows can only keep the budget exceeded: the refusal is reused
+            // without reading the journal again (it is unreadable here).
+            try appendEvent(
+                fixtureEvent(at: fixture.day.addingTimeInterval(2), id: "click-3"),
+                fixture: fixture
+            )
+            let journal = fixture.eventsDirectory.appendingPathComponent(fixture.dayKey + ".jsonl")
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: journal.path)
+            defer {
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
+            }
+            assertBudgetRefusal()
+
+            // A replaced journal may fit again, so it is read again.
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
+            _ = try writeEvents([first], fixture: fixture)
+            XCTAssertNoThrow(try process())
+        }
+
         private func makeCoordinator(
             fixture: Fixture,
             dayLoadLimits: ActivityAnalysisDayLoadLimits = .production

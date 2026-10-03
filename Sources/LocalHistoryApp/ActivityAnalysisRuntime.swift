@@ -1465,6 +1465,22 @@
             self.limits = limits
         }
 
+        var retainedEvidenceBudgetError: ActivityAnalysisCycleError {
+            .sourceInaccessible(
+                "Derived analysis kept the last-known-good views because the "
+                    + "retained-evidence budget was exceeded "
+                    + "(\(limits.maximumRetainedRows) rows or "
+                    + "\(limits.maximumEstimatedRetainedBytes) estimated bytes)"
+            )
+        }
+
+        func isRetainedEvidenceBudgetError(_ error: ActivityAnalysisCycleError) -> Bool {
+            guard case .sourceInaccessible(let message) = error,
+                case .sourceInaccessible(let budget) = retainedEvidenceBudgetError
+            else { return false }
+            return message == budget
+        }
+
         func load(
             day: Date,
             sourceRevision: ActivityAnalysisSourceRevision? = nil
@@ -1531,12 +1547,7 @@
                 guard retainedRowCount < limits.maximumRetainedRows,
                     valueBytes <= limits.maximumEstimatedRetainedBytes - estimatedRetainedBytes
                 else {
-                    throw ActivityAnalysisCycleError.sourceInaccessible(
-                        "Derived analysis kept the last-known-good views because the "
-                            + "retained-evidence budget was exceeded "
-                            + "(\(limits.maximumRetainedRows) rows or "
-                            + "\(limits.maximumEstimatedRetainedBytes) estimated bytes)"
-                    )
+                    throw retainedEvidenceBudgetError
                 }
                 retainedRowCount += 1
                 estimatedRetainedBytes += valueBytes
@@ -2327,6 +2338,17 @@
         private let priorRevisionLock = NSLock()
         private var priorRevisionCache: [String: PriorRevisionCacheEntry] = [:]
         private var priorRevisionCacheOrder: [String] = []
+        /// Appending rows never lowers the retained-evidence count, so a day that
+        /// exceeded the loader budget keeps exceeding it while its journals only grow.
+        /// Remembering that revision avoids re-reading a large day every cycle only
+        /// to reach the same refusal.
+        private struct BudgetExceededEntry {
+            let event: ActivityAnalysisFileStamp
+            let semantic: ActivityAnalysisFileStamp?
+            let error: ActivityAnalysisCycleError
+        }
+        private let budgetExceededLock = NSLock()
+        private var budgetExceeded: [String: BudgetExceededEntry] = [:]
         private var priorRevisionDiagnostics = ActivityAnalysisPriorRevisionDiagnostics(
             scannedEntryCount: 0,
             peakRetainedCandidateCount: 0,
@@ -2401,9 +2423,15 @@
             priorRevisionCache = priorRevisionCache.filter { keys.contains($0.key) }
             priorRevisionCacheOrder.removeAll { !keys.contains($0) }
             priorRevisionLock.unlock()
+            budgetExceededLock.lock()
+            budgetExceeded = budgetExceeded.filter { keys.contains($0.key) }
+            budgetExceededLock.unlock()
         }
 
         func invalidateRevisionCache() throws {
+            budgetExceededLock.lock()
+            budgetExceeded.removeAll(keepingCapacity: false)
+            budgetExceededLock.unlock()
             try cache.removeAll()
             priorRevisionLock.lock()
             priorRevisionCache.removeAll(keepingCapacity: false)
@@ -2496,10 +2524,17 @@
                 )
             }
 
+            if let exceeded = budgetExceededError(dayKey: dayKey, revision: revision) {
+                throw exceeded
+            }
+
             let priorComputerHistory: [ComputerHistoryDayMemory]
             if revision.event.size > 0 {
+                // Workflow detection reads only episodes and patterns. Rendering the
+                // markdown and agent context of every prior day cost ~95% of a cycle.
                 let priorLoad = computerHistoryStore.loadRecent(
-                    maximumDays: Self.maximumPriorComputerHistoryDays + 2
+                    maximumDays: Self.maximumPriorComputerHistoryDays + 2,
+                    renderMarkdown: false
                 )
                 guard priorLoad.isComplete else {
                     throw ActivityAnalysisCycleError.sourceInaccessible(
@@ -2540,7 +2575,15 @@
                 return incremental
             }
 
-            let snapshot = try loader.load(day: start, sourceRevision: revision)
+            let snapshot: ActivityAnalysisDaySnapshot
+            do {
+                snapshot = try loader.load(day: start, sourceRevision: revision)
+            } catch let error as ActivityAnalysisCycleError
+                where loader.isRetainedEvidenceBudgetError(error)
+            {
+                rememberBudgetExceeded(error, dayKey: dayKey, revision: revision)
+                throw error
+            }
             guard snapshot.issues.isEmpty else {
                 throw ActivityAnalysisCycleError.sourceInaccessible(
                     "Derived analysis kept the last-known-good views because the source "
@@ -2664,6 +2707,37 @@
                 derivedViewsWritten: writes,
                 usedCachedRevision: false
             )
+        }
+
+        private func budgetExceededError(
+            dayKey: String,
+            revision: ActivityAnalysisSourceRevision
+        ) -> ActivityAnalysisCycleError? {
+            budgetExceededLock.lock()
+            defer { budgetExceededLock.unlock() }
+            guard let entry = budgetExceeded[dayKey] else { return nil }
+            guard Self.isAppendOnlyAdvance(from: entry.event, to: revision.event),
+                Self.isAppendOnlyAdvance(from: entry.semantic, to: revision.semantic)
+            else {
+                // A replaced or truncated journal may fit again: read it once more.
+                budgetExceeded.removeValue(forKey: dayKey)
+                return nil
+            }
+            return entry.error
+        }
+
+        private func rememberBudgetExceeded(
+            _ error: ActivityAnalysisCycleError,
+            dayKey: String,
+            revision: ActivityAnalysisSourceRevision
+        ) {
+            budgetExceededLock.lock()
+            budgetExceeded[dayKey] = BudgetExceededEntry(
+                event: revision.event,
+                semantic: revision.semantic,
+                error: error
+            )
+            budgetExceededLock.unlock()
         }
 
         private func processMaintenanceOnlyAppend(
