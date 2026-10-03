@@ -5,6 +5,9 @@
     struct LocalHistoryDashboardView: View {
         @ObservedObject var model: DashboardViewModel
         @State private var activityNavigation = GoalongActivityNavigation()
+        /// Activité's days stay read while the window is open, so coming back to the page
+        /// shows them at once; closing the window releases them.
+        @StateObject private var activity = GoalongAnalyticsModel()
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
@@ -69,7 +72,7 @@
         @ViewBuilder private var page: some View {
             switch model.selectedSection {
             case .overview, .analytics:
-                GoalongAnalyticsPage(model: model, navigation: $activityNavigation)
+                GoalongAnalyticsPage(model: model, navigation: $activityNavigation, analytics: activity)
             case .work:
                 GoalongWorkPage(model: model)
             case .history:

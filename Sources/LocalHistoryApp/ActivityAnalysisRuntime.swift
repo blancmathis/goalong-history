@@ -1918,7 +1918,7 @@
             while bytesRead < readCeiling {
                 let remaining = readCeiling - bytesRead
                 let requested = min(Self.readChunkBytes, Int(min(remaining, Int64(Int.max))))
-                guard let chunk = try handle.read(upToCount: requested), !chunk.isEmpty else {
+                guard let chunk = try historyReadChunk(handle, upToCount: requested), !chunk.isEmpty else {
                     throw ActivityAnalysisCycleError.sourceChangedDuringRead
                 }
                 bytesRead += Int64(chunk.count)

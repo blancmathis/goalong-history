@@ -8,7 +8,7 @@ import Combine
 struct GoalongAnalyticsPage: View {
     @ObservedObject var model: DashboardViewModel
     @Binding var navigation: GoalongActivityNavigation
-    @StateObject private var analytics = GoalongAnalyticsModel()
+    @ObservedObject var analytics: GoalongAnalyticsModel
     @StateObject private var studio = GoalongProfileWindow()
     @ObservedObject private var work = GoalongWorkStore.shared
     @ObservedObject private var agent = GoalongWorkAgent.shared

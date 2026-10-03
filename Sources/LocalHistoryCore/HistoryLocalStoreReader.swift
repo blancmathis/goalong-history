@@ -808,6 +808,26 @@ package struct HistoryJSONLinesReadMetrics: Equatable {
     fileprivate var pinnedFileView: HistoryPinnedFileView?
 }
 
+extension Data {
+    /// `firstIndex(of:)` walks `Data` byte by byte through generic indexing; memchr scans
+    /// a 64 KB journal chunk several times faster.
+    package func indexOfNewline(from start: Index) -> Index? {
+        guard start < endIndex else { return nil }
+        return withUnsafeBytes { raw -> Index? in
+            guard let base = raw.baseAddress else { return nil }
+            let offset = start - startIndex
+            guard let hit = memchr(base + offset, 0x0A, raw.count - offset) else { return nil }
+            return startIndex + (UnsafeRawPointer(hit) - base)
+        }
+    }
+}
+
+/// `FileHandle` returns autoreleased buffers. Without a pool per chunk, every chunk of a
+/// journal (70 MB on a busy day) stays alive until the caller's own pool drains.
+package func historyReadChunk(_ handle: FileHandle, upToCount count: Int) throws -> Data? {
+    try autoreleasepool { try handle.read(upToCount: count) }
+}
+
 /// Incremental, read-only JSONL framing. A complete row must be buffered for
 /// `JSONDecoder`, but the complete file never is. Oversized rows are discarded
 /// without retaining their contents and scanning resumes at the next newline.
@@ -950,7 +970,7 @@ package struct HistoryJSONLinesStreamReader {
                 break
             }
             requestedCount = min(chunkSize, Int(min(remaining, Int64(Int.max))))
-            guard let chunk = try handle.read(upToCount: requestedCount), !chunk.isEmpty else {
+            guard let chunk = try historyReadChunk(handle, upToCount: requestedCount), !chunk.isEmpty else {
                 break
             }
             metrics.bytesRead += Int64(chunk.count)
@@ -959,7 +979,7 @@ package struct HistoryJSONLinesStreamReader {
 
             var segmentStart = chunk.startIndex
             while segmentStart < chunk.endIndex,
-                let newline = chunk[segmentStart...].firstIndex(of: 0x0A)
+                let newline = chunk.indexOfNewline(from: segmentStart)
             {
                 append(chunk[segmentStart..<newline])
                 finishLine()
@@ -1653,6 +1673,8 @@ public struct HistoryLocalStoreReader {
         case workContext
         case activityMemory
 
+        var isSizedBySourceRow: Bool { self == .localAnalytics || self == .workContext }
+
         func project(_ event: HistoryEvent) -> HistoryEvent? {
             switch self {
             case .computerHistory:
@@ -1867,6 +1889,80 @@ public struct HistoryLocalStoreReader {
             !sourceAccessWasIncomplete && !evidenceBudgetExceeded && shouldContinue()
         }
 
+        func noteIntegrityBoundary(_ boundary: IntegrityBoundary) {
+            if let currentFirst = firstIntegrityBoundary {
+                if IntegrityBoundary.precedes(boundary, currentFirst) {
+                    firstIntegrityBoundary = boundary
+                }
+            } else {
+                firstIntegrityBoundary = boundary
+            }
+            if let currentLast = lastIntegrityBoundary {
+                if IntegrityBoundary.precedes(currentLast, boundary) {
+                    lastIntegrityBoundary = boundary
+                }
+            } else {
+                lastIntegrityBoundary = boundary
+            }
+        }
+
+        /// Activité reads whole days while the user waits: its rows are decoded on every core
+        /// in batches, then folded in journal order exactly as a sequential read would.
+        /// Background readers keep decoding one row at a time.
+        let decodesInParallel = projection.isSizedBySourceRow
+        var batch: [(line: Data, number: Int)] = []
+        enum DecodedRow {
+            case outside
+            case row(isContinuityBoundary: Bool, boundary: IntegrityBoundary?, projected: HistoryEvent?)
+            case failed(String)
+        }
+        func applyBatch(from file: URL) {
+            guard !batch.isEmpty else { return }
+            let rows = batch
+            batch.removeAll(keepingCapacity: true)
+            var decoded = [DecodedRow](repeating: .outside, count: rows.count)
+            let workers = max(1, min(ProcessInfo.processInfo.activeProcessorCount, rows.count / 64))
+            decoded.withUnsafeMutableBufferPointer { results in
+                DispatchQueue.concurrentPerform(iterations: workers) { worker in
+                    let rowDecoder = decoder(compactEventIntegrity: true)
+                    for index in (rows.count * worker / workers)..<(rows.count * (worker + 1) / workers) {
+                        results[index] = autoreleasepool {
+                            do {
+                                let event = try rowDecoder.decode(HistoryEvent.self, from: rows[index].line)
+                                guard event.timestamp >= start, event.timestamp < endExclusive else { return .outside }
+                                return .row(
+                                    isContinuityBoundary: event.isObservationContinuityBoundary,
+                                    boundary: event.integrity.map { IntegrityBoundary(event: event, integrity: $0) },
+                                    projected: projection.project(event))
+                            } catch {
+                                return .failed("could not decode event JSONL row: \(error)")
+                            }
+                        }
+                    }
+                }
+            }
+            for (row, outcome) in zip(rows, decoded) {
+                guard !sourceAccessWasIncomplete, !evidenceBudgetExceeded else { return }
+                switch outcome {
+                case .outside:
+                    continue
+                case .failed(let message):
+                    recordSourceContentIssue(path: file.path, line: row.number, message: message)
+                case .row(let isContinuityBoundary, let boundary, let projected):
+                    rawEventCount += 1
+                    if isContinuityBoundary { continuityBoundaryCount += 1 }
+                    if let boundary { noteIntegrityBoundary(boundary) }
+                    // Activité keeps a small subset of each row: the row's own length stands in
+                    // for its size instead of re-encoding every event of the day.
+                    guard let projected,
+                        reserveEvidence(rowBytes: row.line.count, inlineBytes: MemoryLayout<HistoryEvent>.stride)
+                    else { continue }
+                    events.append(projected)
+                    retainedEventBytes += Int64(row.line.count)
+                }
+            }
+        }
+
         var eventFiles: [HistoryPinnedSourceFile] = []
         do {
             let sourceRoot = try HistoryPinnedSourceDirectory(rootURL: rootDirectory)
@@ -1899,10 +1995,13 @@ public struct HistoryLocalStoreReader {
                     allowVerifiedAppendOnlyGrowth: true,
                     shouldContinue: continueEvidenceLoading,
                     onLine: { rawLine, lineNumber in
+                        guard !sourceAccessWasIncomplete, !evidenceBudgetExceeded else { return }
+                        if decodesInParallel {
+                            batch.append((rawLine, lineNumber))
+                            if batch.count >= 4_096 { applyBatch(from: file) }
+                            return
+                        }
                         autoreleasepool {
-                            guard !sourceAccessWasIncomplete, !evidenceBudgetExceeded else {
-                                return
-                            }
                             do {
                                 let event = try rowDecoder.decode(HistoryEvent.self, from: rawLine)
                                 guard event.timestamp >= start, event.timestamp < endExclusive else { return }
@@ -1911,24 +2010,7 @@ public struct HistoryLocalStoreReader {
                                     continuityBoundaryCount += 1
                                 }
                                 if let integrity = event.integrity {
-                                    let boundary = IntegrityBoundary(
-                                        event: event,
-                                        integrity: integrity
-                                    )
-                                    if let currentFirst = firstIntegrityBoundary {
-                                        if IntegrityBoundary.precedes(boundary, currentFirst) {
-                                            firstIntegrityBoundary = boundary
-                                        }
-                                    } else {
-                                        firstIntegrityBoundary = boundary
-                                    }
-                                    if let currentLast = lastIntegrityBoundary {
-                                        if IntegrityBoundary.precedes(currentLast, boundary) {
-                                            lastIntegrityBoundary = boundary
-                                        }
-                                    } else {
-                                        lastIntegrityBoundary = boundary
-                                    }
+                                    noteIntegrityBoundary(IntegrityBoundary(event: event, integrity: integrity))
                                 }
                                 guard let compactedEvent = projection.project(event) else { return }
                                 let compactedBytes = try evidenceEncoder.encode(compactedEvent).count
@@ -1950,6 +2032,7 @@ public struct HistoryLocalStoreReader {
                         }
                     },
                     onOversizedLine: { lineNumber, maximumBytes in
+                        applyBatch(from: file)
                         recordSourceContentIssue(
                             path: file.path,
                             line: lineNumber,
@@ -1958,6 +2041,7 @@ public struct HistoryLocalStoreReader {
                         )
                     }
                 )
+                applyBatch(from: file)
                 eventBytesRead += streamMetrics.bytesRead
                 peakStreamBufferBytes = max(peakStreamBufferBytes, streamMetrics.peakBufferedBytes)
                 if let view = streamMetrics.pinnedFileView {
@@ -1991,6 +2075,7 @@ public struct HistoryLocalStoreReader {
                     break
                 }
             } catch {
+                applyBatch(from: file)
                 sourceAccessWasIncomplete = true
                 appendComputerHistoryIssue(
                     HistoryLoadIssue(
@@ -2882,7 +2967,7 @@ public struct HistoryLocalStoreReader {
                 HistoryJSONLinesStreamReader.defaultChunkSize,
                 Int(sourceSize) - raw.count
             )
-            guard let chunk = try handle.read(upToCount: requestedCount), !chunk.isEmpty else {
+            guard let chunk = try historyReadChunk(handle, upToCount: requestedCount), !chunk.isEmpty else {
                 break
             }
             raw.append(chunk)

@@ -61,7 +61,12 @@ struct GoalongAnalyticsPayload: Sendable {
 
 /// Lives off the main actor. Stores only bounded derived measurements, never source events.
 private actor GoalongAnalyticsReader {
+    /// Recently shown days (about 0.5 MB for a busy one): enough for a 28-day period and
+    /// its comparison, plus a few days visited around it.
+    private static let maximumCachedDays = 64
     private var cache: [Date: (String, GoalongLocalAnalytics.Day)] = [:]
+    private var lastUse: [Date: Int] = [:]
+    private var uses = 0
     private let root: URL
     init(root: URL) { self.root = root }
 
@@ -74,7 +79,7 @@ private actor GoalongAnalyticsReader {
         let count = [1, 7, 28].contains(count) ? count : 7
         let last = calendar.startOfDay(for: day)
         var days: [GoalongLocalAnalytics.Day] = []
-        if force { cache.removeAll() }
+        if force { cache.removeAll(); lastUse.removeAll() }
         for offset in (0..<(count * 2)).reversed() {
             try Task.checkCancellation()
             guard let date = calendar.date(byAdding: .day, value: -offset, to: last) else { continue }
@@ -89,8 +94,13 @@ private actor GoalongAnalyticsReader {
                 if value.state != .incomplete { cache[date] = (revision, value) }
             }
             days.append(value)
+            uses += 1
+            if cache[date] != nil { lastUse[date] = uses }
         }
-        cache = cache.filter { key, _ in days.contains { $0.date == key } }
+        if cache.count > Self.maximumCachedDays {
+            let evicted = cache.keys.sorted { (lastUse[$0] ?? 0) < (lastUse[$1] ?? 0) }.prefix(cache.count - Self.maximumCachedDays)
+            for date in evicted { cache[date] = nil; lastUse[date] = nil }
+        }
         let current = Array(days.suffix(count)), previous = Array(days.prefix(count))
         let saved = try readCards(start: current.first?.date ?? last, end: current.last?.end ?? now)
         let recaps = try readDailyRecaps(days: current, calendar: calendar)
