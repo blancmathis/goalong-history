@@ -265,6 +265,65 @@ public enum GoalongLocalAnalytics {
             }.map(\.element)
     }
 
+    /// A bounded, in-memory current-day projection. HistoryEvent and its nested
+    /// models are immutable value data here; no reader or file handle crosses actors.
+    public struct ResumableDayState: @unchecked Sendable {
+        public let cursor: HistoryLocalAnalyticsCursor?
+        public let events: [HistoryEvent]
+        public let incomplete: Bool
+    }
+
+    public struct ResumableDayLoad: Sendable {
+        public let day: Day
+        /// Last complete checkpoint, unchanged if this attempt failed or was cancelled.
+        public let state: ResumableDayState?
+        public let didResume: Bool
+        public let eventBytesRead: Int64
+        public let wasCancelled: Bool
+    }
+
+    /// Reads only appended complete lines when the previous checkpoint is valid.
+    /// Invalidation transparently replaces the accumulated projection with a full read.
+    public static func load(root: URL, day: Date, resuming state: ResumableDayState?,
+                            now: Date = Date(), calendar: Calendar = .current,
+                            shouldContinue: () -> Bool = { true }) -> ResumableDayLoad {
+        let start = calendar.startOfDay(for: day)
+        let end = min(calendar.date(byAdding: .day, value: 1, to: start) ?? start, now)
+        guard end > start, shouldContinue() else {
+            return ResumableDayLoad(day: build(events: [], day: day, now: now, calendar: calendar, incomplete: end > start),
+                state: state, didResume: false, eventBytesRead: 0, wasCancelled: end > start)
+        }
+        let loaded = HistoryLocalStoreReader(rootDirectory: root).loadLocalAnalyticsEvidence(
+            start: start, endExclusive: end, resumeCursor: state?.cursor,
+            timeZoneIdentifier: calendar.timeZone.identifier, shouldContinue: shouldContinue)
+        let metrics = loaded.metrics
+        let incomplete = metrics.wasCancelled || metrics.sourceChangedDuringRead || metrics.sourceAccessWasIncomplete
+            || metrics.evidenceBudgetExceeded || !loaded.issues.isEmpty
+        guard !incomplete else {
+            return ResumableDayLoad(day: build(events: loaded.events, day: day, now: now,
+                calendar: calendar, incomplete: true), state: state, didResume: loaded.didResume,
+                eventBytesRead: metrics.eventBytesRead, wasCancelled: metrics.wasCancelled)
+        }
+        var events = loaded.events
+        if loaded.didResume, let state, let oldCursor = state.cursor {
+            // A legacy root may have several intersecting journals. Preserve full-read
+            // file order even when an earlier file grows, including timestamp ties.
+            events = []
+            events.reserveCapacity(state.events.count + loaded.events.count)
+            var oldOffset = 0, newOffset = 0
+            for (index, file) in oldCursor.files.enumerated() {
+                let oldEnd = oldOffset + file.retainedEventCount
+                let newEnd = newOffset + loaded.appendedEventCounts[index]
+                events.append(contentsOf: state.events[oldOffset..<oldEnd])
+                events.append(contentsOf: loaded.events[newOffset..<newEnd])
+                oldOffset = oldEnd; newOffset = newEnd
+            }
+        }
+        let next = ResumableDayState(cursor: loaded.resumeCursor, events: events, incomplete: false)
+        return ResumableDayLoad(day: build(events: events, day: day, now: now, calendar: calendar),
+            state: next, didResume: loaded.didResume, eventBytesRead: metrics.eventBytesRead, wasCancelled: false)
+    }
+
     public static func load(root: URL, day: Date, now: Date = Date(), calendar: Calendar = .current,
                             shouldContinue: () -> Bool = { true }) -> Day {
         let start = calendar.startOfDay(for: day)
