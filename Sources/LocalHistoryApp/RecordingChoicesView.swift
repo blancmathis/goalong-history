@@ -53,29 +53,45 @@ struct RecordingChoicesView: View {
                 Text("Toujours enregistré").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Rectangle().fill(LHTheme.separator).frame(height: 1)
-            signalGroup("Interactions", signals: [.clicks, .scrolling, .typing, .shortcuts])
+            signalGroup("Interactions", choices: choices([.clicks, .scrolling, .typing, .shortcuts]) + [calls])
             Rectangle().fill(LHTheme.separator).frame(height: 1)
-            signalGroup("Titres et adresses", signals: [.windowTitles, .interfaceLabels, .browserURLs])
+            signalGroup("Titres et adresses", choices: choices([.windowTitles, .interfaceLabels, .browserURLs]))
             if (!draft.excludedDomainsText.isEmpty || !draft.includedDomainsText.isEmpty) && !draft.captureURLs {
                 Label("Les filtres web peuvent bloquer le navigateur. Vérifiez Apps et sites.", systemImage: "info.circle")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
     }
-    private func signalGroup(_ title: String, signals: [RecordingSignal]) -> some View {
+    private struct Choice: Identifiable {
+        let id: String, title: String, detail: String
+        let isOn: Binding<Bool>
+    }
+    private func choices(_ signals: [RecordingSignal]) -> [Choice] {
+        signals.map { signal in
+            Choice(id: signal.rawValue, title: signal.title, detail: signal.detail,
+                   isOn: Binding(get: { draft[keyPath: signal.keyPath] }, set: { draft[keyPath: signal.keyPath] = $0 }))
+        }
+    }
+    /// A separate source, outside the recording profile and its count.
+    private var calls: Choice {
+        Choice(id: "calls", title: "Appels",
+               detail: "L’heure et l’app qui utilise le micro ou la caméra. Ni son, ni image, et jamais ajouté au temps actif.",
+               isOn: $draft.captureCallPresence)
+    }
+    private func signalGroup(_ title: String, choices: [Choice]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
             Grid(horizontalSpacing: 32, verticalSpacing: 0) {
-                ForEach(0..<((signals.count + 1) / 2), id: \.self) { row in
+                ForEach(0..<((choices.count + 1) / 2), id: \.self) { row in
                     GridRow {
-                        ForEach(Array(signals[(row * 2)..<min(row * 2 + 2, signals.count)])) { signal in
+                        ForEach(Array(choices[(row * 2)..<min(row * 2 + 2, choices.count)])) { choice in
                             HStack(spacing: 8) {
-                                Text(signal.title).font(.system(size: 13))
-                                GoalongHelpButton(text: signal.detail)
+                                Text(choice.title).font(.system(size: 13))
+                                GoalongHelpButton(text: choice.detail)
                                 Spacer(minLength: 8)
-                                Toggle(signal.title, isOn: Binding(get: { draft[keyPath: signal.keyPath] }, set: { draft[keyPath: signal.keyPath] = $0 }))
+                                Toggle(choice.title, isOn: choice.isOn)
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly)
-                                    .accessibilityIdentifier("recording-\(signal.rawValue)")
+                                    .accessibilityIdentifier("recording-\(choice.id)")
                             }.frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
                         }
                     }

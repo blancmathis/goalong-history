@@ -165,9 +165,6 @@ actor GoalongSystemSourcesReader {
                      health: health, note: note, noteStatus: noteStatus)
     }
 }
-extension Notification.Name {
-    static let goalongCallPresenceSettingDidChange = Notification.Name("ai.goalong.call-presence-setting-did-change")
-}
 /// UI API: on-demand reads, independent permission request, reversible source toggles and a day note.
 @MainActor final class GoalongSystemSourcesModel: ObservableObject {
     @Published private(set) var value: GoalongSystemSourcesDay?
@@ -191,7 +188,8 @@ extension Notification.Name {
         let config = try? RecorderConfig.load(from: root.appendingPathComponent("config.json"))
         let loaded = await reader.read(day: day, callsEnabled: consents.isEnabled(.localComputerHistory) && config?.effectiveCaptureCallPresence != false,
                                       calendarEnabled: consents.isEnabled(.calendar), screenTimeEnabled: consents.isEnabled(.appleScreenTime))
-        guard request == id, !Task.isCancelled, !GoalongGlobalPause.isPaused(in: root), consent.document == consents else { value = nil; return }
+        guard request == id else { return } // a newer read owns the value
+        guard !Task.isCancelled, !GoalongGlobalPause.isPaused(in: root), consent.document == consents else { value = nil; return }
         value = loaded
     }
     @discardableResult func setCalendarEnabled(_ enabled: Bool) -> Bool {
@@ -204,12 +202,6 @@ extension Notification.Name {
         _ = await GoalongCalendarSource.shared.requestAccess(enabled: true)
         value = nil
         objectWillChange.send()
-    }
-    func setCallPresence(_ enabled: Bool) throws {
-        var config = try RecorderConfig.load(from: root.appendingPathComponent("config.json")); config.captureCallPresence = enabled
-        try ChatGPTSecureStorage.writeFileAtomically(JSONEncoder().encode(config.validated()), to: root.appendingPathComponent("config.json"))
-        request = UUID(); value = nil
-        NotificationCenter.default.post(name: .goalongCallPresenceSettingDidChange, object: root.standardizedFileURL.path)
     }
     func setNote(_ text: String, day: Date) throws { try GoalongDayNoteStore.set(text, root: root, day: day); request = UUID(); value = nil }
     func deleteNote(day: Date) throws { try GoalongDayNoteStore.delete(root: root, day: day); request = UUID(); value = nil }

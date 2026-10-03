@@ -289,6 +289,7 @@
         var captureWindowTitles: Bool
         var captureElementLabels: Bool
         var captureURLs: Bool
+        var captureCallPresence: Bool
         var capturePrivateBrowsing: Bool
         var redactAllURLQueryValues: Bool
         var foregroundIdleSeconds: Int
@@ -309,6 +310,7 @@
             captureWindowTitles = config.captureWindowTitles
             captureElementLabels = config.captureElementLabels
             captureURLs = config.captureURLs
+            captureCallPresence = config.effectiveCaptureCallPresence
             capturePrivateBrowsing = config.capturePrivateBrowsing == true
             redactAllURLQueryValues = config.redactAllURLQueryValues
             foregroundIdleSeconds = config.effectiveForegroundIdleSeconds
@@ -331,6 +333,7 @@
             output.captureWindowTitles = captureWindowTitles
             output.captureElementLabels = captureElementLabels
             output.captureURLs = captureURLs
+            output.captureCallPresence = captureCallPresence
             output.capturePrivateBrowsing = capturePrivateBrowsing
             output.redactAllURLQueryValues = redactAllURLQueryValues
             output.foregroundIdleSeconds = foregroundIdleSeconds

@@ -114,6 +114,12 @@ extension GoalongWorkSharingFilter {
         }
     }
 
+    /// The day note goes to the agent only when the reviewed recap shares it, and never beside an exclusion.
+    static func sharedDayNote(root: URL, day: Date, selection: GoalongAnalysisSelection, policy: GoalongPrivacyPolicy) -> String? {
+        guard selection.isValid(for: policy), selection.systemSources?.dayNote == true, !policy.hasExclusions else { return nil }
+        return try? GoalongDayNoteStore.get(root: root, day: day)
+    }
+
     func classify(day: Date, userInitiated: Bool = true, dayNote: String? = nil) {
         guard !isRunning else { return }
         let state = readiness
@@ -131,8 +137,9 @@ extension GoalongWorkSharingFilter {
         runningDay = start; progress = "Lecture de la journée sur ce Mac…"; lastError = nil
         attempts[start] = (Date(), false)
         let definition = store.definition, revision = store.revision, root = self.root
-        let filter = GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy.load(in: root),
-                                              selection: GoalongAnalysisSelection.load(root: root))
+        let policy = GoalongPrivacyPolicy.load(in: root), selection = GoalongAnalysisSelection.load(root: root)
+        let filter = GoalongWorkSharingFilter(policy: policy, selection: selection)
+        let note = dayNote ?? Self.sharedDayNote(root: root, day: start, selection: selection, policy: policy)
         let dayName = Self.dayString(start, calendar: calendar)
         task = Task { [weak self] in
             guard let self else { return }
@@ -182,7 +189,7 @@ extension GoalongWorkSharingFilter {
                         : "L’agent classe \(batch.count) contexte\(batch.count > 1 ? "s" : "")…"
                     let request = GoalongWorkClassification.request(date: dayName, definition: definition, pending: pending,
                         batch: batch, day: observation.day, verdicts: store.verdicts, knownTasks: store.knownTasks,
-                        examples: store.examples, calendar: calendar, contextExcerpts: excerpts, dayNote: dayNote)
+                        examples: store.examples, calendar: calendar, contextExcerpts: excerpts, dayNote: note)
                     let prompt = GoalongWorkClassification.prompt(request, definition: definition)
                     let privacyRevision = filter.policy.revision
                     guard store.markAsked(batch, revision: revision, day: dayName) else { throw GoalongWorkClassification.Failure.invalid("La tentative n’a pas pu être enregistrée. Rien n’a été envoyé.") }

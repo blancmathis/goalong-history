@@ -16,12 +16,15 @@ Les tests utilisent des répertoires temporaires ; les titres d’agenda restent
 | `GoalongHealthSource` | même fichier | load / decode ; sleepSeconds, sleepStages, steps, workoutCount, workoutSeconds, timeZone, sleepLabel |
 | `GoalongSystemSourcesReader` | même fichier | actor ; read(day:callsEnabled:calendarEnabled:screenTimeEnabled:) |
 | `GoalongSystemSourcesDay`, `GoalongOtherDevicesLane`, `GoalongHealthLane` | même fichier | valeur du jour ; statuts et données de chaque lane, note et noteStatus |
-| `GoalongSystemSourcesModel` | même fichier | ObservableObject MainActor ; value, loading, error, calendarEnabled, callPresenceEnabled, calendarPermission, remindersPermission ; refresh(day:), setCalendarEnabled, requestCalendarPermissions, setCallPresence, setNote, deleteNote |
+| `GoalongSystemSourcesModel` | même fichier | ObservableObject MainActor ; value, loading, error, calendarEnabled, callPresenceEnabled, calendarPermission, remindersPermission ; refresh(day:), setCalendarEnabled, requestCalendarPermissions, setNote, deleteNote |
 | `GoalongSystemRecapSelection` | `Sources/LocalHistoryApp/GoalongSystemRecapSections.swift` | cinq choix indépendants, tous désactivés par défaut ; `GoalongAnalysisSelection.systemSources` optionnel pour migrer les choix existants |
 
 `GoalongCapability.calendar` est le consentement Goalong, séparé des deux autorisations macOS.
 Le réglage `RecorderConfig.captureCallPresence` migre les anciennes configurations vers activé,
 mais l’autorisation Historique de ce Mac et les pauses continuent de bloquer la capture.
+Il se change par le brouillon des réglages (`DashboardSettingsDraft.captureCallPresence`, interrupteur
+« Appels » de Réglages › Données enregistrées), hors du compteur du profil d’enregistrement : la
+configuration en mémoire reste la seule source, et `applyConfiguration` reconfigure le moniteur.
 `AppDelegate` relie le moniteur au consentement, aux pauses, à la configuration et à l’arrêt.
 L’interface peut utiliser le modèle sans déclencher de demande de permission pendant une lecture.
 

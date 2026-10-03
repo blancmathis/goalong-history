@@ -9,6 +9,7 @@ import AppKit
     @State private var search = ""
     @State private var showingRetention = false
     @State private var showingDeveloperProjects = false
+    @StateObject private var system = GoalongSystemSourcesModel()
     @State private var pendingPrivate = false
     @State private var pendingUnredacted = false
     private var pane: SettingsPane {
@@ -17,6 +18,25 @@ import AppKit
     }
     private var recording: Binding<DashboardSettingsDraft> {
         Binding(get: { model.appliedSettings }, set: { _ = model.applyRecordingChoice($0) })
+    }
+    @ViewBuilder private var calendarAccess: some View {
+        let permissions = [system.calendarPermission, system.remindersPermission]
+        if consents.isEnabled(.calendar), permissions.contains(where: { $0 != .ready }) {
+            let denied = permissions.contains(.permissionDenied)
+            HStack(spacing: 10) {
+                Text(denied ? "macOS refuse l’accès à l’agenda ou aux rappels." : "macOS doit encore donner l’accès à l’agenda et aux rappels.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Button(denied ? "Ouvrir Réglages Système…" : "Autoriser l’accès…") {
+                    if denied, let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
+                        NSWorkspace.shared.open(url)
+                    } else if !denied {
+                        Task { await system.requestCalendarPermissions() }
+                    }
+                }
+                .buttonStyle(LHQuietButtonStyle()).accessibilityIdentifier("settings-calendar-access")
+            }
+        }
     }
     var body: some View {
         ScrollView {
@@ -158,6 +178,23 @@ import AppKit
                     Button("Choisir les projets…") { showingDeveloperProjects = true }.buttonStyle(LHQuietButtonStyle())
                         .accessibilityIdentifier("settings-developer-projects")
                 }
+                Divider()
+                SourceActivationToggle(capability: .calendar) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Agenda et rappels")
+                        Text("Événements et rappels terminés de ce Mac, pour comparer le prévu et l’observé. Rien n’est modifié.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                calendarAccess
+            }
+            // macOS asks once, right after the choice; a refusal is then changed only in System Settings.
+            .onChange(of: consents.isEnabled(.calendar)) { enabled in
+                if enabled { Task { await system.requestCalendarPermissions() } }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                system.objectWillChange.send()
             }
         case .applications:
             GoalongApplicationsSettings(model: model)

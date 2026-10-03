@@ -259,13 +259,13 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>NSInputMonitoringUsageDescription</key>
     <string>Goalong History utilise la surveillance de l’entrée pour compter les clics, défilements, raccourcis et la durée de frappe. Il ne conserve jamais les caractères tapés, les mots de passe ni le presse-papiers.</string>
     <key>NSCalendarsUsageDescription</key>
-    <string>Goalong lit vos événements (heures et titres) pour comparer le temps prévu au temps observé sur ce Mac. Rien n'est modifié. Rien ne quitte ce Mac sans votre accord.</string>
+    <string>Goalong lit vos événements (heures et titres) pour comparer le temps prévu au temps observé sur ce Mac. Rien n’est modifié. Rien ne quitte ce Mac sans votre accord.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Goalong lit vos événements (heures et titres) pour comparer le temps prévu au temps observé sur ce Mac. Rien n'est modifié. Rien ne quitte ce Mac sans votre accord.</string>
+    <string>Goalong lit vos événements (heures et titres) pour comparer le temps prévu au temps observé sur ce Mac. Rien n’est modifié. Rien ne quitte ce Mac sans votre accord.</string>
     <key>NSRemindersUsageDescription</key>
-    <string>Goalong lit vos rappels terminés pour montrer ce que vous avez accompli dans la journée. Rien n'est modifié. Rien ne quitte ce Mac sans votre accord.</string>
+    <string>Goalong lit vos rappels terminés pour montrer ce que vous avez accompli dans la journée. Rien n’est modifié. Rien ne quitte ce Mac sans votre accord.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
-    <string>Goalong lit vos rappels terminés pour montrer ce que vous avez accompli dans la journée. Rien n'est modifié. Rien ne quitte ce Mac sans votre accord.</string>
+    <string>Goalong lit vos rappels terminés pour montrer ce que vous avez accompli dans la journée. Rien n’est modifié. Rien ne quitte ce Mac sans votre accord.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

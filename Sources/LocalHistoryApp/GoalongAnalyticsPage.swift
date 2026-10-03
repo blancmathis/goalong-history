@@ -3,6 +3,7 @@ import Foundation
 import AppKit
 import SwiftUI
 import Combine
+import LocalHistoryCore
 
 /// Daily review and longer-term perspective share one window-local selection.
 struct GoalongAnalyticsPage: View {
@@ -14,6 +15,11 @@ struct GoalongAnalyticsPage: View {
     @ObservedObject private var agent = GoalongWorkAgent.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @StateObject private var developer = GoalongDeveloperModel()
+    @StateObject private var system = GoalongSystemSourcesModel()
+    /// The last complete read of calls, agenda, devices, Health and note, with its day; kept while the next one runs.
+    @State private var shownSystem: (day: Date, value: GoalongSystemSourcesDay)?
+    @State private var editingNote = false
+    @State private var importingHealth = false
     @State private var focusMinutes = 25
     @State private var revision = 0
     @State private var manualRefreshRevision = 0
@@ -104,6 +110,7 @@ struct GoalongAnalyticsPage: View {
                             if selection.period == 1 {
                                 GoalongActivityAppleCard(model: model, day: navigation.day,
                                     refreshRevision: manualRefreshRevision)
+                                if let devices = lanes.otherDevices { GoalongOtherDevicesSection(value: devices) }
                             } else {
                                 LHCard(padding: 16) {
                                     HStack(alignment: .center, spacing: 14) {
@@ -138,6 +145,13 @@ struct GoalongAnalyticsPage: View {
         .background(LHTheme.pageBackground)
         .sheet(item: $reviewRequest) { request in GoalongWorkReviewSheet(request: request).goalongControls() }
         .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
+        .sheet(isPresented: $editingNote) {
+            GoalongDayNoteSheet(day: selection.day, initial: systemValue?.note ?? "",
+                                onSave: { try system.setNote($0, day: selection.day); laneRevision += 1 },
+                                onDelete: { try system.deleteNote(day: selection.day); laneRevision += 1 })
+                .goalongControls()
+        }
+        .sheet(isPresented: $importingHealth, onDismiss: { laneRevision += 1 }) { GoalongHealthImportSheet().goalongControls() }
         .confirmationDialog("Analyser la journée du \(GoalongUIFormat.day(navigation.day))",
                             isPresented: $showingAnalysisChoice, titleVisibility: .visible) {
             Button("Bilan quotidien et sources…") { openRecap(navigation.day) }
@@ -170,6 +184,13 @@ struct GoalongAnalyticsPage: View {
                   consents.isEnabled(.aiConversations) || consents.isEnabled(.developerActivity) else { return }
             let day = selection.day, overview = model.agentActivityRuntime.overview
             await developer.refresh(day: day, agents: Calendar.current.isDate(overview.day, inSameDayAs: day) ? overview : nil)
+        }
+        .task(id: systemKey) {
+            // Calls, agenda, other devices, Health and the note; the Mac's day gives its gaps.
+            guard loadRequest.permitsLoading, let day = observedDay else { return }
+            await system.refresh(day: day)
+            guard !Task.isCancelled else { return }
+            shownSystem = system.value.map { (day.date, $0) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .goalongDeveloperProjectsDidChange)) { _ in
             if !previewActive { laneRevision += 1 }
@@ -213,18 +234,56 @@ struct GoalongAnalyticsPage: View {
          "\(consents.isEnabled(.developerActivity))"].joined(separator: "|")
     }
 
+    /// The Mac's day on screen, once read: the system sources need its gaps.
+    private var observedDay: GoalongLocalAnalytics.Day? {
+        guard !previewActive, selection.period == 1, let day = analytics.payload?.current.days.first,
+              Calendar.current.isDate(day.date, inSameDayAs: selection.day) else { return nil }
+        return day
+    }
+
+    private var systemKey: String {
+        [selection.day.timeIntervalSince1970.description, "\(laneRevision)", "\(manualRefreshRevision)",
+         "\(loadRequest.permitsLoading)", observedDay.map { "\($0.segments.count)|\($0.lastObservation?.timeIntervalSince1970 ?? 0)" } ?? "-",
+         "\(model.appliedSettings.captureCallPresence)", "\(consents.isEnabled(.calendar))",
+         "\(consents.isEnabled(.localComputerHistory))", "\(consents.isEnabled(.appleScreenTime))"].joined(separator: "|")
+    }
+
+    private var systemValue: GoalongSystemSourcesDay? {
+        guard selection.period == 1, let shown = shownSystem, Calendar.current.isDate(shown.day, inSameDayAs: selection.day) else { return nil }
+        return shown.value
+    }
+
     /// The sources of the day shown, each separate from the observations.
     private var lanes: GoalongActivityLanes {
         if previewActive { return GoalongAnalyticsPreview.lanes(day: selection.day) }
         let ai = consents.isEnabled(.aiConversations), followsProjects = consents.isEnabled(.developerActivity)
-        var lanes = GoalongActivityLanes(openSettings: { model.openRecordingSettings() },
+        var lanes = GoalongActivityLanes(editNote: { editingNote = true }, allowCalendar: allowCalendar,
+                                         openSettings: { model.openRecordingSettings() },
                                          chooseProjects: { showingDeveloperProjects = true })
         if selection.period == 1, ai || followsProjects, let value = developer.value,
            Calendar.current.isDate(value.day, inSameDayAs: selection.day) {
             lanes.code = GoalongCodeDay(value)
         }
+        if let value = systemValue {
+            lanes.agenda = GoalongAgendaDay(calls: value.calls, calendar: value.calendar,
+                                            calendarPermission: system.calendarPermission, remindersPermission: system.remindersPermission)
+            lanes.sleep = GoalongSleepDay(value.health)
+            lanes.otherDevices = GoalongOtherDevicesDay(value.otherDevices)
+            lanes.note = value.note
+            if case .failed = value.noteStatus {} else { lanes.noteAvailable = true }
+        }
         lanes.sources = sourceRows(ai: ai, followsProjects: followsProjects)
         return lanes
+    }
+
+    /// Asks macOS once; after a refusal only System Settings can give the access back.
+    private func allowCalendar() {
+        guard !previewActive else { return }
+        if [system.calendarPermission, system.remindersPermission].contains(.permissionDenied) {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") { NSWorkspace.shared.open(url) }
+        } else {
+            Task { await system.requestCalendarPermissions(); laneRevision += 1 }
+        }
     }
 
     private func sourceRows(ai: Bool, followsProjects: Bool) -> [GoalongSourceRow] {
@@ -233,6 +292,7 @@ struct GoalongAnalyticsPage: View {
         let value = isDay ? developer.value.flatMap { Calendar.current.isDate($0.day, inSameDayAs: selection.day) ? $0 : nil } : nil
         var rows = [GoalongSourceRow(id: "mac", title: "Activité de ce Mac", state: .ready,
                                      detail: "Applications, sites et saisie : la source du temps actif.")]
+        rows += systemRows(settings: settings)
         if !ai {
             rows.append(.init(id: "agents", title: "Conversations d’agents", state: .off,
                               detail: "Codex, Claude Code et T3 Code : nombre de conversations et de demandes par projet, sans lire les messages.",
@@ -276,6 +336,71 @@ struct GoalongAnalyticsPage: View {
             if value?.developerStatus == .permissionDenied { detail = "Accès refusé à un dossier de projet." }
             rows.append(.init(id: "projects", title: "Projets de développement", state: state,
                               detail: detail, actionTitle: "Choisir les projets…", action: { showingDeveloperProjects = true }))
+        }
+        return rows
+    }
+
+    /// Calls, agenda, other devices and Health, each with its state and at most one action.
+    private func systemRows(settings: @escaping () -> Void) -> [GoalongSourceRow] {
+        let value = systemValue
+        var rows: [GoalongSourceRow] = []
+        let callsPurpose = "L’heure et l’app qui utilise le micro ou la caméra. Ni son, ni image."
+        if !consents.isEnabled(.localComputerHistory) || !model.appliedSettings.captureCallPresence {
+            rows.append(.init(id: "calls", title: "Appels", state: .off, detail: callsPurpose, actionTitle: "Activer…", action: settings))
+        } else if let calls = value?.calls {
+            let total = calls.unionSeconds >= 60 ? GoalongAnalyticsFormatting.duration(calls.unionSeconds) + " d’appels ce jour-là." : "Aucun appel enregistré ce jour-là."
+            let detail: String
+            switch calls.status {
+            case .unsupported: detail = "Ce Mac ne permet pas de savoir quand le micro sert."
+            case .failed(let reason): detail = reason
+            case .partial: detail = total + " Lecture partielle : un micro ne dit pas quelle app l’utilise."
+            default: detail = total
+            }
+            rows.append(.init(id: "calls", title: "Appels", state: .init(calls.status), detail: detail))
+        } else {
+            rows.append(.init(id: "calls", title: "Appels", state: .ready, detail: callsPurpose))
+        }
+        let agendaPurpose = "Événements et rappels terminés, lus sur ce Mac sans rien modifier."
+        let permissions = [system.calendarPermission, system.remindersPermission]
+        if !consents.isEnabled(.calendar) {
+            rows.append(.init(id: "calendar", title: "Agenda et rappels", state: .off, detail: agendaPurpose, actionTitle: "Activer…", action: settings))
+        } else if permissions.contains(where: { $0 != .ready }) {
+            rows.append(.init(id: "calendar", title: "Agenda et rappels", state: .needsPermission,
+                              detail: "macOS n’a pas donné l’accès à l’agenda ou aux rappels.",
+                              actionTitle: permissions.contains(.permissionDenied) ? "Ouvrir…" : "Autoriser…", action: allowCalendar))
+        } else if let calendar = value?.calendar {
+            var detail = GoalongCodeDay.count(calendar.events.filter(\.isPlannedBusy).count, "événement prévu", "événements prévus")
+                + " et " + GoalongCodeDay.count(calendar.completedReminders.count, "rappel terminé", "rappels terminés") + " ce jour-là."
+            if case .failed(let reason) = calendar.status { detail = reason }
+            rows.append(.init(id: "calendar", title: "Agenda et rappels", state: .init(calendar.status), detail: detail))
+        } else {
+            rows.append(.init(id: "calendar", title: "Agenda et rappels", state: .ready, detail: agendaPurpose))
+        }
+        let devicesPurpose = "iPhone et iPad, par Temps d’écran Apple : l’écran allumé pendant les trous du Mac."
+        if !consents.isEnabled(.appleScreenTime) {
+            rows.append(.init(id: "devices", title: "Autres appareils Apple", state: .off, detail: devicesPurpose, actionTitle: "Activer…", action: settings))
+        } else if let lane = value?.otherDevices {
+            let gaps = lane.devices.reduce(0) { $0 + $1.duringMacGapsSeconds }
+            var detail = lane.devices.isEmpty ? "Aucun autre appareil pour cette date."
+                : GoalongCodeDay.count(lane.devices.count, "appareil", "appareils")
+                    + (gaps >= 60 ? ", \(GoalongAnalyticsFormatting.duration(gaps)) d’écran pendant les trous du Mac." : ".")
+            if case .failed(let reason) = lane.status { detail = reason }
+            rows.append(.init(id: "devices", title: "Autres appareils Apple", state: .init(lane.status), detail: detail))
+        } else {
+            rows.append(.init(id: "devices", title: "Autres appareils Apple", state: .ready, detail: devicesPurpose))
+        }
+        // An import is a snapshot by nature: it reads as ready once it exists.
+        switch value?.health.status {
+        case .ready?, .partial?:
+            rows.append(.init(id: "health", title: "Apple Santé (import)", state: .ready,
+                              detail: "Import pour cette date : sommeil, pas et séances.", actionTitle: "Importer…", action: { importingHealth = true }))
+        case .failed(let reason)?:
+            rows.append(.init(id: "health", title: "Apple Santé (import)", state: .failed, detail: reason,
+                              actionTitle: "Importer…", action: { importingHealth = true }))
+        default:
+            rows.append(.init(id: "health", title: "Apple Santé (import)", state: .noData,
+                              detail: "Aucun import pour cette date. Goalong ne lit pas Santé en continu.",
+                              actionTitle: "Importer…", action: { importingHealth = true }))
         }
         return rows
     }

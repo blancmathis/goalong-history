@@ -148,10 +148,10 @@ store and retention) and `docs/WORK_DEFINITION.md` (re-ask rule).
   `EKEventStore` (full access APIs on macOS 14+, `requestAccess(to:)` on macOS 13).
 - Info.plist (`scripts/build_app_core.sh`): `NSCalendarsUsageDescription` and
   `NSCalendarsFullAccessUsageDescription` = « Goalong lit vos événements (heures et titres) pour
-  comparer le temps prévu au temps observé sur ce Mac. Rien n'est modifié. Rien ne quitte ce Mac
+  comparer le temps prévu au temps observé sur ce Mac. Rien n’est modifié. Rien ne quitte ce Mac
   sans votre accord. » ; `NSRemindersUsageDescription` and `NSRemindersFullAccessUsageDescription`
   = « Goalong lit vos rappels terminés pour montrer ce que vous avez accompli dans la journée.
-  Rien n'est modifié. Rien ne quitte ce Mac sans votre accord. »
+  Rien n’est modifié. Rien ne quitte ce Mac sans votre accord. »
 - Hardened Runtime needs the resource-access entitlement
   `com.apple.security.personal-information.calendars` (verify whether Reminders needs another
   key). Add `Distribution/GoalongHistory.entitlements`, sign certificate-backed builds with it by

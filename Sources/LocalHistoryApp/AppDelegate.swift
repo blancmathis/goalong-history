@@ -77,7 +77,6 @@
         private var integrityJournal: IntegrityJournal!
         private var minuteSealer: MinuteSealer!
         private var clearingCallPresence = false
-        private var callPresenceSettingObserver: NSObjectProtocol?
         private var recorder: EventRecorder!
         private var contextProvider: ContextProvider!
         private var contextMonitor: ContextMonitor!
@@ -398,7 +397,6 @@
                 ChatGPTRecapRuntime.shared.stop()
             }
             GoalongCallPresenceMonitor.shared.stop()
-            if let callPresenceSettingObserver { NotificationCenter.default.removeObserver(callPresenceSettingObserver) }
             contextMonitor?.stop()
             eventTapMonitor?.stop()
             if capabilityConsents?.isEnabled(.localComputerHistory) == true {
@@ -945,11 +943,6 @@
         }
 
         private func installCapabilityConsentObserver() {
-            callPresenceSettingObserver = NotificationCenter.default.addObserver(forName: .goalongCallPresenceSettingDidChange, object: nil, queue: .main) { [weak self] notice in
-                guard let self, notice.object as? String == AppPaths.applicationSupportDirectory.standardizedFileURL.path else { return }
-                self.configManager.reload()
-                self.configureCallPresence()
-            }
             globalPauseObserver = NotificationCenter.default.addObserver(forName: .goalongGlobalPauseDidChange,
                 object: nil, queue: .main) { [weak self] notice in
                 guard let self, notice.object as? String == AppPaths.applicationSupportDirectory.standardizedFileURL.path else { return }

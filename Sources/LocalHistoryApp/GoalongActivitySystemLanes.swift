@@ -35,7 +35,9 @@ struct GoalongAgendaDay: Equatable {
     var openDueReminders = 0
     var callsOn = false
     var calendarOn = false
-    var calendarAllowed = true
+    /// macOS access to the agenda and reminders, once « Agenda et rappels » is on.
+    enum CalendarAccess { case granted, notAsked, denied }
+    var calendarAccess = CalendarAccess.granted
     var partial = false
 
     var plannedSeconds: TimeInterval { GoalongIntervals.merged(events.map(\.interval)).reduce(0) { $0 + $1.duration } }
@@ -49,7 +51,7 @@ struct GoalongAgendaDay: Equatable {
         if callSeconds >= 60 { parts.append("\(GoalongAnalyticsFormatting.duration(callSeconds)) d’appels") }
         if plannedSeconds >= 60 { parts.append("\(GoalongAnalyticsFormatting.duration(plannedSeconds)) prévues") }
         if !reminders.isEmpty { parts.append(GoalongCodeDay.count(reminders.count, "rappel terminé", "rappels terminés")) }
-        if parts.isEmpty { return calendarOn && !calendarAllowed ? "Accès à l’agenda à autoriser" : "Aucun appel ni événement prévu" }
+        if parts.isEmpty { return calendarOn && calendarAccess != .granted ? "Accès à l’agenda à autoriser" : "Aucun appel ni événement prévu" }
         return parts.joined(separator: " · ")
     }
 }
@@ -200,8 +202,10 @@ struct GoalongAgendaSection: View {
         }
         if !agenda.calendarOn {
             notes.append(("Pour comparer avec ce qui était prévu, activez « Agenda et rappels ».", "Réglages…", onSettings))
-        } else if !agenda.calendarAllowed {
+        } else if agenda.calendarAccess == .notAsked {
             notes.append(("macOS n’a pas encore donné l’accès à l’agenda et aux rappels.", "Autoriser…", onAllowCalendar))
+        } else if agenda.calendarAccess == .denied {
+            notes.append(("macOS refuse l’accès à l’agenda ou aux rappels. Vous pouvez le donner dans Réglages Système.", "Ouvrir…", onAllowCalendar))
         }
         return notes
     }
@@ -367,7 +371,7 @@ struct GoalongDayNoteSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Note du \(GoalongUIFormat.day(day))").font(LHTheme.sheetTitleFont)
-            Text("Ce qui a marqué la journée, ou ce que les chiffres ne montrent pas. La note reste sur ce Mac ; elle n’entre dans un bilan que si vous la choisissez.")
+            Text("Ce qui a marqué la journée, ou ce que les chiffres ne montrent pas. La note reste sur ce Mac. Elle n’est envoyée que si vous cochez « Note du jour » dans les sources du bilan : elle sert alors au bilan et à l’agent de « Mon travail ».")
                 .font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             GoalongTextArea(text: $text, placeholder: "Par exemple : journée coupée par deux rendez-vous.", minHeight: 96)
                 .accessibilityIdentifier("activity-note-text")
