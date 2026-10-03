@@ -263,3 +263,21 @@ visible partial state if a day still exceeds the ceiling.
 - **Aside extension:** Accessibility already reads 98 % of Aside URLs; S6 covers attribution.
 - **Browser-history backfill, Messages, Mail, CallHistory, shell history:** sensitive, private
   formats, low gain over the live recorder.
+
+## UI (this session, after the three jobs)
+
+Activité stays short: the summary gains one phrase and the day note; every lane lives in a named
+view of « Explorer la journée », whose caption carries the key figure.
+
+- Summary: the bounds line becomes « De 7 h 10 à 22 h 00, dont 1 h 05 sans observation » (only
+  when ≥ 10 min). A day restored from its summary says that its details were deleted after the
+  retention period. « Note du jour » before « Explorer » (quiet button when empty).
+- New named views: « Écriture, lecture et appels » (F3, rows with ink share bars, no new series
+  colour), « Appels et agenda » (S1, S2: planned vs observed sentence, calls, completed
+  reminders), « Agents et code » (D1–D4, per project; agent time never added to active time),
+  « Sommeil et activité » (S4, listed only with imported data), « Couverture et sources » (F2
+  reasons with durations, then every source with its status and one action).
+- « Temps d'écran Apple » gains « Pendant les trous du Mac » (S3).
+- Settings › Enregistrement: « Appels » in « Données enregistrées »; « Agenda et rappels » and
+  « Activité de développement » (+ « Choisir les projets… ») in « Autres sources ». Recap source
+  selection gains the new sections. Storage lists the day summaries.
