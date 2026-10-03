@@ -72,7 +72,7 @@ final class GoalongCallPresenceMonitor {
     private func persistInterval(_ row: GoalongCallInterval) throws {
         let privacy = GoalongPrivacyPolicy.load(in: root)
         guard !privacy.excludes(appID: row.bundleIdentifier, name: row.application),
-              !privacy.hasExclusions || row.bundleIdentifier != nil else { return }
+              !privacy.hasExclusions || row.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { return }
         try GoalongCallStore.save(row, root: root)
     }
     private func persistState() throws {
@@ -165,7 +165,8 @@ final class GoalongCallPresenceMonitor {
             }
         }
         let raw = running?.bundleIdentifier ?? reportedBundle
-        let bundle = raw?.replacingOccurrences(of: #"(?i)(\.helper|\.renderer|\.gpu)(\..*)?$"#, with: "", options: .regularExpression)
+        let mapped = raw?.replacingOccurrences(of: #"(?i)(\.helper|\.renderer|\.gpu)(\..*)?$"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        let bundle = mapped?.isEmpty == false ? mapped : nil
         return (bundle, running?.localizedName ?? bundle)
     }
     private func refresh(rebuild: Bool = false) {

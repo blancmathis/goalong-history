@@ -41,6 +41,15 @@ final class GoalongSystemSourcesTests: XCTestCase {
         XCTAssertEqual(lane.secondsPerApplication["a"], 60)
         var privacy = GoalongPrivacyPolicy(); privacy.applications = ["b": "b"]
         XCTAssertEqual(GoalongCallStore.load(root: root, day: day, enabled: true, privacy: privacy).unionSeconds, 60)
+        XCTAssertNil(GoalongCallPresenceMonitor.application(pid: -1, reportedBundle: " ").0)
+        XCTAssertEqual(GoalongCallPresenceMonitor.application(pid: -1, reportedBundle: "com.example.Browser.helper.renderer").0, "com.example.Browser")
+        for identifier in [nil, " "] as [String?] {
+            let row = GoalongCallInterval(start: day.addingTimeInterval(200), end: day.addingTimeInterval(240),
+                bundleIdentifier: identifier, application: "", microphone: true, camera: false)
+            XCTAssertNil(row.bundleIdentifier)
+            try GoalongCallStore.save(row, root: root)
+        }
+        XCTAssertEqual(GoalongCallStore.load(root: root, day: day, enabled: true, privacy: privacy).unionSeconds, 60)
         XCTAssertEqual(GoalongCallStore.load(root: root, day: day, enabled: false).status, .disabled)
         let key = GoalongSystemSourceFiles.dayKey(day)
         try GoalongSystemSourceFiles.write(Data("incomplete".utf8), root: root, folder: "calls", name: key + ".jsonl", maximumBytes: 100)

@@ -148,7 +148,11 @@ public struct GoalongCallInterval: Codable, Equatable, Sendable, Identifiable {
     public var interrupted: Bool = false
     public var id: String { "\(start.timeIntervalSince1970)|\(end.timeIntervalSince1970)|\(bundleIdentifier ?? "device")|\(microphone)|\(camera)" }
     public init(start: Date, end: Date, bundleIdentifier: String?, application: String?, microphone: Bool, camera: Bool, interrupted: Bool = false) {
-        self.start = start; self.end = end; self.bundleIdentifier = bundleIdentifier; self.application = application
+        self.start = start; self.end = end
+        let bundle = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = application?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.bundleIdentifier = bundle?.isEmpty == false ? bundle : nil
+        self.application = name?.isEmpty == false ? name : nil
         self.microphone = microphone; self.camera = camera; self.interrupted = interrupted
     }
 }
@@ -197,6 +201,7 @@ public enum GoalongCallStore {
                 guard row.end >= row.start, row.end.timeIntervalSince(row.start) <= 31 * 86400,
                       (row.application?.count ?? 0) <= 256, (row.bundleIdentifier?.count ?? 0) <= 256 else { throw CocoaError(.fileReadCorruptFile) }
                 guard !privacy.excludes(appID: row.bundleIdentifier, name: row.application),
+                      !privacy.hasExclusions || row.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
                       let range = GoalongSourceIntervals.clipped(row.start, row.end, to: interval) else { continue }
                 clipped.append(.init(start: range.start, end: range.end, bundleIdentifier: row.bundleIdentifier,
                                      application: row.application, microphone: row.microphone, camera: row.camera, interrupted: row.interrupted))

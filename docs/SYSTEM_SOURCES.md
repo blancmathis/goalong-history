@@ -60,6 +60,8 @@ Un état ouvert au crash n’est jamais prolongé jusqu’au relancement : une b
 est conservée au dernier état confirmé, sans inventer la durée pendant l’arrêt. Les intervalles en cours vivent dans
 le moniteur et sont ajoutés uniquement à sa lecture en cours ; les fichiers sont bornés à 2 Mio/jour.
 Les captures du navigateur sans provenance de domaine sont omises si un filtre de domaine est actif.
+Un bundle vide reste une application inconnue ; les usages sans attribution sont omis à la
+lecture et à la persistance dès qu’une exclusion globale est active.
 
 Le builder de bilan existant est synchrone. L’agenda est obtenu hors du fil principal par une
 attente unique bornée à 9 secondes ; un appel accidentel sur le fil principal donne un état partiel.
