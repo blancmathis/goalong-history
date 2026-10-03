@@ -18,6 +18,17 @@ extension GoalongSourceRow.State {
     }
 }
 
+/// System Settings › Privacy › Calendars, through the reviewed open policy.
+enum GoalongCalendarSettings {
+    @discardableResult static func open() -> Bool {
+        for candidate in ["x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Calendars",
+                          "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"] {
+            if let url = URL(string: candidate), GoalongWorkspaceOpenPolicy.open(url, purpose: .systemSettings) { return true }
+        }
+        return false
+    }
+}
+
 extension GoalongAgendaDay {
     /// Calls and agenda of one day; nil when both sources are off. Titles stay in memory.
     init?(calls: GoalongCallLane, calendar: GoalongCalendarLane,

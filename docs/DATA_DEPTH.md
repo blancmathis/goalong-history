@@ -281,3 +281,27 @@ view of « Explorer la journée », whose caption carries the key figure.
 - Settings › Enregistrement: « Appels » in « Données enregistrées »; « Agenda et rappels » and
   « Activité de développement » (+ « Choisir les projets… ») in « Autres sources ». Recap source
   selection gains the new sections. Storage lists the day summaries.
+
+### State on 2026-10-04 (integration branch `feat/data-depth-20261003`)
+
+All of the above is built. Choices made while building:
+
+- Lanes reach the page through `GoalongActivityLanes` (`GoalongActivityLanes.swift`); builders in
+  `GoalongSystemLaneBuilders.swift` turn each S lane into its view. The page keeps the last complete
+  read of the system sources, with its day, while the next read runs, so a named view never
+  flickers back to the summary.
+- « Appels » goes through the settings draft (`DashboardSettingsDraft.captureCallPresence`), outside
+  the recording-profile count (« Complet · 8/8 » keeps its meaning). The in-memory configuration
+  stays the only source; the monitor is reconfigured by `applyConfiguration`.
+- « Agenda et rappels » asks macOS once, right after it is enabled. After a refusal, the actions
+  open System Settings › Privacy › Calendars through `GoalongWorkspaceOpenPolicy`.
+- A Health import is a snapshot by nature: the view says so once and does not add « partiel ».
+  « Couverture et sources » offers « Importer… » (the existing import sheet).
+- The work agent receives the day note only when the reviewed recap selection shares it and no
+  privacy exclusion exists (`GoalongWorkAgent.sharedDayNote`), the same rule as the recap.
+- A T3 turn left « running » without an end counts six hours at most and marks the read partial.
+- Day summaries appear in Storage › Conservation as « Résumés d’Activité » (F).
+
+Still to check by a person, on a signed build: the Calendar and Reminders prompts under Hardened
+Runtime (and whether Reminders needs its own entitlement), real microphone and camera use, the
+macOS 13 fallback.

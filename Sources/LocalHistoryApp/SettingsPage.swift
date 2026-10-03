@@ -23,16 +23,11 @@ import AppKit
         let permissions = [system.calendarPermission, system.remindersPermission]
         if consents.isEnabled(.calendar), permissions.contains(where: { $0 != .ready }) {
             let denied = permissions.contains(.permissionDenied)
-            HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(denied ? "macOS refuse l’accès à l’agenda ou aux rappels." : "macOS doit encore donner l’accès à l’agenda et aux rappels.")
                     .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
                 Button(denied ? "Ouvrir Réglages Système…" : "Autoriser l’accès…") {
-                    if denied, let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
-                        NSWorkspace.shared.open(url)
-                    } else if !denied {
-                        Task { await system.requestCalendarPermissions() }
-                    }
+                    if denied { GoalongCalendarSettings.open() } else { Task { await system.requestCalendarPermissions() } }
                 }
                 .buttonStyle(LHQuietButtonStyle()).accessibilityIdentifier("settings-calendar-access")
             }

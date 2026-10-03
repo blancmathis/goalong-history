@@ -280,7 +280,7 @@ struct GoalongAnalyticsPage: View {
     private func allowCalendar() {
         guard !previewActive else { return }
         if [system.calendarPermission, system.remindersPermission].contains(.permissionDenied) {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") { NSWorkspace.shared.open(url) }
+            GoalongCalendarSettings.open()
         } else {
             Task { await system.requestCalendarPermissions(); laneRevision += 1 }
         }
