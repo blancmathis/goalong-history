@@ -51,8 +51,9 @@ struct GoalongActivitySummary {
     var averageActivePerDay: TimeInterval? {
         averagedDays.isEmpty ? nil : averagedDays.reduce(0) { $0 + $1.activeSeconds } / Double(averagedDays.count)
     }
-    var averageWorkPerDay: TimeInterval? {
-        averagedDays.isEmpty ? nil : averagedDays.reduce(0) { $0 + $1.seconds(.work) } / Double(averagedDays.count)
+    var averageWorkPerDay: TimeInterval? { averagePerDay(.work) }
+    func averagePerDay(_ kind: GoalongLocalAnalytics.Kind) -> TimeInterval? {
+        averagedDays.isEmpty ? nil : averagedDays.reduce(0) { $0 + $1.seconds(kind) } / Double(averagedDays.count)
     }
 
     var classifiedShare: Double { activeSeconds > 0 ? (workSeconds + otherSeconds) / activeSeconds : 0 }

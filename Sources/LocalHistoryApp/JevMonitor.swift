@@ -154,7 +154,9 @@ struct JevRecentCheck: Identifiable {
         (8...1024).contains(value.utf8.count) && value.utf8.allSatisfy { (33...126).contains($0) }
     }
     func startBreak(minutes: Int) {
-        guard let value = JevTimedBreak(minutes: minutes, now: Date()) else { return }
+        // A break pauses running reminders; with monitoring off there is nothing to pause,
+        // and ending such a break must never switch monitoring on.
+        guard enabled, let value = JevTimedBreak(minutes: minutes, now: Date()) else { return }
         JevWarningPanel.shared.hide(resetPosition: true)
         // Suspend before touching disk: a failed save must never leave monitoring on.
         cancelPending(); inbox.configure(enabled: false)

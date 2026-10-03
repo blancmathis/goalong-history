@@ -60,7 +60,7 @@ final class JevProcrastinationStoreTests: XCTestCase {
         let source = try appSource("JevWorkContextControls.swift")
         for required in ["monitoring-procrastination", "monitoring-add-procrastination", "monitoring-saved-procrastination",
                          "pas une liste exhaustive", "procrastination: procrastination", "procrastination = store.context.procrastination",
-                         "monitoring-cancel-goals", "exemples de procrastination à TypeSafe"] {
+                         "monitoring-cancel-goals", "exemples hors travail à TypeSafe"] {
             XCTAssertTrue(source.contains(required), required)
         }
         XCTAssertFalse(source.contains("setEnabled("))

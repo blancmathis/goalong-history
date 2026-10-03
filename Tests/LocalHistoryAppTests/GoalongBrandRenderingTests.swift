@@ -428,7 +428,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
                 let connect = try XCTUnwrap(accessibleElement("jev-open-connection", within: window))
                 XCTAssertGreaterThan(connect.accessibilityFrame().width, 70)
                 XCTAssertNotNil(accessibleElement("jev-enabled", within: window))
-                XCTAssertNotNil(accessibleElement("jev-break-10", within: window))
+                XCTAssertNil(accessibleElement("jev-break-10", within: window), "No break is offered while monitoring is off")
                 try snapshot(controller.view, to: output.appendingPathComponent("monitoring-setup-\(dark ? "dark" : "light")-\(Int(size.width)).png"))
             }
         }
@@ -462,18 +462,13 @@ final class GoalongBrandRenderingTests: XCTestCase {
             window.appearance = app.appearance; pump()
             try snapshot(controller.view, to: output.appendingPathComponent("monitoring-ready-\(dark ? "dark" : "light")-900.png"))
         }
-        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-break-10", within: window)).accessibilityPerformPress())
-        pump()
-        XCTAssertNotNil(monitor.timedBreak)
-        XCTAssertGreaterThan(monitor.remainingSeconds, 590)
-        XCTAssertEqual(consents.document, readyState)
-        XCTAssertNotNil(accessibleElement("jev-break-countdown", within: window))
-        try snapshot(controller.view, to: output.appendingPathComponent("monitoring-timed-break-900.png"))
-        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-end-break", within: window)).accessibilityPerformPress())
-        pump()
+        // With monitoring off there is nothing to pause: no button, and the model refuses.
+        XCTAssertNil(accessibleElement("jev-break-10", within: window))
+        monitor.startBreak(minutes: 10); pump()
         XCTAssertNil(monitor.timedBreak)
+        XCTAssertNil(accessibleElement("jev-break-countdown", within: window))
         XCTAssertFalse(monitor.enabled)
-        XCTAssertEqual(consents.document, readyState, "Ending a break must not activate Jev or a source")
+        XCTAssertEqual(consents.document, readyState, "A refused break must not activate Jev or a source")
         let preferences = JevInterventionPreferences.shared
         let originalInterventions = preferences.settings
         defer { preferences.update { $0 = originalInterventions } }

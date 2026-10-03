@@ -28,7 +28,7 @@ import LocalHistoryCore
             }
             Text("Assombrissement = voile visuel, pas modification de la luminosité du Mac. Aucun clignotement ni blocage des clics. L’intensité peut aller jusqu’à 85 %, sans noir total. Au-delà de 60 %, la lecture de l’écran devient nettement plus difficile. Les rappels restent au-dessus du voile et les commandes de pause et d’arrêt restent dans Goalong. Si la surveillance ne reçoit plus de résultat, les effets disparaissent sous 30 secondes.")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("Le compteur additionne des fenêtres de 15 s contenant de la procrastination ; il ne prouve pas que chaque seconde était improductive. Inactivité, contexte privé, erreur ou résultat indéterminé remettent la série à zéro.")
+            Text("Le compteur additionne des fenêtres de 15 s contenant une distraction ; il ne prouve pas que chaque seconde était hors travail. Inactivité, contexte privé, erreur ou résultat indéterminé remettent la série à zéro.")
                 .font(.caption).foregroundStyle(.secondary)
             if let error = preferences.error { Text(error).foregroundStyle(LHTheme.warning).font(.caption) }
         }

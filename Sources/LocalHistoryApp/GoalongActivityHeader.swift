@@ -76,7 +76,7 @@ struct GoalongActivityHeader: View {
             }
             .disabled(isRefreshing).accessibilityIdentifier("activity-refresh")
             .accessibilityLabel("Actualiser").help("Actualiser")
-            Button(action: onShare) { Label("Partager", systemImage: "square.and.arrow.up") }
+            Button(action: onShare) { Label("Partager le \(shortDate(selection.day))", systemImage: "square.and.arrow.up") }
                 .disabled(isPreview)
                 .help("Partager la journée du \(shortDate(selection.day)). Rien n’est envoyé sans votre validation.")
         }

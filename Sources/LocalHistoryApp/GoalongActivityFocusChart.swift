@@ -84,7 +84,7 @@ struct GoalongFocusExplanation: View {
                 Spacer(minLength: 0)
             }
             Text(hasFocus
-                ? "Le focus correspond aux séquences continues dans une même application et sur un même site. Les barres turquoise sont incluses dans le temps actif, pas ajoutées."
+                ? "Le focus correspond aux séquences continues dans une même application et sur un même site. Ce temps est inclus dans le temps actif, pas ajouté."
                 : "Aucune séquence continue d’au moins \(minimumMinutes) minutes dans une même application et sur un même site n’a été détectée. Cela ne signifie pas que vous n’avez pas travaillé ou été concentré.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

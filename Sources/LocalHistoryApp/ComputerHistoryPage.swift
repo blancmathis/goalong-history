@@ -839,7 +839,7 @@
                         Spacer()
                         Text(snapshot.eventCount == 0
                             ? "Aucune activité enregistrée"
-                            : "\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) · journée complète")
+                            : "\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }

@@ -10,11 +10,11 @@ import LocalHistoryCore
     @State private var confirmingText = false
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Vidéos et fils sociaux sont considérés comme des distractions, sauf les usages explicitement autorisés. Vos exemples de procrastination ajoutent des repères prioritaires, pas une liste exhaustive. Recherches, lecture et création doivent servir les critères de travail indiqués. Le simple fait de taper ou d’ouvrir une application de travail ne suffit pas. Sans indices suffisants, aucune alerte.")
+            Text("Vidéos et fils sociaux sont considérés comme des distractions, sauf les usages explicitement autorisés. Vos exemples hors travail ajoutent des repères prioritaires, pas une liste exhaustive. Recherches, lecture et création doivent servir les critères de travail indiqués. Le simple fait de taper ou d’ouvrir une application de travail ne suffit pas. Sans indices suffisants, aucune alerte.")
                 .font(.callout).foregroundStyle(.secondary)
             Text("Les fenêtres privées, les données supprimées et les apps ou sites exclus ne sont pas envoyés au service.")
                 .font(.callout).foregroundStyle(.secondary)
-            Text("Vos critères de travail et exemples de procrastination enregistrés, plus seulement les 15 dernières secondes : applications/domaines, titres disponibles et indices d’interaction. Les clics et défilements identiques sont regroupés. Aucun historique de journée n’est transmis.")
+            Text("Vos critères de travail et exemples hors travail enregistrés, plus seulement les 15 dernières secondes : applications/domaines, titres disponibles et indices d’interaction. Les clics et défilements identiques sont regroupés. Aucun historique de journée n’est transmis.")
                 .font(.callout).foregroundStyle(.secondary)
             Toggle("Joindre un bref extrait du texte affiché", isOn: Binding(
                 get: { excerpts }, set: { if $0 { confirmingText = true } else { monitor.setIncludeText(false) } }))
@@ -55,11 +55,11 @@ struct JevRecentChecksView: View {
                     Text(check.start, style: .time).monospacedDigit()
                     Text("–"); Text(check.end, style: .time).monospacedDigit()
                     Spacer()
-                    Label(check.verdict == .procrastination ? "Procrastination présente" : check.verdict == .productive ? "Productif" : "Indéterminé",
+                    Label(check.verdict == .procrastination ? "Distraction repérée" : check.verdict == .productive ? "Travail" : "Indéterminé",
                           systemImage: check.verdict == .procrastination ? "exclamationmark.circle" : check.verdict == .productive ? "checkmark.circle" : "questionmark.circle")
                 }.font(.caption)
             }
-            Text("Ces résultats ne réécrivent pas l’historique. Une fenêtre positive contient de la procrastination, sans être entièrement improductive.")
+            Text("Ces résultats ne réécrivent pas l’historique. Une fenêtre signalée contient une distraction, sans être entièrement hors travail.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -81,7 +81,7 @@ struct JevRecentChecksView: View {
                     Button("Reprendre la surveillance") { monitor.endBreak() }
                         .accessibilityIdentifier("jev-end-break")
                 }
-            } else {
+            } else if monitor.enabled {
                 HStack {
                     ForEach([5, 10, 15, 30], id: \.self) { duration in
                         Button("\(duration) min") { monitor.startBreak(minutes: duration) }
@@ -95,7 +95,11 @@ struct JevRecentChecksView: View {
                     }.padding(.top, 8)
                 }
             }
-            Text("La surveillance et ses rappels sont en pause. L’historique continue s’il est activé. Reprise automatique à la fin.")
+            Text(monitor.timedBreak != nil
+                 ? "La surveillance et ses rappels sont en pause. L’historique continue s’il est activé. Reprise automatique à la fin."
+                 : monitor.enabled
+                 ? "Une pause arrête la surveillance et ses rappels pendant la durée choisie. L’historique continue s’il est activé."
+                 : "La surveillance est désactivée : il n’y a aucun rappel à mettre en pause.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
