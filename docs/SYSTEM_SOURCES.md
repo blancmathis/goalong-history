@@ -91,3 +91,38 @@ Le changement concurrent de `Tests/LocalHistoryAppTests/ChatGPTRecapTests.swift`
 tests quand HOME isolé n’a pas de trousseau login) est conservé mais n’appartient pas aux commits S.
 Le checkout principal et son `CONTEXT.md` restent à mettre à jour par l’intégrateur : ce job
 ne modifie pas les autres worktrees.
+
+## Validation locale — 2026-10-03
+
+Code validé : `d1f4466` (les cinq commits S depuis `9cab47c`). Logs privés et artefacts :
+`/tmp/goalong-system-sources-qa/`. Aucun déploiement, installation, push ou PR.
+
+- Dernière suite complète, HOME et CFFIXED_USER_HOME isolés : `Executed 1445 tests, with 31 tests skipped and 0 failures (0 unexpected) in 631.028 (631.474) seconds` ; `full-suite-post-attribution.log`, exit 0.
+- Tests S ciblés : `Executed 10 tests, with 0 failures (0 unexpected) in 0.027 (0.029) seconds` ; `system-sources-attribution.log`. Ils couvrent notamment les fichiers privés, liens refusés, suppression des notes, union et minuit, exclusions des usages inconnus, migration des navigateurs, choix de bilan, masquage, imports et permissions désactivées.
+- Allowlist `--check`, `verify_source_security.sh` et audit strict : exit 0 ; `allowlist-latest.log`, `security-post-attribution.log`. La liste des fichiers source n’a pas changé depuis le contrôle d’allowlist.
+- Bloc « Validate scripts » de `macos.yml` : exit 0 ; `validate-scripts-2.log`. Vérification cryptographique des mises à jour : exit 0 ; `update-verification.log`.
+- Contrôles UI existants : disclosure 1/0, analytics 2/0, Jev effects 1/0, parcours natifs 3/0 ; `disclosure-2.log`, `analytics-render.log`, `jev-render.log`, `journey.log`. Aucun fichier SwiftUI modifié.
+- Relaunch permissions : trois vrais cycles quit/reopen, quatre PID distincts ; le helper manquant ne quitte pas le parent ; `permission-relaunch.log`.
+- Fuseaux UTC, America/Chicago et Europe/Paris : 27 tests/0 échec chacun ; `timezone-*.log`.
+- Build release arm64 sur le dernier code, un job, identité Apple Development existante : exit 0 ; `signed-build-final.log`. `codesign --verify --deep --strict`, vérification du bundle unique, manifeste de sécurité, quatre textes français exacts et entitlement vérifiés. Hardened Runtime présent ; le dictionnaire d’entitlements contient uniquement `com.apple.security.personal-information.calendars = true` ; `bundle-final.log`.
+- CLI du bundle, HOME isolé : exit 0 et aucune écriture de source ; `cli-final.log`.
+- Packaging de `macos.yml` : exit 0, via hdiutil (`create-dmg` absent) ; `package-final.log`. ZIP : **101764442 octets**, DMG : **113045801 octets**, dans `/tmp/goalong-system-sources-qa/dist/`. Les noms historiques « universal » sont conservés ; cette build locale contient **arm64 uniquement**.
+
+Deux tests Keychain ont d’abord donné exactement `keychainFailure(-60006)` (exception autorisée
+par le brief). Le changement concurrent de `ChatGPTRecapTests.swift` les saute maintenant sous
+HOME isolé : `No login Keychain under HOME (isolated test run).` Il explique les deux skips
+supplémentaires du résultat final et reste hors des commits S.
+
+Un passage intermédiaire a échoué au test préexistant de latence avec `149042416` ns contre
+`100000000` ns ; les 20 tests du groupe ont ensuite passé isolément, puis la suite complète
+sur le dernier code. Le premier essai disclosure a échoué avec
+`Clicking the empty right side must expand the section` ; le second, sans changement, a passé.
+La reconstruction intermédiaire a été arrêtée (exit 130) pour intégrer la correction de
+provenance ; la reconstruction finale a passé. Le contrôle d’architecture a été corrigé
+pour lire `CFBundleExecutable` au lieu de supposer le nom `LocalHistory`.
+
+À vérifier manuellement avant diffusion : invites Calendar/Reminders sous Hardened Runtime,
+éventuelle nécessité d’une clé Reminders distincte, vrais usages micro/caméra, fallback sur
+macOS 13. Aucune invite TCC réelle n’a été déclenchée par ce job. L’intégrateur doit brancher
+F4 sur le getter de note et mettre à jour le CONTEXT.md du checkout principal. Les uploads
+GitHub de la CI ne sont pas exécutés : seuls ses contrôles locaux sont réalisés.
