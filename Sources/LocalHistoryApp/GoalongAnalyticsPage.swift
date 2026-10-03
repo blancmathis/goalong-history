@@ -18,6 +18,8 @@ struct GoalongAnalyticsPage: View {
     @State private var forceNextRead = false
     @State private var showingAnalysisChoice = false
     @State private var reviewRequest: GoalongWorkReviewRequest?
+    /// The named view of Activité on screen (nil = summary); kept when the day or period changes.
+    @State private var detail: GoalongActivityDetail?
     @AppStorage(GoalongDeveloperPreferences.enabledKey) private var developerMode = false
     @State private var showingPreview = false
     @State private var previewNavigation = GoalongActivityNavigation()
@@ -50,67 +52,82 @@ struct GoalongAnalyticsPage: View {
                     model.showingWebsiteShare = true
                 })
             Rectangle().fill(LHTheme.separator).frame(height: 1)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    if !previewActive {
-                        GoalongRecordingStateNotice(model: model)
-                        GoalongRecordingCoverageNotice(model: model, dismissible: true)
-                    }
-                    if developerMode { previewControl }
-                    if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
-                    if let error = analytics.error {
-                        HStack(alignment: .center, spacing: 12) {
-                            GoalongNote(error, tone: .warning)
-                            Button("Réessayer", action: refresh).buttonStyle(LHSecondaryButtonStyle())
+            ScrollViewReader { scroller in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        Color.clear.frame(height: 0).id("activity-top")
+                        if !previewActive {
+                            GoalongRecordingStateNotice(model: model)
+                            GoalongRecordingCoverageNotice(model: model, dismissible: true)
                         }
-                    }
-                    if let payload = analytics.payload, selection.matches(payload, preview: previewActive) {
-                        GoalongAnalyticsContent(payload: payload, focusMinutes: $focusMinutes,
-                            workStatus: previewActive ? .preview : workStatus,
-                            onDay: { day in updateSelection { $0.openDay(day) } },
-                            onWork: { model.selectSection(.work) },
-                            onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
-                            onClassify: { agent.classify(day: selection.day) },
-                            onHistory: { openHistory(selection.day) },
-                            onProjects: { if !previewActive { showingAnalysisChoice = true } },
-                            onHistoryDay: openHistory,
-                            onRecap: openRecap)
-                            .id(selectionID)
-                    } else if analytics.error == nil && !loadRequest.permitsLoading {
-                        GoalongNote("Lecture en attente : cliquez dans cette fenêtre pour lire les observations de cette période. Les lectures privées restent suspendues lorsque vous utilisez une autre application.",
-                                    symbol: "pause.circle")
-                            .accessibilityIdentifier("activity-read-waiting-for-focus")
-                    } else if analytics.error == nil {
-                        GoalongPageLoadingView(title: "Lecture des observations locales…",
-                            message: "Les durées sont calculées sur ce Mac, sans envoyer votre historique.")
-                            .accessibilityIdentifier("analytics-primary-loading-motion")
-                    }
-                    if !previewActive {
-                        if selection.period == 1 {
-                            GoalongActivityAppleCard(model: model, day: navigation.day,
-                                refreshRevision: manualRefreshRevision)
-                        } else {
-                            LHCard(padding: 16) {
-                                HStack(alignment: .center, spacing: 14) {
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text("Temps d’écran Apple").font(.system(size: 13, weight: .semibold))
-                                        Text("Source distincte, consultée par journée et jamais additionnée aux observations Goalong.")
-                                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                                            .fixedSize(horizontal: false, vertical: true)
+                        if developerMode { previewControl }
+                        if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
+                        if let error = analytics.error {
+                            HStack(alignment: .center, spacing: 12) {
+                                GoalongNote(error, tone: .warning)
+                                Button("Réessayer", action: refresh).buttonStyle(LHSecondaryButtonStyle())
+                            }
+                        }
+                        if detail != nil && !showsContent {
+                            // While reading or after an error, a named view still offers its way back.
+                            Button { detail = nil } label: { Label("Synthèse", systemImage: "chevron.left") }
+                                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+                        }
+                        if let payload = analytics.payload, selection.matches(payload, preview: previewActive) {
+                            GoalongAnalyticsContent(payload: payload, focusMinutes: $focusMinutes,
+                                workStatus: previewActive ? .preview : workStatus,
+                                onDay: { day in updateSelection { $0.openDay(day) } },
+                                onWork: { model.selectSection(.work) },
+                                onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
+                                onClassify: { agent.classify(day: selection.day) },
+                                onHistory: { openHistory(selection.day) },
+                                onProjects: { if !previewActive { showingAnalysisChoice = true } },
+                                onHistoryDay: openHistory,
+                                onRecap: openRecap,
+                                detail: $detail)
+                                .id(selectionID)
+                        } else if analytics.error == nil && !loadRequest.permitsLoading {
+                            GoalongNote("Lecture en attente : cliquez dans cette fenêtre pour lire les observations de cette période. Les lectures privées restent suspendues lorsque vous utilisez une autre application.",
+                                        symbol: "pause.circle")
+                                .accessibilityIdentifier("activity-read-waiting-for-focus")
+                        } else if analytics.error == nil {
+                            GoalongPageLoadingView(title: "Lecture des observations locales…",
+                                message: "Les durées sont calculées sur ce Mac, sans envoyer votre historique.")
+                                .accessibilityIdentifier("analytics-primary-loading-motion")
+                        }
+                        if !previewActive && detail == .screenTime {
+                            if selection.period == 1 {
+                                GoalongActivityAppleCard(model: model, day: navigation.day,
+                                    refreshRevision: manualRefreshRevision)
+                            } else {
+                                LHCard(padding: 16) {
+                                    HStack(alignment: .center, spacing: 14) {
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text("Temps d’écran Apple").font(.system(size: 13, weight: .semibold))
+                                            Text("Source distincte, consultée par journée et jamais additionnée aux observations Goalong.")
+                                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                        Spacer(minLength: 8)
+                                        Button("Consulter le \(navigation.day.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)))") {
+                                            model.selectDay(navigation.day)
+                                            model.selectSection(.screenTime)
+                                        }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
                                     }
-                                    Spacer(minLength: 8)
-                                    Button("Consulter le \(navigation.day.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)))") {
-                                        model.selectDay(navigation.day)
-                                        model.selectSection(.screenTime)
-                                    }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
                                 }
                             }
                         }
                     }
+                    .frame(maxWidth: 1080, alignment: .leading)
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 24).padding(.bottom, 40)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .frame(maxWidth: 1080, alignment: .leading)
-                .padding(.horizontal, LHTheme.pageInset).padding(.top, 24).padding(.bottom, 40)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .onChange(of: detail) { shown in
+                    // A named view opens at its top; the summary comes back where its links are.
+                    DispatchQueue.main.async {
+                        scroller.scrollTo(shown == nil ? "activity-explore" : "activity-top", anchor: shown == nil ? .center : .top)
+                    }
+                }
             }
         }
         .background(LHTheme.pageBackground)
@@ -168,6 +185,10 @@ struct GoalongAnalyticsPage: View {
             lastAutomaticRefresh = Date()
             revision += 1
         }
+    }
+
+    private var showsContent: Bool {
+        analytics.payload.map { selection.matches($0, preview: previewActive) } ?? false
     }
 
     private var workStatus: GoalongWorkStatus {
