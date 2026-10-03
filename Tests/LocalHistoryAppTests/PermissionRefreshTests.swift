@@ -140,6 +140,53 @@
             XCTAssertEqual(finalWrites, baseline + 1)
         }
 
+        func testRoutineCaptureMarksWaitLongerThanStateChanges() throws {
+            let manager = PermissionManager(statusProbe: { self.healthyStatus })
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let virtual = VirtualCaptureHealthPersistenceScheduler()
+            let store = CaptureHealthStore(
+                permissions: manager,
+                fileURL: directory.appendingPathComponent("capture-health.json"),
+                persistenceWriter: { _, _ in },
+                persistenceSchedule: virtual.schedule
+            )
+            store.flush()
+
+            store.setSuppression(nil)
+            store.flush()
+            for _ in 0..<100 {
+                store.markInputCallback()
+                store.markRecordedEvent(.permissionStatus)
+                store.markAXSuccess(urlAvailable: true)
+                store.setSuppression(nil)
+            }
+            XCTAssertEqual(virtual.delays, [0.5, 15])
+            virtual.fireAllEvenIfCancelled()
+            XCTAssertEqual(virtual.delays, [0.5, 15])
+
+            // A new suppression state is prompt.
+            store.setSuppression(.secureInput)
+            XCTAssertEqual(virtual.delays, [0.5, 15, 0.5])
+            store.flush()
+            store.markInputCallback()
+            XCTAssertEqual(virtual.delays, [0.5, 15, 0.5, 15])
+
+            // A state change replaces the pending routine write instead of waiting behind it.
+            store.setPaused(true)
+            XCTAssertEqual(virtual.delays, [0.5, 15, 0.5, 15, 0.5])
+            XCTAssertEqual(virtual.activeTaskCount, 1)
+
+            // Routine marks then join the prompt write.
+            store.markInputCallback()
+            XCTAssertEqual(virtual.delays, [0.5, 15, 0.5, 15, 0.5])
+            store.flush()
+            XCTAssertEqual(virtual.activeTaskCount, 0)
+        }
+
         func testCaptureHealthFlushIncludesMutationArrivingDuringWrite() throws {
             let manager = PermissionManager(statusProbe: { self.healthyStatus })
             let directory = FileManager.default.temporaryDirectory
@@ -266,10 +313,12 @@
         }
 
         private var tasks: [Task] = []
+        private(set) var delays: [TimeInterval] = []
 
-        lazy var schedule: CaptureHealthStore.PersistenceSchedule = { [weak self] _, action in
+        lazy var schedule: CaptureHealthStore.PersistenceSchedule = { [weak self] delay, action in
             let task = Task(action: action)
             self?.tasks.append(task)
+            self?.delays.append(delay)
             return task
         }
 
