@@ -4,6 +4,7 @@
 
     enum GoalongCapability: String, Codable, CaseIterable, Identifiable {
         case localComputerHistory
+        case calendar
         case appleScreenTime
         case aiConversations
         case developerActivity
@@ -18,6 +19,7 @@
         var title: String {
             switch self {
             case .localComputerHistory: return "Historique de ce Mac"
+            case .calendar: return "Agenda et rappels"
             case .appleScreenTime: return "Temps d’écran Apple"
             case .aiConversations: return "Conversations locales"
             case .developerActivity: return "Activité de développement"

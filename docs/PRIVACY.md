@@ -95,3 +95,17 @@ that application and site. Summary maintenance performs no external analysis or 
 ## Developer metadata (2026-10-03)
 
 With AI-conversations consent, T3 metadata can be grouped by project without reading thread titles, messages, payloads or diffs. Separately consented, explicitly selected repositories expose reflog timestamps/action words and FSEvents file counters; commit subjects and file contents are not decoded. Only selected repository names/roots are saved as configuration. File journals contain opaque project IDs and counts, never file paths, and follow detailed-event retention/deletion. The separately selected recap section sends bounded project aggregates without paths and is omitted under global exclusions. See [Developer activity](DEVELOPER_ACTIVITY.md).
+
+## Optional system-source lanes
+
+Goalong can note when an application uses its microphone or a video device is running. It
+never opens a capture stream and never records sound or images. Call presence follows the
+Computer History consent, recording pause and `captureCallPresence` setting. Only intervals
+and application metadata are kept in private `calls/` files, with detailed-event retention.
+
+« Agenda et rappels » has a separate Goalong consent and macOS Calendar / Reminders permissions.
+EventKit is read-only; titles and calendar names are cached in memory only. Imported Health
+provides bounded numerical context. `notes/` stores a user-written day note (280 characters)
+without automatic expiry; day/history deletion removes it. Each new recap lane has a separate,
+default-off sharing flag, applies exclusions and masks text before the outgoing field limit.
+These lanes never add time to foreground activity. See [API and limits](SYSTEM_SOURCES.md).

@@ -295,7 +295,9 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             ),
             "privacyUsageDescriptions": {
                 key: info[key]
-                for key in ("NSAccessibilityUsageDescription", "NSInputMonitoringUsageDescription")
+                for key in ("NSAccessibilityUsageDescription", "NSInputMonitoringUsageDescription",
+                            "NSCalendarsUsageDescription", "NSCalendarsFullAccessUsageDescription",
+                            "NSRemindersUsageDescription", "NSRemindersFullAccessUsageDescription")
                 if key in info
             },
             "expectedTCC": [
@@ -308,6 +310,16 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
                     "permission": "Input Monitoring",
                     "purpose": "click, scroll and coarse keyboard activity",
                     "usageDescriptionPresent": "NSInputMonitoringUsageDescription" in info,
+                },
+                {
+                    "permission": "Calendars",
+                    "purpose": "explicitly enabled, read-only planned events",
+                    "usageDescriptionPresent": "NSCalendarsFullAccessUsageDescription" in info,
+                },
+                {
+                    "permission": "Reminders",
+                    "purpose": "explicitly enabled, read-only completed and due reminders",
+                    "usageDescriptionPresent": "NSRemindersFullAccessUsageDescription" in info,
                 },
                 {
                     "permission": "Full Disk Access",

@@ -583,7 +583,11 @@
             let developerPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("developer"),
                 trustedAncestor: trustedAncestor, suffixes: [".jsonl"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
             let analysisPlans = [analysisPlan, developerPlan].compactMap { $0 }
-            let memoryPlans = [memoryPlan].compactMap { $0 }
+            let notesPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("notes"), trustedAncestor: trustedAncestor,
+                suffixes: [".json"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
+            let callsPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("calls"), trustedAncestor: trustedAncestor,
+                suffixes: [".jsonl"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
+            let memoryPlans = [memoryPlan, notesPlan, callsPlan].compactMap { $0 }
             let plan = DerivedHistoryDeletionPlan(
                 analysisPlans: analysisPlans,
                 memoryPlans: memoryPlans,

@@ -58,7 +58,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This validation script requires macOS." >&2
   exit 69
 fi
-if [[ ! -d "$REPO/.git" || ! -f "$REPO/Package.swift" ]]; then
+if [[ ! -f "$REPO/Package.swift" ]] || ! git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Not a Goalong History git checkout: $REPO" >&2
   exit 66
 fi

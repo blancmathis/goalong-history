@@ -126,6 +126,7 @@ jobs:
           LOCALHISTORY_BUILD_NUMBER: ${{ steps.version.outputs.build }}
           LOCALHISTORY_DISPLAY_NAME: Goalong History
           LOCALHISTORY_ARCHS: arm64 x86_64
+          LOCALHISTORY_APP_ENTITLEMENTS: Distribution/GoalongHistory.entitlements
           LOCALHISTORY_RUN_TESTS: 1
           LOCALHISTORY_CODESIGN_IDENTITY: ${{ env.LOCALHISTORY_CODESIGN_IDENTITY }}
           LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY || vars.SPARKLE_PUBLIC_ED_KEY }}

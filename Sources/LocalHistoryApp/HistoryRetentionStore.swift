@@ -73,6 +73,9 @@
                     allowedSuffixes: [".receipts.jsonl"]
                 ),
             ]
+            artifacts.append(HistoryRetentionArtifactDirectory(
+                directory: AppPaths.applicationSupportDirectory.appendingPathComponent("calls"),
+                dataClass: .detailedEvents, allowedSuffixes: [".jsonl"]))
             artifacts.append(
                 contentsOf: computerHistoryDirectories.map {
                     HistoryRetentionArtifactDirectory(
