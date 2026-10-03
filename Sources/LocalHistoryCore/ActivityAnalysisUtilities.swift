@@ -130,6 +130,18 @@ extension ActivityAnalysisEngine {
         )
     }
 
+    private static let requestNoisePrefixes = ["assistant:", "system:", "developer:", "response:"]
+    private static let requestPrefixes = [
+        "add ", "analyze ", "analyse ", "ameliore ", "ameliorer ", "build ", "check ",
+        "cherche ", "compare ", "create ", "cree ", "crée ", "design ", "dis moi ",
+        "donne ", "explain ", "fais ", "fix ", "help ", "improve ", "optimize ", "optimise ", "il faut ", "je veux ",
+        "look up ", "make ", "peux tu ", "peux-tu ", "please ", "refactor ",
+        "resume ", "résume ", "summarize ", "trouve ", "update ", "verify ", "verifie ",
+        "vérifie ", "write ",
+    ]
+    private static let speakerLineTrimmed = CharacterSet.whitespacesAndNewlines
+        .union(CharacterSet(charactersIn: ">-•*_ "))
+
     static func requestCandidates(in semantic: String, event: HistoryEvent) -> [String] {
         let lines = splitSemanticLines(semantic)
         return distinct(
@@ -139,8 +151,7 @@ extension ActivityAnalysisEngine {
                     options: [.caseInsensitive, .diacriticInsensitive],
                     locale: Locale(identifier: "en_US_POSIX")
                 )
-                let noisePrefixes = ["assistant:", "system:", "developer:", "response:"]
-                guard !noisePrefixes.contains(where: { rawLowered.hasPrefix($0) }) else { return nil }
+                guard !requestNoisePrefixes.contains(where: { rawLowered.hasPrefix($0) }) else { return nil }
 
                 let candidate = strippingUserSpeakerPrefix(rawCandidate)
                 guard candidate.count >= 12, candidate.count <= 280 else { return nil }
@@ -148,16 +159,8 @@ extension ActivityAnalysisEngine {
                     options: [.caseInsensitive, .diacriticInsensitive],
                     locale: Locale(identifier: "en_US_POSIX")
                 )
-                let prefixes = [
-                    "add ", "analyze ", "analyse ", "ameliore ", "ameliorer ", "build ", "check ",
-                    "cherche ", "compare ", "create ", "cree ", "crée ", "design ", "dis moi ",
-                    "donne ", "explain ", "fais ", "fix ", "help ", "improve ", "optimize ", "optimise ", "il faut ", "je veux ",
-                    "look up ", "make ", "peux tu ", "peux-tu ", "please ", "refactor ",
-                    "resume ", "résume ", "summarize ", "trouve ", "update ", "verify ", "verifie ",
-                    "vérifie ", "write ",
-                ]
                 let looksLikeRequest = candidate.contains("?")
-                    || prefixes.contains(where: { lowered.hasPrefix($0) })
+                    || requestPrefixes.contains(where: { lowered.hasPrefix($0) })
                     || lowered.contains(" i want ")
                     || lowered.contains(" j'aimerais ")
                     || lowered.contains(" we need ")
@@ -187,10 +190,7 @@ extension ActivityAnalysisEngine {
         let withoutMarkdown = value
             .replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "__", with: "")
-        let markers = CharacterSet(charactersIn: ">-•*_ ")
-        return withoutMarkdown.trimmingCharacters(
-            in: CharacterSet.whitespacesAndNewlines.union(markers)
-        )
+        return withoutMarkdown.trimmingCharacters(in: speakerLineTrimmed)
     }
 
     static func isAIContext(_ event: HistoryEvent) -> Bool {

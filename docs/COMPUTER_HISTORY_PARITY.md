@@ -467,8 +467,9 @@ after decoding; schema-v5 journals retain the salts and event fields needed to r
 those arrays for verification or selective disclosure, while the derived pass retains
 the event sequence, event hash, and observable fields it actually consumes. The shared
 application-managed pass rejects a day before writing when retained useful events and
-referenced semantic payloads exceed 32,768 values or 64 MiB estimated from their encoded
-size, inline stride, and a fixed per-value margin. This is a retained-evidence estimate,
+referenced semantic payloads exceed 131,072 values or 256 MiB estimated from their source
+journal row size, inline stride, and a fixed per-value margin. The derived copy only drops
+fields, so the source row bounds it without encoding it again. This is a retained-evidence estimate,
 not a constant-RSS guarantee: streaming decode buffers, temporary values, and engine output
 still require separate runtime measurement.
 
@@ -588,7 +589,7 @@ strict upper bound on Swift heap usage.
 The analysis JSONL reader rejects every line above 2 MiB before decoding, including a
 newline-terminated line, and caps the unterminated pending buffer at the same size. The
 application-managed and standalone `ComputerHistoryStore.buildAndWrite` paths each admit
-at most 32,768 useful event/semantic values and 64 MiB of estimated retained evidence into
+at most 131,072 useful event/semantic values and 256 MiB of estimated retained evidence into
 one engine pass. A very large raw day can still require a long streaming scan, and the
 estimate does not include every decoder or engine allocation. Cancellation, a source identity change, an
 exhausted evidence budget, or any source-load issue aborts the replacement and leaves the
@@ -620,7 +621,7 @@ Generate one day’s causal memory:
 ```
 
 This direct reconstruction reserves its transient evidence before retaining it:
-at most 32,768 useful event/semantic rows and 64 MiB estimated from the compact
+at most 131,072 useful event/semantic rows and 256 MiB estimated from the compact
 encoded values actually retained, their inline stride, and fixed per-row accounting enter
 one day pass.
 Raw integrity openings and unrelated metadata are discarded before this accounting;
@@ -685,7 +686,7 @@ service. It applies the same retained-answer-first rule as the app before decidi
 whether a separate lexical source pass is necessary. Explicit today, yesterday, and
 this-week questions override a wider `--days` request and reconstruct only that interval.
 Each reconstruction day uses the same
-32,768-row/64 MiB estimated evidence working-set bound as the direct command. A day that
+131,072-row/256 MiB estimated evidence working-set bound as the direct command. A day that
 exceeds it is rejected, and that day plus later requested days are reported unvisited
 rather than treated as absence. When a lexical pass is useful, the CLI then performs a
 separate direct-source pass with the same 384 MiB event, 128 MiB semantic, symlink, line,

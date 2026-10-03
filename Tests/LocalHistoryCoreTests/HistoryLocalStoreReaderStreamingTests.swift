@@ -5,14 +5,18 @@ import XCTest
 @testable import LocalHistoryCore
 
 final class HistoryLocalStoreReaderStreamingTests: XCTestCase {
-    func testProductionComputerHistoryEvidenceBudgetIsSixtyFourMiB() {
+    func testProductionComputerHistoryEvidenceBudgetHoldsABusyDay() {
         XCTAssertEqual(
             ComputerHistoryEvidenceLoadLimits.production.maximumRetainedBytes,
-            64 * 1_024 * 1_024
+            256 * 1_024 * 1_024
         )
         XCTAssertEqual(
             ComputerHistoryEvidenceLoadLimits.production.maximumRetainedRows,
-            32_768
+            131_072
+        )
+        XCTAssertEqual(
+            ComputerHistoryEvidenceLoadLimits.production.summary,
+            "the 131,072-row or 256 MiB retained-evidence budget was exceeded"
         )
     }
 
