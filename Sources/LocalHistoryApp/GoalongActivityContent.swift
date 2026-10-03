@@ -18,7 +18,7 @@ struct GoalongWorkStatus: Equatable {
 /// The secondary views of Activité. The summary answers « combien, quand, sur quoi » ;
 /// each view below answers one further question and is reached by its name.
 enum GoalongActivityDetail: String, CaseIterable, Identifiable {
-    case rhythm, usage, sessions, texture, code, reports, screenTime, coverage
+    case rhythm, usage, sessions, texture, agenda, code, sleep, reports, screenTime, coverage
     var id: String { rawValue }
 
     func title(isDay: Bool) -> String {
@@ -27,7 +27,9 @@ enum GoalongActivityDetail: String, CaseIterable, Identifiable {
         case .usage: return "Applications et sites"
         case .sessions: return "Sessions et focus"
         case .texture: return "Écriture, lecture et appels"
+        case .agenda: return "Appels et agenda"
         case .code: return "Agents et code"
+        case .sleep: return "Sommeil et activité"
         case .reports: return "Bilans et projets"
         case .screenTime: return "Temps d’écran Apple"
         case .coverage: return "Couverture et sources"
@@ -88,9 +90,15 @@ struct GoalongAnalyticsContent: View {
                 if showsWorkCard(summary) { workCard(summary) }
                 if !tasks.isEmpty { tasksSection(tasks) }
                 recapSection
+                if isDay && lanes.noteAvailable {
+                    GoalongDayNoteBlock(note: lanes.note, isPreview: payload.isPreview, onEdit: lanes.editNote)
+                }
                 exploreSection
             } else {
                 emptyState
+                if isDay && lanes.noteAvailable {
+                    GoalongDayNoteBlock(note: lanes.note, isPreview: payload.isPreview, onEdit: lanes.editNote)
+                }
                 exploreSection
             }
             // Apple's source has its own explanations; these describe Goalong's observations only.
@@ -434,7 +442,9 @@ struct GoalongAnalyticsContent: View {
     /// A day-only view needs one day and its source; the others are always there.
     private func isAvailable(_ item: GoalongActivityDetail) -> Bool {
         switch item {
+        case .agenda: return isDay && lanes.agenda != nil
         case .code: return isDay && lanes.code != nil
+        case .sleep: return isDay && lanes.sleep != nil
         default: return true
         }
     }
@@ -445,7 +455,9 @@ struct GoalongAnalyticsContent: View {
         case .usage: return "Le temps passé dans chaque app et chaque site"
         case .sessions: return "Plus longues sessions, changements d’app, comparaison"
         case .texture: return GoalongActivityTexture.caption(current.breakdown)
+        case .agenda: return lanes.agenda?.caption ?? ""
         case .code: return lanes.code?.caption ?? ""
+        case .sleep: return lanes.sleep?.caption ?? ""
         case .coverage: return coverageCaption
         case .reports:
             let count = payload.cards.count
@@ -522,10 +534,17 @@ struct GoalongAnalyticsContent: View {
                 sessionsSection(summary)
             case .texture:
                 GoalongActivityTextureSection(period: current)
+            case .agenda:
+                if let agenda = lanes.agenda, let day = current.days.first {
+                    GoalongAgendaSection(agenda: agenda, day: day, isPreview: payload.isPreview,
+                                         onSettings: lanes.openSettings, onAllowCalendar: lanes.allowCalendar)
+                }
+            case .sleep:
+                if let sleep = lanes.sleep { GoalongSleepSection(sleep: sleep) }
             case .code:
                 if let code = lanes.code, let day = current.days.first {
                     GoalongCodeSection(code: code, day: day, isPreview: payload.isPreview,
-                                       onSettings: lanes.openCodeSettings, onProjects: lanes.chooseProjects)
+                                       onSettings: lanes.openSettings, onProjects: lanes.chooseProjects)
                 }
             case .coverage:
                 GoalongActivityCoverageSection(period: current, bounds: activityBounds(summary),

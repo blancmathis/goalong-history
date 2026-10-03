@@ -26,7 +26,7 @@ final class GoalongAnalyticsRenderingTests: XCTestCase {
                 let selection = GoalongActivityNavigation(day: payload.current.days.last?.date ?? payload.updatedAt,
                     period: payload.current.days.count)
                 // The summary for every fixture; the named views for a day and a week.
-                let views: [GoalongActivityDetail?] = count == 1 ? [nil, .rhythm, .usage, .sessions, .texture, .code, .reports, .coverage]
+                let views: [GoalongActivityDetail?] = count == 1 ? [nil, .rhythm, .usage, .sessions, .texture, .agenda, .code, .sleep, .reports, .coverage]
                     : count == 7 ? [nil, .rhythm, .usage, .sessions, .texture, .reports, .coverage] : [nil]
                 let lanes = [1, 7].contains(count) ? GoalongAnalyticsPreview.lanes(day: selection.day) : GoalongActivityLanes()
                 for shown in views {

@@ -64,7 +64,35 @@ enum GoalongAnalyticsPreview {
             .init(id: "projects", title: "Projets de développement", state: .ready,
                   detail: "2 projets suivis : commits et fichiers modifiés.", actionTitle: "Choisir les projets…"),
         ]
-        return GoalongActivityLanes(code: code, sources: sources)
+        var agenda = GoalongAgendaDay(callsOn: true, calendarOn: true)
+        agenda.events = [
+            .init(id: "standup", start: at(9, 30), end: at(9, 45), title: "Point d’équipe", attendees: 6, callSeconds: 15.0 * 60),
+            .init(id: "client", start: at(11, 0), end: at(12, 0), title: "Revue avec le client", attendees: 3, callSeconds: 0),
+            .init(id: "design", start: at(16, 0), end: at(16, 45), title: "Atelier maquettes", attendees: 4, callSeconds: 40.0 * 60),
+        ]
+        agenda.calls = [span(9, 30, 9, 45), span(14, 35, 14, 55), span(16, 0, 16, 40)]
+        agenda.callApplications = [.init(id: "Zoom", seconds: 55.0 * 60), .init(id: "FaceTime", seconds: 20.0 * 60)]
+        agenda.reminders = [.init(id: "invoice", completedAt: at(10, 50), title: "Envoyer la facture de septembre"),
+                            .init(id: "notes", completedAt: at(17, 40), title: "Relire les notes de version")]
+        agenda.openDueReminders = 1
+        let sleep = GoalongSleepDay(sleepSeconds: 7.0 * 3600 + 20.0 * 60,
+            stages: [.init(id: "Sommeil léger", seconds: 4.0 * 3600 + 5.0 * 60), .init(id: "Sommeil paradoxal", seconds: 100.0 * 60),
+                     .init(id: "Sommeil profond", seconds: 70.0 * 60), .init(id: "Éveillé", seconds: 25.0 * 60)],
+            steps: 8_420, workouts: 1, workoutSeconds: 45.0 * 60,
+            label: "Sommeil pendant cette date (découpé à minuit dans le fuseau de l’import)")
+        let devices = GoalongOtherDevicesDay(devices: [
+            .init(id: "phone", name: "iPhone", screenOnSeconds: 2.0 * 3600 + 10.0 * 60, duringGapsSeconds: 50.0 * 60, estimated: true),
+            .init(id: "tablet", name: "iPad", screenOnSeconds: 35.0 * 60, duringGapsSeconds: 15.0 * 60, estimated: false),
+        ])
+        let systemSources: [GoalongSourceRow] = [
+            .init(id: "calls", title: "Appels", state: .ready, detail: "Micro ou caméra en cours d’utilisation, par app."),
+            .init(id: "calendar", title: "Agenda et rappels", state: .ready, detail: "3 événements prévus, 2 rappels terminés."),
+            .init(id: "devices", title: "Autres appareils Apple", state: .partial, detail: "Temps d’écran par heure : part estimée pendant les trous du Mac."),
+            .init(id: "health", title: "Apple Santé (import)", state: .ready, detail: "Import du 17 septembre."),
+        ]
+        return GoalongActivityLanes(agenda: agenda, code: code, sleep: sleep, otherDevices: devices,
+                                    note: "Journée coupée par la revue client ; maquettes validées en fin d’après-midi.",
+                                    noteAvailable: true, sources: sources + systemSources)
     }
 
     /// Fictional verdicts, as the agent would give them: one task spans several apps.

@@ -217,7 +217,7 @@ struct GoalongAnalyticsPage: View {
     private var lanes: GoalongActivityLanes {
         if previewActive { return GoalongAnalyticsPreview.lanes(day: selection.day) }
         let ai = consents.isEnabled(.aiConversations), followsProjects = consents.isEnabled(.developerActivity)
-        var lanes = GoalongActivityLanes(openCodeSettings: { model.openRecordingSettings() },
+        var lanes = GoalongActivityLanes(openSettings: { model.openRecordingSettings() },
                                          chooseProjects: { showingDeveloperProjects = true })
         if selection.period == 1, ai || followsProjects, let value = developer.value,
            Calendar.current.isDate(value.day, inSameDayAs: selection.day) {

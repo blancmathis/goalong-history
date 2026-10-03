@@ -6,10 +6,18 @@ import LocalHistoryCore
 
 /// Sources read beside the observations of one day. None of them adds to active time.
 struct GoalongActivityLanes {
+    var agenda: GoalongAgendaDay?
     var code: GoalongCodeDay?
+    var sleep: GoalongSleepDay?
+    var otherDevices: GoalongOtherDevicesDay?
+    /// The note of the day shown; unavailable outside a single day or while Goalong is paused.
+    var note: String?
+    var noteAvailable = false
+    var editNote: () -> Void = {}
+    var allowCalendar: () -> Void = {}
     /// Every source with its state and one action, listed in « Couverture et sources ».
     var sources: [GoalongSourceRow] = []
-    var openCodeSettings: () -> Void = {}
+    var openSettings: () -> Void = {}
     var chooseProjects: () -> Void = {}
 }
 
