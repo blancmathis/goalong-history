@@ -193,13 +193,13 @@
             return try write(memory, for: start)
         }
 
-        func loadStored(for day: Date) -> ComputerHistoryDayMemory? {
+        func loadStored(for day: Date, renderMarkdown: Bool = true) -> ComputerHistoryDayMemory? {
             guard let loaded = loadPersistedMemory(at: JSONFile(for: day)),
                 dayString(loaded.stored.dayStart) == dayString(day),
                 loaded.stored.analysisRevision
                     == ComputerHistoryAnalysisContract.currentRevision
             else { return nil }
-            let memory = loaded.stored.rehydrated()
+            let memory = loaded.stored.rehydrated(renderMarkdown: renderMarkdown)
             migrateLegacyStorageIfNeeded(loaded)
             return memory
         }

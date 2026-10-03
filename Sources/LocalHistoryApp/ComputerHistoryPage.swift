@@ -40,6 +40,11 @@
             label: "ai.goalong.localhistory.computer-history-page",
             qos: .userInitiated
         )
+        /// Serial: a retained view is always published before its verified successor.
+        private let loadQueue = DispatchQueue(
+            label: "ai.goalong.localhistory.computer-history-page.load",
+            qos: .userInitiated
+        )
         private var refreshRequestID = UUID()
 
         init(
@@ -49,7 +54,8 @@
         ) {
             self.store = store
             self.refreshRuntime = refreshRuntime
-            self.storedMemoryLoader = storedMemoryLoader ?? { store.loadStored(for: $0) }
+            // The page never shows the markdown rendering of a day.
+            self.storedMemoryLoader = storedMemoryLoader ?? { store.loadStored(for: $0, renderMarkdown: false) }
         }
 
         func refresh(day: Date, forceRebuild: Bool = false) {
@@ -57,42 +63,60 @@
             let requestID = UUID()
             refreshRequestID = requestID
             errorMessage = nil
-            let retainedMemory = storedMemoryLoader(normalized)
-            if !forceRebuild, let retainedMemory {
-                // Display the bounded derived view immediately, but still verify the
-                // source revision asynchronously. An exact cache hit performs no body
-                // read and lets the UI distinguish retained data from a live source.
-                memory = retainedMemory
-                isLoading = false
-            } else {
-                isLoading = true
-            }
+            isLoading = true
             sourceStatus = .checking
-            refreshRuntime.refresh(day: normalized, force: forceRebuild) { [weak self] result in
-                let publish = { [weak self] in
+            // Decoding a stored day takes hundreds of milliseconds on a busy day, so it
+            // runs on this serial queue: the retained view is published first, then the
+            // verified one, never on the main thread.
+            let load = storedMemoryLoader
+            let queue = loadQueue
+            let retained = RetainedMemory()
+            queue.async { [weak self] in
+                retained.value = load(normalized)
+                guard !forceRebuild, let memory = retained.value else { return }
+                DispatchQueue.main.async { [weak self] in
                     guard let self, self.refreshRequestID == requestID else { return }
-                    switch result {
-                    case .success(let cycleResult):
-                        self.memory = self.storedMemoryLoader(normalized) ?? retainedMemory
-                        self.sourceStatus = cycleResult.sourceAbsent ? .absent : .available
-                    case .failure(let error):
-                        if Self.wasInvalidatedByHistoryClear(error) {
-                            self.memory = nil
-                            self.sourceStatus = .unverified
-                        } else {
-                            self.memory = self.storedMemoryLoader(normalized) ?? retainedMemory
-                            self.sourceStatus = Self.sourceStatus(for: error)
-                        }
-                        self.errorMessage = error.localizedDescription
-                    }
+                    // Display the bounded derived view at once, but still verify the
+                    // source revision asynchronously. An exact cache hit performs no body
+                    // read and lets the UI distinguish retained data from a live source.
+                    self.memory = memory
                     self.isLoading = false
                 }
-                if Thread.isMainThread {
-                    publish()
-                } else {
-                    DispatchQueue.main.async(execute: publish)
+            }
+            refreshRuntime.refresh(day: normalized, force: forceRebuild) { [weak self] result in
+                queue.async { [weak self] in
+                    let invalidated: Bool
+                    let memory: ComputerHistoryDayMemory?
+                    switch result {
+                    case .success(let cycleResult) where cycleResult.derivedViewsWritten == 0:
+                        invalidated = false
+                        memory = retained.value ?? load(normalized)
+                    case .success:
+                        invalidated = false
+                        memory = load(normalized) ?? retained.value
+                    case .failure(let error):
+                        invalidated = Self.wasInvalidatedByHistoryClear(error)
+                        memory = invalidated ? nil : load(normalized) ?? retained.value
+                    }
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.refreshRequestID == requestID else { return }
+                        self.memory = memory
+                        switch result {
+                        case .success(let cycleResult):
+                            self.sourceStatus = cycleResult.sourceAbsent ? .absent : .available
+                        case .failure(let error):
+                            self.sourceStatus = invalidated ? .unverified : Self.sourceStatus(for: error)
+                            self.errorMessage = error.localizedDescription
+                        }
+                        self.isLoading = false
+                    }
                 }
             }
+        }
+
+        /// Written and read only on `loadQueue`.
+        private final class RetainedMemory {
+            var value: ComputerHistoryDayMemory?
         }
 
         private static func sourceStatus(for error: Error) -> ComputerHistorySourceStatus {
