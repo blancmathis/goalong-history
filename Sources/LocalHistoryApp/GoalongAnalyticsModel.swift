@@ -51,16 +51,27 @@ struct GoalongAnalyticsPayload: Sendable {
     let archiveNotice: String?
     let updatedAt: Date
     let isPreview: Bool
+    /// The selected period is shown first; its comparison (an empty `previous`) follows.
+    let comparisonPending: Bool
 
     init(current: GoalongLocalAnalytics.Period, previous: GoalongLocalAnalytics.Period,
-         cards: [GoalongAnalyticsCard], archiveNotice: String?, updatedAt: Date, isPreview: Bool = false) {
+         cards: [GoalongAnalyticsCard], archiveNotice: String?, updatedAt: Date, isPreview: Bool = false,
+         comparisonPending: Bool = false) {
         self.current = current; self.previous = previous; self.cards = cards
         self.archiveNotice = archiveNotice; self.updatedAt = updatedAt; self.isPreview = isPreview
+        self.comparisonPending = comparisonPending
+    }
+
+    func with(previous: GoalongLocalAnalytics.Period) -> Self {
+        Self(current: current, previous: previous, cards: cards, archiveNotice: archiveNotice,
+             updatedAt: updatedAt, isPreview: isPreview)
     }
 }
 
-/// Lives off the main actor. Stores only bounded derived measurements, never source events.
+/// Lives off the main actor and outlives the dashboard window, so reopening it shows the
+/// days already read. Stores only bounded derived measurements, never source events.
 private actor GoalongAnalyticsReader {
+    static let shared = GoalongAnalyticsReader(root: AppPaths.applicationSupportDirectory)
     /// Recently shown days (about 0.5 MB for a busy one): enough for a 28-day period and
     /// its comparison, plus a few days visited around it.
     private static let maximumCachedDays = 64
@@ -78,9 +89,37 @@ private actor GoalongAnalyticsReader {
         let calendar = Calendar.current, now = Date()
         let count = [1, 7, 28].contains(count) ? count : 7
         let last = calendar.startOfDay(for: day)
-        var days: [GoalongLocalAnalytics.Day] = []
         if force { cache.removeAll(); lastUse.removeAll() }
-        for offset in (0..<(count * 2)).reversed() {
+        let current = try days(ending: last, count: count, now: now, calendar: calendar)
+        let previousLast = calendar.date(byAdding: .day, value: -count, to: last) ?? last
+        // A comparison that needs a journal read waits for `comparison(for:)`: the selected
+        // period goes on screen first.
+        let previous = cachedDays(ending: previousLast, count: count, now: now, calendar: calendar)
+        let saved = try readCards(start: current.first?.date ?? last, end: current.last?.end ?? now)
+        let recaps = try readDailyRecaps(days: current, calendar: calendar)
+        let cards = (saved.0 + recaps.0).sorted { a, b in a.day == b.day ? a.id < b.id : a.day > b.day }
+        let notices = [saved.1, recaps.1].compactMap { $0 }
+        // The cache keeps raw days; the verdicts of the user's work definition are applied on
+        // every read, so a new verdict or correction never requires reading the journals again.
+        return GoalongAnalyticsPayload(current: GoalongLocalAnalytics.Period(days: current).applying(verdicts),
+            previous: GoalongLocalAnalytics.Period(days: previous ?? []).applying(verdicts),
+            cards: cards, archiveNotice: notices.isEmpty ? nil : notices.joined(separator: " "), updatedAt: now,
+            comparisonPending: previous == nil)
+    }
+
+    /// Reads the previous period of the same length, after the selected one is on screen.
+    func comparison(for payload: GoalongAnalyticsPayload, verdicts: GoalongWorkVerdicts) throws -> GoalongAnalyticsPayload {
+        let calendar = Calendar.current
+        guard payload.comparisonPending, let first = payload.current.days.first,
+              let previousLast = calendar.date(byAdding: .day, value: -1, to: first.date) else { return payload }
+        let previous = try days(ending: previousLast, count: payload.current.days.count,
+            now: payload.updatedAt, calendar: calendar)
+        return payload.with(previous: GoalongLocalAnalytics.Period(days: previous).applying(verdicts))
+    }
+
+    private func days(ending last: Date, count: Int, now: Date, calendar: Calendar) throws -> [GoalongLocalAnalytics.Day] {
+        var days: [GoalongLocalAnalytics.Day] = []
+        for offset in (0..<count).reversed() {
             try Task.checkCancellation()
             guard let date = calendar.date(byAdding: .day, value: -offset, to: last) else { continue }
             let revision = sourceRevision(date, calendar: calendar)
@@ -101,16 +140,21 @@ private actor GoalongAnalyticsReader {
             let evicted = cache.keys.sorted { (lastUse[$0] ?? 0) < (lastUse[$1] ?? 0) }.prefix(cache.count - Self.maximumCachedDays)
             for date in evicted { cache[date] = nil; lastUse[date] = nil }
         }
-        let current = Array(days.suffix(count)), previous = Array(days.prefix(count))
-        let saved = try readCards(start: current.first?.date ?? last, end: current.last?.end ?? now)
-        let recaps = try readDailyRecaps(days: current, calendar: calendar)
-        let cards = (saved.0 + recaps.0).sorted { a, b in a.day == b.day ? a.id < b.id : a.day > b.day }
-        let notices = [saved.1, recaps.1].compactMap { $0 }
-        // The cache keeps raw days; the verdicts of the user's work definition are applied on
-        // every read, so a new verdict or correction never requires reading the journals again.
-        return GoalongAnalyticsPayload(current: GoalongLocalAnalytics.Period(days: current).applying(verdicts),
-            previous: GoalongLocalAnalytics.Period(days: previous).applying(verdicts),
-            cards: cards, archiveNotice: notices.isEmpty ? nil : notices.joined(separator: " "), updatedAt: now)
+        return days
+    }
+
+    /// The period's days when none needs a journal read, nil otherwise.
+    private func cachedDays(ending last: Date, count: Int, now: Date, calendar: Calendar) -> [GoalongLocalAnalytics.Day]? {
+        var days: [GoalongLocalAnalytics.Day] = []
+        for offset in (0..<count).reversed() {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: last),
+                  !calendar.isDate(date, inSameDayAs: now), let cached = cache[date],
+                  cached.0 == sourceRevision(date, calendar: calendar) else { return nil }
+            days.append(cached.1)
+            uses += 1
+            lastUse[date] = uses
+        }
+        return days
     }
 
     /// Reads only existing bounded reports. Does not select a day in the shared recap
@@ -140,16 +184,16 @@ private actor GoalongAnalyticsReader {
         return (cards, rejected > 0 ? "\(rejected) bilan(s) quotidien(s) illisible(s) ou incohérent(s) ne sont pas affichés." : nil)
     }
 
+    /// A day's loader reads only the journal named after that day, so yesterday stays cached
+    /// while today's journal grows.
     private func sourceRevision(_ day: Date, calendar: Calendar) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar; formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = calendar.timeZone; formatter.dateFormat = "yyyy-MM-dd"
-        return (-1...1).map { offset in
-            let date = calendar.date(byAdding: .day, value: offset, to: day) ?? day
-            let url = root.appendingPathComponent("events/" + formatter.string(from: date) + ".jsonl")
-            guard let a = try? FileManager.default.attributesOfItem(atPath: url.path) else { return "missing" }
-            return "\(a[.systemFileNumber] ?? "-")|\(a[.size] ?? "-")|\((a[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)"
-        }.joined(separator: ";") + calendar.timeZone.identifier
+        let url = root.appendingPathComponent("events/" + formatter.string(from: day) + ".jsonl")
+        guard let a = try? FileManager.default.attributesOfItem(atPath: url.path) else { return "missing" + calendar.timeZone.identifier }
+        return "\(a[.systemFileNumber] ?? "-")|\(a[.size] ?? "-")|\((a[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)"
+            + calendar.timeZone.identifier
     }
     private func readCards(start: Date, end: Date) throws -> ([GoalongAnalyticsCard], String?) {
         let folder = root.appendingPathComponent("chatgpt/profile-analyses", isDirectory: true)
@@ -204,7 +248,8 @@ private actor GoalongAnalyticsReader {
     @Published private(set) var error: String?
     private let reader: GoalongAnalyticsReader
     private var operation = UUID()
-    init(root: URL = AppPaths.applicationSupportDirectory) { reader = GoalongAnalyticsReader(root: root) }
+    init() { reader = .shared }
+    init(root: URL) { reader = GoalongAnalyticsReader(root: root) }
     func load(_ request: GoalongAnalyticsLoadRequest, force: Bool = false,
               verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) async {
         guard request.permitsLoading, !Task.isCancelled else { return }
@@ -224,7 +269,14 @@ private actor GoalongAnalyticsReader {
             let value = try await reader.read(ending: day, count: count, force: force, preview: preview, verdicts: verdicts)
             try Task.checkCancellation()
             guard operation == id else { return }
-            payload = value; busy = false
+            payload = value
+            if value.comparisonPending {
+                let compared = try await reader.comparison(for: value, verdicts: verdicts)
+                try Task.checkCancellation()
+                guard operation == id else { return }
+                payload = compared
+            }
+            busy = false
         } catch is CancellationError {
             if operation == id { busy = false }
         } catch {
