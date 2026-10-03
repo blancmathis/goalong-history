@@ -8,6 +8,7 @@ BUNDLE_ID="${LOCALHISTORY_BUNDLE_ID:-ai.goalong.localhistory}"
 PRODUCT_NAME="LocalHistory"
 CLI_PRODUCT_NAME="goalong"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LOCALHISTORY_APP_ENTITLEMENTS="${LOCALHISTORY_APP_ENTITLEMENTS:-$ROOT_DIR/Distribution/GoalongHistory.entitlements}"
 CODESIGN_POLICY="$ROOT_DIR/scripts/codesign_policy.sh"
 if [[ ! -f "$CODESIGN_POLICY" ]]; then
   echo "Code-signing policy is missing: $CODESIGN_POLICY" >&2
@@ -257,6 +258,14 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>Goalong History utilise l’accessibilité uniquement pour reconnaître l’app et la fenêtre au premier plan dans votre historique. Le Temps d’écran est lu directement dans les fichiers d’Apple, en arrière-plan ; Goalong ne pilote jamais Réglages Système et n’envoie aucune saisie.</string>
     <key>NSInputMonitoringUsageDescription</key>
     <string>Goalong History utilise la surveillance de l’entrée pour compter les clics, défilements, raccourcis et la durée de frappe. Il ne conserve jamais les caractères tapés, les mots de passe ni le presse-papiers.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Goalong lit vos événements (heures et titres) pour comparer le temps prévu au temps observé sur ce Mac. Rien n’est modifié. Rien ne quitte ce Mac sans votre accord.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Goalong lit vos événements (heures et titres) pour comparer le temps prévu au temps observé sur ce Mac. Rien n’est modifié. Rien ne quitte ce Mac sans votre accord.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>Goalong lit vos rappels terminés pour montrer ce que vous avez accompli dans la journée. Rien n’est modifié. Rien ne quitte ce Mac sans votre accord.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>Goalong lit vos rappels terminés pour montrer ce que vous avez accompli dans la journée. Rien n’est modifié. Rien ne quitte ce Mac sans votre accord.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

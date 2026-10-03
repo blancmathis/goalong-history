@@ -128,6 +128,7 @@ jobs:
         env:
           LOCALHISTORY_VERSION: 0.6.0-ci
           LOCALHISTORY_BUILD_NUMBER: ${{ github.run_number }}
+          LOCALHISTORY_APP_ENTITLEMENTS: Distribution/GoalongHistory.entitlements
           LOCALHISTORY_RUN_TESTS: 0
           LOCALHISTORY_ARCHS: ${{ runner.arch == 'ARM64' && 'arm64' || 'x86_64' }}
         run: ./scripts/build_app.sh

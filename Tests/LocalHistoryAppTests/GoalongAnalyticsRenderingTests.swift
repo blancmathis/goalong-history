@@ -26,7 +26,9 @@ final class GoalongAnalyticsRenderingTests: XCTestCase {
                 let selection = GoalongActivityNavigation(day: payload.current.days.last?.date ?? payload.updatedAt,
                     period: payload.current.days.count)
                 // The summary for every fixture; the named views for a day and a week.
-                let views: [GoalongActivityDetail?] = [1, 7].contains(count) ? [nil, .rhythm, .usage, .sessions, .reports] : [nil]
+                let views: [GoalongActivityDetail?] = count == 1 ? [nil, .rhythm, .usage, .sessions, .texture, .agenda, .code, .sleep, .reports, .coverage]
+                    : count == 7 ? [nil, .rhythm, .usage, .sessions, .texture, .reports, .coverage] : [nil]
+                let lanes = [1, 7].contains(count) ? GoalongAnalyticsPreview.lanes(day: selection.day) : GoalongActivityLanes()
                 for shown in views {
                 for width in [640.0, 1000.0] {
                     let root = VStack(alignment: .leading, spacing: 0) {
@@ -36,7 +38,7 @@ final class GoalongAnalyticsRenderingTests: XCTestCase {
                         Divider()
                         VStack(alignment: .leading, spacing: 20) {
                             if payload.isPreview { GoalongAnalyticsPreviewBanner() }
-                            GoalongAnalyticsContent(payload: payload, focusMinutes: .constant(25), detail: .constant(shown))
+                            GoalongAnalyticsContent(payload: payload, focusMinutes: .constant(25), lanes: lanes, detail: .constant(shown))
                         }.padding(LHTheme.pageInset)
                     }
                         .frame(width: width).fixedSize(horizontal: false, vertical: true)

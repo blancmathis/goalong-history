@@ -8,6 +8,8 @@ import AppKit
     @ObservedObject private var updates = SoftwareUpdateManager.shared
     @State private var search = ""
     @State private var showingRetention = false
+    @State private var showingDeveloperProjects = false
+    @StateObject private var system = GoalongSystemSourcesModel()
     @State private var pendingPrivate = false
     @State private var pendingUnredacted = false
     private var pane: SettingsPane {
@@ -16,6 +18,20 @@ import AppKit
     }
     private var recording: Binding<DashboardSettingsDraft> {
         Binding(get: { model.appliedSettings }, set: { _ = model.applyRecordingChoice($0) })
+    }
+    @ViewBuilder private var calendarAccess: some View {
+        let permissions = [system.calendarPermission, system.remindersPermission]
+        if consents.isEnabled(.calendar), permissions.contains(where: { $0 != .ready }) {
+            let denied = permissions.contains(.permissionDenied)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(denied ? "macOS refuse l’accès à l’agenda ou aux rappels." : "macOS doit encore donner l’accès à l’agenda et aux rappels.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button(denied ? "Ouvrir Réglages Système…" : "Autoriser l’accès…") {
+                    if denied { GoalongCalendarSettings.open() } else { Task { await system.requestCalendarPermissions() } }
+                }
+                .buttonStyle(LHQuietButtonStyle()).accessibilityIdentifier("settings-calendar-access")
+            }
+        }
     }
     var body: some View {
         ScrollView {
@@ -37,6 +53,7 @@ import AppKit
         }
         .background(LHTheme.pageBackground)
         .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet().goalongControls() }
+        .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
         .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
             Button("Annuler", role: .cancel) {}
             Button("Inclure") { var next = model.appliedSettings; next.capturePrivateBrowsing = true; _ = model.applyRecordingChoice(next) }
@@ -143,6 +160,36 @@ import AppKit
                 Divider()
                 SourceActivationToggle(capability: .aiConversations) { Text("Conversations locales") }
                 Button("Choisir les dossiers de conversations…") { model.selectSection(.agentActivity) }.buttonStyle(LHQuietButtonStyle())
+                Divider()
+                SourceActivationToggle(capability: .developerActivity) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Activité de développement")
+                        Text("Commits et nombre de fichiers modifiés dans les projets choisis. Ni code, ni messages de commit.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if consents.isEnabled(.developerActivity) {
+                    Button("Choisir les projets…") { showingDeveloperProjects = true }.buttonStyle(LHQuietButtonStyle())
+                        .accessibilityIdentifier("settings-developer-projects")
+                }
+                Divider()
+                SourceActivationToggle(capability: .calendar) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Agenda et rappels")
+                        Text("Événements et rappels terminés de ce Mac, pour comparer le prévu et l’observé. Rien n’est modifié.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                calendarAccess
+            }
+            // macOS asks once, right after the choice; a refusal is then changed only in System Settings.
+            .onChange(of: consents.isEnabled(.calendar)) { enabled in
+                if enabled { Task { await system.requestCalendarPermissions() } }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                system.objectWillChange.send()
             }
         case .applications:
             GoalongApplicationsSettings(model: model)

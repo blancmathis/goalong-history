@@ -76,6 +76,7 @@
         private var deviceIdentity: DeviceIdentity!
         private var integrityJournal: IntegrityJournal!
         private var minuteSealer: MinuteSealer!
+        private var clearingCallPresence = false
         private var recorder: EventRecorder!
         private var contextProvider: ContextProvider!
         private var contextMonitor: ContextMonitor!
@@ -83,6 +84,7 @@
         private var dashboardViewModel: DashboardViewModel!
         private var sharingRulesStore: SharingRulesStore!
         private var agentActivityRuntime: AgentActivityRuntime!
+        private var developerActivityRuntime: GoalongDeveloperRuntime?
         private var screenTimeRepository: AppleSystemScreenTimeRepository?
         private var screenTimeArchiveTimer: Timer?
         private var screenTimeArchiveRefreshInFlight = false
@@ -110,7 +112,7 @@
 
         private var hasEnabledBackgroundSources: Bool {
             guard let capabilityConsents else { return false }
-            return [GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations].contains {
+            return [GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations, .developerActivity].contains {
                 capabilityConsents.isEnabled($0)
             }
         }
@@ -135,6 +137,7 @@
 
             do {
                 try AppPaths.prepare()
+                GoalongActivitySummaryBackfill.shared.start()
                 let retentionDirectories = ComputerHistoryStore.retentionDirectories(
                     rootDirectory: AppPaths.applicationSupportDirectory
                 )
@@ -154,6 +157,7 @@
                 }
                 configManager = ConfigManager()
                 capabilityConsents = GoalongCapabilityConsentStore.shared
+                developerActivityRuntime = GoalongDeveloperRuntime()
                 permissions = PermissionManager.shared
                 captureHealthStore = CaptureHealthStore(permissions: permissions)
                 semanticContextStore = SemanticContextStore()
@@ -388,9 +392,11 @@
             readOnlyQueryServer?.stop()
             readOnlyQueryServer = nil
             agentActivityRuntime?.stop()
+            developerActivityRuntime?.stop()
             if GoalongBuildCapabilities.permitsRemoteAnalysis {
                 ChatGPTRecapRuntime.shared.stop()
             }
+            GoalongCallPresenceMonitor.shared.stop()
             contextMonitor?.stop()
             eventTapMonitor?.stop()
             if capabilityConsents?.isEnabled(.localComputerHistory) == true {
@@ -448,11 +454,13 @@
                 captureHealthStore.setPaused(true)
                 _ = minuteSealer.stopAndSeal()
             }
+            configureCallPresence()
             menuBarController.updateStatus()
         }
 
         private func applyConfiguration(_ config: RecorderConfig) throws -> RecorderConfig {
             let applied = try configManager.save(config)
+            configureCallPresence()
             // Retention is an independent, explicitly confirmed policy. Saving a
             // recording switch must never authorize deletion of existing history.
             contextMonitor.resetAndSample()
@@ -463,6 +471,7 @@
 
         private func reloadConfiguration() {
             configManager.reload()
+            configureCallPresence()
             contextMonitor.resetAndSample()
             configureUploader(for: configManager.config)
         }
@@ -478,6 +487,9 @@
         ) {
             let barrier = DerivedHistoryWriteBarrier.shared
             let suspension = barrier.suspend()
+            Task { @MainActor in GoalongActivitySummaryBackfill.shared.cancel() }
+            clearingCallPresence = true
+            GoalongCallPresenceMonitor.shared.stop()
             ActivityAnalysisRuntime.shared.prepareForHistoryClear()
             ChatGPTRecapRuntime.shared.prepareForHistoryClear()
             barrier.notifyWhenDrained(suspension) { [self] in
@@ -495,6 +507,9 @@
         ) {
             let barrier = DerivedHistoryWriteBarrier.shared
             let suspension = barrier.suspend()
+            Task { @MainActor in GoalongActivitySummaryBackfill.shared.cancel() }
+            clearingCallPresence = true
+            GoalongCallPresenceMonitor.shared.stop()
             ActivityAnalysisRuntime.shared.prepareForHistoryClear()
             ChatGPTRecapRuntime.shared.prepareForHistoryClear()
             barrier.notifyWhenDrained(suspension) { [self] in
@@ -634,6 +649,8 @@
                 // invalidating caches or starting a forced rewrite against the unsafe
                 // target that caused preflight to fail.
                 DerivedHistoryWriteBarrier.shared.resume(suspension)
+                clearingCallPresence = false
+                configureCallPresence()
                 completion(.failure(error))
                 return
             }
@@ -760,7 +777,10 @@
             }
 
             DerivedHistoryWriteBarrier.shared.resume(suspension)
+            clearingCallPresence = false
+            configureCallPresence()
             ActivityAnalysisRuntime.shared.refreshAfterHistoryClear()
+            Task { @MainActor in GoalongActivitySummaryBackfill.shared.start() }
             completion(completedResult)
         }
 
@@ -851,6 +871,7 @@
                 contextMonitor.stop()
                 captureState.setManualPaused(true)
                 captureHealthStore.setPaused(true)
+                configureCallPresence()
                 menuBarController.updateStatus()
                 return
             }
@@ -915,6 +936,10 @@
             }
             menuBarController.updateStatus()
             schedulePermissionWatchdog()
+        }
+
+        private func configureCallPresence() {
+            GoalongCallPresenceMonitor.shared.configure(enabled: !clearingCallPresence && capabilityConsents.isEnabled(.localComputerHistory) && !captureState.isManuallyPaused, config: configManager.config)
         }
 
         private func installCapabilityConsentObserver() {
@@ -1010,6 +1035,8 @@
                 agentActivityRuntime.stop()
             }
 
+            configureCallPresence()
+            if !capabilityConsents.isEnabled(.calendar) { Task { await GoalongCalendarSource.shared.disable() } }
             configureScreenTimeDailyArchive()
             configureReadOnlyQueryServer()
 

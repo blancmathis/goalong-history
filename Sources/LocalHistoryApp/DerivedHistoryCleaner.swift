@@ -459,9 +459,10 @@
         let activityAnalysisFiles: Int
         let activityMemoryFiles: Int
         let computerHistoryFiles: Int
+        var activitySummaryFiles: Int = 0
 
         var total: Int {
-            activityAnalysisFiles + activityMemoryFiles + computerHistoryFiles
+            activityAnalysisFiles + activityMemoryFiles + computerHistoryFiles + activitySummaryFiles
         }
     }
 
@@ -472,17 +473,20 @@
         fileprivate let analysisPlans: [OwnedFileDeletionPlan]
         fileprivate let memoryPlans: [OwnedFileDeletionPlan]
         fileprivate let computerHistoryPlans: [OwnedFileDeletionPlan]
+        fileprivate var activitySummaryPlans: [OwnedFileDeletionPlan] = []
+        fileprivate var clearSummaryDirectory = false
 
         var expectedResult: DerivedHistoryDeletionResult {
             DerivedHistoryDeletionResult(
                 activityAnalysisFiles: analysisPlans.reduce(0) { $0 + $1.targets.count },
                 activityMemoryFiles: memoryPlans.reduce(0) { $0 + $1.targets.count },
-                computerHistoryFiles: computerHistoryPlans.reduce(0) { $0 + $1.targets.count }
+                computerHistoryFiles: computerHistoryPlans.reduce(0) { $0 + $1.targets.count },
+                activitySummaryFiles: activitySummaryPlans.reduce(0) { $0 + $1.targets.count }
             )
         }
 
         fileprivate var allPlans: [OwnedFileDeletionPlan] {
-            analysisPlans + memoryPlans + computerHistoryPlans
+            analysisPlans + memoryPlans + computerHistoryPlans + activitySummaryPlans
         }
 
         fileprivate func validate() throws {
@@ -491,6 +495,12 @@
 
         func execute() throws -> DerivedHistoryDeletionResult {
             _ = try OwnedFileDeletionPlan.execute(allPlans)
+            if clearSummaryDirectory, let plan = activitySummaryPlans.first {
+                var status = stat()
+                guard lstat(plan.directory.path, &status) == 0,
+                    OwnedFileDeletionPlan.DirectoryIdentity(status) == plan.directoryIdentity,
+                    rmdir(plan.directory.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+            }
             return expectedResult
         }
     }
@@ -560,18 +570,30 @@
                 cutoffKey: cutoffKey,
                 matchingDayKeys: matchingDayKeys
             )
+            let summaryPlan = try deletionPlan(
+                in: rootDirectory.appendingPathComponent("activity-days"),
+                trustedAncestor: trustedAncestor, suffixes: [".json"],
+                cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
             let computerHistoryPlans = try computerHistoryStore.deletionPlans(
                 cutoffKey: cutoffKey,
                 matchingDayKeys: matchingDayKeys,
                 trustedAncestor: trustedAncestor
             )
 
-            let analysisPlans = [analysisPlan].compactMap { $0 }
-            let memoryPlans = [memoryPlan].compactMap { $0 }
+            let developerPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("developer"),
+                trustedAncestor: trustedAncestor, suffixes: [".jsonl"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
+            let analysisPlans = [analysisPlan, developerPlan].compactMap { $0 }
+            let notesPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("notes"), trustedAncestor: trustedAncestor,
+                suffixes: [".json"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
+            let callsPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("calls"), trustedAncestor: trustedAncestor,
+                suffixes: [".jsonl"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
+            let memoryPlans = [memoryPlan, notesPlan, callsPlan].compactMap { $0 }
             let plan = DerivedHistoryDeletionPlan(
                 analysisPlans: analysisPlans,
                 memoryPlans: memoryPlans,
-                computerHistoryPlans: computerHistoryPlans
+                computerHistoryPlans: computerHistoryPlans,
+                activitySummaryPlans: [summaryPlan].compactMap { $0 },
+                clearSummaryDirectory: cutoffKey == nil && matchingDayKeys == nil
             )
             // Sequential category discovery is followed by one whole-plan validation,
             // immediately before the caller is permitted to begin deleting raw stores.

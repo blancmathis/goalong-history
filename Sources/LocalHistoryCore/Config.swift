@@ -11,6 +11,10 @@ public struct RecorderConfig: Codable, Equatable {
         ForegroundUsageObservation.normalizedIdleLimit(foregroundIdleSeconds)
     }
 
+    /// Missing on older configurations means enabled; Computer History consent still gates it.
+    public var captureCallPresence: Bool? = true
+    public var effectiveCaptureCallPresence: Bool { captureCallPresence != false }
+
     public var captureClicks: Bool
     public var captureScroll: Bool
     public var captureKeyboardActivity: Bool
@@ -127,6 +131,9 @@ public struct RecorderConfig: Codable, Equatable {
         ],
         excludedDomains: [],
         browserBundleIdentifiers: [
+            "at.studio.AsideBrowser",
+            "company.thebrowser.dia",
+            "app.zen-browser.zen",
             "com.apple.Safari",
             "com.apple.SafariTechnologyPreview",
             "com.google.Chrome",
@@ -269,6 +276,8 @@ public struct RecorderConfig: Codable, Equatable {
             maxItems: 512,
             maxLength: 256
         )
+        // Browser recognition enriches attribution; exclusions and private-window capture stay authoritative.
+        output.browserBundleIdentifiers = Array(Set(output.browserBundleIdentifiers + Self.default.browserBundleIdentifiers)).sorted()
         output.privateWindowMarkers = Self.cleanedList(
             output.privateWindowMarkers,
             maxItems: 512,

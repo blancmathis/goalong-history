@@ -5,6 +5,7 @@ public enum HistoryDataClass: String, Codable, CaseIterable {
     case semanticSnapshots
     case memories
     case analysisCaches
+    case activitySummaries
     case minuteSeals
     case anchorReceipts
 
@@ -13,7 +14,7 @@ public enum HistoryDataClass: String, Codable, CaseIterable {
     }
 
     public var isDerived: Bool {
-        self == .memories || self == .analysisCaches
+        self == .memories || self == .analysisCaches || self == .activitySummaries
     }
 }
 
@@ -68,6 +69,7 @@ public struct HistoryRetentionPolicy: Codable, Equatable {
     public var analysisCaches: RetentionDuration
     public var minuteSeals: RetentionDuration
     public var anchorReceipts: RetentionDuration
+    public var activitySummaries: RetentionDuration
     public let migratedFromLegacyRetentionDays: Int?
 
     public init(
@@ -78,7 +80,8 @@ public struct HistoryRetentionPolicy: Codable, Equatable {
         analysisCaches: RetentionDuration,
         minuteSeals: RetentionDuration,
         anchorReceipts: RetentionDuration,
-        migratedFromLegacyRetentionDays: Int? = nil
+        migratedFromLegacyRetentionDays: Int? = nil,
+        activitySummaries: RetentionDuration = .indefinite
     ) {
         self.schemaVersion = schemaVersion
         self.detailedEvents = detailedEvents
@@ -87,7 +90,25 @@ public struct HistoryRetentionPolicy: Codable, Equatable {
         self.analysisCaches = analysisCaches
         self.minuteSeals = minuteSeals
         self.anchorReceipts = anchorReceipts
+        self.activitySummaries = activitySummaries
         self.migratedFromLegacyRetentionDays = migratedFromLegacyRetentionDays
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, detailedEvents, semanticSnapshots, memories, analysisCaches
+        case minuteSeals, anchorReceipts, activitySummaries, migratedFromLegacyRetentionDays
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(schemaVersion: try c.decode(Int.self, forKey: .schemaVersion),
+            detailedEvents: try c.decode(RetentionDuration.self, forKey: .detailedEvents),
+            semanticSnapshots: try c.decode(RetentionDuration.self, forKey: .semanticSnapshots),
+            memories: try c.decode(RetentionDuration.self, forKey: .memories),
+            analysisCaches: try c.decode(RetentionDuration.self, forKey: .analysisCaches),
+            minuteSeals: try c.decode(RetentionDuration.self, forKey: .minuteSeals),
+            anchorReceipts: try c.decode(RetentionDuration.self, forKey: .anchorReceipts),
+            migratedFromLegacyRetentionDays: try c.decodeIfPresent(Int.self, forKey: .migratedFromLegacyRetentionDays),
+            activitySummaries: try c.decodeIfPresent(RetentionDuration.self, forKey: .activitySummaries) ?? .indefinite)
     }
 
     /// Non-destructive migration from the existing single `retentionDays` value.
@@ -115,6 +136,7 @@ public struct HistoryRetentionPolicy: Codable, Equatable {
         case .analysisCaches: return analysisCaches
         case .minuteSeals: return minuteSeals
         case .anchorReceipts: return anchorReceipts
+        case .activitySummaries: return activitySummaries
         }
     }
 
@@ -266,9 +288,9 @@ public enum HistoryDeletionPlanner {
             case .allDetailedData:
                 return artifact.dataClass == .detailedEvents || artifact.dataClass == .semanticSnapshots
             case .allMemories:
-                return artifact.dataClass == .memories
+                return artifact.dataClass == .memories || artifact.dataClass == .activitySummaries
             case .allDerivedData:
-                return artifact.dataClass == .memories || artifact.dataClass == .analysisCaches
+                return artifact.dataClass.isDerived
             case .allLocalHistoryIncludingProofs:
                 return true
             }

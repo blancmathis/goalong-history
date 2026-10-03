@@ -15,6 +15,7 @@ extension HistoryDataClass {
         case .memories: return "Historique et résumés locaux"
         case .analysisCaches: return "Fichiers temporaires d’analyse"
         case .minuteSeals: return "Preuves locales"
+        case .activitySummaries: return "Résumés d’Activité"
         case .anchorReceipts: return "Reçus de vérification"
         }
     }
@@ -27,6 +28,7 @@ extension HistoryRetentionPolicy {
         case .memories: memories = duration
         case .analysisCaches: analysisCaches = duration
         case .minuteSeals: minuteSeals = duration
+        case .activitySummaries: activitySummaries = duration
         case .anchorReceipts: anchorReceipts = duration
         }
     }
@@ -127,7 +129,7 @@ extension HistoryRetentionPolicy {
                             .font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                             .accessibilityIdentifier("retention-confirm-proofs")
                     }
-                    Text("Ces règles couvrent l’activité gérée par Goalong, le texte affiché, les souvenirs dérivés, les caches d’analyse, les sceaux et les reçus. Elles ne suppriment ni les originaux Temps d’écran d’Apple, ni les conversations IA d’origine, ni l’historique des analyses ChatGPT, ni les fichiers exportés, sauvegardes ou données déjà envoyées à un site ou un service : ceux-ci se suppriment depuis leurs propres réglages.")
+                    Text("Ces règles couvrent l’activité gérée par Goalong, le texte affiché, les résumés d’Activité, les souvenirs dérivés, les caches d’analyse, les sceaux et les reçus. Elles ne suppriment ni les originaux Temps d’écran d’Apple, ni les conversations IA d’origine, ni l’historique des analyses ChatGPT, ni les fichiers exportés, sauvegardes ou données déjà envoyées à un site ou un service : ceux-ci se suppriment depuis leurs propres réglages.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     if let error = model.error {
                         Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)

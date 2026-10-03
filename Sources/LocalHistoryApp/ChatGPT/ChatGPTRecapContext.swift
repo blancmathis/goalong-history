@@ -21,6 +21,7 @@
         let computerHistoryEpisodes: Int?
         let computerHistoryResources: Int?
         let workflowSuggestions: Int?
+        let developerProjects: Int?
 
         init(
             localEvents: Int,
@@ -37,7 +38,8 @@
             importedChatMessages: Int,
             computerHistoryEpisodes: Int?,
             computerHistoryResources: Int?,
-            workflowSuggestions: Int?
+            workflowSuggestions: Int?,
+            developerProjects: Int? = nil
         ) {
             self.localEvents = localEvents
             self.activeMinutes = activeMinutes
@@ -54,6 +56,7 @@
             self.computerHistoryEpisodes = computerHistoryEpisodes
             self.computerHistoryResources = computerHistoryResources
             self.workflowSuggestions = workflowSuggestions
+            self.developerProjects = developerProjects
         }
 
         init(from decoder: Decoder) throws {
@@ -75,6 +78,7 @@
             computerHistoryEpisodes = try values.decodeIfPresent(Int.self, forKey: .computerHistoryEpisodes)
             computerHistoryResources = try values.decodeIfPresent(Int.self, forKey: .computerHistoryResources)
             workflowSuggestions = try values.decodeIfPresent(Int.self, forKey: .workflowSuggestions)
+            developerProjects = try values.decodeIfPresent(Int.self, forKey: .developerProjects)
         }
     }
 
@@ -89,12 +93,14 @@
         let renderedData: String
         let sourceCounts: ChatGPTRecapSourceCounts
         let digest: String
+        var systemSourceItemCount: Int = 0
 
         var hasMeaningfulData: Bool {
-            !activity.applications.isEmpty || sourceCounts.localEvents > 0
+            systemSourceItemCount > 0 || !activity.applications.isEmpty || sourceCounts.localEvents > 0
                 || sourceCounts.screenTimeDevices > 0
                 || sourceCounts.agentCaptures > 0
                 || sourceCounts.importedChatMessages > 0
+                || (sourceCounts.developerProjects ?? 0) > 0
                 || computerHistory != nil
         }
     }
@@ -324,6 +330,8 @@
             if selection.conversations && !privacy.hasExclusions {
                 sections.append(boundedRedactedSection(renderAgentActivity(safeAgents), maximum: maximumAgentActivityCharacters))
             }
+            var developerProjects = 0
+            if let development = try GoalongDeveloperRecap.build(day: day, selection: selection, agents: safeAgents, privacy: privacy, onProjects: { developerProjects = $0 }) { sections.append(development) }
             let assembled = sections.joined(separator: "\n\n")
             guard let rendered = ActivitySemanticTextSanitizer.redact(assembled), rendered.count <= maximumRenderedDataCharacters else {
                 throw CodexAppServerError.protocolLimitExceeded("selected context exceeded its bound")
@@ -336,7 +344,7 @@
                 visibleAgentMessages: safeAgents.visibleMessageCount, agentToolCalls: safeAgents.toolCallCount,
                 agentErrors: safeAgents.errorCount, analyzedAgentCaptures: safeAgents.analyzedSessionCount,
                 importedChatMessages: 0, computerHistoryEpisodes: safeMemory?.coverage.episodeCount,
-                computerHistoryResources: safeMemory?.coverage.resourceCount, workflowSuggestions: safeMemory?.suggestions.count)
+                computerHistoryResources: safeMemory?.coverage.resourceCount, workflowSuggestions: safeMemory?.suggestions.count, developerProjects: selection.developer == true ? developerProjects : nil)
             let minimal = ActivityDayAnalysis(schemaVersion: activity.schemaVersion, dayStart: activity.dayStart,
                 dayEnd: activity.dayEnd, generatedAt: activity.generatedAt, headline: "Applications autorisées",
                 activeSeconds: apps.reduce(0) { $0 + $1.activeSeconds }, workSeconds: 0, focusBlocks: [], sites: [],

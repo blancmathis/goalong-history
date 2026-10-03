@@ -94,7 +94,7 @@ if [[ -n "$CODEX_EVENT_ROOT" || -n "$START_UTC" || -n "$END_UTC" || "$CONFIRM_PH
     exit 64
   fi
 fi
-if [[ ! -d "$REPO/.git" || ! -f "$REPO/Package.swift" ]]; then
+if [[ ! -f "$REPO/Package.swift" ]] || ! git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Not a Goalong History git checkout: $REPO" >&2
   exit 66
 fi

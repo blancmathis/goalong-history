@@ -40,9 +40,18 @@ struct GoalongWorkSharingFilter {
     var withholdsTitles: Bool { scope.map { !$0.windowTitles && $0.perApplicationFields.isEmpty } ?? false }
 }
 
+extension GoalongWorkSharingFilter {
+    func permitsVisibleContext(_ label: GoalongWorkContext.Label) -> Bool {
+        self.label(label) != nil && scope?.allows(.visibleText, id: label.bundleIdentifier, name: label.application) == true
+    }
+    func excerpt(_ text: String, label: GoalongWorkContext.Label) -> String? {
+        guard permitsVisibleContext(label), let transformer else { return nil }
+        return (try? transformer.apply(text, maximumCharacters: 2_000)).map { String($0.prefix(240)) }
+    }
+}
+
 /// Runs the user's definition over the contexts of a day through the connected ChatGPT
-/// account (isolated, tool-less Codex thread). Only contexts without a verdict are sent,
-/// longest first; already-classified contexts are never sent again for the same definition.
+/// account (isolated, tool-less Codex thread). Unknown contexts are sent longest first; automatic unclear verdicts may receive bounded daily reassessment.
 @MainActor final class GoalongWorkAgent: ObservableObject {
     static let shared = GoalongWorkAgent()
 
@@ -105,7 +114,13 @@ struct GoalongWorkSharingFilter {
         }
     }
 
-    func classify(day: Date, userInitiated: Bool = true) {
+    /// The day note goes to the agent only when the reviewed recap shares it, and never beside an exclusion.
+    static func sharedDayNote(root: URL, day: Date, selection: GoalongAnalysisSelection, policy: GoalongPrivacyPolicy) -> String? {
+        guard selection.isValid(for: policy), selection.systemSources?.dayNote == true, !policy.hasExclusions else { return nil }
+        return try? GoalongDayNoteStore.get(root: root, day: day)
+    }
+
+    func classify(day: Date, userInitiated: Bool = true, dayNote: String? = nil) {
         guard !isRunning else { return }
         let state = readiness
         guard state == .ready else {
@@ -122,8 +137,9 @@ struct GoalongWorkSharingFilter {
         runningDay = start; progress = "Lecture de la journée sur ce Mac…"; lastError = nil
         attempts[start] = (Date(), false)
         let definition = store.definition, revision = store.revision, root = self.root
-        let filter = GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy.load(in: root),
-                                              selection: GoalongAnalysisSelection.load(root: root))
+        let policy = GoalongPrivacyPolicy.load(in: root), selection = GoalongAnalysisSelection.load(root: root)
+        let filter = GoalongWorkSharingFilter(policy: policy, selection: selection)
+        let note = dayNote ?? Self.sharedDayNote(root: root, day: start, selection: selection, policy: policy)
         let dayName = Self.dayString(start, calendar: calendar)
         task = Task { [weak self] in
             guard let self else { return }
@@ -138,10 +154,20 @@ struct GoalongWorkSharingFilter {
                 }
                 var labels: [String: GoalongWorkContext.Label] = [:]
                 for (key, label) in observation.labels { labels[key] = filter.label(label) }
-                let pending = GoalongWorkClassification.pending(day: observation.day, labels: labels, verdicts: store.verdicts)
+                let pending = GoalongWorkClassification.pending(day: observation.day, labels: labels, verdicts: store.verdicts, calendar: calendar)
                 guard !pending.keys.isEmpty else {
                     finish(id, outcome: "Tout ce qui pouvait être classé le \(GoalongUIFormat.day(start)) l’est déjà.")
                     return
+                }
+                let reasks = Set(pending.keys.filter { store.verdicts.contexts[$0]?.verdict == .unclear })
+                let rawExcerpts = await Task.detached(priority: .utility) {
+                    GoalongWorkReassessment.excerpts(root: root, day: start, keys: reasks, calendar: calendar,
+                        permits: filter.permitsVisibleContext, shouldContinue: { !Task.isCancelled })
+                }.value
+                guard operation == id else { return }
+                var excerpts: [String: String] = [:]
+                for (key, text) in rawExcerpts {
+                    if let label = observation.labels[key] { excerpts[key] = filter.excerpt(text, label: label) }
                 }
                 let size = GoalongWorkClassification.maximumContextsPerRequest
                 let keys = Array(pending.keys.prefix(size * 3))
@@ -163,9 +189,10 @@ struct GoalongWorkSharingFilter {
                         : "L’agent classe \(batch.count) contexte\(batch.count > 1 ? "s" : "")…"
                     let request = GoalongWorkClassification.request(date: dayName, definition: definition, pending: pending,
                         batch: batch, day: observation.day, verdicts: store.verdicts, knownTasks: store.knownTasks,
-                        examples: store.examples, calendar: calendar)
+                        examples: store.examples, calendar: calendar, contextExcerpts: excerpts, dayNote: note)
                     let prompt = GoalongWorkClassification.prompt(request, definition: definition)
                     let privacyRevision = filter.policy.revision
+                    guard store.markAsked(batch, revision: revision, day: dayName) else { throw GoalongWorkClassification.Failure.invalid("La tentative n’a pas pu être enregistrée. Rien n’a été envoyé.") }
                     let response = try await Task.detached(priority: .userInitiated) {
                         let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory()
                         defer { try? FileManager.default.removeItem(at: directory) }

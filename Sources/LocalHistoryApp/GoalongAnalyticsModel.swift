@@ -136,7 +136,7 @@ private actor GoalongAnalyticsReader {
                 value = try readToday(date, calendar: calendar)
                 if value.state != .incomplete { cache[date] = (revision, value) }
             } else {
-                value = GoalongLocalAnalytics.load(root: root, day: date, now: now, calendar: calendar,
+                value = GoalongActivityDayReader.load(root: root, day: date, now: now, calendar: calendar,
                     shouldContinue: { !Task.isCancelled })
                 try Task.checkCancellation()
                 if value.state != .incomplete { cache[date] = (revision, value) }
@@ -209,17 +209,10 @@ private actor GoalongAnalyticsReader {
         return (cards, rejected > 0 ? "\(rejected) bilan(s) quotidien(s) illisible(s) ou incohérent(s) ne sont pas affichés." : nil)
     }
 
-    /// A day's loader reads only the journal named after that day, so yesterday stays cached
-    /// while today's journal grows.
     private func sourceRevision(_ day: Date, calendar: Calendar) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar; formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = calendar.timeZone; formatter.dateFormat = "yyyy-MM-dd"
-        let url = root.appendingPathComponent("events/" + formatter.string(from: day) + ".jsonl")
-        guard let a = try? FileManager.default.attributesOfItem(atPath: url.path) else { return "missing" + calendar.timeZone.identifier }
-        return "\(a[.systemFileNumber] ?? "-")|\(a[.size] ?? "-")|\((a[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)"
-            + calendar.timeZone.identifier
+        GoalongActivityDayReader.sourceRevision(root: root, day: day, calendar: calendar)
     }
+
     private func readCards(start: Date, end: Date) throws -> ([GoalongAnalyticsCard], String?) {
         let folder = root.appendingPathComponent("chatgpt/profile-analyses", isDirectory: true)
         guard FileManager.default.fileExists(atPath: folder.path) else { return ([], nil) }

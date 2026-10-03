@@ -11,7 +11,7 @@ public enum GoalongLocalAnalytics {
         case work, other, unclassified, idle, concealed, unobserved
         public var isActive: Bool { self == .work || self == .other || self == .unclassified }
     }
-    public enum State: String, Sendable { case ready, noSource, incomplete }
+    public enum State: String, Codable, Sendable { case ready, noSource, incomplete }
     public struct Segment: Identifiable, Equatable, Sendable {
         public let start: Date
         public var end: Date
@@ -24,6 +24,7 @@ public enum GoalongLocalAnalytics {
         public var contextKey: String? = nil
         /// The task this work served, as named by the agent or the user.
         public var task: String? = nil
+        public var coverageReason: GoalongCoverageReason? = nil
         public var id: Date { start }
         public var seconds: TimeInterval { max(0, end.timeIntervalSince(start)) }
         /// Application + domain: what an app switch changes.
@@ -71,6 +72,12 @@ public enum GoalongLocalAnalytics {
         public let segments: [Segment]
         public let eventCount: Int
         public let classifierVersions: Set<String>
+        public var origin: GoalongDayOrigin = .journal
+        public var hasDetailedSource: Bool = true
+        public var dayReason: GoalongCoverageReason? = nil
+        public var firstObservation: Date? = nil
+        public var lastObservation: Date? = nil
+        public var recordedBreakdown: GoalongActivityBreakdown? = nil
         public var id: Date { date }
         public var activeSeconds: TimeInterval { seconds(.work) + seconds(.other) + seconds(.unclassified) }
         public var observedSeconds: TimeInterval { segments.filter { $0.kind != .unobserved }.reduce(0) { $0 + $1.seconds } }
@@ -166,15 +173,17 @@ public enum GoalongLocalAnalytics {
         let end = max(start, min(dayEnd, now))
         let rows = evidenceRows(events, start: start, end: end)
         // A genuinely failed or unstable source still must not publish plausible totals.
-        if incomplete {
-            return Day(date: start, end: end, state: .incomplete, segments: end > start ? [Segment(start: start, end: end,
-                kind: .unobserved, application: nil, bundleIdentifier: nil, host: nil)] : [],
-                eventCount: rows.count, classifierVersions: [])
-        }
+        if incomplete { return unreadable(start: start, end: end, eventCount: rows.count) }
         // The same fold refreshes today from its last checkpoint: one definition of a day.
-        var fold = DayFold(start: start)
+        var fold = DayFold(start: start, calendar: calendar)
         for row in rows { fold.consume(row) }
         return fold.finish(end: end)
+    }
+
+    static func unreadable(start: Date, end: Date, eventCount: Int) -> Day {
+        Day(date: start, end: end, state: .incomplete, segments: end > start ? [Segment(start: start, end: end,
+            kind: .unobserved, application: nil, bundleIdentifier: nil, host: nil, coverageReason: .unreadable)] : [],
+            eventCount: eventCount, classifierVersions: [], dayReason: .unreadable)
     }
 
     /// Buffered typing/scroll bursts can be appended after newer foreground samples.
@@ -193,24 +202,38 @@ public enum GoalongLocalAnalytics {
     /// solely to form the next interval, including the last row of a timestamp tie.
     fileprivate struct DayFold {
         let start: Date
+        let calendar: Calendar
         var segments: [Segment] = []
+        var modes = GoalongActivityBreakdown.MinuteModes()
         var tracker = GoalongWorkContext.Tracker()
         var firstTimestamp: Date?
         var last: HistoryEvent?
         var lastContextKey: String?
         var rowCount = 0
 
+        init(start: Date, calendar: Calendar) { self.start = start; self.calendar = calendar }
+
         mutating func consume(_ next: HistoryEvent) {
             let key = tracker.context(for: next)?.key
+            modes.add(next, calendar: calendar)
             defer { last = next; lastContextKey = key; rowCount += 1 }
             guard let previous = last else { firstTimestamp = next.timestamp; return }
+            // Goalong never labels an application as work: active time stays to classify
+            // until the user's own definition is applied to its context.
             let contextKey = lastContextKey
             let gap = next.timestamp.timeIntervalSince(previous.timestamp)
             guard gap > 0 else { return }
             let kind: Kind
+            var coverageReason: GoalongCoverageReason?
             if gap > maximumGap || next.metadata?["observation_gap"] == "true" {
                 kind = .unobserved
+                if next.metadata?["observation_gap"] == "true" { coverageReason = .observationGap }
+                else if previous.suppressionReason != nil || [.recorderStopped, .recordingPaused, .systemSleep,
+                    .sessionLocked, .secureInputSuppressed, .historyCleared].contains(previous.kind) {
+                    coverageReason = .opening(previous)
+                } else { coverageReason = .gap }
             } else if let reason = previous.suppressionReason {
+                coverageReason = .opening(previous)
                 switch reason {
                 case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput, .manualPause:
                     kind = .concealed
@@ -219,6 +242,7 @@ public enum GoalongLocalAnalytics {
                 }
             } else if previous.isObservationContinuityBoundary || previous.app?.name.isEmpty != false {
                 kind = .unobserved
+                coverageReason = .opening(previous)
             } else if ForegroundUsageObservation.usesPresencePolicy(previous) {
                 let seconds = ForegroundUsageObservation.activeDuration(after: previous,
                     until: next.timestamp, nextEvent: next)
@@ -237,7 +261,8 @@ public enum GoalongLocalAnalytics {
                 // Split at the exact reading expiry. A later idle observation
                 // never erases a preceding minute of reading or revives absence.
                 append(activeEnd, next.timestamp,
-                    ForegroundUsageObservation.hasVisibleForeground(previous) ? .idle : .unobserved)
+                    ForegroundUsageObservation.hasVisibleForeground(previous) ? .idle : .unobserved,
+                    reason: ForegroundUsageObservation.hasVisibleForeground(previous) ? nil : .noVisibleForeground)
                 return
             } else if ForegroundActivityEvidence.isInputIdle(previous)
                 || (ForegroundActivityEvidence.isInputIdle(next)
@@ -250,13 +275,16 @@ public enum GoalongLocalAnalytics {
             }
             // A browser-process wake assertion cannot attribute the content of an unproven tab.
             let attributable = previous.url?.host == nil || ForegroundActivityEvidence.supportsWebsiteAttribution(previous)
-            append(previous.timestamp, next.timestamp, kind, previous, contextKey: attributable ? contextKey : nil)
+            append(previous.timestamp, next.timestamp, kind, previous, contextKey: attributable ? contextKey : nil, reason: coverageReason)
         }
 
         mutating func append(_ a: Date, _ b: Date, _ kind: Kind, _ event: HistoryEvent? = nil,
-                    websiteAllowed: Bool = true, contextKey: String? = nil) {
+                    websiteAllowed: Bool = true, contextKey: String? = nil, reason: GoalongCoverageReason? = nil) {
             guard b > a else { return }
             let active = kind.isActive
+            if active, let event, let evidence = ForegroundActivityEvidence.evidence(in: event) {
+                modes.add(evidence, from: a, to: b, calendar: calendar)
+            }
             let application = active ? event?.app?.name : nil
             let bundle = active ? event?.app?.bundleIdentifier : nil
             let host = active && websiteAllowed && event.map(ForegroundActivityEvidence.supportsWebsiteAttribution) == true
@@ -264,36 +292,36 @@ public enum GoalongLocalAnalytics {
             let key = active ? contextKey : nil
             if let last = segments.last, last.end == a, last.kind == kind,
                last.application == application, last.bundleIdentifier == bundle, last.host == host,
-               last.contextKey == key {
+               last.contextKey == key, last.coverageReason == reason {
                 segments[segments.count - 1].end = b
             } else {
                 segments.append(Segment(start: a, end: b, kind: kind, application: application,
-                    bundleIdentifier: bundle, host: host, contextKey: key))
+                    bundleIdentifier: bundle, host: host, contextKey: key, coverageReason: reason))
             }
         }
 
         /// Finalization only touches a copy: the next read can replace the entire window,
         /// and no previous trailing `unobserved` segment can become an observed interval.
         func finish(end: Date) -> Day {
-            guard let first = firstTimestamp, let last else {
-                var final = self
-                final.append(start, end, .unobserved)
-                return Day(date: start, end: end, state: .noSource, segments: final.segments,
-                    eventCount: 0, classifierVersions: [])
-            }
             var final = self
-            if first > start {
-                if let segment = final.segments.first, segment.start == first, segment.kind == .unobserved {
-                    final.segments[0] = Segment(start: start, end: segment.end, kind: .unobserved,
-                        application: nil, bundleIdentifier: nil, host: nil)
-                } else {
-                    final.segments.insert(Segment(start: start, end: first, kind: .unobserved,
-                        application: nil, bundleIdentifier: nil, host: nil), at: 0)
-                }
+            guard let first = firstTimestamp, let last else {
+                final.append(start, end, .unobserved, reason: .notRecorded)
+                return Day(date: start, end: end, state: .noSource, segments: final.segments,
+                    eventCount: 0, classifierVersions: [], dayReason: .notRecorded)
             }
-            final.append(last.timestamp, end, .unobserved)
-            return Day(date: start, end: end, state: .ready, segments: final.segments,
-                eventCount: rowCount, classifierVersions: [GoalongLocalAnalytics.method])
+            // No reason inside the day is `beforeFirstObservation`: this never merges.
+            if first > start {
+                final.segments.insert(Segment(start: start, end: first, kind: .unobserved, application: nil,
+                    bundleIdentifier: nil, host: nil, coverageReason: .beforeFirstObservation), at: 0)
+            }
+            // A last foreground sample is not evidence that activity continued after that sample.
+            let tailReason: GoalongCoverageReason = last.suppressionReason != nil || [.recorderStopped, .recordingPaused,
+                .systemSleep, .sessionLocked, .secureInputSuppressed, .historyCleared].contains(last.kind)
+                ? .opening(last) : .afterLastObservation
+            final.append(last.timestamp, end, .unobserved, reason: tailReason)
+            return Day(date: start, end: end, state: .ready, segments: final.segments, eventCount: rowCount,
+                classifierVersions: [GoalongLocalAnalytics.method], firstObservation: first, lastObservation: last.timestamp,
+                recordedBreakdown: .build(segments: final.segments, modes: final.modes, calendar: calendar))
         }
     }
 
@@ -363,7 +391,7 @@ public enum GoalongLocalAnalytics {
         let metrics = loaded.metrics
         let incomplete = metrics.wasCancelled || metrics.sourceChangedDuringRead || metrics.sourceAccessWasIncomplete
             || metrics.evidenceBudgetExceeded || !loaded.issues.isEmpty
-        var checkpoint = loaded.didResume ? candidate!.fold : DayFold(start: start)
+        var checkpoint = loaded.didResume ? candidate!.fold : DayFold(start: start, calendar: calendar)
         // Incomplete output reports the count without publishing any plausible durations.
         // A failed attempt never changes the caller's last successful state.
         let projectionWasRejected = metrics.sourceChangedDuringRead || metrics.sourceAccessWasIncomplete
@@ -372,10 +400,7 @@ public enum GoalongLocalAnalytics {
             + (loaded.didResume ? candidate!.events.filter { $0.timestamp <= end }.count : 0)
             + loaded.events.filter { $0.timestamp <= end }.count
         func failure(cancelled: Bool) -> ResumableDayLoad {
-            let missing = Segment(start: start, end: end, kind: .unobserved,
-                application: nil, bundleIdentifier: nil, host: nil)
-            return ResumableDayLoad(day: Day(date: start, end: end, state: .incomplete, segments: [missing],
-                eventCount: count, classifierVersions: []), state: state, didResume: loaded.didResume,
+            ResumableDayLoad(day: unreadable(start: start, end: end, eventCount: count), state: state, didResume: loaded.didResume,
                 eventBytesRead: bytesRead, wasCancelled: cancelled)
         }
         guard !incomplete else { return failure(cancelled: metrics.wasCancelled) }

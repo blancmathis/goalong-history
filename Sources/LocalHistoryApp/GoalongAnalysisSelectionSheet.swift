@@ -106,6 +106,24 @@ import AgentActivity
                 source("Activité de ce Mac", capability: .localComputerHistory, value: $selection.computer)
                 source("Temps d’écran Apple", capability: .appleScreenTime, value: $selection.screenTime)
                 source("Conversations locales", capability: .aiConversations, value: $selection.conversations)
+                source("Développement · agents, Git et fichiers",
+                       capability: consents.isEnabled(.aiConversations) ? .aiConversations : .developerActivity,
+                       value: Binding(get: { selection.developer == true }, set: { selection.developer = $0 }))
+                if selection.developer == true && exclusions.policy.hasExclusions {
+                    Text("Omis tant qu’une exclusion de confidentialité existe : ces données n’indiquent ni l’app ni le site d’origine.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            GoalongSettingsGroup(title: "Sources du jour · chacune à part") {
+                source("Appels", capability: .localComputerHistory, value: daySource(\.calls))
+                source("Agenda et rappels", capability: .calendar, value: daySource(\.calendar))
+                source("Autres appareils Apple", capability: .appleScreenTime, value: daySource(\.otherDevices))
+                source("Apple Santé (import)", capability: nil, value: daySource(\.health))
+                source("Note du jour", capability: nil, value: daySource(\.dayNote))
+                Text(selection.systemSources?.dayNote == true && exclusions.policy.hasExclusions
+                     ? "La note est omise tant qu’une exclusion de confidentialité existe : un texte libre ne peut pas être filtré."
+                     : "Cochée, la note sert aussi à l’agent de « Mon travail ». Aucune de ces sources ne s’ajoute au temps actif.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if selection.computer {
                 GoalongSettingsGroup(title: "Détails possibles · uniquement pour les apps autorisées") {
@@ -267,12 +285,18 @@ import AgentActivity
             } else { Text("Aucun envoi : cet aperçu permet de vérifier les champs et les noms après remplacement.").font(.system(size: 13)).foregroundStyle(.secondary).padding(.vertical, 20) }
         }
     }
-    private func source(_ title: String, capability: GoalongCapability, value: Binding<Bool>) -> some View {
-        HStack {
+    private func daySource(_ keyPath: WritableKeyPath<GoalongSystemRecapSelection, Bool>) -> Binding<Bool> {
+        Binding(get: { selection.systemSources?[keyPath: keyPath] == true },
+                set: { var value = selection.systemSources ?? GoalongSystemRecapSelection(); value[keyPath: keyPath] = $0; selection.systemSources = value })
+    }
+    /// A source without capability (an import, the note) is always available.
+    private func source(_ title: String, capability: GoalongCapability?, value: Binding<Bool>) -> some View {
+        let available = capability.map { consents.isEnabled($0) } ?? true
+        return HStack {
             Text(title).font(.system(size: 14))
             Spacer()
-            Toggle(title, isOn: value).labelsHidden().toggleStyle(.goalongSwitchOnly).disabled(!consents.isEnabled(capability))
-            if !consents.isEnabled(capability) {
+            Toggle(title, isOn: value).labelsHidden().toggleStyle(.goalongSwitchOnly).disabled(!available)
+            if !available {
                 Button("Configurer la source") { dismiss(); model.selectSection(.settings); model.settingsPane = .recording }
                     .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
             }
@@ -316,6 +340,13 @@ import AgentActivity
         next.computer = next.computer && consents.isEnabled(.localComputerHistory)
         next.screenTime = next.screenTime && consents.isEnabled(.appleScreenTime)
         next.conversations = next.conversations && consents.isEnabled(.aiConversations)
+        next.developer = next.developer == true && (consents.isEnabled(.aiConversations) || consents.isEnabled(.developerActivity))
+        if var day = next.systemSources {
+            day.calls = day.calls && consents.isEnabled(.localComputerHistory)
+            day.calendar = day.calendar && consents.isEnabled(.calendar)
+            day.otherDevices = day.otherDevices && consents.isEnabled(.appleScreenTime)
+            next.systemSources = day
+        }
         guard next.hasSources else { throw PrivacyScopeInput.invalid("Activez au moins une source pour l’analyse.") }
         if value.applicationIDs == nil { value.applicationIDs = apps.filter { !exclusions.policy.excludes(appID: $0.id, name: $0.name) }.map(\.id) }
         if value.detailApplicationIDs == nil { value.detailApplicationIDs = value.applicationIDs }
@@ -324,8 +355,8 @@ import AgentActivity
         value.applicationNames = Dictionary(apps.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         value.excludedDomains = try PrivacyScopeInput.domains(value.excludedDomains.joined(separator: "\n"))
         try value.validate()
-        if next.screenTime && (value.deviceIDs?.isEmpty ?? true) { throw PrivacyScopeInput.invalid("Choisissez au moins un appareil Apple, ou désactivez cette source.") }
-        if (next.computer || next.screenTime) && (value.applicationIDs?.isEmpty ?? true) { throw PrivacyScopeInput.invalid("Choisissez au moins une application, ou désactivez les sources d’activité.") }
+        if (next.screenTime || next.systemSources?.otherDevices == true) && (value.deviceIDs?.isEmpty ?? true) { throw PrivacyScopeInput.invalid("Choisissez au moins un appareil Apple, ou désactivez cette source.") }
+        if (next.computer || next.screenTime || next.systemSources?.calls == true) && (value.applicationIDs?.isEmpty ?? true) { throw PrivacyScopeInput.invalid("Choisissez au moins une application, ou désactivez les sources d’activité.") }
         if next.conversations && (value.conversationFolderIDs?.isEmpty ?? true) { throw PrivacyScopeInput.invalid("Choisissez un dossier de conversations, ou désactivez cette source.") }
         if next.conversations && !value.conversationCounts && !value.hasConversationText { throw PrivacyScopeInput.invalid("Choisissez le contenu des conversations à analyser, ou désactivez cette source.") }
         next.scope = value; next.version = 2; next.reviewed = true; next.revision = UUID().uuidString
