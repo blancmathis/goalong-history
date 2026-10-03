@@ -77,3 +77,17 @@ website badge. Website authenticity verification remains a separate future featu
 The native mask list matches application names or identifiers exactly, ignoring case. Matching names and IDs are replaced by neutral entries while each source duration remains intact. Any active mask excludes website domains and recap free text from the payload. Source files remain unchanged. The recipient-side mask on the site is a different control.
 
 The native sheet loads a saved recap for local review; no part is selected by default. A separate action can generate that recap through the existing agent flow. The session studio reads an explicitly chosen interval after Computer History consent, preserves unknown boundaries, and lets the user select context excerpts before analysis. An isolated ChatGPT connection or another chosen agent may annotate those fixed episodes. Evidence references and the request fingerprint are checked. Associations and interpretation remain editable; timelines, source context and clock times have separate opt-ins. Any mask removes all session narrative and evidence before upload. This data never certifies attention. See [CLI](CLI.md#session-rhythm-and-pre-transmission-choices).
+
+## Durable foreground-day summaries
+
+`activity-days/<yyyy-MM-dd>.json` stores only closed past-day intervals, app names and IDs,
+domains, hashed context keys, coverage reasons and input/passive-evidence totals. No window
+title, full URL, visible text, transcript, typed characters or task assignment is stored.
+Files are atomic, 0600, capped at 2 MiB and 20 000 intervals; the directory is 0700.
+Summary retention is indefinite by default and separately configurable. Day/interval/entry
+deletions invalidate affected summaries; clearing local history removes them. Before raw
+events expire, retention validates their summary or preserves the original journal.
+An automatic unclear work verdict may be re-asked at most three times on different observed
+days with five minutes of evidence. The most recent visible-context excerpt stays transient,
+is redacted and name-masked, and requires reviewed permission to share visible text for
+that application and site. Summary maintenance performs no external analysis or send.
