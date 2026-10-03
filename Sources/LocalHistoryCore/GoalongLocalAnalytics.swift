@@ -11,7 +11,7 @@ public enum GoalongLocalAnalytics {
         case work, other, unclassified, idle, concealed, unobserved
         public var isActive: Bool { self == .work || self == .other || self == .unclassified }
     }
-    public enum State: String, Sendable { case ready, noSource, incomplete }
+    public enum State: String, Codable, Sendable { case ready, noSource, incomplete }
     public struct Segment: Identifiable, Equatable, Sendable {
         public let start: Date
         public var end: Date
@@ -24,6 +24,7 @@ public enum GoalongLocalAnalytics {
         public var contextKey: String? = nil
         /// The task this work served, as named by the agent or the user.
         public var task: String? = nil
+        public var coverageReason: GoalongCoverageReason? = nil
         public var id: Date { start }
         public var seconds: TimeInterval { max(0, end.timeIntervalSince(start)) }
         /// Application + domain: what an app switch changes.
@@ -71,6 +72,12 @@ public enum GoalongLocalAnalytics {
         public let segments: [Segment]
         public let eventCount: Int
         public let classifierVersions: Set<String>
+        public var origin: GoalongDayOrigin = .journal
+        public var hasDetailedSource: Bool = true
+        public var dayReason: GoalongCoverageReason? = nil
+        public var firstObservation: Date? = nil
+        public var lastObservation: Date? = nil
+        public var recordedBreakdown: GoalongActivityBreakdown? = nil
         public var id: Date { date }
         public var activeSeconds: TimeInterval { seconds(.work) + seconds(.other) + seconds(.unclassified) }
         public var observedSeconds: TimeInterval { segments.filter { $0.kind != .unobserved }.reduce(0) { $0 + $1.seconds } }
@@ -166,12 +173,16 @@ public enum GoalongLocalAnalytics {
         let end = max(start, min(dayEnd, now))
         let rows = evidenceRows(events, start: start, end: end)
         var segments: [Segment] = []
+        var passive: [GoalongActivityBreakdown.PassiveInterval] = []
         var tracker = GoalongWorkContext.Tracker()
         let contextKeys = rows.map { tracker.context(for: $0)?.key }
         func append(_ a: Date, _ b: Date, _ kind: Kind, _ event: HistoryEvent? = nil,
-                    websiteAllowed: Bool = true, contextKey: String? = nil) {
+                    websiteAllowed: Bool = true, contextKey: String? = nil, reason: GoalongCoverageReason? = nil) {
             guard b > a else { return }
             let active = kind.isActive
+            if active, let event, let evidence = ForegroundActivityEvidence.evidence(in: event) {
+                passive.append(.init(start: a, end: b, evidence: evidence))
+            }
             let application = active ? event?.app?.name : nil
             let bundle = active ? event?.app?.bundleIdentifier : nil
             let host = active && websiteAllowed && event.map(ForegroundActivityEvidence.supportsWebsiteAttribution) == true
@@ -179,23 +190,23 @@ public enum GoalongLocalAnalytics {
             let key = active ? contextKey : nil
             if let last = segments.last, last.end == a, last.kind == kind,
                last.application == application, last.bundleIdentifier == bundle, last.host == host,
-               last.contextKey == key {
+               last.contextKey == key, last.coverageReason == reason {
                 segments[segments.count - 1].end = b
             } else {
                 segments.append(Segment(start: a, end: b, kind: kind, application: application,
-                    bundleIdentifier: bundle, host: host, contextKey: key))
+                    bundleIdentifier: bundle, host: host, contextKey: key, coverageReason: reason))
             }
         }
         // A genuinely failed or unstable source still must not publish plausible totals.
         if incomplete {
-            append(start, end, .unobserved)
-            return Day(date: start, end: end, state: .incomplete, segments: segments, eventCount: rows.count, classifierVersions: [])
+            append(start, end, .unobserved, reason: .unreadable)
+            return Day(date: start, end: end, state: .incomplete, segments: segments, eventCount: rows.count, classifierVersions: [], dayReason: .unreadable)
         }
         guard let first = rows.first, let last = rows.last else {
-            append(start, end, .unobserved)
-            return Day(date: start, end: end, state: .noSource, segments: segments, eventCount: 0, classifierVersions: [])
+            append(start, end, .unobserved, reason: .notRecorded)
+            return Day(date: start, end: end, state: .noSource, segments: segments, eventCount: 0, classifierVersions: [], dayReason: .notRecorded)
         }
-        append(start, first.timestamp, .unobserved)
+        append(start, first.timestamp, .unobserved, reason: .beforeFirstObservation)
         for (offset, (previous, next)) in zip(rows, rows.dropFirst()).enumerated() {
             // Goalong never labels an application as work: active time stays to classify
             // until the user's own definition is applied to its context.
@@ -203,9 +214,16 @@ public enum GoalongLocalAnalytics {
             let gap = next.timestamp.timeIntervalSince(previous.timestamp)
             guard gap > 0 else { continue }
             let kind: Kind
+            var coverageReason: GoalongCoverageReason?
             if gap > maximumGap || next.metadata?["observation_gap"] == "true" {
                 kind = .unobserved
+                if next.metadata?["observation_gap"] == "true" { coverageReason = .observationGap }
+                else if previous.suppressionReason != nil || [.recorderStopped, .recordingPaused, .systemSleep,
+                    .sessionLocked, .secureInputSuppressed, .historyCleared].contains(previous.kind) {
+                    coverageReason = .opening(previous)
+                } else { coverageReason = .gap }
             } else if let reason = previous.suppressionReason {
+                coverageReason = .opening(previous)
                 switch reason {
                 case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput, .manualPause:
                     kind = .concealed
@@ -214,6 +232,7 @@ public enum GoalongLocalAnalytics {
                 }
             } else if previous.isObservationContinuityBoundary || previous.app?.name.isEmpty != false {
                 kind = .unobserved
+                coverageReason = .opening(previous)
             } else if ForegroundUsageObservation.usesPresencePolicy(previous) {
                 let seconds = ForegroundUsageObservation.activeDuration(after: previous,
                     until: next.timestamp, nextEvent: next)
@@ -232,7 +251,8 @@ public enum GoalongLocalAnalytics {
                 // Split at the exact reading expiry. A later idle observation
                 // never erases a preceding minute of reading or revives absence.
                 append(activeEnd, next.timestamp,
-                    ForegroundUsageObservation.hasVisibleForeground(previous) ? .idle : .unobserved)
+                    ForegroundUsageObservation.hasVisibleForeground(previous) ? .idle : .unobserved,
+                    reason: ForegroundUsageObservation.hasVisibleForeground(previous) ? nil : .noVisibleForeground)
                 continue
             } else if ForegroundActivityEvidence.isInputIdle(previous)
                 || (ForegroundActivityEvidence.isInputIdle(next)
@@ -245,12 +265,16 @@ public enum GoalongLocalAnalytics {
             }
             // A browser-process wake assertion cannot attribute the content of an unproven tab.
             let attributable = previous.url?.host == nil || ForegroundActivityEvidence.supportsWebsiteAttribution(previous)
-            append(previous.timestamp, next.timestamp, kind, previous, contextKey: attributable ? contextKey : nil)
+            append(previous.timestamp, next.timestamp, kind, previous, contextKey: attributable ? contextKey : nil, reason: coverageReason)
         }
         // A last foreground sample is not evidence that activity continued after that sample.
-        append(last.timestamp, end, .unobserved)
+        let tailReason: GoalongCoverageReason = last.suppressionReason != nil || [.recorderStopped, .recordingPaused,
+            .systemSleep, .sessionLocked, .secureInputSuppressed, .historyCleared].contains(last.kind)
+            ? .opening(last) : .afterLastObservation
+        append(last.timestamp, end, .unobserved, reason: tailReason)
         return Day(date: start, end: end, state: .ready, segments: segments, eventCount: rows.count,
-                   classifierVersions: [GoalongLocalAnalytics.method])
+                   classifierVersions: [GoalongLocalAnalytics.method], firstObservation: first.timestamp, lastObservation: last.timestamp,
+                   recordedBreakdown: .build(segments: segments, events: rows, passive: passive, calendar: calendar))
     }
 
     /// Buffered typing/scroll bursts can be appended after newer foreground samples.

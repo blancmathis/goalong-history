@@ -135,6 +135,7 @@
 
             do {
                 try AppPaths.prepare()
+                GoalongActivitySummaryBackfill.shared.start()
                 let retentionDirectories = ComputerHistoryStore.retentionDirectories(
                     rootDirectory: AppPaths.applicationSupportDirectory
                 )
@@ -478,6 +479,7 @@
         ) {
             let barrier = DerivedHistoryWriteBarrier.shared
             let suspension = barrier.suspend()
+            Task { @MainActor in GoalongActivitySummaryBackfill.shared.cancel() }
             ActivityAnalysisRuntime.shared.prepareForHistoryClear()
             ChatGPTRecapRuntime.shared.prepareForHistoryClear()
             barrier.notifyWhenDrained(suspension) { [self] in
@@ -495,6 +497,7 @@
         ) {
             let barrier = DerivedHistoryWriteBarrier.shared
             let suspension = barrier.suspend()
+            Task { @MainActor in GoalongActivitySummaryBackfill.shared.cancel() }
             ActivityAnalysisRuntime.shared.prepareForHistoryClear()
             ChatGPTRecapRuntime.shared.prepareForHistoryClear()
             barrier.notifyWhenDrained(suspension) { [self] in
@@ -761,6 +764,7 @@
 
             DerivedHistoryWriteBarrier.shared.resume(suspension)
             ActivityAnalysisRuntime.shared.refreshAfterHistoryClear()
+            Task { @MainActor in GoalongActivitySummaryBackfill.shared.start() }
             completion(completedResult)
         }
 

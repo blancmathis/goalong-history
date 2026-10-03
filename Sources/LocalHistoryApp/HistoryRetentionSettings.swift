@@ -15,6 +15,7 @@ extension HistoryDataClass {
         case .memories: return "Historique et résumés locaux"
         case .analysisCaches: return "Fichiers temporaires d’analyse"
         case .minuteSeals: return "Preuves locales"
+        case .activitySummaries: return "Résumés d’Activité"
         case .anchorReceipts: return "Reçus de vérification"
         }
     }
@@ -27,6 +28,7 @@ extension HistoryRetentionPolicy {
         case .memories: memories = duration
         case .analysisCaches: analysisCaches = duration
         case .minuteSeals: minuteSeals = duration
+        case .activitySummaries: activitySummaries = duration
         case .anchorReceipts: anchorReceipts = duration
         }
     }

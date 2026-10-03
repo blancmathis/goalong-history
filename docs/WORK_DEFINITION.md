@@ -51,7 +51,7 @@ Day.applying(verdicts) → .work / .other / .unclassified + tâche
   minuterie, rien pendant un bilan quotidien.
 - Conditions : définition non vide, historique activé, consentement « Analyse ChatGPT »,
   compte ChatGPT connecté, pas de pause globale.
-- Envoi : uniquement les contextes **sans verdict** pour la définition actuelle, de 15 s ou
+- Envoi : les contextes **sans verdict**, ou les contextes indéterminés admissibles à une nouvelle tentative, pour la définition actuelle, de 15 s ou
   plus, les plus longs d’abord, par lots de 250 (3 lots au plus par passage). Chaque
   contexte : nom de l’app, site, titre (secrets masqués), minutes ; plus la définition,
   les tâches déjà nommées, les corrections de l’utilisateur (40 au plus) et la chronologie
@@ -65,12 +65,12 @@ Day.applying(verdicts) → .work / .other / .unclassified + tâche
   avant l’envoi.
 - Validation : même `request_id`, exactement un élément par contexte envoyé, aucun id
   inconnu ou dupliqué ; sinon rien n’est enregistré. « unknown » devient *indéterminé* et
-  n’est pas renvoyé pour la même définition.
+  peut être reposé sur un autre jour observé, avec au moins 5 minutes et moins de 3 tentatives automatiques. Un verdict de l’utilisateur n’est jamais reposé.
 
 ## Stockage
 
 `~/Library/Application Support/LocalHistory/work-classification.json` (0600) :
-révision de la définition, verdicts par empreinte de contexte (sans titre), corrections
+révision de la définition, verdicts par empreinte de contexte (sans titre), `attempts` et `lastAskedDay` pour les tentatives automatiques, corrections
 de l’utilisateur (avec leur libellé, pour servir d’exemples), réglage « automatique ».
 20 000 verdicts au plus (les plus anciens verdicts de l’agent sont retirés d’abord).
 
@@ -88,3 +88,21 @@ Le prompt du bilan reçoit la définition (masquée par les remplacements de nom
 consigne de juger le travail orienté vers un but à partir d’elle : une app ou un site ne
 prouve jamais à lui seul du travail. La ligne « Work-classified time », issue de l’ancien
 classement par app, n’est plus envoyée.
+
+## Reposer un contexte indéterminé
+
+Un contexte `unclear` automatique est admissible si le jour analysé lui apporte au moins
+5 minutes, si aucune demande n’a été envoyée pour ce contexte ce jour-là et si moins de
+3 tentatives automatiques ont eu lieu. Les anciens fichiers comptent comme une tentative,
+avec `seen` pour le dernier jour demandé. Pour une nouvelle tentative, l’admission est
+enregistrée avant l’envoi ; un échec de réponse compte aussi, pour éviter des requêtes
+répétées sans limite. Une première demande qui échoue ne crée aucun verdict : le contexte
+reste « à classer » et peut être renvoyé le jour même.
+
+La demande peut inclure le dernier extrait visible de ce contexte (240 caractères), après
+vérification du hash et redaction des secrets, seulement si une sélection « Données pour
+ChatGPT » confirmée autorise le texte visible pour cette application et ce site. Exclusions
+et remplacements de noms restent appliqués. La lecture sémantique est bornée à 32 768
+lignes, 64 Mio et 20 secondes ; une lecture partielle ne fournit pas d’extrait. Aucun
+extrait n’est persisté. La fonction de demande et l’agent acceptent une note du jour
+optionnelle (280 caractères) ; son raccordement à la source de notes appartient au lot S.

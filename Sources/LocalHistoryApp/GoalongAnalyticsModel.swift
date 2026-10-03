@@ -83,7 +83,7 @@ private actor GoalongAnalyticsReader {
             if !calendar.isDate(date, inSameDayAs: now), let cached = cache[date], cached.0 == revision {
                 value = cached.1
             } else {
-                value = GoalongLocalAnalytics.load(root: root, day: date, now: now, calendar: calendar,
+                value = GoalongActivityDayReader.load(root: root, day: date, now: now, calendar: calendar,
                     shouldContinue: { !Task.isCancelled })
                 try Task.checkCancellation()
                 if value.state != .incomplete { cache[date] = (revision, value) }
@@ -131,16 +131,9 @@ private actor GoalongAnalyticsReader {
     }
 
     private func sourceRevision(_ day: Date, calendar: Calendar) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar; formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = calendar.timeZone; formatter.dateFormat = "yyyy-MM-dd"
-        return (-1...1).map { offset in
-            let date = calendar.date(byAdding: .day, value: offset, to: day) ?? day
-            let url = root.appendingPathComponent("events/" + formatter.string(from: date) + ".jsonl")
-            guard let a = try? FileManager.default.attributesOfItem(atPath: url.path) else { return "missing" }
-            return "\(a[.systemFileNumber] ?? "-")|\(a[.size] ?? "-")|\((a[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)"
-        }.joined(separator: ";") + calendar.timeZone.identifier
+        GoalongActivityDayReader.sourceRevision(root: root, day: day, calendar: calendar)
     }
+
     private func readCards(start: Date, end: Date) throws -> ([GoalongAnalyticsCard], String?) {
         let folder = root.appendingPathComponent("chatgpt/profile-analyses", isDirectory: true)
         guard FileManager.default.fileExists(atPath: folder.path) else { return ([], nil) }
