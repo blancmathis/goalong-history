@@ -80,7 +80,8 @@ enum GoalongAnalyticsPreview {
                 suppressionReason: suppression, metadata: metadata ?? ["idle_seconds": "0"]))
         }
         func block(hour: Int, minute: Int, duration: Int, app: String, host: String? = nil,
-                   work: Bool? = true, idle: Bool = false, concealed: Bool = false, minimumDuration: Int = 0) {
+                   work: Bool? = true, idle: Bool = false, concealed: Bool = false, minimumDuration: Int = 0,
+                   closing: EventKind = .sessionLocked) {
             guard let start = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) else { return }
             let length = max(max(1, minimumDuration), Int(Double(duration) * scale))
             for offset in 0..<length {
@@ -89,13 +90,13 @@ enum GoalongAnalyticsPreview {
                     metadata: idle ? ["idle_seconds": "120"] : nil)
             }
             // Explicit end sample closes the last measured minute without extrapolation.
-            sample(at: start.addingTimeInterval(Double(length * 60)), app: nil, kind: .recorderStopped)
+            sample(at: start.addingTimeInterval(Double(length * 60)), app: nil, kind: closing)
         }
         block(hour: 9, minute: 0, duration: 52 + seed % 15, app: "Xcode", minimumDuration: 52)
         block(hour: 10, minute: 15, duration: 22 + seed % 9, app: "Safari", host: "docs.example.org")
         block(hour: 10, minute: 55, duration: 48 + seed % 14, app: "Figma")
         block(hour: 12, minute: 5, duration: 18, app: "Notes", work: nil)
-        block(hour: 12, minute: 25, duration: 12, app: "Notes", idle: true)
+        block(hour: 12, minute: 25, duration: 12, app: "Notes", idle: true, closing: .systemSleep)
         block(hour: 14, minute: 0, duration: 63 + seed % 17, app: "Xcode")
         block(hour: 15, minute: 25, duration: 25 + seed % 8, app: "Terminal")
         block(hour: 16, minute: 5, duration: 30 + seed % 6, app: "Safari", host: "design.example.org")
@@ -107,11 +108,33 @@ enum GoalongAnalyticsPreview {
                 sample(at: start.addingTimeInterval(Double(minute * 60)),
                     app: minute % 4 < 2 ? "Notes" : "Calendrier", work: nil)
             }
-            sample(at: start.addingTimeInterval(13 * 60), app: nil, kind: .recorderStopped)
+            sample(at: start.addingTimeInterval(13 * 60), app: nil, kind: .sessionLocked)
         }
         block(hour: 18, minute: 0, duration: 10, app: "", concealed: true)
         let end = calendar.date(byAdding: .day, value: 1, to: day) ?? day
-        return GoalongLocalAnalytics.build(events: events, day: day, now: end, calendar: calendar)
+        return withTexture(GoalongLocalAnalytics.build(events: events, day: day, now: end, calendar: calendar), calendar: calendar)
+    }
+
+    /// What each fictional app's minutes looked like: keys in editors, clicks in design tools,
+    /// a quarter of every app's time without input.
+    private static func withTexture(_ day: GoalongLocalAnalytics.Day, calendar: Calendar) -> GoalongLocalAnalytics.Day {
+        let modes: [String: GoalongActivityBreakdown.Mode] = ["Xcode": .keyboard, "Terminal": .keyboard, "Mail": .keyboard,
+            "Notes": .keyboard, "Figma": .pointer, "Calendrier": .pointer, "Safari": .pointer, "Musique": .media]
+        var hours: [Date: [GoalongActivityBreakdown.Mode: TimeInterval]] = [:]
+        for segment in day.segments where segment.kind.isActive {
+            var cursor = segment.start
+            while cursor < segment.end, let hour = calendar.dateInterval(of: .hour, for: cursor) {
+                let stop = min(segment.end, hour.end), seconds = stop.timeIntervalSince(cursor)
+                hours[hour.start, default: [:]][modes[segment.application ?? ""] ?? .reading, default: 0] += seconds * 0.75
+                hours[hour.start, default: [:]][.reading, default: 0] += seconds * 0.25
+                cursor = stop
+            }
+        }
+        var result = day
+        result.recordedBreakdown = GoalongActivityBreakdown(hours: hours.keys.sorted().map { start in
+            .init(start: start, end: calendar.dateInterval(of: .hour, for: start)?.end ?? start, secondsByMode: hours[start] ?? [:])
+        })
+        return result
     }
 }
 #endif

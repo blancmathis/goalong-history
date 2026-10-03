@@ -18,7 +18,7 @@ struct GoalongWorkStatus: Equatable {
 /// The secondary views of Activité. The summary answers « combien, quand, sur quoi » ;
 /// each view below answers one further question and is reached by its name.
 enum GoalongActivityDetail: String, CaseIterable, Identifiable {
-    case rhythm, usage, sessions, reports, screenTime
+    case rhythm, usage, sessions, texture, reports, screenTime, coverage
     var id: String { rawValue }
 
     func title(isDay: Bool) -> String {
@@ -26,13 +26,15 @@ enum GoalongActivityDetail: String, CaseIterable, Identifiable {
         case .rhythm: return isDay ? "Heure par heure" : "Jour par jour"
         case .usage: return "Applications et sites"
         case .sessions: return "Sessions et focus"
+        case .texture: return "Écriture, lecture et appels"
         case .reports: return "Bilans et projets"
         case .screenTime: return "Temps d’écran Apple"
+        case .coverage: return "Couverture et sources"
         }
     }
 
     /// Views that only read the observations of the period.
-    var needsObservations: Bool { self == .rhythm || self == .usage || self == .sessions }
+    var needsObservations: Bool { self == .rhythm || self == .usage || self == .sessions || self == .texture }
 }
 
 /// Pure presentation. Native snapshot tests render this without opening user stores.
@@ -174,7 +176,10 @@ struct GoalongAnalyticsContent: View {
     private func headlineDetails(_ summary: GoalongActivitySummary) -> [String] {
         var lines: [String] = []
         if let bounds = summary.dayBounds {
-            lines.append("De \(GoalongActivitySummary.time(bounds.start)) à \(GoalongActivitySummary.time(bounds.end))")
+            // Gaps inside the day change how its figures read; the night around it does not.
+            let missing = current.days.first.map { GoalongActivityGaps(day: $0, from: bounds.start, to: bounds.end).unobservedSeconds } ?? 0
+            lines.append("De \(GoalongActivitySummary.time(bounds.start)) à \(GoalongActivitySummary.time(bounds.end))"
+                + (missing >= 600 ? ", dont \(duration(missing)) sans observation" : ""))
         } else if isDay {
             lines.append("Activité observée au premier plan")
         } else {
@@ -252,9 +257,13 @@ struct GoalongAnalyticsContent: View {
     /// Only what changes how the figures should be read; nothing when the period is complete.
     @ViewBuilder private var coverage: some View {
         let today = !payload.isPreview && current.days.contains { Calendar.current.isDateInToday($0.date) }
+        let restored = current.days.filter { $0.observedSeconds > 0 && !$0.hasDetailedSource }.count
         if current.incompleteDays > 0 {
             GoalongNote("\(current.incompleteDays) jour(s) illisible(s) ou incomplet(s), exclus des totaux. Actualisez ou consultez l’historique.",
                         tone: .warning)
+        } else if restored > 0 {
+            GoalongNote(isDay ? "Détail effacé après la durée de conservation. Cette journée est relue depuis son résumé : durées, apps et sites, sans titres de fenêtre."
+                        : "\(restored) jour\(restored > 1 ? "s" : "") relu\(restored > 1 ? "s" : "") depuis leur résumé : leur détail a été effacé après la durée de conservation.")
         } else if sparse {
             GoalongNote("Vos premières observations sont déjà visibles. Le graphique adapte son échelle aux petites durées.")
         } else if !isDay && current.daysWithObservations < current.days.count {
@@ -425,12 +434,38 @@ struct GoalongAnalyticsContent: View {
         case .rhythm: return isDay ? "À quel moment, dans quelle app" : "Le détail de chaque jour"
         case .usage: return "Le temps passé dans chaque app et chaque site"
         case .sessions: return "Plus longues sessions, changements d’app, comparaison"
+        case .texture: return GoalongActivityTexture.caption(current.breakdown)
+        case .coverage: return coverageCaption
         case .reports:
             let count = payload.cards.count
             return count == 0 ? "Aucun bilan enregistré · analyse facultative"
                 : "\(count) élément\(count > 1 ? "s" : "") enregistré\(count > 1 ? "s" : "")"
         case .screenTime: return "Source Apple distincte, jamais additionnée"
         }
+    }
+
+    /// The key figure of « Couverture et sources »: time without observation inside the day.
+    private var coverageCaption: String {
+        let summary = self.summary
+        let bounds = activityBounds(summary)
+        let missing = current.days.reduce(0.0) { total, day in
+            guard let range = bounds[day.date] else { return total }
+            return total + GoalongActivityGaps(day: day, from: range.start, to: range.end).unobservedSeconds
+        }
+        if isDay, let range = summary.dayBounds {
+            let span = "entre \(GoalongActivitySummary.time(range.start)) et \(GoalongActivitySummary.time(range.end))"
+            return missing >= 60 ? "\(duration(missing)) sans observation \(span)" : "Aucun trou \(span)"
+        }
+        return missing >= 60 ? "\(duration(missing)) sans observation pendant les journées" : "Ce que Goalong observe, et pourquoi il manque des heures"
+    }
+
+    /// First and last activity of each day, the bounds every gap is measured in.
+    private func activityBounds(_ summary: GoalongActivitySummary) -> [Date: (start: Date, end: Date)] {
+        var result: [Date: (start: Date, end: Date)] = [:]
+        for day in current.days {
+            if let start = summary.firstActivity(day), let end = day.lastActiveEnd, end > start { result[day.date] = (start, end) }
+        }
+        return result
     }
 
     /// Named entries, one per question, instead of every view stacked on the page.
@@ -474,6 +509,10 @@ struct GoalongAnalyticsContent: View {
                 usageCard(usageItems)
             case .sessions:
                 sessionsSection(summary)
+            case .texture:
+                GoalongActivityTextureSection(period: current)
+            case .coverage:
+                GoalongActivityCoverageSection(period: current, bounds: activityBounds(summary), isPreview: payload.isPreview)
             case .reports:
                 projectsSection
             case .screenTime:
@@ -680,7 +719,12 @@ struct GoalongAnalyticsContent: View {
     }
 
     @ViewBuilder private var emptyState: some View {
-        if current.eventCount == 0 && current.incompleteDays == 0 {
+        if isDay, current.days.first?.dayReason == .purgedWithoutSummary {
+            GoalongEmptyState(title: "Détail effacé",
+                message: "Ce jour a été effacé après la durée de conservation, avant que Goalong garde un résumé de chaque journée. Une absence de données n’est pas une journée à zéro.") {
+                EmptyView()
+            }
+        } else if current.eventCount == 0 && current.incompleteDays == 0 {
             GoalongEmptyState(
                 title: isEmptyToday ? "Pas encore d’activité aujourd’hui" : "Pas encore d’enregistrement",
                 message: isEmptyToday
@@ -727,6 +771,8 @@ struct GoalongAnalyticsContent: View {
                 Text("Les moyennes par jour ne comptent que les jours observés. Aujourd’hui est comparé à hier à la même heure ; une période, à la moyenne de la précédente.")
                 Text("La plus longue session de travail suit une même tâche, même en changeant d’application. Sans tâche connue, Goalong montre à la place la plus longue séquence dans une même app ou un même site. Aucune des deux ne mesure l’attention ni l’efficacité.")
                 Text("Un écart de plus de deux minutes entre observations ou une interruption de collecte coupe la continuité. Les appels, lectures et présentations observés au premier plan comptent même sans clavier ni souris. Les périodes sans saisie et sans signal d’usage, privées ou non observées restent distinctes. Rien n’est prolongé avant la première trace ou après la dernière.")
+                Text("Chaque minute active est décrite par le signal le plus fort observé : appel, média, écran gardé allumé, clavier ou souris ; sinon, elle compte comme sans saisie. Ces signaux décrivent le Mac, pas l’attention.")
+                Text("Après la durée de conservation, chaque journée reste lisible depuis un résumé : durées, apps, sites et raisons des trous, sans titres de fenêtre ni textes.")
                 Text("Le Temps d’écran Apple garde ses propres sources et appareils. Il n’est jamais additionné aux observations Goalong. Les conversations et le temps machine ne s’ajoutent pas non plus au temps actif.")
                 Text("Les bilans et projets sont des analyses déjà enregistrées. "
                      + (workStatus.classifiesOnOpen

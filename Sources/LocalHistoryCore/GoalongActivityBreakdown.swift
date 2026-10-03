@@ -10,6 +10,9 @@ public struct GoalongActivityBreakdown: Codable, Equatable, Sendable {
         public let start: Date
         public let end: Date
         public let secondsByMode: [Mode: TimeInterval]
+        public init(start: Date, end: Date, secondsByMode: [Mode: TimeInterval]) {
+            self.start = start; self.end = end; self.secondsByMode = secondsByMode
+        }
         public var totalSeconds: TimeInterval { Mode.allCases.reduce(0) { $0 + seconds($1) } }
         public func seconds(_ mode: Mode) -> TimeInterval { secondsByMode[mode] ?? 0 }
     }
