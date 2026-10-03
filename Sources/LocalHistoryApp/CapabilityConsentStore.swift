@@ -6,6 +6,7 @@
         case localComputerHistory
         case appleScreenTime
         case aiConversations
+        case developerActivity
         case chatGPTAnalysis
         case jevMonitoring
         case remoteVerification
@@ -19,6 +20,7 @@
             case .localComputerHistory: return "Historique de ce Mac"
             case .appleScreenTime: return "Temps d’écran Apple"
             case .aiConversations: return "Conversations locales"
+            case .developerActivity: return "Activité de développement"
             case .chatGPTAnalysis: return "Analyse ChatGPT"
             case .jevMonitoring: return "Surveillance temps réel"
             case .remoteVerification: return "External verification"

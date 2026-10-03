@@ -83,6 +83,7 @@
         private var dashboardViewModel: DashboardViewModel!
         private var sharingRulesStore: SharingRulesStore!
         private var agentActivityRuntime: AgentActivityRuntime!
+        private var developerActivityRuntime: GoalongDeveloperRuntime?
         private var screenTimeRepository: AppleSystemScreenTimeRepository?
         private var screenTimeArchiveTimer: Timer?
         private var screenTimeArchiveRefreshInFlight = false
@@ -110,7 +111,7 @@
 
         private var hasEnabledBackgroundSources: Bool {
             guard let capabilityConsents else { return false }
-            return [GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations].contains {
+            return [GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations, .developerActivity].contains {
                 capabilityConsents.isEnabled($0)
             }
         }
@@ -155,6 +156,7 @@
                 }
                 configManager = ConfigManager()
                 capabilityConsents = GoalongCapabilityConsentStore.shared
+                developerActivityRuntime = GoalongDeveloperRuntime()
                 permissions = PermissionManager.shared
                 captureHealthStore = CaptureHealthStore(permissions: permissions)
                 semanticContextStore = SemanticContextStore()
@@ -389,6 +391,7 @@
             readOnlyQueryServer?.stop()
             readOnlyQueryServer = nil
             agentActivityRuntime?.stop()
+            developerActivityRuntime?.stop()
             if GoalongBuildCapabilities.permitsRemoteAnalysis {
                 ChatGPTRecapRuntime.shared.stop()
             }

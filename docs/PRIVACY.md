@@ -91,3 +91,7 @@ An automatic unclear work verdict may be re-asked at most three times on differe
 days with five minutes of evidence. The most recent visible-context excerpt stays transient,
 is redacted and name-masked, and requires reviewed permission to share visible text for
 that application and site. Summary maintenance performs no external analysis or send.
+
+## Developer metadata (2026-10-03)
+
+With AI-conversations consent, T3 metadata can be grouped by project without reading thread titles, messages, payloads or diffs. Separately consented, explicitly selected repositories expose reflog timestamps/action words and FSEvents file counters; commit subjects and file contents are not decoded. Only selected repository names/roots are saved as configuration. File journals contain opaque project IDs and counts, never file paths, and follow detailed-event retention/deletion. The separately selected recap section sends bounded project aggregates without paths and is omitted under global exclusions. See [Developer activity](DEVELOPER_ACTIVITY.md).

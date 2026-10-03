@@ -8,13 +8,15 @@ struct GoalongAnalysisSelection: Codable, Equatable {
     var computer = false
     var screenTime = false
     var conversations = false
+    /// Optional for backward-compatible decoding; an absent flag never authorizes this lane.
+    var developer: Bool? = false
     var details = false
     var revision = UUID().uuidString
     var privacyRevision: String?
     var scope: GoalongAnalysisScope?
     var replacements: [GoalongTextReplacement]?
     var outputGuidance: String?
-    var hasSources: Bool { computer || screenTime || conversations }
+    var hasSources: Bool { computer || screenTime || conversations || developer == true }
     func isValid(for policy: GoalongPrivacyPolicy) -> Bool {
         guard reviewed, hasSources, !policy.blocked, privacyRevision == policy.revision else { return false }
         do { try validate(); return true } catch { return false }

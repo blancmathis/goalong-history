@@ -580,7 +580,9 @@
                 trustedAncestor: trustedAncestor
             )
 
-            let analysisPlans = [analysisPlan].compactMap { $0 }
+            let developerPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("developer"),
+                trustedAncestor: trustedAncestor, suffixes: [".jsonl"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
+            let analysisPlans = [analysisPlan, developerPlan].compactMap { $0 }
             let memoryPlans = [memoryPlan].compactMap { $0 }
             let plan = DerivedHistoryDeletionPlan(
                 analysisPlans: analysisPlans,
