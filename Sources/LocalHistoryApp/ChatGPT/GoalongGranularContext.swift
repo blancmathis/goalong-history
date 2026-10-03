@@ -15,6 +15,7 @@ extension ChatGPTRecapContextBuilder {
         }
         try scope.validate()
         let consents = GoalongCapabilityConsentStore.shared
+        let sourceConsents = consents.document
         var events: [HistoryEvent] = [], snapshots: [String: SemanticContextPayload] = [:]
         if selection.computer && consents.isEnabled(.localComputerHistory),
            let interval = Calendar.current.dateInterval(of: .day, for: day) {
@@ -39,15 +40,23 @@ extension ChatGPTRecapContextBuilder {
         guard GoalongPrivacyPolicy.load(in: root).revision == privacy.revision else {
             throw CodexAppServerError.generationFailed("Les exclusions ont changé pendant la préparation.")
         }
+        let supplemental = selection.systemSources.map { flags in
+            GoalongSystemRecapSections.load(root: root, day: GoalongLocalAnalytics.build(events: events, day: day),
+                selection: flags, consent: consents.document, scope: scope, privacy: privacy)
+        }
+        try GoalongGlobalPause.revalidate(pause, in: root)
+        guard GoalongPrivacyPolicy.load(in: root).revision == privacy.revision, consents.document == sourceConsents else {
+            throw CodexAppServerError.generationFailed("Les autorisations ont changé pendant la préparation.")
+        }
         return try granularContext(day: day, events: events, snapshots: snapshots,
-                                   screenTime: apple, agents: agents, selection: selection, privacy: privacy)
+                                   screenTime: apple, agents: agents, selection: selection, privacy: privacy, systemSources: supplemental)
     }
 
     /// Build every outgoing field explicitly. No cached narrative or raw metadata is
     /// reused because it could describe an application or field the user excluded.
     static func granularContext(day: Date, events: [HistoryEvent], snapshots: [String: SemanticContextPayload],
                                 screenTime: AppleScreenTimeDaySummary?, agents: AgentActivityOverview,
-                                selection: GoalongAnalysisSelection, privacy: GoalongPrivacyPolicy) throws -> ChatGPTRecapContext {
+                                selection: GoalongAnalysisSelection, privacy: GoalongPrivacyPolicy, systemSources: GoalongSystemSourcesDay? = nil) throws -> ChatGPTRecapContext {
         guard let scope = selection.scope else { throw CodexAppServerError.generationFailed("Sélection détaillée manquante.") }
         let transformer = try GoalongTextTransformer(selection.replacements ?? [])
         // Transform before truncation: a sensitive name crossing a field limit must
@@ -163,6 +172,11 @@ extension ChatGPTRecapContextBuilder {
             document["conversations_choisies"] = dialogues
         }
         if omitted > 0 { document["limite"] = "\(omitted) éléments omis : aperçu partiel, ne pas extrapoler." }
+        var systemSourceItemCount = 0
+        if let systemSources, let flags = selection.systemSources {
+            systemSourceItemCount = try GoalongSystemRecapSections.append(systemSources, selection: flags, scope: scope,
+                privacy: privacy, text: { value, limit in try text(value, limit: limit) }, to: &document)
+        }
         let json = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         // JSON escapes keep observations from closing the prompt's context marker.
         let rendered = String(decoding: json, as: UTF8.self)
@@ -181,7 +195,7 @@ extension ChatGPTRecapContextBuilder {
             importedChatMessages: 0, computerHistoryEpisodes: nil, computerHistoryResources: nil, workflowSuggestions: nil)
         return ChatGPTRecapContext(day: day, activity: safeActivity, computerHistory: nil, screenTime: nil,
             agentActivity: AgentActivityOverview(day: day), importedChats: [], localJournalSourceAbsent: events.isEmpty,
-            renderedData: rendered, sourceCounts: counts, digest: SHA256Digest.hashHex(rendered))
+            renderedData: rendered, sourceCounts: counts, digest: SHA256Digest.hashHex(rendered), systemSourceItemCount: systemSourceItemCount)
     }
 }
 #endif

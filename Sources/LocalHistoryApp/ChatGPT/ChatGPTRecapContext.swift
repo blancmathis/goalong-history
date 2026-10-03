@@ -89,9 +89,10 @@
         let renderedData: String
         let sourceCounts: ChatGPTRecapSourceCounts
         let digest: String
+        var systemSourceItemCount: Int = 0
 
         var hasMeaningfulData: Bool {
-            !activity.applications.isEmpty || sourceCounts.localEvents > 0
+            systemSourceItemCount > 0 || !activity.applications.isEmpty || sourceCounts.localEvents > 0
                 || sourceCounts.screenTimeDevices > 0
                 || sourceCounts.agentCaptures > 0
                 || sourceCounts.importedChatMessages > 0

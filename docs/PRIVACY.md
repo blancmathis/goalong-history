@@ -77,3 +77,17 @@ website badge. Website authenticity verification remains a separate future featu
 The native mask list matches application names or identifiers exactly, ignoring case. Matching names and IDs are replaced by neutral entries while each source duration remains intact. Any active mask excludes website domains and recap free text from the payload. Source files remain unchanged. The recipient-side mask on the site is a different control.
 
 The native sheet loads a saved recap for local review; no part is selected by default. A separate action can generate that recap through the existing agent flow. The session studio reads an explicitly chosen interval after Computer History consent, preserves unknown boundaries, and lets the user select context excerpts before analysis. An isolated ChatGPT connection or another chosen agent may annotate those fixed episodes. Evidence references and the request fingerprint are checked. Associations and interpretation remain editable; timelines, source context and clock times have separate opt-ins. Any mask removes all session narrative and evidence before upload. This data never certifies attention. See [CLI](CLI.md#session-rhythm-and-pre-transmission-choices).
+
+## Optional system-source lanes
+
+Goalong can note when an application uses its microphone or a video device is running. It
+never opens a capture stream and never records sound or images. Call presence follows the
+Computer History consent, recording pause and `captureCallPresence` setting. Only intervals
+and application metadata are kept in private `calls/` files, with detailed-event retention.
+
+« Agenda et rappels » has a separate Goalong consent and macOS Calendar / Reminders permissions.
+EventKit is read-only; titles and calendar names are cached in memory only. Imported Health
+provides bounded numerical context. `notes/` stores a user-written day note (280 characters)
+without automatic expiry; day/history deletion removes it. Each new recap lane has a separate,
+default-off sharing flag, applies exclusions and masks text before the outgoing field limit.
+These lanes never add time to foreground activity. See [API and limits](SYSTEM_SOURCES.md).
