@@ -256,7 +256,7 @@ final class HistoryLocalAnalyticsResumeTests: XCTestCase {
             try append(try bytes([row(2, offset: 0, app: "Notes")]), to: file)
             try append(try bytes([row(3)]), to: later)
             let resumed = load(root, state: initial.state), full = load(root)
-            XCTAssertTrue(resumed.didResume)
+            XCTAssertFalse(resumed.didResume, "Multiple growing files need a full fold to preserve journal ties")
             XCTAssertEqual(resumed.state?.events.map(\.id), ["event-0", "event-2", "event-1", "event-3"])
             XCTAssertEqual(resumed.state?.events, full.state?.events)
             XCTAssertEqual(resumed.day, full.day)
@@ -328,11 +328,12 @@ final class HistoryLocalAnalyticsResumeTests: XCTestCase {
         }
         XCTAssertEqual(first.day.state, .ready)
         XCTAssertNotNil(first.state?.cursor)
+        let latest = try XCTUnwrap(first.state?.events.map(\.timestamp).max())
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
         var extra = Data(), index = 0
         while extra.count < 1_048_576 {
             let event = HistoryEvent(id: "perf-append-\(index)", sessionID: "perf",
-                timestamp: day.addingTimeInterval(20 * 3600 + Double(index % 3600)), kind: .heartbeat,
+                timestamp: min(latest.addingTimeInterval(Double(index % 300)), horizon.addingTimeInterval(-1)), kind: .heartbeat,
                 app: .init(name: "Perf", bundleIdentifier: "fixture.perf", processIdentifier: 1),
                 window: .init(title: "Synthetic appended activity", role: nil, subrole: nil), metadata: ["idle_seconds": "0"])
             extra.append(try encoder.encode(event)); extra.append(0x0A); index += 1

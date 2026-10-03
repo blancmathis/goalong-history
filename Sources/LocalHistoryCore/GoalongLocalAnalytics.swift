@@ -265,12 +265,127 @@ public enum GoalongLocalAnalytics {
             }.map(\.element)
     }
 
-    /// A bounded, in-memory current-day projection. HistoryEvent and its nested
-    /// models are immutable value data here; no reader or file handle crosses actors.
+    /// The committed prefix has no leading/trailing extrapolation. Its last row is kept
+    /// solely to form the next interval, including the last row of a timestamp tie.
+    fileprivate struct DayFold {
+        let start: Date
+        var segments: [Segment] = []
+        var tracker = GoalongWorkContext.Tracker()
+        var firstTimestamp: Date?
+        var last: HistoryEvent?
+        var lastContextKey: String?
+        var rowCount = 0
+
+        mutating func consume(_ next: HistoryEvent) {
+            let key = tracker.context(for: next)?.key
+            defer { last = next; lastContextKey = key; rowCount += 1 }
+            guard let previous = last else { firstTimestamp = next.timestamp; return }
+            let contextKey = lastContextKey
+            let gap = next.timestamp.timeIntervalSince(previous.timestamp)
+            guard gap > 0 else { return }
+            let kind: Kind
+            if gap > maximumGap || next.metadata?["observation_gap"] == "true" {
+                kind = .unobserved
+            } else if let reason = previous.suppressionReason {
+                switch reason {
+                case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput, .manualPause:
+                    kind = .concealed
+                case .sessionUnavailable, .accessibilityUnavailable:
+                    kind = .unobserved
+                }
+            } else if previous.isObservationContinuityBoundary || previous.app?.name.isEmpty != false {
+                kind = .unobserved
+            } else if ForegroundUsageObservation.usesPresencePolicy(previous) {
+                let seconds = ForegroundUsageObservation.activeDuration(after: previous,
+                    until: next.timestamp, nextEvent: next)
+                let activeEnd = previous.timestamp.addingTimeInterval(seconds)
+                // A browser-process wake assertion cannot attribute the content of an unproven tab.
+                let attributable = previous.url?.host == nil || ForegroundActivityEvidence.supportsWebsiteAttribution(previous)
+                let siteSeconds = ForegroundUsageObservation.websiteDuration(after: previous,
+                    until: next.timestamp, nextEvent: next)
+                if previous.url?.host != nil && siteSeconds < seconds {
+                    let siteEnd = previous.timestamp.addingTimeInterval(siteSeconds)
+                    append(previous.timestamp, siteEnd, .unclassified, previous, contextKey: attributable ? contextKey : nil)
+                    append(siteEnd, activeEnd, .unclassified, previous, websiteAllowed: false)
+                } else {
+                    append(previous.timestamp, activeEnd, .unclassified, previous, contextKey: attributable ? contextKey : nil)
+                }
+                // Split at the exact reading expiry. A later idle observation
+                // never erases a preceding minute of reading or revives absence.
+                append(activeEnd, next.timestamp,
+                    ForegroundUsageObservation.hasVisibleForeground(previous) ? .idle : .unobserved)
+                return
+            } else if ForegroundActivityEvidence.isInputIdle(previous)
+                || (ForegroundActivityEvidence.isInputIdle(next)
+                    && ForegroundActivityEvidence.evidence(in: previous) == nil) {
+                // A later idle sample/app switch must not erase an observed call
+                // preceding it; equally, a later call must not revive earlier idle.
+                kind = .idle
+            } else {
+                kind = .unclassified
+            }
+            // A browser-process wake assertion cannot attribute the content of an unproven tab.
+            let attributable = previous.url?.host == nil || ForegroundActivityEvidence.supportsWebsiteAttribution(previous)
+            append(previous.timestamp, next.timestamp, kind, previous, contextKey: attributable ? contextKey : nil)
+        }
+
+        mutating func append(_ a: Date, _ b: Date, _ kind: Kind, _ event: HistoryEvent? = nil,
+                    websiteAllowed: Bool = true, contextKey: String? = nil) {
+            guard b > a else { return }
+            let active = kind.isActive
+            let application = active ? event?.app?.name : nil
+            let bundle = active ? event?.app?.bundleIdentifier : nil
+            let host = active && websiteAllowed && event.map(ForegroundActivityEvidence.supportsWebsiteAttribution) == true
+                ? event?.url?.host : nil
+            let key = active ? contextKey : nil
+            if let last = segments.last, last.end == a, last.kind == kind,
+               last.application == application, last.bundleIdentifier == bundle, last.host == host,
+               last.contextKey == key {
+                segments[segments.count - 1].end = b
+            } else {
+                segments.append(Segment(start: a, end: b, kind: kind, application: application,
+                    bundleIdentifier: bundle, host: host, contextKey: key))
+            }
+        }
+
+        /// Finalization only touches a copy: the next read can replace the entire window,
+        /// and no previous trailing `unobserved` segment can become an observed interval.
+        func finish(end: Date) -> Day {
+            guard let first = firstTimestamp, let last else {
+                var final = self
+                final.append(start, end, .unobserved)
+                return Day(date: start, end: end, state: .noSource, segments: final.segments,
+                    eventCount: 0, classifierVersions: [])
+            }
+            var final = self
+            if first > start {
+                if let segment = final.segments.first, segment.start == first, segment.kind == .unobserved {
+                    final.segments[0] = Segment(start: start, end: segment.end, kind: .unobserved,
+                        application: nil, bundleIdentifier: nil, host: nil)
+                } else {
+                    final.segments.insert(Segment(start: start, end: first, kind: .unobserved,
+                        application: nil, bundleIdentifier: nil, host: nil), at: 0)
+                }
+            }
+            final.append(last.timestamp, end, .unobserved)
+            return Day(date: start, end: end, state: .ready, segments: final.segments,
+                eventCount: rowCount, classifierVersions: [GoalongLocalAnalytics.method])
+        }
+    }
+
+    /// A committed prefix plus a 15-minute reorder window. `events` contains only the
+    /// sorted window (including rows after `now`), never all of today's source events.
+    /// The prefix holds derived segments, context hashes, counters and one boundary row.
+    /// These value data contain no reader/file handle and stay owned by the app's actor.
     public struct ResumableDayState: @unchecked Sendable {
         public let cursor: HistoryLocalAnalyticsCursor?
         public let events: [HistoryEvent]
+        public let windowStart: Date
         public let incomplete: Bool
+        public var foldedEventCount: Int { fold.rowCount }
+        public var retainedEventCount: Int { fold.rowCount + events.count }
+        fileprivate let fold: DayFold
+        fileprivate let evaluatedThrough: Date
     }
 
     public struct ResumableDayLoad: Sendable {
@@ -282,8 +397,8 @@ public enum GoalongLocalAnalytics {
         public let wasCancelled: Bool
     }
 
-    /// Reads only appended complete lines when the previous checkpoint is valid.
-    /// Invalidation transparently replaces the accumulated projection with a full read.
+    /// Only appended complete lines are decoded, and only the reorder window is folded
+    /// again. Older arrivals or uncertain journal ordering transparently read the full day.
     public static func load(root: URL, day: Date, resuming state: ResumableDayState?,
                             now: Date = Date(), calendar: Calendar = .current,
                             shouldContinue: () -> Bool = { true }) -> ResumableDayLoad {
@@ -294,44 +409,79 @@ public enum GoalongLocalAnalytics {
             return ResumableDayLoad(day: build(events: [], day: day, now: now, calendar: calendar, incomplete: end > start),
                 state: state, didResume: false, eventBytesRead: 0, wasCancelled: end > start)
         }
-        // The journal is read to the end of the day, not to `now`: a row written while it is
-        // read would otherwise void the checkpoint. `build` still stops the day at `now`.
-        let loaded = HistoryLocalStoreReader(rootDirectory: root).loadLocalAnalyticsEvidence(
-            start: start, endExclusive: dayEnd, resumeCursor: state?.cursor,
-            timeZoneIdentifier: calendar.timeZone.identifier, shouldContinue: shouldContinue)
+        let reader = HistoryLocalStoreReader(rootDirectory: root)
+        // Read to dayEnd: rows written during the read may be later than `now`. They stay
+        // in the window and become visible only once `now` reaches their timestamps.
+        // Rewinding `now` also requires the prefix rows that were already discarded.
+        let candidate = state.flatMap { $0.fold.start == start && end >= $0.evaluatedThrough ? $0 : nil }
+        var loaded = reader.loadLocalAnalyticsEvidence(start: start, endExclusive: dayEnd,
+            resumeCursor: candidate?.cursor, timeZoneIdentifier: calendar.timeZone.identifier,
+            shouldContinue: shouldContinue)
+        var bytesRead = loaded.metrics.eventBytesRead
+        if loaded.didResume, !loaded.metrics.wasCancelled, !loaded.metrics.sourceChangedDuringRead,
+           !loaded.metrics.sourceAccessWasIncomplete, !loaded.metrics.evidenceBudgetExceeded, loaded.issues.isEmpty {
+            let canFold: Bool
+            if let candidate, let cursor = candidate.cursor {
+                canFold = loaded.appendedEventCounts.count == cursor.files.count
+                    && cursor.files.reduce(0, { $0 + $1.retainedEventCount }) == candidate.retainedEventCount
+                    && loaded.appendedEventCounts.reduce(0, +) == loaded.events.count
+                    && !loaded.events.contains { $0.timestamp < candidate.windowStart }
+                    // Full-read file order precedes timestamp ordering. An earlier file's
+                    // new ties could precede discarded rows of a later file: reread safely.
+                    && (cursor.files.count <= 1 || loaded.events.isEmpty)
+            } else { canFold = false }
+            if !canFold {
+                loaded = reader.loadLocalAnalyticsEvidence(start: start, endExclusive: dayEnd,
+                    timeZoneIdentifier: calendar.timeZone.identifier, shouldContinue: shouldContinue)
+                bytesRead += loaded.metrics.eventBytesRead
+            }
+        }
         let metrics = loaded.metrics
         let incomplete = metrics.wasCancelled || metrics.sourceChangedDuringRead || metrics.sourceAccessWasIncomplete
             || metrics.evidenceBudgetExceeded || !loaded.issues.isEmpty
-        guard !incomplete else {
-            return ResumableDayLoad(day: build(events: loaded.events, day: day, now: now,
-                calendar: calendar, incomplete: true), state: state, didResume: loaded.didResume,
-                eventBytesRead: metrics.eventBytesRead, wasCancelled: metrics.wasCancelled)
+        var checkpoint = loaded.didResume ? candidate!.fold : DayFold(start: start)
+        // Incomplete output reports the count without publishing any plausible durations.
+        // A failed attempt never changes the caller's last successful state.
+        let projectionWasRejected = metrics.sourceChangedDuringRead || metrics.sourceAccessWasIncomplete
+            || metrics.evidenceBudgetExceeded
+        let count = projectionWasRejected ? 0 : checkpoint.rowCount
+            + (loaded.didResume ? candidate!.events.filter { $0.timestamp <= end }.count : 0)
+            + loaded.events.filter { $0.timestamp <= end }.count
+        func failure(cancelled: Bool) -> ResumableDayLoad {
+            let missing = Segment(start: start, end: end, kind: .unobserved,
+                application: nil, bundleIdentifier: nil, host: nil)
+            return ResumableDayLoad(day: Day(date: start, end: end, state: .incomplete, segments: [missing],
+                eventCount: count, classifierVersions: []), state: state, didResume: loaded.didResume,
+                eventBytesRead: bytesRead, wasCancelled: cancelled)
         }
-        var events = loaded.events
-        if loaded.didResume, let state, let oldCursor = state.cursor {
-            // Inconsistent counts never index out of range: they read the whole day again.
-            guard loaded.appendedEventCounts.count == oldCursor.files.count,
-                  oldCursor.files.reduce(0, { $0 + $1.retainedEventCount }) == state.events.count,
-                  loaded.appendedEventCounts.reduce(0, +) == loaded.events.count else {
-                return load(root: root, day: day, resuming: nil, now: now, calendar: calendar,
-                            shouldContinue: shouldContinue)
-            }
-            // A legacy root may have several intersecting journals. Preserve full-read
-            // file order even when an earlier file grows, including timestamp ties.
-            events = []
-            events.reserveCapacity(state.events.count + loaded.events.count)
-            var oldOffset = 0, newOffset = 0
-            for (index, file) in oldCursor.files.enumerated() {
-                let oldEnd = oldOffset + file.retainedEventCount
-                let newEnd = newOffset + loaded.appendedEventCounts[index]
-                events.append(contentsOf: state.events[oldOffset..<oldEnd])
-                events.append(contentsOf: loaded.events[newOffset..<newEnd])
-                oldOffset = oldEnd; newOffset = newEnd
-            }
+        guard !incomplete else { return failure(cancelled: metrics.wasCancelled) }
+        let rows: [HistoryEvent]
+        if loaded.didResume, loaded.events.isEmpty {
+            rows = candidate!.events
+        } else {
+            // For a single journal old rows always precede appended rows on timestamp ties.
+            rows = evidenceRows((loaded.didResume ? candidate!.events : []) + loaded.events, start: start, end: dayEnd)
         }
-        let next = ResumableDayState(cursor: loaded.resumeCursor, events: events, incomplete: false)
-        return ResumableDayLoad(day: build(events: events, day: day, now: now, calendar: calendar),
-            state: next, didResume: loaded.didResume, eventBytesRead: metrics.eventBytesRead, wasCancelled: false)
+        let latest = rows.last?.timestamp ?? checkpoint.last?.timestamp ?? start
+        let windowStart = max(start, min(latest, end).addingTimeInterval(-15 * 60))
+        var committed = 0
+        for row in rows {
+            guard row.timestamp < windowStart else { break }
+            if committed % 128 == 0, !shouldContinue() { return failure(cancelled: true) }
+            checkpoint.consume(row); committed += 1
+        }
+        let window = Array(rows.dropFirst(committed))
+        var displayed = checkpoint
+        for (index, row) in window.enumerated() {
+            guard row.timestamp <= end else { break }
+            if index % 128 == 0, !shouldContinue() { return failure(cancelled: true) }
+            displayed.consume(row)
+        }
+        guard shouldContinue() else { return failure(cancelled: true) }
+        let next = ResumableDayState(cursor: loaded.resumeCursor, events: window, windowStart: windowStart,
+            incomplete: false, fold: checkpoint, evaluatedThrough: end)
+        return ResumableDayLoad(day: displayed.finish(end: end), state: next, didResume: loaded.didResume,
+            eventBytesRead: bytesRead, wasCancelled: false)
     }
 
     public static func load(root: URL, day: Date, now: Date = Date(), calendar: Calendar = .current,
