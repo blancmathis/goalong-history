@@ -65,6 +65,12 @@ final class T3CodeMetadataTests: XCTestCase {
         XCTAssertEqual(value.status, .ready); XCTAssertEqual(value.projects.first?.requests, 1); XCTAssertEqual(value.projects.first?.busySeconds, 1200)
         XCTAssertEqual(value.projects.first?.waitingSeconds, 2400)
     }
+    func testOpenTurnWithoutEndIsCappedAndPartial() throws {
+        let (file, db) = try fixture(v2: false)
+        try sql(db, "INSERT INTO projection_turns VALUES('stale','one','2026-10-03T01:00:00.000Z','2026-10-03T01:00:00.000Z',NULL,'running');")
+        let value = T3CodeMetadataReader.read(at: file, day: day, enabled: true, now: day.addingTimeInterval(12 * 3600), calendar: calendar)
+        XCTAssertEqual(value.status, .partial); XCTAssertEqual(value.projects.first?.busySeconds, T3CodeMetadataReader.maximumOpenTurn)
+    }
     func testLiveWALUsesCommittedRowsWithoutWritingDatabaseOrWAL() throws {
         let (file, db) = try fixture(v2: false, wal: true)
         try sql(db, "INSERT INTO projection_turns VALUES('a','one','2026-10-03T00:01:00.000Z','2026-10-03T00:01:00.000Z','2026-10-03T00:02:00.000Z','completed');")

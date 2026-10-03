@@ -31,6 +31,8 @@ public struct T3CodeDay: Equatable, Sendable {
 /// A discovered metadata source, independent of transcript parsers and folder indexing.
 /// Uses AI-conversations consent supplied by the caller; never reads message or payload values.
 public enum T3CodeMetadataReader {
+    /// Longest duration counted for a turn still marked running without an end.
+    public static let maximumOpenTurn: TimeInterval = 6 * 3600
     public static func sourceURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
         home.appendingPathComponent(".t3/userdata/statev2.sqlite")
     }
@@ -106,7 +108,10 @@ public enum T3CodeMetadataReader {
                 guard let s = parseDate(start) else { partial = true; return nil }
                 let terminal = parseDate(end)
                 let ongoing = ["running", "started", "in_progress", "active"].contains(status ?? "")
-                guard let e = terminal ?? (ongoing ? min(now, dayInterval.end) : nil), e >= s else { partial = true; return nil }
+                // A turn left « running » by a crash must not fill the day: an open turn counts six hours at most.
+                var open = min(now, dayInterval.end)
+                if ongoing && terminal == nil && open.timeIntervalSince(s) > maximumOpenTurn { open = s.addingTimeInterval(maximumOpenTurn); partial = true }
+                guard let e = terminal ?? (ongoing ? open : nil), e >= s else { partial = true; return nil }
                 return (s, e)
             }
             let cap = max(1, min(20_000, limits.maximumRows))
