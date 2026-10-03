@@ -106,6 +106,13 @@ import AgentActivity
                 source("Activité de ce Mac", capability: .localComputerHistory, value: $selection.computer)
                 source("Temps d’écran Apple", capability: .appleScreenTime, value: $selection.screenTime)
                 source("Conversations locales", capability: .aiConversations, value: $selection.conversations)
+                source("Développement · agents, Git et fichiers",
+                       capability: consents.isEnabled(.aiConversations) ? .aiConversations : .developerActivity,
+                       value: Binding(get: { selection.developer == true }, set: { selection.developer = $0 }))
+                if selection.developer == true && exclusions.policy.hasExclusions {
+                    Text("Omis tant qu’une exclusion de confidentialité existe : ces données n’indiquent ni l’app ni le site d’origine.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
             }
             if selection.computer {
                 GoalongSettingsGroup(title: "Détails possibles · uniquement pour les apps autorisées") {
@@ -316,6 +323,7 @@ import AgentActivity
         next.computer = next.computer && consents.isEnabled(.localComputerHistory)
         next.screenTime = next.screenTime && consents.isEnabled(.appleScreenTime)
         next.conversations = next.conversations && consents.isEnabled(.aiConversations)
+        next.developer = next.developer == true && (consents.isEnabled(.aiConversations) || consents.isEnabled(.developerActivity))
         guard next.hasSources else { throw PrivacyScopeInput.invalid("Activez au moins une source pour l’analyse.") }
         if value.applicationIDs == nil { value.applicationIDs = apps.filter { !exclusions.policy.excludes(appID: $0.id, name: $0.name) }.map(\.id) }
         if value.detailApplicationIDs == nil { value.detailApplicationIDs = value.applicationIDs }

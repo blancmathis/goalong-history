@@ -18,6 +18,7 @@ struct GoalongAnalyticsPage: View {
     @State private var revision = 0
     @State private var manualRefreshRevision = 0
     @State private var laneRevision = 0
+    @State private var showingDeveloperProjects = false
     @State private var forceNextRead = false
     @State private var showingAnalysisChoice = false
     @State private var reviewRequest: GoalongWorkReviewRequest?
@@ -136,6 +137,7 @@ struct GoalongAnalyticsPage: View {
         }
         .background(LHTheme.pageBackground)
         .sheet(item: $reviewRequest) { request in GoalongWorkReviewSheet(request: request).goalongControls() }
+        .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
         .confirmationDialog("Analyser la journée du \(GoalongUIFormat.day(navigation.day))",
                             isPresented: $showingAnalysisChoice, titleVisibility: .visible) {
             Button("Bilan quotidien et sources…") { openRecap(navigation.day) }
@@ -215,7 +217,8 @@ struct GoalongAnalyticsPage: View {
     private var lanes: GoalongActivityLanes {
         if previewActive { return GoalongAnalyticsPreview.lanes(day: selection.day) }
         let ai = consents.isEnabled(.aiConversations), followsProjects = consents.isEnabled(.developerActivity)
-        var lanes = GoalongActivityLanes(openCodeSettings: { model.openRecordingSettings() })
+        var lanes = GoalongActivityLanes(openCodeSettings: { model.openRecordingSettings() },
+                                         chooseProjects: { showingDeveloperProjects = true })
         if selection.period == 1, ai || followsProjects, let value = developer.value,
            Calendar.current.isDate(value.day, inSameDayAs: selection.day) {
             lanes.code = GoalongCodeDay(value)
@@ -265,14 +268,14 @@ struct GoalongAnalyticsPage: View {
                               actionTitle: "Activer…", action: settings))
         } else if developer.selectedProjects.isEmpty {
             rows.append(.init(id: "projects", title: "Projets de développement", state: .noData,
-                              detail: "Aucun projet suivi.", actionTitle: "Choisir les projets…", action: settings))
+                              detail: "Aucun projet suivi.", actionTitle: "Choisir les projets…", action: { showingDeveloperProjects = true }))
         } else {
             let state = value.map { GoalongSourceRow.State($0.developerStatus) } ?? .ready
             var detail = GoalongCodeDay.count(developer.selectedProjects.count, "projet suivi", "projets suivis") + " : commits et fichiers modifiés."
             if case .failed(let reason)? = value?.developerStatus { detail = reason }
             if value?.developerStatus == .permissionDenied { detail = "Accès refusé à un dossier de projet." }
             rows.append(.init(id: "projects", title: "Projets de développement", state: state,
-                              detail: detail, actionTitle: "Choisir les projets…", action: settings))
+                              detail: detail, actionTitle: "Choisir les projets…", action: { showingDeveloperProjects = true }))
         }
         return rows
     }

@@ -93,6 +93,7 @@ enum SupportSourceAllowlist {
         "GoalongControls.swift",
         "GoalongDeveloperFileMonitor.swift",
         "GoalongDeveloperModel.swift",
+        "GoalongDeveloperProjectsSheet.swift",
         "GoalongDeveloperRecap.swift",
         "GoalongDeveloperRuntime.swift",
         "GoalongDeveloperSettings.swift",

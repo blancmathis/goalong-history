@@ -524,7 +524,8 @@ struct GoalongAnalyticsContent: View {
                 GoalongActivityTextureSection(period: current)
             case .code:
                 if let code = lanes.code, let day = current.days.first {
-                    GoalongCodeSection(code: code, day: day, isPreview: payload.isPreview, onSettings: lanes.openCodeSettings)
+                    GoalongCodeSection(code: code, day: day, isPreview: payload.isPreview,
+                                       onSettings: lanes.openCodeSettings, onProjects: lanes.chooseProjects)
                 }
             case .coverage:
                 GoalongActivityCoverageSection(period: current, bounds: activityBounds(summary),

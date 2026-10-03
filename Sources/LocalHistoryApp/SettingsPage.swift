@@ -8,6 +8,7 @@ import AppKit
     @ObservedObject private var updates = SoftwareUpdateManager.shared
     @State private var search = ""
     @State private var showingRetention = false
+    @State private var showingDeveloperProjects = false
     @State private var pendingPrivate = false
     @State private var pendingUnredacted = false
     private var pane: SettingsPane {
@@ -37,6 +38,7 @@ import AppKit
         }
         .background(LHTheme.pageBackground)
         .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet().goalongControls() }
+        .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
         .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
             Button("Annuler", role: .cancel) {}
             Button("Inclure") { var next = model.appliedSettings; next.capturePrivateBrowsing = true; _ = model.applyRecordingChoice(next) }
@@ -143,6 +145,19 @@ import AppKit
                 Divider()
                 SourceActivationToggle(capability: .aiConversations) { Text("Conversations locales") }
                 Button("Choisir les dossiers de conversations…") { model.selectSection(.agentActivity) }.buttonStyle(LHQuietButtonStyle())
+                Divider()
+                SourceActivationToggle(capability: .developerActivity) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Activité de développement")
+                        Text("Commits et nombre de fichiers modifiés dans les projets choisis. Ni code, ni messages de commit.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if consents.isEnabled(.developerActivity) {
+                    Button("Choisir les projets…") { showingDeveloperProjects = true }.buttonStyle(LHQuietButtonStyle())
+                        .accessibilityIdentifier("settings-developer-projects")
+                }
             }
         case .applications:
             GoalongApplicationsSettings(model: model)

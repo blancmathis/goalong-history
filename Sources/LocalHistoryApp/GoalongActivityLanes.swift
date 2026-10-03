@@ -10,6 +10,7 @@ struct GoalongActivityLanes {
     /// Every source with its state and one action, listed in « Couverture et sources ».
     var sources: [GoalongSourceRow] = []
     var openCodeSettings: () -> Void = {}
+    var chooseProjects: () -> Void = {}
 }
 
 extension GoalongSourceRow.State {
@@ -320,6 +321,7 @@ struct GoalongCodeSection: View {
     let day: GoalongLocalAnalytics.Day
     var isPreview = false
     var onSettings: () -> Void = {}
+    var onProjects: () -> Void = {}
 
     private static let shownProjects = 6
 
@@ -347,7 +349,8 @@ struct GoalongCodeSection: View {
                 if let note = followNote {
                     HStack(alignment: .center, spacing: 12) {
                         GoalongNote(note.text)
-                        Button(note.action, action: onSettings).buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+                        Button(note.action, action: code.followsProjects ? onProjects : onSettings)
+                            .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                             .disabled(isPreview)
                     }
                 }
