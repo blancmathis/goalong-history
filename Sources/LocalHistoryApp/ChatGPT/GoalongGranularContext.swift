@@ -162,6 +162,8 @@ extension ChatGPTRecapContextBuilder {
             }
             document["conversations_choisies"] = dialogues
         }
+        var developerProjects = 0
+        if let development = try GoalongDeveloperRecap.build(day: day, selection: selection, agents: agents, privacy: privacy, transform: { try text($0, limit: 160) }, onProjects: { developerProjects = $0 }) { document["developpement"] = development }
         if omitted > 0 { document["limite"] = "\(omitted) éléments omis : aperçu partiel, ne pas extrapoler." }
         let json = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         // JSON escapes keep observations from closing the prompt's context marker.
@@ -178,7 +180,8 @@ extension ChatGPTRecapContextBuilder {
             activeMinutes: safeActivity.activeSeconds / 60, semanticSnapshots: semanticCount,
             screenTimeDevices: appleRows.count, screenTimeApplications: appleCount, agentCaptures: dialogues.count,
             agentMessages: messageCount, visibleAgentMessages: messageCount, analyzedAgentCaptures: dialogues.count,
-            importedChatMessages: 0, computerHistoryEpisodes: nil, computerHistoryResources: nil, workflowSuggestions: nil)
+            importedChatMessages: 0, computerHistoryEpisodes: nil, computerHistoryResources: nil, workflowSuggestions: nil,
+            developerProjects: selection.developer == true ? developerProjects : nil)
         return ChatGPTRecapContext(day: day, activity: safeActivity, computerHistory: nil, screenTime: nil,
             agentActivity: AgentActivityOverview(day: day), importedChats: [], localJournalSourceAbsent: events.isEmpty,
             renderedData: rendered, sourceCounts: counts, digest: SHA256Digest.hashHex(rendered))

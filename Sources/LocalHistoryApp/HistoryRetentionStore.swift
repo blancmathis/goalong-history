@@ -38,6 +38,11 @@
                     allowedSuffixes: [".jsonl"]
                 ),
                 HistoryRetentionArtifactDirectory(
+                    directory: AppPaths.applicationSupportDirectory.appendingPathComponent("developer"),
+                    dataClass: .detailedEvents,
+                    allowedSuffixes: [".jsonl"]
+                ),
+                HistoryRetentionArtifactDirectory(
                     directory: AppPaths.semanticDirectory,
                     dataClass: .semanticSnapshots,
                     allowedSuffixes: [".semantic.jsonl"]
