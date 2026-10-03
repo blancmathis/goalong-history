@@ -192,6 +192,7 @@
                 repeats: true
             ) { [weak self] _ in
                 self?.generateRecentAnalyses(force: false)
+                GoalongAnalyticsModel.advanceToday()
             }
             analysisTimer.tolerance = 30
             RunLoop.main.add(analysisTimer, forMode: .common)

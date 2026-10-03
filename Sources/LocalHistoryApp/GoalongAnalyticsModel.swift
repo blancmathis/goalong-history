@@ -78,10 +78,9 @@ private actor GoalongAnalyticsReader {
     private var cache: [Date: (String, GoalongLocalAnalytics.Day)] = [:]
     private var lastUse: [Date: Int] = [:]
     private var uses = 0
-    /// Today's journal is read once, then only the lines appended since. Its projection is
-    /// dropped ten minutes after Activité last asked for today.
+    /// Today's journal is read once, then only the lines appended since. The checkpoint
+    /// holds derived segments and the last 15 minutes of rows (about 2 MB on a busy day).
     private var today: (date: Date, state: GoalongLocalAnalytics.ResumableDayState)?
-    private var todayRelease: Task<Void, Never>?
     private let root: URL
     init(root: URL) { self.root = root }
 
@@ -132,6 +131,10 @@ private actor GoalongAnalyticsReader {
                 value = try readToday(date, calendar: calendar)
             } else if let cached = cache[date], cached.0 == revision {
                 value = cached.1
+            } else if let held = today, calendar.isDate(held.date, inSameDayAs: date) {
+                // The day that just ended is finished from its checkpoint, not read again.
+                value = try readToday(date, calendar: calendar)
+                if value.state != .incomplete { cache[date] = (revision, value) }
             } else {
                 value = GoalongLocalAnalytics.load(root: root, day: date, now: now, calendar: calendar,
                     shouldContinue: { !Task.isCancelled })
@@ -154,17 +157,16 @@ private actor GoalongAnalyticsReader {
         let loaded = GoalongLocalAnalytics.load(root: root, day: date, resuming: previous, now: Date(),
             calendar: calendar, shouldContinue: { !Task.isCancelled })
         today = loaded.state.map { (date, $0) }
-        todayRelease?.cancel()
-        todayRelease = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 600 * 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            await self?.releaseToday()
-        }
         try Task.checkCancellation()
         return loaded.day
     }
 
-    private func releaseToday() { today = nil }
+    /// Moves today's checkpoint forward between visits, so opening Activité decodes
+    /// minutes of journal rather than everything written since the last visit.
+    func advanceToday() {
+        let calendar = Calendar.current
+        _ = try? readToday(calendar.startOfDay(for: Date()), calendar: calendar)
+    }
 
     /// The period's days when none needs a journal read, nil otherwise.
     private func cachedDays(ending last: Date, count: Int, now: Date, calendar: Calendar) -> [GoalongLocalAnalytics.Day]? {
@@ -272,6 +274,11 @@ private actor GoalongAnalyticsReader {
     private let reader: GoalongAnalyticsReader
     private var operation = UUID()
     init() { reader = .shared }
+
+    /// Called by the existing 10-minute analysis timer: no wake-up of its own.
+    nonisolated static func advanceToday() {
+        Task.detached(priority: .utility) { await GoalongAnalyticsReader.shared.advanceToday() }
+    }
     init(root: URL) { reader = GoalongAnalyticsReader(root: root) }
     func load(_ request: GoalongAnalyticsLoadRequest, force: Bool = false,
               verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) async {
