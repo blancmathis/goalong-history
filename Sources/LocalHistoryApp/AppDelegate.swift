@@ -76,6 +76,8 @@
         private var deviceIdentity: DeviceIdentity!
         private var integrityJournal: IntegrityJournal!
         private var minuteSealer: MinuteSealer!
+        private var clearingCallPresence = false
+        private var callPresenceSettingObserver: NSObjectProtocol?
         private var recorder: EventRecorder!
         private var contextProvider: ContextProvider!
         private var contextMonitor: ContextMonitor!
@@ -391,6 +393,8 @@
             if GoalongBuildCapabilities.permitsRemoteAnalysis {
                 ChatGPTRecapRuntime.shared.stop()
             }
+            GoalongCallPresenceMonitor.shared.stop()
+            if let callPresenceSettingObserver { NotificationCenter.default.removeObserver(callPresenceSettingObserver) }
             contextMonitor?.stop()
             eventTapMonitor?.stop()
             if capabilityConsents?.isEnabled(.localComputerHistory) == true {
@@ -448,11 +452,13 @@
                 captureHealthStore.setPaused(true)
                 _ = minuteSealer.stopAndSeal()
             }
+            configureCallPresence()
             menuBarController.updateStatus()
         }
 
         private func applyConfiguration(_ config: RecorderConfig) throws -> RecorderConfig {
             let applied = try configManager.save(config)
+            configureCallPresence()
             // Retention is an independent, explicitly confirmed policy. Saving a
             // recording switch must never authorize deletion of existing history.
             contextMonitor.resetAndSample()
@@ -463,6 +469,7 @@
 
         private func reloadConfiguration() {
             configManager.reload()
+            configureCallPresence()
             contextMonitor.resetAndSample()
             configureUploader(for: configManager.config)
         }
@@ -478,6 +485,8 @@
         ) {
             let barrier = DerivedHistoryWriteBarrier.shared
             let suspension = barrier.suspend()
+            clearingCallPresence = true
+            GoalongCallPresenceMonitor.shared.stop()
             ActivityAnalysisRuntime.shared.prepareForHistoryClear()
             ChatGPTRecapRuntime.shared.prepareForHistoryClear()
             barrier.notifyWhenDrained(suspension) { [self] in
@@ -495,6 +504,8 @@
         ) {
             let barrier = DerivedHistoryWriteBarrier.shared
             let suspension = barrier.suspend()
+            clearingCallPresence = true
+            GoalongCallPresenceMonitor.shared.stop()
             ActivityAnalysisRuntime.shared.prepareForHistoryClear()
             ChatGPTRecapRuntime.shared.prepareForHistoryClear()
             barrier.notifyWhenDrained(suspension) { [self] in
@@ -634,6 +645,8 @@
                 // invalidating caches or starting a forced rewrite against the unsafe
                 // target that caused preflight to fail.
                 DerivedHistoryWriteBarrier.shared.resume(suspension)
+                clearingCallPresence = false
+                configureCallPresence()
                 completion(.failure(error))
                 return
             }
@@ -760,6 +773,8 @@
             }
 
             DerivedHistoryWriteBarrier.shared.resume(suspension)
+            clearingCallPresence = false
+            configureCallPresence()
             ActivityAnalysisRuntime.shared.refreshAfterHistoryClear()
             completion(completedResult)
         }
@@ -851,6 +866,7 @@
                 contextMonitor.stop()
                 captureState.setManualPaused(true)
                 captureHealthStore.setPaused(true)
+                configureCallPresence()
                 menuBarController.updateStatus()
                 return
             }
@@ -917,7 +933,16 @@
             schedulePermissionWatchdog()
         }
 
+        private func configureCallPresence() {
+            GoalongCallPresenceMonitor.shared.configure(enabled: !clearingCallPresence && capabilityConsents.isEnabled(.localComputerHistory) && !captureState.isManuallyPaused, config: configManager.config)
+        }
+
         private func installCapabilityConsentObserver() {
+            callPresenceSettingObserver = NotificationCenter.default.addObserver(forName: .goalongCallPresenceSettingDidChange, object: nil, queue: .main) { [weak self] notice in
+                guard let self, notice.object as? String == AppPaths.applicationSupportDirectory.standardizedFileURL.path else { return }
+                self.configManager.reload()
+                self.configureCallPresence()
+            }
             globalPauseObserver = NotificationCenter.default.addObserver(forName: .goalongGlobalPauseDidChange,
                 object: nil, queue: .main) { [weak self] notice in
                 guard let self, notice.object as? String == AppPaths.applicationSupportDirectory.standardizedFileURL.path else { return }
@@ -1010,6 +1035,8 @@
                 agentActivityRuntime.stop()
             }
 
+            configureCallPresence()
+            if !capabilityConsents.isEnabled(.calendar) { Task { await GoalongCalendarSource.shared.disable() } }
             configureScreenTimeDailyArchive()
             configureReadOnlyQueryServer()
 
