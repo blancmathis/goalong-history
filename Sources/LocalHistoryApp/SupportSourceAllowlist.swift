@@ -62,6 +62,7 @@ enum SupportSourceAllowlist {
         "GoalongActivityAppleCard.swift",
         "GoalongActivityCharts.swift",
         "GoalongActivityContent.swift",
+        "GoalongActivityDayReader.swift",
         "GoalongActivityExport.swift",
         "GoalongActivityFocusChart.swift",
         "GoalongActivityHeader.swift",

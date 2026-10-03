@@ -43,6 +43,11 @@
                     allowedSuffixes: [".semantic.jsonl"]
                 ),
                 HistoryRetentionArtifactDirectory(
+                    directory: AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongActivityDayStore.directoryName),
+                    dataClass: .activitySummaries,
+                    allowedSuffixes: [".json"]
+                ),
+                HistoryRetentionArtifactDirectory(
                     directory: AppPaths.memoriesDirectory,
                     dataClass: .memories,
                     allowedSuffixes: [".memory.json", ".memory.md"]
@@ -106,6 +111,7 @@
     /// the persisted policy and its activation record must both be valid and equal.
     final class HistoryRetentionStore {
         private static let maximumMetadataBytes: Int64 = 64 * 1_024
+        private static let cleanupQueue = DispatchQueue(label: "ai.goalong.localhistory.retention-summary", qos: .utility)
 
         private let fileManager: FileManager
         private let storage: HistoryRetentionStorage
@@ -213,10 +219,15 @@
             guard isAutomaticCleanupEnabled else { completion(); return }
             let suspension = barrier.suspend()
             barrier.notifyWhenDrained(suspension) { [self] in
-                // Revalidates the activation record: a later stop or policy change wins.
-                applyCleanup(now: now)
-                barrier.resume(suspension)
-                completion()
+                // An independent disk-loaded snapshot avoids sharing mutable Settings state.
+                // Summary generation can read an entire old journal: never do that on the UI thread.
+                Self.cleanupQueue.async { [self] in
+                    let worker = HistoryRetentionStore(legacyRetentionDays: 0, storage: storage,
+                        fileManager: fileManager, diagnostics: diagnose)
+                    worker.applyCleanup(now: now)
+                    barrier.resume(suspension)
+                    DispatchQueue.main.async(execute: completion)
+                }
             }
         }
 
@@ -245,7 +256,23 @@
                     continue
                 }
                 do {
+                    if decision.artifact.dataClass == .detailedEvents,
+                        file.deletingLastPathComponent().lastPathComponent == "events" {
+                        let root = file.deletingLastPathComponent().deletingLastPathComponent()
+                        try GoalongActivityDayStore(root: root).preserveBeforePurge(day: decision.artifact.start, now: now)
+                    }
+                    guard activationMatchesCurrentPolicy() else { return }
                     try Self.unlinkRegularFile(at: file)
+                    // A finite summary policy is an explicit request to expire this derived day too.
+                    if decision.artifact.dataClass == .detailedEvents,
+                       file.deletingLastPathComponent().lastPathComponent == "events",
+                       let cutoff = policy.activitySummaries.cutoff(relativeTo: now), decision.artifact.end < cutoff {
+                        let summary = file.deletingLastPathComponent().deletingLastPathComponent()
+                            .appendingPathComponent("activity-days/" + String(file.lastPathComponent.prefix(10)) + ".json")
+                        if isManagedRegularArtifact(summary), activationMatchesCurrentPolicy() {
+                            try Self.unlinkRegularFile(at: summary)
+                        }
+                    }
                 } catch {
                     diagnose(
                         "Retention cleanup could not remove \(decision.artifact.localPath): \(error)"

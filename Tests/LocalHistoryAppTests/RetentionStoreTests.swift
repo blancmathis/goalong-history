@@ -935,7 +935,9 @@
         func testMigratedPolicyCannotDeleteUntilExplicitlyActivated() throws {
             let fixture = try makeFixture()
             let oldEvent = fixture.events.appendingPathComponent("2020-01-01.jsonl")
-            try Data("event\n".utf8).write(to: oldEvent)
+            let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+            let valid = HistoryEvent(sessionID: "retention", timestamp: Self.date(year: 2020, month: 1, day: 1, hour: 12), kind: .heartbeat)
+            try (encoder.encode(valid) + Data([10])).write(to: oldEvent)
             // This is the pre-hardening marker. It must not activate a newly
             // migrated policy because it is not bound to the policy contents.
             try Data("explicit-settings-save\n".utf8).write(to: fixture.activation)
@@ -988,7 +990,7 @@
             try store.updateDetailedRetention(fromLegacyDays: 1)
             store.applyCleanup(now: fixture.now)
 
-            XCTAssertFalse(FileManager.default.fileExists(atPath: oldEvent.path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: oldEvent.path), "Invalid evidence cannot be summarized, so retention keeps the journal")
             XCTAssertTrue(FileManager.default.fileExists(atPath: unknown.path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: invalidDay.path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: disguisedDirectory.path))

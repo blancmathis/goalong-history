@@ -66,7 +66,8 @@
 
             let report = AbandonedTemporaryScavenger(
                 rootDirectory: fixture.root,
-                codexMemoryDirectory: codex
+                codexMemoryDirectory: codex,
+                monotonicClock: { 0 } // Ownership is tested independently of host scheduling.
             ).scavenge(now: now)
 
             XCTAssertEqual(report.deletedFiles, owned.count)

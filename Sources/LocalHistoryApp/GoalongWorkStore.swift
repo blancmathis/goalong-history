@@ -23,6 +23,24 @@ extension Notification.Name {
         var byOwner: Bool
         /// yyyy-MM-dd of the last day this context was seen, used to prune the oldest.
         var seen: String
+        var attempts: Int = 1
+        var lastAskedDay: String? = nil
+
+        private enum CodingKeys: String, CodingKey { case verdict, task, byOwner, seen, attempts, lastAskedDay }
+        init(verdict: GoalongWorkVerdict, task: String?, byOwner: Bool, seen: String,
+             attempts: Int = 1, lastAskedDay: String? = nil) {
+            self.verdict = verdict; self.task = task; self.byOwner = byOwner; self.seen = seen
+            self.attempts = attempts; self.lastAskedDay = lastAskedDay
+        }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            verdict = try c.decode(GoalongWorkVerdict.self, forKey: .verdict)
+            task = try c.decodeIfPresent(String.self, forKey: .task)
+            byOwner = try c.decode(Bool.self, forKey: .byOwner)
+            seen = try c.decode(String.self, forKey: .seen)
+            attempts = min(3, max(0, try c.decodeIfPresent(Int.self, forKey: .attempts) ?? (byOwner ? 0 : 1)))
+            lastAskedDay = try c.decodeIfPresent(String.self, forKey: .lastAskedDay) ?? (byOwner ? nil : seen)
+        }
     }
     struct Correction: Codable, Equatable {
         var key: String
@@ -85,10 +103,24 @@ extension Notification.Name {
     func merge(_ assignments: [String: GoalongWorkAssignment], revision: String, day: String) {
         guard revision == document.revision, !assignments.isEmpty else { return }
         for (key, assignment) in assignments where document.entries[key]?.byOwner != true {
-            document.entries[key] = Entry(verdict: assignment.verdict, task: assignment.task, byOwner: false, seen: day)
+            let previous = document.entries[key]
+            let attempts = min(3, (previous?.attempts ?? 0) + (previous?.lastAskedDay == day ? 0 : 1))
+            document.entries[key] = Entry(verdict: assignment.verdict, task: assignment.task, byOwner: false,
+                seen: day, attempts: attempts, lastAskedDay: day)
         }
         prune()
         publish(); persist()
+    }
+
+    /// Persist admission before dispatch: a failed answer still counts as an automatic attempt.
+    func markAsked(_ keys: [String], revision: String, day: String) {
+        guard revision == document.revision else { return }
+        for key in keys where document.entries[key]?.byOwner != true {
+            var entry = document.entries[key] ?? Entry(verdict: .unclear, task: nil, byOwner: false, seen: day, attempts: 0)
+            if entry.lastAskedDay != day { entry.attempts = min(3, entry.attempts + 1) }
+            entry.lastAskedDay = day; entry.seen = day; document.entries[key] = entry
+        }
+        prune(); publish(); persist()
     }
 
     /// The user's own verdict for one context. `nil` removes the correction and lets the
@@ -148,7 +180,7 @@ extension Notification.Name {
     private func publish() {
         let next = GoalongWorkVerdicts(document.entries.mapValues {
             GoalongWorkAssignment(verdict: $0.verdict, task: $0.task, byOwner: $0.byOwner)
-        })
+        }, retries: document.entries.mapValues { GoalongWorkRetryState(attempts: $0.attempts, lastAskedDay: $0.lastAskedDay) })
         guard next != verdicts else { return }
         verdicts = next
         NotificationCenter.default.post(name: .goalongWorkVerdictsDidChange, object: self)
