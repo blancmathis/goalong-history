@@ -739,7 +739,11 @@ struct GoalongAnalyticsContent: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Comparaison avec la période précédente").font(.system(size: 13, weight: .semibold))
             Text("Période sélectionnée : \(duration(current.activeSeconds)) · \(current.daysWithObservations)/\(current.days.count) jours avec activité mesurée.")
-            Text("Période précédente : \(payload.previous.observedSeconds > 0 ? duration(payload.previous.activeSeconds) : "—") · \(payload.previous.daysWithObservations)/\(payload.previous.days.count) jours avec activité mesurée.")
+            if payload.comparisonPending {
+                Text("Période précédente : lecture en cours.")
+            } else {
+                Text("Période précédente : \(payload.previous.observedSeconds > 0 ? duration(payload.previous.activeSeconds) : "—") · \(payload.previous.daysWithObservations)/\(payload.previous.days.count) jours avec activité mesurée.")
+            }
             if let first = payload.previous.days.first, let last = payload.previous.days.last {
                 Text("Référence : " + (first.id == last.id ? shortDate(first.date) : "\(shortDate(first.date)) – \(shortDate(last.date))"))
             }

@@ -4,11 +4,13 @@ import LocalHistoryCore
 
 /// Small adapter for the Activité reader; all summary implementation lives in Core.
 enum GoalongActivityDayReader {
+    /// A day's loader reads only the journal named after that day, so yesterday stays cached
+    /// while today's journal grows. A new summary of the day is read once more.
     static func sourceRevision(root: URL, day: Date, calendar: Calendar) -> String {
         let store = GoalongActivityDayStore(root: root)
         let summary = root.appendingPathComponent("activity-days/" + GoalongActivityDayStore.dayKey(day, calendar: calendar) + ".json")
         let attributes = try? FileManager.default.attributesOfItem(atPath: summary.path)
-        return store.sourceRevision(day: day, calendar: calendar) + "|summary|"
+        return store.journalRevision(day: day, calendar: calendar) + calendar.timeZone.identifier + "|summary|"
             + "\(attributes?[.systemFileNumber] ?? "missing")|\(attributes?[.size] ?? "-")|\((attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)"
     }
 

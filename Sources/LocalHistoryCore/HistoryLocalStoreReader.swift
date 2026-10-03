@@ -205,6 +205,64 @@ package struct ComputerHistoryEvidenceLoadLimits: Equatable {
     }
 }
 
+/// In-memory checkpoint for Activité's append-only JSONL projection. It contains no
+/// event contents. A checkpoint is published only after a complete, stable read.
+public struct HistoryLocalAnalyticsCursor: Sendable, Equatable {
+    public struct File: Sendable, Equatable {
+        public let name: String
+        public let device: Int64
+        public let inode: UInt64
+        public let consumedBytes: Int64
+        public let nonEmptyLineCount: Int
+        public let retainedEventCount: Int
+        public let lastLineOffset: Int64
+        public let lastLineBytes: Int
+        public let lastLineHash: String
+
+        fileprivate func matches(descriptor: Int32) -> Bool {
+            var value = stat()
+            guard fstat(descriptor, &value) == 0, (value.st_mode & S_IFMT) == S_IFREG,
+                Int64(value.st_dev) == device, UInt64(value.st_ino) == inode,
+                Int64(value.st_size) >= consumedBytes else { return false }
+            guard consumedBytes > 0 else { return true }
+            guard lastLineBytes > 0, lastLineBytes <= HistoryJSONLinesStreamReader.defaultMaximumLineBytes + 1,
+                lastLineOffset >= 0, lastLineOffset + Int64(lastLineBytes) <= consumedBytes else { return false }
+            var bytes = [UInt8](repeating: 0, count: lastLineBytes)
+            guard pread(descriptor, &bytes, bytes.count, off_t(lastLineOffset)) == bytes.count else { return false }
+            return SHA256Digest.hashHex(Data(bytes)) == lastLineHash
+        }
+    }
+    public let start: Date
+    public let endExclusive: Date
+    public let timeZoneIdentifier: String
+    public let files: [File]
+    public let retainedRows: Int
+    public let retainedBytes: Int64
+    fileprivate let rootPath: String
+    fileprivate let maximumRetainedRows: Int
+    fileprivate let maximumRetainedBytes: Int64
+    fileprivate let rawEventCount: Int
+    fileprivate let continuityBoundaryCount: Int
+    fileprivate let retainedEventBytes: Int64
+    fileprivate let firstBoundary: HistoryAnalyticsIntegrityBoundary?
+    fileprivate let lastBoundary: HistoryAnalyticsIntegrityBoundary?
+}
+
+fileprivate struct HistoryAnalyticsIntegrityBoundary: Sendable, Equatable {
+    let timestamp: Date
+    let eventID: String
+    let sequence: UInt64
+    let eventHash: String
+
+    init(event: HistoryEvent, integrity: EventIntegrity) {
+        timestamp = event.timestamp; eventID = event.id
+        sequence = integrity.sequence; eventHash = integrity.eventHash
+    }
+    static func precedes(_ left: Self, _ right: Self) -> Bool {
+        left.timestamp == right.timestamp ? left.eventID < right.eventID : left.timestamp < right.timestamp
+    }
+}
+
 /// The minimal source material required by `ComputerHistoryEngine`. Raw journal
 /// rows are decoded once and immediately discarded unless they can affect the
 /// causal analysis. Coverage and continuity remain exact through the constant-
@@ -215,19 +273,30 @@ package struct ComputerHistoryEvidenceLoad {
     package let sourceJournalSummary: ComputerHistorySourceJournalSummary
     package let issues: [HistoryLoadIssue]
     package let metrics: ComputerHistoryEvidenceLoadMetrics
+    /// On a successful resume, `events` contains additions only; counters are cumulative.
+    /// On a rejected/cancelled read the input checkpoint is returned unchanged.
+    package let resumeCursor: HistoryLocalAnalyticsCursor?
+    package let didResume: Bool
+    package let appendedEventCounts: [Int]
 
     package init(
         events: [HistoryEvent],
         semanticSnapshots: [String: SemanticContextPayload],
         sourceJournalSummary: ComputerHistorySourceJournalSummary,
         issues: [HistoryLoadIssue],
-        metrics: ComputerHistoryEvidenceLoadMetrics
+        metrics: ComputerHistoryEvidenceLoadMetrics,
+        resumeCursor: HistoryLocalAnalyticsCursor? = nil,
+        didResume: Bool = false,
+        appendedEventCounts: [Int] = []
     ) {
         self.events = events
         self.semanticSnapshots = semanticSnapshots
         self.sourceJournalSummary = sourceJournalSummary
         self.issues = issues
         self.metrics = metrics
+        self.resumeCursor = resumeCursor
+        self.didResume = didResume
+        self.appendedEventCounts = appendedEventCounts
     }
 }
 
@@ -382,6 +451,7 @@ private struct HistoryPinnedRegularFileIdentity: Equatable {
 private struct HistoryPinnedFileView: Equatable {
     let identity: HistoryPinnedRegularFileIdentity
     let prefixByteCount: Int64
+    let prefixStartOffset: Int64
     let prefixFingerprint: String
     let permitsVerifiedAppendOnlyGrowth: Bool
 }
@@ -437,13 +507,14 @@ private struct HistorySourcePrefixFingerprint {
 
 private func historyFingerprint(
     descriptor: Int32,
-    prefixByteCount: Int64
+    prefixByteCount: Int64,
+    startOffset: Int64 = 0
 ) throws -> String {
     guard prefixByteCount >= 0 else {
         throw NSError(domain: NSPOSIXErrorDomain, code: Int(EINVAL))
     }
     var fingerprint = HistorySourcePrefixFingerprint()
-    var offset: Int64 = 0
+    var offset: Int64 = startOffset
     var buffer = [UInt8](repeating: 0, count: HistoryJSONLinesStreamReader.defaultChunkSize)
     while offset < prefixByteCount {
         let requested = min(buffer.count, Int(prefixByteCount - offset))
@@ -782,7 +853,8 @@ private struct HistoryPinnedSourceFile {
         guard
             (try? historyFingerprint(
                 descriptor: descriptor,
-                prefixByteCount: view.prefixByteCount
+                prefixByteCount: view.prefixByteCount,
+                startOffset: view.prefixStartOffset
             )) == view.prefixFingerprint
         else { return false }
 
@@ -815,6 +887,7 @@ package struct HistoryJSONLinesReadMetrics: Equatable {
     package var sourceChangedDuringRead = false
     fileprivate var pinnedIdentity: HistoryPinnedRegularFileIdentity?
     fileprivate var pinnedFileView: HistoryPinnedFileView?
+    fileprivate var analyticsFileCursor: HistoryLocalAnalyticsCursor.File?
 }
 
 extension Data {
@@ -863,6 +936,8 @@ package struct HistoryJSONLinesStreamReader {
         relativeName: String? = nil,
         maximumBytes: Int64? = nil,
         allowVerifiedAppendOnlyGrowth: Bool = false,
+        completeLinesOnly: Bool = false,
+        resumeFile: HistoryLocalAnalyticsCursor.File? = nil,
         shouldContinue: () -> Bool = { true },
         onLine: (Data, Int) -> Void,
         onOversizedLine: (Int, Int) -> Void
@@ -918,6 +993,11 @@ package struct HistoryJSONLinesStreamReader {
                 ]
             )
         }
+        if let resumeFile, !resumeFile.matches(descriptor: descriptor) {
+            throw HistoryBoundedFileReadError.changedDuringRead
+        }
+        let startOffset = resumeFile?.consumedBytes ?? 0
+        try handle.seek(toOffset: UInt64(startOffset))
         let sourceByteCount = Int64(sourceStat.st_size)
         let sourceDevice = sourceStat.st_dev
         let sourceInode = sourceStat.st_ino
@@ -936,7 +1016,12 @@ package struct HistoryJSONLinesStreamReader {
         var pending = Data()
         pending.reserveCapacity(min(chunkSize, maximumLineBytes))
         var discardingOversizedLine = false
-        var nonEmptyLineNumber = 0
+        var nonEmptyLineNumber = resumeFile?.nonEmptyLineCount ?? 0
+        var consumedBytes = startOffset
+        var lastCompleteLine = Data()
+        var lastLineOffset = resumeFile?.lastLineOffset ?? 0
+        var lastLineBytes = resumeFile?.lastLineBytes ?? 0
+        var lastLineHash = resumeFile?.lastLineHash ?? ""
 
         func append<C: Collection>(_ bytes: C) where C.Element == UInt8 {
             guard !discardingOversizedLine else { return }
@@ -971,7 +1056,7 @@ package struct HistoryJSONLinesStreamReader {
                 break
             }
             let requestedCount: Int
-            let remaining = readCeiling - metrics.bytesRead
+            let remaining = readCeiling - startOffset - metrics.bytesRead
             guard remaining > 0 else {
                 if let callerByteLimit {
                     metrics.reachedByteLimit = sourceByteCount > callerByteLimit
@@ -991,6 +1076,17 @@ package struct HistoryJSONLinesStreamReader {
                 let newline = chunk.indexOfNewline(from: segmentStart)
             {
                 append(chunk[segmentStart..<newline])
+                if completeLinesOnly {
+                    let lineOffset = consumedBytes
+                    consumedBytes = startOffset + metrics.bytesRead - Int64(chunk.endIndex - newline - 1)
+                    // Blank rows advance the byte checkpoint, but must not hide an
+                    // in-place rewrite of the last consumed JSON event.
+                    if !pending.isEmpty || nonEmptyLineNumber == 0 {
+                        lastLineOffset = lineOffset
+                        lastCompleteLine = pending
+                        lastCompleteLine.append(0x0A)
+                    }
+                }
                 finishLine()
                 segmentStart = chunk.index(after: newline)
             }
@@ -1000,7 +1096,7 @@ package struct HistoryJSONLinesStreamReader {
             metrics.peakBufferedBytes = max(metrics.peakBufferedBytes, pending.count + chunk.count)
         }
 
-        let completedPinnedPrefix = !metrics.wasCancelled && metrics.bytesRead == readCeiling
+        let completedPinnedPrefix = !metrics.wasCancelled && startOffset + metrics.bytesRead == readCeiling
         let pinnedPrefixFingerprint =
             completedPinnedPrefix
             ? prefixFingerprint.finalize()
@@ -1020,7 +1116,8 @@ package struct HistoryJSONLinesStreamReader {
                     metrics.sourceChangedDuringRead
                     || (try? historyFingerprint(
                         descriptor: descriptor,
-                        prefixByteCount: readCeiling
+                        prefixByteCount: readCeiling,
+                        startOffset: startOffset
                     )) != pinnedPrefixFingerprint
             } else {
                 metrics.sourceChangedDuringRead =
@@ -1037,7 +1134,7 @@ package struct HistoryJSONLinesStreamReader {
                 inode: sourceInode
             )
         if !metrics.reachedByteLimit, !metrics.wasCancelled,
-            discardingOversizedLine || !pending.isEmpty
+            !completeLinesOnly, discardingOversizedLine || !pending.isEmpty
         {
             let endedInsideVerifiedAppend =
                 allowVerifiedAppendOnlyGrowth
@@ -1055,9 +1152,26 @@ package struct HistoryJSONLinesStreamReader {
             metrics.pinnedFileView = HistoryPinnedFileView(
                 identity: initialIdentity,
                 prefixByteCount: readCeiling,
+                prefixStartOffset: startOffset,
                 prefixFingerprint: pinnedPrefixFingerprint,
                 permitsVerifiedAppendOnlyGrowth: allowVerifiedAppendOnlyGrowth
             )
+        }
+        if completeLinesOnly, completedPinnedPrefix, !metrics.sourceChangedDuringRead,
+            metrics.oversizedRows == 0 {
+            if !lastCompleteLine.isEmpty {
+                lastLineBytes = lastCompleteLine.count
+                lastLineHash = SHA256Digest.hashHex(lastCompleteLine)
+            }
+            metrics.analyticsFileCursor = HistoryLocalAnalyticsCursor.File(
+                name: relativeName ?? file.lastPathComponent, device: Int64(sourceDevice), inode: UInt64(sourceInode),
+                consumedBytes: consumedBytes, nonEmptyLineCount: nonEmptyLineNumber, retainedEventCount: 0,
+                lastLineOffset: lastLineOffset, lastLineBytes: lastLineBytes, lastLineHash: lastLineHash)
+        }
+        // Check the old boundary again after reading the suffix, including concurrent edits.
+        if let resumeFile, !resumeFile.matches(descriptor: descriptor) {
+            metrics.sourceChangedDuringRead = true
+            metrics.analyticsFileCursor = nil
         }
         return metrics
     }
@@ -1504,10 +1618,13 @@ public struct HistoryLocalStoreReader {
     package func loadLocalAnalyticsEvidence(
         start: Date, endExclusive: Date,
         limits: ComputerHistoryEvidenceLoadLimits = .localAnalytics,
+        resumeCursor: HistoryLocalAnalyticsCursor? = nil,
+        timeZoneIdentifier: String = TimeZone.current.identifier,
         shouldContinue: () -> Bool = { true }
     ) -> ComputerHistoryEvidenceLoad {
         loadBoundedDerivedEvidence(start: start, endExclusive: endExclusive,
-            projection: .localAnalytics, limits: limits, shouldContinue: shouldContinue)
+            projection: .localAnalytics, limits: limits, resumeCursor: resumeCursor,
+            timeZoneIdentifier: timeZoneIdentifier, shouldContinue: shouldContinue)
     }
 
     /// Loads a persisted bounded day memory only when it contains every episode
@@ -1724,6 +1841,8 @@ public struct HistoryLocalStoreReader {
         endExclusive: Date,
         projection: BoundedDerivedEvidenceProjection,
         limits rawLimits: ComputerHistoryEvidenceLoadLimits,
+        resumeCursor: HistoryLocalAnalyticsCursor? = nil,
+        timeZoneIdentifier: String = TimeZone.current.identifier,
         shouldContinue: () -> Bool
     ) -> ComputerHistoryEvidenceLoad {
         guard endExclusive > start else {
@@ -1756,24 +1875,7 @@ public struct HistoryLocalStoreReader {
         var events: [HistoryEvent] = []
         var rawEventCount = 0
         var continuityBoundaryCount = 0
-        struct IntegrityBoundary {
-            let timestamp: Date
-            let eventID: String
-            let sequence: UInt64
-            let eventHash: String
-
-            init(event: HistoryEvent, integrity: EventIntegrity) {
-                timestamp = event.timestamp
-                eventID = event.id
-                sequence = integrity.sequence
-                eventHash = integrity.eventHash
-            }
-
-            static func precedes(_ left: Self, _ right: Self) -> Bool {
-                if left.timestamp == right.timestamp { return left.eventID < right.eventID }
-                return left.timestamp < right.timestamp
-            }
-        }
+        typealias IntegrityBoundary = HistoryAnalyticsIntegrityBoundary
         var firstIntegrityBoundary: IntegrityBoundary?
         var lastIntegrityBoundary: IntegrityBoundary?
         var eventBytesRead: Int64 = 0
@@ -1787,6 +1889,11 @@ public struct HistoryLocalStoreReader {
         var sourceAccessWasIncomplete = false
         var evidenceBudgetExceeded = false
         var retainedEvidenceRowCount = 0
+        var didResume = false
+        // A later interval could admit already consumed future-dated rows. In that
+        // case publish the day, but require a full read on the next attempt.
+        var hasUpperExcludedRow = false
+        var newFileCursors: [HistoryLocalAnalyticsCursor.File] = []
         var retainedEvidenceBytes: Int64 = 0
         let limits = rawLimits.validated(ceiling: projection == .localAnalytics || projection == .workContext ? .localAnalytics : .production)
         let rowDecoder = decoder(compactEventIntegrity: true)
@@ -1923,6 +2030,7 @@ public struct HistoryLocalStoreReader {
         enum DecodedRow {
             case outside
             case row(isContinuityBoundary: Bool, boundary: IntegrityBoundary?, projected: HistoryEvent?)
+            case future
             case failed(String)
         }
         func applyBatch(from file: URL) {
@@ -1938,7 +2046,8 @@ public struct HistoryLocalStoreReader {
                         results[index] = autoreleasepool {
                             do {
                                 let event = try rowDecoder.decode(HistoryEvent.self, from: rows[index].line)
-                                guard event.timestamp >= start, event.timestamp < endExclusive else { return .outside }
+                                guard event.timestamp >= start else { return .outside }
+                                guard event.timestamp < endExclusive else { return .future }
                                 return .row(
                                     isContinuityBoundary: event.isObservationContinuityBoundary,
                                     boundary: event.integrity.map { IntegrityBoundary(event: event, integrity: $0) },
@@ -1954,6 +2063,9 @@ public struct HistoryLocalStoreReader {
                 guard !sourceAccessWasIncomplete, !evidenceBudgetExceeded else { return }
                 switch outcome {
                 case .outside:
+                    continue
+                case .future:
+                    hasUpperExcludedRow = true
                     continue
                 case .failed(let message):
                     recordSourceContentIssue(path: file.path, line: row.number, message: message)
@@ -1990,6 +2102,30 @@ public struct HistoryLocalStoreReader {
             recordSourceAccessIssue(error, path: eventsDirectory.path)
         }
 
+        if projection == .localAnalytics, let cursor = resumeCursor,
+            cursor.rootPath == rootDirectory.path, cursor.start == start,
+            cursor.endExclusive <= endExclusive, cursor.timeZoneIdentifier == timeZoneIdentifier,
+            cursor.maximumRetainedRows == limits.maximumRetainedRows,
+            cursor.maximumRetainedBytes == limits.maximumRetainedBytes,
+            cursor.files.map(\.name) == eventFiles.map(\.name),
+            eventFiles.allSatisfy({ file in
+                let descriptor = file.name.withCString {
+                    openat(file.directory.descriptor, $0, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+                }
+                guard descriptor >= 0 else { return false }
+                defer { close(descriptor) }
+                return cursor.files.first { $0.name == file.name }!.matches(descriptor: descriptor)
+            }) {
+            didResume = true
+            rawEventCount = cursor.rawEventCount
+            continuityBoundaryCount = cursor.continuityBoundaryCount
+            retainedEventBytes = cursor.retainedEventBytes
+            retainedEvidenceRowCount = cursor.retainedRows
+            retainedEvidenceBytes = cursor.retainedBytes
+            firstIntegrityBoundary = cursor.firstBoundary
+            lastIntegrityBoundary = cursor.lastBoundary
+        }
+
         for sourceFile in eventFiles {
             let file = sourceFile.url
             guard shouldContinue() else {
@@ -1997,11 +2133,15 @@ public struct HistoryLocalStoreReader {
                 break
             }
             do {
+                let oldFileCursor = didResume ? resumeCursor?.files.first { $0.name == sourceFile.name } : nil
+                let eventsBeforeFile = events.count
                 let streamMetrics = try streamReader.read(
                     file: file,
                     directoryDescriptor: sourceFile.directory.descriptor,
                     relativeName: sourceFile.name,
                     allowVerifiedAppendOnlyGrowth: true,
+                    completeLinesOnly: projection == .localAnalytics,
+                    resumeFile: oldFileCursor,
                     shouldContinue: continueEvidenceLoading,
                     onLine: { rawLine, lineNumber in
                         guard !sourceAccessWasIncomplete, !evidenceBudgetExceeded else { return }
@@ -2051,6 +2191,14 @@ public struct HistoryLocalStoreReader {
                     }
                 )
                 applyBatch(from: file)
+                if let fileCursor = streamMetrics.analyticsFileCursor {
+                    newFileCursors.append(HistoryLocalAnalyticsCursor.File(
+                        name: fileCursor.name, device: fileCursor.device, inode: fileCursor.inode,
+                        consumedBytes: fileCursor.consumedBytes, nonEmptyLineCount: fileCursor.nonEmptyLineCount,
+                        retainedEventCount: (oldFileCursor?.retainedEventCount ?? 0) + events.count - eventsBeforeFile,
+                        lastLineOffset: fileCursor.lastLineOffset, lastLineBytes: fileCursor.lastLineBytes,
+                        lastLineHash: fileCursor.lastLineHash))
+                }
                 eventBytesRead += streamMetrics.bytesRead
                 peakStreamBufferBytes = max(peakStreamBufferBytes, streamMetrics.peakBufferedBytes)
                 if let view = streamMetrics.pinnedFileView {
@@ -2275,6 +2423,7 @@ public struct HistoryLocalStoreReader {
                                 HistoryPinnedFileView(
                                     identity: pinnedIdentity,
                                     prefixByteCount: Int64(pinnedIdentity.size),
+                                    prefixStartOffset: 0,
                                     prefixFingerprint: "",
                                     permitsVerifiedAppendOnlyGrowth: false
                                 )
@@ -2371,6 +2520,24 @@ public struct HistoryLocalStoreReader {
                 to: &issues
             )
         }
+        if didResume, let cursor = resumeCursor {
+            for (file, checkpoint) in zip(eventFiles, cursor.files) {
+                let descriptor = file.name.withCString {
+                    openat(file.directory.descriptor, $0, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+                }
+                let stable: Bool
+                if descriptor >= 0 {
+                    stable = checkpoint.matches(descriptor: descriptor)
+                    close(descriptor)
+                } else { stable = false }
+                if !stable {
+                    sourceChangedDuringRead = true
+                    appendComputerHistoryIssue(HistoryLoadIssue(path: file.url.path, line: nil,
+                        message: "Computer History cached event boundary changed during read; the day projection was rejected."),
+                        to: &issues)
+                }
+            }
+        }
         revalidate(pinnedSemanticDirectory)
         revalidate(pinnedEventsDirectory)
         revalidate(pinnedSourceRoot, membershipIsSourceEvidence: false)
@@ -2395,6 +2562,19 @@ public struct HistoryLocalStoreReader {
                 lastSourceSequence: lastIntegrityBoundary?.sequence,
                 lastSourceEventHash: lastIntegrityBoundary?.eventHash
             )
+        let completed = !projectionWasRejected && !wasCancelled && issues.isEmpty
+        var nextCursor = resumeCursor
+        if projection == .localAnalytics, completed {
+            nextCursor = !hasUpperExcludedRow && newFileCursors.count == eventFiles.count
+                ? HistoryLocalAnalyticsCursor(start: start, endExclusive: endExclusive,
+                    timeZoneIdentifier: timeZoneIdentifier, files: newFileCursors,
+                    retainedRows: retainedEvidenceRowCount, retainedBytes: retainedEvidenceBytes,
+                    rootPath: rootDirectory.path, maximumRetainedRows: limits.maximumRetainedRows,
+                    maximumRetainedBytes: limits.maximumRetainedBytes, rawEventCount: rawEventCount,
+                    continuityBoundaryCount: continuityBoundaryCount, retainedEventBytes: retainedEventBytes,
+                    firstBoundary: firstIntegrityBoundary, lastBoundary: lastIntegrityBoundary)
+                : nil
+        }
         return ComputerHistoryEvidenceLoad(
             events: acceptedEvents,
             semanticSnapshots: acceptedSemanticSnapshots,
@@ -2405,7 +2585,7 @@ public struct HistoryLocalStoreReader {
                 semanticBytesRead: semanticBytesRead,
                 peakStreamBufferBytes: peakStreamBufferBytes,
                 rawEventCount: rawEventCount,
-                retainedEventCount: acceptedEvents.count,
+                retainedEventCount: projection == .localAnalytics && !projectionWasRejected ? retainedEvidenceRowCount : acceptedEvents.count,
                 retainedEventBytes: projectionWasRejected ? 0 : retainedEventBytes,
                 semanticRowsVisited: semanticRowsVisited,
                 retainedSemanticSnapshotCount: acceptedSemanticSnapshots.count,
@@ -2418,7 +2598,11 @@ public struct HistoryLocalStoreReader {
                 evidenceBudgetExceeded: evidenceBudgetExceeded,
                 peakRetainedEvidenceRows: retainedEvidenceRowCount,
                 peakEstimatedRetainedEvidenceBytes: retainedEvidenceBytes
-            )
+            ),
+            resumeCursor: nextCursor, didResume: didResume,
+            appendedEventCounts: newFileCursors.enumerated().map { index, file in
+                file.retainedEventCount - (didResume ? resumeCursor!.files[index].retainedEventCount : 0)
+            }
         )
     }
 
@@ -2691,6 +2875,7 @@ public struct HistoryLocalStoreReader {
                             HistoryPinnedFileView(
                                 identity: pinnedIdentity,
                                 prefixByteCount: Int64(pinnedIdentity.size),
+                                prefixStartOffset: 0,
                                 prefixFingerprint: "",
                                 permitsVerifiedAppendOnlyGrowth: false
                             )

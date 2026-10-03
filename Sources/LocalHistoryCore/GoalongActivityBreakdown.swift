@@ -26,37 +26,45 @@ public struct GoalongActivityBreakdown: Codable, Equatable, Sendable {
     public var totalSeconds: TimeInterval { Mode.allCases.reduce(0) { $0 + seconds($1) } }
     public init(hours: [Hour] = []) { self.hours = hours }
 
-    struct PassiveInterval {
-        let start: Date, end: Date
-        let evidence: ForegroundActivityEvidence
-    }
+    /// The strongest evidence of each calendar minute. Folded row by row, a day keeps at
+    /// most one entry per minute instead of its rows.
+    struct MinuteModes {
+        private(set) var modes: [Date: Mode] = [:]
 
-    static func build(segments: [GoalongLocalAnalytics.Segment], events: [HistoryEvent],
-                      passive: [PassiveInterval], calendar: Calendar) -> Self {
-        // Calendar minute boundaries also behave correctly on 23/25-hour days.
-        func minute(_ date: Date) -> Date { calendar.dateInterval(of: .minute, for: date)?.start ?? date }
-        var modes: [Date: Mode] = [:]
-        func add(_ date: Date, _ mode: Mode) {
-            let key = minute(date)
-            if (modes[key] ?? .reading).rawValue < mode.rawValue { modes[key] = mode }
-        }
-        for event in events where event.suppressionReason == nil && !event.isObservationContinuityBoundary {
+        mutating func add(_ event: HistoryEvent, calendar: Calendar) {
+            guard event.suppressionReason == nil, !event.isObservationContinuityBoundary else { return }
             switch event.kind {
-            case .keyPressed, .typingBurst, .keyboardShortcut: add(event.timestamp, .keyboard)
-            case .mouseClick, .scrollBurst: add(event.timestamp, .pointer)
+            case .keyPressed, .typingBurst, .keyboardShortcut: add(event.timestamp, .keyboard, calendar)
+            case .mouseClick, .scrollBurst: add(event.timestamp, .pointer, calendar)
             default: break
             }
         }
-        for interval in passive {
+
+        mutating func add(_ evidence: ForegroundActivityEvidence, from start: Date, to end: Date, calendar: Calendar) {
             let mode: Mode
-            switch interval.evidence { case .call: mode = .call; case .mediaPlayback: mode = .media; case .displayAssertion: mode = .display }
-            var cursor = minute(interval.start)
-            while cursor < interval.end {
-                add(cursor, mode)
+            switch evidence { case .call: mode = .call; case .mediaPlayback: mode = .media; case .displayAssertion: mode = .display }
+            var cursor = Self.minute(start, calendar)
+            while cursor < end {
+                add(cursor, mode, calendar)
                 guard let next = calendar.dateInterval(of: .minute, for: cursor)?.end, next > cursor else { break }
                 cursor = next
             }
         }
+
+        func mode(at date: Date, calendar: Calendar) -> Mode { modes[Self.minute(date, calendar)] ?? .reading }
+
+        private mutating func add(_ date: Date, _ mode: Mode, _ calendar: Calendar) {
+            let key = Self.minute(date, calendar)
+            if (modes[key] ?? .reading).rawValue < mode.rawValue { modes[key] = mode }
+        }
+
+        // Calendar minute boundaries also behave correctly on 23/25-hour days.
+        private static func minute(_ date: Date, _ calendar: Calendar) -> Date {
+            calendar.dateInterval(of: .minute, for: date)?.start ?? date
+        }
+    }
+
+    static func build(segments: [GoalongLocalAnalytics.Segment], modes: MinuteModes, calendar: Calendar) -> Self {
         var buckets: [Date: [Mode: TimeInterval]] = [:]
         for segment in segments where segment.kind.isActive {
             var cursor = segment.start
@@ -64,7 +72,7 @@ public struct GoalongActivityBreakdown: Codable, Equatable, Sendable {
                 guard let minuteEnd = calendar.dateInterval(of: .minute, for: cursor)?.end,
                       let hour = calendar.dateInterval(of: .hour, for: cursor), minuteEnd > cursor else { break }
                 let stop = min(segment.end, minuteEnd, hour.end)
-                let mode = modes[minute(cursor)] ?? .reading
+                let mode = modes.mode(at: cursor, calendar: calendar)
                 buckets[hour.start, default: [:]][mode, default: 0] += stop.timeIntervalSince(cursor)
                 cursor = stop
             }
@@ -77,7 +85,7 @@ public struct GoalongActivityBreakdown: Codable, Equatable, Sendable {
 
 extension GoalongLocalAnalytics.Day {
     public var breakdown: GoalongActivityBreakdown {
-        recordedBreakdown ?? .build(segments: segments, events: [], passive: [], calendar: .current)
+        recordedBreakdown ?? .build(segments: segments, modes: .init(), calendar: .current)
     }
 }
 extension GoalongLocalAnalytics.Period {

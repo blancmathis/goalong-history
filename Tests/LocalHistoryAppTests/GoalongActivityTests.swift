@@ -186,5 +186,37 @@ final class GoalongActivityTests: XCTestCase {
         XCTAssertTrue(cleared)
         subscription.cancel()
     }
+
+    @MainActor func testTodayRefreshShowsRowsAppendedSinceTheLastRead() async throws {
+        let today = Calendar.current.startOfDay(for: Date())
+        guard Date().timeIntervalSince(today) > 120 else { throw XCTSkip("Too close to midnight.") }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let events = root.appendingPathComponent("events", isDirectory: true)
+        try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
+        let journal = events.appendingPathComponent(formatter.string(from: today) + ".jsonl")
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601; encoder.outputFormatting = [.sortedKeys]
+        func rows(_ indexes: ClosedRange<Int>) throws -> Data {
+            try indexes.reduce(into: Data()) { data, index in
+                data.append(try encoder.encode(HistoryEvent(id: "event-\(index)", sessionID: "fixture",
+                    timestamp: today.addingTimeInterval(Double(index * 15)), kind: .heartbeat,
+                    app: .init(name: "Editor", bundleIdentifier: "fixture.editor", processIdentifier: 1),
+                    window: .init(title: "Document", role: nil, subrole: nil), metadata: ["idle_seconds": "0"],
+                    integrity: EventIntegrity(sequence: UInt64(index + 1), previousEventHash: "previous",
+                        eventRoot: "root", eventHash: "hash-\(index)", fieldCommitments: []))))
+                data.append(0x0A)
+            }
+        }
+        try rows(0...1).write(to: journal)
+        let model = GoalongAnalyticsModel(root: root)
+        await model.load(day: today, count: 1)
+        XCTAssertEqual(model.payload?.current.days.last?.eventCount, 2)
+        let handle = try FileHandle(forWritingTo: journal)
+        try handle.seekToEnd(); try handle.write(contentsOf: try rows(2...2)); try handle.close()
+        await model.load(day: today, count: 1)
+        XCTAssertEqual(model.payload?.current.days.last?.eventCount, 3)
+    }
 }
 #endif

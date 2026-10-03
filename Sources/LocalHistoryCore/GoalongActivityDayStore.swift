@@ -37,16 +37,20 @@ public struct GoalongActivityDayStore: Sendable {
         return f.string(from: date)
     }
 
-    /// Same adjacent-journal stamp as Activité, with nanosecond mtime to detect fast rewrites.
+    /// Adjacent-journal stamp of a summary.
     public func sourceRevision(day: Date, calendar: Calendar = .current) -> String {
         (-1...1).map { offset -> String in
-            let date = calendar.date(byAdding: .day, value: offset, to: day) ?? day
-            let url = root.appendingPathComponent("events/" + Self.dayKey(date, calendar: calendar) + ".jsonl")
-            var info = stat()
-            guard lstat(url.path, &info) == 0 else { return errno == ENOENT ? "missing" : "unreadable" }
-            guard info.st_mode & S_IFMT == S_IFREG else { return "unsafe" }
-            return "\(info.st_dev)|\(info.st_ino)|\(info.st_size)|\(info.st_mtimespec.tv_sec).\(info.st_mtimespec.tv_nsec)"
+            journalRevision(day: calendar.date(byAdding: .day, value: offset, to: day) ?? day, calendar: calendar)
         }.joined(separator: ";") + calendar.timeZone.identifier
+    }
+
+    /// One journal's stamp, with nanosecond mtime to detect fast rewrites.
+    public func journalRevision(day: Date, calendar: Calendar = .current) -> String {
+        let url = root.appendingPathComponent("events/" + Self.dayKey(day, calendar: calendar) + ".jsonl")
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { return errno == ENOENT ? "missing" : "unreadable" }
+        guard info.st_mode & S_IFMT == S_IFREG else { return "unsafe" }
+        return "\(info.st_dev)|\(info.st_ino)|\(info.st_size)|\(info.st_mtimespec.tv_sec).\(info.st_mtimespec.tv_nsec)"
     }
 
     /// The next day's journal can still add events to this day until that day closes too.
