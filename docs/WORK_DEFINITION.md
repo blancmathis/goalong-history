@@ -94,8 +94,10 @@ classement par app, n’est plus envoyée.
 Un contexte `unclear` automatique est admissible si le jour analysé lui apporte au moins
 5 minutes, si aucune demande n’a été envoyée pour ce contexte ce jour-là et si moins de
 3 tentatives automatiques ont eu lieu. Les anciens fichiers comptent comme une tentative,
-avec `seen` pour le dernier jour demandé. L’admission est enregistrée avant l’envoi ; un
-échec de réponse compte aussi, pour éviter des requêtes répétées sans limite.
+avec `seen` pour le dernier jour demandé. Pour une nouvelle tentative, l’admission est
+enregistrée avant l’envoi ; un échec de réponse compte aussi, pour éviter des requêtes
+répétées sans limite. Une première demande qui échoue ne crée aucun verdict : le contexte
+reste « à classer » et peut être renvoyé le jour même.
 
 La demande peut inclure le dernier extrait visible de ce contexte (240 caractères), après
 vérification du hash et redaction des secrets, seulement si une sélection « Données pour

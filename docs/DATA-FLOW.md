@@ -57,7 +57,7 @@ transport and updater remain excluded. Full Disk Access reader isolation remains
 Foreground analytics reads one bounded journal day at a time, or a matching durable
 `activity-days` summary. A stale summary is rebuilt while its journal remains; a purged
 journal is represented by the summary origin. Delayed utility backfill and retention
-maintenance save closed days only. Failed preservation keeps raw events. The new
+maintenance save settled days only (the next day is closed too). Failed preservation keeps raw events. The new
 `activitySummaries` retention category defaults to indefinite; explicit affected-day and
 full-history deletion include summaries under the derived-writer barrier. Coverage reasons
 and the active-time partition are derived from the same foreground intervals, never from

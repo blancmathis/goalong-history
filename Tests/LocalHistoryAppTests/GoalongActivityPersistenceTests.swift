@@ -101,6 +101,16 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         XCTAssertEqual(restored.entry(for: key)?.byOwner, true)
         XCTAssertEqual(restored.entry(for: key)?.lastAskedDay, nil)
     }
+    @MainActor func testFailedFirstRequestLeavesContextToClassify() throws {
+        let root = try root(), file = root.appendingPathComponent("work-classification.json")
+        let definition = GoalongWorkDefinition(goals: "Project"), key = "0123456789abcdef"
+        let store = GoalongWorkStore(fileURL: file, definition: { definition })
+        XCTAssertTrue(store.markAsked([key], revision: store.revision, day: "2026-08-10"))
+        XCTAssertNil(store.entry(for: key))
+        store.merge([key: .init(verdict: .unclear)], revision: store.revision, day: "2026-08-10")
+        XCTAssertEqual(store.entry(for: key)?.attempts, 1)
+        XCTAssertEqual(store.entry(for: key)?.lastAskedDay, "2026-08-10")
+    }
     func testPrivacyFilterRequiresReviewedVisibleTextAndHonorsMasks() throws {
         let label = GoalongWorkContext.Label(application: "Editor", bundleIdentifier: "fixture.editor", host: "example.test", title: "Project")
         var selection = GoalongAnalysisSelection()

@@ -49,6 +49,23 @@ public struct GoalongActivityDayStore: Sendable {
         }.joined(separator: ";") + calendar.timeZone.identifier
     }
 
+    /// The next day's journal can still add events to this day until that day closes too.
+    public static func isSettled(_ day: Date, now: Date, calendar: Calendar = .current) -> Bool {
+        guard let next = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: day)) else { return false }
+        return next < calendar.startOfDay(for: now)
+    }
+
+    /// A summary still describes its day while the day's own journal is unchanged and a
+    /// neighbouring journal has only disappeared: retention purges days oldest first.
+    static func revision(_ stored: String, describes current: String, timeZone: String) -> Bool {
+        if stored == current { return true }
+        guard stored.hasSuffix(timeZone), current.hasSuffix(timeZone) else { return false }
+        let a = stored.dropLast(timeZone.count).split(separator: ";", omittingEmptySubsequences: false)
+        let b = current.dropLast(timeZone.count).split(separator: ";", omittingEmptySubsequences: false)
+        guard a.count == 3, b.count == 3, a[1] == b[1], a[1] != "missing" else { return false }
+        return [0, 2].allSatisfy { a[$0] == b[$0] || b[$0] == "missing" }
+    }
+
     public func read(day: Date, sourceRevision: String? = nil, calendar: Calendar = .current) throws -> GoalongLocalAnalytics.Day {
         let key = Self.dayKey(day, calendar: calendar)
         let fd = try directory(create: false); defer { close(fd) }
@@ -65,9 +82,11 @@ public struct GoalongActivityDayStore: Sendable {
         let e = try JSONDecoder().decode(Envelope.self, from: bytes)
         let start = calendar.startOfDay(for: day)
         let end = calendar.date(byAdding: .day, value: 1, to: start)!
-        guard e.schema == Self.schema, e.method == GoalongLocalAnalytics.method, e.timeZone == calendar.timeZone.identifier,
+        // Without a journal, a summary from an older method is still the only account of the day.
+        guard e.schema == Self.schema, e.method == GoalongLocalAnalytics.method || sourceRevision == nil,
+              e.timeZone == calendar.timeZone.identifier,
               e.date == key, e.start == start, e.end == end, e.state == .ready, e.eventCount > 0,
-              sourceRevision.map({ e.sourceRevision == $0 }) ?? true,
+              sourceRevision.map({ Self.revision(e.sourceRevision, describes: $0, timeZone: calendar.timeZone.identifier) }) ?? true,
               !e.sourceRevision.isEmpty, e.sourceRevision.utf8.count <= 1024,
               e.segments.count <= Self.maximumSegments, e.strings.count <= Self.maximumSegments * 5,
               e.strings.allSatisfy({ $0.utf8.count <= 1024 }), e.classifierVersions.count <= 16 else { throw Failure.invalidSummary }
@@ -194,7 +213,8 @@ public struct GoalongActivityDayStore: Sendable {
             }, eventCount: 0, classifierVersions: [], dayReason: .purgedWithoutSummary)
         }
         value.hasDetailedSource = !absent
-        if past, value.state == .ready, shouldContinue(), retains(day: start, now: now, days: summaryRetentionDays, calendar: calendar),
+        if past, value.state == .ready, Self.isSettled(start, now: now, calendar: calendar), shouldContinue(),
+           retains(day: start, now: now, days: summaryRetentionDays, calendar: calendar),
            revision == sourceRevision(day: start, calendar: calendar) {
             try? write(value, sourceRevision: revision, now: now, calendar: calendar)
         }
@@ -224,7 +244,8 @@ public struct GoalongActivityDayStore: Sendable {
         var saved = 0
         for day in try journalDays(before: now, calendar: calendar) {
             guard shouldContinue() else { break }
-            guard retains(day: day, now: now, days: summaryRetentionDays, calendar: calendar) else { continue }
+            guard Self.isSettled(day, now: now, calendar: calendar),
+                  retains(day: day, now: now, days: summaryRetentionDays, calendar: calendar) else { continue }
             let revision = sourceRevision(day: day, calendar: calendar)
             if (try? read(day: day, sourceRevision: revision, calendar: calendar)) != nil { continue }
             let value = GoalongLocalAnalytics.load(root: root, day: day, now: now, calendar: calendar,

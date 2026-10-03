@@ -185,8 +185,7 @@ extension GoalongWorkSharingFilter {
                         examples: store.examples, calendar: calendar, contextExcerpts: excerpts, dayNote: dayNote)
                     let prompt = GoalongWorkClassification.prompt(request, definition: definition)
                     let privacyRevision = filter.policy.revision
-                    store.markAsked(batch, revision: revision, day: dayName)
-                    guard store.lastError == nil else { throw GoalongWorkClassification.Failure.invalid("La tentative n’a pas pu être enregistrée. Rien n’a été envoyé.") }
+                    guard store.markAsked(batch, revision: revision, day: dayName) else { throw GoalongWorkClassification.Failure.invalid("La tentative n’a pas pu être enregistrée. Rien n’a été envoyé.") }
                     let response = try await Task.detached(priority: .userInitiated) {
                         let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory()
                         defer { try? FileManager.default.removeItem(at: directory) }

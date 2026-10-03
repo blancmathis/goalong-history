@@ -46,7 +46,8 @@ enum GoalongActivityDayReader {
                 try await Task.sleep(nanoseconds: UInt64(max(0, delay) * 1_000_000_000))
                 guard let admission else { return }
                 let store = GoalongActivityDayStore(root: root), now = Date(), calendar = Calendar.current
-                for day in try store.journalDays(before: now, calendar: calendar) {
+                for day in try store.journalDays(before: now, calendar: calendar)
+                    where GoalongActivityDayStore.isSettled(day, now: now, calendar: calendar) {
                     guard !Task.isCancelled, barrier.isCurrent(admission), let permit = barrier.beginJob(admission: admission) else { return }
                     autoreleasepool {
                         _ = GoalongActivityDayReader.load(root: root, day: day, now: now, calendar: calendar,

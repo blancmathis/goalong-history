@@ -112,15 +112,20 @@ extension Notification.Name {
         publish(); persist()
     }
 
-    /// Persist admission before dispatch: a failed answer still counts as an automatic attempt.
-    func markAsked(_ keys: [String], revision: String, day: String) {
-        guard revision == document.revision else { return }
-        for key in keys where document.entries[key]?.byOwner != true {
-            var entry = document.entries[key] ?? Entry(verdict: .unclear, task: nil, byOwner: false, seen: day, attempts: 0)
+    /// Persist a re-ask before dispatch: a failed answer still counts as an automatic attempt.
+    /// A first request records nothing here, so a failure leaves the context unclassified.
+    /// Returns false only if a needed record could not be saved.
+    @discardableResult func markAsked(_ keys: [String], revision: String, day: String) -> Bool {
+        guard revision == document.revision else { return true }
+        var changed = false
+        for key in keys {
+            guard var entry = document.entries[key], !entry.byOwner, entry.verdict == .unclear else { continue }
             if entry.lastAskedDay != day { entry.attempts = min(3, entry.attempts + 1) }
-            entry.lastAskedDay = day; entry.seen = day; document.entries[key] = entry
+            entry.lastAskedDay = day; entry.seen = day; document.entries[key] = entry; changed = true
         }
+        guard changed else { return true }
         prune(); publish(); persist()
+        return lastError == nil
     }
 
     /// The user's own verdict for one context. `nil` removes the correction and lets the

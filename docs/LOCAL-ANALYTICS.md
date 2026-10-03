@@ -65,7 +65,11 @@ d’URL, ni texte visible, ni contenu de conversation, ni tâche dérivée d’u
 Les verdicts courants s’appliquent encore à la lecture.
 
 Le journal reste prioritaire lorsqu’il existe et que sa révision diffère du résumé.
-Un résumé valide à révision identique évite une relecture ; sans journal, il est restauré
+Un résumé valide à révision identique évite une relecture. La révision couvre la veille,
+le jour et le lendemain : un voisin purgé par la conservation ne périme pas le résumé, un
+voisin modifié le périme. Seul un jour « réglé » (le lendemain est clos aussi) est écrit,
+car le journal du lendemain peut encore ajouter des événements datés de la veille. Sans
+journal, un résumé d’une méthode plus ancienne reste lu. Sans journal, il est restauré
 avec `Day.origin = .summary` et `hasDetailedSource = false`. Un résumé utilisé comme
 cache d’un journal présent garde `hasDetailedSource = true`. Le jour courant n’est jamais sauvegardé comme résumé clos.
 Le fuseau et la méthode doivent correspondre ; une incompatibilité ne fabrique aucune donnée.

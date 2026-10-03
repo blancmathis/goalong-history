@@ -130,11 +130,38 @@ final class GoalongActivityFoundationTests: XCTestCase {
         _ = try journal([event(0), event(60)].map {
             HistoryEvent(sessionID: "fixture", timestamp: $0.timestamp.addingTimeInterval(86400), kind: $0.kind, app: $0.app)
         }, root: root, day: nextDay)
-        XCTAssertEqual(try store.backfill(now: nextDay.addingTimeInterval(120), calendar: calendar, shouldContinue: { false }), 0)
-        XCTAssertEqual(try store.backfill(now: nextDay.addingTimeInterval(120), calendar: calendar), 1)
+        // The day before yesterday is settled; yesterday can still gain events from today's journal.
+        let now = nextDay.addingTimeInterval(86400 + 120)
+        XCTAssertEqual(try store.backfill(now: now, calendar: calendar, shouldContinue: { false }), 0)
+        XCTAssertEqual(try store.backfill(now: now, calendar: calendar), 1)
         XCTAssertEqual(try store.read(day: day, calendar: calendar).activeSeconds, 60)
         XCTAssertThrowsError(try store.read(day: nextDay, calendar: calendar))
-        XCTAssertEqual(try store.backfill(now: nextDay.addingTimeInterval(120), calendar: calendar), 0)
+        XCTAssertEqual(try store.backfill(now: now, calendar: calendar), 0)
+        _ = store.load(day: nextDay, now: now, calendar: calendar)
+        XCTAssertThrowsError(try store.read(day: nextDay, calendar: calendar))
+    }
+    func testSummarySurvivesNeighbourPurgeAndOlderMethodOnlyWithoutJournal() throws {
+        let root = try root(), store = GoalongActivityDayStore(root: root), now = day.addingTimeInterval(5 * 86400)
+        let previous = try journal([event(-86400), event(-86340)], root: root, day: day.addingTimeInterval(-86400))
+        let file = try journal([event(0), event(60)], root: root)
+        let summary = root.appendingPathComponent("activity-days/2026-08-10.json")
+        try store.preserveBeforePurge(day: day, now: now, calendar: calendar)
+        let written = try Data(contentsOf: summary)
+        try FileManager.default.removeItem(at: previous)
+        try store.preserveBeforePurge(day: day, now: now, calendar: calendar)
+        XCTAssertEqual(try Data(contentsOf: summary), written)
+        XCTAssertEqual(store.load(day: day, now: now, calendar: calendar).origin, .summary)
+        _ = try journal([event(0), event(60), event(120)], root: root)
+        XCTAssertEqual(store.load(day: day, now: now, calendar: calendar).activeSeconds, 120)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: summary)) as? [String: Any])
+        object["method"] = "local-observed-rhythm-v3"; object["classifierVersions"] = ["local-observed-rhythm-v3"]
+        try JSONSerialization.data(withJSONObject: object).write(to: summary)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: summary.path)
+        XCTAssertThrowsError(try store.read(day: day, sourceRevision: store.sourceRevision(day: day, calendar: calendar), calendar: calendar))
+        try FileManager.default.removeItem(at: file)
+        let restored = store.load(day: day, now: now, calendar: calendar)
+        XCTAssertEqual(restored.origin, .summary); XCTAssertEqual(restored.activeSeconds, 120)
+        XCTAssertEqual(restored.classifierVersions, ["local-observed-rhythm-v3"])
     }
     func testSummarySymlinkAndOversizedStoreNeverAuthorizePurge() throws {
         let root = try root(), store = GoalongActivityDayStore(root: root), now = day.addingTimeInterval(86400)
