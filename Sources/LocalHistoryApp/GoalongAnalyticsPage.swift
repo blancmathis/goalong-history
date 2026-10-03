@@ -12,9 +12,12 @@ struct GoalongAnalyticsPage: View {
     @StateObject private var studio = GoalongProfileWindow()
     @ObservedObject private var work = GoalongWorkStore.shared
     @ObservedObject private var agent = GoalongWorkAgent.shared
+    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    @StateObject private var developer = GoalongDeveloperModel()
     @State private var focusMinutes = 25
     @State private var revision = 0
     @State private var manualRefreshRevision = 0
+    @State private var laneRevision = 0
     @State private var forceNextRead = false
     @State private var showingAnalysisChoice = false
     @State private var reviewRequest: GoalongWorkReviewRequest?
@@ -75,6 +78,7 @@ struct GoalongAnalyticsPage: View {
                         }
                         if let payload = analytics.payload, selection.matches(payload, preview: previewActive) {
                             GoalongAnalyticsContent(payload: payload, focusMinutes: $focusMinutes,
+                                lanes: lanes,
                                 workStatus: previewActive ? .preview : workStatus,
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { model.selectSection(.work) },
@@ -158,6 +162,16 @@ struct GoalongAnalyticsPage: View {
                 agent.classifyIfNeeded(payload.current.days)
             }
         }
+        .task(id: laneKey) {
+            // Day-only sources, read beside the observations; never mixed into active time.
+            guard loadRequest.permitsLoading, !previewActive, selection.period == 1,
+                  consents.isEnabled(.aiConversations) || consents.isEnabled(.developerActivity) else { return }
+            let day = selection.day, overview = model.agentActivityRuntime.overview
+            await developer.refresh(day: day, agents: Calendar.current.isDate(overview.day, inSameDayAs: day) ? overview : nil)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongDeveloperProjectsDidChange)) { _ in
+            if !previewActive { laneRevision += 1 }
+        }
         .onChange(of: developerMode) { enabled in
             if !enabled { showingPreview = false; previewNavigation = GoalongActivityNavigation() }
         }
@@ -189,6 +203,78 @@ struct GoalongAnalyticsPage: View {
 
     private var showsContent: Bool {
         analytics.payload.map { selection.matches($0, preview: previewActive) } ?? false
+    }
+
+    private var laneKey: String {
+        [selection.day.timeIntervalSince1970.description, "\(selection.period)", "\(revision)", "\(laneRevision)",
+         "\(previewActive)", "\(loadRequest.permitsLoading)", "\(consents.isEnabled(.aiConversations))",
+         "\(consents.isEnabled(.developerActivity))"].joined(separator: "|")
+    }
+
+    /// The sources of the day shown, each separate from the observations.
+    private var lanes: GoalongActivityLanes {
+        if previewActive { return GoalongAnalyticsPreview.lanes(day: selection.day) }
+        let ai = consents.isEnabled(.aiConversations), followsProjects = consents.isEnabled(.developerActivity)
+        var lanes = GoalongActivityLanes(openCodeSettings: { model.openRecordingSettings() })
+        if selection.period == 1, ai || followsProjects, let value = developer.value,
+           Calendar.current.isDate(value.day, inSameDayAs: selection.day) {
+            lanes.code = GoalongCodeDay(value)
+        }
+        lanes.sources = sourceRows(ai: ai, followsProjects: followsProjects)
+        return lanes
+    }
+
+    private func sourceRows(ai: Bool, followsProjects: Bool) -> [GoalongSourceRow] {
+        let settings = { model.openRecordingSettings() }
+        let isDay = selection.period == 1
+        let value = isDay ? developer.value.flatMap { Calendar.current.isDate($0.day, inSameDayAs: selection.day) ? $0 : nil } : nil
+        var rows = [GoalongSourceRow(id: "mac", title: "Activité de ce Mac", state: .ready,
+                                     detail: "Applications, sites et saisie : la source du temps actif.")]
+        if !ai {
+            rows.append(.init(id: "agents", title: "Conversations d’agents", state: .off,
+                              detail: "Codex, Claude Code et T3 Code : nombre de conversations et de demandes par projet, sans lire les messages.",
+                              actionTitle: "Activer…", action: settings))
+        } else {
+            let conversations = value.map { $0.agents.projects.reduce(0) { $0 + $1.sessions } + $0.agents.unassignedSessions }
+            rows.append(.init(id: "agents", title: "Conversations d’agents", state: .ready,
+                              detail: conversations.map { GoalongCodeDay.count($0, "conversation", "conversations") + " ce jour-là." }
+                                  ?? "Codex et Claude Code : nombre de conversations par projet, sans lire les messages."))
+            if !developer.t3Discovered {
+                rows.append(.init(id: "t3", title: "T3 Code", state: .unavailable, detail: "T3 Code n’est pas installé sur ce Mac."))
+            } else if let t3 = value?.t3 {
+                let requests = t3.projects.reduce(0) { $0 + $1.requests }
+                let detail: String
+                switch t3.status {
+                case .ready, .partial:
+                    detail = GoalongCodeDay.count(requests, "demande", "demandes") + " ce jour-là, dans "
+                        + GoalongCodeDay.count(t3.projects.count, "projet", "projets") + "."
+                        + (t3.status == .partial ? " Lecture partielle : la base dépasse les limites de lecture." : "")
+                case .noData: detail = "Aucune demande ce jour-là."
+                case .unsupported: detail = "Cette version de T3 Code n’est pas encore prise en charge."
+                case .failed(let reason): detail = reason
+                default: detail = "Demandes et tours par projet, sans lire les messages."
+                }
+                rows.append(.init(id: "t3", title: "T3 Code", state: .init(t3.status), detail: detail))
+            } else {
+                rows.append(.init(id: "t3", title: "T3 Code", state: .ready, detail: "Demandes et tours par projet, lus pour une journée à la fois."))
+            }
+        }
+        if !followsProjects {
+            rows.append(.init(id: "projects", title: "Projets de développement", state: .off,
+                              detail: "Commits et nombre de fichiers modifiés dans les projets que vous choisissez.",
+                              actionTitle: "Activer…", action: settings))
+        } else if developer.selectedProjects.isEmpty {
+            rows.append(.init(id: "projects", title: "Projets de développement", state: .noData,
+                              detail: "Aucun projet suivi.", actionTitle: "Choisir les projets…", action: settings))
+        } else {
+            let state = value.map { GoalongSourceRow.State($0.developerStatus) } ?? .ready
+            var detail = GoalongCodeDay.count(developer.selectedProjects.count, "projet suivi", "projets suivis") + " : commits et fichiers modifiés."
+            if case .failed(let reason)? = value?.developerStatus { detail = reason }
+            if value?.developerStatus == .permissionDenied { detail = "Accès refusé à un dossier de projet." }
+            rows.append(.init(id: "projects", title: "Projets de développement", state: state,
+                              detail: detail, actionTitle: "Choisir les projets…", action: settings))
+        }
+        return rows
     }
 
     private var workStatus: GoalongWorkStatus {

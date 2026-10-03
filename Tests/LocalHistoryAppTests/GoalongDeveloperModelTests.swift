@@ -61,6 +61,24 @@ final class GoalongDeveloperModelTests: XCTestCase {
         XCTAssertEqual(lines.filter { $0.hasPrefix("busy") || $0.hasPrefix("small") || $0.hasPrefix("calm") }.map { String($0.prefix(4)) }, ["busy", "smal"])
         XCTAssertEqual(lines.last, "1 projet suivi sans activité observée ce jour-là.")
     }
+    func testCodeDayKeepsActiveProjectsAndMeasuresTimeWithoutTheUser() throws {
+        let root = try fixture(), day = Calendar.current.startOfDay(for: Date())
+        let projects = try ["calm", "busy"].map { name -> GoalongDeveloperProject in
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(name + "/.git"), withIntermediateDirectories: true)
+            return GoalongDeveloperProject(root: root.appendingPathComponent(name), name: name)
+        }
+        let value = GoalongDeveloperDay(day: day, t3: T3CodeMetadataReader.read(day: day, enabled: false, shouldContinue: { true }),
+            agents: GoalongAgentProjectGrouping.group(.init(day: day), t3: nil, enabled: false), git: [],
+            files: .init(status: .ready, buckets: [.init(projectID: projects[1].id, start: day, modifiedFiles: 4, estimated: false, lastEventID: 1)]),
+            selectedProjects: projects, suggestions: [], developerStatus: .ready)
+        let code = GoalongCodeDay(value)
+        XCTAssertEqual(code.projects.map(\.name), ["busy"])
+        XCTAssertEqual(code.fileChanges, 4); XCTAssertTrue(code.followsProjects); XCTAssertEqual(code.followedProjects, 2)
+        XCTAssertEqual(code.caption, "1\u{00A0}projet · 4\u{00A0}modifications de fichiers")
+        let running = [DateInterval(start: day, duration: 600), DateInterval(start: day.addingTimeInterval(300), duration: 600)]
+        let present = [DateInterval(start: day.addingTimeInterval(120), duration: 180)]
+        XCTAssertEqual(GoalongIntervals.seconds(running, outside: present), 720)
+    }
     func testCounterJournalsAreRemovedWithDerivedDayDeletion() throws {
         let root = try fixture(), day = Calendar.current.startOfDay(for: Date()), store = GoalongDeveloperStore(root: root.appendingPathComponent("data"))
         let project = GoalongDeveloperProject(root: root.appendingPathComponent("repo"))

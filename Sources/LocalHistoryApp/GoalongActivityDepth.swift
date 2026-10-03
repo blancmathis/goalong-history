@@ -319,7 +319,10 @@ struct GoalongActivityCoverageSection: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(source.title).font(.system(size: 13, weight: .medium))
-                    StatusPill(title: source.state.word, symbol: source.state.symbol, tint: source.state.tint)
+                    // A ready source needs nothing: only the states to act on carry a label.
+                    if source.state != .ready {
+                        StatusPill(title: source.state.word, symbol: source.state.symbol, tint: source.state.tint)
+                    }
                 }
                 Text(source.detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)

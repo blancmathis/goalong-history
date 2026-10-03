@@ -18,7 +18,7 @@ struct GoalongWorkStatus: Equatable {
 /// The secondary views of Activité. The summary answers « combien, quand, sur quoi » ;
 /// each view below answers one further question and is reached by its name.
 enum GoalongActivityDetail: String, CaseIterable, Identifiable {
-    case rhythm, usage, sessions, texture, reports, screenTime, coverage
+    case rhythm, usage, sessions, texture, code, reports, screenTime, coverage
     var id: String { rawValue }
 
     func title(isDay: Bool) -> String {
@@ -27,6 +27,7 @@ enum GoalongActivityDetail: String, CaseIterable, Identifiable {
         case .usage: return "Applications et sites"
         case .sessions: return "Sessions et focus"
         case .texture: return "Écriture, lecture et appels"
+        case .code: return "Agents et code"
         case .reports: return "Bilans et projets"
         case .screenTime: return "Temps d’écran Apple"
         case .coverage: return "Couverture et sources"
@@ -41,6 +42,7 @@ enum GoalongActivityDetail: String, CaseIterable, Identifiable {
 struct GoalongAnalyticsContent: View {
     let payload: GoalongAnalyticsPayload
     @Binding var focusMinutes: Int
+    var lanes = GoalongActivityLanes()
     var workStatus = GoalongWorkStatus.preview
     var onDay: (Date) -> Void = { _ in }
     var onWork: () -> Void = {}
@@ -79,7 +81,7 @@ struct GoalongAnalyticsContent: View {
         let summary = self.summary
         let tasks = current.tasks
         VStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
-            if let shown = detail.wrappedValue {
+            if let shown = detail.wrappedValue, isAvailable(shown) {
                 detailView(shown, summary: summary)
             } else if current.observedSeconds > 0 {
                 hero(summary)
@@ -425,7 +427,15 @@ struct GoalongAnalyticsContent: View {
 
     private var exploreItems: [GoalongActivityDetail] {
         GoalongActivityDetail.allCases.filter { item in
-            (current.observedSeconds > 0 || !item.needsObservations) && !(item == .screenTime && payload.isPreview)
+            (current.observedSeconds > 0 || !item.needsObservations) && !(item == .screenTime && payload.isPreview) && isAvailable(item)
+        }
+    }
+
+    /// A day-only view needs one day and its source; the others are always there.
+    private func isAvailable(_ item: GoalongActivityDetail) -> Bool {
+        switch item {
+        case .code: return isDay && lanes.code != nil
+        default: return true
         }
     }
 
@@ -435,6 +445,7 @@ struct GoalongAnalyticsContent: View {
         case .usage: return "Le temps passé dans chaque app et chaque site"
         case .sessions: return "Plus longues sessions, changements d’app, comparaison"
         case .texture: return GoalongActivityTexture.caption(current.breakdown)
+        case .code: return lanes.code?.caption ?? ""
         case .coverage: return coverageCaption
         case .reports:
             let count = payload.cards.count
@@ -511,8 +522,13 @@ struct GoalongAnalyticsContent: View {
                 sessionsSection(summary)
             case .texture:
                 GoalongActivityTextureSection(period: current)
+            case .code:
+                if let code = lanes.code, let day = current.days.first {
+                    GoalongCodeSection(code: code, day: day, isPreview: payload.isPreview, onSettings: lanes.openCodeSettings)
+                }
             case .coverage:
-                GoalongActivityCoverageSection(period: current, bounds: activityBounds(summary), isPreview: payload.isPreview)
+                GoalongActivityCoverageSection(period: current, bounds: activityBounds(summary),
+                                               sources: lanes.sources, isPreview: payload.isPreview)
             case .reports:
                 projectsSection
             case .screenTime:

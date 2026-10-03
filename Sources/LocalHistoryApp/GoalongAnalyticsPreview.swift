@@ -40,6 +40,33 @@ enum GoalongAnalyticsPreview {
             updatedAt: now, isPreview: true)
     }
 
+    /// Fictional sources of one day: agents and code, and the state of every source.
+    static func lanes(day date: Date, calendar: Calendar = .current) -> GoalongActivityLanes {
+        let day = calendar.startOfDay(for: date)
+        func at(_ hour: Int, _ minute: Int) -> Date { calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) ?? day }
+        func span(_ h0: Int, _ m0: Int, _ h1: Int, _ m1: Int) -> DateInterval { DateInterval(start: at(h0, m0), end: at(h1, m1)) }
+        var mobile = GoalongCodeDay.Project(id: "preview-mobile", name: "parcours-mobile")
+        mobile.requests = 14; mobile.parallel = 2
+        mobile.running = [span(9, 10, 9, 38), span(9, 30, 9, 52), span(11, 5, 11, 40), span(12, 30, 13, 25),
+                          span(14, 20, 14, 55), span(15, 30, 16, 10)]
+        mobile.conversations = 3; mobile.providers = ["Codex"]; mobile.spans = [span(9, 5, 10, 10), span(14, 10, 15, 0)]
+        mobile.commits = [at(10, 12), at(11, 58), at(15, 20), at(16, 30)]; mobile.fileChanges = 46
+        var notes = GoalongCodeDay.Project(id: "preview-notes", name: "notes-de-version")
+        notes.requests = 5; notes.parallel = 1; notes.running = [span(16, 50, 17, 20), span(18, 10, 18, 40)]
+        notes.commits = [at(17, 25)]; notes.fileChanges = 9
+        var site = GoalongCodeDay.Project(id: "preview-site", name: "site-vitrine")
+        site.conversations = 2; site.providers = ["Claude Code"]; site.spans = [span(12, 40, 13, 10)]; site.otherGitActions = 2
+        let code = GoalongCodeDay(projects: [mobile, notes, site], unassignedConversations: 0, followsProjects: true, followedProjects: 2)
+        let sources: [GoalongSourceRow] = [
+            .init(id: "mac", title: "Activité de ce Mac", state: .ready, detail: "Applications, sites et saisie : la source du temps actif."),
+            .init(id: "agents", title: "Conversations d’agents", state: .ready, detail: "5 conversations ce jour-là (Codex, Claude Code)."),
+            .init(id: "t3", title: "T3 Code", state: .ready, detail: "19 demandes ce jour-là, dans 2 projets."),
+            .init(id: "projects", title: "Projets de développement", state: .ready,
+                  detail: "2 projets suivis : commits et fichiers modifiés.", actionTitle: "Choisir les projets…"),
+        ]
+        return GoalongActivityLanes(code: code, sources: sources)
+    }
+
     /// Fictional verdicts, as the agent would give them: one task spans several apps.
     static var verdicts: GoalongWorkVerdicts {
         let tasks: [(String, String?, GoalongWorkVerdict, String?)] = [
