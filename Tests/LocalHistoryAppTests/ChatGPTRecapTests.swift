@@ -1030,6 +1030,7 @@
         }
 
         func testGeneratedResponseCapsuleIsEncryptedBoundedAuthenticatedAndCryptographicallyDeleted() throws {
+            try skipUnlessLoginKeychainExists()
             let container = try makeTemporaryDirectory(prefix: "goalong-evidence-capsule")
             defer { try? FileManager.default.removeItem(at: container) }
             let executionID = UUID().uuidString.lowercased()
@@ -1066,6 +1067,7 @@
         }
 
         func testAnalysisProofStoreCreatesBoundedVerifiableArtifactsWithoutCopyingPromptOrTranscript() throws {
+            try skipUnlessLoginKeychainExists()
             let container = try makeTemporaryDirectory(prefix: "goalong-analysis-proof-store")
             defer { try? FileManager.default.removeItem(at: container) }
             let proofRoot = container.appendingPathComponent("proofs", isDirectory: true)
@@ -2540,6 +2542,18 @@
                 bundle: .main
             )
             XCTAssertEqual(located?.standardizedFileURL, executable.standardizedFileURL)
+        }
+
+        /// Unsigned test runs fall back to the file Keychain under $HOME. With an
+        /// isolated HOME it does not exist and macOS blocks on a "Keychain Not
+        /// Found" dialog, so skip instead of waiting for a click.
+        private func skipUnlessLoginKeychainExists() throws {
+            let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+            let keychain = URL(fileURLWithPath: home, isDirectory: true)
+                .appendingPathComponent("Library/Keychains/login.keychain-db")
+            guard FileManager.default.fileExists(atPath: keychain.path) else {
+                throw XCTSkip("No login Keychain under HOME (isolated test run).")
+            }
         }
 
         private func makeTemporaryDirectory(prefix: String) throws -> URL {

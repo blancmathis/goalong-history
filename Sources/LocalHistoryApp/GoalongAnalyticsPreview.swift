@@ -40,6 +40,61 @@ enum GoalongAnalyticsPreview {
             updatedAt: now, isPreview: true)
     }
 
+    /// Fictional sources of one day: agents and code, and the state of every source.
+    static func lanes(day date: Date, calendar: Calendar = .current) -> GoalongActivityLanes {
+        let day = calendar.startOfDay(for: date)
+        func at(_ hour: Int, _ minute: Int) -> Date { calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) ?? day }
+        func span(_ h0: Int, _ m0: Int, _ h1: Int, _ m1: Int) -> DateInterval { DateInterval(start: at(h0, m0), end: at(h1, m1)) }
+        var mobile = GoalongCodeDay.Project(id: "preview-mobile", name: "parcours-mobile")
+        mobile.requests = 14; mobile.parallel = 2
+        mobile.running = [span(9, 10, 9, 38), span(9, 30, 9, 52), span(11, 5, 11, 40), span(12, 30, 13, 25),
+                          span(14, 20, 14, 55), span(15, 30, 16, 10)]
+        mobile.conversations = 3; mobile.providers = ["Codex"]; mobile.spans = [span(9, 5, 10, 10), span(14, 10, 15, 0)]
+        mobile.commits = [at(10, 12), at(11, 58), at(15, 20), at(16, 30)]; mobile.fileChanges = 46
+        var notes = GoalongCodeDay.Project(id: "preview-notes", name: "notes-de-version")
+        notes.requests = 5; notes.parallel = 1; notes.running = [span(16, 50, 17, 20), span(18, 10, 18, 40)]
+        notes.commits = [at(17, 25)]; notes.fileChanges = 9
+        var site = GoalongCodeDay.Project(id: "preview-site", name: "site-vitrine")
+        site.conversations = 2; site.providers = ["Claude Code"]; site.spans = [span(12, 40, 13, 10)]; site.otherGitActions = 2
+        let code = GoalongCodeDay(projects: [mobile, notes, site], unassignedConversations: 0, followsProjects: true, followedProjects: 2)
+        let sources: [GoalongSourceRow] = [
+            .init(id: "mac", title: "Activité de ce Mac", state: .ready, detail: "Applications, sites et saisie : la source du temps actif."),
+            .init(id: "agents", title: "Conversations d’agents", state: .ready, detail: "5 conversations ce jour-là (Codex, Claude Code)."),
+            .init(id: "t3", title: "T3 Code", state: .ready, detail: "19 demandes ce jour-là, dans 2 projets."),
+            .init(id: "projects", title: "Projets de développement", state: .ready,
+                  detail: "2 projets suivis : commits et fichiers modifiés.", actionTitle: "Choisir les projets…"),
+        ]
+        var agenda = GoalongAgendaDay(callsOn: true, calendarOn: true)
+        agenda.events = [
+            .init(id: "standup", start: at(9, 30), end: at(9, 45), title: "Point d’équipe", attendees: 6, callSeconds: 15.0 * 60),
+            .init(id: "client", start: at(11, 0), end: at(12, 0), title: "Revue avec le client", attendees: 3, callSeconds: 0),
+            .init(id: "design", start: at(16, 0), end: at(16, 45), title: "Atelier maquettes", attendees: 4, callSeconds: 40.0 * 60),
+        ]
+        agenda.calls = [span(9, 30, 9, 45), span(14, 35, 14, 55), span(16, 0, 16, 40)]
+        agenda.callApplications = [.init(id: "Zoom", seconds: 55.0 * 60), .init(id: "FaceTime", seconds: 20.0 * 60)]
+        agenda.reminders = [.init(id: "invoice", completedAt: at(10, 50), title: "Envoyer la facture de septembre"),
+                            .init(id: "notes", completedAt: at(17, 40), title: "Relire les notes de version")]
+        agenda.openDueReminders = 1
+        let sleep = GoalongSleepDay(sleepSeconds: 7.0 * 3600 + 20.0 * 60,
+            stages: [.init(id: "Sommeil léger", seconds: 4.0 * 3600 + 5.0 * 60), .init(id: "Sommeil paradoxal", seconds: 100.0 * 60),
+                     .init(id: "Sommeil profond", seconds: 70.0 * 60), .init(id: "Éveillé", seconds: 25.0 * 60)],
+            steps: 8_420, workouts: 1, workoutSeconds: 45.0 * 60,
+            label: "Sommeil pendant cette date (découpé à minuit dans le fuseau de l’import)")
+        let devices = GoalongOtherDevicesDay(devices: [
+            .init(id: "phone", name: "iPhone", screenOnSeconds: 2.0 * 3600 + 10.0 * 60, duringGapsSeconds: 50.0 * 60, estimated: true),
+            .init(id: "tablet", name: "iPad", screenOnSeconds: 35.0 * 60, duringGapsSeconds: 15.0 * 60, estimated: false),
+        ])
+        let systemSources: [GoalongSourceRow] = [
+            .init(id: "calls", title: "Appels", state: .ready, detail: "Micro ou caméra en cours d’utilisation, par app."),
+            .init(id: "calendar", title: "Agenda et rappels", state: .ready, detail: "3 événements prévus, 2 rappels terminés."),
+            .init(id: "devices", title: "Autres appareils Apple", state: .partial, detail: "Temps d’écran par heure : part estimée pendant les trous du Mac."),
+            .init(id: "health", title: "Apple Santé (import)", state: .ready, detail: "Import du 17 septembre."),
+        ]
+        return GoalongActivityLanes(agenda: agenda, code: code, sleep: sleep, otherDevices: devices,
+                                    note: "Journée coupée par la revue client ; maquettes validées en fin d’après-midi.",
+                                    noteAvailable: true, sources: sources + systemSources)
+    }
+
     /// Fictional verdicts, as the agent would give them: one task spans several apps.
     static var verdicts: GoalongWorkVerdicts {
         let tasks: [(String, String?, GoalongWorkVerdict, String?)] = [
@@ -80,7 +135,8 @@ enum GoalongAnalyticsPreview {
                 suppressionReason: suppression, metadata: metadata ?? ["idle_seconds": "0"]))
         }
         func block(hour: Int, minute: Int, duration: Int, app: String, host: String? = nil,
-                   work: Bool? = true, idle: Bool = false, concealed: Bool = false, minimumDuration: Int = 0) {
+                   work: Bool? = true, idle: Bool = false, concealed: Bool = false, minimumDuration: Int = 0,
+                   closing: EventKind = .sessionLocked) {
             guard let start = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) else { return }
             let length = max(max(1, minimumDuration), Int(Double(duration) * scale))
             for offset in 0..<length {
@@ -89,13 +145,13 @@ enum GoalongAnalyticsPreview {
                     metadata: idle ? ["idle_seconds": "120"] : nil)
             }
             // Explicit end sample closes the last measured minute without extrapolation.
-            sample(at: start.addingTimeInterval(Double(length * 60)), app: nil, kind: .recorderStopped)
+            sample(at: start.addingTimeInterval(Double(length * 60)), app: nil, kind: closing)
         }
         block(hour: 9, minute: 0, duration: 52 + seed % 15, app: "Xcode", minimumDuration: 52)
         block(hour: 10, minute: 15, duration: 22 + seed % 9, app: "Safari", host: "docs.example.org")
         block(hour: 10, minute: 55, duration: 48 + seed % 14, app: "Figma")
         block(hour: 12, minute: 5, duration: 18, app: "Notes", work: nil)
-        block(hour: 12, minute: 25, duration: 12, app: "Notes", idle: true)
+        block(hour: 12, minute: 25, duration: 12, app: "Notes", idle: true, closing: .systemSleep)
         block(hour: 14, minute: 0, duration: 63 + seed % 17, app: "Xcode")
         block(hour: 15, minute: 25, duration: 25 + seed % 8, app: "Terminal")
         block(hour: 16, minute: 5, duration: 30 + seed % 6, app: "Safari", host: "design.example.org")
@@ -107,11 +163,33 @@ enum GoalongAnalyticsPreview {
                 sample(at: start.addingTimeInterval(Double(minute * 60)),
                     app: minute % 4 < 2 ? "Notes" : "Calendrier", work: nil)
             }
-            sample(at: start.addingTimeInterval(13 * 60), app: nil, kind: .recorderStopped)
+            sample(at: start.addingTimeInterval(13 * 60), app: nil, kind: .sessionLocked)
         }
         block(hour: 18, minute: 0, duration: 10, app: "", concealed: true)
         let end = calendar.date(byAdding: .day, value: 1, to: day) ?? day
-        return GoalongLocalAnalytics.build(events: events, day: day, now: end, calendar: calendar)
+        return withTexture(GoalongLocalAnalytics.build(events: events, day: day, now: end, calendar: calendar), calendar: calendar)
+    }
+
+    /// What each fictional app's minutes looked like: keys in editors, clicks in design tools,
+    /// a quarter of every app's time without input.
+    private static func withTexture(_ day: GoalongLocalAnalytics.Day, calendar: Calendar) -> GoalongLocalAnalytics.Day {
+        let modes: [String: GoalongActivityBreakdown.Mode] = ["Xcode": .keyboard, "Terminal": .keyboard, "Mail": .keyboard,
+            "Notes": .keyboard, "Figma": .pointer, "Calendrier": .pointer, "Safari": .pointer, "Musique": .media]
+        var hours: [Date: [GoalongActivityBreakdown.Mode: TimeInterval]] = [:]
+        for segment in day.segments where segment.kind.isActive {
+            var cursor = segment.start
+            while cursor < segment.end, let hour = calendar.dateInterval(of: .hour, for: cursor) {
+                let stop = min(segment.end, hour.end), seconds = stop.timeIntervalSince(cursor)
+                hours[hour.start, default: [:]][modes[segment.application ?? ""] ?? .reading, default: 0] += seconds * 0.75
+                hours[hour.start, default: [:]][.reading, default: 0] += seconds * 0.25
+                cursor = stop
+            }
+        }
+        var result = day
+        result.recordedBreakdown = GoalongActivityBreakdown(hours: hours.keys.sorted().map { start in
+            .init(start: start, end: calendar.dateInterval(of: .hour, for: start)?.end ?? start, secondsByMode: hours[start] ?? [:])
+        })
+        return result
     }
 }
 #endif

@@ -1,0 +1,118 @@
+#if os(macOS)
+import XCTest
+import Foundation
+import LocalHistoryCore
+import AgentActivity
+@testable import LocalHistoryApp
+
+final class GoalongDeveloperModelTests: XCTestCase {
+    private func fixture() throws -> URL {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(".build").appendingPathComponent("goalong-developer-ui-api-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("repo/.git"), withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }; return root
+    }
+    @MainActor func testProjectSelectionAndConsentAPIsRemainIndependent() async throws {
+        let root = try fixture(), consents = GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("data/capability-consent.json"))
+        let model = GoalongDeveloperModel(root: root.appendingPathComponent("data"), consents: consents)
+        XCTAssertEqual(model.status, .disabled)
+        try model.addProject(root.appendingPathComponent("repo")); XCTAssertEqual(model.selectedProjects.count, 1)
+        let restored = GoalongDeveloperModel(root: root.appendingPathComponent("data"), consents: consents)
+        XCTAssertEqual(restored.selectedProjects.count, 1)
+        XCTAssertFalse(consents.isEnabled(.developerActivity))
+        XCTAssertTrue(model.setEnabled(true)); XCTAssertFalse(consents.isEnabled(.aiConversations))
+        await model.refresh(day: Date()); XCTAssertEqual(model.value?.selectedProjects.count, 1)
+        XCTAssertEqual(model.value?.t3.status, .disabled)
+        try model.removeProject(id: model.selectedProjects[0].id); XCTAssertTrue(model.selectedProjects.isEmpty)
+        XCTAssertTrue(model.setEnabled(false)); XCTAssertNil(model.value)
+    }
+    func testRecapRequiresItsOwnFlagAndHonoursExclusionsBeforeReading() throws {
+        let root = try fixture(), consents = GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("data/capability-consent.json"))
+        var selection = GoalongAnalysisSelection(), privacy = GoalongPrivacyPolicy()
+        XCTAssertNil(try GoalongDeveloperRecap.build(day: Date(), selection: selection, agents: .init(day: Date()), privacy: privacy, root: root, consents: consents))
+        selection.developer = true; privacy.domains = ["example.invalid"]
+        let rendered = try GoalongDeveloperRecap.build(day: Date(), selection: selection, agents: .init(day: Date()), privacy: privacy, root: root, consents: consents)
+        XCTAssertTrue(rendered?.contains("omis") == true)
+        let legacy = Data("{\"version\":1,\"reviewed\":false,\"computer\":false,\"screenTime\":false,\"conversations\":false,\"details\":false,\"revision\":\"legacy\"}".utf8)
+        XCTAssertNil(try JSONDecoder().decode(GoalongAnalysisSelection.self, from: legacy).developer)
+    }
+    func testDeveloperOnlySourceCountsPermitARecapWithoutMacEvidence() throws {
+        let day = Date(), activity = ActivityAnalysisEngine.analyze(events: [], day: day)
+        let counts = ChatGPTRecapSourceCounts(localEvents: 0, activeMinutes: 0, semanticSnapshots: 0,
+            screenTimeDevices: 0, screenTimeApplications: 0, agentCaptures: 0, agentMessages: 0,
+            importedChatMessages: 0, computerHistoryEpisodes: nil, computerHistoryResources: nil,
+            workflowSuggestions: nil, developerProjects: 1)
+        let context = ChatGPTRecapContext(day: day, activity: activity, computerHistory: nil, screenTime: nil,
+            agentActivity: .init(day: day), importedChats: [], localJournalSourceAbsent: true,
+            renderedData: "Développement", sourceCounts: counts, digest: "fixture")
+        XCTAssertTrue(context.hasMeaningfulData)
+        XCTAssertEqual(try JSONDecoder().decode(ChatGPTRecapSourceCounts.self, from: JSONEncoder().encode(counts)), counts)
+    }
+    func testRecapListsMostActiveProjectsFirstAndCountsQuietOnes() throws {
+        let root = try fixture(), day = Calendar.current.startOfDay(for: Date())
+        let projects = try ["calm", "small", "busy"].map { name -> GoalongDeveloperProject in
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(name + "/.git"), withIntermediateDirectories: true)
+            return GoalongDeveloperProject(root: root.appendingPathComponent(name), name: name)
+        }
+        let buckets = [(projects[1], 2), (projects[2], 9)].map { GoalongFileModificationBucket(projectID: $0.0.id, start: day, modifiedFiles: $0.1, estimated: false, lastEventID: 1) }
+        let value = GoalongDeveloperDay(day: day, t3: T3CodeMetadataReader.read(day: day, enabled: false, shouldContinue: { true }),
+            agents: GoalongAgentProjectGrouping.group(.init(day: day), t3: nil, enabled: false), git: [],
+            files: .init(status: .ready, buckets: buckets), selectedProjects: projects, suggestions: [], developerStatus: .ready)
+        let lines = try GoalongDeveloperRecap.render(value).components(separatedBy: "\n")
+        XCTAssertEqual(lines.filter { $0.hasPrefix("busy") || $0.hasPrefix("small") || $0.hasPrefix("calm") }.map { String($0.prefix(4)) }, ["busy", "smal"])
+        XCTAssertEqual(lines.last, "1 projet suivi sans activité observée ce jour-là.")
+    }
+    func testCodeDayKeepsActiveProjectsAndMeasuresTimeWithoutTheUser() throws {
+        let root = try fixture(), day = Calendar.current.startOfDay(for: Date())
+        let projects = try ["calm", "busy"].map { name -> GoalongDeveloperProject in
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(name + "/.git"), withIntermediateDirectories: true)
+            return GoalongDeveloperProject(root: root.appendingPathComponent(name), name: name)
+        }
+        let value = GoalongDeveloperDay(day: day, t3: T3CodeMetadataReader.read(day: day, enabled: false, shouldContinue: { true }),
+            agents: GoalongAgentProjectGrouping.group(.init(day: day), t3: nil, enabled: false), git: [],
+            files: .init(status: .ready, buckets: [.init(projectID: projects[1].id, start: day, modifiedFiles: 4, estimated: false, lastEventID: 1)]),
+            selectedProjects: projects, suggestions: [], developerStatus: .ready)
+        let code = GoalongCodeDay(value)
+        XCTAssertEqual(code.projects.map(\.name), ["busy"])
+        XCTAssertEqual(code.fileChanges, 4); XCTAssertTrue(code.followsProjects); XCTAssertEqual(code.followedProjects, 2)
+        XCTAssertEqual(code.caption, "1\u{00A0}projet · 4\u{00A0}modifications de fichiers")
+        let running = [DateInterval(start: day, duration: 600), DateInterval(start: day.addingTimeInterval(300), duration: 600)]
+        let present = [DateInterval(start: day.addingTimeInterval(120), duration: 180)]
+        XCTAssertEqual(GoalongIntervals.seconds(running, outside: present), 720)
+    }
+    func testCounterJournalsAreRemovedWithDerivedDayDeletion() throws {
+        let root = try fixture(), day = Calendar.current.startOfDay(for: Date()), store = GoalongDeveloperStore(root: root.appendingPathComponent("data"))
+        let project = GoalongDeveloperProject(root: root.appendingPathComponent("repo"))
+        try store.append([.init(projectID: project.id, start: day, modifiedFiles: 3, estimated: false, lastEventID: 7)], day: day)
+        _ = try DerivedHistoryCleaner(rootDirectory: store.root, codexMemoryDirectory: store.root.appendingPathComponent("codex-memory")).prepareDeletion(days: [day]).execute()
+        XCTAssertEqual(store.read(day: day).status, .noData)
+    }
+    func testRealFileEventsWriteOnlyCountsAndStopDuringPause() throws {
+        let root = try fixture(), store = GoalongDeveloperStore(root: root.appendingPathComponent("data"))
+        try store.add(root.appendingPathComponent("repo"))
+        let monitor = GoalongDeveloperFileMonitor(root: store.root)
+        monitor.start(replayHistory: false); defer { monitor.stop() }
+        XCTAssertEqual(monitor.snapshotStatus(), .ready)
+        let file = root.appendingPathComponent("repo/example.swift")
+        try Data("FILE-CONTENT-NEVER-READ".utf8).write(to: file)
+        let deadline = Date().addingTimeInterval(15)
+        repeat {
+            monitor.synchronizeForTesting()
+            if store.read(day: Date()).fileChanges > 0 { break }
+            Thread.sleep(forTimeInterval: 0.2)
+        } while Date() < deadline
+        let recorded = store.read(day: Date())
+        XCTAssertGreaterThan(recorded.fileChanges, 0, "Watcher status: \(monitor.snapshotStatus())")
+        let directory = store.root.appendingPathComponent("developer")
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        let raw = try files.map { try String(contentsOf: $0) }.joined()
+        XCTAssertFalse(raw.contains("example.swift")); XCTAssertFalse(raw.contains("FILE-CONTENT")); XCTAssertFalse(raw.contains(root.path))
+        var pause = GoalongGlobalPause(); pause.paused = true
+        try GoalongDeveloperFileIO.write(JSONEncoder().encode(pause), name: "global-pause.json", directory: store.root)
+        try Data("paused".utf8).write(to: root.appendingPathComponent("repo/paused.swift"))
+        monitor.synchronizeForTesting(); XCTAssertEqual(store.read(day: Date()).fileChanges, recorded.fileChanges)
+        XCTAssertFalse(GoalongDeveloperFileMonitor.permits(relativePath: "node_modules/pkg/index.js"))
+        XCTAssertFalse(GoalongDeveloperFileMonitor.permits(relativePath: "src/.DS_Store"))
+        XCTAssertTrue(GoalongDeveloperFileMonitor.permits(relativePath: "Sources/file.swift"))
+    }
+}
+#endif

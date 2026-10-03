@@ -130,7 +130,7 @@
     }
 
     /// Whole-hour marks under a thread: a tick and a label, drawn once.
-    private struct GoalongThreadAxis: View {
+    struct GoalongThreadAxis: View {
         /// Hours since the start of the day shown, and their position between 0 and 1.
         let marks: [(label: String, position: CGFloat)]
 

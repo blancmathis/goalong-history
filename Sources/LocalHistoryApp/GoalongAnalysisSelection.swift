@@ -8,13 +8,16 @@ struct GoalongAnalysisSelection: Codable, Equatable {
     var computer = false
     var screenTime = false
     var conversations = false
+    /// Optional for backward-compatible decoding; an absent flag never authorizes this lane.
+    var developer: Bool? = false
+    var systemSources: GoalongSystemRecapSelection?
     var details = false
     var revision = UUID().uuidString
     var privacyRevision: String?
     var scope: GoalongAnalysisScope?
     var replacements: [GoalongTextReplacement]?
     var outputGuidance: String?
-    var hasSources: Bool { computer || screenTime || conversations }
+    var hasSources: Bool { computer || screenTime || conversations || developer == true || systemSources?.hasSources == true }
     func isValid(for policy: GoalongPrivacyPolicy) -> Bool {
         guard reviewed, hasSources, !policy.blocked, privacyRevision == policy.revision else { return false }
         do { try validate(); return true } catch { return false }
@@ -29,14 +32,17 @@ struct GoalongAnalysisSelection: Codable, Equatable {
     }
     func validate() throws {
         guard [1, 2].contains(version) else { throw PrivacyScopeInput.invalid("Format de sélection inconnu.") }
+        if systemSources?.hasSources == true, version != 2 || scope == nil {
+            throw PrivacyScopeInput.invalid("Confirmez la sélection détaillée pour les nouvelles sources.")
+        }
         if version == 2 {
             guard let scope else { throw PrivacyScopeInput.invalid("Choisissez les données avant d’autoriser l’analyse.") }
-            if computer || screenTime {
+            if computer || screenTime || systemSources?.calls == true {
                 guard scope.applicationIDs != nil, scope.detailApplicationIDs != nil else {
                     throw PrivacyScopeInput.invalid("La liste des applications doit être confirmée.")
                 }
             }
-            if screenTime, scope.deviceIDs == nil { throw PrivacyScopeInput.invalid("Confirmez les appareils autorisés.") }
+            if screenTime || systemSources?.otherDevices == true, scope.deviceIDs == nil { throw PrivacyScopeInput.invalid("Confirmez les appareils autorisés.") }
             if conversations, scope.conversationFolderIDs == nil { throw PrivacyScopeInput.invalid("Confirmez les dossiers autorisés.") }
         }
         try scope?.validate()

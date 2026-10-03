@@ -27,6 +27,8 @@ Product behavior, security guarantees or implementation contracts.
 - [Permissions](PERMISSIONS.md): macOS permissions, degradation and revocation.
 - [Data flow](DATA-FLOW.md): current component and information flow.
 - [Mon travail](WORK_DEFINITION.md): the user's definition of work, per-context agent classification and tasks.
+- [Data depth](DATA_DEPTH.md): durable day summaries, coverage, activity breakdown, calls, agenda, devices, health, day note and developer sources (2026-10-03 plan).
+- [Developer activity](DEVELOPER_ACTIVITY.md): T3 metadata, agent projects, selected Git repositories and path-free file counters.
 - [Security model](../SECURITY.md) and [cryptography](CRYPTOGRAPHY.md): integrity and selective-disclosure proof.
 - [Build verification](BUILD-VERIFICATION.md): one command for pre-download source review, then exact-bundle inspection.
 - [Reproducible builds](REPRODUCIBLE-BUILDS.md): reproducibility scope and limitations.

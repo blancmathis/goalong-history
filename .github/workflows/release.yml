@@ -63,6 +63,7 @@ jobs:
           LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY || vars.SPARKLE_PUBLIC_ED_KEY }}
           LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
           LOCALHISTORY_ARCHS: arm64 x86_64
+          LOCALHISTORY_APP_ENTITLEMENTS: Distribution/GoalongHistory.entitlements
           LOCALHISTORY_RUN_TESTS: 1
           LOCALHISTORY_CODESIGN_IDENTITY: ${{ env.LOCALHISTORY_CODESIGN_IDENTITY }}
         run: ./scripts/build_app.sh

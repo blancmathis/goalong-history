@@ -63,6 +63,23 @@ final class GoalongTrustRenderingTests: XCTestCase {
             }
         }
 
+        // The recording pane is long: render it whole, with the optional sources and a pending macOS access.
+        XCTAssertTrue(GoalongCapabilityConsentStore.shared.set(.calendar, enabled: true, surface: .settings))
+        for dark in [true, false] {
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            model.selectedSection = .settings; model.settingsPane = .recording
+            let controller = NSHostingController(rootView: LocalHistoryDashboardView(model: model))
+            window.contentViewController = controller
+            window.setContentSize(NSSize(width: 1240, height: 1500))
+            window.makeKeyAndOrderFront(nil); pump()
+            try snapshot(controller.view, to: output.appendingPathComponent("settings-recording-sources-\(dark ? "dark" : "light").png"))
+            if let scroll = Self.firstScrollView(in: controller.view), let document = scroll.documentView {
+                let bottom = max(0, document.bounds.height - scroll.contentView.bounds.height)
+                document.scroll(NSPoint(x: 0, y: document.isFlipped ? bottom : 0)); pump()
+                try snapshot(controller.view, to: output.appendingPathComponent("settings-recording-sources-bottom-\(dark ? "dark" : "light").png"))
+            }
+        }
+
         let support = SupportRequestController()
         support.phase = .ready(URL(fileURLWithPath: "/tmp/Goalong-diagnostic-preview.json"), SupportFindings.detect(
             live: ["storageInterrupted": .flag(true), "storageFailure": .state(.diskFull)],
@@ -86,6 +103,12 @@ final class GoalongTrustRenderingTests: XCTestCase {
         health.markStorageRestored()
         model.dashboardDidBecomeHidden(); model.dashboardDidBecomeVisible(); pump()
         XCTAssertNil(model.runtime.storageFailure)
+    }
+
+    @MainActor private static func firstScrollView(in view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView { return scroll }
+        for child in view.subviews { if let scroll = firstScrollView(in: child) { return scroll } }
+        return nil
     }
 
     @MainActor private func pump() {

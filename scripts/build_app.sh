@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LOCALHISTORY_APP_ENTITLEMENTS="${LOCALHISTORY_APP_ENTITLEMENTS:-$ROOT_DIR/Distribution/GoalongHistory.entitlements}"
 CORE_BUILDER="$ROOT_DIR/scripts/build_app_core.sh"
 CODESIGN_POLICY="$ROOT_DIR/scripts/codesign_policy.sh"
 SOURCE_CODESIGN_IDENTITY="$ROOT_DIR/scripts/source_codesign_identity.sh"

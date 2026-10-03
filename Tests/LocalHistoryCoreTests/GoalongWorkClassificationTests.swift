@@ -109,11 +109,12 @@ final class GoalongWorkClassificationTests: XCTestCase {
             + [event(36_000 + 26 * 60, app: "Notes", title: "Courses"), event(36_000 + 26 * 60 + 10, app: "Pages", title: "Rapport")]
             + minutes(27...30, from: 36_000, app: "Secret", title: "Coffre")
         let observation = observe(events)
-        let known = GoalongWorkVerdicts([label("Mail", nil, "Inbox").key: .init(verdict: .unclear)])
+        let known = GoalongWorkVerdicts([label("Mail", nil, "Inbox").key: .init(verdict: .unclear)],
+            retries: [label("Mail", nil, "Inbox").key: .init(attempts: 1, lastAskedDay: "2026-09-10")])
         let pending = GoalongWorkClassification.pending(day: observation.day, labels: observation.labels, verdicts: known,
                                                         permits: { $0.application != "Secret" })
         XCTAssertEqual(pending.keys, [label("Pages", nil, "Rapport").key],
-                       "Already judged (even undecided), shorter than 15 s or withheld contexts are not sent")
+                       "Already judged or asked today, shorter than 15 s or withheld contexts are not sent")
     }
 
     func testRequestCarriesDefinitionAndTimelineButNeverKeys() throws {
