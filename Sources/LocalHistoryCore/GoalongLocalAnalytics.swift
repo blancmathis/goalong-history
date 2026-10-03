@@ -288,13 +288,16 @@ public enum GoalongLocalAnalytics {
                             now: Date = Date(), calendar: Calendar = .current,
                             shouldContinue: () -> Bool = { true }) -> ResumableDayLoad {
         let start = calendar.startOfDay(for: day)
-        let end = min(calendar.date(byAdding: .day, value: 1, to: start) ?? start, now)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        let end = min(dayEnd, now)
         guard end > start, shouldContinue() else {
             return ResumableDayLoad(day: build(events: [], day: day, now: now, calendar: calendar, incomplete: end > start),
                 state: state, didResume: false, eventBytesRead: 0, wasCancelled: end > start)
         }
+        // The journal is read to the end of the day, not to `now`: a row written while it is
+        // read would otherwise void the checkpoint. `build` still stops the day at `now`.
         let loaded = HistoryLocalStoreReader(rootDirectory: root).loadLocalAnalyticsEvidence(
-            start: start, endExclusive: end, resumeCursor: state?.cursor,
+            start: start, endExclusive: dayEnd, resumeCursor: state?.cursor,
             timeZoneIdentifier: calendar.timeZone.identifier, shouldContinue: shouldContinue)
         let metrics = loaded.metrics
         let incomplete = metrics.wasCancelled || metrics.sourceChangedDuringRead || metrics.sourceAccessWasIncomplete
@@ -306,6 +309,13 @@ public enum GoalongLocalAnalytics {
         }
         var events = loaded.events
         if loaded.didResume, let state, let oldCursor = state.cursor {
+            // Inconsistent counts never index out of range: they read the whole day again.
+            guard loaded.appendedEventCounts.count == oldCursor.files.count,
+                  oldCursor.files.reduce(0, { $0 + $1.retainedEventCount }) == state.events.count,
+                  loaded.appendedEventCounts.reduce(0, +) == loaded.events.count else {
+                return load(root: root, day: day, resuming: nil, now: now, calendar: calendar,
+                            shouldContinue: shouldContinue)
+            }
             // A legacy root may have several intersecting journals. Preserve full-read
             // file order even when an earlier file grows, including timestamp ties.
             events = []

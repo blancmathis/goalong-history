@@ -78,6 +78,10 @@ private actor GoalongAnalyticsReader {
     private var cache: [Date: (String, GoalongLocalAnalytics.Day)] = [:]
     private var lastUse: [Date: Int] = [:]
     private var uses = 0
+    /// Today's journal is read once, then only the lines appended since. Its projection is
+    /// dropped ten minutes after Activité last asked for today.
+    private var today: (date: Date, state: GoalongLocalAnalytics.ResumableDayState)?
+    private var todayRelease: Task<Void, Never>?
     private let root: URL
     init(root: URL) { self.root = root }
 
@@ -89,7 +93,7 @@ private actor GoalongAnalyticsReader {
         let calendar = Calendar.current, now = Date()
         let count = [1, 7, 28].contains(count) ? count : 7
         let last = calendar.startOfDay(for: day)
-        if force { cache.removeAll(); lastUse.removeAll() }
+        if force { cache.removeAll(); lastUse.removeAll(); today = nil }
         let current = try days(ending: last, count: count, now: now, calendar: calendar)
         let previousLast = calendar.date(byAdding: .day, value: -count, to: last) ?? last
         // A comparison that needs a journal read waits for `comparison(for:)`: the selected
@@ -124,7 +128,9 @@ private actor GoalongAnalyticsReader {
             guard let date = calendar.date(byAdding: .day, value: -offset, to: last) else { continue }
             let revision = sourceRevision(date, calendar: calendar)
             let value: GoalongLocalAnalytics.Day
-            if !calendar.isDate(date, inSameDayAs: now), let cached = cache[date], cached.0 == revision {
+            if calendar.isDate(date, inSameDayAs: now) {
+                value = try readToday(date, calendar: calendar)
+            } else if let cached = cache[date], cached.0 == revision {
                 value = cached.1
             } else {
                 value = GoalongLocalAnalytics.load(root: root, day: date, now: now, calendar: calendar,
@@ -142,6 +148,23 @@ private actor GoalongAnalyticsReader {
         }
         return days
     }
+
+    private func readToday(_ date: Date, calendar: Calendar) throws -> GoalongLocalAnalytics.Day {
+        let previous = today.flatMap { calendar.isDate($0.date, inSameDayAs: date) ? $0.state : nil }
+        let loaded = GoalongLocalAnalytics.load(root: root, day: date, resuming: previous, now: Date(),
+            calendar: calendar, shouldContinue: { !Task.isCancelled })
+        today = loaded.state.map { (date, $0) }
+        todayRelease?.cancel()
+        todayRelease = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 600 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.releaseToday()
+        }
+        try Task.checkCancellation()
+        return loaded.day
+    }
+
+    private func releaseToday() { today = nil }
 
     /// The period's days when none needs a journal read, nil otherwise.
     private func cachedDays(ending last: Date, count: Int, now: Date, calendar: Calendar) -> [GoalongLocalAnalytics.Day]? {

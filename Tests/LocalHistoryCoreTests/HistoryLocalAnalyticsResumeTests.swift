@@ -264,7 +264,7 @@ final class HistoryLocalAnalyticsResumeTests: XCTestCase {
         }
     }
 
-    func testEndAdvancesButPreviouslyExcludedFutureRowsRequireFullRead() throws {
+    func testEndAdvancesAndRowsAfterNowKeepTheCheckpoint() throws {
         try fixture { root, file in
             try bytes([row(0)]).write(to: file)
             let initial = load(root, now: start.addingTimeInterval(10))
@@ -272,12 +272,17 @@ final class HistoryLocalAnalyticsResumeTests: XCTestCase {
             let advanced = load(root, state: initial.state, now: start.addingTimeInterval(30))
             XCTAssertTrue(advanced.didResume)
             XCTAssertEqual(advanced.day, load(root, now: start.addingTimeInterval(30)).day)
+            // A row written while the journal is read can be later than `now`: it is kept,
+            // stays outside the day until `now` passes it, and the checkpoint survives.
             try append(try bytes([row(2, offset: 60)]), to: file)
             let future = load(root, state: advanced.state, now: start.addingTimeInterval(40))
-            XCTAssertNil(future.state?.cursor)
+            XCTAssertTrue(future.didResume)
+            XCTAssertNotNil(future.state?.cursor)
+            XCTAssertEqual(future.day, GoalongLocalAnalytics.load(root: root, day: start, now: start.addingTimeInterval(40)))
             let caughtUp = load(root, state: future.state, now: start.addingTimeInterval(70))
-            XCTAssertFalse(caughtUp.didResume)
+            XCTAssertTrue(caughtUp.didResume)
             XCTAssertEqual(caughtUp.day, load(root, now: start.addingTimeInterval(70)).day)
+            XCTAssertEqual(caughtUp.day, GoalongLocalAnalytics.load(root: root, day: start, now: start.addingTimeInterval(70)))
         }
     }
 
