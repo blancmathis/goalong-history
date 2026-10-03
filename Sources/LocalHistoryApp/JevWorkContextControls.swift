@@ -33,7 +33,7 @@ import LocalHistoryCore
                 // Only meaningful once there are examples to weigh against missing criteria.
                 if !store.context.hasProductivityCriteria,
                    !(editing || store.context.isEmpty ? procrastination : store.context.procrastination).isEmpty {
-                    GoalongNote("Sans critères de travail, vos exemples de procrastination n’autorisent pas automatiquement les autres usages. Le lien avec votre travail peut rester indéterminé.")
+                    GoalongNote("Sans critères de travail, vos exemples hors travail n’autorisent pas automatiquement les autres usages. Le lien avec votre travail peut rester indéterminé.")
                 }
                 if let message = error ?? store.error { GoalongNote(message, tone: .warning) }
             }
@@ -83,11 +83,11 @@ import LocalHistoryCore
                   hint: "Ex. Documentation Swift, recherches liées à mes projets, e-mails clients, rédaction de posts Goalong.",
                   text: $content, identifier: "monitoring-work-content")
             sectionLabel("Hors travail", mark: LHTheme.otherData).padding(.top, 8)
-            field("Ce qui n’est pas du travail (procrastination)",
+            field("Ce qui n’est pas du travail",
                   detail: "Des exemples certains, pas une liste exhaustive.", help: procrastinationText,
                   hint: "Ex. Scroller le fil Pour vous de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
                   text: $procrastination, identifier: "monitoring-procrastination")
-            GoalongNote("Ces critères restent stockés sur ce Mac. Enregistrer autorise leur envoi à votre compte ChatGPT avec les contextes à classer si le classement est activé, et l’envoi de vos critères de travail et exemples de procrastination à TypeSafe avec les prochaines analyses si la surveillance est activée. N’indiquez ni clé API ni information sensible.",
+            GoalongNote("Ces critères restent stockés sur ce Mac. Enregistrer autorise leur envoi à votre compte ChatGPT avec les contextes à classer si le classement est activé, et l’envoi de vos critères de travail et exemples hors travail à TypeSafe avec les prochaines analyses si la surveillance est activée. N’indiquez ni clé API ni information sensible.",
                         tone: .privacy)
             HStack(spacing: 10) {
                 if draftBytes > 0 { budget }

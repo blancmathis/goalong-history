@@ -93,6 +93,7 @@ struct GoalongSettingsList<Content: View>: View {
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var sender = GoalongWebsiteAutoSender.shared
     @ObservedObject private var analysis = ChatGPTRecapRuntime.shared
+    @ObservedObject private var work = GoalongWorkStore.shared
     @State private var pause = GoalongGlobalPause.load()
     @State private var analysisSelection = GoalongAnalysisSelection.load()
     @ObservedObject private var exclusions = GoalongExclusionStore.shared
@@ -106,14 +107,31 @@ struct GoalongSettingsList<Content: View>: View {
                 row("Envoi à Goalong", status: sender.enabled ? "Chaque jour" : "À la demande",
                     detail: "Compte, données et fréquence des envois", symbol: "arrow.up.circle", pane: .website)
                 GoalongRowDivider()
-                row("Analyse ChatGPT", status: !consents.isEnabled(.chatGPTAnalysis) || !analysisSelection.isValid(for: exclusions.policy) ? "À configurer" : analysis.automaticRecapsEnabled ? "Automatique" : "À la demande",
+                row("Analyse ChatGPT", status: chatGPTStatus,
                     detail: "Applications, textes, noms masqués et consignes", symbol: "sparkles", pane: .chatGPT)
             }
         }.onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }
             .onReceive(NotificationCenter.default.publisher(for: .goalongAnalysisSelectionDidChange)) { _ in analysisSelection = .load() }
     }
+    /// Two automations run through ChatGPT: classifying time when Activité opens, and daily
+    /// reports. The status names the ones that really run, not only the report schedule.
+    private var chatGPTStatus: String {
+        guard consents.isEnabled(.chatGPTAnalysis), analysisSelection.isValid(for: exclusions.policy) else { return "À configurer" }
+        switch analysis.connectionState {
+        case .signedOut, .codexUnavailable, .unsupportedCredentialMode, .failed: return "Non connecté"
+        case .checking, .connected: break
+        }
+        switch (work.automatic && !work.definition.isEmpty, analysis.automaticRecapsEnabled) {
+        case (true, true): return "Automatique"
+        case (true, false): return "Classement automatique"
+        case (false, true): return "Bilans automatiques"
+        case (false, false): return "À la demande"
+        }
+    }
     private func row(_ title: String, status: String, detail: String, symbol: String, pane: SettingsPane) -> some View {
-        GoalongSettingsLink(title: title, value: pause.blocksActivity ? "Suspendu" : status, symbol: symbol, detail: detail) {
+        // A disabled or unconfigured service is not "suspended": the global pause changes nothing for it.
+        GoalongSettingsLink(title: title, value: pause.blocksActivity && !["Désactivé", "À configurer", "Non connecté"].contains(status) ? "Suspendu" : status,
+                            symbol: symbol, detail: detail) {
             model.selectSection(.settings); model.settingsPane = pane
         }
         .accessibilityIdentifier("settings-\(pane)")

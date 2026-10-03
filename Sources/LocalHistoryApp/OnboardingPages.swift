@@ -145,7 +145,9 @@
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Vous pouvez commencer").goalongPageTitle()
-                    Text("Votre fil apparaîtra dans Activité dès les premières minutes d’utilisation de ce Mac.")
+                    Text(consents.isEnabled(.localComputerHistory)
+                         ? "Votre fil apparaîtra dans Activité dès les premières minutes d’utilisation de ce Mac."
+                         : "L’enregistrement local est désactivé : Activité restera vide. Vous pourrez l’activer dans Réglages, Enregistrement local.")
                         .font(.system(size: 14)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }

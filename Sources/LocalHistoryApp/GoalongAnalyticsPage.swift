@@ -17,6 +17,7 @@ struct GoalongAnalyticsPage: View {
     @State private var manualRefreshRevision = 0
     @State private var forceNextRead = false
     @State private var showingAnalysisChoice = false
+    @State private var reviewRequest: GoalongWorkReviewRequest?
     @AppStorage(GoalongDeveloperPreferences.enabledKey) private var developerMode = false
     @State private var showingPreview = false
     @State private var previewNavigation = GoalongActivityNavigation()
@@ -68,6 +69,7 @@ struct GoalongAnalyticsPage: View {
                             workStatus: previewActive ? .preview : workStatus,
                             onDay: { day in updateSelection { $0.openDay(day) } },
                             onWork: { model.selectSection(.work) },
+                            onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
                             onClassify: { agent.classify(day: selection.day) },
                             onHistory: { openHistory(selection.day) },
                             onProjects: { if !previewActive { showingAnalysisChoice = true } },
@@ -112,6 +114,7 @@ struct GoalongAnalyticsPage: View {
             }
         }
         .background(LHTheme.pageBackground)
+        .sheet(item: $reviewRequest) { request in GoalongWorkReviewSheet(request: request).goalongControls() }
         .confirmationDialog("Analyser la journée du \(GoalongUIFormat.day(navigation.day))",
                             isPresented: $showingAnalysisChoice, titleVisibility: .visible) {
             Button("Bilan quotidien et sources…") { openRecap(navigation.day) }
@@ -144,6 +147,7 @@ struct GoalongAnalyticsPage: View {
         .onDisappear {
             showingPreview = false
             showingAnalysisChoice = false
+            reviewRequest = nil
             previewNavigation = GoalongActivityNavigation()
         }
         .onChange(of: work.verdicts) { _ in
@@ -168,7 +172,8 @@ struct GoalongAnalyticsPage: View {
 
     private var workStatus: GoalongWorkStatus {
         GoalongWorkStatus(hasDefinition: !work.definition.isEmpty, isClassifying: agent.isRunning,
-            progress: agent.progress, problem: agent.isRunning ? nil : (agent.lastError ?? (agent.readiness == .ready ? nil : agent.readiness.message)))
+            progress: agent.progress, problem: agent.isRunning ? nil : (agent.lastError ?? (agent.readiness == .ready ? nil : agent.readiness.message)),
+            classifiesOnOpen: work.automatic && agent.readiness == .ready)
     }
 
     private var previewControl: some View {

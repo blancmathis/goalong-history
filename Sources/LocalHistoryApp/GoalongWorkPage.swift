@@ -220,8 +220,10 @@ import SwiftUI
 @MainActor struct GoalongWorkReviewCard: View {
     @ObservedObject var review: GoalongWorkReviewModel
     @ObservedObject private var work = GoalongWorkStore.shared
-    @State private var day = Date()
-    @State private var expanded: Set<String> = []
+    @State private var day: Date
+    @State private var expanded: Set<String>
+    private let focusTask: String?
+    private let loadsOnAppear: Bool
     @State private var naming: GoalongWorkReviewModel.Row?
     @State private var renaming: String?
     @State private var name = ""
@@ -232,6 +234,16 @@ import SwiftUI
         let task: String?
         let rows: [GoalongWorkReviewModel.Row]
         var seconds: TimeInterval { rows.reduce(0) { $0 + $1.seconds } }
+    }
+
+    /// Opened from Activité, the review starts on the day shown there, already loaded,
+    /// with the task the user clicked first and unfolded.
+    init(review: GoalongWorkReviewModel, day: Date = Date(), focusTask: String? = nil, loadsOnAppear: Bool = false) {
+        _review = ObservedObject(wrappedValue: review)
+        _day = State(initialValue: day)
+        _expanded = State(initialValue: focusTask.map { ["task|" + $0] } ?? [])
+        self.focusTask = focusTask
+        self.loadsOnAppear = loadsOnAppear
     }
 
     private var groups: [ReviewGroup] {
@@ -248,6 +260,9 @@ import SwiftUI
             ReviewGroup(id: "task|" + name, title: name, task: name, rows: rows)
         }
         result.sort { (a: ReviewGroup, b: ReviewGroup) -> Bool in a.seconds == b.seconds ? a.title < b.title : a.seconds > b.seconds }
+        if let focusTask, let index = result.firstIndex(where: { $0.task == focusTask }) {
+            result.insert(result.remove(at: index), at: 0)
+        }
         if !other.isEmpty { result.append(ReviewGroup(id: "other", title: "Hors travail", task: nil, rows: other)) }
         if !pending.isEmpty { result.append(ReviewGroup(id: "pending", title: "À classer ou indéterminé", task: nil, rows: pending)) }
         return result
@@ -262,7 +277,7 @@ import SwiftUI
                 if review.loading { ProgressView().controlSize(.small) }
                 Spacer(minLength: 0)
             }
-            Text("Lecture locale : les titres affichés ici ne quittent pas ce Mac. Une correction s’applique à tout l’historique et sert d’exemple à l’agent.")
+            Text("Lecture locale : les titres affichés ici ne quittent pas ce Mac. Une correction vaut pour ce contexte (même app, site et titre) dans tout l’historique, pas seulement ce jour-là. Elle sert aussi d’exemple à l’agent.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let error = review.error {
                 Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
@@ -276,6 +291,7 @@ import SwiftUI
             }
         }
         .onChange(of: day) { value in if review.loadedDay != nil { review.load(day: value) } }
+        .onAppear { if loadsOnAppear && review.loadedDay == nil && !review.loading { review.load(day: day) } }
         .alert("Nouvelle tâche", isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
             TextField("Nom de la tâche", text: $name)
             Button("Annuler", role: .cancel) { naming = nil }
@@ -364,6 +380,47 @@ import SwiftUI
         if verdict == .work, GoalongWorkClassification.cleanTask(task) == nil { return }
         work.correct(key: row.id, label: row.label, verdict: verdict, task: task,
                      day: GoalongWorkAgent.dayString(review.loadedDay ?? day))
+    }
+}
+
+/// What Activité asks to correct: the day on screen and, when a task was clicked, that task.
+struct GoalongWorkReviewRequest: Identifiable {
+    let id = UUID()
+    let day: Date
+    let task: String?
+}
+
+/// Activité's « Corriger »: the review in a sheet, so closing it returns to the same day,
+/// period and scroll position in Activité instead of switching to Mon travail.
+@MainActor struct GoalongWorkReviewSheet: View {
+    let request: GoalongWorkReviewRequest
+    @StateObject private var review = GoalongWorkReviewModel()
+    @ObservedObject private var agent = GoalongWorkAgent.shared
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Corriger le classement").font(LHTheme.sheetTitleFont)
+                    Text("Chaque contexte de la journée, rangé par tâche. Vos corrections priment sur l’agent.")
+                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Terminé") { dismiss() }.keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("work-review-sheet-done")
+            }.padding(24)
+            Divider()
+            ScrollView {
+                GoalongWorkReviewCard(review: review, day: request.day, focusTask: request.task, loadsOnAppear: true)
+                    .padding(24)
+            }
+        }
+        .frame(width: 720, height: 640).background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
+        .onChange(of: agent.isRunning) { running in
+            if !running, let day = review.loadedDay { review.load(day: day) }
+        }
+        .accessibilityIdentifier("work-review-sheet")
     }
 }
 

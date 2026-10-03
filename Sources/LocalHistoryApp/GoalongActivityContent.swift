@@ -10,6 +10,8 @@ struct GoalongWorkStatus: Equatable {
     var isClassifying = false
     var progress: String? = nil
     var problem: String? = nil
+    /// Opening Activité sends contexts not yet classified to ChatGPT (automatic, consented, connected).
+    var classifiesOnOpen = false
     static let preview = GoalongWorkStatus()
 }
 
@@ -20,6 +22,8 @@ struct GoalongAnalyticsContent: View {
     var workStatus = GoalongWorkStatus.preview
     var onDay: (Date) -> Void = { _ in }
     var onWork: () -> Void = {}
+    /// Opens the correction of the day on screen; the task is the one clicked, if any.
+    var onReview: (String?) -> Void = { _ in }
     var onClassify: () -> Void = {}
     var onHistory: () -> Void = {}
     var onProjects: () -> Void = {}
@@ -69,6 +73,8 @@ struct GoalongAnalyticsContent: View {
                 if current.observedSeconds > 0 { rhythmDetails }
                 methodology
                 Text(payload.isPreview ? "Données fictives, non enregistrées."
+                     : workStatus.classifiesOnOpen
+                     ? "Durées calculées sur ce Mac ; nouveaux contextes classés par ChatGPT. Actualisé à \(time(payload.updatedAt))."
                      : "Calculé sur ce Mac, sans envoi. Actualisé à \(time(payload.updatedAt)).")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                     .padding(.top, 12).padding(.leading, 6)
@@ -170,12 +176,12 @@ struct GoalongAnalyticsContent: View {
     private func concentrationFigure(_ summary: GoalongActivitySummary) -> some View {
         if summary.workIsMeasurable, let block = summary.longestWorkBlock {
             let blocks = summary.workBlocks.count
-            return figure("Concentration", value: duration(block.workSeconds),
-                          detail: block.task.map { "Sur \($0)" } ?? "Plus longue session de travail",
+            return figure("Plus longue session de travail", value: duration(block.workSeconds),
+                          detail: block.task.map { "Sur \($0)" } ?? "Sur une même tâche",
                           help: "Plus longue session sur une même tâche. \(blocks) session\(blocks > 1 ? "s" : "") de 25 min ou plus.")
         }
         let longest = summary.longestSequence
-        return figure("Concentration", value: longest.map { duration($0.seconds) } ?? "—",
+        return figure("Plus longue séquence", value: longest.map { duration($0.seconds) } ?? "—",
                       detail: longest.map { "Dans \(GoalongActivityPresentation.displayName($0.host ?? $0.application))" }
                         ?? "Aucune période continue",
                       help: "Plus longue période continue dans une même app ou un même site.")
@@ -314,25 +320,20 @@ struct GoalongAnalyticsContent: View {
         let visible = allTasks ? tasks : Array(tasks.prefix(5))
         return GoalongSection(title: "Tâches", subtitle: "Votre travail par projet, quelles que soient les applications") {
             if !payload.isPreview {
-                Button("Corriger", action: onWork).buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+                Button("Corriger") { onReview(nil) }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                     .accessibilityIdentifier("activity-tasks-review")
             }
         } content: {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(visible) { task in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(task.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                            Text(taskDetail(task)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
-                            Spacer(minLength: 8)
-                            Text(duration(task.seconds)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                            Text(percent(task.seconds / total)).font(.system(size: 12)).monospacedDigit()
-                                .foregroundStyle(LHTheme.secondaryText).frame(width: 42, alignment: .trailing)
-                        }
-                        GoalongShareBar(share: task.seconds / total, color: LHTheme.workData)
+                    if payload.isPreview {
+                        taskRow(task, total: total).help(task.name)
+                    } else {
+                        Button { onReview(task.name) } label: { taskRow(task, total: total) }
+                            .buttonStyle(.plain)
+                            .help("\(task.name) · cliquer pour corriger son classement")
+                            .accessibilityHint("Ouvre la correction du classement de cette tâche")
                     }
-                    .help(task.name)
-                    .accessibilityElement(children: .combine)
                 }
                 if tasks.count > 5 {
                     Button(allTasks ? "Réduire" : "Voir les \(tasks.count) tâches") { allTasks.toggle() }
@@ -340,6 +341,22 @@ struct GoalongAnalyticsContent: View {
                 }
             }
         }.accessibilityIdentifier("activity-tasks")
+    }
+
+    private func taskRow(_ task: GoalongWorkTask, total: Double) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(task.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                Text(taskDetail(task)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(duration(task.seconds)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                Text(percent(task.seconds / total)).font(.system(size: 12)).monospacedDigit()
+                    .foregroundStyle(LHTheme.secondaryText).frame(width: 42, alignment: .trailing)
+            }
+            GoalongShareBar(share: task.seconds / total, color: LHTheme.workData)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     private func taskDetail(_ task: GoalongWorkTask) -> String {
@@ -601,10 +618,14 @@ struct GoalongAnalyticsContent: View {
                 Text("Temps actif = Travail + Hors travail + À classer. Le travail et le focus sont inclus dans l’actif ; ce ne sont pas des heures supplémentaires.")
                 Text("Goalong ne décide jamais qu’une app ou un site est productif. Un agent applique votre définition (Mon travail) à chaque contexte — app, site et titre de fenêtre — et vos corrections priment. Sans verdict, le temps reste à classer, pas à zéro. Hors travail ne signifie pas procrastination.")
                 Text("Les moyennes par jour ne comptent que les jours observés. Aujourd’hui est comparé à hier à la même heure ; une période, à la moyenne de la précédente.")
-                Text("Une séquence de focus suit une même tâche, même en changeant d’application ; sans tâche connue, elle suit la même application et le même domaine. Elle ne mesure ni l’attention ni l’efficacité.")
+                Text("La plus longue session de travail suit une même tâche, même en changeant d’application. Sans tâche connue, Goalong montre à la place la plus longue séquence dans une même app ou un même site. Aucune des deux ne mesure l’attention ni l’efficacité.")
                 Text("Un écart de plus de deux minutes entre observations ou une interruption de collecte coupe la continuité. Les appels, lectures et présentations observés au premier plan comptent même sans clavier ni souris. Les périodes sans saisie et sans signal d’usage, privées ou non observées restent distinctes. Rien n’est prolongé avant la première trace ou après la dernière.")
                 Text("Le Temps d’écran Apple garde ses propres sources et appareils. Il n’est jamais additionné aux observations Goalong. Les conversations et le temps machine ne s’ajoutent pas non plus au temps actif.")
-                Text("Les bilans et projets sont des analyses déjà enregistrées. Consulter cette page ne lance aucun agent. Sport, sommeil et travail hors ordinateur ne sont pas déduits de l’activité du Mac.")
+                Text("Les bilans et projets sont des analyses déjà enregistrées. "
+                     + (workStatus.classifiesOnOpen
+                        ? "Le classement automatique est activé : ouvrir cette page envoie à votre compte ChatGPT les contextes pas encore classés, selon vos choix de données. "
+                        : "Consulter cette page ne lance ni classement ni bilan. ")
+                     + "Sport, sommeil et travail hors ordinateur ne sont pas déduits de l’activité du Mac.")
             }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 10).padding(.bottom, 8)
         }.font(.system(size: 13))
