@@ -404,6 +404,46 @@ enum ComputerHistorySupport {
             .filter { !$0.isEmpty }
     }
 
+    /// The lines of recently seen texts with their token sets. One action's "after" text is
+    /// usually the next action's "before" text, so a few dozen entries catch most reuse.
+    struct SemanticLineCache {
+        typealias Line = (text: String, tokens: Set<String>)
+        private var entries: [String: [Line]] = [:]
+        private var order: [String] = []
+        private let capacity = 64
+
+        mutating func lines(of text: String) -> [Line] {
+            if let known = entries[text] { return known }
+            let value = splitSemanticLines(text).map { line -> Line in
+                (line, autoreleasepool { Set(tokens(line)) })
+            }
+            entries[text] = value
+            order.append(text)
+            if order.count > capacity { entries.removeValue(forKey: order.removeFirst()) }
+            return value
+        }
+    }
+
+    /// Same result as `semanticDelta(before:after:)`, with line tokens taken from `cache`.
+    static func semanticDelta(
+        before: String?,
+        after: String?,
+        cache: inout SemanticLineCache
+    ) -> [String] {
+        guard let after else { return [] }
+        let beforeTokenSets = cache.lines(of: before ?? "").map(\.tokens)
+        var output: [String] = []
+        output.reserveCapacity(10)
+        for line in cache.lines(of: after) where line.text.count >= 3 {
+            guard !beforeTokenSets.contains(where: { jaccard($0, line.tokens) >= 0.88 }) else {
+                continue
+            }
+            output.append(line.text)
+            if output.count == 10 { break }
+        }
+        return output
+    }
+
     static func semanticDelta(before: String?, after: String?) -> [String] {
         guard let after else { return [] }
         let beforeTokenSets = splitSemanticLines(before ?? "").map { line in
@@ -515,7 +555,30 @@ enum ComputerHistorySupport {
     }
 
     static func containsAny(_ value: String, markers: [String]) -> Bool {
-        markers.contains { value.contains($0) }
+        var haystack = value
+        return haystack.withUTF8 { text in
+            let textIsASCII = text.allSatisfy { $0 < 0x80 }
+            return markers.contains { marker in
+                var needle = marker
+                // An ASCII marker matches only where its exact bytes occur, so a byte scan
+                // rejects most texts at once. Only a non-ASCII text, where grapheme rules
+                // could still refuse a byte match, is confirmed by the full comparison.
+                let bytesMatch: Bool? = needle.withUTF8 { pattern in
+                    // In ASCII text only CR LF forms a multi-byte grapheme; leave such
+                    // markers, non-ASCII ones and the empty one to the full comparison.
+                    guard !pattern.isEmpty,
+                        pattern.allSatisfy({ $0 < 0x80 && $0 != 0x0A && $0 != 0x0D })
+                    else { return nil }
+                    guard text.count >= pattern.count else { return false }
+                    return memmem(text.baseAddress!, text.count, pattern.baseAddress!, pattern.count) != nil
+                }
+                switch bytesMatch {
+                case false?: return false
+                case true? where textIsASCII: return true
+                default: return value.contains(marker)
+                }
+            }
+        }
     }
 
     static func stableIdentifier(_ value: String) -> String {

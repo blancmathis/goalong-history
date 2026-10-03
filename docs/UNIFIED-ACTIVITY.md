@@ -54,7 +54,7 @@ Un **bloc de travail** regroupe le temps classé Travail tant que les interrupti
 
 ## Journées très chargées
 
-Une journée réelle peut dépasser 40 000 observations. La projection Activité, compacte, dispose désormais de son propre plafond (262 144 lignes, 384 Mio estimés) au lieu de celui de l’historique détaillé (32 768 lignes) qui rejetait ces journées entières comme « illisibles ». La lecture reste bornée, une journée à la fois, et les journées passées sont mises en cache après leur première lecture.
+Une journée réelle peut dépasser 40 000 observations. La projection Activité, compacte, dispose désormais de son propre plafond (262 144 lignes, 384 Mio estimés) au lieu de celui de l’historique détaillé (alors 32 768 lignes, 131 072 depuis) qui rejetait ces journées entières comme « illisibles ». La lecture reste bornée, une journée à la fois, et les journées passées sont mises en cache après leur première lecture.
 
 ## Données et confidentialité
 

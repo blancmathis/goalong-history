@@ -174,16 +174,21 @@ enum ComputerHistoryResourceResolver {
             events.count > largeDayEventThreshold
             ? maximumLargeDayProvenanceReferences
             : nil
+        // A busy day repeats a few hundred titles, sites and texts across tens of thousands
+        // of events; each distinct value is cleaned once per pass.
+        var memo = Memo()
 
         for event in events {
             autoreleasepool {
-                let semantic = ComputerHistorySupport.semanticText(
+                let semantic = SemanticContextResolver.text(
                     for: event,
                     semanticSnapshots: semanticSnapshots
-                )
+                ).flatMap { raw in
+                    memo.cleanedSemanticText(raw)
+                }
                 if semantic != nil { semanticSnapshotCount += 1 }
                 interactionSemanticTexts.append(semantic)
-                let candidates = candidates(for: event, semantic: semantic)
+                let candidates = candidates(for: event, semantic: semantic, memo: &memo)
                 var resourceIDs: [String] = []
                 resourceIDs.reserveCapacity(candidates.count)
 
@@ -248,20 +253,71 @@ enum ComputerHistoryResourceResolver {
         )
     }
 
+    private struct Memo {
+        private var semanticTexts: [String: String?] = [:]
+        private var titles: [TitleKey: String?] = [:]
+        private var URLs: [URLKey: Candidate?] = [:]
+
+        private struct TitleKey: Hashable {
+            let title: String?
+            let application: String?
+        }
+
+        private struct URLKey: Hashable {
+            let rawURL: String
+            let rawHost: String?
+            let title: String?
+            let application: String?
+            let bundleIdentifier: String?
+        }
+
+        mutating func cleanedSemanticText(_ raw: String) -> String? {
+            if let cached = semanticTexts[raw] { return cached }
+            let value = ActivitySemanticTextSanitizer.clean(raw, maximumLength: 6_000)
+            semanticTexts[raw] = .some(value)
+            return value
+        }
+
+        mutating func cleanTitle(_ raw: String?, application: String?) -> String? {
+            let key = TitleKey(title: raw, application: application)
+            if let cached = titles[key] { return cached }
+            let value = ComputerHistorySupport.cleanTitle(raw, application: application)
+            titles[key] = .some(value)
+            return value
+        }
+
+        mutating func URLCandidate(
+            rawURL: String,
+            rawHost: String?,
+            title: String?,
+            application: String?,
+            bundleIdentifier: String?
+        ) -> Candidate? {
+            let key = URLKey(rawURL: rawURL, rawHost: rawHost, title: title,
+                application: application, bundleIdentifier: bundleIdentifier)
+            if let cached = URLs[key] { return cached }
+            let value = ComputerHistoryResourceResolver.URLCandidate(rawURL: rawURL, rawHost: rawHost,
+                title: title, application: application, bundleIdentifier: bundleIdentifier)
+            URLs[key] = .some(value)
+            return value
+        }
+    }
+
     private static func candidates(
         for event: HistoryEvent,
-        semantic: String?
+        semantic: String?,
+        memo: inout Memo
     ) -> [Candidate] {
         let application = event.app?.name
         let bundleIdentifier = event.app?.bundleIdentifier
-        let title = ComputerHistorySupport.cleanTitle(
+        let title = memo.cleanTitle(
             event.window?.title,
             application: application
         )
         var output: [Candidate] = []
 
         if let rawURL = event.url?.value,
-            let URLCandidate = URLCandidate(
+            let URLCandidate = memo.URLCandidate(
                 rawURL: rawURL,
                 rawHost: event.url?.host,
                 title: title,

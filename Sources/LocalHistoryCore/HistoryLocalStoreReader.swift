@@ -156,10 +156,19 @@ package struct ComputerHistoryEvidenceLoadMetrics: Equatable {
 }
 
 package struct ComputerHistoryEvidenceLoadLimits: Equatable {
+    /// One day's evidence, loaded one day at a time. Busy real days reach 60 000+ rows
+    /// (events plus referenced texts); the former 32 768-row ceiling rejected them from
+    /// about midday, so recaps, targeted deletion and agents lost the rest of the day.
     package static let production = ComputerHistoryEvidenceLoadLimits(
-        maximumRetainedRows: 32_768,
-        maximumRetainedBytes: 64 * 1_024 * 1_024
+        maximumRetainedRows: 131_072,
+        maximumRetainedBytes: 256 * 1_024 * 1_024
     )
+
+    /// Shown to people when a day still exceeds the ceiling.
+    package var summary: String {
+        "the \(maximumRetainedRows.formatted(.number.locale(Locale(identifier: "en_US"))))-row or "
+            + "\(maximumRetainedBytes / 1_048_576) MiB retained-evidence budget was exceeded"
+    }
     /// Activité keeps only a compact projection per row (no window, element or semantic
     /// payload). A busy real day reaches 40 000+ rows; rejecting it hid the most active
     /// days from every total. This ceiling covers several such days of growth while the

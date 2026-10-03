@@ -31,6 +31,9 @@
         @Published private(set) var isAnswering = false
         @Published private(set) var errorMessage: String?
         @Published private(set) var sourceStatus: ComputerHistorySourceStatus = .unverified
+        /// The journal is readable but the day outgrew the analysis ceiling: the memory
+        /// shown is the last one that fitted, so it stops before the end of the day.
+        @Published private(set) var isAnalysisPartial = false
         @Published var question = ""
 
         private let store: ComputerHistoryStore
@@ -101,9 +104,12 @@
                     DispatchQueue.main.async { [weak self] in
                         guard let self, self.refreshRequestID == requestID else { return }
                         self.memory = memory
+                        self.isAnalysisPartial = Self.exceededAnalysisCeiling(result)
                         switch result {
                         case .success(let cycleResult):
                             self.sourceStatus = cycleResult.sourceAbsent ? .absent : .available
+                        case .failure where self.isAnalysisPartial:
+                            self.sourceStatus = .available
                         case .failure(let error):
                             self.sourceStatus = invalidated ? .unverified : Self.sourceStatus(for: error)
                             self.errorMessage = error.localizedDescription
@@ -127,7 +133,18 @@
             case .sourceInaccessible, .sourceChangedDuringRead, .oversizedJSONLine,
                 .reentrantCycle:
                 return .inaccessible(error.localizedDescription)
+            case .retainedEvidenceBudgetExceeded:
+                return .available
             }
+        }
+
+        private static func exceededAnalysisCeiling(
+            _ result: Result<ActivityAnalysisCycleResult, Error>
+        ) -> Bool {
+            guard case .failure(let error) = result,
+                case .retainedEvidenceBudgetExceeded? = error as? ActivityAnalysisCycleError
+            else { return false }
+            return true
         }
 
         private static func wasInvalidatedByHistoryClear(_ error: Error) -> Bool {
@@ -729,6 +746,8 @@
             switch model.sourceStatus {
             case .checking:
                 return "Vérification de la journée"
+            case .available where model.isAnalysisPartial:
+                return "Analyse partielle"
             case .available:
                 return snapshot.eventCount > 0 || !tenMinuteGroups.isEmpty
                     ? "Enregistré sur ce Mac"
@@ -749,6 +768,8 @@
             switch model.sourceStatus {
             case .checking:
                 return "arrow.triangle.2.circlepath"
+            case .available where model.isAnalysisPartial:
+                return "clock.badge.exclamationmark"
             case .available:
                 return snapshot.eventCount > 0 || !tenMinuteGroups.isEmpty
                     ? "checkmark"
@@ -765,6 +786,8 @@
         private var recordingStateTint: Color {
             if isPreparingTimeline { return LHTheme.accent }
             switch model.sourceStatus {
+            case .available where model.isAnalysisPartial:
+                return LHTheme.warning
             case .available:
                 return snapshot.eventCount > 0 || !tenMinuteGroups.isEmpty
                     ? LHTheme.success
@@ -802,7 +825,15 @@
                 break
             }
             let windows = tenMinuteGroups.count.formatted()
-            return "\(windows) périodes de dix minutes. Ouvrez une période pour voir ses détails."
+            let summary = "\(windows) périodes de dix minutes. Ouvrez une période pour voir ses détails."
+            return model.isAnalysisPartial ? partialAnalysisNotice + " " + summary : summary
+        }
+
+        private var partialAnalysisNotice: String {
+            guard let end = model.memory?.episodes.map(\.end).max() else {
+                return "Journée très chargée : elle dépasse ce que l’analyse de ce Mac garde en mémoire."
+            }
+            return "Journée très chargée : l’analyse de ce Mac s’arrête à \(end.formatted(date: .omitted, time: .shortened))."
         }
 
         private var historySection: some View {

@@ -450,6 +450,14 @@ enum ComputerHistoryInteractionBuilder {
 
         var output: [ComputerHistoryInteraction] = []
         output.reserveCapacity(ordered.count)
+        // Consecutive actions on one screen share the same before/after texts; the delta
+        // is a pure function of that pair, so each pair is compared once.
+        struct DeltaKey: Hashable {
+            let before: String?
+            let after: String
+        }
+        var deltas: [DeltaKey: [String]] = [:]
+        var deltaLines = ComputerHistorySupport.SemanticLineCache()
         for event in ordered {
             guard ComputerHistorySupport.isActionEvent(event) else { continue }
             autoreleasepool {
@@ -505,10 +513,24 @@ enum ComputerHistoryInteractionBuilder {
                 } else {
                     explicitDelta = []
                 }
-                let delta =
-                    explicitDelta.isEmpty
-                    ? ComputerHistorySupport.semanticDelta(before: beforeText, after: afterText)
-                    : explicitDelta
+                let delta: [String]
+                if !explicitDelta.isEmpty {
+                    delta = explicitDelta
+                } else if let afterText {
+                    let key = DeltaKey(before: beforeText, after: afterText)
+                    if let known = deltas[key] {
+                        delta = known
+                    } else {
+                        delta = ComputerHistorySupport.semanticDelta(
+                            before: beforeText,
+                            after: afterText,
+                            cache: &deltaLines
+                        )
+                        deltas[key] = delta
+                    }
+                } else {
+                    delta = []
+                }
                 let linkedEvents = ComputerHistorySupport.distinctEvents(
                     [event] + [before?.event, after?.event].compactMap { $0 }
                 )

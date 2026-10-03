@@ -1114,9 +1114,11 @@
     }
 
     struct ActivityAnalysisDayLoadLimits {
+        /// Sized by journal row. A busy real day reaches 60 000+ rows and ~150 MB by the
+        /// evening; the former 32 768 rows stopped the day's analysis about midday.
         static let production = ActivityAnalysisDayLoadLimits(
-            maximumRetainedRows: 32_768,
-            maximumEstimatedRetainedBytes: 64 * 1_024 * 1_024
+            maximumRetainedRows: 131_072,
+            maximumEstimatedRetainedBytes: 256 * 1_024 * 1_024
         )
 
         let maximumRetainedRows: Int
@@ -1167,6 +1169,9 @@
         case sourceChangedDuringRead
         case oversizedJSONLine(path: String, maximumBytes: Int)
         case reentrantCycle
+        /// The day holds more evidence than one pass may keep in memory. The source is
+        /// fine; the last derived views stay, and they stop where the day last fitted.
+        case retainedEvidenceBudgetExceeded(rows: Int, bytes: Int64)
 
         var errorDescription: String? {
             switch self {
@@ -1178,6 +1183,10 @@
                 return "Refused an oversized JSONL row in \(path) (maximum \(maximumBytes) bytes)"
             case .reentrantCycle:
                 return "Refused a reentrant activity-analysis cycle on the same source root"
+            case .retainedEvidenceBudgetExceeded(let rows, let bytes):
+                return "Derived analysis kept the last-known-good views because the "
+                    + "retained-evidence budget was exceeded "
+                    + "(\(rows) rows or \(bytes) estimated bytes)"
             }
         }
     }
@@ -1466,19 +1475,15 @@
         }
 
         var retainedEvidenceBudgetError: ActivityAnalysisCycleError {
-            .sourceInaccessible(
-                "Derived analysis kept the last-known-good views because the "
-                    + "retained-evidence budget was exceeded "
-                    + "(\(limits.maximumRetainedRows) rows or "
-                    + "\(limits.maximumEstimatedRetainedBytes) estimated bytes)"
+            .retainedEvidenceBudgetExceeded(
+                rows: limits.maximumRetainedRows,
+                bytes: limits.maximumEstimatedRetainedBytes
             )
         }
 
         func isRetainedEvidenceBudgetError(_ error: ActivityAnalysisCycleError) -> Bool {
-            guard case .sourceInaccessible(let message) = error,
-                case .sourceInaccessible(let budget) = retainedEvidenceBudgetError
-            else { return false }
-            return message == budget
+            if case .retainedEvidenceBudgetExceeded = error { return true }
+            return false
         }
 
         func load(
@@ -1537,12 +1542,11 @@
             var sourceTailIsValid = true
             var retainedRowCount = 0
             var estimatedRetainedBytes: Int64 = 0
-            let retainedValueEncoder = Self.makeEncoder()
 
-            func reserveRetainedValue<T: Encodable>(_ value: T) throws {
-                let valueBytes = try Self.estimatedRetainedBytes(
-                    for: value,
-                    encoder: retainedValueEncoder
+            func reserveRetainedValue<T>(_: T.Type, sourceLineBytes: Int) throws {
+                let valueBytes = Self.estimatedRetainedBytes(
+                    for: T.self,
+                    sourceLineBytes: sourceLineBytes
                 )
                 guard retainedRowCount < limits.maximumRetainedRows,
                     valueBytes <= limits.maximumEstimatedRetainedBytes - estimatedRetainedBytes
@@ -1608,8 +1612,8 @@
                     previousPhysicalEvent = boundary
                 },
                 transform: { $0.compactedForDerivedAnalysis },
-                retain: { event in
-                    try reserveRetainedValue(event)
+                retain: { _, sourceLineBytes in
+                    try reserveRetainedValue(HistoryEvent.self, sourceLineBytes: sourceLineBytes)
                     return true
                 },
                 issues: &issues
@@ -1638,7 +1642,7 @@
                     timestamp: { $0.capturedAt },
                     include: { referencedSemanticIDs.contains($0.id) },
                     observe: { _ in },
-                    retain: { payload in
+                    retain: { payload, sourceLineBytes in
                         if let existing = semanticSnapshots[payload.id] {
                             guard existing == payload else {
                                 throw ActivityAnalysisCycleError.sourceInaccessible(
@@ -1649,7 +1653,10 @@
                             }
                             return false
                         }
-                        try reserveRetainedValue(payload)
+                        try reserveRetainedValue(
+                            SemanticContextPayload.self,
+                            sourceLineBytes: sourceLineBytes
+                        )
                         semanticSnapshots[payload.id] = payload
                         return false
                     },
@@ -1873,7 +1880,7 @@
             include: (T) -> Bool,
             observe: (T) -> Void,
             transform: (T) -> T = { $0 },
-            retain: (T) throws -> Bool = { _ in true },
+            retain: (T, _ sourceLineBytes: Int) throws -> Bool = { _, _ in true },
             issues: inout [HistoryLoadIssue]
         ) throws -> ([T], Int64, String, Bool) {
             let descriptor = Darwin.open(
@@ -2038,7 +2045,7 @@
             include: (T) -> Bool,
             observe: (T) -> Void,
             transform: (T) -> T,
-            retain: (T) throws -> Bool,
+            retain: (T, _ sourceLineBytes: Int) throws -> Bool,
             output: inout [T],
             issues: inout [HistoryLoadIssue]
         ) throws {
@@ -2064,18 +2071,14 @@
             guard date >= start, date < end else { return }
             guard include(value) else { return }
             let transformed = transform(value)
-            guard try retain(transformed) else { return }
+            guard try retain(transformed, line.count) else { return }
             output.append(transformed)
         }
 
-        static func estimatedRetainedBytes<T: Encodable>(
-            for value: T,
-            encoder: JSONEncoder? = nil
-        ) throws -> Int64 {
-            let encoder = encoder ?? makeEncoder()
-            return Int64(try encoder.encode(value).count)
-                + Int64(MemoryLayout<T>.stride)
-                + retainedValueMarginBytes
+        /// Sized from the journal row rather than by encoding the kept value again: the
+        /// derived copy only drops fields, so its row is an upper bound and costs no work.
+        static func estimatedRetainedBytes<T>(for _: T.Type, sourceLineBytes: Int) -> Int64 {
+            Int64(sourceLineBytes) + Int64(MemoryLayout<T>.stride) + retainedValueMarginBytes
         }
 
         private static func fileExistsWithoutFollowingSymlinks(_ URL: URL) -> Bool {
@@ -2117,13 +2120,6 @@
                 )
             }
             return decoder
-        }
-
-        private static func makeEncoder() -> JSONEncoder {
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            return encoder
         }
 
         private static let fractionalISO: ISO8601DateFormatter = {
@@ -2628,15 +2624,38 @@
                 )
             }
 
-            let generatedAt = Date()
-            let analysisEvents = snapshot.events.map { event in
-                Self.eventByResolvingSemanticContext(
-                    event,
-                    semanticSnapshots: snapshot.semanticSnapshots
+            return try ActivitySemanticTextSanitizer.withMemo {
+                try analyzeAndWrite(
+                    snapshot: snapshot,
+                    start: start,
+                    dayKey: dayKey,
+                    revision: revision,
+                    tokenBudget: tokenBudget,
+                    includeActivityMemory: includeActivityMemory,
+                    priorComputerHistory: priorComputerHistory
                 )
             }
+        }
+
+        private func analyzeAndWrite(
+            snapshot: ActivityAnalysisDaySnapshot,
+            start: Date,
+            dayKey: String,
+            revision: ActivityAnalysisSourceRevision,
+            tokenBudget: Int,
+            includeActivityMemory: Bool,
+            priorComputerHistory: [ComputerHistoryDayMemory]
+        ) throws -> ActivityAnalysisCycleResult {
+            let generatedAt = Date()
+            // The resolved copies are only for this engine; built inline, they are freed
+            // before the next engines run instead of doubling the day's events.
             let analysis = ActivityAnalysisEngine.analyze(
-                events: analysisEvents,
+                events: snapshot.events.map { event in
+                    Self.eventByResolvingSemanticContext(
+                        event,
+                        semanticSnapshots: snapshot.semanticSnapshots
+                    )
+                },
                 day: start,
                 options: ActivityAnalysisOptions(agentTokenBudget: tokenBudget),
                 generatedAt: generatedAt
@@ -3094,7 +3113,7 @@
                 .appendingPathComponent(dayKey + ".computer-history.json")
         }
 
-        private static func eventByResolvingSemanticContext(
+        static func eventByResolvingSemanticContext(
             _ event: HistoryEvent,
             semanticSnapshots: [String: SemanticContextPayload]
         ) -> HistoryEvent {

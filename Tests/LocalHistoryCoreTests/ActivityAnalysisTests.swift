@@ -135,6 +135,52 @@ final class ActivityAnalysisTests: XCTestCase {
         XCTAssertTrue(cleaned?.contains("[REDACTED") == true)
     }
 
+    func testRequestSimilarityOnTokenSetsMatchesTokenSimilarity() {
+        let words = ["fix", "the", "login", "page", "corrige", "la", "connexion", "vite", "Login", "pagé", "bug", "a"]
+        var generator = SystemRandomNumberGenerator()
+        var phrases = ["", "a b", "fix the login page", "Fix the LOGIN page?", "corrige la connexion"]
+        for _ in 0..<300 {
+            let count = Int.random(in: 1...9, using: &generator)
+            phrases.append((0..<count).map { _ in words.randomElement(using: &generator)! }.joined(separator: " "))
+        }
+        for left in phrases {
+            for right in phrases.prefix(60) {
+                let lhs = ActivityAnalysisEngine.normalizedComparable(left)
+                let rhs = ActivityAnalysisEngine.normalizedComparable(right)
+                XCTAssertEqual(
+                    ActivityAnalysisEngine.isRequestSimilar(
+                        Set(ActivityAnalysisEngine.tokens(lhs)),
+                        Set(ActivityAnalysisEngine.tokens(rhs))
+                    ),
+                    ActivityAnalysisEngine.tokenSimilarity(lhs, rhs) >= 0.82,
+                    "\(lhs) | \(rhs)"
+                )
+            }
+        }
+    }
+
+    func testRepeatedRequestsMergeIntoOneSummary() {
+        let start = makeDate("2026-08-18T09:00:00Z")
+        let texts = [
+            "Peux-tu corriger la page de connexion ?",
+            "Peux-tu corriger la page de connexion ?",
+            "peux tu corriger la page de connexion",
+            "Fix the login page please?",
+        ]
+        let events = texts.enumerated().map { index, text in
+            HistoryEvent(
+                sessionID: "s",
+                timestamp: start.addingTimeInterval(Double(index) * 60),
+                kind: .windowChanged,
+                app: AppSnapshot(name: "ChatGPT", bundleIdentifier: "com.openai.chat", processIdentifier: 1),
+                metadata: [ActivitySemanticMetadata.text: text]
+            )
+        }
+        let requests = ActivityAnalysisEngine.makeRequests(from: events, options: ActivityAnalysisOptions())
+        XCTAssertEqual(requests.map(\.occurrences).sorted(), [1, 3])
+        XCTAssertEqual(requests.first?.text, "Peux-tu corriger la page de connexion ?")
+    }
+
     func testCompiledSemanticSanitizerRulesPreserveOrderedReplacementBehavior() {
         let corpus = [
             "  tabs\tand   spaces\r\n\rline\n\n\nend  ",
@@ -142,6 +188,11 @@ final class ActivityAnalysisTests: XCTestCase {
             "sk-abcdefghijklmnop ghp_abcdefghijklmnopqrstuvwxyz1234",
             "eyJabcdefghijkl.abcdefgh.abcdefgh 4111 1111 1111 1111",
             "Résumé sans secret et texte 日本語",
+            // Each rule is skipped only when its literal or digit count cannot occur.
+            "ſecret: folded-value and Authorization: Basic abc API-KEY=xyz",
+            "carte ١٢٣٤٥٦٧٨٩٠١٢٣ fin, twelve 1234 5678 9012 only",
+            "gho_abcdefghijklmnopqrstuvwxyz12 ghx_abcdefghijklmnopqrstuvwxyz12 sk-short",
+            "plain words, a date 2026-10-03 20:30, nothing to hide",
         ]
         let rules: [(String, String)] = [
             ("[\\t ]+", " "),
