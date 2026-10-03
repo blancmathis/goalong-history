@@ -46,7 +46,18 @@ enum GoalongDeveloperRecap {
         var lines = ["Développement — activité des outils, jamais le temps de travail de la personne.",
                      "T3 : \(value.t3.status.label). Fichiers : \(value.files.status.label).",
                      "Les spans de conversations ne prouvent pas une exécution continue ; les délais entre demandes sont plafonnés à 2 h."]
-        for project in projects.values.sorted(by: { $0.id < $1.id }).prefix(maximumProjects) {
+        // Most active projects first; selected projects without activity collapse into one count.
+        let weights = projects.mapValues { project -> Int in
+            let agent = value.agents.projects.first { $0.id == project.id }
+            return (agent?.sessions ?? 0) + (agent?.t3?.requests ?? 0)
+                + (value.git.first { $0.project.id == project.id }?.actions.count ?? 0)
+                + value.files.buckets.filter { $0.projectID == project.id }.reduce(0) { $0 + $1.modifiedFiles }
+        }
+        let active = projects.values.filter { weights[$0.id, default: 0] > 0 }.sorted {
+            let a = weights[$0.id, default: 0], b = weights[$1.id, default: 0]
+            return a == b ? $0.id < $1.id : a > b
+        }
+        for project in active.prefix(maximumProjects) {
             let name = String((ActivitySemanticTextSanitizer.redact(try transform(project.name)) ?? "Projet").prefix(160)).replacingOccurrences(of: "\n", with: " ")
             let agent = value.agents.projects.first { $0.id == project.id }
             let git = value.git.first { $0.project.id == project.id }
@@ -70,13 +81,16 @@ enum GoalongDeveloperRecap {
             }
             if value.selectedProjects.contains(where: { $0.id == project.id }) {
                 if value.files.buckets.contains(where: { $0.projectID == project.id }) { parts.append("\(changes) fichiers distincts par tranche de 5 min, cumul des tranches") }
+                else if value.files.status == .ready { parts.append("aucun fichier modifié observé") }
                 else { parts.append("Fichiers : \(value.files.status.label)") }
             }
             let line = parts.joined(separator: " · ")
             if lines.joined(separator: "\n").count + line.count + 1 > maximumCharacters - 160 { lines.append("Autres projets omis : section bornée."); break }
             lines.append(line)
         }
-        if projects.count > maximumProjects { lines.append("\(projects.count - maximumProjects) autres projets omis.") }
+        let omitted = active.count - maximumProjects, quiet = projects.count - active.count
+        if omitted > 0 { lines.append(omitted == 1 ? "1 autre projet actif omis." : "\(omitted) autres projets actifs omis.") }
+        if quiet > 0 { lines.append(quiet == 1 ? "1 projet suivi sans activité observée ce jour-là." : "\(quiet) projets suivis sans activité observée ce jour-là.") }
         return lines.joined(separator: "\n")
     }
 }

@@ -47,6 +47,20 @@ final class GoalongDeveloperModelTests: XCTestCase {
         XCTAssertTrue(context.hasMeaningfulData)
         XCTAssertEqual(try JSONDecoder().decode(ChatGPTRecapSourceCounts.self, from: JSONEncoder().encode(counts)), counts)
     }
+    func testRecapListsMostActiveProjectsFirstAndCountsQuietOnes() throws {
+        let root = try fixture(), day = Calendar.current.startOfDay(for: Date())
+        let projects = try ["calm", "small", "busy"].map { name -> GoalongDeveloperProject in
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(name + "/.git"), withIntermediateDirectories: true)
+            return GoalongDeveloperProject(root: root.appendingPathComponent(name), name: name)
+        }
+        let buckets = [(projects[1], 2), (projects[2], 9)].map { GoalongFileModificationBucket(projectID: $0.0.id, start: day, modifiedFiles: $0.1, estimated: false, lastEventID: 1) }
+        let value = GoalongDeveloperDay(day: day, t3: T3CodeMetadataReader.read(day: day, enabled: false, shouldContinue: { true }),
+            agents: GoalongAgentProjectGrouping.group(.init(day: day), t3: nil, enabled: false), git: [],
+            files: .init(status: .ready, buckets: buckets), selectedProjects: projects, suggestions: [], developerStatus: .ready)
+        let lines = try GoalongDeveloperRecap.render(value).components(separatedBy: "\n")
+        XCTAssertEqual(lines.filter { $0.hasPrefix("busy") || $0.hasPrefix("small") || $0.hasPrefix("calm") }.map { String($0.prefix(4)) }, ["busy", "smal"])
+        XCTAssertEqual(lines.last, "1 projet suivi sans activité observée ce jour-là.")
+    }
     func testCounterJournalsAreRemovedWithDerivedDayDeletion() throws {
         let root = try fixture(), day = Calendar.current.startOfDay(for: Date()), store = GoalongDeveloperStore(root: root.appendingPathComponent("data"))
         let project = GoalongDeveloperProject(root: root.appendingPathComponent("repo"))
