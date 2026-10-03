@@ -1387,7 +1387,7 @@
             XCTAssertGreaterThan(result.derivedViewsWritten, 0)
         }
 
-        func testCompactJournalIntegrityCanBeSizedAfterDerivedCompaction() throws {
+        func testCompactJournalIntegrityStaysEncodableAfterDerivedCompaction() throws {
             let eventRoot = SHA256Digest.hashHex("compact-derived-event-root")
             let previousHash = String(repeating: "0", count: 64)
             let sourceEvent = fixtureEvent(at: Date(timeIntervalSince1970: 1_700_000_000))
@@ -1409,10 +1409,7 @@
             let derived = sourceEvent.compactedForDerivedAnalysis
             XCTAssertEqual(derived.integrity?.storageFormat, .fullCommitments)
             XCTAssertEqual(derived.integrity?.fieldCommitments, [])
-            XCTAssertGreaterThan(
-                try ActivityAnalysisDayLoader.estimatedRetainedBytes(for: derived),
-                0
-            )
+            XCTAssertFalse(try JSONEncoder().encode(derived).isEmpty)
         }
 
         func testOptInRealActivityDayLoaderHandlesCompactIntegrityReadOnly() throws {
@@ -1449,18 +1446,19 @@
         }
 
         func testSharedRetainedEvidenceBudgetIsExactAndKeepsLastKnownGoodState() throws {
-            XCTAssertEqual(ActivityAnalysisDayLoadLimits.production.maximumRetainedRows, 32_768)
+            XCTAssertEqual(ActivityAnalysisDayLoadLimits.production.maximumRetainedRows, 131_072)
             XCTAssertEqual(
                 ActivityAnalysisDayLoadLimits.production.maximumEstimatedRetainedBytes,
-                64 * 1_024 * 1_024
+                256 * 1_024 * 1_024
             )
 
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.container) }
             let first = fixtureEvent(at: fixture.day, id: "click-1")
-            _ = try writeEvents([first], fixture: fixture)
-            let exactEventBytes = try ActivityAnalysisDayLoader.estimatedRetainedBytes(
-                for: first.compactedForDerivedAnalysis
+            let journal = try writeEvents([first], fixture: fixture)
+            let exactEventBytes = ActivityAnalysisDayLoader.estimatedRetainedBytes(
+                for: HistoryEvent.self,
+                sourceLineBytes: journal.count - 1
             )
 
             let exactByteLoader = ActivityAnalysisDayLoader(
@@ -1520,7 +1518,7 @@
                 )
             ) { error in
                 guard let cycleError = error as? ActivityAnalysisCycleError,
-                    case .sourceInaccessible = cycleError
+                    case .retainedEvidenceBudgetExceeded = cycleError
                 else {
                     return XCTFail("Expected a fail-closed budget error, got \(error)")
                 }
@@ -1528,6 +1526,58 @@
             }
             XCTAssertEqual(try outputs.map { try Data(contentsOf: $0) }, lastKnownGoodOutputs)
             XCTAssertEqual(try Data(contentsOf: cacheURL), lastKnownGoodCache)
+        }
+
+        func testBudgetRefusalIsReusedWhileTheJournalOnlyGrows() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let first = fixtureEvent(at: fixture.day, id: "click-1")
+            _ = try writeEvents(
+                [first, fixtureEvent(at: fixture.day.addingTimeInterval(1), id: "click-2")],
+                fixture: fixture
+            )
+            let coordinator = makeCoordinator(
+                fixture: fixture,
+                dayLoadLimits: ActivityAnalysisDayLoadLimits(
+                    maximumRetainedRows: 1,
+                    maximumEstimatedRetainedBytes: 48 * 1_024 * 1_024
+                )
+            )
+            func process() throws {
+                _ = try coordinator.process(
+                    day: fixture.day,
+                    tokenBudget: 1_600,
+                    forceVerification: true,
+                    includeActivityMemory: true
+                )
+            }
+            func assertBudgetRefusal(file: StaticString = #filePath, line: UInt = #line) {
+                XCTAssertThrowsError(try process(), file: file, line: line) { error in
+                    XCTAssertTrue(
+                        error.localizedDescription.contains("retained-evidence budget"),
+                        "\(error)", file: file, line: line
+                    )
+                }
+            }
+            assertBudgetRefusal()
+
+            // Appended rows can only keep the budget exceeded: the refusal is reused
+            // without reading the journal again (it is unreadable here).
+            try appendEvent(
+                fixtureEvent(at: fixture.day.addingTimeInterval(2), id: "click-3"),
+                fixture: fixture
+            )
+            let journal = fixture.eventsDirectory.appendingPathComponent(fixture.dayKey + ".jsonl")
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: journal.path)
+            defer {
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
+            }
+            assertBudgetRefusal()
+
+            // A replaced journal may fit again, so it is read again.
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
+            _ = try writeEvents([first], fixture: fixture)
+            XCTAssertNoThrow(try process())
         }
 
         private func makeCoordinator(

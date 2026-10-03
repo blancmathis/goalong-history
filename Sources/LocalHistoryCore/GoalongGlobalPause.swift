@@ -26,16 +26,12 @@ public struct GoalongGlobalPause: Codable, Equatable {
         var value = Self(); value.paused = true; value.invalid = true; value.revision = "invalid"; return value
     }
     public static func load(in root: URL = defaultRoot) -> Self {
-        let url = file(in: root), fm = FileManager.default
-        let attributes: [FileAttributeKey: Any]
-        do { attributes = try fm.attributesOfItem(atPath: url.path) }
-        catch let error as NSError {
-            return error.domain == NSCocoaErrorDomain && [NSFileReadNoSuchFileError, NSFileNoSuchFileError].contains(error.code) ? Self() : unavailable
-        }
-        guard attributes[.type] as? FileAttributeType == .typeRegular,
-              let size = attributes[.size] as? NSNumber, size.intValue > 0, size.intValue <= 8192 else { return unavailable }
-        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? -1
-        let stamp = "\(attributes[.systemFileNumber] ?? "none")-\(modified)-\(size)"
+        let url = file(in: root)
+        // Read on every recorded event: a bare lstat costs ~1 µs, attributesOfItem ~36 µs.
+        var status = stat()
+        guard lstat(url.path, &status) == 0 else { return errno == ENOENT ? Self() : unavailable }
+        guard status.st_mode & S_IFMT == S_IFREG, status.st_size > 0, status.st_size <= 8192 else { return unavailable }
+        let stamp = "\(status.st_ino)-\(status.st_mtimespec.tv_sec).\(status.st_mtimespec.tv_nsec)-\(status.st_size)"
         lock.lock(); defer { lock.unlock() }
         if let entry = cache[url.path], entry.stamp == stamp { return entry.value }
         guard let handle = try? FileHandle(forReadingFrom: url) else { return unavailable }

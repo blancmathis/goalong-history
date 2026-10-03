@@ -1,5 +1,13 @@
 # Changelog
 
+## À publier — plus rapide, plus sobre, journées complètes
+
+- **Les journées chargées sont analysées jusqu’au bout.** Au-delà de 32 768 observations (vers midi un jour de travail intensif), Historique « Ce Mac », le bilan ChatGPT détaillé, la suppression d’un épisode et le résumé pour les agents s’arrêtaient. Le plafond passe à 131 072 lignes. Si une journée le dépasse encore, Historique affiche « Analyse partielle » avec l’heure d’arrêt, au lieu d’un « Réessayer » inutile.
+- **Analyse en arrière-plan bien plus légère** : elle ne rend plus le texte de 32 jours à chaque passage, ne ré-encode plus chaque ligne lue et ne recalcule plus les mêmes textes. Une journée chargée complète coûte environ 18 s de calcul, contre 65 s avant ces changements.
+- **Activité plus rapide** : un jour se lit sur tous les cœurs, les jours lus restent en mémoire tant que la fenêtre est ouverte (64 au plus), et la mémoire de lecture est libérée au fil du fichier.
+- **Historique plus fluide** : la journée se charge hors du fil principal, sans rendu inutile.
+- **Moins d’écritures disque** : l’état de l’enregistrement s’écrit au plus toutes les 15 s quand rien d’important ne change, et les vérifications de pause et de confidentialité ne lisent plus de fichier.
+
 ## À publier — Mon travail : votre définition du travail, appliquée par un agent
 
 - **Goalong ne juge plus aucune app ni aucun site.** Fini « Xcode = travail » ou le classement Travail / Hors travail par app : une même app sert au travail puis à autre chose. L’ancien classement automatique est retiré partout (Activité, bilan quotidien, anciens écrans).

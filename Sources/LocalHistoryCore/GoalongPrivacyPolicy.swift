@@ -77,9 +77,11 @@ public enum GoalongPrivacyPolicyCache {
     private static var values: [String: Entry] = [:]
     public static func read(in root: URL) -> GoalongPrivacyPolicy {
         let path = GoalongPrivacyPolicy.file(in: root).path
-        let metadata = try? FileManager.default.attributesOfItem(atPath: path)
-        let modified = (metadata?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? -1
-        let signature = "\(metadata?[.systemFileNumber] ?? "none")|\(modified)|\(metadata?[.size] ?? "none")"
+        // Read on every recorded event: a bare lstat costs ~1 µs, attributesOfItem ~36 µs.
+        var status = stat()
+        let signature = lstat(path, &status) == 0
+            ? "\(status.st_ino)|\(status.st_mtimespec.tv_sec).\(status.st_mtimespec.tv_nsec)|\(status.st_size)"
+            : "none"
         lock.lock(); defer { lock.unlock() }
         if let cached = values[path], cached.signature == signature { return cached.policy }
         let policy = GoalongPrivacyPolicy.load(in: root)

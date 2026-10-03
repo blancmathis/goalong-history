@@ -357,16 +357,35 @@ extension ActivityAnalysisEngine {
             var application: String?
             var host: String?
             var confidence: Double
+            /// `Set(tokens(key))`, kept so the similarity scan never re-tokenizes a key.
+            let keyTokens: Set<String>
         }
         var builders: [String: Builder] = [:]
+        // Many events share one observed text, and one request repeats all day: compute
+        // each text's candidates and each key's tokens once. The scan below still visits
+        // the keys in the same order with the same test as `tokenSimilarity(key, N) >= 0.82`.
+        var candidatesBySemantic: [String: [String]] = [:]
+        var tokensByKey: [String: Set<String>] = [:]
         for event in events {
             guard let semantic = semanticText(from: event) else { continue }
-            for candidate in requestCandidates(in: semantic, event: event) {
+            let candidates = candidatesBySemantic[semantic] ?? {
+                let found = requestCandidates(in: semantic, event: event)
+                candidatesBySemantic[semantic] = found
+                return found
+            }()
+            for candidate in candidates {
                 let normalizedKey = normalizedComparable(candidate)
                 guard !normalizedKey.isEmpty else { continue }
-                let key = builders.keys.first(where: {
-                    tokenSimilarity($0, normalizedKey) >= 0.82
-                }) ?? normalizedKey
+                let candidateTokens = tokensByKey[normalizedKey] ?? {
+                    let found = Set(tokens(normalizedKey))
+                    tokensByKey[normalizedKey] = found
+                    return found
+                }()
+                let key = candidateTokens.isEmpty
+                    ? normalizedKey
+                    : builders.first(where: {
+                        isRequestSimilar($0.value.keyTokens, candidateTokens)
+                    })?.key ?? normalizedKey
                 let AIContext = isAIContext(event)
                 var builder = builders[key] ?? Builder(
                     text: candidate,
@@ -375,7 +394,8 @@ extension ActivityAnalysisEngine {
                     occurrences: 0,
                     application: event.app?.name,
                     host: normalizedHost(event.url?.host),
-                    confidence: AIContext ? 0.88 : 0.62
+                    confidence: AIContext ? 0.88 : 0.62,
+                    keyTokens: candidateTokens
                 )
                 builder.occurrences += 1
                 builder.firstSeen = min(builder.firstSeen, event.timestamp)
@@ -402,6 +422,17 @@ extension ActivityAnalysisEngine {
         }
         .prefix(options.maximumRequests)
         .map { $0 }
+    }
+
+    /// `tokenSimilarity(left, right) >= 0.82` on already tokenized sets. The Jaccard
+    /// index never exceeds the ratio of the set sizes, so most pairs stop at that test.
+    static func isRequestSimilar(_ left: Set<String>, _ right: Set<String>) -> Bool {
+        guard !left.isEmpty, !right.isEmpty else { return false }
+        let (small, large) = left.count <= right.count ? (left, right) : (right, left)
+        guard Double(small.count) / Double(large.count) >= 0.82 else { return false }
+        let intersection = small.reduce(0) { large.contains($1) ? $0 + 1 : $0 }
+        let union = left.count + right.count - intersection
+        return Double(intersection) / Double(union) >= 0.82
     }
 
     static func makeHighlights(

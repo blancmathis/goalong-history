@@ -30,6 +30,7 @@
         private struct PendingPersist {
             let token: UUID
             var task: CaptureHealthScheduledTask?
+            let isRoutine: Bool
         }
 
         private struct PermissionBits: Equatable {
@@ -54,10 +55,15 @@
         private let persistenceQueue: DispatchQueue
         private let persistenceQueueID: UUID
         private let persistenceDelay: TimeInterval
+        /// Input, recorded-event and AX-success marks only refresh timestamps and
+        /// counters. Writing them twice a second rewrote this file all day long.
+        private let routinePersistenceDelay: TimeInterval
         private let persistenceWriter: PersistenceWriter
         private let persistenceSchedule: PersistenceSchedule
         private let workLock = NSLock()
         private var pendingPersist: PendingPersist?
+        /// Last suppression state written by `setSuppression`; `nil` until the first sample.
+        private var lastSuppression: SuppressionReason??
         private var mutationGeneration: UInt64 = 0
         private let permissionLock = NSLock()
         private var lastPermissionBits: PermissionBits
@@ -66,6 +72,7 @@
             permissions: PermissionManager,
             fileURL: URL = AppPaths.captureHealthFile,
             persistenceDelay: TimeInterval = 0.5,
+            routinePersistenceDelay: TimeInterval = 15,
             persistenceWriter: PersistenceWriter? = nil,
             persistenceSchedule: PersistenceSchedule? = nil
         ) {
@@ -78,6 +85,7 @@
             self.persistenceQueue = queue
             self.persistenceQueueID = queueID
             self.persistenceDelay = max(0, persistenceDelay)
+            self.routinePersistenceDelay = max(self.persistenceDelay, routinePersistenceDelay)
             self.persistenceWriter = persistenceWriter ?? Self.write
             self.persistenceSchedule =
                 persistenceSchedule ?? { delay, action in
@@ -121,11 +129,12 @@
                 return false
             }
             lastPermissionBits = nextBits
-            let token = mutateAndPreparePersist {
+            let prepared = mutateAndPreparePersist {
                 accumulator.updatePermissions(Self.observation(from: status))
+                return false
             }
             permissionLock.unlock()
-            schedulePreparedPersist(token)
+            schedulePreparedPersist(prepared)
             return true
         }
 
@@ -153,19 +162,19 @@
         }
 
         func markInputCallback(at date: Date = Date()) {
-            mutateAndSchedule { accumulator.markInputCallback(at: date) }
+            mutateAndSchedule(routine: true) { accumulator.markInputCallback(at: date) }
         }
 
         func markTapControlCallback(at date: Date = Date()) {
-            mutateAndSchedule { accumulator.markTapControlCallback(at: date) }
+            mutateAndSchedule(routine: true) { accumulator.markTapControlCallback(at: date) }
         }
 
         func markRecordedEvent(_ kind: EventKind, at date: Date = Date()) {
-            mutateAndSchedule { accumulator.markRecordedEvent(kind: kind, at: date) }
+            mutateAndSchedule(routine: true) { accumulator.markRecordedEvent(kind: kind, at: date) }
         }
 
         func markAXSuccess(urlAvailable: Bool, at date: Date = Date()) {
-            mutateAndSchedule {
+            mutateAndSchedule(routine: true) {
                 accumulator.markAXSuccess(urlAvailable: urlAvailable, at: date)
             }
         }
@@ -175,7 +184,13 @@
         }
 
         func setSuppression(_ reason: SuppressionReason?, at date: Date = Date()) {
-            mutateAndSchedule { accumulator.setSuppression(reason, at: date) }
+            schedulePreparedPersist(mutateAndPreparePersist {
+                // Every foreground sample reports its state; only a change is prompt.
+                let unchanged = lastSuppression == .some(reason)
+                lastSuppression = .some(reason)
+                accumulator.setSuppression(reason, at: date)
+                return unchanged
+            })
         }
 
         func setPaused(_ value: Bool) {
@@ -215,29 +230,50 @@
             }
         }
 
-        private func mutateAndSchedule(_ mutation: () -> Void) {
-            schedulePreparedPersist(mutateAndPreparePersist(mutation))
+        private struct PreparedPersist {
+            let token: UUID?
+            let delay: TimeInterval
+            let replacedTask: CaptureHealthScheduledTask?
         }
 
-        private func mutateAndPreparePersist(_ mutation: () -> Void) -> UUID? {
+        private func mutateAndSchedule(routine: Bool = false, _ mutation: () -> Void) {
+            schedulePreparedPersist(mutateAndPreparePersist {
+                mutation()
+                return routine
+            })
+        }
+
+        /// `mutation` runs under the work lock and returns whether it was routine.
+        private func mutateAndPreparePersist(_ mutation: () -> Bool) -> PreparedPersist {
             workLock.lock()
-            mutation()
+            let routine = mutation()
             mutationGeneration &+= 1
-            let token: UUID?
-            if pendingPersist == nil {
-                let nextToken = UUID()
-                pendingPersist = PendingPersist(token: nextToken, task: nil)
-                token = nextToken
+            var token: UUID?
+            var replacedTask: CaptureHealthScheduledTask?
+            if let pending = pendingPersist {
+                // A state change must not wait behind a routine refresh.
+                if pending.isRoutine && !routine {
+                    replacedTask = pending.task
+                    token = UUID()
+                }
             } else {
-                token = nil
+                token = UUID()
+            }
+            if let token {
+                pendingPersist = PendingPersist(token: token, task: nil, isRoutine: routine)
             }
             workLock.unlock()
-            return token
+            return PreparedPersist(
+                token: token,
+                delay: routine ? routinePersistenceDelay : persistenceDelay,
+                replacedTask: replacedTask
+            )
         }
 
-        private func schedulePreparedPersist(_ token: UUID?) {
-            guard let token else { return }
-            let task = persistenceSchedule(persistenceDelay) { [weak self] in
+        private func schedulePreparedPersist(_ prepared: PreparedPersist) {
+            prepared.replacedTask?.cancel()
+            guard let token = prepared.token else { return }
+            let task = persistenceSchedule(prepared.delay) { [weak self] in
                 self?.persistScheduled(token: token)
             }
 

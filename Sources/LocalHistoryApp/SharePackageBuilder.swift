@@ -1220,7 +1220,7 @@
                 let requestedBytes = Int(min(Int64(limits.readChunkBytes), remaining))
                 let chunk: Data
                 do {
-                    guard let value = try handle.read(upToCount: requestedBytes), !value.isEmpty else {
+                    guard let value = try historyReadChunk(handle, upToCount: requestedBytes), !value.isEmpty else {
                         throw ShareBuildError.sourceIncomplete(
                             "\(file.lastPathComponent) ended while it was being read"
                         )
@@ -1236,7 +1236,7 @@
 
                 var segmentStart = chunk.startIndex
                 while segmentStart < chunk.endIndex,
-                    let newline = chunk[segmentStart...].firstIndex(of: 0x0A)
+                    let newline = chunk.indexOfNewline(from: segmentStart)
                 {
                     try append(chunk[segmentStart..<newline])
                     try finishLine()

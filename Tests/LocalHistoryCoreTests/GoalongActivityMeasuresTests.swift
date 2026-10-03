@@ -156,4 +156,31 @@ final class GoalongActivityMeasuresTests: XCTestCase {
         XCTAssertFalse(full.metrics.evidenceBudgetExceeded)
         XCTAssertEqual(full.events.count, 60)
     }
+
+    func testActivityDecodesRowsInBatchesYetKeepsJournalOrderAndTheFirstBadRow() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("analytics-batches-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("events")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        // More rows than one decoding batch, written out of time order like buffered input.
+        let rows = (0..<9_000).map { event(36_000 + Double(($0 * 7_919) % 9_000) * 3, app: $0 % 3 == 0 ? "A" : "B") }
+        let lines = try rows.map { String(decoding: try encoder.encode($0), as: UTF8.self) }
+        let file = folder.appendingPathComponent("2026-09-10.jsonl")
+        try (lines.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
+        let reader = HistoryLocalStoreReader(rootDirectory: root)
+        let loaded = reader.loadLocalAnalyticsEvidence(start: day, endExclusive: day.addingTimeInterval(86400))
+        XCTAssertTrue(loaded.issues.isEmpty)
+        XCTAssertEqual(loaded.events.map(\.id), rows.map(\.id), "Journal order, not time order")
+        XCTAssertEqual(loaded.metrics.rawEventCount, rows.count)
+
+        var broken = lines
+        broken[5_000] = "{not json"
+        broken[7_000] = "{nor this"
+        try (broken.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
+        let rejected = reader.loadLocalAnalyticsEvidence(start: day, endExclusive: day.addingTimeInterval(86400))
+        XCTAssertTrue(rejected.events.isEmpty)
+        XCTAssertTrue(rejected.metrics.sourceAccessWasIncomplete)
+        XCTAssertEqual(rejected.issues.compactMap(\.line), [5_001], "Only the first bad row, by its line number")
+    }
 }

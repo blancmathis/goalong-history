@@ -423,20 +423,63 @@ public enum ActivitySemanticTextSanitizer {
     private struct ReplacementRule {
         let expression: NSRegularExpression
         let template: String
+        /// A cheap necessary condition for any match. When it is false the expression
+        /// cannot match, so skipping it leaves the text exactly as the expression would.
+        let mayMatch: (String) -> Bool
 
-        init(_ pattern: String, template: String) {
+        init(_ pattern: String, template: String, mayMatch: @escaping (String) -> Bool) {
             // These are compile-time literals covered by sanitizer regression tests.
             expression = try! NSRegularExpression(pattern: pattern)
             self.template = template
+            self.mayMatch = mayMatch
         }
 
         func apply(to value: String) -> String {
-            expression.stringByReplacingMatches(
+            guard mayMatch(value) else { return value }
+            return expression.stringByReplacingMatches(
                 in: value,
                 range: NSRange(value.startIndex..<value.endIndex, in: value),
                 withTemplate: template
             )
         }
+    }
+
+    /// Whether the UTF-8 bytes contain one of `needles`, compared ASCII-case-insensitively
+    /// when `ignoringCase`. Any regex match on these ASCII literals implies these bytes.
+    private static func containsBytes(_ value: String, anyOf needles: [String], ignoringCase: Bool = false) -> Bool {
+        var value = value
+        return value.withUTF8 { bytes in
+            needles.contains { needle in
+                let pattern = Array(needle.utf8)
+                guard pattern.count <= bytes.count else { return false }
+                for start in 0...(bytes.count - pattern.count) {
+                    var index = 0
+                    while index < pattern.count {
+                        var byte = bytes[start + index]
+                        if ignoringCase, byte >= 0x41, byte <= 0x5A { byte += 0x20 }
+                        if byte != pattern[index] { break }
+                        index += 1
+                    }
+                    if index == pattern.count { return true }
+                }
+                return false
+            }
+        }
+    }
+
+    /// ICU's `\d` is any Unicode decimal digit (Nd).
+    private static func hasDecimalDigits(_ value: String, atLeast minimum: Int) -> Bool {
+        var count = 0
+        for scalar in value.unicodeScalars {
+            let isDigit = scalar.isASCII
+                ? (0x30...0x39).contains(scalar.value)
+                : scalar.properties.generalCategory == .decimalNumber
+            if isDigit {
+                count += 1
+                if count >= minimum { return true }
+            }
+        }
+        return false
     }
 
     // `String.replacingOccurrences(..., .regularExpression)` recompiles each pattern.
@@ -447,18 +490,69 @@ public enum ActivitySemanticTextSanitizer {
     private static let replacementRules: [ReplacementRule] = [
         ReplacementRule(
             #"(?i)\b(password|passwd|secret|api[ _-]?key|access[ _-]?token|authorization)\s*[:=]\s*(?:(?:bearer|basic)\s+)?[^\s,;]+"#,
-            template: "$1=[REDACTED]"
+            template: "$1=[REDACTED]",
+            // Case folding can map non-ASCII letters (ſ, K) onto these words: such
+            // text always goes through the expression.
+            mayMatch: { value in
+                !value.utf8.allSatisfy { $0 < 0x80 }
+                    || containsBytes(value, anyOf: ["passw", "secret", "api", "access", "authorization"], ignoringCase: true)
+            }
         ),
-        ReplacementRule(#"\bsk-[A-Za-z0-9_-]{16,}\b"#, template: "[REDACTED_KEY]"),
-        ReplacementRule(#"\bgh[pousr]_[A-Za-z0-9]{20,}\b"#, template: "[REDACTED_TOKEN]"),
+        ReplacementRule(#"\bsk-[A-Za-z0-9_-]{16,}\b"#, template: "[REDACTED_KEY]",
+            mayMatch: { containsBytes($0, anyOf: ["sk-"]) }),
+        ReplacementRule(#"\bgh[pousr]_[A-Za-z0-9]{20,}\b"#, template: "[REDACTED_TOKEN]",
+            mayMatch: { containsBytes($0, anyOf: ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]) }),
         ReplacementRule(
             #"\beyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"#,
-            template: "[REDACTED_TOKEN]"
+            template: "[REDACTED_TOKEN]",
+            mayMatch: { containsBytes($0, anyOf: ["eyJ"]) }
         ),
-        ReplacementRule(#"\b(?:\d[ -]*?){13,19}\b"#, template: "[REDACTED_NUMBER]"),
+        ReplacementRule(#"\b(?:\d[ -]*?){13,19}\b"#, template: "[REDACTED_NUMBER]",
+            mayMatch: { hasDecimalDigits($0, atLeast: 13) }),
     ]
 
+    /// Remembers cleaned texts while `body` runs on this task or thread. One analysis pass
+    /// cleans the same observation text many times (scoring, labels, resources, evidence);
+    /// `clean` is a pure function of its inputs, so a repeat returns the first result.
+    public static func withMemo<T>(_ body: () throws -> T) rethrows -> T {
+        try $memo.withValue(Memo(), operation: body)
+    }
+
+    private final class Memo: @unchecked Sendable {
+        struct Key: Hashable {
+            let raw: String
+            let maximumLength: Int
+        }
+
+        private let lock = NSLock()
+        private var cleaned: [Key: String?] = [:]
+
+        func value(for key: Key, orInsert make: () -> String?) -> String? {
+            lock.lock()
+            if let known = cleaned[key] {
+                lock.unlock()
+                return known
+            }
+            lock.unlock()
+            let value = make()
+            lock.lock()
+            cleaned[key] = value
+            lock.unlock()
+            return value
+        }
+    }
+
+    @TaskLocal private static var memo: Memo?
+
     public static func clean(_ raw: String?, maximumLength: Int = 6_000) -> String? {
+        guard let raw else { return nil }
+        guard let memo else { return uncachedClean(raw, maximumLength: maximumLength) }
+        return memo.value(for: Memo.Key(raw: raw, maximumLength: maximumLength)) {
+            uncachedClean(raw, maximumLength: maximumLength)
+        }
+    }
+
+    private static func uncachedClean(_ raw: String, maximumLength: Int) -> String? {
         guard var value = redact(raw) else { return nil }
 
         let limit = max(64, min(maximumLength, 40_000))

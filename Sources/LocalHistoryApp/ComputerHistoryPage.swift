@@ -31,6 +31,9 @@
         @Published private(set) var isAnswering = false
         @Published private(set) var errorMessage: String?
         @Published private(set) var sourceStatus: ComputerHistorySourceStatus = .unverified
+        /// The journal is readable but the day outgrew the analysis ceiling: the memory
+        /// shown is the last one that fitted, so it stops before the end of the day.
+        @Published private(set) var isAnalysisPartial = false
         @Published var question = ""
 
         private let store: ComputerHistoryStore
@@ -38,6 +41,11 @@
         private let storedMemoryLoader: (Date) -> ComputerHistoryDayMemory?
         private let queue = DispatchQueue(
             label: "ai.goalong.localhistory.computer-history-page",
+            qos: .userInitiated
+        )
+        /// Serial: a retained view is always published before its verified successor.
+        private let loadQueue = DispatchQueue(
+            label: "ai.goalong.localhistory.computer-history-page.load",
             qos: .userInitiated
         )
         private var refreshRequestID = UUID()
@@ -49,7 +57,8 @@
         ) {
             self.store = store
             self.refreshRuntime = refreshRuntime
-            self.storedMemoryLoader = storedMemoryLoader ?? { store.loadStored(for: $0) }
+            // The page never shows the markdown rendering of a day.
+            self.storedMemoryLoader = storedMemoryLoader ?? { store.loadStored(for: $0, renderMarkdown: false) }
         }
 
         func refresh(day: Date, forceRebuild: Bool = false) {
@@ -57,42 +66,63 @@
             let requestID = UUID()
             refreshRequestID = requestID
             errorMessage = nil
-            let retainedMemory = storedMemoryLoader(normalized)
-            if !forceRebuild, let retainedMemory {
-                // Display the bounded derived view immediately, but still verify the
-                // source revision asynchronously. An exact cache hit performs no body
-                // read and lets the UI distinguish retained data from a live source.
-                memory = retainedMemory
-                isLoading = false
-            } else {
-                isLoading = true
-            }
+            isLoading = true
             sourceStatus = .checking
-            refreshRuntime.refresh(day: normalized, force: forceRebuild) { [weak self] result in
-                let publish = { [weak self] in
+            // Decoding a stored day takes hundreds of milliseconds on a busy day, so it
+            // runs on this serial queue: the retained view is published first, then the
+            // verified one, never on the main thread.
+            let load = storedMemoryLoader
+            let queue = loadQueue
+            let retained = RetainedMemory()
+            queue.async { [weak self] in
+                retained.value = load(normalized)
+                guard !forceRebuild, let memory = retained.value else { return }
+                DispatchQueue.main.async { [weak self] in
                     guard let self, self.refreshRequestID == requestID else { return }
-                    switch result {
-                    case .success(let cycleResult):
-                        self.memory = self.storedMemoryLoader(normalized) ?? retainedMemory
-                        self.sourceStatus = cycleResult.sourceAbsent ? .absent : .available
-                    case .failure(let error):
-                        if Self.wasInvalidatedByHistoryClear(error) {
-                            self.memory = nil
-                            self.sourceStatus = .unverified
-                        } else {
-                            self.memory = self.storedMemoryLoader(normalized) ?? retainedMemory
-                            self.sourceStatus = Self.sourceStatus(for: error)
-                        }
-                        self.errorMessage = error.localizedDescription
-                    }
+                    // Display the bounded derived view at once, but still verify the
+                    // source revision asynchronously. An exact cache hit performs no body
+                    // read and lets the UI distinguish retained data from a live source.
+                    self.memory = memory
                     self.isLoading = false
                 }
-                if Thread.isMainThread {
-                    publish()
-                } else {
-                    DispatchQueue.main.async(execute: publish)
+            }
+            refreshRuntime.refresh(day: normalized, force: forceRebuild) { [weak self] result in
+                queue.async { [weak self] in
+                    let invalidated: Bool
+                    let memory: ComputerHistoryDayMemory?
+                    switch result {
+                    case .success(let cycleResult) where cycleResult.derivedViewsWritten == 0:
+                        invalidated = false
+                        memory = retained.value ?? load(normalized)
+                    case .success:
+                        invalidated = false
+                        memory = load(normalized) ?? retained.value
+                    case .failure(let error):
+                        invalidated = Self.wasInvalidatedByHistoryClear(error)
+                        memory = invalidated ? nil : load(normalized) ?? retained.value
+                    }
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.refreshRequestID == requestID else { return }
+                        self.memory = memory
+                        self.isAnalysisPartial = Self.exceededAnalysisCeiling(result)
+                        switch result {
+                        case .success(let cycleResult):
+                            self.sourceStatus = cycleResult.sourceAbsent ? .absent : .available
+                        case .failure where self.isAnalysisPartial:
+                            self.sourceStatus = .available
+                        case .failure(let error):
+                            self.sourceStatus = invalidated ? .unverified : Self.sourceStatus(for: error)
+                            self.errorMessage = error.localizedDescription
+                        }
+                        self.isLoading = false
+                    }
                 }
             }
+        }
+
+        /// Written and read only on `loadQueue`.
+        private final class RetainedMemory {
+            var value: ComputerHistoryDayMemory?
         }
 
         private static func sourceStatus(for error: Error) -> ComputerHistorySourceStatus {
@@ -103,7 +133,18 @@
             case .sourceInaccessible, .sourceChangedDuringRead, .oversizedJSONLine,
                 .reentrantCycle:
                 return .inaccessible(error.localizedDescription)
+            case .retainedEvidenceBudgetExceeded:
+                return .available
             }
+        }
+
+        private static func exceededAnalysisCeiling(
+            _ result: Result<ActivityAnalysisCycleResult, Error>
+        ) -> Bool {
+            guard case .failure(let error) = result,
+                case .retainedEvidenceBudgetExceeded? = error as? ActivityAnalysisCycleError
+            else { return false }
+            return true
         }
 
         private static func wasInvalidatedByHistoryClear(_ error: Error) -> Bool {
@@ -705,6 +746,8 @@
             switch model.sourceStatus {
             case .checking:
                 return "Vérification de la journée"
+            case .available where model.isAnalysisPartial:
+                return "Analyse partielle"
             case .available:
                 return snapshot.eventCount > 0 || !tenMinuteGroups.isEmpty
                     ? "Enregistré sur ce Mac"
@@ -725,6 +768,8 @@
             switch model.sourceStatus {
             case .checking:
                 return "arrow.triangle.2.circlepath"
+            case .available where model.isAnalysisPartial:
+                return "clock.badge.exclamationmark"
             case .available:
                 return snapshot.eventCount > 0 || !tenMinuteGroups.isEmpty
                     ? "checkmark"
@@ -741,6 +786,8 @@
         private var recordingStateTint: Color {
             if isPreparingTimeline { return LHTheme.accent }
             switch model.sourceStatus {
+            case .available where model.isAnalysisPartial:
+                return LHTheme.warning
             case .available:
                 return snapshot.eventCount > 0 || !tenMinuteGroups.isEmpty
                     ? LHTheme.success
@@ -778,7 +825,15 @@
                 break
             }
             let windows = tenMinuteGroups.count.formatted()
-            return "\(windows) périodes de dix minutes. Ouvrez une période pour voir ses détails."
+            let summary = "\(windows) périodes de dix minutes. Ouvrez une période pour voir ses détails."
+            return model.isAnalysisPartial ? partialAnalysisNotice + " " + summary : summary
+        }
+
+        private var partialAnalysisNotice: String {
+            guard let end = model.memory?.episodes.map(\.end).max() else {
+                return "Journée très chargée : elle dépasse ce que l’analyse de ce Mac garde en mémoire."
+            }
+            return "Journée très chargée : l’analyse de ce Mac s’arrête à \(end.formatted(date: .omitted, time: .shortened))."
         }
 
         private var historySection: some View {

@@ -1956,7 +1956,7 @@
                 let requestCount = Int(min(Int64(limits.readChunkBytes), remaining))
                 let chunk: Data
                 do {
-                    guard let next = try handle.read(upToCount: requestCount), !next.isEmpty else {
+                    guard let next = try historyReadChunk(handle, upToCount: requestCount), !next.isEmpty else {
                         throw JournalReadError.unstable
                     }
                     chunk = next
@@ -1971,7 +1971,7 @@
                 currentOffset += Int64(chunk.count)
                 var segmentStart = chunk.startIndex
                 while segmentStart < chunk.endIndex,
-                    let newline = chunk[segmentStart...].firstIndex(of: 0x0A)
+                    let newline = chunk.indexOfNewline(from: segmentStart)
                 {
                     try append(chunk[segmentStart..<newline])
                     try finishLine()

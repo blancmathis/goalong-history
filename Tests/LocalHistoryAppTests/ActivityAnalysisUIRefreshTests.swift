@@ -279,6 +279,12 @@
             model.refresh(day: day)
 
             XCTAssertEqual(runtime.requestCount, 1)
+            XCTAssertEqual(model.sourceStatus, .checking)
+            // The stored day is decoded off the main thread, then shown before verification.
+            let deadline = Date().addingTimeInterval(2)
+            while model.memory == nil, Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
             XCTAssertEqual(model.memory, stored)
             XCTAssertEqual(model.sourceStatus, .checking)
             XCTAssertFalse(model.isLoading)
@@ -289,6 +295,10 @@
             )
 
             let absentPublished = expectation(description: "absent source status published")
+            let deadline2 = Date().addingTimeInterval(2)
+            while model.sourceStatus == .checking, Date() < deadline2 {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
             DispatchQueue.main.async {
                 XCTAssertEqual(model.memory, stored)
                 XCTAssertEqual(model.sourceStatus, .absent)
@@ -313,6 +323,10 @@
 
             model.refresh(day: day)
             runtime.completeRequest(at: 0, with: .failure(error))
+            let deadline = Date().addingTimeInterval(2)
+            while model.sourceStatus == .checking, Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
 
             let inaccessiblePublished = expectation(
                 description: "inaccessible source status published"

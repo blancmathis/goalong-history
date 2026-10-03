@@ -48,7 +48,7 @@
             }
             if loaded.metrics.evidenceBudgetExceeded {
                 throw LoadError.incompleteSourceEvidence(
-                    "the 32,768-row or 64 MiB retained-evidence budget was exceeded"
+                    ComputerHistoryEvidenceLoadLimits.production.summary
                 )
             }
             if let issue = loaded.issues.first {

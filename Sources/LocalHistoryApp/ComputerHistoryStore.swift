@@ -163,7 +163,7 @@
             }
             if loaded.metrics.evidenceBudgetExceeded {
                 throw StorageError.incompleteSourceEvidence(
-                    "the 32,768-row or 64 MiB retained-evidence budget was exceeded"
+                    ComputerHistoryEvidenceLoadLimits.production.summary
                 )
             }
             if let issue = loaded.issues.first {
@@ -193,19 +193,22 @@
             return try write(memory, for: start)
         }
 
-        func loadStored(for day: Date) -> ComputerHistoryDayMemory? {
+        func loadStored(for day: Date, renderMarkdown: Bool = true) -> ComputerHistoryDayMemory? {
             guard let loaded = loadPersistedMemory(at: JSONFile(for: day)),
                 dayString(loaded.stored.dayStart) == dayString(day),
                 loaded.stored.analysisRevision
                     == ComputerHistoryAnalysisContract.currentRevision
             else { return nil }
-            let memory = loaded.stored.rehydrated()
+            let memory = loaded.stored.rehydrated(renderMarkdown: renderMarkdown)
             migrateLegacyStorageIfNeeded(loaded)
             return memory
         }
 
-        func loadRecent(maximumDays: Int = 30) -> ComputerHistoryRecentLoadResult {
-            loadRecent(before: .distantFuture, maximumDays: maximumDays, renderMarkdown: true)
+        func loadRecent(
+            maximumDays: Int = 30,
+            renderMarkdown: Bool = true
+        ) -> ComputerHistoryRecentLoadResult {
+            loadRecent(before: .distantFuture, maximumDays: maximumDays, renderMarkdown: renderMarkdown)
         }
 
         func answer(_ query: String, maximumDays: Int = 30) -> ComputerHistoryAnswer {
