@@ -17,6 +17,8 @@ final class GoalongCallPresenceMonitor {
     private var cameraListeners: [(CMIOObjectID, CMIOObjectPropertyAddress, CMIOObjectPropertyListenerBlock)] = []
     private var sourceStatus: GoalongSystemSourceStatus = .disabled
     private var recovered = false
+    private var refreshScheduled = false
+    private var pendingRebuild = false
     init(root: URL) { self.root = root }
 
     func configure(enabled: Bool, config: RecorderConfig) {
@@ -97,14 +99,14 @@ final class GoalongCallPresenceMonitor {
     private func audioListen(_ object: AudioObjectID, selector: AudioObjectPropertySelector, scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) {
         guard !audioListeners.contains(where: { $0.0 == object && $0.1.mSelector == selector && $0.1.mScope == scope }) else { return }
         var address = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.refresh(rebuild: selector == kAudioHardwarePropertyDevices || selector == kAudioHardwarePropertyProcessObjectList) }
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.scheduleRefresh(rebuild: selector == kAudioHardwarePropertyDevices || selector == kAudioHardwarePropertyProcessObjectList) }
         if AudioObjectAddPropertyListenerBlock(object, &address, queue, block) == noErr { audioListeners.append((object, address, block)) }
         else { sourceStatus = .partial }
     }
     private func cameraListen(_ object: CMIOObjectID, selector: CMIOObjectPropertySelector) {
         guard !cameraListeners.contains(where: { $0.0 == object && $0.1.mSelector == selector }) else { return }
         var address = CMIOObjectPropertyAddress(mSelector: selector, mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))
-        let block: CMIOObjectPropertyListenerBlock = { [weak self] _, _ in self?.refresh(rebuild: selector == UInt32(kCMIOHardwarePropertyDevices)) }
+        let block: CMIOObjectPropertyListenerBlock = { [weak self] _, _ in self?.scheduleRefresh(rebuild: selector == UInt32(kCMIOHardwarePropertyDevices)) }
         if CMIOObjectAddPropertyListenerBlock(object, &address, queue, block) == noErr { cameraListeners.append((object, address, block)) }
         else { sourceStatus = .partial }
     }
@@ -145,6 +147,34 @@ final class GoalongCallPresenceMonitor {
         guard let output = streamBytes(scope: kAudioDevicePropertyScopeOutput), output == 0 else { sourceStatus = .partial; return false }
         return true
     }
+    /// Audio processes come and go in bursts (a browser test run starts dozens a second). One
+    /// coalesced refresh keeps this queue short, so stop() and lane(), which wait on it from the
+    /// main thread, never queue behind minutes of listener rebuilds.
+    private func scheduleRefresh(rebuild: Bool) {
+        pendingRebuild = pendingRebuild || rebuild
+        guard !refreshScheduled else { return }
+        refreshScheduled = true
+        queue.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { return }
+            let rebuild = pendingRebuild
+            refreshScheduled = false; pendingRebuild = false
+            refresh(rebuild: rebuild)
+        }
+    }
+    /// Only listeners of vanished objects are removed; live ones are kept rather than rebuilt.
+    private func pruneVanishedListeners() {
+        var liveAudio = Set(audioIDs(selector: kAudioHardwarePropertyDevices)); liveAudio.insert(AudioObjectID(kAudioObjectSystemObject))
+        if #available(macOS 14.2, *) { liveAudio.formUnion(audioIDs(selector: kAudioHardwarePropertyProcessObjectList)) }
+        audioListeners.removeAll { id, address, block in
+            guard !liveAudio.contains(id) else { return false }
+            var a = address; AudioObjectRemovePropertyListenerBlock(id, &a, queue, block); return true
+        }
+        var liveCameras = Set(cameras()); liveCameras.insert(CMIOObjectID(kCMIOObjectSystemObject))
+        cameraListeners.removeAll { id, address, block in
+            guard !liveCameras.contains(id) else { return false }
+            var a = address; CMIOObjectRemovePropertyListenerBlock(id, &a, queue, block); return true
+        }
+    }
     private func installListeners() {
         audioListen(AudioObjectID(kAudioObjectSystemObject), selector: kAudioHardwarePropertyDevices)
         if #available(macOS 14.2, *) {
@@ -172,7 +202,7 @@ final class GoalongCallPresenceMonitor {
     private func refresh(rebuild: Bool = false) {
         guard enabled else { return }
         if GoalongGlobalPause.isPaused(in: root) { closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled; return }
-        if rebuild { removeListeners(); installListeners() }
+        if rebuild { pruneVanishedListeners(); installListeners() }
         if case .failed = sourceStatus {} else if sourceStatus != .partial { sourceStatus = .ready }
         let privacy = GoalongPrivacyPolicy.load(in: root)
         var next: [String: GoalongCallInterval] = [:]
