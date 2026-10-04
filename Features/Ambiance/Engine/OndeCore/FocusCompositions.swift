@@ -3,7 +3,7 @@ import Foundation
 /// Eight small, authored vocabularies. The long-form planners develop them without
 /// changing genre or promising a clinically established optimum.
 public enum FocusCompositions {
-    public static let ids = ["ambre", "canopee", "meridien", "sillage", "filigrane", "confluence", "sanctuaire", "gravite"]
+    public static let ids = ["ambre", "canopee", "meridien", "sillage", "filigrane", "confluence", "sanctuaire", "gravite", "orbit", "sonar"]
     public static let profiles: [SoundProfile] = [
         make(5, "ambre", "Amber", "ELECTRIC KEYS · 82 BPM", "Velvety chords, supple bass and piano responses. Long phrases without added lo-fi hiss.", 82),
         make(6, "canopee", "Canopy", "MELODIC PERCUSSION · 94 BPM", "Wooden resonances, acoustic harp and low strings. Two answering motifs, without random improvisation.", 94),
@@ -12,7 +12,9 @@ public enum FocusCompositions {
         make(2, "filigrane", "Filigree", "ACOUSTIC PIANO · 78 BPM", "Soft piano unfolds in eight-bar phrases. The left hand anchors the rhythm as the answers develop.", 78),
         make(3, "confluence", "Confluence", "HYBRID ORCHESTRA · 88 BPM", "Rhythmic cellos, sustained strings and sections that gradually shift their place in the ensemble.", 88),
         make(4, "sanctuaire", "Sanctuary", "SYNTHESIZED VOCALS · 86 BPM", "Sustained vowels, answering harp and a steady bass. Harmony that breathes without words.", 86),
-        make(13, "gravite", "Gravity", "DEEP BASS · 120 BPM", "A soft kick and a sustained sub share one deep pulse. Offbeat bass, slow chords and a few quiet notes, with nothing sudden.", 120)
+        make(13, "gravite", "Gravity", "DEEP BASS · 120 BPM", "A soft kick and a sustained sub share one deep pulse. Offbeat bass, slow chords and a few quiet notes, with nothing sudden.", 120),
+        make(14, "orbit", "Orbit", "DEEP HOUSE · 120 BPM", "A rounded kick and a warm sub, an offbeat bass, pumping organ chords and a few electric-piano notes in a dub echo.", 120),
+        make(15, "sonar", "Sonar", "DEEP TECHNO · 120 BPM", "A tight kick and a deep sub, a filtered offbeat bass that slowly changes colour, a dark drone and a few glassy pings.", 120)
     ]
     private static func make(_ score: Double, _ id: String, _ title: String, _ subtitle: String, _ description: String, _ tempo: Double) -> SoundProfile {
         var c = GenerativeSettings()
@@ -43,7 +45,7 @@ public enum FocusCompositions {
             c.bass = 0.59; c.pulse = 0.24; c.drive = 0.30; c.punch = 0.18
             c.space = 0.56; c.density = 0.36; c.orchestra = 0.35
             c.strings = 0.42; c.harp = 0.58; c.percussion = 0.32; c.brightness = 0.35
-        case 13:
+        case 13, 14, 15:
             // Texture is the depth of the fast tremolo on the chords; zero removes it.
             c.bass = 0.90; c.pulse = 0.45; c.drive = 0.62; c.punch = 0.55
             c.space = 0.42; c.density = 0.40; c.orchestra = 0; c.texture = 0.55
@@ -64,6 +66,8 @@ public enum FocusCompositions {
         case "confluence": return "Instrument sections stay coordinated. Their balance changes slowly over minutes, rather than each part changing direction on every beat."
         case "sanctuaire": return "A synthesized choir, not recorded singers. Common notes connect the chords as the harp develops its answers. Vocals can be turned off."
         case "gravite": return "One beat-locked oscillator is both the soft kick and the sub, so the low end repeats exactly. The chords carry a fast tremolo that can be set to zero."
+        case "orbit": return "The same beat-locked low end as Gravity, in a warmer deep-house style. Electric-piano notes feed a dub echo; the chord tremolo can be set to zero."
+        case "sonar": return "The same beat-locked low end as Gravity. The offbeat bass keeps its notes while a slow filter changes its colour over minutes; the drone tremolo can be set to zero."
         default: return ""
         }
     }

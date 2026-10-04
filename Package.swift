@@ -45,7 +45,9 @@ let package = Package(
     ],
     dependencies: packageDependencies,
     targets: [
-        .target(name: "OndeDSP", path: "Features/Ambiance/Engine/OndeDSP", publicHeadersPath: "include"),
+        // Size over speed: keeps Ambiance under its 1 MB binary budget for ~0.1 % of one core.
+        .target(name: "OndeDSP", path: "Features/Ambiance/Engine/OndeDSP", publicHeadersPath: "include",
+                cSettings: [.unsafeFlags(["-Os"], .when(configuration: .release))]),
         .target(name: "OndeCore", dependencies: ["OndeDSP"], path: "Features/Ambiance/Engine/OndeCore",
                 exclude: ["GenerativeRenderer.swift", "TransitionRenderer.swift", "PlaybackSelection.swift"]),
         .target(name: "Ambiance", dependencies: ["OndeCore", "OndeDSP"], path: "Features/Ambiance/Sources"),

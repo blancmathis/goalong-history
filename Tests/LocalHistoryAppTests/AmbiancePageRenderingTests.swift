@@ -24,7 +24,8 @@ final class AmbianceModuleNavigationTests: XCTestCase {
 /// `GOALONG_AMBIANCE_SNAPSHOTS=<dir> swift test --filter AmbiancePageRenderingTests`
 final class AmbiancePageRenderingTests: XCTestCase {
     private static let focus = [("ambre", "Ambre"), ("canopee", "Canopée"), ("meridien", "Méridien"), ("sillage", "Sillage"),
-                                ("filigrane", "Filigrane"), ("confluence", "Confluence"), ("sanctuaire", "Sanctuaire"), ("gravite", "Gravité")]
+                                ("filigrane", "Filigrane"), ("confluence", "Confluence"), ("sanctuaire", "Sanctuaire"), ("gravite", "Gravité"),
+                                ("orbit", "Orbit"), ("sonar", "Sonar")]
     private static let relax = [("lagoon", "Lagon"), ("stillwater", "Eau calme"), ("hearth", "Foyer"), ("reverie", "Rêverie"), ("driftwood", "Bois flotté")]
     private static let textures = [("rain", "Pluie douce"), ("ocean", "Marée"), ("brown", "Velours brun"), ("pink", "Air rose"), ("aube", "Aube")]
 

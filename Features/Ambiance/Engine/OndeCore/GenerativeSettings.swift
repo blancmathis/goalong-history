@@ -80,7 +80,7 @@ public struct GenerativeSettings: Codable, Equatable {
     public var values: [Double] { [density, brightness, movement, space, texture, pulse, evolution, settleMinutes, bass, tempo, stability, warmth, character, drive, punch, orchestra, strings, brass, woods, harp, ostinato, percussion, composition, vocals, piano] }
     public static func dspIndex(_ index: Int) -> Int32 { Int32(index < 8 ? index : index + 1) }
     public func value(_ key: String) -> Double { Self.keys.firstIndex(of: key).map { values[$0] } ?? 0 }
-    public static func range(_ key: String) -> ClosedRange<Double> { key == "composition" ? 0...13 : key == "tempo" ? 40...120 : key == "settleMinutes" ? 0...120 : 0...1 }
+    public static func range(_ key: String) -> ClosedRange<Double> { key == "composition" ? 0...15 : key == "tempo" ? 40...120 : key == "settleMinutes" ? 0...120 : 0...1 }
     public mutating func set(_ key: String, _ value: Double) throws {
         guard Self.keys.contains(key) else { throw OndeError("invalid_key", "Generator keys: \(Self.keys.joined(separator: ", ")).") }
         let range = Self.range(key)

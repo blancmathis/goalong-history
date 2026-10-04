@@ -16,7 +16,7 @@ public struct AmbianceSource: Identifiable, Equatable {
     }
     static let compositionTitles = [
         "ambre": "Ambre", "canopee": "Canopée", "meridien": "Méridien", "sillage": "Sillage",
-        "filigrane": "Filigrane", "confluence": "Confluence", "sanctuaire": "Sanctuaire", "gravite": "Gravité",
+        "filigrane": "Filigrane", "confluence": "Confluence", "sanctuaire": "Sanctuaire", "gravite": "Gravité", "orbit": "Orbit", "sonar": "Sonar",
         "lagoon": "Lagon", "stillwater": "Eau calme", "hearth": "Foyer", "reverie": "Rêverie", "driftwood": "Bois flotté",
     ]
     static let textures = [("rain", "Pluie douce"), ("ocean", "Marée"), ("brown", "Velours brun"), ("pink", "Air rose"), ("aube", "Aube")]

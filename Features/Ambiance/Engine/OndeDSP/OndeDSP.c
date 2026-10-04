@@ -7,6 +7,8 @@
 #include "PhrasePlanner.h"
 #include "RelaxationPlanner.h"
 #include "GravityPlanner.h"
+#include "OrbitPlanner.h"
+#include "SonarPlanner.h"
 #include "Orchestra.h"
 #include "VowelChoir.h"
 #include <math.h>
@@ -25,9 +27,13 @@
 #define MEMORY 262144
 #define ECHO 131072
 #define AP_MAX 2048
-/* Scores 1..7 are the Focus signatures, 8..12 the relaxation worlds, 13 Gravity. */
+/* Scores 1..7 are the Focus signatures, 8..12 the relaxation worlds, 13 Gravity, 14 Orbit, 15 Sonar. */
 #define RELAXATION(score) ((score)>=8&&(score)<=12)
 #define GRAVITY 13
+#define ORBIT 14
+#define SONAR 15
+/* Bass-led scores share the Gravity state and render their own low end. */
+#define BASS_LED(score) ((score)>=GRAVITY&&(score)<=SONAR)
 #define GRAVITY_VOICES 10
 
 typedef struct { uint64_t state; } Random;
@@ -69,7 +75,8 @@ typedef struct {
     GravityVoice voice[GRAVITY_VOICES];
     double low,roll,rollStep;
     float sweep,thump,pump,tremolo,sweepCoef,thumpCoef,pumpCoef,glide,slew,tailCoef;
-    float lowLast,lowTail;
+    float lowLast,lowTail,tailEnv;
+    float acidAmp,acidBand,acidFilter,acidLow;
     float rollEnv[6],rollDecay[6],rollAmp[6],rollLevel,rollLast,rollTail,rollAttack,rollRelease;
     float entrance[3];
     uint32_t age,rollAge,rollLife;
@@ -222,6 +229,8 @@ static void note(OndeDSP *s,int midi,int kind,float level,float pan,float delayS
 #include "SignatureScore.h"
 #include "RelaxationScore.h"
 #include "GravityScore.h"
+#include "OrbitScore.h"
+#include "SonarScore.h"
 static void newMotif(OndeDSP *s){
     /* Seed chooses a composition ONCE. No note-by-note random omissions. */
     int contour=(int)(s->seed%4);
@@ -313,7 +322,7 @@ static void sequencer(OndeDSP *s){
         float pan=.5f+(index%2?.09f:-.09f);
         if(level>.0001f && detail>.001f)note(s,midi,kind,level*detail,pan,0);
     }
-    if(s->score==GRAVITY)gravity_score(s,k);else if(RELAXATION(s->score))relaxation_score(s,k);else if(s->score)signature_score(s,k);else orchestra_score(s,k);
+    if(s->score==GRAVITY)gravity_score(s,k);else if(s->score==ORBIT)orbit_score(s,k);else if(s->score==SONAR)sonar_score(s,k);else if(RELAXATION(s->score))relaxation_score(s,k);else if(s->score)signature_score(s,k);else orchestra_score(s,k);
     if(++s->step==16){s->step=0;s->bars++;}
 }
 static void grain(OndeDSP *s){
@@ -366,7 +375,7 @@ static void control(OndeDSP *s){
     float evolution=s->now[ONDE_EVOLUTION];
     float wantedBass=s->score==2?.08f:s->score==3?.65f:s->score==4?.67f:s->score==5?.55f:s->score==6?.55f:1.f;
     if(RELAXATION(s->score)){const float relaxationBass[5]={.42f,.025f,.055f,.09f,.06f};wantedBass=relaxationBass[s->score-8];}
-    if(s->score==GRAVITY)wantedBass=0; /* Gravity renders its own beat-locked low end */
+    if(BASS_LED(s->score))wantedBass=0; /* Gravity, Orbit and Sonar render its own beat-locked low end */
     s->bassMix+=(s->frame==0?1.f:(1-expf(-dt/2.f)))*(wantedBass-s->bassMix);
     s->choirMix+=(1-expf(-dt/2.f))*((s->score==4||s->score==11?1.f:0.f)-s->choirMix);
     s->bpm=s->now[ONDE_TEMPO];
@@ -405,7 +414,7 @@ static void control(OndeDSP *s){
         float wanted=sn(s,s->delayPhase[j])*(.35f+.65f*s->now[ONDE_MOVEMENT]);
         s->delayWobbleStep[j]=(wanted-s->delayWobble[j])/128.f;
     }
-    if(s->score==GRAVITY)gravity_control(s);
+    if(s->score==GRAVITY)gravity_control(s);else if(s->score==ORBIT)orbit_control(s);else if(s->score==SONAR)sonar_control(s);
     double beat=60/s->bpm;
     s->echoTimeL+=(1-expf(-dt/3.f))*(beat*1.0*s->sr-s->echoTimeL);
     s->echoTimeR+=(1-expf(-dt/3.f))*(beat*1.5*s->sr-s->echoTimeR);
@@ -474,7 +483,7 @@ uint64_t onde_dsp_orchestra_events(const OndeDSP *s){return s?atomic_load_explic
 void onde_dsp_set(OndeDSP *s,int p,float v){
     if(p==ONDE_COMPOSITION && (!isfinite(v)||v!=floorf(v)))return;
     if(s&&p>=0&&p<ONDE_PARAM_COUNT&&isfinite(v))
-        atomic_store_explicit(&s->target[p],cl(v,p==ONDE_TEMPO?40:0,(p==ONDE_SETTLE_MINUTES||p==ONDE_TEMPO)?120:p==ONDE_COMPOSITION?GRAVITY:1),memory_order_relaxed);
+        atomic_store_explicit(&s->target[p],cl(v,p==ONDE_TEMPO?40:0,(p==ONDE_SETTLE_MINUTES||p==ONDE_TEMPO)?120:p==ONDE_COMPOSITION?SONAR:1),memory_order_relaxed);
 }
 void onde_dsp_set_mode(OndeDSP *s,int m){if(s&&m>=0&&m<=2)atomic_store_explicit(&s->wantedMode,m,memory_order_relaxed);}
 void onde_dsp_set_seed(OndeDSP *s,uint64_t seed){if(s)atomic_store_explicit(&s->wantedSeed,seed,memory_order_relaxed);}
@@ -531,7 +540,7 @@ void onde_dsp_render(OndeDSP *s,float *left,float *right,uint32_t count){
             l+=pl;r+=pr;sendL+=pl*.60f;sendR+=pr*.60f;v->age++;
         }
         if(RELAXATION(s->score)){float bl=0,br=0;relaxation_frame(s,&bl,&br);l+=bl;r+=br;sendL+=bl*.48f;sendR+=br*.48f;}
-        if(s->score==GRAVITY)gravity_frame(s,&l,&r,&sendL,&sendR);
+        if(s->score==GRAVITY)gravity_frame(s,&l,&r,&sendL,&sendR);else if(s->score==ORBIT)orbit_frame(s,&l,&r,&sendL,&sendR);else if(s->score==SONAR)sonar_frame(s,&l,&r,&sendL,&sendR);
         /* Energy rack: a beat-locked impact plus an eighth-note bass ostinato.
            Original synthesis only. Zero-valued controls preserve the legacy timbre.
            No white noise, clipping-based distortion or randomized drum omissions. */
@@ -678,7 +687,7 @@ void onde_dsp_render(OndeDSP *s,float *left,float *right,uint32_t count){
         float target=s->now[ONDE_GAIN];s->master+=(target>s->master?up:down)*(target-s->master);
         /* Reserve headroom for articulated bass instead of relying on the safety ceiling. */
         float calibration=(.85f+.05f*s->meditation)/(1.f+.35f*drive+.15f*punch);
-        static const float collectionGain[14]={1,.95f,1.50f,1.10f,1.23f,1.75f,1.90f,.90f, 0.96f,1.65f,1.22f,1.23f,1.45f, 0.60f};
+        static const float collectionGain[SONAR+1]={1,.95f,1.50f,1.10f,1.23f,1.75f,1.90f,.90f, 0.96f,1.65f,1.22f,1.23f,1.45f, 0.60f,0.60f,0.60f};
         calibration*=collectionGain[s->score];
         l*=s->master*calibration;r*=s->master*calibration;
         if(fabsf(l)>.78f)l=copysignf(.78f+.17f*(1-expf(-(fabsf(l)-.78f)/.17f)),l);
