@@ -107,6 +107,7 @@ struct BlockingStore {
         defer { close(fd); unlinkat(directoryFD, temporary, 0) }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(document)
+        guard data.count <= 8 * 1024 * 1024 else { throw Failure.invalidDocument }
         try data.withUnsafeBytes { bytes in
             var offset = 0
             while offset < bytes.count {

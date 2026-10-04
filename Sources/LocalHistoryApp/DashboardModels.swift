@@ -8,7 +8,11 @@
         case history
         case monitoring
         case blocking
+<<<<<<< HEAD
         case ambiance
+=======
+        case concentration
+>>>>>>> origin/main
         case analytics
         case activity
         case screenTime
@@ -29,7 +33,11 @@
             case .history: return "Historique"
             case .monitoring: return "Surveillance temps réel"
             case .blocking: return "Blocage"
+<<<<<<< HEAD
             case .ambiance: return "Ambiance"
+=======
+            case .concentration: return "Concentration"
+>>>>>>> origin/main
             case .activity: return "Historique de ce Mac"
             case .screenTime: return "Temps d’écran Apple"
             case .agentActivity: return "Conversations IA"
@@ -49,7 +57,11 @@
             case .history: return "clock.arrow.circlepath"
             case .monitoring: return "eye.circle"
             case .blocking: return "lock"
+<<<<<<< HEAD
             case .ambiance: return "waveform"
+=======
+            case .concentration: return "scope"
+>>>>>>> origin/main
             case .activity: return "clock.arrow.circlepath"
             case .screenTime: return "macbook.and.iphone"
             case .agentActivity: return "cpu"
@@ -72,7 +84,11 @@
         var isSecondary: Bool {
             switch self {
             case .screenTime, .agentActivity, .chatGPTRecap, .share, .privacy, .cli: return true
+<<<<<<< HEAD
             case .overview, .work, .history, .monitoring, .blocking, .ambiance, .analytics, .activity, .settings: return false
+=======
+            case .overview, .work, .history, .monitoring, .blocking, .concentration, .analytics, .activity, .settings: return false
+>>>>>>> origin/main
             }
         }
 

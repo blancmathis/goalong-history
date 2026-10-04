@@ -45,7 +45,9 @@ one normalized Screen Time record per observed day: only today's record is updat
 completed days are served locally and never cause a retrospective Apple read. The CLI reaches the
 running app through a `0700` runtime directory and `0600` Unix socket only when the active day must
 be refreshed. Completed-day CLI reads open the owner-only daily record directly and create no
-response file. If Screen Time consent is off, active-day refresh is unavailable.
+response file. If Screen Time consent is off, active-day refresh is unavailable. The socket stays open while the app
+runs and answers only peers with the same user ID; each route checks its own consent or module. The
+optional Concentration commands use it only while that module is on, and the app stays their only writer.
 
 The Codex edge is the optional external-analysis boundary; the website edge submits selected data
 without starting a new analysis. Neither the offline preview nor continuous capture triggers a
