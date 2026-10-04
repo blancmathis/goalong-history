@@ -14,7 +14,7 @@ final class JevMonitoringUXTests: XCTestCase {
     }
 
     func testSettingsNoLongerContainMonitoringOrItsConnection() throws {
-        XCTAssertEqual(SettingsPane.matches(""), [.applications, .permissions, .storage, .advanced])
+        XCTAssertEqual(SettingsPane.matches(""), [.applications, .modules, .permissions, .storage, .advanced])
         for query in ["jev", "typesafe", "surveillance", "minuterie"] {
             XCTAssertTrue(SettingsPane.matches(query).isEmpty, query)
         }
