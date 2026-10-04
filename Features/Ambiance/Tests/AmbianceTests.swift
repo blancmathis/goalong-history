@@ -177,8 +177,18 @@ final class AmbianceTests: XCTestCase {
         runtime.stop()
         XCTAssertEqual(runtime.diagnostics.mappedBytes, 0)
         XCTAssertFalse(runtime.diagnostics.runtimeCreated)
-        controller.play(source)
-        XCTAssertEqual(controller.state, .error(AmbianceError.audioBoundary.localizedDescription))
+        if ProcessInfo.processInfo.environment["GOALONG_AMBIANCE_DEVICE_TESTS"] == "1" {
+            controller.volume = 0.01; controller.play(source)
+            XCTAssertEqual(controller.state, .playing(source))
+            XCTAssertTrue(controller.diagnostics.engineRunning)
+            XCTAssertTrue(controller.diagnostics.runtimeCreated)
+            XCTAssertThrowsError(try runtime.render(seconds: 0.1))
+            module.setEnabled(false)
+            XCTAssertFalse(controller.diagnostics.engineRunning)
+            XCTAssertFalse(controller.diagnostics.runtimeCreated)
+            XCTAssertEqual(controller.diagnostics.mappedBytes, 0)
+            XCTAssertNil(module.controller)
+        }
     }
     func testMappedPCM16MatchesOriginalDecodedSampler() throws {
         let (store, pack) = try installedOrchestra(), directory = store.directory(pack)

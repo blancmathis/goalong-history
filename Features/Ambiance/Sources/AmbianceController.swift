@@ -33,11 +33,30 @@ import OndeCore
         stop()
         guard settings.isEnabled else { state = .error(AmbianceError.disabled.localizedDescription); return }
         refresh()
-        guard sources.contains(where: { $0.id == source.id && $0.kind == source.kind && $0.isAvailable }) else {
+        guard let canonical = sources.first(where: { $0.id == source.id && $0.kind == source.kind && $0.isAvailable }) else {
             state = .error(AmbianceError.unavailable.localizedDescription); return
         }
-        // Do not publish .playing when no device can be started under the audit.
-        state = .error(AmbianceError.audioBoundary.localizedDescription)
+        state = .loading
+        do {
+            let prepared: AmbianceRuntime
+            if canonical.profile != nil, let pack = AmbiancePackCatalog.packs.first(where: { $0.id == "orchestra" }) {
+                prepared = try AmbianceRuntime(source: canonical, orchestraDirectory: store.directory(pack))
+            } else {
+                let url: URL
+                if canonical.kind == .ownFile, let path = canonical.path { url = URL(fileURLWithPath: path) }
+                else if canonical.kind == .texture, let pack = AmbiancePackCatalog.packs.first(where: { $0.id == "textures" }) {
+                    url = store.directory(pack).appendingPathComponent(canonical.id + ".wav")
+                } else { throw AmbianceError.unavailable }
+                prepared = try AmbianceRuntime(fileURL: url, looping: canonical.kind == .texture) { [weak self] in
+                    self?.stop()
+                }
+            }
+            prepared.volume = volume; runtime = prepared
+            try prepared.startOutput()
+            settings.lastSource = canonical.id; state = .playing(canonical)
+        } catch {
+            stop(); state = .error("Lecture impossible : \(error.localizedDescription)")
+        }
     }
     public func stop() { runtime?.stop(); runtime = nil; state = .idle }
     public func shutdown() {

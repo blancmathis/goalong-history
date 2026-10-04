@@ -13,11 +13,11 @@ public struct AmbianceRenderMeasure {
     public var percentOfOneCore: Double { cpuSeconds / seconds * 100 }
 }
 
-/// One render owner, no global cache. Live device output is blocked by the
-/// unchanged repository audit; this path exercises the production DSP offline.
+/// One DSP/bank owner, no global cache. Device output exists only after start.
 @MainActor public final class AmbianceRuntime {
     private var core: OpaquePointer?
     private var bank: OrchestraBank.Loaded?
+    private var output: AmbianceAudioOutput?
     public private(set) var copiedSampleBytes = 0
     public init(source: AmbianceSource, orchestraDirectory: URL) throws {
         guard let profile = source.profile else { throw AmbianceError.unavailable }
@@ -32,24 +32,41 @@ public struct AmbianceRenderMeasure {
             core = candidate; bank = loaded; copiedSampleBytes = loaded.copiedBytes
         } catch { onde_dsp_destroy(candidate); throw error }
     }
-    deinit { if let core { onde_dsp_destroy(core) } }
+    init(fileURL: URL, looping: Bool, finish: @escaping () -> Void) throws {
+        output = try AmbianceAudioOutput(fileURL: fileURL, looping: looping, finish: finish)
+    }
+    deinit { output?.stop(); if let core { onde_dsp_destroy(core) } }
     public var volume: Double = 1 {
-        didSet { if let core { onde_dsp_set(core, Int32(ONDE_GAIN), Float(AmbianceSettings.clamp(volume))) } }
+        didSet {
+            if let output { output.volume = volume }
+            else if let core { onde_dsp_set(core, Int32(ONDE_GAIN), Float(AmbianceSettings.clamp(volume))) }
+        }
+    }
+    func startOutput() throws {
+        if output == nil, let core {
+            onde_dsp_set(core, Int32(ONDE_GAIN), 1)
+            output = AmbianceAudioOutput(core: core)
+        }
+        guard let output else { throw AmbianceError.unavailable }
+        do { try output.start(volume: volume) }
+        catch { stop(); throw error }
     }
     public var diagnostics: AmbianceDiagnostics {
         var result = AmbianceDiagnostics()
         result.residentBytes = Self.residentBytes()
-        result.runtimeCreated = core != nil
+        result.runtimeCreated = core != nil || output != nil
+        result.engineRunning = output?.running == true
         result.mappedBytes = bank?.mappedBytes ?? 0
         result.copiedSampleBytes = copiedSampleBytes
         return result
     }
     public func stop() {
+        output?.stop(); output = nil
         if let core { onde_dsp_destroy(core) }
         core = nil; bank = nil; copiedSampleBytes = 0
     }
     public func render(seconds: Double) throws -> AmbianceRenderMeasure {
-        guard seconds.isFinite, (0.1...10_800).contains(seconds), let core else { throw AmbianceError.unavailable }
+        guard output == nil, seconds.isFinite, (0.1...10_800).contains(seconds), let core else { throw AmbianceError.unavailable }
         // Allocate scratch once before rendering; the C callback never allocates or locks.
         var left = [Float](repeating: 0, count: 2048), right = left
         let frames = Int(seconds * 44_100), started = ProcessInfo.processInfo.systemUptime, cpu = Self.cpuSeconds()

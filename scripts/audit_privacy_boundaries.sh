@@ -15,7 +15,10 @@ AGENT_ACTIVITY_MODELS="$AGENT_ACTIVITY_SOURCE_ROOT/Models.swift"
 AGENT_ACTIVITY_MIGRATION="$ROOT_DIR/Sources/LocalHistoryApp/AppPaths.swift"
 AGENT_ACTIVITY_RECAP_CONTEXT="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/ChatGPTRecapContext.swift"
 AGENT_ACTIVITY_RECAP_RUNTIME="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/ChatGPTRecapRuntime.swift"
-CONTENT_FORBIDDEN='NSPasteboard|UIPasteboard|CGWindowListCreateImage|ScreenCaptureKit|SCStream|AVCaptureSession|AVAudioEngine|keyboardGetUnicodeString|NSEvent\.characters|CGEventKeyboardGetUnicodeString|AudioDeviceCreateIOProcID|AudioDeviceStart|AudioHardwareCreateProcessTap|CMIODeviceStartStream|CMIOStreamCopyBufferQueue|AudioUnitRender'
+CONTENT_FORBIDDEN='NSPasteboard|UIPasteboard|CGWindowListCreateImage|ScreenCaptureKit|SCStream|AVCaptureSession|keyboardGetUnicodeString|NSEvent\.characters|CGEventKeyboardGetUnicodeString|AudioDeviceCreateIOProcID|AudioDeviceStart|AudioHardwareCreateProcessTap|CMIODeviceStartStream|CMIOStreamCopyBufferQueue|AudioUnitRender'
+AMBIANCE_AUDIO_OUTPUT="$ROOT_DIR/Features/Ambiance/Sources/AmbianceAudioOutput.swift"
+AMBIANCE_PACK_DOWNLOADER="$ROOT_DIR/Features/Ambiance/Sources/AmbiancePackDownloader.swift"
+MICROPHONE_FORBIDDEN='inputNode|AVAudioInputNode|installTap|AVAudioRecorder|AVCaptureDevice|AudioQueueNewInput|kAudioOutputUnitProperty_EnableIO|requestRecordPermission|recordPermission'
 SHELL_EXECUTION_FORBIDDEN='NSAppleScript|osascript|NSTask|/bin/sh|/bin/bash'
 CODEX_BRIDGE="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/CodexAppServerClient.swift"
 CLIPBOARD_WRITER="$ROOT_DIR/Sources/LocalHistoryApp/GoalongClipboardWriter.swift"
@@ -31,6 +34,43 @@ if grep -R -nE "$CONTENT_FORBIDDEN" "${CODE_ROOTS[@]}"; then
   echo "Forbidden content-capture API found." >&2
   failed=true
 fi
+
+# Owner decision 2026-10-04: device output in one file, never input in any file.
+while IFS= read -r match; do
+  file="${match%%:*}"
+  if [[ "$file" != "$AMBIANCE_AUDIO_OUTPUT" ]]; then
+    echo "Audio output API outside the sole Ambiance output boundary: $match" >&2
+    failed=true
+  fi
+done < <(grep -R -nE 'AVAudio(Engine|SourceNode|PlayerNode|MixerNode)' "${CODE_ROOTS[@]}" || true)
+# Existing offline exporters/tests already use files and PCM buffers; all new
+# Ambiance playback uses of those types are confined to the output file too.
+while IFS= read -r match; do
+  file="${match%%:*}"
+  if [[ "$file" != "$AMBIANCE_AUDIO_OUTPUT" ]]; then
+    echo "Playback file/buffer API outside the Ambiance output boundary: $match" >&2
+    failed=true
+  fi
+done < <(grep -R -nE 'AVAudio(File|PCMBuffer)' "$ROOT_DIR/Features/Ambiance/Sources" || true)
+if grep -R -nE "$MICROPHONE_FORBIDDEN|MediaPlayer|MusicKit|NSAppleMusicUsageDescription|NSMicrophoneUsageDescription" "${CODE_ROOTS[@]}"; then
+  echo "Forbidden microphone or Apple Music API found (including the audio output boundary)." >&2
+  failed=true
+fi
+if grep -nE 'NSMicrophoneUsageDescription|NSAppleMusicUsageDescription' "$ROOT_DIR"/scripts/build*.sh; then
+  echo "Microphone or Apple Music usage description in an Info.plist builder." >&2
+  failed=true
+fi
+if ! ENTITLEMENT_FILES="$(find "$ROOT_DIR" \( -name .build -o -name .git -o -name dist -o -name .ambiance-work \) -prune -o -type f -name '*.entitlements' -print)"; then
+  echo "Unable to inventory source entitlements." >&2
+  failed=true
+fi
+while IFS= read -r entitlement; do
+  [[ -n "$entitlement" ]] || continue
+  if grep -nE 'com\.apple\.security\.device\.(audio-input|microphone)' "$entitlement"; then
+    echo "Forbidden microphone entitlement: $entitlement" >&2
+    failed=true
+  fi
+done <<< "$ENTITLEMENT_FILES"
 
 # A user-triggered copy action may write Goalong's own static help text to the clipboard through
 # one reviewed Carbon boundary. Clipboard reads remain forbidden everywhere, and pasteboard APIs
@@ -212,8 +252,8 @@ fi
 SITE_SUBMISSION="$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSiteSubmission.swift"
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$SITE_SUBMISSION" && "$file" != "$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/CommitmentUploader.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/JevTransport.swift" ]]; then
-    echo "Unexpected first-party network API outside the reviewed website and optional Jev boundaries: $match" >&2
+  if [[ "$file" != "$SITE_SUBMISSION" && "$file" != "$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/CommitmentUploader.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/JevTransport.swift" && "$file" != "$AMBIANCE_PACK_DOWNLOADER" ]]; then
+    echo "Unexpected first-party network API outside the reviewed website, optional Jev and Ambiance pack boundaries: $match" >&2
     failed=true
   fi
 done < <(grep -R -nE 'URLSession|HTTPURLResponse|URLRequest' "${CODE_ROOTS[@]}" || true)
@@ -607,4 +647,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge, bundled one-shot self-relauncher and confirmed single-service Goalong permission reset; first-party networking is confined to confirmed website pairing, reviewed sends and separately consented bounded Jev classification; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge, bundled one-shot self-relauncher and confirmed single-service Goalong permission reset; output-only Ambiance audio is confined to one file with microphone APIs and rights prohibited everywhere; first-party networking is confined to confirmed website pairing, reviewed sends, separately consented bounded Jev classification and explicit pinned Ambiance pack downloads; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."
