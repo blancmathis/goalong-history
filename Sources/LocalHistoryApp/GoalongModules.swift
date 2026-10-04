@@ -6,6 +6,7 @@ import Foundation
 enum GoalongModule: String, CaseIterable, Identifiable {
     case blocking
     case concentration
+    case ambiance
 
     var id: String { rawValue }
     var defaultsKey: String { "goalong.module.\(rawValue).enabled" }
@@ -14,6 +15,7 @@ enum GoalongModule: String, CaseIterable, Identifiable {
         switch self {
         case .blocking: return "Blocage"
         case .concentration: return "Concentration"
+        case .ambiance: return "Ambiance"
         }
     }
 
@@ -21,6 +23,7 @@ enum GoalongModule: String, CaseIterable, Identifiable {
         switch self {
         case .concentration: return "Séances, Pomodoro, plan du jour et bilan, statut."
         case .blocking: return "Bloquer des sites et des apps, verrouiller un blocage, geler le Mac."
+        case .ambiance: return "De la musique pour travailler ou souffler, téléchargée à la demande."
         }
     }
 
@@ -28,6 +31,7 @@ enum GoalongModule: String, CaseIterable, Identifiable {
         switch self {
         case .blocking: return "lock"
         case .concentration: return "scope"
+        case .ambiance: return "waveform"
         }
     }
 }

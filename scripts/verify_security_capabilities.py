@@ -66,6 +66,8 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
         fail("single app unexpectedly embeds an XPC service")
     if value.get("forbiddenLocalEntitlementsPresent"):
         fail("single app contains a forbidden entitlement")
+    if "NSMicrophoneUsageDescription" in info or "NSAppleMusicUsageDescription" in info:
+        fail("Ambiance must never declare microphone or Apple Music permission")
     markers = value.get("detectedBinaryMarkers", {})
     if not markers.get("codexAppServer") or not markers.get("managedOAuth"):
         fail("explicit-consent Codex bridge markers are missing")
@@ -115,8 +117,8 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
     }:
         fail("Jev intervention safety contract differs from bounded opt-in local overlays")
     destinations = value.get("network", {}).get("declaredDestinations", [])
-    if len(destinations) != 5 or {item.get("purpose") for item in destinations} != {
-        "opt-in-jev-activity-classification", "managed-ChatGPT-analysis-after-explicit-consent", "explicit-selected-website-import", "explicit-website-pairing", "signed-software-updates"
+    if len(destinations) != 6 or {item.get("purpose") for item in destinations} != {
+        "opt-in-jev-activity-classification", "managed-ChatGPT-analysis-after-explicit-consent", "explicit-selected-website-import", "explicit-website-pairing", "signed-software-updates", "explicit-ambiance-pack-download"
     }:
         fail("declared network emission paths differ from the reviewed optional features and signed updater")
     if value.get("ipc", {}).get("authenticatedSensitiveReader") != "not-shipped":

@@ -18,6 +18,8 @@ from update_policy import manifest_policy
 
 SCHEMA_VERSION = 1
 FORBIDDEN_LOCAL_ENTITLEMENTS = {
+    "com.apple.security.device.audio-input",
+    "com.apple.security.device.microphone",
     "com.apple.security.network.client",
     "com.apple.security.network.server",
     "com.apple.security.automation.apple-events",
@@ -249,6 +251,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "osEnforcedNetworkSandbox": "not-enabled",
     }
     declared_network_destinations: list[dict[str, str]] = [
+        {"purpose": "explicit-ambiance-pack-download", "destination": "https://github.com/blancmathis/goalong-history/releases/download/ambiance-packs-v1/{orchestra,textures}.tar; at most one redirect to HTTPS release-assets.githubusercontent.com:443", "source": "AmbiancePackDownloader after one explicit member action; GET with no member or Mac identifier"},
         {"purpose": "opt-in-jev-activity-classification", "destination": "https://api.typesafe.ai/v1/systemone", "source": "JevTransport after separate explicit consent; bounded recent context only"},
         {"purpose": "signed-software-updates", "destination": "fixed Community feed and immutable release archives on GitHub/CDN", "source": "pinned Sparkle; no activity data or system profile"},
         {"purpose": "explicit-website-pairing", "destination": "user-confirmed website origin", "source": "GoalongSitePairing after native confirmation"},
@@ -348,6 +351,27 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         },
         "network": {
             "declaredDestinations": declared_network_destinations,
+            "ambiancePacks": {
+                "defaultEnabled": False,
+                "remoteTransportImplemented": True,
+                "destinations": [
+                    "https://github.com/blancmathis/goalong-history/releases/download/ambiance-packs-v1/orchestra.tar",
+                    "https://github.com/blancmathis/goalong-history/releases/download/ambiance-packs-v1/textures.tar",
+                ],
+                "redirectHost": "release-assets.githubusercontent.com",
+                "redirectPort": 443,
+                "maximumRedirects": 1,
+                "method": "GET",
+                "session": "ephemeral-no-cookies-cache-credentials-custom-headers",
+                "initialQueryStrings": False,
+                "appConstructedQueryStrings": False,
+                "signedGitHubRedirects": "preserved-verbatim-on-the-single-allowed-redirect",
+                "signedURLLoggedStoredOrShown": False,
+                "releaseAvailability": "not-published-by-this-task",
+                "localInstallOverride": "GOALONG_AMBIANCE_PACK_DIR",
+                "integrity": "exact-byte-size-and-SHA256-before-atomic-install",
+                "automaticDownloads": False,
+            },
             "softwareUpdates": manifest_policy(info),
             "osEnforcedDeny": False,
             "jevClassification": {'trigger': 'explicit-jev-consent-and-computer-history', 'destination': 'https://api.typesafe.ai/v1/systemone', 'model': 'jev-1.13.0', 'method': 'POST', 'intervalSeconds': 15, 'windowSeconds': 15, 'consecutiveWarnings': 1, 'skipInactive': True, 'timedBreakSuspends': True, 'privateBrowsing': 'never-sent', 'requestMaximumBytes': 1600, 'acceptedInputTokensMaximum': 999, 'providerTokenizerKnown': False, 'responseMaximumBytes': 65536, 'resourceTimeoutSeconds': 12, 'redirects': 'refused', 'automaticRetry': False, 'authentication': 'user-owned-0600-api-key-file', 'payloadRetention': 'bounded-memory-only', 'extraVisibleText': 'separate-opt-in-with-existing-local-consent', 'workReference': 'explicitly-saved-800-byte-work-and-procrastination-criteria-owner-only', 'relevancePolicy': 'owner-work-and-procrastination-v4'},
@@ -393,6 +417,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "consentRegistry": "~/Library/Application Support/LocalHistory/capability-consent.json",
             "consentRegistryMode": "0600",
             "newInstallDefaults": {
+                "ambiance": False,
                 "computerHistory": False,
                 "jevMonitoring": False,
                 "appleScreenTime": False,

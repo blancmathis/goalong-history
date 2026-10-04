@@ -67,7 +67,7 @@ cat <<'EOF'
 Goalong source security verification passed.
 - one public app identity
 - sensitive capabilities off by default
-- first-party HTTP limited to reviewed website actions and separately consented, bounded Jev classification
+- first-party HTTP limited to reviewed website actions, separately consented bounded Jev classification, and explicit pinned Ambiance pack downloads
 - signed, user-approved updates use the pinned Sparkle dependency
 - Screen Time CLI access brokered through the consented app
 - Agent Activity direct-source readers remain read-only and metadata-only on disk

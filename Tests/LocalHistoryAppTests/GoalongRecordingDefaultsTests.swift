@@ -2,6 +2,7 @@
 import XCTest
 import Foundation
 import LocalHistoryCore
+import Ambiance
 @testable import LocalHistoryApp
 
 final class GoalongRecordingDefaultsTests: XCTestCase {
@@ -102,6 +103,21 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
             onSaveConfiguration: save ?? { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
             onDeleteTargetedDetails: { _, done in done(.success(0)) })
         return (model, config)
+    }
+    @MainActor func testBuildingAppModelDoesNotCreateDisabledAmbianceController() throws {
+        guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {
+            throw XCTSkip("App model construction requires an isolated HOME")
+        }
+        let preferences = UserDefaults.standard
+        let original = preferences.object(forKey: AmbianceSettings.enabledKey)
+        preferences.removeObject(forKey: AmbianceSettings.enabledKey)
+        defer { preferences.set(original, forKey: AmbianceSettings.enabledKey) }
+        let (model, _) = try isolatedModel()
+        let lazyStorage = Mirror(reflecting: model).children.first { $0.label?.contains("ambianceModule") == true }
+        XCTAssertEqual(String(describing: try XCTUnwrap(lazyStorage).value), "nil")
+        XCTAssertFalse(model.ambianceModule.settings.isEnabled)
+        XCTAssertNil(model.ambianceModule.controller)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: AppPaths.applicationSupportDirectory.appendingPathComponent("Ambiance").path))
     }
     @MainActor func testCompleteChoiceActuallyReachesPersistedRecorderAndPreservesRemoteConsents() throws {
         let preferences = defaults(), (model, config) = try isolatedModel()

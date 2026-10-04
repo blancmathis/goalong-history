@@ -12,3 +12,6 @@ qa/journey-ci/
 # Python validation caches are not source modifications in release inventories.
 __pycache__/
 *.py[cod]
+
+# Private Ambiance measurements and pack preparation.
+.ambiance-work/

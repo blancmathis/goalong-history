@@ -12,6 +12,16 @@ Goalong ships one public macOS application: `Goalong History`, bundle identifier
 pass, the project supports these claims:
 
 - every sensitive Goalong capability is off on a new install;
+- Ambiance is off by default. Goalong can play music; it never listens. Playback
+  uses the default output device and needs no microphone, Apple Music or Full Disk
+  Access permission. Stop releases its engine, nodes, file and mapped instruments;
+- Ambiance packs download only after an explicit member action, through an ephemeral
+  GET to the exact compiled GitHub release URL without a query, followed by at most
+  one redirect to `https://release-assets.githubusercontent.com:443`. GitHub's signed
+  query is preserved verbatim; Goalong never builds a query or logs, stores or shows
+  the signed URL. Other hosts, HTTP, other ports and a second redirect are refused.
+  Size and SHA-256 are checked before atomic installation; personal music is never
+  copied or uploaded. See [network controls and current hosting limitation](NETWORK.md);
 - a macOS permission never substitutes for Goalong consent;
 - the app target excludes the retired commitment uploader and App Attest transport; its only
   updater is the pinned Sparkle framework, which checks one fixed Community feed and installs a
