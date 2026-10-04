@@ -39,6 +39,17 @@ final class BlockingEngineTests: XCTestCase {
         for id in BlockingRules.neverBlocked { var t = target(date()); t.bundleIdentifier = id; XCTAssertTrue(BlockingRules.exempt(t)) }
         var t = target(date()); t.regular = false; XCTAssertTrue(BlockingRules.exempt(t))
     }
+    func testWebContentAppsAreAppsNotBrowsers() {
+        XCTAssertTrue(BlockingRules.isKnownBrowser("org.mozilla.firefox", configured: []))
+        XCTAssertTrue(BlockingRules.isKnownBrowser("com.apple.Safari", configured: ["com.apple.Safari"]))
+        XCTAssertFalse(BlockingRules.isKnownBrowser("com.tinyspeck.slackmacgap", configured: ["com.apple.Safari"]))
+        // An Electron app with no readable address is an app: allowOnly blocks it, a site list does not.
+        let slack = BlockingObservation(bundleIdentifier: "com.tinyspeck.slackmacgap", pid: 42, windowFrame: nil,
+                                        isBrowser: false, url: nil, privateWindow: false, at: Date())
+        XCTAssertTrue(BlockingRules.wouldBlock(slack, list: BlockList(name: "Focus", mode: .allowOnly, sites: [BlockSiteRule(pattern: "notion.so")])))
+        XCTAssertFalse(BlockingRules.wouldBlock(slack, list: BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "youtube.com")])))
+    }
+
     func testAllowOnlyBrowserInternalAndApps() {
         let list = BlockList(name: "Travail", mode: .allowOnly, sites: [BlockSiteRule(pattern: "example.com")], apps: [BlockAppRule(bundleIdentifier: "editor", name: "Éditeur")])
         XCTAssertFalse(BlockingRules.wouldBlock(target(date(), url: "example.com/docs"), list: list))

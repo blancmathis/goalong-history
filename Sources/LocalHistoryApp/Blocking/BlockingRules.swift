@@ -25,6 +25,20 @@ enum BlockingRules {
         "com.apple.systemuiserver", "com.apple.controlcenter", "com.apple.notificationcenterui",
         "com.apple.Spotlight", "com.apple.SecurityAgent", "com.apple.coreautha", "com.apple.ScreenSaver.Engine",
     ]
+    /// Browsers the blocker knows even when it cannot read their address, so it fails closed on them.
+    /// Apps that only show web content (Electron apps, Mail) are not browsers: app rules apply.
+    static let otherBrowsers: Set<String> = [
+        "company.thebrowser.Browser", "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition",
+        "org.mozilla.nightly", "io.gitlab.librewolf-community", "one.ablaze.floorp", "net.waterfox.waterfox",
+        "org.torproject.torbrowser", "net.mullvad.mullvadbrowser", "com.operasoftware.Opera",
+        "com.operasoftware.OperaGX", "com.vivaldi.Vivaldi", "com.kagi.kagimacOS", "com.duckduckgo.macos.browser",
+        "com.sigmaos.sigmaos.macos", "ru.yandex.desktop.yandex-browser", "org.chromium.Thorium",
+    ]
+    static func isKnownBrowser(_ bundleIdentifier: String?, configured: [String]) -> Bool {
+        guard let id = bundleIdentifier, !id.isEmpty else { return false }
+        return configured.contains(id) || otherBrowsers.contains(id)
+    }
+
     static func exempt(_ target: BlockingObservation) -> Bool {
         !target.regular || neverBlocked.contains(target.bundleIdentifier)
             || target.pid == ProcessInfo.processInfo.processIdentifier

@@ -8,6 +8,9 @@
         @StateObject private var login = LaunchAtLoginManager()
         @ObservedObject private var continuity = BackgroundContinuityController.shared
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+        @ObservedObject private var blocking = BlockingRuntime.shared
+
+        private var blockingHoldsLogin: Bool { login.isRegistered && blocking.controller?.hasLocks == true }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
@@ -22,8 +25,11 @@
                         Toggle("Ouvrir Goalong à l’ouverture de session", isOn: Binding(
                             get: { login.isRegistered },
                             set: { _ = login.setUserPreference($0, surface: .settings) }
-                        )).toggleStyle(.goalongSwitch).disabled(login.isChanging)
-                        Text(login.statusDetail).font(.system(size: 12)).foregroundStyle(.secondary)
+                        )).toggleStyle(.goalongSwitch).disabled(login.isChanging || blockingHoldsLogin)
+                        Text(blockingHoldsLogin
+                             ? "Un blocage verrouillé est en cours : Goalong reste ouvert à la connexion jusqu’à la fin."
+                             : login.statusDetail)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                         if consents.isEnabled(.launchAtLogin) && !login.isEnabled {
                             Text("Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système.")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.warning)

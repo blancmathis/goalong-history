@@ -273,17 +273,20 @@
 
         /// Ephemeral blocking lane. No history policy/cache, title snapshot, focused text or Jev call.
         /// The private flag is resolved before any address read, including capability discovery.
-        private func captureBlocking() -> BlockingObservation? {
-            guard let running = NSWorkspace.shared.frontmostApplication else { return nil }
+        func captureBlocking(of application: NSRunningApplication? = nil) -> BlockingObservation? {
+            guard let running = application ?? NSWorkspace.shared.frontmostApplication else { return nil }
             let app = AppSnapshot(name: running.localizedName ?? "", bundleIdentifier: running.bundleIdentifier, processIdentifier: running.processIdentifier)
+            let known = BlockingRules.isKnownBrowser(running.bundleIdentifier, configured: configManager.config.browserBundleIdentifiers)
             var result = BlockingObservation(bundleIdentifier: running.bundleIdentifier ?? "", pid: running.processIdentifier,
-                windowFrame: nil, isBrowser: isBrowser(app: app, config: configManager.config), url: nil,
+                windowFrame: nil, isBrowser: known, url: nil,
                 privateWindow: false, at: Date(), regular: running.activationPolicy == .regular,
                 sessionAvailable: ForegroundSessionAvailability.isAvailable(), idleSeconds: UserInputActivityClock.secondsSinceLastInput())
             guard result.sessionAvailable, AXIsProcessTrusted() else { return result }
             let element = AXUIElementCreateApplication(running.processIdentifier)
             AXUIElementSetMessagingTimeout(element, 0.20)
-            guard let window = AXReader.focusedWindow(for: element) else { return result }
+            // The main window stands in while no window holds focus (an open menu, a sheet closing).
+            guard let window = AXReader.focusedWindow(for: element) ?? AXReader.element(element, attribute: kAXMainWindowAttribute as CFString)
+            else { return result }
             result.windowIdentity = Int(CFHash(window))
             var position: CFTypeRef?, size: CFTypeRef?
             AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position)
@@ -295,19 +298,23 @@
                     result.windowFrame = CGRect(origin: point, size: dimensions)
                 }
             }
-            if !result.isBrowser, AXReader.containsWebArea(window) { result.isBrowser = true; rememberBrowser(app) }
-            guard result.isBrowser else { return result }
-            var signals: [String?] = [AXReader.string(window, attribute: "AXTitle" as CFString),
-                                     AXReader.string(window, attribute: "AXDescription" as CFString)]
-            signals.append(contentsOf: AXReader.browserChromeLabels(window, limit: 80))
-            result.privateWindow = PrivacyClassifier.containsPrivateMarker(in: signals, markers: configManager.config.privateWindowMarkers)
-            guard !result.privateWindow else { return result }
+            // Known browsers follow site rules and fail closed. Any other app follows app rules, unless an
+            // address is actually read from it: showing web content does not make an app a browser.
+            guard known || isBrowser(app: app, config: configManager.config) || AXReader.containsWebArea(window) else { return result }
+            if known {
+                var signals: [String?] = [AXReader.string(window, attribute: "AXTitle" as CFString),
+                                         AXReader.string(window, attribute: "AXDescription" as CFString)]
+                signals.append(contentsOf: AXReader.browserChromeLabels(window, limit: 80))
+                result.privateWindow = PrivacyClassifier.containsPrivateMarker(in: signals, markers: configManager.config.privateWindowMarkers)
+                guard !result.privateWindow else { return result }
+            }
             if let raw = AXReader.browserURL(from: window, addressFieldMarkers: configManager.config.addressFieldMarkers) {
+                result.isBrowser = true
                 let lower = raw.lowercased()
                 result.isInternalPage = lower.hasPrefix("about:") || lower.hasPrefix("favorites:")
                     || lower.hasPrefix("chrome://newtab") || lower.hasPrefix("edge://newtab")
                 result.url = result.isInternalPage ? lower.components(separatedBy: "?")[0].components(separatedBy: "#")[0] : BlockingRules.normalize(raw)
-            } else if result.bundleIdentifier == "com.apple.Safari" {
+            } else if known, result.bundleIdentifier == "com.apple.Safari" {
                 // An empty Safari start page has no web area. Missing address on real content fails closed.
                 result.isInternalPage = !AXReader.containsWebArea(window)
             }

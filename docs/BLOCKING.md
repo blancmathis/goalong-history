@@ -165,8 +165,11 @@ App launches and activations also arrive through the existing `NSWorkspace` noti
   then fades.
 - **Private window during a site block**: covered with the site veil (« Navigation privée »), tab
   closed the same way.
-- **Unsupported browser**: a browser (provider's browser detection) whose URL stays unreadable for
-  3 s while a site block is active is treated as blocked (« Navigateur non pris en charge »).
+- **Unsupported browser**: a known browser (the configured browser list plus
+  `BlockingRules.otherBrowsers`) whose URL stays unreadable for 3 s while a site block is active is
+  treated as blocked (« Navigateur non pris en charge »). An app that only shows web content
+  (Electron apps, Mail) is not a browser: app rules apply to it, so « Tout bloquer sauf » blocks it
+  unless listed. An unknown app becomes a browser for one sample only when its address is read.
 - **Accessibility missing**: app blocks still work; site blocks are flagged on the page
   (`siteBlockingAvailable == false`) and every known browser is treated as unsupported.
 - **Persistence**: on launch, the controller restores sessions, usage and freeze before the first

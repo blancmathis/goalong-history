@@ -27,6 +27,7 @@ import Foundation
     private var timer: Timer?
     private var lastClock: BlockingClockState?
     private var lastSavedAt = Date.distantPast
+    private var lastRefresh = Date.distantPast
     private var storeFailed = false
     private var lastGood: BlockingDocument?
     private var lastObservation: BlockingObservation?
@@ -268,6 +269,7 @@ import Foundation
 
     func refresh(enforceLast: Bool = true) {
         let now = clock()
+        lastRefresh = now
         if let store, !storeFailed {
             do { _ = try store.load() } catch { failStore() }
         }
@@ -285,11 +287,12 @@ import Foundation
         document.heldPrograms = document.heldPrograms?.filter { $0.end > now }
         document.programSkips = document.programSkips?.filter { $0.value > now }
         if let freeze = document.freeze, freeze.end <= now { document.freeze = nil }
-        lists = document.lists
-        freeze = document.freeze
+        // Publish only real changes: the page must not redraw on every sample.
+        if lists != document.lists { lists = document.lists }
+        if freeze != document.freeze { freeze = document.freeze }
         let usage = todayUsage()
         document.usage = document.usage == nil && usage.quotaSecondsUsed.isEmpty && usage.breaksTaken.isEmpty ? nil : usage
-        activeBlocks = (document.sessions + (document.heldPrograms ?? [])).filter { $0.start <= now && $0.end > now }.map { session in
+        let blocks = (document.sessions + (document.heldPrograms ?? [])).filter { $0.start <= now && $0.end > now }.map { session in
             var block = BlockingActiveBlock(id: session.id, listIDs: session.listIDs, start: session.start,
                                             end: session.end, lock: session.lock, origin: session.origin)
             for id in session.listIDs {
@@ -302,17 +305,24 @@ import Foundation
             }
             return block
         } + programBlocks(at: now, usage: usage)
-        nextProgramStart = nextStart(after: now)
-        siteBlockingAvailable = backend?.accessibilityAvailable ?? true
-        browsers = backend?.browsers ?? []
+        if activeBlocks != blocks { activeBlocks = blocks }
+        let next = nextStart(after: now)
+        if nextProgramStart?.listID != next?.listID || nextProgramStart?.date != next?.date { nextProgramStart = next }
+        let available = backend?.accessibilityAvailable ?? true
+        if siteBlockingAvailable != available { siteBlockingAvailable = available }
+        let support = backend?.browsers ?? []
+        if browsers != support { browsers = support }
         if let backend {
-            protection = backend.updateProtection(locked: hasLocks)
+            let state = backend.updateProtection(locked: hasLocks)
+            if protection != state { protection = state }
             if !storeFailed {
+                let message: String?
                 switch protection.component {
-                case .awaitingApproval: error = "Autorisez Goalong dans les éléments d’ouverture pour reprendre les verrous à la connexion."
-                case .failed(let reason): error = reason
-                default: break
+                case .awaitingApproval: message = "Autorisez Goalong dans les éléments d’ouverture pour reprendre les verrous à la connexion."
+                case .failed(let reason): message = reason
+                default: message = nil
                 }
+                if let message, error != message { error = message }
             }
             backend.updateFreeze(freeze)
         }
@@ -376,7 +386,9 @@ import Foundation
 
     func observe(_ target: BlockingObservation) {
         backend?.observeBrowser(target)
-        refresh(enforceLast: false)
+        // Samples arrive about every second; boundaries have their own timer, so a full refresh
+        // (store check, protection, published state) runs at most every 5 s from here.
+        if clock().timeIntervalSince(lastRefresh) >= 5 { refresh(enforceLast: false) }
         if !target.isForeground { enforce(target); return }
         if let previous = lastObservation, previous.pid == target.pid, previous.url == target.url,
            previous.windowIdentity == target.windowIdentity, previous.sessionAvailable, target.sessionAvailable,
@@ -389,7 +401,11 @@ import Foundation
                       block.start <= previous.at, usage.breakEnds[list.id].map({ $0 > previous.at }) != true else { continue }
                 usage.quotaSecondsUsed[list.id] = min(Double(list.quotaMinutesPerDay! * 60), (usage.quotaSecondsUsed[list.id] ?? 0) + seconds)
             }
-            if document.usage != usage && !usage.quotaSecondsUsed.isEmpty { document.usage = usage; commit(reenforce: false) }
+            if document.usage != usage && !usage.quotaSecondsUsed.isEmpty {
+                document.usage = usage
+                // Persist quota use every 15 s at most; enforcement reads the in-memory value.
+                if store == nil || clock().timeIntervalSince(lastSavedAt) >= 15 { commit(reenforce: false) } else { publishQuota(usage) }
+            }
         }
         lastObservation = target
         enforce(target)
@@ -431,6 +447,17 @@ import Foundation
             break
         }
         if !blockedSite { backend.clearSite() }
+    }
+
+    private func publishQuota(_ usage: BlockDayUsage) {
+        var blocks = activeBlocks
+        for index in blocks.indices {
+            for id in blocks[index].listIDs {
+                guard let quota = list(id)?.quotaMinutesPerDay else { continue }
+                blocks[index].quotaSecondsLeft[id] = max(0, Double(quota * 60) - (usage.quotaSecondsUsed[id] ?? 0))
+            }
+        }
+        if blocks != activeBlocks { activeBlocks = blocks }
     }
 
     private func todayUsage() -> BlockDayUsage {

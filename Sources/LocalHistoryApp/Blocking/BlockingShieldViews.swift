@@ -22,7 +22,8 @@ struct BlockingVeilPresentation: Equatable {
 /// blocked, until when, and the one way out the member chose in advance (a break).
 struct BlockedSiteVeil: View {
     let presentation: BlockingVeilPresentation
-    var now = Date()
+    /// Fixed for renders; live veils follow the clock.
+    var now: Date?
     var onBreak: () -> Void = {}
 
     var body: some View {
@@ -36,9 +37,11 @@ struct BlockedSiteVeil: View {
                     Label(untilLine, systemImage: presentation.lock == .locked ? "lock.fill" : "lock")
                         .font(.system(size: 15, weight: .medium))
                 }
-                BlockingSessionThread(start: presentation.start, end: presentation.end, now: now,
-                                      locked: presentation.lock == .locked)
-                    .frame(width: 320)
+                TimelineView(.periodic(from: Date(), by: 15)) { context in
+                    BlockingSessionThread(start: presentation.start, end: presentation.end, now: now ?? context.date,
+                                          locked: presentation.lock == .locked)
+                }
+                .frame(width: 320)
                 Text(detail).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     .multilineTextAlignment(.center).frame(maxWidth: 380).fixedSize(horizontal: false, vertical: true)
                 if let minutes = presentation.breakMinutes, presentation.breaksLeft > 0 {

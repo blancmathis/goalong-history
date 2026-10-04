@@ -34,20 +34,26 @@ private final class BlockingFreezePanel: NSPanel {
     var canLockScreen: Bool { accessibilityAvailable }
     var appStillBlocked: ((BlockingObservation) -> Bool)?
     private var observedBrowserSupport: [String: Bool] = [:]
+    private var observedBrowserNames: [String: String] = [:]
     func observeBrowser(_ target: BlockingObservation) {
-        guard target.isForeground, target.isBrowser, !target.privateWindow else { return }
+        guard target.isForeground, target.isBrowser, !target.privateWindow, !target.bundleIdentifier.isEmpty else { return }
         observedBrowserSupport[target.bundleIdentifier] = target.url != nil || target.isInternalPage
+        if observedBrowserNames[target.bundleIdentifier] == nil {
+            observedBrowserNames[target.bundleIdentifier] = NSRunningApplication(processIdentifier: target.pid)?.localizedName
+        }
     }
     var browsers: [BlockingBrowserSupport] {
         var result = [("com.apple.Safari", "Safari"), ("com.google.Chrome", "Chrome"), ("com.microsoft.edgemac", "Edge"),
          ("com.brave.Browser", "Brave"), ("company.thebrowser.Browser", "Arc"), ("org.mozilla.firefox", "Firefox")]
             .map { BlockingBrowserSupport(bundleIdentifier: $0.0, name: $0.1, supported: accessibilityAvailable && (observedBrowserSupport[$0.0] ?? ($0.0 != "org.mozilla.firefox"))) }
         for (id, supported) in observedBrowserSupport where !result.contains(where: { $0.bundleIdentifier == id }) {
-            result.append(BlockingBrowserSupport(bundleIdentifier: id, name: id, supported: accessibilityAvailable && supported))
+            result.append(BlockingBrowserSupport(bundleIdentifier: id, name: observedBrowserNames[id] ?? id, supported: accessibilityAvailable && supported))
         }
         return result
     }
     private var veil: NSPanel?
+    private var veilHost: NSHostingView<AnyView>?
+    private var veilPresentation: BlockingVeilPresentation?
     private var notice: NSPanel?
     private var shields: [NSPanel] = []
     private var veilTarget: BlockingObservation?
@@ -106,8 +112,18 @@ private final class BlockingFreezePanel: NSPanel {
         veilClear?.cancel(); veilClear = nil
         let frame = target.windowFrame.map(Self.appKitFrame) ?? (NSScreen.main?.frame ?? .zero)
         let panel = veil ?? makePanel(frame: frame)
-        panel.contentView = host(BlockedSiteVeil(presentation: presentation, onBreak: onBreak), frame: frame)
-        panel.setFrame(frame, display: true); panel.alphaValue = 1; panel.orderFrontRegardless(); veil = panel
+        // One hosting view per veil; rebuild its content only when what it says changes.
+        if veilHost == nil || veilPresentation != presentation {
+            let content = AnyView(BlockedSiteVeil(presentation: presentation, onBreak: onBreak).tint(LHTheme.accent).goalongControls())
+            if let veilHost { veilHost.rootView = content } else {
+                let host = NSHostingView(rootView: content)
+                host.sizingOptions = []; host.frame = CGRect(origin: .zero, size: frame.size); host.autoresizingMask = [.width, .height]
+                panel.contentView = host; veilHost = host
+            }
+            veilPresentation = presentation
+        }
+        if panel.frame != frame { panel.setFrame(frame, display: true) }
+        panel.alphaValue = 1; panel.orderFrontRegardless(); veil = panel
         if veilTarget?.pid != target.pid || veilTarget?.windowIdentity != target.windowIdentity
             || veilTarget?.url != target.url || veilTarget?.privateWindow != target.privateWindow
             || target.at.timeIntervalSince(lastTabClose) >= 1.5 {
@@ -124,7 +140,7 @@ private final class BlockingFreezePanel: NSPanel {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.2; panel?.animator().alphaValue = 0
             } completionHandler: { panel?.close() }
-            self.veil = nil; self.veilTarget = nil; self.veilClear = nil
+            self.veil = nil; self.veilHost = nil; self.veilPresentation = nil; self.veilTarget = nil; self.veilClear = nil
         }
         veilClear = work; DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
@@ -178,6 +194,12 @@ private final class BlockingFreezePanel: NSPanel {
     private func openAllowed(_ app: BlockAppRule) {
         guard freeze?.allowedApps.contains(where: { $0.bundleIdentifier == app.bundleIdentifier }) == true,
               let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier) else { return }
+        // Kept apps come forward alone: every other app is hidden, so nothing else shows above the shield.
+        let kept = Set(freeze?.allowedApps.map(\.bundleIdentifier) ?? [])
+        for other in NSWorkspace.shared.runningApplications where other.activationPolicy == .regular
+            && other.processIdentifier != ProcessInfo.processInfo.processIdentifier && !kept.contains(other.bundleIdentifier ?? "") {
+            other.hide()
+        }
         let config = NSWorkspace.OpenConfiguration(); config.activates = true
         NSWorkspace.shared.openApplication(at: url, configuration: config) { [weak self] app, error in
             Task { @MainActor in
@@ -203,7 +225,7 @@ private final class BlockingFreezePanel: NSPanel {
         updateFreeze(nil)
         veilClear?.cancel(); noticeClear?.cancel()
         for work in terminations.values { work.cancel() }; terminations.removeAll()
-        veil?.close(); veil = nil; notice?.close(); notice = nil
+        veil?.close(); veil = nil; veilHost = nil; veilPresentation = nil; notice?.close(); notice = nil
         if registeredLogin { do { try SMAppService.mainApp.unregister() } catch { loginError = error.localizedDescription } }
     }
     private func makePanel(frame: CGRect) -> NSPanel {

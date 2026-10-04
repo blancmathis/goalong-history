@@ -336,7 +336,7 @@
                 alert.messageText = "Un blocage est verrouillé"
                 alert.informativeText = "Goalong reste ouvert jusqu’à la fin du verrou. Vous pouvez fermer la fenêtre."
                 alert.addButton(withTitle: "Fermer la fenêtre")
-                alert.addButton(withTitle: "Continuer")
+                alert.addButton(withTitle: "Annuler")
                 if alert.runModal() == .alertFirstButtonReturn { dashboardWindowController?.window?.close() }
                 return false
             }

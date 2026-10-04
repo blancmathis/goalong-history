@@ -95,7 +95,7 @@
                 guard let self, self.blockingObservationEnabled else { return }
                 // Launches may be background launches: enforce app rules immediately, without reading a URL.
                 self.blockingSink?(BlockingObservation(bundleIdentifier: app.bundleIdentifier ?? "", pid: app.processIdentifier,
-                    windowFrame: nil, isBrowser: self.provider.isBrowser(app: AppSnapshot(name: app.localizedName ?? "", bundleIdentifier: app.bundleIdentifier, processIdentifier: app.processIdentifier), config: self.configManager.config), url: nil, privateWindow: false, at: Date(),
+                    windowFrame: nil, isBrowser: BlockingRules.isKnownBrowser(app.bundleIdentifier, configured: self.configManager.config.browserBundleIdentifiers), url: nil, privateWindow: false, at: Date(),
                     regular: app.activationPolicy == .regular, sessionAvailable: ForegroundSessionAvailability.isAvailable(), idleSeconds: 121,
                     isForeground: app.processIdentifier == NSWorkspace.shared.frontmostApplication?.processIdentifier))
             }
