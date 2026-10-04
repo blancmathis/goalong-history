@@ -195,6 +195,7 @@ enum SupportSourceAllowlist {
         "ShareWindowController.swift",
         "SharingRulesStore.swift",
         "SimpleSettingsComponents.swift",
+        "SlowDownPlaceholder.swift",
         "SoftwareUpdateManager.swift",
         "SoftwareUpdateWindowCoordinator.swift",
         "SourceActivation.swift",

@@ -17,6 +17,7 @@ struct BlockingObservation: Equatable {
     var windowIdentity: Int = 0
     var isInternalPage = false
     var isForeground = true
+    var isActivation = false
 }
 
 enum BlockingRules {
@@ -94,6 +95,7 @@ enum BlockingRules {
             guard !list.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   list.sites.allSatisfy({ normalize($0.pattern) != nil }),
                   list.apps.allSatisfy({ !$0.bundleIdentifier.isEmpty }),
+                  (3...60).contains(list.delaySeconds), (1...60).contains(list.allowanceMinutes),
                   list.quotaMinutesPerDay.map({ (1...720).contains($0) }) ?? true,
                   list.breaks.map({ (1...12).contains($0.count) && (1...30).contains($0.minutes) }) ?? true,
                   list.program.ranges.allSatisfy({ !$0.weekdays.isEmpty && $0.weekdays.isSubset(of: Set(1...7))
@@ -103,7 +105,9 @@ enum BlockingRules {
         guard document.sessions.allSatisfy({ $0.start < $0.end && !$0.listIDs.isEmpty
             && Set($0.listIDs).isSubset(of: ids) }),
             document.usage?.quotaSecondsUsed.values.allSatisfy({ $0.isFinite && $0 >= 0 }) ?? true,
-            document.usage?.breaksTaken.values.allSatisfy({ $0 >= 0 }) ?? true else { return false }
+            document.usage?.breaksTaken.values.allSatisfy({ $0 >= 0 }) ?? true,
+            [document.usage?.slowDownShown, document.usage?.renounced, document.usage?.continued].allSatisfy({ $0?.values.allSatisfy { $0 >= 0 } ?? true }),
+            document.usageHistory.map({ $0.count <= 366 }) ?? true else { return false }
         if let freeze = document.freeze { return freeze.end > freeze.start }
         return true
     }
