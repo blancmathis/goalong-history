@@ -27,6 +27,11 @@ Goalong adaptations:
   no Goalong caller uses them, and Ambiance's
   public offline diagnostic renders directly through its runtime. This avoids
   linking unused export/transition code while preserving the documented UI API.
+- Goalong does not serialize engine configurations or expose Onde's legacy profile
+  catalog/CLI controls. Their unused Codable conformances, JSON helpers and legacy
+  presets are removed from the compiled engine. All fifteen Focus/Relax profiles,
+  their rendering values, seeds and validation remain unchanged. Module settings
+  still persist through `AmbianceSettings`; pack receipts retain their JSON format.
 - The 2026-10-04 owner decision permits device output and explicit pack downloads
   in two isolated files, with stricter microphone guards; see
   [`AMBIANCE-IMPLEMENTATION.md`](../../../docs/AMBIANCE-IMPLEMENTATION.md).
