@@ -48,7 +48,7 @@ import SwiftUI
         switch kind {
         case .phase: return 380
         case .sessionReview: return 460
-        case .morning, .evening, .limit: return 420
+        case .morning, .evening, .limit, .commitment: return 420
         }
     }
 
@@ -72,6 +72,8 @@ import SwiftUI
             FocusPromptPanelView(morning: content.kind == .morning, onNow: { controller.promptNow() }, onLater: { controller.promptLater() })
         case .limit:
             FocusLimitPanelView(text: content.text, onClose: { controller.dismissPanel() })
+        case .commitment:
+            Text(content.text) // TODO(design)
         }
     }
 }

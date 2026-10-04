@@ -194,6 +194,16 @@ goalong plan set --day today --file plan.json
 goalong review show today
 goalong review set --day today --file -
 goalong limits
+goalong commitment show
+goalong commitment show --day tomorrow
+goalong commitment show --week this
+goalong commitment set --day today --kind work --target 7h30 --stake LIST_ID --until 12:00
+goalong commitment set --week next --kind task --task Goalong --target 3h
+goalong commitment set --day today --file commitment.json
+goalong commitment delete --day tomorrow
+goalong commitment joker --day 2026-10-04
+goalong commitment declare --week 2026-W40
+goalong commitments --from 2026-10-01 --to 2026-10-31
 goalong block-lists
 goalong friction yesterday
 ```
@@ -279,3 +289,72 @@ not zero. The JSON accepted by `plan set`/`review set` includes these annotation
 `show`; the app ignores them on input and recomputes them, so clients cannot write measured facts.
 Facts are drawn from the currently loaded, consented Activity cache; an unrequested older interval
 may honestly have `facts.available:false`. These annotations are never persisted in Focus files.
+
+### Engagements: periods, input and results
+
+`commitment show` without selectors returns `{schema:1,day:COMMITMENT|null,week:COMMITMENT|null}`.
+With exactly one selector it returns that annotated commitment, or `null`; with both, the same
+`day`/`week` envelope. Day selectors accept `today`, `tomorrow`, or a real `YYYY-MM-DD`;
+week selectors accept `this`, `next`, or a valid ISO `YYYY-Www` (including ISO year boundaries).
+Weeks always run from Monday to Sunday in the Mac time zone, including on an en-US Mac. Weekly
+work limits use the same helper. A new day commitment may target today through today + 7 days;
+a new weekly commitment may target this week or next. One commitment per period.
+
+For `set`, choose exactly one selector and either goal flags or `--file PATH|-` (at most 64 KiB).
+The single-selector `show` output is valid file input. The app owns `id`, `createdAt`, `edits`,
+`result`, progress and all annotations: supplying those fields cannot reset a lock, forge a result,
+or recover a joker. An optional input `period` must match the selector. Minimal JSON:
+
+```json
+{"period":{"kind":"day","key":"2026-10-04"},"kind":"work","target":450,
+ "stake":{"listIds":["00000000-0000-4000-8000-000000000001"],"until":"12:00"}}
+```
+
+Kinds: `work`, `task` (requires `task`/`--task` matching the plan project by case-insensitive name),
+`sessions`, `plan`. Work/task targets are minutes, in 15-minute steps: day work 30…960, task
+15…960; week work 60…4800, task 30…4800. Flag durations accept `7h`, `7h30`, `7h30m`, `90m`, or
+plain minutes. Counts: day sessions 1…12, plan 1…10; week sessions 1…60, plan 1…70. A session
+counts once when at least 15 minutes of its work phases fall inside the period. Plan counts done
+items in the period's plans. Work uses observed work; without a definition it uses active time and
+`progress.usesActiveTime` is true. Task always uses work segments assigned to its name. Missing,
+concealed and unclassified time remains in `unmeasuredMinutes`; it is never invented as work.
+
+`--stake LIST_ID` may repeat (1…200 distinct IDs). Adding or changing a stake requires Blocking
+and existing lists. `--until HH:mm` defaults to `12:00`; `23:59` means all day. The list's own
+block/Ralentir action, quotas and allowed breaks remain in force. No work limit refuses a goal;
+`limitHours` supplies a neutral warning when a work/task target exceeds a chosen limit.
+
+Free edit/delete ends at the later of creation + 10 minutes and period start. At that exact
+boundary only a higher target, added stake lists or a later end time is accepted; a kind/task/period
+change, removal or easier change returns `locked`. Settled goals cannot be edited or deleted.
+Results settle on measurement refresh after period end, even with unavailable history (zero
+measured plus explicit uncertainty). A day and week settled together share one result panel.
+
+`result` contains `settledAt`, frozen `measured`, `unmeasuredMinutes`, `outcome` (`held`/`missed`),
+`declared`, optional `jokerAt`, `usesActiveTime`, and `stake:{state,blockId?,reason?,at?}`. Stake
+states are `none`, `applied`, `skipped`, `cancelled`. Skip reasons: `late`, `noList`, `blockingOff`
+(in that order of precedence). Partial list deletion keeps the surviving lists. Applied stakes
+are locked until the chosen settle-day time; ordinary stop/delete/module-off cannot release them.
+`joker` or `declare` releases only this commitment's block. The app persists each intent before
+changing Blocking, and replays unfinished applications/releases after restart. `stake.at` on an
+applied result acknowledges the Blocking write; an interrupted unacknowledged intent records
+`late`, `noList` or `blockingOff` if application is no longer possible.
+
+Both exits require a missed result and an open `exitUntil`: the actual block end for an applied
+stake (including Blocking's clock protection), otherwise the end of the settle day. A joker
+consumes one reserve and preserves the series. Declaration requires `unmeasuredMinutes > 0` or
+kind `plan`; it freezes the measured facts, changes the outcome to held and marks `declared:true`.
+Neither exit can be applied twice. Day/week monthly reserves default to 2/1; module settings
+`commitmentJokers:{day:0…5,week:0…2}` override them. The month belongs to the period's last civil
+day (Sunday for a week), even when settlement occurs in another month. Remaining jokers are
+computed from saved results. Separate series count held/joker results in period order; missing
+commitments do not add or break them. They are calculated from retained history (at most 800
+entries, oldest settled entries removed first; unsettled entries are never silently removed).
+
+`commitments` returns `{schema:1,commitments:[COMMITMENT],series:{day,week},jokersLeft:{day,week},
+jokerSettings:{day,week}}`. Inclusive explicit date filters `--from`/`--to` select periods
+intersecting that local-day range; series and reserve totals still use all retained history.
+Each annotated commitment adds `progress`, `series`, `jokersLeft`, `canUseJoker`, `canDeclare`,
+`exitUntil`, `limitHours`, `editMode` (`free`/`harderOnly`/`locked`) and `editUntil`. Successful delete returns `{schema:1,deleted:true,period}`.
+Errors use the same JSON stderr/exit contract: `appNotRunning`, `moduleDisabled`,
+`invalidArgument`, `locked`, `notFound`, `storageFailed`. No command launches the app.

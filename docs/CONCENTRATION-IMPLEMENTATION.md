@@ -205,3 +205,188 @@ Logs locaux ignorés par git : `.build/concentration-logs/`.
 - Rebaser celui qui fusionne après Ambiance : mêmes surfaces `GoalongModules*`, dashboard et Modules.
 - Les bornes de rétention et la lecture quota/friction ci-dessus peuvent être ajustées par une
   décision explicite du propriétaire. Elles restent déclarées, sans affaiblir la protection.
+
+## Engagements (2026-10-04)
+
+Plomberie de `docs/CONCENTRATION.md` › Engagements, depuis `3cf203e`, dans le même worktree et
+sur `feat/concentration-20261004`. Commits locaux uniquement, aucun push ni opération de PR.
+Le `CONTEXT.md` du checkout principal a été lu ; il reste inchangé conformément à la consigne
+« Work only there ». Le présent passage de relais contient l'état à reprendre.
+
+### Commits et fichiers
+
+| Commit | Contenu |
+| --- | --- |
+| `220bed3` | Modèle, règles pures, store, calendrier ISO partagé et tests de règles |
+| `0c42fa7` | Origine persistante engagement, deux appels Blocage, refus des autres arrêts et refresh avant désactivation |
+| Ce commit de raccordement et de rapport | Contrôleur, mesure/règlement/reprise, cartes/panneau, socket/CLI, contrats, docs CLI et tests |
+
+Le raccordement et ce rapport sont livrés ensemble sous
+`feat(focus): wire commitments through controller and CLI`. Son hash, communiqué dans la réponse
+finale, se retrouve par `git log -1 --format=%h -- docs/CONCENTRATION-IMPLEMENTATION.md`.
+
+Fichiers de l'app (préfixe `Sources/LocalHistoryApp/`) :
+
+- `Concentration/ConcentrationModel.swift` : `FocusCommitmentPeriod`, `FocusCommitment`, `FocusStake`,
+  `FocusCommitmentResult`, `FocusCommitmentProgress`, `FocusCommitmentCard`, `FocusJokerSettings` ;
+  réglage additif optionnel `FocusSettings.commitmentJokers` (anciens settings compatibles).
+- `Concentration/ConcentrationRules.swift` : `FocusCommitRule.check(old:new:now:calendar:)`,
+  `FocusCommitmentRules.progress`, `settle`, `mayCreate`, `series`, `jokerMonth`, `jokersLeft`,
+  `stakeEnd`, `stakeWindow` ; limite hebdomadaire ISO.
+- `Concentration/ConcentrationStore.swift` : `commitments()` et
+  `saveCommitments(_:) -> [FocusCommitment]` sous `Focus/commitments.json`, mêmes accès fd
+  sans symlink/hardlink, permissions 0700/0600, écriture atomique et borne de 2 MiB.
+  Au plus 800 entrées, retrait des plus anciennes réglées ; trop d'entrées non réglées = refus.
+- `Concentration/ConcentrationController.swift` : seul writer, actions communes app/CLI,
+  progression, règlement au refresh de mesure, sorties, rejeu entre les deux stores,
+  panel commun jour/semaine, refresh aux échéances (pas de nouveau polling).
+- `Concentration/ConcentrationRuntime.swift` : chargement des jours nécessaires aux engagements
+  non réglés, semaine ISO pour les limites, routes et schemas, garde de consentement lors des
+  lectures. Sans historique consenti, le refresh calcule séances/plans et incertitude sans ouvrir
+  l'historique. Une erreur de lecture n'est pas remplacée par un succès vide.
+- `Blocking/BlockingModel.swift`, `BlockingRules.swift`, `BlockingController.swift` : origine
+  `.commitment(UUID)` persistante, ID de bloc = ID d'engagement, verrou obligatoire ; arrêts,
+  suppression/réduction de liste et module off refusés selon les protections existantes.
+- `Concentration/ConcentrationPanelViews.swift` : seuls ajouts de compilation : case commitment
+  dans la largeur et `Text(content.text) // TODO(design)`. `ConcentrationPage.swift` inchangé.
+
+CLI : `Sources/LocalHistoryQueryCLI/GoalongFocusCalendar.swift` (unique helper ISO),
+`GoalongCommitmentCLI.swift` (validation partagée), `GoalongFocusCLI.swift`,
+`GoalongCLIContract.swift`, `LocalHistoryQueryCLI.swift`, `docs/CLI.md`.
+Le broker existant transporte ces routes Focus sans nouvelle voie d'accès ni writer.
+`help --json` et `capabilities` exposent les commandes et l'effet explicite sur Blocage.
+Le générateur de l'allowlist a été exécuté ; son résultat est inchangé (aucun nouveau fichier app).
+
+### API exacte pour le design
+
+Continuer à obtenir `ConcentrationRuntime.shared.controller`, optionnel ; ne pas créer de store
+ni de contrôleur dans les vues. Nouvelles propriétés `@Published private(set)` :
+
+```swift
+commitments: [FocusCommitment]             // historique retenu, pas seulement aujourd'hui
+commitmentCards: [FocusCommitmentCard]     // annotations calculées et faits réglés figés
+commitmentSeries: FocusJokerSettings       // .day / .week = longueurs de série
+commitmentJokersLeft: FocusJokerSettings   // .day / .week = réserves du mois courant
+```
+
+Lectures : `todayCommitment: FocusCommitmentCard?`, `weekCommitment: FocusCommitmentCard?`,
+`hasLockedBlock: Bool` (phase OU enjeu, pour module off/suppression),
+`hasLockedSessionBlock: Bool` (phase seulement, pour stop/skip d'une séance).
+Le design devra utiliser cette dernière pour les boutons de séance : un enjeu indépendant
+n'empêche pas d'arrêter une séance libre. La page existante n'est pas modifiée dans ce lot.
+
+```swift
+@discardableResult
+func setCommitment(period: FocusCommitmentPeriod, kind: FocusCommitment.Kind, target: Int,
+                   task: String? = nil, stake: FocusStake? = nil) throws -> FocusCommitment
+func deleteCommitment(period: FocusCommitmentPeriod) throws
+func useCommitmentJoker(period: FocusCommitmentPeriod) throws
+func declareCommitmentHeld(period: FocusCommitmentPeriod) throws
+func commitmentProgress(_ value: FocusCommitment) throws -> FocusCommitmentProgress
+func commitCheck(_ value: FocusCommitment, replacing old: FocusCommitment) -> FocusCommitRule.Check
+```
+
+`FocusCommitmentPeriod(kind: .day, key: "YYYY-MM-DD")` ou
+`FocusCommitmentPeriod(kind: .week, key: "YYYY-Www")` ; `.interval(calendar:)` donne les bornes.
+`FocusStake(listIds: [UUID], until: "12:00")` ; `.minute` / `.valid` vérifient l'heure et les listes.
+`FocusCommitRule.Check` : `.free`, `.harderOnly`, `.locked(String)` ; suppression : appeler la
+fonction pure avec `new: nil` ou lire `card.editMode`.
+
+Une carte fournit `commitment`, `progress` (`measured`, `unmeasuredMinutes`, `usesActiveTime`),
+`series`, `jokersLeft`, `canUseJoker`, `canDeclare`, `exitUntil`, `limitHours`,
+`editMode` (`free` / `harderOnly` / `locked`), `editUntil`. Les durées sont des minutes, les autres
+cibles des comptes. `limitHours` est une annotation neutre, jamais un refus. Les dates d'échéance
+sont présentables via TimelineView ; le contrôleur réveille aussi l'état aux échéances, sans timer
+rapide. Les actions revalident l'échéance et les réserves, quels que soient les boutons affichés.
+Les cartes absentes sont `nil` ; pour demain ou la prochaine semaine, filtrer `commitmentCards`
+ou construire la période puis appeler `setCommitment`.
+
+Les réglages se sauvegardent par l'action existante `updateSettings(_:)` :
+
+```swift
+var value = controller.settings
+value.commitmentJokers = FocusJokerSettings(day: 2, week: 1)
+try controller.updateSettings(value)
+```
+
+Bornes 0…5 / 0…2. `settings.jokerSettings` fournit les défauts quand la clé optionnelle est absente.
+
+`FocusPanel.Kind.commitment` et `panel.commitmentIDs: [UUID]` identifient tous les résultats du
+même refresh. Lire leurs cartes, présenter les faits, l'enjeu et les sorties, puis les actions
+ci-dessus. Le panneau utilise les hooks existants, une fois par résultat ; `dismissPanel()`
+continue à fermer le panneau. Pas de panneau pendant la période.
+
+Blocage : `startCommitmentBlock(id:listIDs:until:) throws`,
+`endCommitmentBlock(id:) throws` (ID = engagement). Seules la résolution joker/déclaration et son
+rejeu utilisent la seconde. Elle refuse un bloc manuel ou de programme, même si son ID est fourni.
+Les autres arrêts continuent à refuser le verrou ; l'heure protégée de Blocage détermine la fin
+réelle d'une fenêtre de sortie.
+
+### Lectures retenues et extensions
+
+- Le mois du joker est celui du dernier jour civil de la période (dimanche pour la semaine),
+  pas celui du minuit exclusif suivant ni du règlement. Réserves jour/semaine séparées, calculées
+  depuis les résultats ; un engagement absent ne casse ni n'ajoute à la série.
+- Un enjeu sauté (`late`, `noList`, `blockingOff`) a la même fenêtre de sortie qu'un résultat sans
+  enjeu appliqué : fin du jour de règlement. Pour un enjeu appliqué, c'est la fin réelle du bloc,
+  incluant les prolongations anti-saut d'horloge. À l'échéance exacte, les sorties sont fermées.
+- Priorité des raisons sautées : late, puis blockingOff, puis noList. Une suppression partielle
+  conserve les listes restantes. Actions, quotas et pauses des listes suivent Blocage existant.
+- `work` sans définition compte le temps actif ; `task` suit uniquement les segments work avec
+  le même matching de nom que le projet du plan. Unclassifié, dissimulé, jours/gaps absents
+  restent de l'incertitude. La nuit non observée appartient aussi à cette durée, selon la spec.
+  Une séance compte ses phases de travail dans la période, indépendamment de l'outcome.
+- Le résultat fige les faits au premier refresh après la fin. Un statut plan renseigné plus tard
+  peut passer par déclaration ; il ne réécrit pas la mesure réglée. Joker ne transforme pas missed
+  en held ; il préserve la série et affiche `jokerAt`. Déclaration marque held/declared sans joker.
+- Extensions additives pour une reprise honnête : `result.usesActiveTime` fige la provenance de
+  mesure ; `result.stake.at` sur applied acquitte l'écriture Blocage (nil = intention à rejouer).
+  Règlement et annulation sont persistés avant leurs effets Blocage. Une intention non acquittée
+  devenue impossible au redémarrage est enregistrée skipped avec sa raison, sans revendiquer une application qui n’a pas eu lieu.
+  Une annulation persistée libère son bloc au redémarrage sans consommer une seconde réserve.
+- Les séries et réserves historiques portent sur les 800 entrées retenues. `commitments` filtre
+  les périodes qui intersectent la plage inclusive de jours, mais garde les totaux globaux.
+  File input accepte le show à un sélecteur ; les annotations et métadonnées serveur sont ignorées,
+  jamais utilisées pour effacer une fenêtre ou fabriquer un résultat.
+- Les anciennes marques hebdomadaires sont converties en clé ISO depuis leur date pour garder
+  la règle « une fois par semaine » après passage au helper lundi.
+
+### Vérification et suite complète
+
+26 tests ajoutés : `ConcentrationCommitmentRulesTests` (11),
+`ConcentrationCommitmentControllerTests` (10), `GoalongCommitmentCLITests` (5).
+Sélection Commitment : 29 tests (dont 3 existants), 0 échec.
+Couvre les 4 mesures et clipping, bornes, DST, ISO en-US et année ISO, commit/free/harder/locked,
+règlement held/missed et toutes les raisons, séries/jokers mensuels séparés, store 0600/atomicité/
+rétention/no-follow, restauration entre stores et intention interrompue, déclaration, réserve zéro,
+verrou de tous les arrêts ordinaires et modules, horloge, sorties indépendantes, JSON round trip,
+métadonnées forgées, routes off, chaque syntaxe CLI et socket réel, help/capabilities.
+
+Suite finale : **1 626 tests, 46 skips, 0 échec**, exit 0, 677,228 s.
+Les cinq checks ont été exécutés avant chacun des trois commits locaux, avec les mêmes sources
+complètes dans le worktree pendant le découpage de l'index. Les trois suites :
+
+| Passage | Suite complète | Build / privacy / security / allowlist |
+| --- | --- | --- |
+| Avant domaine (`*-final.log`) | 1 626 / 46 skips / 0 échec, 368,371 s | tous exit 0 |
+| Avant Blocage (`*-c2.log`) | 1 626 / 46 skips / 0 échec, 601,916 s | tous exit 0 |
+| Avant raccordement (`*-c3.log`) | 1 626 / 46 skips / 0 échec, 677,228 s | tous exit 0 |
+
+Commandes : `swift build`, `swift test` sans filtre, `scripts/audit_privacy_boundaries.sh`,
+`scripts/verify_source_security.sh`, `python3 scripts/generate_support_source_allowlist.py --check`.
+Chaque suite utilise un HOME neuf isolé (HOME et CFFIXED_USER_HOME, GIT_ALLOW_PROTOCOL=file).
+Le binaire `.build/debug/goalong` a aussi été exécuté : `help --json` et `capabilities` contiennent
+les deux commandes (exit 0) ; `commitment show` contre un socket absent renvoie JSON
+`appNotRunning` sur stderr, exit 1. Pas de changement de code après ces checks.
+
+Logs complets locaux ignorés : `.build/engagement-logs/` (`build-final.log`, `full-final.log`,
+`privacy-final.log`, `security-final.log`, `allowlist-final.log`, `focused-05.log`). HOME de la suite
+isolé avec HOME/CFFIXED_USER_HOME ; toutes les racines de fixtures Focus sont sous `/private/tmp`.
+Pas de script d'audit modifié, pas de nouvelle observation/permission/réseau/processus dans la
+plomberie. L'inventaire reste inchangé et --check passe.
+
+### Questions ouvertes / passage de relais
+
+Aucune question bloquante de plomberie. Le design doit remplacer le Text TODO, dessiner les
+cartes/éditeurs/panneaux et relier les actions ci-dessus (dont le verrou propre aux séances).
+Aucun parcours de l'app installée ni validation visuelle des Engagements n'est revendiqué ici.
