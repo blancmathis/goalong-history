@@ -25,7 +25,7 @@ extension GoalongFocusRequest {
         if ["sessions", "friction", "plan show", "review show"].contains(command), let day = values.removeValue(forKey: "--day") { args.append(day) }
         for key in values.keys.sorted() {
             guard let value = values[key] else { continue }
-            if key == "--block" { for id in value.split(separator: ",") { args += [key, String(id)] } }
+            if key == "--block" || key == "--stake" { for id in value.split(separator: ",") { args += [key, String(id)] } }
             else { args += [key, value] }
         }
         args += flags.sorted()
@@ -37,7 +37,7 @@ extension GoalongFocusRequest {
 /// The client validates syntax; the app validates the same normalized request and owns every write.
 public enum GoalongFocusCLI {
     public static let maximumInputBytes = 64 * 1024
-    public static let commands = ["focus", "session", "sessions", "plan", "review", "limits", "block-lists", "friction"]
+    public static let commands = ["focus", "session", "sessions", "plan", "review", "limits", "block-lists", "friction", "commitment", "commitments"]
     private static func text(_ value: String, max: Int = 140) -> Bool {
         !value.trimmingCharacters(in: .whitespaces).isEmpty && value.count <= max && value.utf8.count <= max * 32
             && !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
@@ -49,6 +49,7 @@ public enum GoalongFocusCLI {
     }
     public static func parse(command: String, arguments: [String], readFile: (String) throws -> Data = readInput) throws -> GoalongFocusRequest {
         guard commands.contains(command), arguments.count <= 420, arguments.allSatisfy({ text($0, max: 4096) }) else { throw GoalongFocusError.invalidArgument }
+        if command == "commitment" || command == "commitments" { return try GoalongCommitmentCLI.parse(command: command, arguments: arguments, readFile: readFile) }
         var args = arguments, action = "", options: [String: String] = [:], flags = Set<String>()
         if ["focus", "session", "plan", "review"].contains(command) {
             guard !args.isEmpty else { throw GoalongFocusError.invalidArgument }; action = args.removeFirst()
