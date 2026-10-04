@@ -69,6 +69,7 @@ struct GoalongAnalyticsPage: View {
                         if !previewActive {
                             GoalongRecordingStateNotice(model: model)
                             GoalongRecordingCoverageNotice(model: model, dismissible: true)
+                            ConcentrationActivityMarksPlaceholder(day: selection.day)
                         }
                         if developerMode { previewControl }
                         if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }

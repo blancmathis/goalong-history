@@ -554,6 +554,17 @@ public enum GoalongQueryCLI {
             }
             FileHandle.standardOutput.write(try statusPayload(rootDirectory: root))
 
+        case "focus", "session", "sessions", "plan", "review", "limits", "block-lists", "friction":
+            let request = try GoalongFocusCLI.parse(command: command, arguments: arguments.values)
+            if request.command == "focus watch" {
+                try GoalongFocusCLI.watch(root: root) { data in
+                    FileHandle.standardOutput.write(data); FileHandle.standardOutput.write(Data([10]))
+                }
+            } else {
+                FileHandle.standardOutput.write(try GoalongFocusCLI.execute(request, root: root))
+                FileHandle.standardOutput.write(Data([10]))
+            }
+
         case "recent":
             let minutes = try integer(arguments.removeOption("--minutes") ?? "60")
             let loaded = HistoryLocalStoreReader(rootDirectory: root).load(

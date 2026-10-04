@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor struct GoalongModulesSettings: View {
     var onOpen: (DashboardSection) -> Void
     @ObservedObject private var modules = GoalongModuleStore.shared
+    @ObservedObject private var concentration = ConcentrationRuntime.shared
     @ObservedObject private var blocking = BlockingRuntime.shared
 
     var body: some View {
@@ -17,13 +18,20 @@ import SwiftUI
                     }
                 }
             }
+            if modules.isEnabled(.concentration) {
+                Button("Supprimer les données Concentration") { do { try concentration.deleteData() } catch { concentration.controller?.error = String(describing: error) } }
+                    .disabled(concentration.controller?.hasLockedBlock == true)
+            } else {
+                Button("Supprimer les données Concentration") { do { try concentration.deleteData() } catch { } }
+            }
+            if let error = concentration.error { Text(error).font(.callout) }
             GoalongNote("Un module désactivé ne tourne pas, n’installe rien et ne demande aucun accès.")
         }
     }
 
     private func row(_ module: GoalongModule) -> some View {
         let on = modules.isEnabled(module)
-        let locked = module == .blocking && blocking.controller?.hasLocks == true
+        let locked = (module == .blocking && blocking.controller?.hasLocks == true) || (module == .concentration && concentration.controller?.hasLockedBlock == true)
         return HStack(alignment: .center, spacing: 12) {
             Image(systemName: module.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 22).accessibilityHidden(true)
@@ -49,6 +57,7 @@ import SwiftUI
     private func section(_ module: GoalongModule) -> DashboardSection {
         switch module {
         case .blocking: return .blocking
+        case .concentration: return .concentration
         }
     }
 }

@@ -290,7 +290,12 @@
             }
             SupportDiagnosticsRuntime.shared.start { [weak self] in self?.supportSnapshot() ?? [:] }
             applyDailyRetentionCleanupIfNeeded()
-            MainActor.assumeIsolated { BlockingRuntime.shared.start(monitor: contextMonitor) }
+            MainActor.assumeIsolated {
+                BlockingRuntime.shared.start(monitor: contextMonitor)
+                ConcentrationRuntime.shared.start(monitor: contextMonitor)
+                ConcentrationRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .concentration) }
+            }
+            eventTapMonitor.concentrationInputSink = { date, count in MainActor.assumeIsolated { ConcentrationRuntime.shared.noteInput(at: date, count: count) } }
             applyCapabilityConsents(recordTransition: false)
             BackgroundContinuityController.shared.start(hasEnabledSources: hasEnabledBackgroundSources)
             ChatGPTRecapRuntime.shared.configure(deviceID: deviceIdentity.info.deviceID)
@@ -1073,30 +1078,12 @@
         }
 
         private func configureReadOnlyQueryServer() {
-            guard capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused() else {
-                readOnlyQueryServer?.stop()
-                readOnlyQueryServer = nil
-                do {
-                    try GoalongReadOnlyQueryServer.removeOwnedStaleSocket(
-                        rootDirectory: AppPaths.applicationSupportDirectory
-                    )
-                } catch {
-                    Diagnostics.write(
-                        "Screen Time CLI broker stayed off but an unexpected socket path was preserved: \(error)"
-                    )
-                }
-                return
-            }
             guard readOnlyQueryServer == nil else { return }
-
-            guard let screenTimeRepository else {
-                Diagnostics.write("Screen Time CLI broker stayed off because daily storage is unavailable.")
-                return
-            }
             let server = GoalongReadOnlyQueryServer(
                 rootDirectory: AppPaths.applicationSupportDirectory,
-                screenTimeHandler: { day, macOnly, selectedDeviceIDs in
-                    try GoalongQueryCLI.screenTimePayload(
+                screenTimeHandler: { [weak self] day, macOnly, selectedDeviceIDs in
+                    guard let self, self.capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused(), let screenTimeRepository = self.screenTimeRepository else { throw FocusFailure.moduleDisabled }
+                    return try GoalongQueryCLI.screenTimePayload(
                         day: day,
                         macOnly: macOnly,
                         selectedDeviceIDs: selectedDeviceIDs,
@@ -1104,12 +1091,29 @@
                         currentMacProvider: { screenTimeRepository.currentMacDevice }
                     )
                 },
-                screenTimeRangeHandler: { days in
-                    try GoalongQueryCLI.screenTimeRangePayload(
+                screenTimeRangeHandler: { [weak self] days in
+                    guard let self, self.capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused(), let screenTimeRepository = self.screenTimeRepository else { throw FocusFailure.moduleDisabled }
+                    return try GoalongQueryCLI.screenTimeRangePayload(
                         days: days,
                         dailyCollectionProvider: { screenTimeRepository.collect(for: $0) },
                         currentMacProvider: { screenTimeRepository.currentMacDevice }
                     )
+                },
+                focusHandler: { request in
+                    if request.command == "focus watch" || request.command == "focus unwatch" {
+                        let hub = try DispatchQueue.main.sync { () throws -> GoalongFocusStatusHub in
+                            guard GoalongModuleStore.shared.isEnabled(.concentration) else { throw GoalongFocusError.moduleDisabled }
+                            return try MainActor.assumeIsolated {
+                                guard ConcentrationRuntime.shared.controller != nil else { throw GoalongFocusError.storageFailed }
+                                return ConcentrationRuntime.shared.statusHub
+                            }
+                        }
+                        guard let id = request.options["id"], UUID(uuidString: id) != nil, request.options.count <= 2,
+                              request.body == nil, request.flags.isEmpty, request.options["cursor"].map({ $0.count <= 128 }) ?? true else { throw GoalongFocusError.invalidArgument }
+                        if request.command == "focus unwatch" { hub.remove(id); return Data("{}".utf8) }
+                        return try JSONEncoder().encode(hub.poll(id: id, cursor: request.options["cursor"]))
+                    }
+                    return try DispatchQueue.main.sync { try MainActor.assumeIsolated { try ConcentrationRuntime.shared.handle(request) } }
                 }
             )
             do {

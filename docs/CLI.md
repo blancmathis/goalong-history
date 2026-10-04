@@ -165,3 +165,117 @@ Prepare the request with the universal website CLI’s `analysis-prepare --file 
 Use a private output directory and `umask 077` before shell redirections. The native commands emit data to stdout. A website send remains a separate explicit action. The app can keep requests and analyses under its private `chatgpt/profile-analyses` directory, reopen them, and correct cards before selecting anything to transmit. Free-text privacy instructions guide the agent; literal names belong in exclusion/replacement rules and results still require review.
 
 The Conversation History input source is independent from the `ai` output module. Version 2 requests bind explicit `include_conversations` consent to the context digest; checking `ai` alone does not include conversations. Version 1 saved requests retain their original semantics. A project or methods analysis may use selected prior conversations with `ai` unchecked. The fixed prompt distinguishes earlier context, user intentions, assistant proposals and observed work today. Users inspect and redact this context before agent analysis, then independently select any cards to transmit.
+
+## Concentration and Ralentir (local app routes)
+
+These commands use the same owner-only `0600` Unix socket. The running app is the only writer of
+`Focus/` and `Blocking/`. They never launch Goalong, a process, an observer, a permission prompt or
+network access. Screen Time routes still check their own consent and global-pause gates even when
+the shared socket is available for these independent modules. Concentration data is excluded from
+`export-site`, `send-site`, ChatGPT recap and Jev.
+
+```bash
+goalong focus status
+goalong focus watch
+goalong session start --intent "Écrire" --minutes 50
+goalong session start --intent "Réviser" --pomodoro
+goalong session start --intent "Code" --pomodoro 50/10/20/3 --cycles 4 --block LIST_ID --lock --ambiance
+goalong session start --intent "Lire" --open --plan-item ITEM_ID
+goalong session current
+goalong session skip
+goalong session stop --outcome partly --note "Suite demain"
+goalong sessions yesterday
+goalong plan show today
+goalong plan add "Devis" --day today --project "Client" --estimate 30
+goalong plan done ITEM_ID --day today
+goalong plan drop ITEM_ID --day today
+goalong plan move ITEM_ID --to tomorrow-date --day today
+goalong plan set --day today --file plan.json
+goalong review show today
+goalong review set --day today --file -
+goalong limits
+goalong block-lists
+goalong friction yesterday
+```
+
+`DAY` accepts `today`, `yesterday` and a real local `YYYY-MM-DD`; `tomorrow-date` above means an
+explicit date. `--block` may repeat. Exactly one of `--minutes`, `--open` and `--pomodoro` is required.
+Pomodoro defaults to 25/5/15/4, optionally takes work/short/long/every-N, and accepts `--cycles 1…16`.
+`--block-during-breaks` also blocks break phases; only work phases receive `--lock`. An open free
+session cannot lock. Ambiance uses the no-op audio adapter until its separate module merges.
+
+`session skip` and `session stop` fail with `locked` while the session's current work block is
+locked, including clock-extended locks. A free open session renews a short free Blocking lease.
+`session current` returns `{session,phase,facts}`; phase has `kind`, `cycle`, `endsAt`, and facts has
+`available`, active/work/other/unclassified seconds, app switches and longest stretch seconds.
+`sessions` returns the selected start-day's array of sessions, whose phases remain computed.
+Outcome is `done`, `partly`, `not-done`, or absent when dismissed. Notes are at most 140 characters.
+
+`focus status` returns a sorted object with `schema:1`, `state`, `since` (ISO 8601), optional `source`
+(`session` or `detected`), and `session` only during a session. States are `focus`, `break`, `away`,
+`active`, `off`. The nested session has `id`, `intent`, `phase` (`work`, `shortBreak`, `longBreak`),
+`cycle`, and optional `phaseEndsAt` (absent for an open session). When the app is not running,
+`focus status` returns `{"schema":1,"state":"unavailable"}` and exits zero.
+
+`focus watch` emits that current object, then one NDJSON line per status/phase change. It reconnects
+after an app restart and retries every five seconds while unavailable. At most eight watcher leases
+exist; each expires after 15 seconds without a request. The app wakes bounded long polls immediately
+on changes (five-second maximum wait), retains 256 transitions, and sends the new current status
+after a broker restart. It does not sample the foreground. Interrupt the CLI to stop it.
+
+`plan show` and `plan set` share this schema (IDs may be omitted on input):
+
+```json
+{"schema":1,"day":"2026-10-05","intention":"Chapitre 2","items":[
+ {"id":"00000000-0000-4000-8000-000000000001","title":"Écrire","project":"Livre","estimateMinutes":60,"status":"open"}
+]}
+```
+
+A plan has 1…10 items when explicitly saved. Title/intention/project are single-line text bounded
+to 140 characters; estimate is 5…600 minutes. Status is `open`, `done`, `dropped`, or `moved` with
+`toDay`. Missing plans show an empty plan without creating a file. Setting a shown plan round trips
+without changing IDs. Plan-linked work-phase minutes and project work minutes are separate facts;
+the estimate comparison uses their temporal union. Missing observation remains unavailable.
+
+`review show` and `review set` share this schema:
+
+```json
+{"schema":1,"day":"2026-10-05","items":[
+ {"id":"00000000-0000-4000-8000-000000000001","outcome":"partly"}
+],"tomorrowFirst":"Relire le chapitre","note":"À reprendre"}
+```
+
+Use `toDay` instead of `outcome` to move an item. Omitted review IDs match the current plan's item
+order; an unmatched position is rejected. `tomorrowFirst` is at most 140 characters and becomes the
+next day's first item; note is at most 500. `partly`/`not-done` leave the plan item open while the
+review retains the member's outcome. Move/review edits preflight every affected plan's ten-item
+bound and use an atomic replayable local transaction. Carry-forward IDs are stable and do not
+replace an independently authored item with the same title.
+
+`limits` returns `{limits,marks}`. Optional limits: `weeklyHours` 10…80, `dailyHours` 2…16,
+`endMinute` 0…1439 plus ISO `weekdays` 1…7. None is pre-filled. Marks identify `kind`, `period`, `at`
+and `usesActiveTime`; daily/end-time warnings are once per day, weekly warnings once per week.
+They warn without refusing a session. Changes are made through the module settings/controller.
+
+`block-lists` returns `{schema:1,lists:[{id,name,mode,action,locked}]}` using only the Blocking module.
+`friction DAY` returns the selected `BlockDayUsage`: `day` and optional per-list `slowDownShown`,
+`renounced`, `continued` counters. UUID-keyed dictionaries use Swift Codable's alternating key/value
+array encoding. Up to 366 historical usage days are retained in Blocking's existing schema-1 store.
+A missing count means zero. Concentration can be off for both of these reads.
+
+All commands return JSON on stdout. `focus watch` is NDJSON; errors are sorted JSON on stderr with
+nonzero exit status and `error` equal to `appNotRunning`, `moduleDisabled`, `invalidArgument`,
+`locked`, `notFound`, `storageFailed`, or `tooManyWatchers`. Only unavailable `focus status`/`watch`
+use the stable success object above. `--file -` reads stdin; every JSON input is bounded to 64 KiB.
+Text control characters are rejected. A disabled module answers `moduleDisabled` before creating
+its controller, store, timer, observer or panel. Local module writes require the member's explicit
+instruction; plans, intentions and limits are never inferred by an agent.
+
+Read-only fact annotations are included in these same responses: every `sessions` object has
+`facts`; `plan show` (and plan edit replies) adds `measures` and `estimateRatio`; `review show` adds
+`measures`. Each measure has `id`, `sessionMinutes`, optional `projectWorkMinutes` and
+`measuredMinutes`, and optional `estimateMinutes`. An absent measured value means unavailable,
+not zero. The JSON accepted by `plan set`/`review set` includes these annotations when copied from
+`show`; the app ignores them on input and recomputes them, so clients cannot write measured facts.
+Facts are drawn from the currently loaded, consented Activity cache; an unrequested older interval
+may honestly have `facts.available:false`. These annotations are never persisted in Focus files.
