@@ -100,7 +100,7 @@
                 encoding: .utf8
             )
 
-            XCTAssertTrue(source.contains("private let primarySections = DashboardSection.primarySections"))
+            XCTAssertTrue(source.contains("private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled) }"))
             XCTAssertTrue(
                 source.contains(
                     "static let primarySections: [DashboardSection] = [.overview, .work, .history, .monitoring, .settings]"

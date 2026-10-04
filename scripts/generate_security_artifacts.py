@@ -273,6 +273,17 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "build": info.get("CFBundleVersion"),
             "edition": info.get("GoalongBuildEdition"),
         },
+        "blockingModule": {
+            "defaultEnabled": False, "level": "standard-in-process",
+            "sources": ["BlockingController.swift", "BlockingRules.swift", "BlockingStore.swift", "BlockingEnforcement.swift"],
+            "observations": "existing ContextMonitor/AccessibilityEventMonitor; ephemeral host and path only",
+            "historyIndependent": True, "privateURLRead": False, "network": False,
+            "effects": ["terminate-listed-apps", "AX-close-tab-or-fixed-pid-command-W", "click-absorbing-panels", "kiosk-shield", "fixed-control-command-Q-lock-shortcut"],
+            "store": {"directory": "Blocking", "file": "blocking.json", "directoryMode": "0700", "fileMode": "0600", "symlinks": "refused", "replace": "atomic"},
+            "loginItem": "SMAppService.mainApp while locked; macOS approval may be required",
+            "privilegedComponent": False, "forcedQuitProtection": False,
+            "clockLimit": "forward wall-clock change across reboot cannot be detected",
+        },
         "jevInterventions": {
             "defaultEnabled": False, "firstWarningSeconds": 15,
             "closeBehavior": "rearm-next-positive-window-preserve-duration-and-effects",

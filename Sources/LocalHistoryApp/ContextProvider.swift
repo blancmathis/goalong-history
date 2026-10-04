@@ -37,6 +37,10 @@
     final class ContextProvider {
         private let configManager: ConfigManager
         private let permissions: PermissionManager
+        private let blockingProbe: (() -> BlockingObservation?)?
+        private struct BlockingWindowKey: Hashable { let pid: Int32; let window: Int }
+        /// A window does not turn private: its answer is kept 30 s instead of rereading ~200 labels per sample.
+        private var blockingPrivateWindows: [BlockingWindowKey: (isPrivate: Bool, at: Date)] = [:]
 
         private var cachedURL: URLSnapshot?
         private var cachedBrowserIdentity: String?
@@ -48,9 +52,10 @@
         private var discoveredBrowserBundleIdentifiers = BoundedIdentifierCache<String>(capacity: 128)
         private var discoveredBrowserProcessIdentifiers = BoundedProcessIdentifierCache()
 
-        init(configManager: ConfigManager, permissions: PermissionManager) {
+        init(configManager: ConfigManager, permissions: PermissionManager, blockingProbe: (() -> BlockingObservation?)? = nil) {
             self.configManager = configManager
             self.permissions = permissions
+            self.blockingProbe = blockingProbe
         }
 
         // NSWorkspace fallback and reads of our own process are not AX evidence.
@@ -59,10 +64,25 @@
             protectedReadSucceeded && PermissionManager.isExternalProbeTarget(pid: pid, ownPID: ownPID)
         }
 
-        func capture() -> ContextSnapshot? {
+        var historyPrivacyStopped: Bool {
+            GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory).blocked
+        }
+        func capture(blockingSink: ((BlockingObservation) -> Void)? = nil, historyEnabled: Bool = true) -> ContextSnapshot? {
+            var blockingPrivateApp: AppSnapshot?
+            if let blockingSink, let observation = blockingProbe == nil ? captureBlocking() : blockingProbe?() {
+                blockingSink(observation)
+                if observation.privateWindow {
+                    blockingPrivateApp = AppSnapshot(name: observation.bundleIdentifier, bundleIdentifier: observation.bundleIdentifier, processIdentifier: observation.pid)
+                }
+            }
+            guard historyEnabled else { return nil }
             lastCaptureProvedExternalAX = false
             guard let pauseRevision = try? GoalongGlobalPause.admit() else { return nil }
             let policy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory)
+            if let app = blockingPrivateApp {
+                return ContextSnapshot(app: app, window: nil, focusedElement: nil, url: nil,
+                    suppressionReason: .privateBrowserWindow, privacyRevision: policy.revision, globalPauseRevision: pauseRevision)
+            }
             guard let snapshot = capture(privacy: policy) else { return nil }
             return ContextSnapshot(app: snapshot.app, window: snapshot.window,
                 focusedElement: snapshot.focusedElement, url: snapshot.url,
@@ -254,6 +274,66 @@
             )
         }
 
+        /// Ephemeral blocking lane. No history policy/cache, title snapshot, focused text or Jev call.
+        /// The private flag is resolved before any address read, including capability discovery.
+        func captureBlocking(of application: NSRunningApplication? = nil) -> BlockingObservation? {
+            guard let running = application ?? NSWorkspace.shared.frontmostApplication else { return nil }
+            let app = AppSnapshot(name: running.localizedName ?? "", bundleIdentifier: running.bundleIdentifier, processIdentifier: running.processIdentifier)
+            let known = BlockingRules.isKnownBrowser(running.bundleIdentifier, configured: configManager.config.browserBundleIdentifiers)
+            var result = BlockingObservation(bundleIdentifier: running.bundleIdentifier ?? "", pid: running.processIdentifier,
+                windowFrame: nil, isBrowser: known, url: nil,
+                privateWindow: false, at: Date(), regular: running.activationPolicy == .regular,
+                sessionAvailable: ForegroundSessionAvailability.isAvailable(), idleSeconds: UserInputActivityClock.secondsSinceLastInput())
+            guard result.sessionAvailable, AXIsProcessTrusted() else { return result }
+            let element = AXUIElementCreateApplication(running.processIdentifier)
+            AXUIElementSetMessagingTimeout(element, 0.20)
+            // The main window stands in while no window holds focus (an open menu, a sheet closing).
+            guard let window = AXReader.focusedWindow(for: element) ?? AXReader.element(element, attribute: kAXMainWindowAttribute as CFString)
+            else { return result }
+            result.windowIdentity = Int(CFHash(window))
+            var position: CFTypeRef?, size: CFTypeRef?
+            AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position)
+            AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &size)
+            if let position, let size, CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() {
+                var point = CGPoint.zero, dimensions = CGSize.zero
+                if AXValueGetValue(unsafeBitCast(position, to: AXValue.self), .cgPoint, &point),
+                   AXValueGetValue(unsafeBitCast(size, to: AXValue.self), .cgSize, &dimensions) {
+                    result.windowFrame = CGRect(origin: point, size: dimensions)
+                }
+            }
+            // Known browsers follow site rules and fail closed. Any other app follows app rules, unless an
+            // address is actually read from it: showing web content does not make an app a browser.
+            guard known || isBrowser(app: app, config: configManager.config) || AXReader.containsWebArea(window) else { return result }
+            // Every app that may show a page is checked for a private window before any address read.
+            let key = BlockingWindowKey(pid: running.processIdentifier, window: result.windowIdentity)
+            if let cached = blockingPrivateWindows[key], result.at.timeIntervalSince(cached.at) < 30 {
+                result.privateWindow = cached.isPrivate
+            } else {
+                var signals: [String?] = [AXReader.string(window, attribute: "AXTitle" as CFString),
+                                         AXReader.string(window, attribute: "AXDescription" as CFString)]
+                signals.append(contentsOf: AXReader.browserChromeLabels(window, limit: 80))
+                result.privateWindow = PrivacyClassifier.containsPrivateMarker(in: signals, markers: configManager.config.privateWindowMarkers)
+                if blockingPrivateWindows.count >= 64 { blockingPrivateWindows.removeAll() }
+                blockingPrivateWindows[key] = (result.privateWindow, result.at)
+            }
+            if result.privateWindow {
+                // An unknown app counts as a browser only when it shows an address field, found without reading it.
+                if !known { result.isBrowser = AXReader.hasAddressField(in: window, addressFieldMarkers: configManager.config.addressFieldMarkers) }
+                return result
+            }
+            if let raw = AXReader.browserURL(from: window, addressFieldMarkers: configManager.config.addressFieldMarkers) {
+                result.isBrowser = true
+                let lower = raw.lowercased()
+                result.isInternalPage = lower.hasPrefix("about:") || lower.hasPrefix("favorites:")
+                    || lower.hasPrefix("chrome://newtab") || lower.hasPrefix("edge://newtab")
+                result.url = result.isInternalPage ? lower.components(separatedBy: "?")[0].components(separatedBy: "#")[0] : BlockingRules.normalize(raw)
+            } else if known, result.bundleIdentifier == "com.apple.Safari" {
+                // An empty Safari start page has no web area. Missing address on real content fails closed.
+                result.isInternalPage = !AXReader.containsWebArea(window)
+            }
+            return result
+        }
+
         func fastSuppressionReason() -> SuppressionReason? {
             guard !GoalongGlobalPause.isPaused() else { return .manualPause }
             guard let runningApplication = NSWorkspace.shared.frontmostApplication else { return .sessionUnavailable }
@@ -399,7 +479,7 @@
             return focusedApplication
         }
 
-        private func isBrowser(app: AppSnapshot, config: RecorderConfig) -> Bool {
+        func isBrowser(app: AppSnapshot, config: RecorderConfig) -> Bool {
             if discoveredBrowserProcessIdentifiers.contains(app.processIdentifier) {
                 return true
             }

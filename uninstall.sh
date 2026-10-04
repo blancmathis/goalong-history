@@ -23,6 +23,18 @@ case "${1:-}" in
     ;;
 esac
 
+# A locked block (Goalong › Blocage) is a commitment: refuse before any effect, until its end.
+LOCK_MARKER="$DATA_DIR/Blocking/locked-until"
+if [[ "${GOALONG_UNINSTALL_DURING_LOCK:-}" != 1 && -f "$LOCK_MARKER" && ! -L "$LOCK_MARKER" ]]; then
+  locked_until="$(head -c 12 "$LOCK_MARKER" | tr -cd '0-9')"
+  if [[ -n "$locked_until" ]] && (( locked_until > $(date +%s) )); then
+    echo "A locked block is active until $(date -r "$locked_until" '+%Y-%m-%d %H:%M')." >&2
+    echo "Goalong History was not removed. Run this again after that time." >&2
+    echo "To remove it anyway: GOALONG_UNINSTALL_DURING_LOCK=1 ./uninstall.sh" >&2
+    exit 3
+  fi
+fi
+
 for app in \
   "/Applications/$APP_NAME.app" \
   "$HOME/Applications/$APP_NAME.app" \

@@ -80,6 +80,8 @@
             case .monitoring:
                 JevMonitoringPage(onOpenRecording: { model.openRecordingSettings() },
                                   onOpenWork: { model.selectSection(.work) })
+            case .blocking:
+                BlockingPage()
             case .activity:
                 ActivityPage(
                     model: model,
@@ -122,7 +124,8 @@
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @ObservedObject private var monitor = JevMonitor.shared
 
-        private let primarySections = DashboardSection.primarySections
+        @ObservedObject private var modules = GoalongModuleStore.shared
+        private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled) }
         @Namespace private var selection
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -341,12 +344,20 @@
     extension DashboardSection {
         static let primarySections: [DashboardSection] = [.overview, .work, .history, .monitoring, .settings]
 
+        /// An enabled module's page joins the sidebar before Réglages; a disabled one has no entry.
+        static func sidebarSections(modules: Set<GoalongModule>) -> [DashboardSection] {
+            var sections = primarySections
+            if modules.contains(.blocking) { sections.insert(.blocking, at: sections.count - 1) }
+            return sections
+        }
+
         var simpleTitle: String {
             switch self {
             case .overview, .analytics: return "Activité"
             case .work: return "Mon travail"
             case .history: return "Historique"
             case .monitoring: return "Surveillance temps réel"
+            case .blocking: return "Blocage"
             case .activity: return "Historique de ce Mac"
             case .screenTime: return "Temps d’écran"
             case .agentActivity: return "Conversations IA"
@@ -364,6 +375,8 @@
                 return .overview
             case .monitoring:
                 return .monitoring
+            case .blocking:
+                return .blocking
             case .work:
                 return .work
             case .history, .activity, .screenTime:

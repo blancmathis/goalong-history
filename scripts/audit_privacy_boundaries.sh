@@ -280,13 +280,29 @@ done < <(grep -R -nE --include='*.swift' 'NSWorkspace\.shared\.open\(' "$ROOT_DI
 # history or grant permissions. The old process must exit before LaunchServices opens the app.
 PERMISSION_RECOVERY="$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift"
 RELAUNCHER="$ROOT_DIR/Sources/GoalongRelauncher/main.swift"
+BLOCKING_ENFORCEMENT="$ROOT_DIR/Sources/LocalHistoryApp/Blocking/BlockingEnforcement.swift"
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$RELAUNCHER" ]]; then
+  if [[ "$file" != "$RELAUNCHER" && "$file" != "$BLOCKING_ENFORCEMENT" ]]; then
     echo "Unreviewed application relaunch boundary: $match" >&2
     failed=true
   fi
 done < <(grep -R -nE --include='*.swift' 'NSWorkspace\.shared\.openApplication\(' "$ROOT_DIR/Sources" || true)
+# The freeze shield can open only a member-selected retained app resolved by bundle identity.
+if [[ -f "$BLOCKING_ENFORCEMENT" ]]; then
+  for fragment in 'private func openAllowed(_ app: BlockAppRule)' \
+    'freeze?.allowedApps.contains(where: { $0.bundleIdentifier == app.bundleIdentifier }) == true' \
+    'NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier)' \
+    'NSWorkspace.shared.openApplication(at: url, configuration: config)'; do
+    if ! grep -Fq "$fragment" "$BLOCKING_ENFORCEMENT"; then
+      echo "Blocking allowed-app launch boundary is missing: $fragment" >&2; failed=true
+    fi
+  done
+  if [[ "$(grep -c 'NSWorkspace.shared.openApplication(' "$BLOCKING_ENFORCEMENT")" != 1 ]]; then
+    echo "Blocking added an unreviewed application launcher." >&2; failed=true
+  fi
+fi
+
 for required_fragment in \
   'bundle.bundleIdentifier == "ai.goalong.localhistory"' \
   'child.executableURL = helper' \

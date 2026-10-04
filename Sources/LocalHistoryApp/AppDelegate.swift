@@ -290,10 +290,12 @@
             }
             SupportDiagnosticsRuntime.shared.start { [weak self] in self?.supportSnapshot() ?? [:] }
             applyDailyRetentionCleanupIfNeeded()
+            MainActor.assumeIsolated { BlockingRuntime.shared.start(monitor: contextMonitor) }
             applyCapabilityConsents(recordTransition: false)
             BackgroundContinuityController.shared.start(hasEnabledSources: hasEnabledBackgroundSources)
             ChatGPTRecapRuntime.shared.configure(deviceID: deviceIdentity.info.deviceID)
             installCapabilityConsentObserver()
+
             retentionPolicyObserver = NotificationCenter.default.addObserver(
                 forName: .goalongRetentionPolicyDidChange, object: nil, queue: .main
             ) { [weak self] _ in
@@ -329,6 +331,15 @@
         }
 
         private func confirmUserQuitIfNeeded() -> Bool {
+            if MainActor.assumeIsolated({ BlockingRuntime.shared.controller?.hasLocks == true }) {
+                let alert = NSAlert()
+                alert.messageText = "Un blocage est verrouillé"
+                alert.informativeText = "Goalong reste ouvert jusqu’à la fin du verrou. Vous pouvez fermer la fenêtre."
+                alert.addButton(withTitle: "Fermer la fenêtre")
+                alert.addButton(withTitle: "Annuler")
+                if alert.runModal() == .alertFirstButtonReturn { dashboardWindowController?.window?.close() }
+                return false
+            }
             guard !userQuitConfirmed,
                   BackgroundContinuityPreferences.shouldConfirmQuit(
                     keepRunning: continuityPreferences.keepRunning,
@@ -350,6 +361,11 @@
             let event = NSAppleEventManager.shared().currentAppleEvent
             let senderPID = event?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
             let senderID = senderPID.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+            let systemQuit = ["com.apple.loginwindow", "com.apple.systempreferences", "com.apple.SystemSettings"].contains(senderID ?? "")
+            if !systemQuit, !PermissionRecovery.isRestarting, !SoftwareUpdateManager.shared.isRelaunchingForUpdate,
+               MainActor.assumeIsolated({ BlockingRuntime.shared.controller?.hasLocks == true }) {
+                _ = confirmUserQuitIfNeeded(); return .terminateCancel
+            }
             // Our menu and Command-Q use requestUserQuit(). Cover a direct Dock Quit
             // as well, but never intercept logout/shutdown, installers, or a restart.
             if senderID == "com.apple.dock", !PermissionRecovery.isRestarting,

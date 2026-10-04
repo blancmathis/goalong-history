@@ -233,14 +233,7 @@
                 }
             }
 
-            let normalizedMarkers = addressFieldMarkers.map {
-                $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            }
-            let capabilityMarkers = [
-                "address", "url", "location", "omnibox", "search field", "website",
-                "adresse", "ubicación", "indirizzo", "endereço", "網址", "アドレス", "주소",
-            ]
-
+            let normalizedMarkers = normalizedAddressMarkers(addressFieldMarkers)
             var queue: [AXUIElement] = [window]
             var index = 0
             var visited = 0
@@ -265,24 +258,7 @@
                 }
                 if role == "AXStaticText" { continue }
 
-                let metadata = [
-                    string(element, attribute: AXAttribute.title),
-                    string(element, attribute: AXAttribute.description),
-                    string(element, attribute: AXAttribute.roleDescription),
-                    string(element, attribute: AXAttribute.identifier),
-                ]
-                .compactMap { $0 }
-                .joined(separator: " ")
-                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-
-                let isAddressLike = normalizedMarkers.contains {
-                    metadata.localizedCaseInsensitiveContains($0)
-                } || capabilityMarkers.contains {
-                    metadata.localizedCaseInsensitiveContains($0)
-                }
-                let isEditableRole = role == "AXTextField" || role == "AXComboBox"
-
-                if isAddressLike && isEditableRole,
+                if isAddressField(element, role: role, normalizedMarkers: normalizedMarkers),
                     let candidate = string(element, attribute: AXAttribute.value),
                     looksLikeURL(candidate)
                 {
@@ -295,6 +271,46 @@
             }
 
             return nil
+        }
+
+        /// Finds an address field without reading its value or any page URL.
+        static func hasAddressField(in window: AXUIElement, addressFieldMarkers: [String], maxNodes: Int = 320) -> Bool {
+            let normalizedMarkers = normalizedAddressMarkers(addressFieldMarkers)
+            var queue: [AXUIElement] = [window]
+            var index = 0
+            while index < queue.count, index < maxNodes {
+                let element = queue[index]
+                index += 1
+                let role = string(element, attribute: AXAttribute.role) ?? ""
+                if role == "AXWebArea" || role == "AXDocument" || role == "AXStaticText" { continue }
+                if isAddressField(element, role: role, normalizedMarkers: normalizedMarkers) { return true }
+                if queue.count < maxNodes * 2 { queue.append(contentsOf: elements(element)) }
+            }
+            return false
+        }
+
+        private static let addressCapabilityMarkers = [
+            "address", "url", "location", "omnibox", "search field", "website",
+            "adresse", "ubicación", "indirizzo", "endereço", "網址", "アドレス", "주소",
+        ]
+
+        private static func normalizedAddressMarkers(_ markers: [String]) -> [String] {
+            markers.map { $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current) }
+        }
+
+        private static func isAddressField(_ element: AXUIElement, role: String, normalizedMarkers: [String]) -> Bool {
+            guard role == "AXTextField" || role == "AXComboBox" else { return false }
+            let metadata = [
+                string(element, attribute: AXAttribute.title),
+                string(element, attribute: AXAttribute.description),
+                string(element, attribute: AXAttribute.roleDescription),
+                string(element, attribute: AXAttribute.identifier),
+            ]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return normalizedMarkers.contains { metadata.localizedCaseInsensitiveContains($0) }
+                || addressCapabilityMarkers.contains { metadata.localizedCaseInsensitiveContains($0) }
         }
 
         private static func isActionableRole(_ role: String) -> Bool {

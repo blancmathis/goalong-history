@@ -6,6 +6,7 @@ import AppKit
     @ObservedObject var model: DashboardViewModel
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var updates = SoftwareUpdateManager.shared
+    @ObservedObject private var modules = GoalongModuleStore.shared
     @State private var search = ""
     @State private var showingRetention = false
     @State private var showingDeveloperProjects = false
@@ -205,6 +206,8 @@ import AppKit
             GoalongWebsiteSettings(model: model)
         case .chatGPT:
             GoalongChatGPTSettings(model: model)
+        case .modules:
+            GoalongModulesSettings(onOpen: { model.selectSection($0) })
         case .permissions:
             GoalongSettingsGroup(title: "Accès nécessaires à vos choix") {
                 GoalongPermissionRow(capability: .localComputerHistory)
@@ -257,6 +260,7 @@ import AppKit
         case .connections: return "Choisir une connexion"
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
+        case .modules: return modules.enabled.isEmpty ? "Aucun activé" : modules.enabled.map(\.title).sorted().joined(separator: ", ")
         case .permissions: return "Selon vos fonctions"
         case .storage: return "Conservation et effacement"
         case .advanced: return "Outils et diagnostics"
@@ -266,8 +270,8 @@ import AppKit
 }
 
 enum SettingsPane: Hashable {
-    case home, recording, applications, connections, website, chatGPT, permissions, storage, advanced, tools
-    static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .permissions, .storage]
+    case home, recording, applications, connections, website, chatGPT, modules, permissions, storage, advanced, tools
+    static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .modules, .permissions, .storage]
     /// Start at login and background running live on the Settings home, not in a pane.
     static func matchesStartup(_ raw: String) -> Bool {
         let keywords = "démarrage démarrer ouverture session connexion login arrière-plan fermer quitter"
@@ -290,6 +294,7 @@ enum SettingsPane: Hashable {
         case .connections: return "Connexions"
         case .website: return "Envoi à Goalong"
         case .chatGPT: return "Analyse ChatGPT"
+        case .modules: return "Modules"
         case .permissions: return "Autorisations macOS"
         case .storage: return "Stockage"
         case .advanced: return "Avancé"
@@ -305,6 +310,7 @@ enum SettingsPane: Hashable {
         case .connections: return "connections"
         case .website: return "website"
         case .chatGPT: return "chatGPT"
+        case .modules: return "modules"
         case .permissions: return "permissions"
         case .storage: return "storage"
         case .advanced: return "advanced"
@@ -320,6 +326,7 @@ enum SettingsPane: Hashable {
         case .connections: return "link"
         case .website: return "arrow.up.circle"
         case .chatGPT: return "sparkles"
+        case .modules: return "square.stack.3d.up"
         case .permissions: return "hand.raised"
         case .storage: return "internaldrive"
         default: return "slider.horizontal.3"
@@ -332,6 +339,7 @@ enum SettingsPane: Hashable {
         case .connections: return "connexions"
         case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"
         case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
+        case .modules: return "module modules blocage bloquer site sites app apps verrouiller cold turkey geler activer"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"
         case .storage: return "supprimer effacer historique conserver durée espace mémoire"
         case .advanced: return "terminal cli configuration json diagnostic diagnostics version mise à jour démarrage développeur developer mocks fictives aperçu"
