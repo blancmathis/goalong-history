@@ -18,6 +18,8 @@ from update_policy import manifest_policy
 
 SCHEMA_VERSION = 1
 FORBIDDEN_LOCAL_ENTITLEMENTS = {
+    "com.apple.security.device.audio-input",
+    "com.apple.security.device.microphone",
     "com.apple.security.network.client",
     "com.apple.security.network.server",
     "com.apple.security.automation.apple-events",
@@ -249,6 +251,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "osEnforcedNetworkSandbox": "not-enabled",
     }
     declared_network_destinations: list[dict[str, str]] = [
+        {"purpose": "explicit-ambiance-pack-download", "destination": "https://github.com/blancmathis/goalong-history/releases/download/ambiance-packs-v1/{orchestra,textures}.tar; HTTPS release-assets.githubusercontent.com redirects only", "source": "AmbiancePackDownloader after one explicit member action; GET with no member or Mac identifier"},
         {"purpose": "opt-in-jev-activity-classification", "destination": "https://api.typesafe.ai/v1/systemone", "source": "JevTransport after separate explicit consent; bounded recent context only"},
         {"purpose": "signed-software-updates", "destination": "fixed Community feed and immutable release archives on GitHub/CDN", "source": "pinned Sparkle; no activity data or system profile"},
         {"purpose": "explicit-website-pairing", "destination": "user-confirmed website origin", "source": "GoalongSitePairing after native confirmation"},
@@ -350,12 +353,17 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "declaredDestinations": declared_network_destinations,
             "ambiancePacks": {
                 "defaultEnabled": False,
-                "remoteTransportImplemented": False,
-                "blockedBy": "unchanged audit_privacy_boundaries.sh network allowlist",
-                "reservedInactiveDestinations": [
+                "remoteTransportImplemented": True,
+                "destinations": [
                     "https://github.com/blancmathis/goalong-history/releases/download/ambiance-packs-v1/orchestra.tar",
                     "https://github.com/blancmathis/goalong-history/releases/download/ambiance-packs-v1/textures.tar",
                 ],
+                "redirectHost": "release-assets.githubusercontent.com",
+                "method": "GET",
+                "session": "ephemeral-no-cookies-cache-credentials-custom-headers",
+                "queryStrings": False,
+                "signedGitHubRedirects": "blocked-pending-owner-query-decision",
+                "releaseAvailability": "not-published-by-this-task",
                 "localInstallOverride": "GOALONG_AMBIANCE_PACK_DIR",
                 "integrity": "exact-byte-size-and-SHA256-before-atomic-install",
                 "automaticDownloads": False,
@@ -405,6 +413,7 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "consentRegistry": "~/Library/Application Support/LocalHistory/capability-consent.json",
             "consentRegistryMode": "0600",
             "newInstallDefaults": {
+                "ambiance": False,
                 "computerHistory": False,
                 "jevMonitoring": False,
                 "appleScreenTime": False,

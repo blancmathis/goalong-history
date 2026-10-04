@@ -47,22 +47,33 @@ retrying. Review the implementation in
 Goalong may also open a reviewed HTTPS documentation or account-login URL after an explicit user
 action. It does not perform that HTTP request itself.
 
-### Ambiance packs — reserved, currently blocked
+### Ambiance packs — explicit download
 
-The optional Ambiance module defaults to off. Its compiled catalog reserves the HTTPS
+The optional Ambiance module defaults to off. Its compiled catalog pins the HTTPS
 archives `orchestra.tar` and `textures.tar` under
 `https://github.com/blancmathis/goalong-history/releases/download/ambiance-packs-v1/`.
-The release has not been created or uploaded. The unchanged privacy audit forbids any
-additional first-party HTTP transport, so remote installation is **not implemented**;
-the UI API returns an explicit French failure. There is no background request, session,
-cookie, cache or retry. The security inventory records these URLs as reserved inactive
-paths, separately from the five approved emission paths.
+The release has not been created or uploaded by this task. An explicit `download(id)`
+action starts one ephemeral GET in `AmbiancePackDownloader.swift`. There is no launch,
+activation, timer or background download, retained session, cookie, cache, credential,
+custom header, member/Mac identifier or automatic retry. Only the exact catalog URLs
+and HTTPS redirects to `release-assets.githubusercontent.com` are permitted. The
+security inventory includes this sixth intentional external path.
+
+The owner's 2026-10-04 prohibition on query strings is enforced, redirects included.
+A HEAD observation on 2026-10-04 found that GitHub supplies a signed query on release
+asset redirects; removing it returns HTTP 618. Consequently those signed redirects
+currently fail honestly until the owner resolves this conflict. No query exception
+has been inferred or enabled. See [`AMBIANCE-IMPLEMENTATION.md`](AMBIANCE-IMPLEMENTATION.md).
 
 An explicit install action can instead read pinned archives from the absolute local
 folder `GOALONG_AMBIANCE_PACK_DIR`. It verifies the exact size and SHA-256, extracts only
 regular flat files into a private staging directory, then renames the complete pack to
 `AppPaths.applicationSupportDirectory/Ambiance/<packId>/`. This development override
-makes no network request. Personal audio remains at its original path and is never uploaded.
+makes no network request. Debug builds also accept `GOALONG_AMBIANCE_PACK_TEST_URL`,
+strictly `http://127.0.0.1:<port>/`, for the same catalog archives served locally.
+That seam refuses every redirect and is absent from Release builds. Downloaded
+temporary files are deleted after installation, failure or cancellation. Personal
+audio remains at its original path and is never uploaded.
 
 ## Honest limitation
 

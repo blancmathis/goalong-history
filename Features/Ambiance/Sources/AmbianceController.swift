@@ -85,20 +85,27 @@ import OndeCore
         guard settings.isEnabled else { return }
         guard let pack = AmbiancePackCatalog.packs.first(where: { $0.id == id }), downloadTasks[id] == nil else { return }
         if store.isInstalled(pack) { refresh(); return }
-        guard let folder = ProcessInfo.processInfo.environment["GOALONG_AMBIANCE_PACK_DIR"], folder.hasPrefix("/") else {
-            setStatus(id, .failed(AmbianceError.networkBoundary.localizedDescription)); return
-        }
-        let archive = URL(fileURLWithPath: folder, isDirectory: true).appendingPathComponent(id + ".tar")
+        let folder = ProcessInfo.processInfo.environment["GOALONG_AMBIANCE_PACK_DIR"]
         let ticket = UUID(), store = self.store
         downloadTickets[id] = ticket; setStatus(id, .downloading(0))
         downloadTasks[id] = Task { [weak self] in
             let worker = Task.detached(priority: .utility) {
-                try store.install(pack, archive: archive) { progress in
+                let remote = folder == nil
+                let publish: (Double) -> Void = { progress in
                     Task { @MainActor [weak self] in
                         guard let self, self.downloadTickets[id] == ticket else { return }
                         self.setStatus(id, .downloading(progress))
                     }
                 }
+                let archive: URL
+                if let folder {
+                    guard folder.hasPrefix("/") else { throw AmbianceError.invalidPack("dossier local non absolu") }
+                    archive = URL(fileURLWithPath: folder, isDirectory: true).appendingPathComponent(id + ".tar")
+                } else {
+                    archive = try await AmbiancePackDownloader.download(pack) { publish($0 * 0.5) }
+                }
+                defer { if remote { try? FileManager.default.removeItem(at: archive) } }
+                try store.install(pack, archive: archive) { publish(remote ? 0.5 + $0 * 0.5 : $0) }
             }
             do {
                 try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })

@@ -5,6 +5,17 @@ context_room:
 
 # macOS permissions and Goalong consent
 
+**Goalong can play music; it never listens.** Ambiance asks for no permission at
+onboarding, module activation or Play. Sound output uses no microphone, Apple Music
+library or Full Disk Access. The module defaults to off; off creates no audio engine
+or download session.
+
+Personal music is selected through the system file picker (`NSOpenPanel`) only when
+the member asks. Ambiance stores paths and streams the selected files from disk,
+without making a copy. If macOS itself later asks for access to Documents, Downloads
+or Desktop while reading a selected file, that system folder prompt is acceptable;
+Goalong does not request those permissions preemptively.
+
 | Capability | Why Goalong may need it | Behavior when absent or off |
 | --- | --- | --- |
 | Accessibility | Foreground app/window/control context and browser URL where exposed | Computer History remains off or reports incomplete context |
