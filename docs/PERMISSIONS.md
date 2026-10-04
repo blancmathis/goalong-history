@@ -20,3 +20,20 @@ not follow Full Disk Access automatically.
 Full Disk Access is broad. The current main process owns it; the narrower reader service described
 in [`lifecycle/changes/active/fda-reader-isolation`](lifecycle/changes/active/fda-reader-isolation/index.md)
 is not shipped.
+
+## Optional Blocage module (Standard)
+
+The module switch is separate explicit consent, off by default. Off creates no controller,
+blocking file, timer, observer or permission prompt. Once on, active/upcoming blocks reuse the
+existing context monitor even when Computer History is paused, disabled or privacy-stopped.
+This independent lane reads only app identity, window geometry, private-window status and public
+browser host/path, never records history and never feeds Jev or analysis. History exclusions do
+not exempt a blocking rule. Private addresses are never read by this lane.
+
+Accessibility permits browser inspection, menu tab closure, a fixed pid-scoped Command-W fallback,
+and the fixed Control-Command-Q screen-lock shortcut. The module never requests Accessibility
+itself; the existing permission settings remain the approval route. Without it, application
+termination works and known browsers with active site rules are covered as unsupported.
+A freeze using screen locking requires Accessibility; shield mode remains available.
+The locked module requests `SMAppService.mainApp` launch at login and publishes enabled,
+awaiting approval or failure. It adds no helper/daemon and does not grant itself permission.

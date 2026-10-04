@@ -52,3 +52,24 @@ pass, the project supports these claims:
 Do not claim that Full Disk Access is narrow, that Goalong can never exfiltrate data, that XPC
 reader isolation is shipped, that the build is reproducible, or that a local model name proves
 provider authorship. Those claims require evidence the current artifact does not have.
+
+## Optional Blocage: Standard enforcement
+
+Member-owned lists are local only. No history-derived suggestions, network operation or privileged
+component is added. The module remains inert when disabled. While enabled it can terminate regular
+listed apps, close browser tabs, absorb clicks above browser windows, present shields on each
+display and request launch at login while locked. System/prompt processes and non-regular apps
+remain exempt. The independent observation lane does not record events or feed Jev/analysis.
+
+This is friction inside the running user process. Force quit, process suspension, uninstall,
+login-item revocation, deleting/altering member-owned state, another user/OS, inaccessible or
+undetected web containers, background traffic, non-foreground windows, and clock changes across
+reboot can bypass it. A forward clock jump in the same boot extends locked deadlines using
+continuous time (including sleep); a backward reboot clock preserves remaining durations.
+Corrupt stores keep the last good state, refuse edits and refuse disabling/quitting; an initially
+unreadable store cannot reconstruct missing lists. Scheduled ends still expire normally.
+
+Kiosk options are effective while Goalong is foreground. Shutdown/restart remain possible;
+`disableSessionTermination` is intentionally excluded. Screen locking is a best-effort fixed macOS
+shortcut, dependent on Accessibility and OS shortcut behavior, with a one-second unlock fallback.
+Standard cannot promise tamper resistance or a system-level network deny. See [BLOCKING.md](BLOCKING.md).

@@ -245,3 +245,90 @@ in-memory `BlockingController` skeleton. The engine work completes it without ch
   failures are known there); `scripts/verify_source_security.sh`;
   `scripts/generate_support_source_allowlist.py --check`; `./scripts/audit_privacy_boundaries.sh`.
   Never run two `swift build` at once in one worktree.
+
+## Standard engine implementation notes (2026-10-04)
+
+- The page API and design-owned views are preserved. Schema 1 gains optional `clock`,
+  `heldPrograms` (locked program windows extended after a clock jump), and `programSkips`
+  (a free program stopped for its current window); old schema-1 files remain readable.
+- An unreadable/invalid store preserves the last good in-process state and refuses all edits,
+  module-off and ordinary quit. Scheduled deadlines still end normally; an initially unreadable
+  store reports an error because missing rules cannot be reconstructed. No store is created while
+  the module is off or an enabled module is completely empty.
+- Locked allowlists can only shrink by set inclusion (replacing one allowed rule with another is
+  refused); quotas can decrease or be removed (no quota means immediate blocking). Removing a
+  program lock is refused. A freeze cannot be replaced or shortened while it runs.
+- Breaks end at local midnight; usage and break counters reset then. Private/unreadable browser
+  URLs fail closed during an eligible site block, including while a quota remains, because no
+  address can establish eligible quota accounting. Explicit browser internal pages stay allowed.
+- Program times use civil calendar times: a missing DST time advances to the next valid time;
+  a repeated time uses its first occurrence. Touching/overlapping windows are merged.
+- Screen-lock freeze uses the fixed macOS Control-Command-Q shortcut (no private API, executable,
+  helper or shell), with a one-second relock timer while unlocked. Starting it without
+  Accessibility is refused in French. If Accessibility is revoked during the freeze, enforcement
+  falls back to the shield until it becomes available again. The Standard level cannot prove that the shortcut actually
+  locked the session; use shield mode if the OS shortcut is changed or ineffective.
+- Shield uses hideDock/hideMenuBar, disableProcessSwitching/disableForceQuit/disableHideApplication.
+  `disableSessionTermination` is deliberately omitted: Apple documents that it also disables
+  shutdown/restart, contrary to the owner's escape requirement. Kiosk options apply only while
+  Goalong is foreground. Allowed apps are launched explicitly from the shield.
+  Reference: [Apple presentation options](https://developer.apple.com/documentation/appkit/nsapplication/presentationoptions-swift.struct).
+- Continuous time is `mach_continuous_time` (includes sleep). Login-item registration is the main
+  app only, with actual SMAppService status published and approval/failure exposed through the page error; permission approval remains the member's action.
+- A dormant scheduled program keeps one one-shot boundary timer (next start minus 60 seconds).
+  Periodic refresh is limited to active/upcoming/locked work; an enabled module with no pending
+  session, program, lock or freeze has no timer. This is the necessary interpretation of
+  “nothing while idle” to make automatic starts work. Module-off remains completely inert.
+- No destructive live-app/keyboard tests are run against the member's current applications.
+  Injected-backend tests establish controller dispatch and rules; physical multi-display kiosk,
+  browser-specific AX menu behavior and actual lock/unlock timing remain device acceptance checks.
+
+### Known Standard bypasses
+
+1. Force quit / SIGKILL / process suspension or crash removes all panels and enforcement; uninstall
+   and an unapproved/disabled login item prevent recovery. Permission/updater relaunches and
+   system-directed termination also leave a recovery gap. Another user, recovery/safe mode or
+   another OS is outside the process boundary.
+2. The member owns the preferences and store. Disabling the module in defaults while Goalong is
+   stopped, deleting/replacing valid JSON, restoring an older copy, changing app bundle IDs or
+   moving/replacing the app defeats this level. Symlinks, special files, invalid versions and
+   corruption are rejected, but this is not cryptographic tamper resistance.
+3. Only foreground targets are observed. Background downloads/audio/network use, another browser
+   window, offscreen tabs, very quick app/window switches and page execution before tab closure
+   can escape. Quota gaps after missed/stale samples are not invented; eligible accounting is
+   capped at 15 seconds per interval and can undercount when the process is stalled.
+4. Browser identity/private-mode detection and AX URL/menu exposure are best effort. Undetected
+   wrappers, spoofed AX metadata, unreadable private markers, disabled Accessibility, a rejected
+   AX/Command-W operation, remapped shortcuts, full-screen Spaces/window ordering and an unknown
+   browser without a usable window frame can defeat site enforcement. Missing Accessibility is
+   shown and known browsers are covered; it does not grant the app power to stop network traffic.
+5. A same-boot forward clock jump is corrected. A forward clock change across reboot, edited clock
+   metadata, or a killed process before the minute checkpoint cannot be detected reliably.
+6. A regular app may refuse termination during the one-second grace; another user/protected
+   process and the reviewed system/non-regular exceptions are intentionally never terminated.
+7. Kiosk limitations, allowed-app windows, Mission Control/Spaces/system UI and changed OS lock
+   shortcuts remain escape surfaces. Screen locking cannot be guaranteed without a stronger
+   component. Shutdown/restart stay possible and resume depends on Goalong launching at login.
+8. The design-owned typing field rejects multi-character growth, but cannot distinguish an
+   individual pasted character or automated keystrokes from typing; the controller receives text,
+   not trusted input provenance. Standard provides a friction challenge, not input attestation.
+
+### Engine verification and local delivery (2026-10-04)
+
+- `swift build`: passed (exit 0).
+- Full `swift test` with an isolated `HOME`: 1,561 tests, 48 skipped, 0 failures, 283.6 seconds.
+  `BlockingEngineTests`: 30 tests, 0 failures. The two previously known isolated-HOME
+  `ChatGPTRecapTests` keychain failures did not reproduce in this run.
+- `scripts/verify_source_security.sh`: passed (exit 0).
+- `python3 scripts/generate_support_source_allowlist.py --check`: passed (exit 0).
+- `./scripts/audit_privacy_boundaries.sh`: passed (exit 0).
+- Workflow script validation/regressions: 58 commands, all exit 0. Full packaging, install,
+  opt-in rendering and physical browser/multi-display/lock-screen tests were not run for this
+  engine handoff. No live app was terminated and no lock shortcut was sent during verification.
+- Logs: `/tmp/goalong-blocking-build.log`, `/tmp/goalong-blocking-tests.log`,
+  `/tmp/goalong-blocking-security.log`, `/tmp/goalong-blocking-privacy.log`,
+  `/tmp/goalong-blocking-workflow.log`. The isolated HOME path is recorded in
+  `/tmp/goalong-blocking-test-home.txt`.
+- Local commits: `c8457e1` (rules/store/calendar), `5d6012d` (Standard backend), `75af45c`
+  (lifecycle/observation/accounting and regression tests), followed by the documentation/inventory
+  commit. Branch: `feat/cold-turkey-engine-20261004`; no push or PR. All design-owner files preserved.
