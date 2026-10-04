@@ -283,7 +283,7 @@ enum SettingsPane: Hashable {
     }
     static func matches(_ raw: String) -> [Self] {
         let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty { return [.applications, .permissions, .storage, .advanced] }
+        if query.isEmpty { return [.applications, .modules, .permissions, .storage, .advanced] }
         return (primary + [.advanced, .tools]).filter { ($0.title + " " + $0.keywords).localizedStandardContains(query) }
     }
     var title: String {
