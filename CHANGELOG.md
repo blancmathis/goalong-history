@@ -1,5 +1,9 @@
 # Changelog
 
+## À publier — mises à jour plus légères
+
+- **Une mise à jour télécharge environ 10 Mo au lieu de 215 Mo.** Chaque version propose une mise à jour partielle depuis les trois versions précédentes : seuls les fichiers changés sont téléchargés. Elle est signée comme l’archive complète. Si elle ne s’applique pas, Goalong télécharge l’archive complète, comme avant.
+
 ## À publier — plus rapide, plus sobre, journées complètes
 
 - **Les journées chargées sont analysées jusqu’au bout.** Au-delà de 32 768 observations (vers midi un jour de travail intensif), Historique « Ce Mac », le bilan ChatGPT détaillé, la suppression d’un épisode et le résumé pour les agents s’arrêtaient. Le plafond passe à 131 072 lignes. Si une journée le dépasse encore, Historique affiche « Analyse partielle » avec l’heure d’arrêt, au lieu d’un « Réessayer » inutile.

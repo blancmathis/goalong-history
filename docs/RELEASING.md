@@ -11,7 +11,8 @@ write permissions. Private keys must never be logged, committed, or passed on co
 The rolling workflow runs the full test suite, audits the bundle and capabilities, creates ZIP/DMG,
 signs the archive and appcast, checks the signature against the embedded key, then generates
 inventories and GitHub provenance attestations. It uploads the ZIP to an immutable `main-RUN_ID-ATTEMPT`
-release. Manual-download assets follow; the authenticated `community-appcast.xml` is uploaded last,
+release, with signed deltas from the three previous builds when they can be made (see
+`UPDATE-SECURITY.md`). Manual-download assets follow; the authenticated `community-appcast.xml` is uploaded last,
 then `latest-main` moves to the commit. Do not overwrite immutable archives or reorder these steps.
 Publication is not cancelled midway when a new commit arrives.
 

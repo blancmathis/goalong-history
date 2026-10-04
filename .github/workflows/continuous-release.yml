@@ -56,7 +56,7 @@ jobs:
     needs: signing-plan
     if: needs.signing-plan.outputs.mode != 'local'
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 80
     env:
       # Bound the GitHub CLI large-asset transport to HTTP/1.1; TLS and signature checks remain mandatory.
       GODEBUG: http2client=0
@@ -165,15 +165,47 @@ jobs:
           brew install create-dmg
           env -u LOCALHISTORY_CODESIGN_IDENTITY ./scripts/package_release.sh
 
+      - name: Fetch recent update archives for delta updates
+        # Optional: without them, the feed offers the full archive only.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_BUILD: ${{ steps.version.outputs.build }}
+        run: |
+          set -euo pipefail
+          BASES="$RUNNER_TEMP/delta-bases"
+          mkdir -p "$BASES"
+          gh release list --limit 20 --exclude-drafts --json tagName,name > "$RUNNER_TEMP/releases.json"
+          python3 - "$RUNNER_TEMP/releases.json" "$CURRENT_BUILD" > "$RUNNER_TEMP/delta-base-tags" <<'PY'
+          import json, re, sys
+          releases, build = json.load(open(sys.argv[1])), sys.argv[2]
+          tags = [r["tagName"] for r in releases if re.fullmatch(r"main-[0-9]+-[0-9]+", r["tagName"]) and build not in (r.get("name") or "")]
+          tags.sort(key=lambda tag: [int(part) for part in tag.split("-")[1:]], reverse=True)
+          print("\n".join(tags[:3]))
+          PY
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+            gh release download "$tag" --dir "$BASES/$tag" \
+              --pattern Goalong-History-macOS-universal.zip \
+              --pattern Goalong-History-macOS-universal.zip.sha256
+            (cd "$BASES/$tag" && shasum -a 256 -c Goalong-History-macOS-universal.zip.sha256)
+            mv "$BASES/$tag/Goalong-History-macOS-universal.zip" "$BASES/$tag.zip"
+            rm -rf "${BASES:?}/$tag"
+          done < "$RUNNER_TEMP/delta-base-tags"
+          ls -l "$BASES"
+
       - name: Generate authenticated Community appcast
         env:
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+          LOCALHISTORY_DELTA_BASES_DIR: ${{ runner.temp }}/delta-bases
         run: |
           set -euo pipefail
           ./scripts/generate_sparkle_appcast.sh \
             "${{ steps.version.outputs.value }}" \
             dist/Goalong-History-macOS-universal.zip \
             dist/community-appcast.xml "$IMMUTABLE_TAG"
+          # Free the previous archives and Sparkle's extracted copies before packaging the release.
+          rm -rf "$LOCALHISTORY_DELTA_BASES_DIR" "$HOME/Library/Caches/Sparkle_generate_appcast"
           grep -Fq "<sparkle:version>${{ steps.version.outputs.build }}</sparkle:version>" dist/community-appcast.xml
 
       - name: Generate auditable release inventory
@@ -218,13 +250,17 @@ jobs:
           set -euo pipefail
           # An old feed must remain usable while latest-main assets are being replaced.
           # Never clobber these archives or use latest-main ZIP URLs in the appcast.
+          # Signed deltas live next to the ZIP, in the same immutable release.
+          shopt -s nullglob
+          deltas=(dist/Goalong-History-macOS-universal-from-*.delta)
           gh release create "$IMMUTABLE_TAG" \
             --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "Goalong History ${{ steps.version.outputs.value }} — build ${{ steps.version.outputs.build }}" \
             --notes "Authenticated Community update archive for $GITHUB_SHA. Stable certificate-backed identity; not Apple-notarized." \
             dist/Goalong-History-macOS-universal.zip \
             dist/Goalong-History-macOS-universal.zip.sha256 \
-            dist/security-capabilities.json dist/sbom.spdx.json dist/release-manifest.json
+            dist/security-capabilities.json dist/sbom.spdx.json dist/release-manifest.json \
+            ${deltas[@]+"${deltas[@]}"}
 
       - name: Remove retired rolling-release assets
         env:

@@ -16,7 +16,8 @@ and embeds one framework: the pinned Sparkle 2.9.6 updater.
 Software updates use Sparkle. Checks run at launch and hourly unless disabled in Settings. They
 fetch one fixed feed,
 `https://github.com/blancmathis/goalong-history/releases/download/latest-main/community-appcast.xml`,
-then the signed release archive it names on GitHub or its CDN. They send no activity data or system
+then the signed release archive it names on GitHub or its CDN, or a smaller signed delta from the
+same release when one matches the installed build. They send no activity data or system
 profile, and installation needs the user's approval. See [`UPDATE-SECURITY.md`](UPDATE-SECURITY.md).
 
 When the user separately enables ChatGPT analysis, Goalong may launch the reviewed local Codex
