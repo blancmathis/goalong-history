@@ -11,7 +11,11 @@ curl --fail --location --silent --show-error --retry 3 --connect-timeout 15 --ma
 "$WORK/verify" --feed-only "$(cat "$ROOT/Distribution/sparkle-public-ed-key.txt")" "$WORK/feed.xml" > "$WORK/feed.json"
 URL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["url"])' "$WORK/feed.json")"
 curl --fail --location --silent --show-error --retry 3 --connect-timeout 15 --max-time 300 --max-filesize 350000000 --proto '=https' --proto-redir '=https' "$URL" -o "$WORK/update.zip"
-"$WORK/verify" "$DIST/Goalong History.app/Contents/Info.plist" "$WORK/update.zip" "$WORK/feed.xml"
+mkdir -p "$WORK/deltas"
+while IFS= read -r DELTA_URL; do
+  curl --fail --location --silent --show-error --retry 3 --connect-timeout 15 --max-time 300 --max-filesize 350000000 --proto '=https' --proto-redir '=https' "$DELTA_URL" -o "$WORK/deltas/${DELTA_URL##*/}"
+done < <(python3 -c 'import json,sys;[print(d["url"]) for d in json.load(open(sys.argv[1]))["deltas"]]' "$WORK/feed.json")
+"$WORK/verify" "$DIST/Goalong History.app/Contents/Info.plist" "$WORK/update.zip" "$WORK/feed.xml" "$WORK/deltas"
 python3 - "$DIST" "$WORK" <<'PY'
 import hashlib,json,plistlib,sys
 from pathlib import Path
@@ -24,5 +28,7 @@ def digest(p):
   for block in iter(lambda:f.read(1024*1024),b''):h.update(block)
  return h.hexdigest()
 assert digest(work/'update.zip')==digest(dist/'Goalong-History-macOS-universal.zip'), 'Published ZIP differs from the tested release'
+for delta in (work/'deltas').iterdir():
+ assert digest(delta)==digest(dist/delta.name), f'Published {delta.name} differs from the tested release'
 print('PUBLIC_UPDATE_VERIFIED',info['CFBundleShortVersionString'],info['CFBundleVersion'],info.get('GoalongSourceRevision','unknown'))
 PY

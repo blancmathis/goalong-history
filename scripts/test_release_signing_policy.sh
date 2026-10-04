@@ -31,6 +31,9 @@ fi
 /usr/bin/grep -Fq 'LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1' "$WORKFLOW"
 /usr/bin/grep -Fq 'Publish immutable update archive' "$WORKFLOW"
 /usr/bin/grep -Fq 'Publish authenticated feed last' "$WORKFLOW"
+# Deltas are optional and published in the immutable release, never in latest-main.
+/usr/bin/grep -Fq 'LOCALHISTORY_DELTA_BASES_DIR:' "$WORKFLOW"
+/usr/bin/grep -Fq 'deltas=(dist/Goalong-History-macOS-universal-from-*.delta)' "$WORKFLOW"
 
 echo "Release policy tests passed: stable pinned identity; authenticated updates; no ad-hoc public fallback."
 

@@ -30,6 +30,19 @@ Package version, feed URL, signature requirements and disabled profiling/automat
 audited. Source builds without a public key embed the framework but cannot query the live feed.
 The new Community feed is separate from the retired pre-Community `appcast.xml` channel.
 
+## Delta updates
+
+Each release also offers signed deltas from the three previous immutable builds, so an update
+downloads about 10 MB instead of the full ~215 MB ZIP. Sparkle's `generate_appcast` builds and
+signs them with the same Ed25519 key; they are renamed `Goalong-History-macOS-universal-from-BUILD.delta`
+(GitHub would rewrite the space in Sparkle's default name) and uploaded to the same immutable release
+as the ZIP. The feed is then re-signed. CI checks each delta's size and signature against the key
+inside the shipped app, rejects a delta outside that release or not named after its source build,
+and checks them again after publication. On the Mac, Sparkle verifies the patched app's checksum and
+falls back to the full ZIP if a delta is missing, fails or does not match the installed build.
+Deltas are optional: if previous archives cannot be fetched, or generation fails or exceeds 25
+minutes, the feed lists the full ZIP only.
+
 ## Remaining trust and macOS limits
 
 The app trusts code signed by the release Ed25519 key and the release pipeline. This is a real
