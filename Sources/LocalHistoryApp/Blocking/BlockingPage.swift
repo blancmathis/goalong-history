@@ -495,21 +495,18 @@ struct BlockingLockExplainer: View {
                                  : "macOS verrouille la session, et la reverrouille à chaque ouverture.")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    if mode == .shield {
-                        HStack(alignment: .center, spacing: 8) {
-                            Text("Garder").font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                                .frame(width: 64, alignment: .leading)
-                            BlockingFlow(spacing: 6) {
-                                ForEach(allowed) { app in
-                                    BlockingItemChip(item: .app(app), removable: true) { allowed.removeAll { $0 == app } }
-                                }
-                                Button { picking = true } label: { Label("Ajouter une app", systemImage: "plus") }
-                                    .buttonStyle(LHQuietButtonStyle())
-                                    .popover(isPresented: $picking) {
-                                        BlockingAppPicker(excluded: Set(allowed.map(\.bundleIdentifier))) { allowed.append($0) }
+                            if mode == .shield {
+                                BlockingFlow(spacing: 6) {
+                                    ForEach(allowed) { app in
+                                        BlockingItemChip(item: .app(app), removable: true) { allowed.removeAll { $0 == app } }
                                     }
+                                    Button { picking = true } label: { Label("Garder une app", systemImage: "plus") }
+                                        .buttonStyle(LHQuietButtonStyle())
+                                        .accessibilityIdentifier("blocking-freeze-keep")
+                                        .popover(isPresented: $picking) {
+                                            BlockingAppPicker(excluded: Set(allowed.map(\.bundleIdentifier))) { allowed.append($0) }
+                                        }
+                                }
                             }
                         }
                     }

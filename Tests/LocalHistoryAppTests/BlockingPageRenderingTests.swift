@@ -57,13 +57,13 @@ final class BlockingPageRenderingTests: XCTestCase {
             }
             let sunday = now.addingTimeInterval(-86_400)
             try render("page-empty-\(suffix)", width: 900, height: 900, page(fixtures.empty()))
-            try render("page-idle-\(suffix)", width: 900, height: 1_500, page(fixtures.idle(), at: sunday))
-            try render("page-active-\(suffix)", width: 900, height: 1_700, page(fixtures.active()))
+            try render("page-idle-\(suffix)", width: 900, height: 1_800, page(fixtures.idle(), at: sunday))
+            try render("page-active-\(suffix)", width: 900, height: 2_150, page(fixtures.active()))
             let editing = fixtures.idle()
-            try render("page-editing-\(suffix)", width: 900, height: 2_000,
+            try render("page-editing-\(suffix)", width: 900, height: 2_300,
                        page(editing, expanded: editing.lists.first?.id, at: sunday))
             let locked = fixtures.active()
-            try render("page-editing-locked-\(suffix)", width: 900, height: 2_100,
+            try render("page-editing-locked-\(suffix)", width: 900, height: 2_500,
                        page(locked, expanded: locked.lists.first?.id))
             try render("modules-\(suffix)", width: 760, GoalongModulesSettings(onOpen: { _ in }).padding(32))
             try render("typing-\(suffix)", width: 560,
