@@ -3,17 +3,16 @@ import Foundation
 /// Five separately authored relaxation worlds. Evidence-informed design, not a
 /// universal prescription. The same pieces are available during meditation.
 public enum RelaxCompositions {
-    public static let ids = ["lagoon", "stillwater", "hearth", "reverie", "driftwood"]
     public static let profiles: [SoundProfile] = [
-        make(8, "lagoon", "Lagoon", "WARM AMBIENT", "A deep, continuous harmonic tide. Quiet blooms and slowly changing common tones, without a beat.", 50),
-        make(9, "stillwater", "Stillwater", "SOFT ACOUSTIC PIANO", "Spacious recorded piano, gentle low strings and long answering phrases. Room between the notes.", 56),
-        make(10, "hearth", "Hearth", "CHAMBER ENSEMBLE", "Warm cellos, violas, restrained horns and woodwinds. Sustained, overlapping voices without percussion.", 52),
-        make(11, "reverie", "Reverie", "WORDLESS CHOIR", "Soft synthesized vowels, low strings and distant harp. Common tones connect without words or vocal solos.", 48),
-        make(12, "driftwood", "Driftwood", "WOOD & HARP", "Rounded wooden resonances answer a recorded harp over a quiet harmonic bed. Unhurried, composed motion.", 62)
+        make(8, "lagoon", 50),
+        make(9, "stillwater", 56),
+        make(10, "hearth", 52),
+        make(11, "reverie", 48),
+        make(12, "driftwood", 62)
     ]
-    private static func make(_ score: Double, _ id: String, _ title: String, _ subtitle: String, _ description: String, _ tempo: Double) -> SoundProfile {
+    private static func make(_ score: Double, _ id: String, _ tempo: Double) -> SoundProfile {
         var c = GenerativeSettings()
-        c.profileID = id; c.composition = score; c.seed = UInt64(11100 + Int(score)); c.tempo = tempo
+        c.composition = score; c.seed = UInt64(11100 + Int(score)); c.tempo = tempo
         c.density = 0.28; c.brightness = 0.20; c.warmth = 0.85; c.space = 0.72
         c.movement = 0.10; c.evolution = 0.40; c.stability = 1; c.character = 0.85
         c.texture = 0; c.pulse = 0; c.drive = 0; c.punch = 0; c.settleMinutes = 0
@@ -35,6 +34,6 @@ public enum RelaxCompositions {
             c.orchestra = 0.70; c.strings = 0.29; c.harp = 0.72
             c.space = 0.66; c.density = 0.31; c.bass = 0.42; c.brightness = 0.22
         }
-        return SoundProfile(id: id, title: title, mode: .relax, subtitle: subtitle, description: description, configuration: c)
+        return SoundProfile(id: id, mode: .relax, configuration: c)
     }
 }

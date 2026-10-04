@@ -30,7 +30,9 @@ Goalong adaptations:
 - Goalong does not serialize engine configurations or expose Onde's legacy profile
   catalog/CLI controls. Their unused Codable conformances, JSON helpers and legacy
   presets are removed from the compiled engine. All fifteen Focus/Relax profiles,
-  their rendering values, seeds and validation remain unchanged. Module settings
+  their rendering values, seeds and validation rules remain unchanged. The render
+  profile keeps only its ID, mode and controls; unused upstream English copy and
+  CLI setters are absent. Goalong's French titles and views are unchanged. Module settings
   still persist through `AmbianceSettings`; pack receipts retain their JSON format.
 - The 2026-10-04 owner decision permits device output and explicit pack downloads
   in two isolated files, with stricter microphone guards; see
