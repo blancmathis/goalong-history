@@ -1,4 +1,6 @@
 #if os(macOS)
+    import AppKit
+    import ApplicationServices
     import Carbon
     import CoreGraphics
     import Foundation
@@ -18,6 +20,23 @@
         private let semanticContextStore: SemanticContextStore
         private let memoryStore: LocalActivityMemoryStore
 
+        var blockingSink: ((BlockingObservation) -> Void)?
+        private(set) var blockingObservationEnabled = false
+        private var historyRequested = false
+        func setBlockingObservationEnabled(_ enabled: Bool) {
+            guard enabled != blockingObservationEnabled else { return }
+            blockingObservationEnabled = enabled
+            accessibilityEventMonitor?.observesApplicationLaunches = enabled
+            if enabled {
+                pollingIsActive = true
+                accessibilityEventMonitor?.start()
+                sampleNow()
+            } else if !historyRequested {
+                pollingIsActive = false; timer?.invalidate(); timer = nil
+                accessibilityEventMonitor?.stop()
+            } else { accessibilityEventMonitor?.start(); scheduleNextPoll() }
+        }
+        static func usesBlockingOnlyLane(capturing: Bool, blockingEnabled: Bool) -> Bool { blockingEnabled && !capturing }
         private var timer: Timer?
         private var accessibilityEventMonitor: AccessibilityEventMonitor?
         private var previous: ContextSnapshot?
@@ -59,8 +78,8 @@
             self.semanticContextStore = semanticContextStore
             self.memoryStore = memoryStore
             accessibilityEventMonitor = AccessibilityEventMonitor(
-                isAccessibilityAvailable: { [weak permissions] in
-                    permissions?.currentStatus.accessibilityUsable == true
+                isAccessibilityAvailable: { [weak self, weak permissions] in
+                    permissions?.currentStatus.accessibilityUsable == true || (self?.blockingObservationEnabled == true && AXIsProcessTrusted())
                 },
                 onChange: { [weak self] trigger in
                     guard let self,
@@ -72,10 +91,19 @@
                     )
                 }
             )
+            accessibilityEventMonitor?.onApplication = { [weak self] app in
+                guard let self, self.blockingObservationEnabled else { return }
+                // Launches may be background launches: enforce app rules immediately, without reading a URL.
+                self.blockingSink?(BlockingObservation(bundleIdentifier: app.bundleIdentifier ?? "", pid: app.processIdentifier,
+                    windowFrame: nil, isBrowser: self.provider.isBrowser(app: AppSnapshot(name: app.localizedName ?? "", bundleIdentifier: app.bundleIdentifier, processIdentifier: app.processIdentifier), config: self.configManager.config), url: nil, privateWindow: false, at: Date(),
+                    regular: app.activationPolicy == .regular, sessionAvailable: ForegroundSessionAvailability.isAvailable(), idleSeconds: 121,
+                    isForeground: app.processIdentifier == NSWorkspace.shared.frontmostApplication?.processIdentifier))
+            }
         }
 
         func start() {
             stop()
+            historyRequested = true
             pollingIsActive = true
             sampleNow()
             ActivityAnalysisRuntime.shared.start(
@@ -106,12 +134,14 @@
         }
 
         func stop() {
-            pollingIsActive = false
+            historyRequested = false
+            pollingIsActive = blockingObservationEnabled
             invalidatePresence()
-            accessibilityEventMonitor?.stop()
+            if !blockingObservationEnabled { accessibilityEventMonitor?.stop() }
             timer?.invalidate()
             timer = nil
             ActivityAnalysisRuntime.shared.stop()
+            if blockingObservationEnabled { scheduleNextPoll() }
         }
 
         func invalidatePresence() {
@@ -143,10 +173,10 @@
             timer?.invalidate()
             let configuredInterval = Double(configManager.config.pollIntervalMilliseconds) / 1_000.0
             guard pollingIsActive,
-                  let interval = Self.nextPollInterval(
+                  let interval = blockingObservationEnabled ? 0.75 : Self.nextPollInterval(
                 configuredInterval: configuredInterval,
                 idleSeconds: idleSeconds(),
-                isCapturing: state.isCapturing,
+                isCapturing: historyRequested && state.isCapturing,
                 suppressionReason: latestSnapshot?.suppressionReason,
                 eventDrivenCoverageAvailable: accessibilityEventMonitor?.hasReliableEventCoverage == true
                     && consecutiveCaptureFailures == 0
@@ -213,7 +243,12 @@
                     scheduleNextPoll()
                 }
             }
-            guard state.isCapturing else {
+            if blockingObservationEnabled && (!historyRequested || !state.isCapturing || provider.historyPrivacyStopped || !ForegroundSessionAvailability.isAvailable() || IsSecureEventInputEnabled()) {
+                _ = provider.capture(blockingSink: blockingSink, historyEnabled: false)
+                // No recorder, capture health, Jev, analysis or retained snapshot in this lane.
+                return nil
+            }
+            guard historyRequested, state.isCapturing else {
                 invalidatePresence(); return nil
             }
             guard ForegroundSessionAvailability.isAvailable() else {
@@ -242,7 +277,7 @@
                 captureHealth.setSuppression(.secureInput)
                 return safeContext
             }
-            guard let captured = provider.capture() else {
+            guard let captured = provider.capture(blockingSink: blockingObservationEnabled ? blockingSink : nil) else {
                 markObservationUnavailable()
                 consecutiveCaptureFailures = min(consecutiveCaptureFailures + 1, 1_000)
                 captureHealth.markAXFailure()

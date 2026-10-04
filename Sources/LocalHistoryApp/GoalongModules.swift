@@ -34,6 +34,8 @@ final class GoalongModuleStore: ObservableObject {
 
     @Published private(set) var enabled: Set<GoalongModule>
     private let defaults: UserDefaults
+    var blockingDisableCheck: (() -> Bool)?
+    var onBlockingEnabledChange: ((Bool) -> Void)?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -44,8 +46,10 @@ final class GoalongModuleStore: ObservableObject {
 
     func setEnabled(_ module: GoalongModule, _ value: Bool) {
         guard value != isEnabled(module) else { return }
+        if module == .blocking, !value, blockingDisableCheck?() == false { return }
         defaults.set(value, forKey: module.defaultsKey)
         if value { enabled.insert(module) } else { enabled.remove(module) }
+        if module == .blocking { onBlockingEnabledChange?(value) }
         NotificationCenter.default.post(name: .goalongModulesDidChange, object: self)
     }
 }

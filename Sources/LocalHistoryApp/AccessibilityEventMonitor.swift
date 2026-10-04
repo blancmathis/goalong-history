@@ -29,6 +29,9 @@
         private var focusedElement: AXUIElement?
         private var observedPID: pid_t?
         private var activationToken: NSObjectProtocol?
+        private var launchToken: NSObjectProtocol?
+        var onApplication: ((NSRunningApplication) -> Void)?
+        var observesApplicationLaunches = false
         private var debounceWorkItem: DispatchWorkItem?
         private var pendingNotifications = Set<String>()
         private var registeredApplicationNotifications = Set<String>()
@@ -83,7 +86,16 @@
             ) { [weak self] notification in
                 let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
                     as? NSRunningApplication
+                if let application { self?.onApplication?(application) }
+                self?.onChange("application_activation")
                 self?.attach(to: application ?? NSWorkspace.shared.frontmostApplication)
+            }
+            if observesApplicationLaunches { launchToken = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] notification in
+                if let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+                    self?.onApplication?(application)
+                }
+                self?.onChange("application_launch")
+            }
             }
             attach(to: NSWorkspace.shared.frontmostApplication)
         }
@@ -96,6 +108,8 @@
                 NSWorkspace.shared.notificationCenter.removeObserver(token)
             }
             activationToken = nil
+            if let launchToken { NSWorkspace.shared.notificationCenter.removeObserver(launchToken) }
+            launchToken = nil
             detachObserver()
         }
 
