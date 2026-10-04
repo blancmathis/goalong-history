@@ -48,7 +48,6 @@ enum AmbiancePackDownloader {
         private let lock = NSLock()
         private var continuation: CheckedContinuation<URL, Error>?
         private var session: URLSession?
-        private var task: URLSessionDownloadTask?
         private var cancelled = false
         private var failure: Error?
         private var redirects = 0
@@ -73,8 +72,9 @@ enum AmbiancePackDownloader {
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
             request.httpMethod = "GET"
             request.httpShouldHandleCookies = false
-            self.session = session; task = session.downloadTask(with: request)
-            task?.resume(); lock.unlock()
+            self.session = session
+            let task = session.downloadTask(with: request)
+            task.resume(); lock.unlock()
         }
         func cancel() {
             lock.lock(); cancelled = true; let session = self.session; lock.unlock()
@@ -83,7 +83,7 @@ enum AmbiancePackDownloader {
         private func finish(_ result: Result<URL, Error>) {
             lock.lock()
             let continuation = self.continuation, session = self.session, cancelled = self.cancelled
-            self.continuation = nil; self.session = nil; task = nil
+            self.continuation = nil; self.session = nil
             lock.unlock()
             session?.invalidateAndCancel()
             if case .success(let file) = result, cancelled || continuation == nil { try? FileManager.default.removeItem(at: file) }
