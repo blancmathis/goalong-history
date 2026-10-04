@@ -79,6 +79,33 @@ final class AmbianceTests: XCTestCase {
         XCTAssertFalse(controller.diagnostics.runtimeCreated)
         XCTAssertEqual(controller.diagnostics.mappedBytes, 0)
     }
+    @MainActor func testFolderImportIncludesNestedAlbumWithoutCopying() throws {
+        let support = try root(), album = try root().appendingPathComponent("Artiste/Album")
+        try FileManager.default.createDirectory(at: album, withIntermediateDirectories: true)
+        let file = album.appendingPathComponent("morceau.flac")
+        try Data([1, 2]).write(to: file)
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        controller.addOwnFiles([album.deletingLastPathComponent().deletingLastPathComponent()])
+        XCTAssertEqual(settings.ownFiles, [file.resolvingSymlinksInPath().path])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: support.appendingPathComponent("Ambiance").path))
+    }
+    @MainActor func testLocalDownloadAndRemovePublishCorrectPackState() async throws {
+        guard ProcessInfo.processInfo.environment["GOALONG_AMBIANCE_PACK_DIR"] != nil else { throw XCTSkip("Local dev archives required") }
+        let support = try root(), settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        let installed = expectation(description: "complete pack installed")
+        let token = controller.$packs.sink { values in
+            if values.first(where: { $0.id == "orchestra" })?.status == .installed { installed.fulfill() }
+        }
+        controller.download("orchestra")
+        await fulfillment(of: [installed], timeout: 30)
+        token.cancel()
+        XCTAssertTrue(controller.sources.contains { $0.kind == .focus && $0.isAvailable })
+        controller.remove("orchestra")
+        XCTAssertEqual(controller.packs.first { $0.id == "orchestra" }?.status, .notInstalled)
+        XCTAssertFalse(controller.sources.contains { $0.kind == .focus && $0.isAvailable })
+    }
     func testPackRejectsSizeAndChecksumBeforeCreatingStorage() throws {
         let support = try root(), fixture = try fixtureArchive(), store = AmbiancePackStore(supportDirectory: support)
         let size = AmbiancePack(id: "orchestra", title: "test", bytes: fixture.pack.bytes + 1, url: fixture.pack.url, sha256: fixture.pack.sha256)
@@ -127,7 +154,7 @@ final class AmbianceTests: XCTestCase {
         }
         let pack = try XCTUnwrap(AmbiancePackCatalog.packs.first { $0.id == "orchestra" })
         let store = AmbiancePackStore(supportDirectory: try root())
-        try store.install(pack, archive: URL(fileURLWithPath: folder).appendingPathComponent("orchestra.tar"))
+        try autoreleasepool { try store.install(pack, archive: URL(fileURLWithPath: folder).appendingPathComponent("orchestra.tar")) }
         return (store, pack)
     }
     @MainActor func testFocusAndRelaxRenderNonSilentAndStopUnmaps() throws {

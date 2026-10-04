@@ -44,6 +44,7 @@ public struct AmbiancePackStore {
         } && !receipt.files.isEmpty
     }
     public func install(_ pack: AmbiancePack, archive: URL, progress: (Double) -> Void = { _ in }) throws {
+        try checkCancellation()
         try validate(pack)
         guard isRegularFile(archive),
               (try archive.resourceValues(forKeys: [.fileSizeKey])).fileSize == Int(pack.bytes) else {
@@ -52,8 +53,14 @@ public struct AmbiancePackStore {
         let reader = try FileHandle(forReadingFrom: archive)
         defer { try? reader.close() }
         var hash = SHA256(), read: Int64 = 0
-        while let block = try reader.read(upToCount: 65_536), !block.isEmpty {
-            try checkCancellation(); hash.update(data: block); read += Int64(block.count)
+        while true {
+            try checkCancellation()
+            let count = try autoreleasepool { () throws -> Int in
+                guard let block = try reader.read(upToCount: 65_536), !block.isEmpty else { return 0 }
+                hash.update(data: block); return block.count
+            }
+            if count == 0 { break }
+            read += Int64(count)
             guard read <= pack.bytes else { throw AmbianceError.invalidPack("taille incorrecte") }
             progress(Double(read) / Double(pack.bytes) * 0.45)
         }
@@ -93,8 +100,11 @@ public struct AmbiancePackStore {
                 var remaining = size
                 while remaining > 0 {
                     try checkCancellation()
-                    let block = try exact(reader, min(65_536, remaining))
-                    try writer.write(contentsOf: block); remaining -= block.count; consumed += Int64(block.count)
+                    let count = try autoreleasepool { () throws -> Int in
+                        let block = try exact(reader, min(65_536, remaining))
+                        try writer.write(contentsOf: block); return block.count
+                    }
+                    remaining -= count; consumed += Int64(count)
                     progress(0.45 + Double(consumed) / Double(pack.bytes) * 0.5)
                 }
                 try writer.close()

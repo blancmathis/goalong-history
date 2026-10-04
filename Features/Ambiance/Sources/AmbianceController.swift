@@ -88,7 +88,7 @@ import OndeCore
             } catch {
                 guard let self, self.downloadTickets[id] == ticket else { return }
                 self.downloadTickets[id] = nil; self.downloadTasks[id] = nil
-                self.setStatus(id, .failed(error.localizedDescription)); self.refreshSources()
+                self.setStatus(id, .failed("Installation impossible : \(error.localizedDescription)")); self.refreshSources()
             }
         }
     }
@@ -103,20 +103,24 @@ import OndeCore
         guard downloadTasks[id] == nil else { cancelDownload(id); return }
         stop()
         do { try store.remove(pack); refresh() }
-        catch { setStatus(id, .failed(error.localizedDescription)) }
+        catch { setStatus(id, .failed("Suppression impossible : \(error.localizedDescription)")) }
     }
     public func addOwnFiles(_ urls: [URL]) {
         guard settings.isEnabled else { return }
         let extensions: Set<String> = ["wav", "aiff", "aif", "m4a", "mp3", "caf", "flac"]
         var paths = settings.ownFiles
+        func include(_ file: URL) {
+            guard extensions.contains(file.pathExtension.lowercased()) else { return }
+            let path = file.resolvingSymlinksInPath().standardizedFileURL.path
+            if (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true, !paths.contains(path) { paths.append(path) }
+        }
         for url in urls where url.isFileURL {
-            var candidates = [url]
             if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                candidates = (try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey])) ?? []
-            }
-            for file in candidates where extensions.contains(file.pathExtension.lowercased()) {
-                let path = file.resolvingSymlinksInPath().standardizedFileURL.path
-                if (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true, !paths.contains(path) { paths.append(path) }
+                if let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
+                    while let file = files.nextObject() as? URL { include(file) }
+                }
+            } else {
+                include(url)
             }
         }
         settings.ownFiles = paths; refreshSources()
