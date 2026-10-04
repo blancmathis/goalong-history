@@ -9,6 +9,7 @@ var packageDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6"),
 ]
 var appDependencies: [Target.Dependency] = [
+    "Ambiance",
     "LocalHistoryCore",
     "AppleScreenTime",
     "AppleSystemScreenTime",
@@ -33,6 +34,7 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
+        .library(name: "Ambiance", targets: ["Ambiance"]),
         .executable(name: "goalong-relauncher", targets: ["GoalongRelauncher"]),
         .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
         .library(name: "AppleSystemScreenTime", targets: ["AppleSystemScreenTime"]),
@@ -43,6 +45,10 @@ let package = Package(
     ],
     dependencies: packageDependencies,
     targets: [
+        .target(name: "OndeDSP", path: "Features/Ambiance/Engine/OndeDSP", publicHeadersPath: "include"),
+        .target(name: "OndeCore", dependencies: ["OndeDSP"], path: "Features/Ambiance/Engine/OndeCore"),
+        .target(name: "Ambiance", dependencies: ["OndeCore", "OndeDSP"], path: "Features/Ambiance/Sources"),
+        .testTarget(name: "AmbianceTests", dependencies: ["Ambiance", "OndeCore"], path: "Features/Ambiance/Tests"),
         .executableTarget(name: "GoalongRelauncher", path: "Sources/GoalongRelauncher"),
         .target(
             name: "AppleScreenTime",
@@ -133,7 +139,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LocalHistoryAppTests",
-            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime"],
+            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "Ambiance"],
             path: "Tests/LocalHistoryAppTests",
             exclude: appTestExcludes,
             swiftSettings: appSwiftSettings
@@ -144,5 +150,6 @@ let package = Package(
             path: "Tests/LocalHistoryQueryCLITests"
         ),
     ],
-    swiftLanguageVersions: [.v5]
+    swiftLanguageVersions: [.v5],
+    cLanguageStandard: .c11
 )

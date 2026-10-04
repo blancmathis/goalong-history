@@ -1,5 +1,6 @@
 #if os(macOS)
     import AppKit
+    import Ambiance
     import Combine
     import Foundation
     import LocalHistoryCore
@@ -138,6 +139,10 @@
         let deviceProtectionTitle: String
         let deviceProtectionSummary: String
         let agentActivityRuntime: AgentActivityRuntime
+        /// The gate is lazy; constructing the dashboard does not create an audio module.
+        @MainActor lazy var ambianceModule = AmbianceModule(
+            supportDirectory: { AppPaths.applicationSupportDirectory }
+        )
 
         private(set) var selectedDay: Date
         private var savedSettingsDraft: DashboardSettingsDraft
