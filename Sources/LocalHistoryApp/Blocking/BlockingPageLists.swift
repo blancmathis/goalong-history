@@ -1,0 +1,620 @@
+#if os(macOS)
+import AppKit
+import SwiftUI
+
+// MARK: - Lists
+
+@MainActor struct BlockingListsSection: View {
+    @ObservedObject var controller: BlockingController
+    let now: Date
+    @Binding var expanded: UUID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if !controller.lists.isEmpty {
+            GoalongSection(title: "Listes") {
+                Button {
+                    let list = BlockList(name: "Nouvelle liste")
+                    controller.save(list)
+                    expanded = list.id
+                } label: { Label("Nouvelle liste", systemImage: "plus") }
+                .buttonStyle(LHQuietButtonStyle())
+                .accessibilityIdentifier("blocking-new-list")
+            } content: {
+                LHCard(padding: 0) {
+                    VStack(spacing: 0) {
+                        ForEach(controller.lists) { list in
+                            row(list)
+                            if expanded == list.id {
+                                BlockListEditor(controller: controller, list: list, now: now)
+                                    .padding(.horizontal, LHTheme.cardInset).padding(.bottom, 20).padding(.top, 4)
+                                    .transition(.opacity)
+                            }
+                            if list.id != controller.lists.last?.id { GoalongRowDivider(inset: LHTheme.cardInset) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func row(_ list: BlockList) -> some View {
+        let open = expanded == list.id
+        let locked = isLocked(list)
+        return Button {
+            withAnimation(reduceMotion ? nil : LHTheme.settle) { expanded = open ? nil : list.id }
+        } label: {
+            HStack(spacing: 14) {
+                BlockingIconCluster(lists: [list], size: 22, limit: 3).frame(width: 104, alignment: .leading)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(list.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                        if locked {
+                            Image(systemName: "lock.fill").font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
+                                .accessibilityLabel("Verrouillée")
+                        }
+                    }
+                    Text(BlockingFormat.summary(list)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 12)
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(LHTheme.tertiaryText)
+                    .rotationEffect(.degrees(open ? 90 : 0))
+            }
+            .padding(.horizontal, LHTheme.cardInset).frame(minHeight: 60).contentShape(Rectangle())
+        }
+        .buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
+        .accessibilityIdentifier("blocking-list-\(list.name)")
+        .accessibilityHint(open ? "Replier" : "Modifier la liste")
+    }
+
+    private func isLocked(_ list: BlockList) -> Bool {
+        list.program.isLocked(at: now)
+            || controller.activeBlocks.contains { $0.lock == .locked && $0.listIDs.contains(list.id) }
+    }
+}
+
+/// Edits a list in place; every change is saved at once, and a lock only lets it get stricter.
+@MainActor struct BlockListEditor: View {
+    @ObservedObject var controller: BlockingController
+    let list: BlockList
+    let now: Date
+    @State private var newSite = ""
+    @State private var siteError: String?
+    @State private var pickingApp = false
+    @State private var addingRange = false
+    @State private var confirmingDelete = false
+    @State private var lockingProgram = false
+
+    private var stricterOnly: Bool {
+        list.program.isLocked(at: now) || controller.activeBlocks.contains { $0.lock == .locked && $0.listIDs.contains(list.id) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            if stricterOnly {
+                GoalongNote(lockNote, symbol: "lock.fill", tone: .neutral)
+            }
+            HStack(spacing: 12) {
+                TextField("Nom de la liste", text: Binding(get: { list.name }, set: { name in
+                    var next = list; next.name = String(name.prefix(40)); controller.save(next)
+                }))
+                .textFieldStyle(GoalongFieldStyle()).frame(maxWidth: 260)
+                .accessibilityIdentifier("blocking-list-name")
+                GoalongSegmentedControl("Mode", selection: Binding(get: { list.mode }, set: { mode in
+                    var next = list; next.mode = mode; controller.save(next)
+                }), options: BlockList.Mode.allCases) {
+                    $0 == .block ? "Bloquer ces éléments" : "Tout bloquer sauf"
+                }
+                .disabled(stricterOnly)
+            }
+            BlockingModePicture(mode: list.mode)
+            part(list.mode == .block ? "Sites bloqués" : "Sites permis") {
+                VStack(alignment: .leading, spacing: 10) {
+                    BlockingFlow(spacing: 6) {
+                        ForEach(list.sites) { site in
+                            BlockingItemChip(item: .site(site.pattern), removable: canRemove) {
+                                var next = list; next.sites.removeAll { $0 == site }; controller.save(next)
+                            }
+                        }
+                        TextField("Ajouter un site, ex. youtube.com", text: $newSite)
+                            .textFieldStyle(GoalongFieldStyle()).controlSize(.small).frame(width: 220)
+                            .onSubmit(addSite)
+                            .disabled(!canAdd)
+                            .accessibilityIdentifier("blocking-add-site")
+                    }
+                    if let siteError {
+                        Text(siteError).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                    }
+                    if list.mode == .block {
+                        suggestionRow
+                    }
+                }
+            }
+            part(list.mode == .block ? "Apps bloquées" : "Apps permises") {
+                BlockingFlow(spacing: 6) {
+                    ForEach(list.apps) { app in
+                        BlockingItemChip(item: .app(app), removable: canRemove) {
+                            var next = list; next.apps.removeAll { $0 == app }; controller.save(next)
+                        }
+                    }
+                    Button { pickingApp = true } label: { Label("Ajouter une app", systemImage: "plus") }
+                        .buttonStyle(LHQuietButtonStyle())
+                        .disabled(!canAdd)
+                        .popover(isPresented: $pickingApp) {
+                            BlockingAppPicker(excluded: Set(list.apps.map(\.bundleIdentifier))) { app in
+                                var next = list; next.apps.append(app); controller.save(next)
+                            }
+                        }
+                        .accessibilityIdentifier("blocking-add-app")
+                }
+            }
+            part("Programme") {
+                VStack(alignment: .leading, spacing: 12) {
+                    if !list.program.ranges.isEmpty {
+                        BlockingWeekView(lists: [list], now: now, compact: true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(list.program.ranges) { range in
+                                HStack(spacing: 10) {
+                                    Text(BlockingFormat.weekdays(range.weekdays)).font(.system(size: 13, weight: .medium))
+                                        .frame(width: 112, alignment: .leading)
+                                    Text(BlockingFormat.range(range)).font(.system(size: 13).monospacedDigit())
+                                    Spacer()
+                                    if !stricterOnly {
+                                        Button {
+                                            var next = list; next.program.ranges.removeAll { $0.id == range.id }; controller.save(next)
+                                        } label: { Image(systemName: "xmark") }
+                                        .buttonStyle(LHQuietButtonStyle())
+                                        .accessibilityLabel("Retirer la plage")
+                                    }
+                                }
+                                .frame(minHeight: 26)
+                            }
+                        }
+                    }
+                    if addingRange {
+                        BlockingRangeComposer { range in
+                            var next = list; next.program.ranges.append(range); controller.save(next)
+                            addingRange = false
+                        } onCancel: { addingRange = false }
+                    } else {
+                        HStack(spacing: 6) {
+                            Button { addingRange = true } label: { Label("Ajouter une plage", systemImage: "plus") }
+                                .buttonStyle(LHQuietButtonStyle())
+                            ForEach(Self.presets, id: \.title) { preset in
+                                Button(preset.title) {
+                                    var next = list; next.program.ranges.append(preset.range); controller.save(next)
+                                }
+                                .controlSize(.small)
+                            }
+                        }
+                    }
+                }
+            }
+            part("Limites") {
+                VStack(alignment: .leading, spacing: 12) {
+                    limitRow(on: list.quotaMinutesPerDay != nil, title: "Laisser du temps chaque jour",
+                             detail: "Les éléments de la liste restent ouverts jusqu’à ce temps, puis se bloquent.") { on in
+                        var next = list; next.quotaMinutesPerDay = on ? 30 : nil; controller.save(next)
+                    } value: {
+                        if let quota = list.quotaMinutesPerDay {
+                            Stepper(value: Binding(get: { quota }, set: { value in
+                                var next = list; next.quotaMinutesPerDay = value; controller.save(next)
+                            }), in: 5...720, step: 5) {
+                                Text("\(BlockingFormat.duration(minutes: quota)) par jour").monospacedDigit()
+                            }.fixedSize()
+                        }
+                    }
+                    limitRow(on: list.breaks != nil, title: "Autoriser des pauses",
+                             detail: "Choisies à l’avance, elles restent possibles même verrouillé.") { on in
+                        var next = list; next.breaks = on ? BlockBreaks(count: 3, minutes: 5) : nil; controller.save(next)
+                    } value: {
+                        if let breaks = list.breaks {
+                            HStack(spacing: 6) {
+                                Stepper(value: Binding(get: { breaks.count }, set: { value in
+                                    var next = list; next.breaks?.count = value; controller.save(next)
+                                }), in: 1...12) { Text("\(breaks.count) ×").monospacedDigit() }.fixedSize()
+                                Stepper(value: Binding(get: { breaks.minutes }, set: { value in
+                                    var next = list; next.breaks?.minutes = value; controller.save(next)
+                                }), in: 1...30) { Text("\(breaks.minutes) min").monospacedDigit() }.fixedSize()
+                            }
+                        }
+                    }
+                }
+            }
+            HStack(spacing: 10) {
+                if !list.program.ranges.isEmpty {
+                    Button { lockingProgram = true } label: {
+                        Label(list.program.isLocked(at: now) ? "Prolonger le verrou…" : "Verrouiller le programme…",
+                              systemImage: "lock")
+                    }
+                    .popover(isPresented: $lockingProgram) {
+                        BlockingProgramLock(current: list.program.lockedUntil, now: now) { date in
+                            controller.lockProgram(listID: list.id, until: date)
+                            lockingProgram = false
+                        }
+                    }
+                    .accessibilityIdentifier("blocking-lock-program")
+                }
+                Spacer()
+                if !stricterOnly {
+                    Button("Supprimer la liste", role: .destructive) { confirmingDelete = true }
+                        .buttonStyle(LHQuietButtonStyle())
+                }
+            }
+        }
+        .font(.system(size: 13))
+        .alert("Supprimer « \(list.name) » ?", isPresented: $confirmingDelete) {
+            Button("Annuler", role: .cancel) {}
+            Button("Supprimer", role: .destructive) { controller.delete(list.id) }
+        } message: { Text("Son programme s’arrête aussi.") }
+    }
+
+    /// Under a lock, removing from « Tout bloquer sauf » is stricter; adding to it is not.
+    private var canRemove: Bool { !stricterOnly || list.mode == .allowOnly }
+    private var canAdd: Bool { !stricterOnly || list.mode == .block }
+
+    private var lockNote: String {
+        if let until = list.program.lockedUntil, until > now {
+            return "Programme verrouillé jusqu’au \(BlockingFormat.day(until)). La liste peut seulement devenir plus stricte."
+        }
+        return "Un blocage verrouillé utilise cette liste. Elle peut seulement devenir plus stricte."
+    }
+
+    private var suggestionRow: some View {
+        let present = Set(list.sites.map(\.pattern))
+        let options = controller.suggestions.filter { !Set($0.sites).isSubset(of: present) }
+        return Group {
+            if !options.isEmpty {
+                HStack(spacing: 6) {
+                    Text("Ajouter").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    ForEach(options) { suggestion in
+                        Button("+ \(suggestion.title)") {
+                            var next = list
+                            for site in suggestion.sites where !present.contains(site) { next.sites.append(BlockSiteRule(pattern: site)) }
+                            for app in suggestion.apps where !next.apps.contains(app) { next.apps.append(app) }
+                            controller.save(next)
+                        }
+                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
+                    }
+                }
+            }
+        }
+    }
+
+    private func addSite() {
+        guard let pattern = BlockingRules.normalizeSite(newSite) else {
+            siteError = newSite.isEmpty ? nil : "« \(newSite) » n’est pas une adresse de site."
+            return
+        }
+        siteError = nil
+        newSite = ""
+        guard !list.sites.contains(where: { $0.pattern == pattern }) else { return }
+        var next = list; next.sites.append(BlockSiteRule(pattern: pattern)); controller.save(next)
+    }
+
+    private func part<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+                .accessibilityAddTraits(.isHeader)
+            content()
+        }
+    }
+
+    private func limitRow<Value: View>(on: Bool, title: String, detail: String, toggle: @escaping (Bool) -> Void,
+                                       @ViewBuilder value: () -> Value) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .medium))
+                Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            value()
+            Toggle(title, isOn: Binding(get: { on }, set: toggle))
+                .toggleStyle(.goalongSwitchOnly).fixedSize()
+                .disabled(stricterOnly && !on)
+        }
+    }
+
+    static let presets: [(title: String, range: BlockProgramRange)] = [
+        ("Lun–ven 9–18 h", BlockProgramRange(weekdays: Set(1...5), startMinute: 540, endMinute: 1_080)),
+        ("Tous les jours", BlockProgramRange(weekdays: Set(1...7), startMinute: 0, endMinute: 1_440)),
+        ("Le soir 21 h–7 h", BlockProgramRange(weekdays: Set(1...7), startMinute: 1_260, endMinute: 420)),
+    ]
+}
+
+/// What the mode does, drawn: four tiles, the blocked ones struck through.
+struct BlockingModePicture: View {
+    let mode: BlockList.Mode
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 4) {
+                ForEach(0..<5) { index in
+                    let listed = index < 2
+                    let blocked = mode == .block ? listed : !listed
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(listed ? LHTheme.controlBackground : LHTheme.insetBackground)
+                            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .strokeBorder(listed ? LHTheme.controlBorder : LHTheme.separator))
+                        if blocked {
+                            Path { path in path.move(to: CGPoint(x: 4, y: 14)); path.addLine(to: CGPoint(x: 14, y: 4)) }
+                                .stroke(LHTheme.text, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                        }
+                    }
+                    .frame(width: 18, height: 18)
+                }
+            }
+            Text(mode == .block ? "Ce qui est dans la liste est bloqué. Le reste est libre."
+                                : "Tout est bloqué, sauf ce qui est dans la liste. Goalong et le Finder restent ouverts.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(mode == .block ? "Mode : la liste est bloquée" : "Mode : tout est bloqué sauf la liste")
+    }
+}
+
+/// Days as letters to tick, then the start and end times.
+struct BlockingRangeComposer: View {
+    var onAdd: (BlockProgramRange) -> Void
+    var onCancel: () -> Void
+    @State private var days: Set<Int> = Set(1...5)
+    @State private var start = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
+    @State private var end = Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: Date()) ?? Date()
+
+    var body: some View {
+        HStack(spacing: 14) {
+            HStack(spacing: 3) {
+                ForEach(1...7, id: \.self) { day in
+                    let on = days.contains(day)
+                    Button {
+                        if on { days.remove(day) } else { days.insert(day) }
+                    } label: {
+                        Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 12, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                            .foregroundStyle(on ? LHTheme.onAccent : LHTheme.secondaryText)
+                            .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,
+                                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(BlockingFormat.weekdayShort[day - 1])
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            DatePicker("De", selection: $start, displayedComponents: .hourAndMinute).fixedSize()
+            DatePicker("à", selection: $end, displayedComponents: .hourAndMinute).fixedSize()
+            Spacer(minLength: 0)
+            Button("Annuler", action: onCancel).buttonStyle(LHQuietButtonStyle())
+            Button("Ajouter") {
+                onAdd(BlockProgramRange(weekdays: days, startMinute: minutes(start), endMinute: minutes(end) == 0 ? 1_440 : minutes(end)))
+            }
+            .disabled(days.isEmpty || minutes(start) == minutes(end))
+        }
+        .padding(12)
+        .background(LHTheme.insetBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+    }
+
+    private func minutes(_ date: Date) -> Int {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+    }
+}
+
+struct BlockingProgramLock: View {
+    let current: Date?
+    let now: Date
+    var onLock: (Date) -> Void
+    @State private var until = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Verrouiller le programme").font(LHTheme.cardTitleFont)
+            Text("Jusqu’à cette date, la liste et son programme peuvent seulement devenir plus stricts. Les plages programmées ne peuvent pas être arrêtées.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            DatePicker("Jusqu’au", selection: $until, in: max(now, current ?? now)..., displayedComponents: .date)
+                .datePickerStyle(.field)
+            HStack {
+                Spacer()
+                Button("Verrouiller jusqu’au \(BlockingFormat.day(until))") { onLock(Calendar.current.startOfDay(for: until).addingTimeInterval(86_399)) }
+            }
+        }
+        .padding(18).frame(width: 340)
+        .goalongControls()
+    }
+}
+
+// MARK: - Chips, icons, layout
+
+enum BlockingItem: Hashable {
+    case site(String)
+    case app(BlockAppRule)
+    /// A thing without an icon of its own, such as a private window.
+    case symbol(String)
+}
+
+/// The icons of what a list holds: apps first, then sites, overlapping a little.
+struct BlockingIconCluster: View {
+    let lists: [BlockList]
+    var size: CGFloat = 22
+    var limit = 5
+
+    var body: some View {
+        let items = lists.flatMap { list in list.apps.map(BlockingItem.app) + list.sites.map { .site($0.host) } }
+        if items.isEmpty {
+            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+                .strokeBorder(LHTheme.controlBorder, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        } else {
+            BlockingIconStack(items: Array(items.prefix(limit)), size: size, overflow: max(0, items.count - limit))
+        }
+    }
+}
+
+struct BlockingIconStack: View {
+    let items: [BlockingItem]
+    var size: CGFloat = 22
+    var overflow = 0
+
+    var body: some View {
+        HStack(spacing: max(2, size * 0.14)) {
+            ForEach(items, id: \.self) { item in icon(item) }
+            if overflow > 0 {
+                Text("+\(overflow)").font(.system(size: max(10, size * 0.5), weight: .medium).monospacedDigit())
+                    .foregroundStyle(LHTheme.secondaryText).fixedSize().padding(.leading, 2)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private func icon(_ item: BlockingItem) -> some View {
+        switch item {
+        case .site(let host): BlockingSiteTile(host: host, size: size)
+        case .symbol(let name):
+            let shape = RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+            Image(systemName: name).font(.system(size: size * 0.45, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                .frame(width: size, height: size)
+                .background(shape.fill(LHTheme.insetBackground)).overlay(shape.strokeBorder(LHTheme.separator))
+        case .app(let app): AppIconView(bundleIdentifier: app.bundleIdentifier, appName: app.name, size: size)
+        }
+    }
+}
+
+/// A site has no icon offline: its initial on a quiet tile, the same shape as an app icon.
+struct BlockingSiteTile: View {
+    let host: String
+    var size: CGFloat = 22
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+        Text(host.first.map { String($0).uppercased() } ?? "•")
+            .font(.system(size: size * 0.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(LHTheme.secondaryText)
+            .frame(width: size, height: size)
+            .background(shape.fill(LHTheme.insetBackground))
+            .overlay(shape.strokeBorder(LHTheme.separator))
+    }
+}
+
+/// One site or app in a list: icon, name, and a remove cross when removing is allowed.
+struct BlockingItemChip: View {
+    let item: BlockingItem
+    var removable = true
+    var onRemove: () -> Void = {}
+
+    var body: some View {
+        HStack(spacing: 6) {
+            BlockingIconStack(items: [item], size: 16)
+            Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+            if removable {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(LHTheme.secondaryText)
+                        .frame(width: 16, height: 16).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Retirer \(title)")
+            }
+        }
+        .padding(.leading, 6).padding(.trailing, removable ? 4 : 9).frame(height: 26)
+        .background(GoalongSurface(corner: LHTheme.controlRadius - 1, fill: LHTheme.controlBackground, highlighted: true))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var title: String {
+        switch item {
+        case .site(let pattern): return pattern
+        case .app(let app): return app.name
+        case .symbol(let name): return name
+        }
+    }
+}
+
+/// A list to include in « Bloquer maintenant »: selected = lime outline and a check.
+struct BlockingListChip: View {
+    let list: BlockList
+    let selected: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                BlockingIconCluster(lists: [list], size: 16, limit: 3)
+                Text(list.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                Image(systemName: selected ? "checkmark" : "plus").font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(selected ? LHTheme.accent : LHTheme.tertiaryText)
+            }
+            .padding(.horizontal, 10).frame(height: 32)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
+                shape.fill(selected ? LHTheme.selectionBackground : LHTheme.controlBackground)
+                    .overlay(shape.strokeBorder(selected ? LHTheme.accent : LHTheme.controlBorder, lineWidth: selected ? 1.5 : 1))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("blocking-pick-\(list.name)")
+    }
+}
+
+/// Installed apps, searchable, with their icons.
+@MainActor struct BlockingAppPicker: View {
+    let excluded: Set<String>
+    var onPick: (BlockAppRule) -> Void
+    @State private var apps: [BlockAppRule] = []
+    @State private var search = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GoalongSearchField("Rechercher une app…", text: $search, accessibilityLabel: "Rechercher une app")
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(apps.filter { !excluded.contains($0.bundleIdentifier) && (search.isEmpty || $0.name.localizedStandardContains(search)) }) { app in
+                        Button { onPick(app) } label: {
+                            HStack(spacing: 10) {
+                                AppIconView(bundleIdentifier: app.bundleIdentifier, appName: app.name, size: 22)
+                                Text(app.name).font(.system(size: 13))
+                                Spacer()
+                            }
+                            .padding(.horizontal, 8).frame(height: 32).contentShape(Rectangle())
+                        }
+                        .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
+                    }
+                }
+            }
+            .frame(height: 300)
+        }
+        .padding(14).frame(width: 300)
+        .task { apps = await BlockingController.installedApps() }
+        .goalongControls()
+    }
+}
+
+/// Lays chips out in lines, wrapping at the available width.
+struct BlockingFlow: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { y += line + spacing; x = 0; line = 0 }
+            x += size.width + spacing; line = max(line, size.height); widest = max(widest, x - spacing)
+        }
+        return CGSize(width: proposal.width ?? widest, height: y + line)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, line: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.maxX { y += line + spacing; x = bounds.minX; line = 0 }
+            view.place(at: CGPoint(x: x, y: y + (line > 0 ? 0 : 0)), proposal: ProposedViewSize(size))
+            x += size.width + spacing; line = max(line, size.height)
+        }
+    }
+}
+#endif

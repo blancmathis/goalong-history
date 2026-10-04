@@ -294,6 +294,7 @@
             BackgroundContinuityController.shared.start(hasEnabledSources: hasEnabledBackgroundSources)
             ChatGPTRecapRuntime.shared.configure(deviceID: deviceIdentity.info.deviceID)
             installCapabilityConsentObserver()
+            Task { @MainActor in BlockingRuntime.shared.start() }
             retentionPolicyObserver = NotificationCenter.default.addObserver(
                 forName: .goalongRetentionPolicyDidChange, object: nil, queue: .main
             ) { [weak self] _ in
