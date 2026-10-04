@@ -68,11 +68,8 @@ import SwiftUI
     private func section(_ module: GoalongModule) -> DashboardSection {
         switch module {
         case .blocking: return .blocking
-<<<<<<< HEAD
-        case .ambiance: return .ambiance
-=======
         case .concentration: return .concentration
->>>>>>> origin/main
+        case .ambiance: return .ambiance
         }
     }
 }

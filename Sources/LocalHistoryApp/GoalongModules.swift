@@ -5,11 +5,8 @@ import Foundation
 /// observer, window, file or permission request. Key: `goalong.module.<id>.enabled`.
 enum GoalongModule: String, CaseIterable, Identifiable {
     case blocking
-<<<<<<< HEAD
-    case ambiance
-=======
     case concentration
->>>>>>> origin/main
+    case ambiance
 
     var id: String { rawValue }
     var defaultsKey: String { "goalong.module.\(rawValue).enabled" }
@@ -17,11 +14,8 @@ enum GoalongModule: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .blocking: return "Blocage"
-<<<<<<< HEAD
-        case .ambiance: return "Ambiance"
-=======
         case .concentration: return "Concentration"
->>>>>>> origin/main
+        case .ambiance: return "Ambiance"
         }
     }
 
@@ -36,11 +30,8 @@ enum GoalongModule: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .blocking: return "lock"
-<<<<<<< HEAD
-        case .ambiance: return "waveform"
-=======
         case .concentration: return "scope"
->>>>>>> origin/main
+        case .ambiance: return "waveform"
         }
     }
 }
