@@ -348,6 +348,18 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         },
         "network": {
             "declaredDestinations": declared_network_destinations,
+            "ambiancePacks": {
+                "defaultEnabled": False,
+                "remoteTransportImplemented": False,
+                "blockedBy": "unchanged audit_privacy_boundaries.sh network allowlist",
+                "reservedInactiveDestinations": [
+                    "https://github.com/blancmathis/goalong-history/releases/download/ambiance-packs-v1/orchestra.tar",
+                    "https://github.com/blancmathis/goalong-history/releases/download/ambiance-packs-v1/textures.tar",
+                ],
+                "localInstallOverride": "GOALONG_AMBIANCE_PACK_DIR",
+                "integrity": "exact-byte-size-and-SHA256-before-atomic-install",
+                "automaticDownloads": False,
+            },
             "softwareUpdates": manifest_policy(info),
             "osEnforcedDeny": False,
             "jevClassification": {'trigger': 'explicit-jev-consent-and-computer-history', 'destination': 'https://api.typesafe.ai/v1/systemone', 'model': 'jev-1.13.0', 'method': 'POST', 'intervalSeconds': 15, 'windowSeconds': 15, 'consecutiveWarnings': 1, 'skipInactive': True, 'timedBreakSuspends': True, 'privateBrowsing': 'never-sent', 'requestMaximumBytes': 1600, 'acceptedInputTokensMaximum': 999, 'providerTokenizerKnown': False, 'responseMaximumBytes': 65536, 'resourceTimeoutSeconds': 12, 'redirects': 'refused', 'automaticRetry': False, 'authentication': 'user-owned-0600-api-key-file', 'payloadRetention': 'bounded-memory-only', 'extraVisibleText': 'separate-opt-in-with-existing-local-consent', 'workReference': 'explicitly-saved-800-byte-work-and-procrastination-criteria-owner-only', 'relevancePolicy': 'owner-work-and-procrastination-v4'},

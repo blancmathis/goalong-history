@@ -47,6 +47,23 @@ retrying. Review the implementation in
 Goalong may also open a reviewed HTTPS documentation or account-login URL after an explicit user
 action. It does not perform that HTTP request itself.
 
+### Ambiance packs — reserved, currently blocked
+
+The optional Ambiance module defaults to off. Its compiled catalog reserves the HTTPS
+archives `orchestra.tar` and `textures.tar` under
+`https://github.com/blancmathis/goalong-history/releases/download/ambiance-packs-v1/`.
+The release has not been created or uploaded. The unchanged privacy audit forbids any
+additional first-party HTTP transport, so remote installation is **not implemented**;
+the UI API returns an explicit French failure. There is no background request, session,
+cookie, cache or retry. The security inventory records these URLs as reserved inactive
+paths, separately from the five approved emission paths.
+
+An explicit install action can instead read pinned archives from the absolute local
+folder `GOALONG_AMBIANCE_PACK_DIR`. It verifies the exact size and SHA-256, extracts only
+regular flat files into a private staging directory, then renames the complete pack to
+`AppPaths.applicationSupportDirectory/Ambiance/<packId>/`. This development override
+makes no network request. Personal audio remains at its original path and is never uploaded.
+
 ## Honest limitation
 
 The main app is not App-Sandboxed. Source-level restrictions on these reviewed paths are not an
