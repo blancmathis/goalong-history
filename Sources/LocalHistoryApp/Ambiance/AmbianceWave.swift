@@ -44,11 +44,16 @@ struct AmbianceWaveShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         var random = SplitMix(seed: Self.hash(seed))
-        let parts = character.bands.map { band, weight in
-            (frequency: band.lowerBound + random.next() * (band.upperBound - band.lowerBound),
-             weight: weight, phase: random.next() * 2 * .pi)
+        let bands = character.bands
+        var parts: [(frequency: Double, weight: Double, phase: Double)] = []
+        parts.reserveCapacity(bands.count)
+        var total = 0.0
+        for (band, weight) in bands {
+            let frequency = band.lowerBound + random.next() * (band.upperBound - band.lowerBound)
+            let phase = random.next() * 2 * .pi
+            parts.append((frequency, weight, phase))
+            total += weight
         }
-        let total = parts.reduce(0) { $0 + $1.weight }
         let count = max(48, Int(rect.width / 2))
         let amplitude = rect.height / 2 * 0.92
         var points: [CGPoint] = []
@@ -58,7 +63,11 @@ struct AmbianceWaveShape: Shape {
             // The line starts and ends on its axis, like a thread pulled at both ends.
             var envelope = pow(sin(Double.pi * x), 0.7)
             if character == .dawn { envelope *= 0.2 + 0.8 * x }
-            let value = parts.reduce(0) { $0 + $1.weight * sin(2 * .pi * $1.frequency * x + $1.phase) } / total
+            var value = 0.0
+            for part in parts {
+                value += part.weight * sin(2 * .pi * part.frequency * x + part.phase)
+            }
+            value /= total
             points.append(CGPoint(x: rect.minX + rect.width * x, y: rect.midY - amplitude * envelope * value))
         }
         var path = Path()
@@ -67,7 +76,9 @@ struct AmbianceWaveShape: Shape {
     }
 
     private static func hash(_ text: String) -> UInt64 {
-        text.utf8.reduce(0xcbf2_9ce4_8422_2325) { ($0 ^ UInt64($1)) &* 0x0000_0100_0000_01b3 }
+        var result: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in text.utf8 { result = (result ^ UInt64(byte)) &* 0x0000_0100_0000_01b3 }
+        return result
     }
 
     private struct SplitMix {
