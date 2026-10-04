@@ -10,7 +10,10 @@
         let days: [String]?
         let macOnly: Bool?
         let selectedDeviceIDs: [String]?
+        var focus: GoalongFocusRequest? = nil
     }
+
+    private struct GoalongFocusRemoteError: Codable { let focusError: String }
 
     private struct GoalongBrokerError: Codable {
         let brokerError: String
@@ -22,7 +25,7 @@
     }
 
     public enum GoalongReadOnlyQueryBroker {
-        static let maximumRequestBytes = 4 * 1_024
+        static let maximumRequestBytes = 96 * 1_024
         static let maximumResponseBytes = 64 * 1_024 * 1_024
         static let maximumScreenTimeRangeResponseBytes = 2 * 1_024 * 1_024
 
@@ -59,6 +62,7 @@
             guard descriptor >= 0 else { throw BrokerFailure.system("socket", errno) }
             defer { Darwin.close(descriptor) }
             setNoSigPipe(descriptor)
+            setTimeout(descriptor)
 
             var address = try unixAddress(for: socketURL(rootDirectory: rootDirectory).path)
             let result = withUnsafePointer(to: &address.value) { pointer in
@@ -105,6 +109,7 @@
             guard descriptor >= 0 else { throw BrokerFailure.system("socket", errno) }
             defer { Darwin.close(descriptor) }
             setNoSigPipe(descriptor)
+            setTimeout(descriptor)
 
             var address = try unixAddress(for: socketURL(rootDirectory: rootDirectory).path)
             let result = withUnsafePointer(to: &address.value) { pointer in
@@ -138,6 +143,21 @@
             }
             _ = try JSONSerialization.jsonObject(with: response)
             return response
+        }
+
+        public static func requestFocus(rootDirectory: URL, request focus: GoalongFocusRequest) throws -> Data {
+            guard focus.body.map({ $0.count <= GoalongFocusCLI.maximumInputBytes }) ?? true else { throw GoalongFocusError.invalidArgument }
+            let request = GoalongBrokerRequest(schemaVersion: 1, command: "focus-route", day: nil, days: nil, macOnly: nil, selectedDeviceIDs: nil, focus: focus)
+            guard try JSONEncoder().encode(request).count < maximumRequestBytes else { throw GoalongFocusError.invalidArgument }
+            do {
+                let data = try self.request(rootDirectory: rootDirectory, request: request, maximumResponseBytes: 2 * 1024 * 1024)
+                if let failure = try? JSONDecoder().decode(GoalongFocusRemoteError.self, from: data) {
+                    throw GoalongFocusError(rawValue: failure.focusError) ?? .invalidArgument
+                }
+                return data
+            } catch let error as GoalongFocusError { throw error }
+            catch BrokerFailure.system(_, _) { throw GoalongFocusError.appNotRunning }
+            catch BrokerFailure.emptyResponse { throw GoalongFocusError.appNotRunning }
         }
 
         public static func socketURL(rootDirectory: URL) -> URL {
@@ -177,6 +197,12 @@
                     socklen_t(MemoryLayout<Int32>.size)
                 )
             }
+        }
+
+        fileprivate static func setTimeout(_ descriptor: Int32) {
+            var timeout = timeval(tv_sec: 10, tv_usec: 0)
+            _ = setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+            _ = setsockopt(descriptor, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         }
 
         fileprivate static func writeAll(_ data: Data, to descriptor: Int32) throws {
@@ -220,6 +246,7 @@
             guard descriptor >= 0 else { throw BrokerFailure.system("socket", errno) }
             defer { Darwin.close(descriptor) }
             setNoSigPipe(descriptor)
+            setTimeout(descriptor)
 
             var address = try unixAddress(for: socketURL(rootDirectory: rootDirectory).path)
             let result = withUnsafePointer(to: &address.value) { pointer in
@@ -230,6 +257,7 @@
             guard result == 0 else { throw BrokerFailure.system("connect", errno) }
 
             var encoded = try JSONEncoder().encode(request)
+            guard encoded.count < maximumRequestBytes else { throw BrokerFailure.requestTooLarge }
             encoded.append(0x0A)
             try writeAll(encoded, to: descriptor)
             Darwin.shutdown(descriptor, SHUT_WR)
@@ -251,12 +279,17 @@
         private let rootDirectory: URL
         private let screenTimeHandler: ScreenTimeHandler
         private let screenTimeRangeHandler: ScreenTimeRangeHandler
+        private let focusHandler: ((GoalongFocusRequest) throws -> Data)?
+        private let clientsLock = NSLock()
+        private var clientCount = 0
+        private let appleQueue = DispatchQueue(label: "ai.goalong.broker.apple")
         private let queue = DispatchQueue(
             label: "ai.goalong.localhistory.readonly-query-broker",
             qos: .utility
         )
         private var source: DispatchSourceRead?
         private var listeningDescriptor: Int32 = -1
+        private var socketIdentity: (ino_t, dev_t)?
 
         public convenience init(rootDirectory: URL) {
             self.init(
@@ -277,9 +310,11 @@
         public init(
             rootDirectory: URL,
             screenTimeHandler: @escaping ScreenTimeHandler,
-            screenTimeRangeHandler: ScreenTimeRangeHandler? = nil
+            screenTimeRangeHandler: ScreenTimeRangeHandler? = nil,
+            focusHandler: ((GoalongFocusRequest) throws -> Data)? = nil
         ) {
             self.rootDirectory = rootDirectory
+            self.focusHandler = focusHandler
             self.screenTimeHandler = screenTimeHandler
             self.screenTimeRangeHandler = screenTimeRangeHandler ?? { days in
                 try GoalongQueryCLI.screenTimeRangePayload(days: days)
@@ -324,6 +359,8 @@
                 throw error
             }
 
+            var info = stat()
+            if Darwin.lstat(socketURL.path, &info) == 0 { socketIdentity = (info.st_ino, info.st_dev) }
             listeningDescriptor = descriptor
             let readSource = DispatchSource.makeReadSource(
                 fileDescriptor: descriptor,
@@ -344,7 +381,13 @@
                 Darwin.close(listeningDescriptor)
                 listeningDescriptor = -1
             }
-            try? Self.removeOwnedStaleSocket(at: socketPath)
+            if let identity = socketIdentity {
+                socketIdentity = nil
+                var info = stat()
+                if Darwin.lstat(socketPath, &info) == 0, info.st_ino == identity.0, info.st_dev == identity.1 {
+                    try? Self.removeOwnedStaleSocket(at: socketPath)
+                }
+            }
         }
 
         /// Removes only a socket owned by the current user. This lets the app fail closed
@@ -359,13 +402,26 @@
             guard listeningDescriptor >= 0 else { return }
             let client = Darwin.accept(listeningDescriptor, nil, nil)
             guard client >= 0 else { return }
+            var uid: uid_t = 0, gid: gid_t = 0
+            guard getpeereid(client, &uid, &gid) == 0, uid == getuid() else { Darwin.close(client); return }
+            clientsLock.lock()
+            guard clientCount < 32 else { clientsLock.unlock(); Darwin.close(client); return }
+            clientCount += 1; clientsLock.unlock()
             GoalongReadOnlyQueryBroker.setNoSigPipe(client)
+            GoalongReadOnlyQueryBroker.setTimeout(client)
+            DispatchQueue.global(qos: .utility).async { [self] in
+                self.serve(client)
+                clientsLock.lock(); clientCount -= 1; clientsLock.unlock()
+            }
+        }
+        private func serve(_ client: Int32) {
             defer { Darwin.close(client) }
 
             do {
                 let requestData = try readRequest(from: client)
                 let request = try JSONDecoder().decode(GoalongBrokerRequest.self, from: requestData)
                 guard request.schemaVersion == 1 else { throw BrokerFailure.unsupportedRequest }
+                guard request.command == "focus-route" || requestData.count < 4 * 1024 else { throw BrokerFailure.requestTooLarge }
                 let payload: Data
                 switch request.command {
                 case "status":
@@ -376,21 +432,24 @@
                     guard let day = request.day, let macOnly = request.macOnly else {
                         throw BrokerFailure.unsupportedRequest
                     }
-                    payload = try screenTimeHandler(
-                        day,
-                        macOnly,
-                        request.selectedDeviceIDs ?? []
-                    )
+                    payload = try appleQueue.sync { try screenTimeHandler(day, macOnly, request.selectedDeviceIDs ?? []) }
                 case "screen-time-range":
                     guard let days = request.days, (1...31).contains(days.count) else {
                         throw BrokerFailure.invalidDayCount
                     }
-                    payload = try screenTimeRangeHandler(days)
+                    payload = try appleQueue.sync { try screenTimeRangeHandler(days) }
+                case "focus-route":
+                    guard let focus = request.focus, let focusHandler else { throw GoalongFocusError.moduleDisabled }
+                    payload = try focusHandler(focus)
                 default:
                     throw BrokerFailure.unsupportedRequest
                 }
                 try GoalongReadOnlyQueryBroker.writeAll(payload, to: client)
             } catch {
+                if let focus = error as? GoalongFocusError {
+                    if let data = try? JSONEncoder().encode(GoalongFocusRemoteError(focusError: focus.rawValue)) { try? GoalongReadOnlyQueryBroker.writeAll(data, to: client) }
+                    return
+                }
                 let payload = (try? JSONEncoder().encode(
                     GoalongBrokerError(brokerError: String(describing: error))
                 )) ?? Data("{\"brokerError\":\"query failed\"}".utf8)

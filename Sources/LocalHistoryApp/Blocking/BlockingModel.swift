@@ -14,12 +14,21 @@ struct BlockList: Codable, Identifiable, Equatable, Hashable {
     /// Minutes the list allows per local day while it is active, before it blocks.
     var quotaMinutesPerDay: Int?
     var breaks: BlockBreaks?
+    enum Action: String, Codable { case block, slowDown }
+    var action: Action?
+    var slowDownSeconds: Int?
+    var continueMinutes: Int?
+    var effectiveAction: Action { action ?? .block }
+    var delaySeconds: Int { slowDownSeconds ?? 10 }
+    var allowanceMinutes: Int { continueMinutes ?? 10 }
 
     init(id: UUID = UUID(), name: String, mode: Mode = .block, sites: [BlockSiteRule] = [],
          apps: [BlockAppRule] = [], program: BlockProgram = BlockProgram(),
-         quotaMinutesPerDay: Int? = nil, breaks: BlockBreaks? = nil) {
+         quotaMinutesPerDay: Int? = nil, breaks: BlockBreaks? = nil, action: Action? = nil,
+         slowDownSeconds: Int? = nil, continueMinutes: Int? = nil) {
         self.id = id; self.name = name; self.mode = mode; self.sites = sites; self.apps = apps
         self.program = program; self.quotaMinutesPerDay = quotaMinutesPerDay; self.breaks = breaks
+        self.action = action; self.slowDownSeconds = slowDownSeconds; self.continueMinutes = continueMinutes
     }
 
     var isEmpty: Bool { sites.isEmpty && apps.isEmpty && mode == .block }
@@ -89,6 +98,9 @@ struct BlockDayUsage: Codable, Hashable {
     var quotaSecondsUsed: [UUID: Double] = [:]
     var breaksTaken: [UUID: Int] = [:]
     var breakEnds: [UUID: Date] = [:]
+    var slowDownShown: [UUID: Int]?
+    var renounced: [UUID: Int]?
+    var continued: [UUID: Int]?
 }
 
 struct BlockFreeze: Codable, Hashable {
@@ -109,6 +121,7 @@ struct BlockingDocument: Codable, Equatable {
     var clock: BlockingClockState?
     var programSkips: [UUID: Date]?
     var heldPrograms: [BlockSession]?
+    var usageHistory: [String: BlockDayUsage]?
 }
 
 /// One thing blocking right now, as the page shows it: a manual session or a program window.
@@ -139,6 +152,19 @@ struct BlockingProtectionState: Hashable {
     var level: BlockingProtectionLevel = .standard
     var component: Component = .notInstalled
     var launchAtLogin = false
+}
+
+struct BlockingFrictionPresentation: Equatable {
+    var listID: UUID
+    var key: String
+    var name: String
+    var shownAt: Date
+    var readyAt: Date
+    var occurrence: Int
+    static func key(_ target: BlockingObservation, listID: UUID) -> String {
+        let destination = target.isBrowser ? "host:" + (BlockingRules.normalize(target.url ?? "")?.split(separator: "/").first.map(String.init) ?? "") : "app:" + target.bundleIdentifier
+        return listID.uuidString + "|" + destination
+    }
 }
 
 enum BlockingEditCheck: Equatable {

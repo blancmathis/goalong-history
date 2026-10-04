@@ -80,6 +80,8 @@
             case .monitoring:
                 JevMonitoringPage(onOpenRecording: { model.openRecordingSettings() },
                                   onOpenWork: { model.selectSection(.work) })
+            case .concentration:
+                ConcentrationPage()
             case .blocking:
                 BlockingPage()
             case .activity:
@@ -350,6 +352,7 @@
         static func sidebarSections(modules: Set<GoalongModule>) -> [DashboardSection] {
             var sections = primarySections
             if modules.contains(.blocking) { sections.insert(.blocking, at: sections.count - 1) }
+            if modules.contains(.concentration) { sections.insert(.concentration, at: sections.count - 1) }
             if modules.contains(.ambiance) { sections.insert(.ambiance, at: sections.count - 1) }
             return sections
         }
@@ -361,6 +364,7 @@
             case .history: return "Historique"
             case .monitoring: return "Surveillance temps réel"
             case .blocking: return "Blocage"
+            case .concentration: return "Concentration"
             case .ambiance: return "Ambiance"
             case .activity: return "Historique de ce Mac"
             case .screenTime: return "Temps d’écran"
@@ -379,6 +383,7 @@
                 return .overview
             case .monitoring:
                 return .monitoring
+            case .concentration: return .concentration
             case .blocking:
                 return .blocking
             case .ambiance:

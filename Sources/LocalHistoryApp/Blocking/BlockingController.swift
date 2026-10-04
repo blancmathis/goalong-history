@@ -15,6 +15,11 @@ import Foundation
     @Published private(set) var browsers: [BlockingBrowserSupport] = []
     @Published private(set) var protection = BlockingProtectionState()
     @Published var error: String?
+    @Published private(set) var friction: BlockingFrictionPresentation?
+    @Published private(set) var frictionUsage: BlockDayUsage?
+    private var frictionTarget: BlockingObservation?
+    private var frictionAllowances: [String: Date] = [:]
+    private var suppressedAppFriction: Set<String> = []
 
     private var document: BlockingDocument
     private let clock: () -> Date
@@ -72,6 +77,7 @@ import Foundation
             self.refresh(enforceLast: false)
             let now = self.clock(), usage = self.todayUsage()
             return self.lists.contains { list in
+                list.effectiveAction == .block &&
                 self.activeBlocks.contains { $0.listIDs.contains(list.id) }
                     && usage.breakEnds[list.id].map({ $0 > now }) != true
                     && (list.quotaMinutesPerDay.map { (usage.quotaSecondsUsed[list.id] ?? 0) >= Double($0 * 60) } ?? true)
@@ -91,6 +97,7 @@ import Foundation
         }
         timer?.invalidate(); timer = nil
         onObservationRequirementChanged?(false); onObservationRequirementChanged = nil
+        clearFriction(); frictionAllowances.removeAll()
         backend?.shutdown()
     }
 
@@ -114,6 +121,10 @@ import Foundation
         if storeFailed { return .refused("Le fichier de blocage doit être réparé avant toute modification.") }
         guard let current = list(next.id) else { return .allowed }
         guard isStricterOnly(current.id) else { return .allowed }
+        if (current.effectiveAction == .block && next.effectiveAction == .slowDown)
+            || next.delaySeconds < current.delaySeconds || next.allowanceMinutes > current.allowanceMinutes {
+            return .refused("Pendant un verrou, Ralentir peut seulement devenir plus strict.")
+        }
         if next.mode != current.mode { return .refused("Le mode ne change pas pendant un verrou.") }
         let oldSites = Set(current.sites.map(\.pattern)), newSites = Set(next.sites.map(\.pattern))
         let oldApps = Set(current.apps.map(\.bundleIdentifier)), newApps = Set(next.apps.map(\.bundleIdentifier))
@@ -147,6 +158,11 @@ import Foundation
         guard BlockingRules.validate(candidate) else { error = "Vérifiez la liste, les horaires, le quota et les pauses."; return }
         if case .refused(let reason) = editCheck(next) { error = reason; return }
         if let index = document.lists.firstIndex(where: { $0.id == next.id }) {
+            let old = document.lists[index]
+            if old.effectiveAction != next.effectiveAction || old.delaySeconds != next.delaySeconds || old.allowanceMinutes != next.allowanceMinutes {
+                frictionAllowances = frictionAllowances.filter { !$0.key.hasPrefix(next.id.uuidString + "|") }
+                if friction?.listID == next.id { clearFriction() }
+            }
             document.lists[index] = next
         } else {
             document.lists.append(next)
@@ -182,6 +198,16 @@ import Foundation
         guard !listIDs.isEmpty, Set(listIDs).isSubset(of: Set(lists.map(\.id))), end > now else { error = "Choisissez une liste et une fin future."; return }
         document.sessions.append(BlockSession(listIDs: listIDs, start: now, end: end, lock: lock))
         commit()
+    }
+
+    func startFocusBlock(id: UUID, listIDs: [UUID], until end: Date, lock: BlockLock) throws {
+        refresh(enforceLast: false)
+        guard !storeFailed else { throw FocusFailure.storageFailed }
+        guard !listIDs.isEmpty, end > clock(), Set(listIDs).isSubset(of: Set(lists.map(\.id))) else { throw FocusFailure.notFound }
+        if document.sessions.contains(where: { $0.id == id }) { return }
+        document.sessions.append(BlockSession(id: id, listIDs: listIDs, start: clock(), end: end, lock: lock))
+        commit()
+        guard !storeFailed else { throw FocusFailure.storageFailed }
     }
 
     /// Ends a manual session. `typed` must match the challenge for `.typing`; `.locked` never stops.
@@ -301,8 +327,14 @@ import Foundation
         // Publish only real changes: the page must not redraw on every sample.
         if lists != document.lists { lists = document.lists }
         if freeze != document.freeze { freeze = document.freeze }
+        if let previous = document.usage, previous.day != Self.dayKey(now, calendar: calendar) {
+            document.usageHistory = document.usageHistory ?? [:]
+            document.usageHistory?[previous.day] = previous
+            for day in (document.usageHistory?.keys.sorted().dropLast(366)) ?? [] { document.usageHistory?[day] = nil }
+        }
         let usage = todayUsage()
-        document.usage = document.usage == nil && usage.quotaSecondsUsed.isEmpty && usage.breaksTaken.isEmpty ? nil : usage
+        if frictionUsage != usage { frictionUsage = usage }
+        document.usage = document.usage == nil && usage.quotaSecondsUsed.isEmpty && usage.breaksTaken.isEmpty && usage.slowDownShown == nil ? nil : usage
         let blocks = (document.sessions + (document.heldPrograms ?? [])).filter { $0.start <= now && $0.end > now }.map { session in
             var block = BlockingActiveBlock(id: session.id, listIDs: session.listIDs, start: session.start,
                                             end: session.end, lock: session.lock, origin: session.origin)
@@ -406,6 +438,7 @@ import Foundation
     }
 
     func observe(_ target: BlockingObservation) {
+        if target.isActivation { frictionActivation(target) }
         backend?.observeBrowser(target)
         // Samples arrive about every second; boundaries have their own timer, so a full refresh
         // (store check, protection, published state) runs at most every 5 s from here.
@@ -434,12 +467,13 @@ import Foundation
 
     private func enforce(_ target: BlockingObservation) {
         guard let backend else { return }
-        guard target.sessionAvailable, !BlockingRules.exempt(target) else { backend.clearSite(); return }
+        guard target.sessionAvailable, !BlockingRules.exempt(target) else { backend.clearSite(); if frictionTarget?.isBrowser == true { clearFriction() }; return }
         if target.isForeground, let freeze, freeze.mode == .shield, !freeze.allowedApps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) {
-            backend.returnToShield(); return
+            clearFriction(); backend.returnToShield(); return
         }
-        var blockedSite = false
-        for list in lists {
+        let blockedSite = false
+        var slowCandidates: [(BlockList, BlockingActiveBlock)] = []
+        for list in lists.sorted(by: { $0.effectiveAction == .block && $1.effectiveAction != .block }) {
             guard let block = activeBlocks.first(where: { $0.listIDs.contains(list.id) }) else { continue }
             let usage = todayUsage()
             if usage.breakEnds[list.id].map({ $0 > target.at }) == true { continue }
@@ -454,20 +488,86 @@ import Foundation
             } else { unreadableSince[target.pid] = nil }
             guard special != nil || BlockingRules.wouldBlock(target, list: list) else { continue }
             // Privacy/unreadable addresses cannot establish eligible quota use: fail closed.
-            if special == nil, let quota = list.quotaMinutesPerDay, (usage.quotaSecondsUsed[list.id] ?? 0) < Double(quota * 60) { continue }
+            let quotaLeft = list.quotaMinutesPerDay.map { (usage.quotaSecondsUsed[list.id] ?? 0) < Double($0 * 60) } ?? true
+            if special == nil, list.effectiveAction == .slowDown, quotaLeft, !storeFailed {
+                if target.isForeground || target.isActivation { slowCandidates.append((list, block)) }
+                continue
+            }
+            if special == nil, list.effectiveAction == .block, list.quotaMinutesPerDay != nil, quotaLeft { continue }
+            clearFriction()
             if !target.isBrowser || (list.mode == .block && list.apps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier })) {
-                backend.blockApp(target, app: list.apps.first { $0.bundleIdentifier == target.bundleIdentifier }
-                    ?? BlockAppRule(bundleIdentifier: target.bundleIdentifier, name: target.bundleIdentifier), block: block, listName: list.name)
+                backend.clearSite()
+                let app = list.apps.first { $0.bundleIdentifier == target.bundleIdentifier }
+                    ?? BlockAppRule(bundleIdentifier: target.bundleIdentifier, name: target.bundleIdentifier)
+                if list.effectiveAction == .slowDown { backend.blockSlowDownApp(target, app: app, block: block, listName: list.name) }
+                else { backend.blockApp(target, app: app, block: block, listName: list.name) }
             } else {
                 let reason = special ?? list.quotaMinutesPerDay.map { BlockingVeilPresentation.Reason.quotaUsed(target.url ?? "", minutes: $0) } ?? .site(target.url ?? "")
                 let presentation = BlockingVeilPresentation(reason: reason, listName: list.name, start: block.start, end: block.end,
                     lock: block.lock, breakMinutes: list.breaks?.minutes, breaksLeft: block.breaksLeft[list.id] ?? 0)
                 backend.blockSite(target, presentation: presentation) { [weak self] in self?.takeBreak(listID: list.id) }
-                blockedSite = true
             }
-            break
+            return
         }
         if !blockedSite { backend.clearSite() }
+        if let (list, _) = slowCandidates.first(where: { !isFrictionAllowed(target, list: $0.0) }) {
+            showFriction(target, list: list)
+        } else if frictionTarget?.isBrowser == true { clearFriction() }
+        else if let current = friction, !activeBlocks.contains(where: { $0.listIDs.contains(current.listID) }) { clearFriction() }
+    }
+
+
+    func frictionCounts(day: String) -> BlockDayUsage {
+        let current = todayUsage()
+        return current.day == day ? current : document.usageHistory?[day] ?? BlockDayUsage(day: day)
+    }
+    private func isFrictionAllowed(_ target: BlockingObservation, list: BlockList) -> Bool {
+        frictionAllowances[BlockingFrictionPresentation.key(target, listID: list.id)].map { $0 > clock() } == true
+    }
+    private func clearFriction() {
+        friction = nil; frictionTarget = nil; backend?.clearSlowDown()
+    }
+    private func showFriction(_ target: BlockingObservation, list: BlockList) {
+        let key = BlockingFrictionPresentation.key(target, listID: list.id)
+        if !target.isBrowser, suppressedAppFriction.contains(key) { return }
+        if friction?.key != key {
+            var usage = todayUsage(); usage.slowDownShown = usage.slowDownShown ?? [:]
+            usage.slowDownShown?[list.id, default: 0] += 1
+            document.usage = usage
+            commit(reenforce: false)
+            if storeFailed { enforce(target); return }
+            friction = BlockingFrictionPresentation(listID: list.id, key: key, name: target.isBrowser ? (target.url?.split(separator: "/").first.map(String.init) ?? list.name) : (list.apps.first { $0.bundleIdentifier == target.bundleIdentifier }?.name ?? target.bundleIdentifier),
+                shownAt: clock(), readyAt: clock().addingTimeInterval(Double(list.delaySeconds)), occurrence: usage.slowDownShown?[list.id] ?? 1)
+        }
+        frictionTarget = target
+        guard let friction else { return }
+        backend?.slowDown(target, presentation: friction, onRenounce: { [weak self] in self?.renounceFriction() }, onContinue: { [weak self] in self?.continueFriction() })
+    }
+    func renounceFriction() {
+        guard let value = friction, let target = frictionTarget else { return }
+        var usage = todayUsage(); usage.renounced = usage.renounced ?? [:]; usage.renounced?[value.listID, default: 0] += 1
+        document.usage = usage; commit(reenforce: false)
+        guard !storeFailed else { return }
+        if !target.isBrowser { suppressedAppFriction.insert(value.key) }
+        backend?.renounceSlowDown(target); clearFriction()
+    }
+    func continueFriction() {
+        guard let value = friction, let target = frictionTarget, clock() >= value.readyAt, let list = list(value.listID) else { return }
+        refresh(enforceLast: false)
+        guard freeze == nil, activeBlocks.contains(where: { $0.listIDs.contains(list.id) }),
+            !lists.contains(where: { candidate in candidate.effectiveAction == .block && activeBlocks.contains { $0.listIDs.contains(candidate.id) }
+                && todayUsage().breakEnds[candidate.id].map { $0 > clock() } != true
+                && (candidate.quotaMinutesPerDay.map { (todayUsage().quotaSecondsUsed[candidate.id] ?? 0) >= Double($0 * 60) } ?? true)
+                && BlockingRules.wouldBlock(target, list: candidate) }) else { clearFriction(); return }
+        var usage = todayUsage(); usage.continued = usage.continued ?? [:]; usage.continued?[list.id, default: 0] += 1
+        document.usage = usage; commit(reenforce: false)
+        guard !storeFailed else { return }
+        frictionAllowances[value.key] = clock().addingTimeInterval(Double(list.allowanceMinutes * 60))
+        backend?.continueSlowDown(target); clearFriction()
+    }
+    /// Only an explicit launch/activation releases a renounced hidden app, never an old sample.
+    func frictionActivation(_ target: BlockingObservation) {
+        suppressedAppFriction = suppressedAppFriction.filter { !$0.hasSuffix("|app:" + target.bundleIdentifier) }
     }
 
     private func publishQuota(_ usage: BlockDayUsage) {
@@ -528,7 +628,7 @@ import Foundation
         return minutes
     }
 
-    static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
+    nonisolated static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }

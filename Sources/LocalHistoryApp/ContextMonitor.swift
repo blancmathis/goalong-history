@@ -20,6 +20,7 @@
         private let semanticContextStore: SemanticContextStore
         private let memoryStore: LocalActivityMemoryStore
 
+        var concentrationSink: ((FocusObservation) -> Void)?
         var blockingSink: ((BlockingObservation) -> Void)?
         private(set) var blockingObservationEnabled = false
         private var historyRequested = false
@@ -97,7 +98,7 @@
                 self.blockingSink?(BlockingObservation(bundleIdentifier: app.bundleIdentifier ?? "", pid: app.processIdentifier,
                     windowFrame: nil, isBrowser: BlockingRules.isKnownBrowser(app.bundleIdentifier, configured: self.configManager.config.browserBundleIdentifiers), url: nil, privateWindow: false, at: Date(),
                     regular: app.activationPolicy == .regular, sessionAvailable: ForegroundSessionAvailability.isAvailable(), idleSeconds: 121,
-                    isForeground: app.processIdentifier == NSWorkspace.shared.frontmostApplication?.processIdentifier))
+                    isForeground: app.processIdentifier == NSWorkspace.shared.frontmostApplication?.processIdentifier, isActivation: true))
             }
         }
 
@@ -145,6 +146,7 @@
         }
 
         func invalidatePresence() {
+            concentrationSink?(FocusObservation(at: Date(), observing: false))
             previous = nil
             setLatest(nil)
             foregroundActivityProbe.reset()
@@ -238,6 +240,8 @@
 
         @discardableResult
         func sampleNow() -> ContextSnapshot? {
+            var focusSample = FocusObservation(at: Date(), observing: false)
+            defer { concentrationSink?(focusSample) }
             defer {
                 if pollingIsActive, !scheduledPollInProgress {
                     scheduleNextPoll()
@@ -252,6 +256,7 @@
                 invalidatePresence(); return nil
             }
             guard ForegroundSessionAvailability.isAvailable() else {
+                focusSample.observing = true; focusSample.available = false
                 markObservationUnavailable(); return nil
             }
             if IsSecureEventInputEnabled() {
@@ -287,9 +292,10 @@
             consecutiveCaptureFailures = 0
             observationUnavailable = false
             let observedAt = Date()
+            let observedIdleSeconds = idleSeconds()
             let presence = foregroundActivityProbe.observe(captured,
                 labelsEnabled: configManager.config.captureElementLabels,
-                idleSeconds: idleSeconds(), idleLimitSeconds: configManager.config.effectiveForegroundIdleSeconds,
+                idleSeconds: observedIdleSeconds, idleLimitSeconds: configManager.config.effectiveForegroundIdleSeconds,
                 at: observedAt)
             guard state.isCapturing, ForegroundSessionAvailability.isAvailable(),
                   !IsSecureEventInputEnabled() else {
@@ -329,6 +335,12 @@
                 )
             }
 
+            if concentrationSink != nil {
+                let label = GoalongWorkContext.Label(application: current.app.name, bundleIdentifier: current.app.bundleIdentifier,
+                    host: current.url?.host, title: GoalongWorkContext.displayTitle(current.window?.title))
+                let assignment = MainActor.assumeIsolated { GoalongWorkStore.shared.verdicts.assignment(for: label.key) }
+                focusSample = FocusObservation(at: observedAt, observing: true, available: true, idleSeconds: observedIdleSeconds, context: label.key, verdict: assignment?.verdict, task: assignment?.task)
+            }
             let activityMetadata = presence.metadata(at: observedAt)
             if let transition = Self.contextTransition(from: previous, to: current) {
                 recorder.record(
@@ -431,6 +443,10 @@
             }
         }
 
+        func recordFocusLimit(_ mark: FocusLimitMark) {
+            guard historyRequested, state.isCapturing, !provider.historyPrivacyStopped else { return }
+            recorder.record(kind: .diagnostic, metadata: ["goalong.focus.limit": mark.kind, "goalong.focus.period": mark.period], timestamp: mark.at)
+        }
         private func idleSeconds() -> Double {
             UserInputActivityClock.secondsSinceLastInput()
         }

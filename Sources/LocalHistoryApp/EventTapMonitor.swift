@@ -527,6 +527,7 @@
         private let state: CaptureState
         private let configManager: ConfigManager
         private let captureHealth: CaptureHealthStore
+        var concentrationInputSink: ((Date, Int) -> Void)?
         private let ingress = EventTapIngressBuffer(capacity: 256)
         private let eventTapLock = NSLock()
 
@@ -1130,6 +1131,7 @@
             let nearEventContext = context
             // A callback only proves healthy capture after it crosses the event-time
             // privacy, target and freshness gates above.
+            concentrationInputSink?(input.lastObservedAt, input.occurrences)
             captureHealth.markInputCallback(at: input.lastObservedAt)
 
             switch input.kind {

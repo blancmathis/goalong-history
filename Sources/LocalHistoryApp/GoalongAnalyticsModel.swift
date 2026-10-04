@@ -70,7 +70,7 @@ struct GoalongAnalyticsPayload: Sendable {
 
 /// Lives off the main actor and outlives the dashboard window, so reopening it shows the
 /// days already read. Stores only bounded derived measurements, never source events.
-private actor GoalongAnalyticsReader {
+actor GoalongAnalyticsReader {
     static let shared = GoalongAnalyticsReader(root: AppPaths.applicationSupportDirectory)
     /// Recently shown days (about 0.5 MB for a busy one): enough for a 28-day period and
     /// its comparison, plus a few days visited around it.
@@ -83,6 +83,14 @@ private actor GoalongAnalyticsReader {
     private var today: (date: Date, state: GoalongLocalAnalytics.ResumableDayState)?
     private let root: URL
     init(root: URL) { self.root = root }
+
+    /// Focus reuses the same validated day cache and bounded current-day fold, without
+    /// loading recap cards, starting analysis or changing the Activity selection.
+    func focusDay(_ day: Date, verdicts: GoalongWorkVerdicts) throws -> GoalongLocalAnalytics.Day {
+        try Task.checkCancellation()
+        let value = try days(ending: Calendar.current.startOfDay(for: day), count: 1, now: Date(), calendar: .current)[0]
+        return value.applying(verdicts)
+    }
 
     func read(ending day: Date, count: Int, force: Bool, preview: Bool,
               verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) throws -> GoalongAnalyticsPayload {
