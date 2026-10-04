@@ -56,7 +56,7 @@ if grep -R -nE "$MICROPHONE_FORBIDDEN|MediaPlayer|MusicKit|NSAppleMusicUsageDesc
   echo "Forbidden microphone or Apple Music API found (including the audio output boundary)." >&2
   failed=true
 fi
-if grep -nE 'NSMicrophoneUsageDescription|NSAppleMusicUsageDescription' "$ROOT_DIR"/scripts/build*.sh; then
+if grep -nE 'NSMicrophoneUsageDescription|NSAppleMusicUsageDescription' "$ROOT_DIR"/scripts/build*.sh "$ROOT_DIR/scripts/update_policy.py"; then
   echo "Microphone or Apple Music usage description in an Info.plist builder." >&2
   failed=true
 fi

@@ -33,11 +33,13 @@ def main():
             "AudioUnitRender", "AudioDeviceStart", "AudioDeviceCreateIOProcID", "AudioHardwareCreateProcessTap",
             "MediaPlayer", "MusicKit", "NSAppleMusicUsageDescription",
         )]
-        fixtures += [("scripts/build_app_core.sh", token) for token in
-                     ("NSMicrophoneUsageDescription", "NSAppleMusicUsageDescription")]
+        fixtures += [(builder, token) for builder in ("scripts/build_app_core.sh", "scripts/update_policy.py")
+                     for token in ("NSMicrophoneUsageDescription", "NSAppleMusicUsageDescription")]
         fixtures += [("Distribution/GoalongHistory.entitlements", token) for token in
                      ("com.apple.security.device.audio-input", "com.apple.security.device.microphone")]
         fixtures += [("Features/Ambiance/Sources/ForbiddenAudioFixture.swift", "AVAudioEngine")]
+        fixtures += [("Features/Ambiance/Sources/ForbiddenAudioFixture.swift", token)
+                     for token in ("AVAudioFile", "AVAudioPCMBuffer")]
         for index, (relative, token) in enumerate(fixtures):
             path = root / relative
             original = path.read_text() if path.exists() else None
