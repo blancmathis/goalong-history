@@ -260,52 +260,6 @@ import Foundation
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 }
-
-enum BlockingRules {
-    /// Never blocked, whatever the list says. Also skipped by the app picker.
-    static let neverBlocked: Set<String> = [
-        "ai.goalong.localhistory", "com.apple.finder", "com.apple.dock", "com.apple.loginwindow",
-        "com.apple.systemuiserver", "com.apple.controlcenter", "com.apple.notificationcenterui",
-        "com.apple.Spotlight", "com.apple.SecurityAgent", "com.apple.coreautha", "com.apple.ScreenSaver.Engine",
-    ]
-}
-
-enum BlockingSchedule {
-    struct Window { var rangeID: UUID; var start: Date; var end: Date }
-
-    /// The program window containing `now`, merged with the windows that touch it.
-    static func currentWindow(of program: BlockProgram, at now: Date, calendar: Calendar = .current) -> Window? {
-        for range in program.ranges {
-            for dayOffset in [-1, 0] {
-                guard let day = calendar.date(byAdding: .day, value: dayOffset, to: calendar.startOfDay(for: now)) else { continue }
-                guard range.weekdays.contains(isoWeekday(day, calendar: calendar)) else { continue }
-                let start = day.addingTimeInterval(TimeInterval(range.startMinute * 60))
-                let end = start.addingTimeInterval(TimeInterval(range.durationMinutes * 60))
-                if start <= now, now < end { return Window(rangeID: range.id, start: start, end: end) }
-            }
-        }
-        return nil
-    }
-
-    static func nextStart(of program: BlockProgram, after now: Date, calendar: Calendar = .current) -> Date? {
-        var best: Date?
-        for range in program.ranges {
-            for dayOffset in 0...7 {
-                guard let day = calendar.date(byAdding: .day, value: dayOffset, to: calendar.startOfDay(for: now)),
-                      range.weekdays.contains(isoWeekday(day, calendar: calendar)) else { continue }
-                let start = day.addingTimeInterval(TimeInterval(range.startMinute * 60))
-                if start > now { best = min(best ?? start, start); break }
-            }
-        }
-        return best
-    }
-
-    static func isoWeekday(_ date: Date, calendar: Calendar = .current) -> Int {
-        let weekday = calendar.component(.weekday, from: date) // 1 = Sunday
-        return weekday == 1 ? 7 : weekday - 1
-    }
-}
-
 /// Holds the controller only while the module is on.
 @MainActor final class BlockingRuntime: ObservableObject {
     static let shared = BlockingRuntime()

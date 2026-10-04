@@ -106,6 +106,9 @@ struct BlockingDocument: Codable, Equatable {
     var sessions: [BlockSession] = []
     var usage: BlockDayUsage?
     var freeze: BlockFreeze?
+    var clock: BlockingClockState?
+    var programSkips: [UUID: Date]?
+    var heldPrograms: [BlockSession]?
 }
 
 /// One thing blocking right now, as the page shows it: a manual session or a program window.
