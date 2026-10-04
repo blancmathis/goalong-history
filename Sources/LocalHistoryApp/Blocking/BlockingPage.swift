@@ -607,11 +607,15 @@ struct BlockingFreezeGlyph: View {
         }
     }
 
+    /// What the Standard level cannot stop. Kept in step with docs/BLOCKING.md.
     static let limits = [
-        "Un compte administrateur peut toujours, avec le Terminal, retirer Goalong et ses services.",
+        "Forcer Goalong à quitter arrête le blocage jusqu’à la prochaine ouverture de session.",
+        "Retirer Goalong des éléments d’ouverture, ou le désinstaller, met fin au blocage.",
+        "Supprimer le fichier de blocage puis relancer Goalong efface les verrous.",
         "Changer l’heure du Mac puis redémarrer peut raccourcir un verrou.",
+        "Un navigateur que Goalong ne connaît pas, et dont il ne lit pas l’adresse, n’est pas couvert.",
+        "Un onglet en arrière-plan continue (son, téléchargement) jusqu’à ce qu’il passe devant.",
         "Un autre compte utilisateur du Mac n’est pas bloqué.",
-        "Les onglets restés en arrière-plan ne sont fermés qu’au moment où ils passent devant.",
     ]
 
     private func statusRow(symbol: String, title: String, ok: Bool, value: String) -> some View {
