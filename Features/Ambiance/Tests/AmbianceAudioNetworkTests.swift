@@ -22,7 +22,81 @@ final class AmbianceAudioNetworkTests: XCTestCase {
         let asset = try XCTUnwrap(URL(string: "https://release-assets.githubusercontent.com/asset"))
         XCTAssertFalse(AmbiancePackDownloader.allows(asset, pack: pack, redirect: false))
         XCTAssertTrue(AmbiancePackDownloader.allows(asset, pack: pack, redirect: true))
-        XCTAssertFalse(AmbiancePackDownloader.allows(URL(string: asset.absoluteString + "?sig=unsigned")!, pack: pack, redirect: true))
+        XCTAssertTrue(AmbiancePackDownloader.allows(URL(string: asset.absoluteString + "?sig=github-signed")!, pack: pack, redirect: true))
+    }
+
+    func testSignedRedirectPreservesURLAndDropsForwardedHeaders() throws {
+        let pack = try XCTUnwrap(AmbiancePackCatalog.packs.first)
+        let signed = try XCTUnwrap(URL(string: "https://release-assets.githubusercontent.com:443/asset?sig=a%2Bb%2Fc%3D&jwt=x.y.z&key=1&key=2&empty=&plus=+"))
+        var request = try XCTUnwrap(AmbiancePackDownloader.redirectRequest(.init(url: signed), responseURL: pack.url,
+            initialURL: pack.url, pack: pack, redirectCount: 1))
+        request.httpMethod = "GET"
+        request.setValue("discard", forHTTPHeaderField: "Authorization")
+        request.setValue("discard", forHTTPHeaderField: "Cookie")
+        let clean = try XCTUnwrap(AmbiancePackDownloader.redirectRequest(request, responseURL: pack.url,
+            initialURL: pack.url, pack: pack, redirectCount: 1))
+        XCTAssertEqual(clean.url?.absoluteString, signed.absoluteString)
+        XCTAssertEqual(clean.url?.query, signed.query)
+        XCTAssertEqual(clean.httpMethod, "GET")
+        XCTAssertNil(clean.httpBody)
+        XCTAssertNil(clean.httpBodyStream)
+        XCTAssertTrue(clean.allHTTPHeaderFields?.isEmpty ?? true)
+        XCTAssertFalse(clean.httpShouldHandleCookies)
+        XCTAssertEqual(clean.cachePolicy, .reloadIgnoringLocalCacheData)
+    }
+
+    func testRedirectRejectsQueryOnGitHub() throws {
+        let pack = try XCTUnwrap(AmbiancePackCatalog.packs.first)
+        let queried = try XCTUnwrap(URL(string: pack.url.absoluteString + "?sig=forbidden"))
+        XCTAssertNil(AmbiancePackDownloader.redirectRequest(.init(url: queried), responseURL: pack.url,
+            initialURL: pack.url, pack: pack, redirectCount: 1))
+        let asset = URL(string: "https://release-assets.githubusercontent.com/asset?sig=synthetic")!
+        XCTAssertNil(AmbiancePackDownloader.redirectRequest(.init(url: asset), responseURL: queried,
+            initialURL: queried, pack: pack, redirectCount: 1))
+    }
+
+    func testRedirectRejectsOtherHostHTTPAndOtherPort() throws {
+        let pack = try XCTUnwrap(AmbiancePackCatalog.packs.first)
+        for value in ["https://evil.invalid/asset?sig=synthetic",
+                      "https://release-assets.githubusercontent.com.evil.invalid/asset?sig=synthetic",
+                      "http://release-assets.githubusercontent.com/asset?sig=synthetic",
+                      "https://release-assets.githubusercontent.com:444/asset?sig=synthetic",
+                      "https://user@release-assets.githubusercontent.com/asset?sig=synthetic",
+                      "https://release-assets.githubusercontent.com/asset?sig=synthetic#fragment",
+                      pack.url.absoluteString] {
+            XCTAssertNil(AmbiancePackDownloader.redirectRequest(.init(url: try XCTUnwrap(URL(string: value))), responseURL: pack.url,
+                initialURL: pack.url, pack: pack, redirectCount: 1), value)
+        }
+    }
+
+    func testRedirectRejectsSecondRedirectAndUnexpectedResponseOrigin() throws {
+        let pack = try XCTUnwrap(AmbiancePackCatalog.packs.first)
+        let asset = URL(string: "https://release-assets.githubusercontent.com/asset?sig=synthetic")!
+        for count in [0, 2, 3] {
+            XCTAssertNil(AmbiancePackDownloader.redirectRequest(.init(url: asset), responseURL: pack.url,
+                initialURL: pack.url, pack: pack, redirectCount: count))
+        }
+        XCTAssertNil(AmbiancePackDownloader.redirectRequest(.init(url: asset), responseURL: asset,
+            initialURL: pack.url, pack: pack, redirectCount: 1))
+    }
+
+    func testRedirectRejectsAssetHostAsFirstRequestAndNonGET() throws {
+        let pack = try XCTUnwrap(AmbiancePackCatalog.packs.first)
+        let asset = URL(string: "https://release-assets.githubusercontent.com/asset?sig=synthetic")!
+        var request = try XCTUnwrap(AmbiancePackDownloader.redirectRequest(.init(url: asset), responseURL: pack.url,
+            initialURL: pack.url, pack: pack, redirectCount: 1))
+        XCTAssertFalse(AmbiancePackDownloader.allows(asset, pack: pack, redirect: false))
+        XCTAssertNil(AmbiancePackDownloader.redirectRequest(request, responseURL: asset,
+            initialURL: asset, pack: pack, redirectCount: 1))
+        request.httpMethod = "POST"
+        XCTAssertNil(AmbiancePackDownloader.redirectRequest(request, responseURL: pack.url,
+            initialURL: pack.url, pack: pack, redirectCount: 1))
+        request.httpMethod = "GET"; request.httpBody = Data([1])
+        XCTAssertNil(AmbiancePackDownloader.redirectRequest(request, responseURL: pack.url,
+            initialURL: pack.url, pack: pack, redirectCount: 1))
+        request.httpBody = nil; request.httpBodyStream = InputStream(data: Data([1]))
+        XCTAssertNil(AmbiancePackDownloader.redirectRequest(request, responseURL: pack.url,
+            initialURL: pack.url, pack: pack, redirectCount: 1))
     }
 
     @MainActor func testExplicitHTTPDownloadInstallsAndRejectsBadResponses() async throws {

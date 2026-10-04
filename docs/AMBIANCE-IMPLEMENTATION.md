@@ -13,11 +13,13 @@ le démarrage réussi du moteur. Stop et désactivation arrêtent le graphe, dé
 ses nœuds et libèrent le lecteur, le DSP et les mappings. Un échec de préparation
 ou de démarrage publie une erreur française et libère le runtime.
 
-Le téléchargement explicite est implémenté et testé sur loopback. La règle
-« aucune query string » demeure stricte, redirections comprises. **GitHub impose
-une query signée : les téléchargements passant par cette redirection restent
-bloqués jusqu’à une décision complémentaire du propriétaire.** La question a
-été posée ; aucune exception n’a été déduite de son silence.
+Le téléchargement explicite est implémenté et testé sur loopback. La clarification
+du propriétaire du 2026-10-04 est appliquée : URL initiale exacte du catalogue sur
+`github.com`, sans query, puis au plus une redirection vers
+`https://release-assets.githubusercontent.com:443` (port implicite 443 admis).
+La query signée reçue de GitHub reste intacte ; Goalong ne la construit pas et
+n'enregistre, n'affiche ni ne journalise l'URL signée. Les erreurs de transport
+Foundation, susceptibles de contenir cette URL, deviennent une erreur de pack.
 
 HEAD du 2026-10-04, sans télécharger l’asset : release publique `v0.6.2`, asset
 `Goalong-History-macOS-universal.dmg`, réponse 302 vers
@@ -114,14 +116,15 @@ archives restent ceux de la passe antérieure (77 158 400 / 83 363 840 octets).
   `Features/Ambiance/Sources/AmbiancePackDownloader.swift`. Les autres règles restent.
 - `generate_security_artifacts.py` / `verify_security_capabilities.py` : cinq chemins
   externes actifs et packs inactifs → six chemins, avec GET, session, intégrité,
-  host de redirection et conflit des queries explicitement déclarés. Les droits
+  host/port de redirection, limite d’une redirection et query signée reçue intacte.
+  Le conflit déclaré avant la clarification du propriétaire est supprimé. Les droits
   micro deviennent interdits dans le manifeste ; le vérificateur rejette aussi
   les usage descriptions micro/Apple Music du bundle. Les autres invariants restent.
 - `audit_site_submission.py`, `audit_jev.py`, `audit_local_only.sh`,
   `audit_update_dependency.py` : règles inchangées. Le premier ne contient aucun
   inventaire global à étendre. Le message de `verify_source_security.sh` est actualisé.
 
-## Vérification
+## Vérification antérieure au rebase
 
 - `swift build` : passé.
 - `swift test`, vrais packs locaux, CFFIXED_USER_HOME isolé, tests de périphérique
@@ -149,7 +152,7 @@ archives restent ceux de la passe antérieure (77 158 400 / 83 363 840 octets).
   `dist/Goalong History.app`, `dist/security-capabilities.json`. Pas de notarisation
   ni publication demandée. Les trois mesures de sortie sont terminées ci-dessous.
 
-## Mesures réelles
+## Mesures réelles antérieures
 
 Runner Swift `-O`, targets Ambiance/OndeCore/OndeDSP de production, sans rendu offline.
 Il initialise `NSApplication.shared` avec la politique `.accessory`, comme
@@ -208,15 +211,107 @@ Preuve privée : `.ambiance-work/binary-audio-final-measures.json`.
 L’avant-dernière construction dépassait de 2 352 octets ; l’exclusion du helper
 inutilisé a résolu cet échec, sans changer la signature de comparaison.
 
-## Passation et reste
+## Reprise sur la branche combinée (2026-10-04)
 
-Commits locaux : `e653cd2` (audio + gardes), `8b170ac` (transport + inventaires/docs),
-`7d74718` (25 fixtures et builders), `0a6d0d0` (exporters exclus), `420844e` (ownership
-session), `9df7065` (helper inutilisé exclu).
-Reste : résoudre le résidu RAM Confluence ; arbitrer la query signée GitHub. La sortie est implémentée, mais cette tâche ne constitue pas une acceptation
-finale des budgets. La cible CPU Ambre est manquée.
-La publication des packs reste réservée à l’accord du propriétaire. La session UI conserve son worktree séparé.
+Base `1bf8d44`, après rebase sur `origin/main` (Cold Turkey #62, deltas Sparkle #64)
+et intégration de la branche UI. Aucun fichier de `Sources/LocalHistoryApp/` modifié
+par cette reprise. Le code audio reste inchangé.
 
-Le `CONTEXT.md` partagé du checkout principal a été lu. L’interdiction de travailler
-hors de ce worktree empêche de l’éditer ; ce document tient lieu de passation locale.
-La décision `AMBIANCE-AUDIO-NETWORK.md`, initialement non suivie, reste intacte.
+### Redirection signée
+
+`allows` sépare l'URL initiale sans query du seul host de redirection autorisé.
+`redirectRequest`, appelée directement par le delegate, exige un compteur égal à 1,
+une URL initiale exacte du catalogue, une réponse depuis cette même URL, HTTPS et
+port 443, un GET sans body/stream, sans user/password/fragment. Elle réutilise
+l'objet URL reçu sans reconstruire sa query et crée une requête sans les headers
+transmis. Toute seconde redirection est refusée. Les erreurs réseau Foundation ne
+sortent jamais du delegate ; seul un message nommant le pack atteint le contrôleur.
+Session éphémère, cookies/cache/credentials désactivés, aucun retry inchangés.
+
+Cinq nouveaux tests couvrent query sur GitHub (initiale ou cible), autre host, HTTP,
+autre port, seconde redirection, origine de réponse inattendue, asset host en
+première requête, POST/body/stream, user/fragment et headers transmis. Le cas positif
+prouve l'égalité de l'URL et de sa query encodée, avec `%2B`, `%2F`, `%3D`, `+`,
+paramètres répétés et valeur vide. Toutes les signatures de test sont synthétiques.
+Aucun téléchargement ni nouvel appel GitHub ; l'observation HEAD antérieure reste
+la preuve du host. Les packs GitHub n'existent pas encore.
+
+### Cinq cycles de sortie réelle par composition
+
+Runner AppKit `-O`, recompilé contre les targets de production de cette branche :
+Confluence puis Ambre, chacun dans un processus froid distinct, volume 0,08,
+sortie par défaut, aucun rendu offline ni préchauffage audio. Après 5 s au repos :
+RSS et `TASK_VM_INFO.phys_footprint` avant lecture. Chaque cycle fait Play 60 s,
+Stop, puis attend au moins 10 s avant le relevé. Les durées observées vont de
+60,02 à 60,06 s et de 10,32 à 10,70 s. Les dix contrôles du graphe confirment
+moteur/runtime absents et mappings nuls après Stop.
+
+| Relevé après Stop + 10 s | Confluence RSS (Mo) | Confluence footprint (Mo) | Ambre RSS (Mo) | Ambre footprint (Mo) |
+|---|---:|---:|---:|---:|
+| Avant toute lecture | 24,22 | 6,49 | 23,72 | 6,64 |
+| Cycle 1 | 26,51 | 9,42 | 30,06 | 9,50 |
+| Cycle 2 | 26,26 | 9,57 | 29,15 | 9,68 |
+| Cycle 3 | 25,72 | 9,55 | 28,79 | 9,62 |
+| Cycle 4 | 27,12 | 9,60 | 25,36 | 9,67 |
+| Cycle 5 | 27,03 | 9,65 | 25,33 | 9,80 |
+
+Mo décimaux. Confluence : RSS oscille, sans accumulation ; footprint +0,23 Mo
+entre les cycles 1 et 5. Ambre : RSS diminue ; footprint +0,29 Mo entre les
+cycles 1 et 5. Le saut initial du footprint est voisin de 2,9 Mo pour les deux,
+puis le niveau reste dans une plage étroite. Résidu RSS final : Confluence +2,82 Mo,
+Ambre +1,61 Mo. Le +5,91 Mo antérieur ne se répète pas à chaque lecture.
+**Verdict : cache unique de démarrage audio/allocateur, pas fuite Ambiance/Onde
+mise en évidence. Aucune modification audio.** Cela ne réécrit pas l'ancien
+relevé hors budget ; la RSS dépend aussi de la résidence des pages et des caches.
+
+`leaks 12042` après les cinq cycles Confluence : exit 1, **287 objets / 14 320 octets**.
+`leaks 35961` après les cinq cycles Ambre : exit 1, **288 objets / 14 400 octets**.
+Les trois racines de chaque rapport sont des cycles `NSXPCConnection`, protocole
+`LNDaemonApplicationInterface`, dans AppIntents/Foundation ; aucun objet
+Ambiance/Onde ni allocation DSP signalé. Témoin AppKit sans import Ambiance et sans
+audio : exit 1, 192 objets / 9 600 octets, deux cycles identiques du même protocole.
+Ce sont des résultats non nuls, pas un « leaks vert ». macOS marque ces runners
+« not debuggable » et limite la lecture du contenu des objets ; les types et graphes
+ci-dessus sont ceux effectivement affichés. La conclusion repose aussi sur les
+dix relevés et la libération du runtime, pas sur une prétendue absence universelle
+de fuite. Preuves privées : `.ambiance-work/r3/cycles-{confluence,ambre}.json`,
+`cycle-progress.log`, `leaks-{confluence,ambre,appkit-idle}.log`, sources des runners.
+
+### Vérification actuelle
+
+- `swift build` : exit 0, branche combinée.
+- `swift test` : exit 0, **1 591 tests, 48 skips opt-in, zéro échec**, 485,77 s.
+  HOME et CFFIXED_USER_HOME isolés dans `/tmp/goalong-ambiance-r3-*`, vrais packs
+  locaux ; aucun test concurrent de périphérique. Les cinq nouveaux tests réseau
+  sont tous exécutés. Logs `.ambiance-work/r3/swift-{build,test}.log` ; statuts
+  `swift-checks.json`. Aucune ancienne suite utilisée comme preuve de cette reprise.
+- Les cinq audits (`audit_local_only`, `audit_privacy_boundaries`,
+  `audit_site_submission`, `audit_jev`, `audit_update_dependency`) : exit 0.
+  **25 fixtures négatives rejetées**, baseline acceptée, exit 0. Statuts et logs
+  `.ambiance-work/r3/audit-checks.json` et `privacy-fixtures.log`.
+- `verify_source_security.sh` : exit 0 ; politique site/manifeste : 39 tests passés.
+- Exécutables Release arm64 (`LocalHistory`, `goalong`, `goalong-relauncher`) de la
+  branche combinée reconstruits. Bundle de vérification local signé Apple Development,
+  ressources/framework/runtime déjà présents réutilisés sans téléchargement GitHub.
+  Signature stricte et `verify_security_capabilities.py` : exit 0. Les trois artefacts
+  (`security-capabilities.json`, `sbom.spdx.json`, `release-manifest.json`) sont
+  régénérés dans `.ambiance-work/r3/artifacts/`, puis repris dans `dist/` avec ce
+  bundle ; l'ancien `dist/` est sauvegardé dans `.ambiance-work/r3/previous-dist/`.
+  La déclaration du conflit de query est supprimée ; le manifeste décrit le host,
+  le port 443, une redirection, query initiale interdite et query GitHub intacte.
+  Ce bundle arm64 local ne remplace pas la référence universelle historique de taille.
+  Il n'est ni installé ni publié. Logs `artifact-{build,finalize}.log`,
+  `artifact-checks.json` ; le pointeur de source est actualisé après le commit local.
+- Le premier audit a rejeté les tokens de construction de requête dans les nouveaux
+  tests. Les tests utilisent maintenant l'inférence de type sur le helper de
+  production ; l'audit et ses allowlists restent strictement inchangés. Les cinq
+  audits et les fixtures ont été relancés après cette correction.
+
+### Passation
+
+La publication de la release `ambiance-packs-v1` reste à autoriser séparément.
+Cette reprise prépare uniquement un commit local avec le trailer
+`Co-Authored-By: Codex <noreply@openai.com>`. Aucun push, PR, upload ou release.
+Le `CONTEXT.md` partagé du checkout principal a été lu et actualisé ; la session UI
+conserve son worktree et ses fichiers. Les références de commits des sections
+historiques décrivent les builds antérieures au rebase, pas un nouveau bundle.

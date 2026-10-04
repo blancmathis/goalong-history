@@ -55,15 +55,20 @@ archives `orchestra.tar` and `textures.tar` under
 The release has not been created or uploaded by this task. An explicit `download(id)`
 action starts one ephemeral GET in `AmbiancePackDownloader.swift`. There is no launch,
 activation, timer or background download, retained session, cookie, cache, credential,
-custom header, member/Mac identifier or automatic retry. Only the exact catalog URLs
-and HTTPS redirects to `release-assets.githubusercontent.com` are permitted. The
-security inventory includes this sixth intentional external path.
+custom header, member/Mac identifier or automatic retry. The initial request must be
+the exact catalog URL on `github.com`, without a query. Only one redirect, from that
+URL to `https://release-assets.githubusercontent.com` on port 443, is allowed. An
+omitted port means HTTPS port 443. A second redirect, another host, HTTP, another
+port, or a first request to the asset host is refused. The security inventory
+includes this sixth intentional external path.
 
-The owner's 2026-10-04 prohibition on query strings is enforced, redirects included.
-A HEAD observation on 2026-10-04 found that GitHub supplies a signed query on release
-asset redirects; removing it returns HTTP 618. Consequently those signed redirects
-currently fail honestly until the owner resolves this conflict. No query exception
-has been inferred or enabled. See [`AMBIANCE-IMPLEMENTATION.md`](AMBIANCE-IMPLEMENTATION.md).
+The owner's clarification of 2026-10-04 permits GitHub's own signed redirect query,
+preserved exactly as received. Goalong never constructs or changes a query string,
+logs, stores or displays the signed URL. The redirected request is a fresh plain
+GET without forwarded headers or a body. Transport errors are replaced by a pack
+error before reaching the UI, since Foundation errors can contain the failing URL.
+The earlier HEAD observation identified this release-asset host; no GitHub pack is
+downloaded by this task. See [`AMBIANCE-IMPLEMENTATION.md`](AMBIANCE-IMPLEMENTATION.md).
 
 An explicit install action can instead read pinned archives from the absolute local
 folder `GOALONG_AMBIANCE_PACK_DIR`. It verifies the exact size and SHA-256, extracts only

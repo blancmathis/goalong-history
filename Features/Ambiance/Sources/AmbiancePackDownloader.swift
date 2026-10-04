@@ -34,11 +34,23 @@ enum AmbiancePackDownloader {
     static func allows(_ url: URL, pack: AmbiancePack, redirect: Bool) -> Bool {
         guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
               parts.scheme == "https", parts.port == nil || parts.port == 443,
-              parts.user == nil, parts.password == nil, parts.fragment == nil, parts.query == nil else { return false }
-        if parts.host == "github.com" {
-            return parts.percentEncodedPath == releasePath + pack.id + ".tar" && url == pack.url
-        }
-        return redirect && parts.host == assetHost && !parts.path.isEmpty
+              parts.user == nil, parts.password == nil, parts.fragment == nil else { return false }
+        if redirect { return parts.host == assetHost && !parts.path.isEmpty }
+        return parts.host == "github.com" && parts.query == nil
+            && parts.percentEncodedPath == releasePath + pack.id + ".tar" && url == pack.url
+    }
+
+    static func redirectRequest(_ request: URLRequest, responseURL: URL?, initialURL: URL,
+                                pack: AmbiancePack, redirectCount: Int) -> URLRequest? {
+        guard redirectCount == 1, allows(initialURL, pack: pack, redirect: false),
+              responseURL == initialURL, request.httpMethod == "GET",
+              request.httpBody == nil, request.httpBodyStream == nil,
+              let next = request.url, allows(next, pack: pack, redirect: true) else { return nil }
+        // Reuse GitHub's URL verbatim: parsing validates it, never rebuilds its query.
+        // A fresh request drops any forwarded headers, cookies or credentials.
+        var clean = URLRequest(url: next, cachePolicy: .reloadIgnoringLocalCacheData)
+        clean.httpMethod = "GET"; clean.httpShouldHandleCookies = false
+        return clean
     }
 
     private final class Download: NSObject, URLSessionDownloadDelegate {
@@ -93,12 +105,10 @@ enum AmbiancePackDownloader {
         func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                         newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
             redirects += 1
-            guard url.scheme == "https", redirects <= 3, let next = request.url,
-                  AmbiancePackDownloader.allows(next, pack: pack, redirect: true) else {
+            guard let clean = AmbiancePackDownloader.redirectRequest(request, responseURL: response.url,
+                    initialURL: url, pack: pack, redirectCount: redirects) else {
                 failure = AmbianceError.invalidPack("redirection refusée"); completionHandler(nil); return
             }
-            var clean = URLRequest(url: next, cachePolicy: .reloadIgnoringLocalCacheData)
-            clean.httpMethod = "GET"; clean.httpShouldHandleCookies = false
             completionHandler(clean)
         }
         func urlSession(_ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
@@ -128,7 +138,11 @@ enum AmbiancePackDownloader {
             } catch { finish(.failure(error)) }
         }
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-            if let error { finish(.failure(failure ?? error)) }
+            // Foundation transport errors may contain the signed failing URL.
+            // Never retain or expose them through the controller's public error.
+            if error != nil {
+                finish(.failure(failure ?? AmbianceError.invalidPack("téléchargement du pack \(pack.id) impossible")))
+            }
         }
     }
 }
