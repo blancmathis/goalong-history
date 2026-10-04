@@ -38,6 +38,9 @@
         private let configManager: ConfigManager
         private let permissions: PermissionManager
         private let blockingProbe: (() -> BlockingObservation?)?
+        private struct BlockingWindowKey: Hashable { let pid: Int32; let window: Int }
+        /// A window does not turn private: its answer is kept 30 s instead of rereading ~200 labels per sample.
+        private var blockingPrivateWindows: [BlockingWindowKey: (isPrivate: Bool, at: Date)] = [:]
 
         private var cachedURL: URLSnapshot?
         private var cachedBrowserIdentity: String?
@@ -302,10 +305,17 @@
             // address is actually read from it: showing web content does not make an app a browser.
             guard known || isBrowser(app: app, config: configManager.config) || AXReader.containsWebArea(window) else { return result }
             if known {
-                var signals: [String?] = [AXReader.string(window, attribute: "AXTitle" as CFString),
-                                         AXReader.string(window, attribute: "AXDescription" as CFString)]
-                signals.append(contentsOf: AXReader.browserChromeLabels(window, limit: 80))
-                result.privateWindow = PrivacyClassifier.containsPrivateMarker(in: signals, markers: configManager.config.privateWindowMarkers)
+                let key = BlockingWindowKey(pid: running.processIdentifier, window: result.windowIdentity)
+                if let cached = blockingPrivateWindows[key], result.at.timeIntervalSince(cached.at) < 30 {
+                    result.privateWindow = cached.isPrivate
+                } else {
+                    var signals: [String?] = [AXReader.string(window, attribute: "AXTitle" as CFString),
+                                             AXReader.string(window, attribute: "AXDescription" as CFString)]
+                    signals.append(contentsOf: AXReader.browserChromeLabels(window, limit: 80))
+                    result.privateWindow = PrivacyClassifier.containsPrivateMarker(in: signals, markers: configManager.config.privateWindowMarkers)
+                    if blockingPrivateWindows.count >= 64 { blockingPrivateWindows.removeAll() }
+                    blockingPrivateWindows[key] = (result.privateWindow, result.at)
+                }
                 guard !result.privateWindow else { return result }
             }
             if let raw = AXReader.browserURL(from: window, addressFieldMarkers: configManager.config.addressFieldMarkers) {

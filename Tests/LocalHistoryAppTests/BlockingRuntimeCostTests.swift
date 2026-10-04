@@ -30,7 +30,7 @@ final class BlockingRuntimeCostTests: XCTestCase {
             var observation: BlockingObservation?
             for _ in 0..<count { observation = provider.captureBlocking(of: app) }
             let perSample = (cpuSeconds() - cpu) / Double(count) * 1_000
-            print("BLOCKING_COST trusted=\(AXIsProcessTrusted()) session=\(observation?.sessionAvailable == true) frame=\(observation?.windowFrame != nil) private=\(observation?.privateWindow == true) browsers=\(targets.compactMap(\.bundleIdentifier))")
+            if observation?.sessionAvailable != true { print("BLOCKING_COST session locked: nothing is read") }
             print(String(format: "BLOCKING_COST sample %@ %@ cpu=%.2f ms wall=%.2f ms url=%@ browser=%@", label,
                          app.bundleIdentifier ?? "?", perSample, Date().timeIntervalSince(wall) / Double(count) * 1_000,
                          observation?.url == nil ? "no" : "yes", observation?.isBrowser == true ? "yes" : "no"))
