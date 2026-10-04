@@ -8,10 +8,16 @@ context_room:
 ## One application
 
 Goalong has one public build, not Local and Connected editions. The app target physically excludes
-the retired commitment uploader, App Attest transport and Sparkle updater. It declares no network
-client entitlement and embeds no framework.
+the retired commitment uploader and App Attest transport. It declares no network client entitlement
+and embeds one framework: the pinned Sparkle 2.9.6 updater.
 
 ## Intentional external paths
+
+Software updates use Sparkle. Checks run at launch and hourly unless disabled in Settings. They
+fetch one fixed feed,
+`https://github.com/blancmathis/goalong-history/releases/download/latest-main/community-appcast.xml`,
+then the signed release archive it names on GitHub or its CDN. They send no activity data or system
+profile, and installation needs the user's approval. See [`UPDATE-SECURITY.md`](UPDATE-SECURITY.md).
 
 When the user separately enables ChatGPT analysis, Goalong may launch the reviewed local Codex
 binary with the fixed `app-server` argument. Codex owns its authenticated ChatGPT transport.

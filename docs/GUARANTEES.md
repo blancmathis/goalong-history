@@ -13,8 +13,9 @@ pass, the project supports these claims:
 
 - every sensitive Goalong capability is off on a new install;
 - a macOS permission never substitutes for Goalong consent;
-- the app target excludes the retired commitment uploader, App Attest transport, Sparkle
-  framework/feed or automatic updater;
+- the app target excludes the retired commitment uploader and App Attest transport; its only
+  updater is the pinned Sparkle framework, which checks one fixed Community feed and installs a
+  signed update only after user approval ([update security](UPDATE-SECURITY.md));
 - Apple Screen Time and provider-owned conversation stores are opened through bounded,
   read-only adapters;
 - Goalong stores one normalized owner-only Screen Time record per observed day; only the active
