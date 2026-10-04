@@ -46,7 +46,8 @@ let package = Package(
     dependencies: packageDependencies,
     targets: [
         .target(name: "OndeDSP", path: "Features/Ambiance/Engine/OndeDSP", publicHeadersPath: "include"),
-        .target(name: "OndeCore", dependencies: ["OndeDSP"], path: "Features/Ambiance/Engine/OndeCore"),
+        .target(name: "OndeCore", dependencies: ["OndeDSP"], path: "Features/Ambiance/Engine/OndeCore",
+                exclude: ["GenerativeRenderer.swift", "TransitionRenderer.swift"]),
         .target(name: "Ambiance", dependencies: ["OndeCore", "OndeDSP"], path: "Features/Ambiance/Sources"),
         .testTarget(name: "AmbianceTests", dependencies: ["Ambiance", "OndeCore"], path: "Features/Ambiance/Tests"),
         .executableTarget(name: "GoalongRelauncher", path: "Sources/GoalongRelauncher"),

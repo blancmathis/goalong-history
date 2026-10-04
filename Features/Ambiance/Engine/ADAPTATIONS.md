@@ -22,8 +22,12 @@ Goalong adaptations:
   The upstream sampler remains responsible for scheduling, envelopes and mixing.
 - Offline exporters explicitly retain bank mappings through their final render.
   They accept a pack directory and never search the application bundle.
-- The app's unchanged audit prohibits device audio and new HTTP transports.
-  These two integration paths are deliberately absent; see
+- The two upstream WAV exporters remain vendored for provenance but are excluded
+  from the private OndeCore target: no Goalong caller uses them, and Ambiance's
+  public offline diagnostic renders directly through its runtime. This avoids
+  linking unused export/transition code while preserving the documented UI API.
+- The 2026-10-04 owner decision permits device output and explicit pack downloads
+  in two isolated files, with stricter microphone guards; see
   [`AMBIANCE-IMPLEMENTATION.md`](../../../docs/AMBIANCE-IMPLEMENTATION.md).
 
 The focused tests compare PCM16 mapping against the original decoded sampler,
