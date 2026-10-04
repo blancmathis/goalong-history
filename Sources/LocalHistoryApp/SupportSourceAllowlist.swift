@@ -17,6 +17,8 @@ enum SupportSourceAllowlist {
         "AgentActivityRuntime.swift",
         "AgentConversationSourceHealth.swift",
         "AgentTokenUsageCard.swift",
+        "AmbiancePage.swift",
+        "AmbianceWave.swift",
         "AnalysisEvidenceCapsuleStore.swift",
         "AnalysisProofStore.swift",
         "AppAttestManager.swift",

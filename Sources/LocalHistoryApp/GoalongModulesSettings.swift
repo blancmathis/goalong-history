@@ -4,6 +4,8 @@ import SwiftUI
 /// Réglages › Modules: one switch per optional part of Goalong.
 @MainActor struct GoalongModulesSettings: View {
     var onOpen: (DashboardSection) -> Void
+    /// Lets a module stop at once when it is turned off (Ambiance stops its music).
+    var onChange: (GoalongModule, Bool) -> Void = { _, _ in }
     @ObservedObject private var modules = GoalongModuleStore.shared
     @ObservedObject private var blocking = BlockingRuntime.shared
 
@@ -38,7 +40,10 @@ import SwiftUI
                 Button("Ouvrir") { onOpen(section(module)) }.buttonStyle(LHQuietButtonStyle())
                     .accessibilityIdentifier("settings-module-open-\(module.rawValue)")
             }
-            Toggle(module.title, isOn: Binding(get: { on }, set: { modules.setEnabled(module, $0) }))
+            Toggle(module.title, isOn: Binding(get: { on }, set: { value in
+                modules.setEnabled(module, value)
+                onChange(module, value)
+            }))
                 .toggleStyle(.goalongSwitchOnly).fixedSize()
                 .disabled(locked)
                 .accessibilityIdentifier("settings-module-\(module.rawValue)")
@@ -49,6 +54,7 @@ import SwiftUI
     private func section(_ module: GoalongModule) -> DashboardSection {
         switch module {
         case .blocking: return .blocking
+        case .ambiance: return .ambiance
         }
     }
 }

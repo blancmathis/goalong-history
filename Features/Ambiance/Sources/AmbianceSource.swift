@@ -11,7 +11,7 @@ public struct AmbianceSource: Identifiable, Equatable {
     public var requiredPack: String? {
         switch kind { case .focus, .relax: return "orchestra"; case .texture: return "textures"; case .ownFile: return nil }
     }
-    init(id: String, title: String, kind: Kind, isAvailable: Bool, path: String? = nil) {
+    public init(id: String, title: String, kind: Kind, isAvailable: Bool, path: String? = nil) {
         self.id = id; self.title = title; self.kind = kind; self.isAvailable = isAvailable; self.path = path
     }
     static let compositionTitles = [

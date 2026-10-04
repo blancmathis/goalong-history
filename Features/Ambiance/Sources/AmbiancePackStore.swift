@@ -18,6 +18,9 @@ public struct AmbiancePackState: Identifiable, Equatable {
     public let title: String
     public let bytes: Int64
     public var status: Status
+    public init(id: String, title: String, bytes: Int64, status: Status) {
+        self.id = id; self.title = title; self.bytes = bytes; self.status = status
+    }
 }
 
 /// Strict, flat USTAR archives allow streaming extraction without a subprocess,
