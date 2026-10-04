@@ -141,6 +141,23 @@
             }
         }
 
+        /// A running Concentration session shows its phase and minutes next to the mark.
+        func setFocusTitle(_ text: String?) {
+            guard let button = statusItem.button else { return }
+            if let text {
+                statusItem.length = NSStatusItem.variableLength
+                button.imagePosition = .imageLeading
+                button.attributedTitle = NSAttributedString(string: " " + text, attributes: [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)])
+                button.setAccessibilityValue("Concentration : \(text)")
+            } else {
+                statusItem.length = NSStatusItem.squareLength
+                button.imagePosition = .imageOnly
+                button.title = ""
+                button.setAccessibilityValue(nil)
+            }
+        }
+
         private func configureStatusItem() {
             if let button = statusItem.button {
                 button.image = GoalongBrandAssets.menuBarImage

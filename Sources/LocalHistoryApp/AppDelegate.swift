@@ -292,8 +292,9 @@
             applyDailyRetentionCleanupIfNeeded()
             MainActor.assumeIsolated {
                 BlockingRuntime.shared.start(monitor: contextMonitor)
-                ConcentrationRuntime.shared.start(monitor: contextMonitor)
                 ConcentrationRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .concentration) }
+                ConcentrationRuntime.shared.onMenuBarText = { [weak self] text in self?.menuBarController?.setFocusTitle(text) }
+                ConcentrationRuntime.shared.start(monitor: contextMonitor)
             }
             eventTapMonitor.concentrationInputSink = { date, count in MainActor.assumeIsolated { ConcentrationRuntime.shared.noteInput(at: date, count: count) } }
             applyCapabilityConsents(recordTransition: false)

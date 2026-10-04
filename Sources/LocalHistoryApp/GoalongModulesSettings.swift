@@ -7,6 +7,7 @@ import SwiftUI
     @ObservedObject private var modules = GoalongModuleStore.shared
     @ObservedObject private var concentration = ConcentrationRuntime.shared
     @ObservedObject private var blocking = BlockingRuntime.shared
+    @State private var confirmingDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -18,15 +19,20 @@ import SwiftUI
                     }
                 }
             }
-            if modules.isEnabled(.concentration) {
-                Button("Supprimer les données Concentration") { do { try concentration.deleteData() } catch { concentration.controller?.error = String(describing: error) } }
+            HStack {
+                Spacer()
+                Button("Supprimer les données Concentration", role: .destructive) { confirmingDelete = true }
+                    .buttonStyle(LHQuietButtonStyle())
                     .disabled(concentration.controller?.hasLockedBlock == true)
-            } else {
-                Button("Supprimer les données Concentration") { do { try concentration.deleteData() } catch { } }
             }
             if let error = concentration.error { Text(error).font(.callout) }
             GoalongNote("Un module désactivé ne tourne pas, n’installe rien et ne demande aucun accès.")
         }
+        .alert("Supprimer les données Concentration ?", isPresented: $confirmingDelete) {
+            Button("Annuler", role: .cancel) {}
+            // On failure the runtime keeps the reason in `error`, shown above.
+            Button("Supprimer", role: .destructive) { try? concentration.deleteData() }
+        } message: { Text("Séances, plans, bilans et réglages de ce module. Le reste de Goalong ne change pas.") }
     }
 
     private func row(_ module: GoalongModule) -> some View {

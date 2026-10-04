@@ -81,7 +81,7 @@
                 JevMonitoringPage(onOpenRecording: { model.openRecordingSettings() },
                                   onOpenWork: { model.selectSection(.work) })
             case .concentration:
-                ConcentrationPlaceholder()
+                ConcentrationPage()
             case .blocking:
                 BlockingPage()
             case .activity:

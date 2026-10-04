@@ -64,7 +64,7 @@ private final class BlockingFreezePanel: NSPanel {
         }
         return result
     }
-    private var frictionPanel: SlowDownPlaceholderPanel?
+    private var frictionPanel: SlowDownPanel?
     private var veil: NSPanel?
     private var veilHost: NSHostingView<AnyView>?
     private var veilPresentation: BlockingVeilPresentation?
@@ -174,7 +174,7 @@ private final class BlockingFreezePanel: NSPanel {
             guard let app = NSRunningApplication(processIdentifier: target.pid), app.bundleIdentifier == target.bundleIdentifier, app.activationPolicy == .regular else { return }
             app.hide()
         }
-        let panel = frictionPanel ?? SlowDownPlaceholderPanel()
+        let panel = frictionPanel ?? SlowDownPanel()
         panel.show(target, presentation: presentation, onRenounce: onRenounce, onContinue: onContinue)
         frictionPanel = panel
     }

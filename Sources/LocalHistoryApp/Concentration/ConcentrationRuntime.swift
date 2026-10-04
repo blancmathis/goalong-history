@@ -12,9 +12,13 @@ import LocalHistoryQueryCLI
     @Published private(set) var error: String?
     lazy var statusHub = GoalongFocusStatusHub()
     var onOpen: (() -> Void)?
+    /// The phase and the minutes left, for the menu bar; `nil` when no session runs.
+    var onMenuBarText: ((String?) -> Void)?
+    private var menuBarSubscription: AnyCancellable?
+    private var menuBarTimer: Timer?
     private var modules: GoalongModuleStore?
     private weak var monitor: ContextMonitor?
-    private var presenter: ConcentrationPlaceholderPanel?
+    private var presenter: ConcentrationPanelPresenter?
     private let presentsPanels: Bool
     private let storeFactory: () -> FocusStore
     private var measurementTask: Task<Void, Never>?
@@ -40,7 +44,7 @@ import LocalHistoryQueryCLI
                 statusHub.publish(try FocusJSON.encode(value.status))
                 value.onPanelChange = { [weak self, weak value] panel in
                     guard let self, let value, self.presentsPanels else { return }
-                    if let panel { let p = self.presenter ?? ConcentrationPlaceholderPanel(); p.show(panel, controller: value); self.presenter = p }
+                    if let panel { let p = self.presenter ?? ConcentrationPanelPresenter(); p.show(panel, controller: value); self.presenter = p }
                     else { self.presenter?.close(); self.presenter = nil }
                 }
                 value.onPhaseSound = { NSSound(named: "Glass")?.play() }
@@ -52,15 +56,40 @@ import LocalHistoryQueryCLI
                     if !observation.observing { self?.measurementTask?.cancel(); self?.measurementTask = nil; self?.measurementGeneration = UUID() }
                 }
                 if let panel = value.panel { value.onPanelChange?(panel) }
+                menuBarSubscription = value.$phase.combineLatest(value.$currentSession).sink { [weak self] phase, session in
+                    self?.updateMenuBar(phase: phase, session: session)
+                }
             } catch { self.error = String(describing: error) }
         } else if !enabled, let controller {
             if controller.hasLockedBlock { modules?.setEnabled(.concentration, true); error = FocusFailure.locked.rawValue; return }
             measurementTask?.cancel(); measurementTask = nil; measurementGeneration = UUID()
             controller.shutdown(); monitor?.concentrationSink = nil
+            menuBarSubscription = nil; menuBarTimer?.invalidate(); menuBarTimer = nil; onMenuBarText?(nil)
             presenter?.close(); presenter = nil; self.controller = nil
         }
     }
     func noteInput(at: Date, count: Int) { controller?.noteInput(at: at, count: count) }
+    /// Minutes, not seconds: one wake per minute while a session runs, none otherwise.
+    private func updateMenuBar(phase: FocusPhase?, session: FocusSession?) {
+        menuBarTimer?.invalidate(); menuBarTimer = nil
+        guard let session, let phase, phase.kind != .ended else { onMenuBarText?(nil); return }
+        let now = Date(), text: String, next: TimeInterval
+        if let end = phase.endsAt {
+            let left = max(0, end.timeIntervalSince(now)), minutes = max(1, Int((left / 60).rounded(.up)))
+            text = (phase.isWork ? "" : "Pause ") + "\(minutes) min"
+            next = left - Double(minutes - 1) * 60
+        } else {
+            let elapsed = max(0, now.timeIntervalSince(session.startedAt))
+            text = "+\(Int(elapsed / 60)) min"
+            next = 60 - elapsed.truncatingRemainder(dividingBy: 60)
+        }
+        onMenuBarText?(text)
+        let timer = Timer(timeInterval: max(1, next + 0.05), repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.updateMenuBar(phase: self?.controller?.phase, session: self?.controller?.currentSession) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        menuBarTimer = timer
+    }
     func deleteData() throws {
         if controller?.hasLockedBlock == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
         let wasEnabled = modules?.isEnabled(.concentration) == true
