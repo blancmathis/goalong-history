@@ -83,7 +83,7 @@ enum BlockLock: String, Codable, CaseIterable {
 }
 
 struct BlockSession: Codable, Identifiable, Hashable {
-    enum Origin: Codable, Hashable { case manual, program(UUID) }
+    enum Origin: Codable, Hashable { case manual, program(UUID), commitment(UUID) }
     var id: UUID = UUID()
     var listIDs: [UUID]
     var start: Date
