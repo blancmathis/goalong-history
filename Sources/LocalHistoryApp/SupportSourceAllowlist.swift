@@ -28,6 +28,7 @@ enum SupportSourceAllowlist {
         "BackgroundContinuityPolicy.swift",
         "BackgroundContinuitySettings.swift",
         "BlockingController.swift",
+        "BlockingEnforcement.swift",
         "BlockingFormat.swift",
         "BlockingModel.swift",
         "BlockingPage.swift",
