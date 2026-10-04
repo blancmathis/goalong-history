@@ -60,9 +60,13 @@ Code: `Sources/LocalHistoryApp/Blocking/BlockingModel.swift` (types are fixed; l
 extensions elsewhere).
 
 Store: `~/Library/Application Support/LocalHistory/Blocking/blocking.json`, directory 0700, file
-0600, no symlinks, atomic replace, schema version 1. An unreadable or unknown-version file never
-unlocks: the controller keeps the last good copy in memory, refuses edits and shows an error. A
-missing file = empty state.
+0600, no symlinks, schema version 1. Each save swaps the new file in atomically (`RENAME_SWAP`) and
+keeps the replaced generation as `blocking.previous.json`. At launch, an unreadable, unknown-version
+or missing `blocking.json` gives way to the previous generation; a damaged file is set aside as
+`*.damaged.json`, never deleted. When neither is usable the state starts empty and the page says
+so. While Goalong runs, its in-memory state is the reference: a file changed under it is set aside
+and rewritten. A store error refuses edits; it is never a lock and never stops « Quitter ».
+`locked-until` holds the end of the latest lock (Unix seconds) for `uninstall.sh`; absent = no lock.
 
 - `BlockList`: `id`, `name`, `mode` (`block` | `allowOnly`), `sites: [BlockSiteRule]`,
   `apps: [BlockAppRule]`, `program: BlockProgram`, `quotaMinutesPerDay: Int?` (1…720),
@@ -146,7 +150,10 @@ forward clock change cannot be detected by the app alone.
 - When Computer History is capturing normally, the same samples feed the sink: no extra sampling.
 - The sink receives `BlockingObservation`: bundle id, pid, window frame (AX, screen coordinates),
   browser flag, URL (host + path only) when readable, private-window flag, at.
-- Private windows are never read: the provider only reports the flag. Exclusions of Computer History
+- Private windows are never read: the provider only reports the flag. The private check runs for
+  every app that may show a page (known browser, configured browser or web content) before any
+  address read. An unknown app with a private window counts as a browser only when it shows an
+  address field, found without reading its value. Exclusions of Computer History
   do not hide URLs from the blocking sink (they are privacy choices for history), but the URL never
   reaches the recorder.
 
@@ -182,8 +189,42 @@ Windows: reuse the `JevWarningPanel` technique. Blocking windows sit above Jev's
 
 ## Strict level (Renforcée)
 
-Pending the GPT Pro decision (`gptpro#bfb651`). The controller talks to enforcement through
-`BlockingEnforcementBackend` so a privileged backend can be added without changing the UI.
+Decision 2026-10-04 (owner, after GPT Pro `gptpro#bfb651`): **later**. Standard ships first. Strict
+is decided together with a move to Developer ID + notarization, which every variant needs: the SDK
+states « Apps that contain LaunchDaemons must be notarized » (`SMAppService.h`), a root component
+must not ship from the current non-notarized build, and Network Extension needs Developer ID. The
+move changes the designated requirement (leaf « Apple Development: … » today), so every member grants
+macOS permissions again once.
+
+Target design when it starts (Pro's plan, checked against the code):
+- **A package, not the app bundle.** A root daemon `blockingd` (`/Library/PrivilegedHelperTools`,
+  `/Library/LaunchDaemons`, root:wheel) keeps commitments, deadlines and quotas, and refuses early
+  unlocks. A session companion `Goalong Protection.app` (root-owned, its own `SMAppService.agent`)
+  owns observation, veils and app termination under the member's UID. A separate signed `.pkg`
+  installs both only when the member turns Strict on; « off » means none of it is installed. A daemon
+  inside the main bundle was rejected: moving the app to the Trash then force-quitting ends it
+  without a password, so it adds little over Standard.
+- **Root keeps commitments, not commands.** XPC with `setCodeSigningRequirement` (macOS 13) per
+  role. The app and the CLI share one signing identity, so neither gets mutation rights: only the
+  companion. Messages: `hello`, `status`, `prepareCommit`, `commit`, `tighten`, `requestBreak`,
+  `endBreak`, `requestRemoval`, `reportHealth`; never a path, command, URL, PID or end date from a
+  client. `BlockingEnforcementBackend` is an effects adapter and is not exposed to root as is.
+  Visited URLs never reach root.
+- **One observer.** `ContextMonitor` sampling is extracted; in Strict the companion owns it and feeds
+  history only under its existing consent. The companion needs its own Accessibility approval.
+- **Time.** Deadlines on `mach_continuous_time` + boot id; across a reboot the remaining time never
+  grows. A forward clock change plus a reboot can still end a lock early (accepted: no time server).
+- **Safety.** Freeze ≤ 24 h, locked program horizon ≤ 7 days, a store failure leads to recovery and
+  never to an endless lock, a visible and slow safety exit from the freeze, an admin recovery tool
+  outside the app. No `hosts`, `pf`, immutable flags or configuration profiles.
+- **Network, later.** Blocking before page load and in background tabs needs a
+  `NEFilterDataProvider` system extension: a separate phase with its own consent and tests.
+- **Promise.** Strict makes « quit Goalong » an act that needs the admin password. It does not stop an
+  administrator who wants to remove it.
+
+Lots: 0 contract and distribution, 1 `BlockingPolicyCore`, 2 IPC + daemon, 3 observation extraction
++ companion, 4 product integration, 5 packaging and lifecycle, 6 network filter. No merge to `main`
+before Developer ID and recovery tests on a dedicated Mac.
 
 ## API for the UI
 
@@ -288,14 +329,16 @@ in-memory `BlockingController` skeleton. The engine work completes it without ch
 
 ### Known Standard bypasses
 
-1. Force quit / SIGKILL / process suspension or crash removes all panels and enforcement; uninstall
-   and an unapproved/disabled login item prevent recovery. Permission/updater relaunches and
+1. Force quit / SIGKILL / process suspension or crash removes all panels and enforcement; deleting
+   the app by hand and an unapproved/disabled login item prevent recovery. `uninstall.sh` refuses
+   while a lock is active (override `GOALONG_UNINSTALL_DURING_LOCK=1`). Permission/updater relaunches and
    system-directed termination also leave a recovery gap. Another user, recovery/safe mode or
    another OS is outside the process boundary.
 2. The member owns the preferences and store. Disabling the module in defaults while Goalong is
-   stopped, deleting/replacing valid JSON, restoring an older copy, changing app bundle IDs or
-   moving/replacing the app defeats this level. Symlinks, special files, invalid versions and
-   corruption are rejected, but this is not cryptographic tamper resistance.
+   stopped, deleting the store directory or both generations, replacing them with valid JSON,
+   restoring an older copy, changing app bundle IDs or moving/replacing the app defeats this level.
+   A damaged or deleted `blocking.json` alone gives way to the previous generation; this is not
+   cryptographic tamper resistance.
 3. Only foreground targets are observed. Background downloads/audio/network use, another browser
    window, offscreen tabs, very quick app/window switches and page execution before tab closure
    can escape. Quota gaps after missed/stale samples are not invented; eligible accounting is

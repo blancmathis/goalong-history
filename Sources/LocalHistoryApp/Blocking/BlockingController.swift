@@ -29,6 +29,8 @@ import Foundation
     private var lastSavedAt = Date.distantPast
     private var lastRefresh = Date.distantPast
     private var storeFailed = false
+    /// Last end written for uninstall.sh; `.none` until the first refresh writes it.
+    private var lockMarker: Date?? = .none
     private var lastGood: BlockingDocument?
     private var lastObservation: BlockingObservation?
     private var unreadableSince: [Int32: Date] = [:]
@@ -53,8 +55,15 @@ import Foundation
         self.clock = clock; self.store = store; self.backend = backend; self.calendar = calendar
         self.continuous = continuous; self.boot = boot; self.runsTimers = runsTimers
         if let store {
-            do { self.document = try store.load() }
-            catch { storeFailed = true; self.error = "Le fichier de blocage est illisible. Les verrous sont conservés et les modifications refusées." }
+            do {
+                let loaded = try store.loadRecovering()
+                self.document = loaded.document
+                switch loaded.recovery {
+                case .none: break
+                case .previous: self.error = "Le fichier de blocage était abîmé : Goalong a repris sa copie de secours. La dernière modification peut manquer."
+                case .reset: self.error = "Le fichier de blocage et sa copie de secours étaient illisibles : Goalong repart sans listes. Les fichiers abîmés restent dans son dossier."
+                }
+            } catch { failStore() }
         }
         lastGood = self.document
         lastClock = self.document.clock
@@ -86,11 +95,13 @@ import Foundation
     }
 
     /// Anything the member committed to and cannot undo before its end.
-    var hasLocks: Bool {
+    var hasLocks: Bool { lockedUntil != nil }
+    /// End of the latest commitment. A store error is not a lock: it refuses edits, never quitting.
+    var lockedUntil: Date? {
         let now = clock()
-        return storeFailed || activeBlocks.contains { $0.lock == .locked }
-            || lists.contains { $0.program.isLocked(at: now) }
-            || (freeze.map { $0.end > now } ?? false)
+        let ends = activeBlocks.filter { $0.lock == .locked }.map(\.end)
+            + lists.compactMap { $0.program.lockedUntil } + [freeze?.end].compactMap { $0 }
+        return ends.filter { $0 > now }.max()
     }
 
     var suggestions: [BlockSuggestion] { BlockSuggestion.catalog }
@@ -271,7 +282,7 @@ import Foundation
         let now = clock()
         lastRefresh = now
         if let store, !storeFailed {
-            do { _ = try store.load() } catch { failStore() }
+            do { _ = try store.load() } catch { restoreStore(store) }
         }
         let currentClock = BlockingClockState(wall: now, continuous: continuous(), boot: boot())
         if let previous = lastClock {
@@ -306,6 +317,9 @@ import Foundation
             return block
         } + programBlocks(at: now, usage: usage)
         if activeBlocks != blocks { activeBlocks = blocks }
+        if let store, !storeFailed, lockMarker != .some(lockedUntil) {
+            lockMarker = .some(lockedUntil); store.writeLockMarker(until: lockedUntil)
+        }
         let next = nextStart(after: now)
         if nextProgramStart?.listID != next?.listID || nextProgramStart?.date != next?.date { nextProgramStart = next }
         let available = backend?.accessibilityAvailable ?? true
@@ -339,7 +353,14 @@ import Foundation
     private var hasPersistedWork: Bool { !document.lists.isEmpty || !document.sessions.isEmpty || document.freeze != nil }
     private func failStore() {
         storeFailed = true
-        error = "Le fichier de blocage est illisible. Les verrous sont conservés et les modifications refusées."
+        error = "Goalong ne peut pas enregistrer le blocage : les modifications sont refusées. Relancez Goalong pour réessayer."
+    }
+    /// A file changed under a running Goalong: the running state is the reference and is written back.
+    private func restoreStore(_ store: BlockingStore) {
+        do {
+            try store.replaceDamaged(with: document); lastGood = document; lastSavedAt = clock()
+            error = "Le fichier de blocage a été modifié hors de Goalong : Goalong l’a remis dans son état en cours."
+        } catch { failStore() }
     }
     private func admitEdit() -> Bool { refresh(); return !storeFailed }
     private func commit(reenforce: Bool = true) {

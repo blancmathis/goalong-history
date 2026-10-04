@@ -610,8 +610,8 @@ struct BlockingFreezeGlyph: View {
     /// What the Standard level cannot stop. Kept in step with docs/BLOCKING.md.
     static let limits = [
         "Forcer Goalong à quitter arrête le blocage jusqu’à la prochaine ouverture de session.",
-        "Retirer Goalong des éléments d’ouverture, ou le désinstaller, met fin au blocage.",
-        "Supprimer le fichier de blocage puis relancer Goalong efface les verrous.",
+        "Retirer Goalong des éléments d’ouverture, ou supprimer l’app à la main, met fin au blocage.",
+        "Supprimer le dossier de blocage puis relancer Goalong efface les verrous.",
         "Changer l’heure du Mac puis redémarrer peut raccourcir un verrou.",
         "Un navigateur que Goalong ne connaît pas, et dont il ne lit pas l’adresse, n’est pas couvert.",
         "Un onglet en arrière-plan continue (son, téléchargement) jusqu’à ce qu’il passe devant.",

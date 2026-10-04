@@ -611,6 +611,14 @@ else
   status "macOS privacy identity is unchanged"
 fi
 
+LOCK_MARKER="$HOME/Library/Application Support/LocalHistory/Blocking/locked-until"
+if [[ -f "$LOCK_MARKER" && ! -L "$LOCK_MARKER" ]]; then
+  locked_until="$(/usr/bin/head -c 12 "$LOCK_MARKER" | /usr/bin/tr -cd '0-9')"
+  if [[ -n "$locked_until" ]] && (( locked_until > $(/bin/date +%s) )); then
+    note "A locked block is active: Goalong History reopens at the end of this installation and resumes it."
+  fi
+fi
+
 headline "Installing"
 /usr/bin/launchctl bootout "gui/$UID" "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist" >/dev/null 2>&1 || true
 /bin/rm -f -- "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"

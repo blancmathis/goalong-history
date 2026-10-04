@@ -223,14 +223,46 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertEqual(BlockingClock.adjustment(previous: old, now: BlockingClockState(wall: date().addingTimeInterval(-3600), continuous: 1, boot: "new")), -3600)
         XCTAssertEqual(BlockingClock.adjustment(previous: old, now: BlockingClockState(wall: date().addingTimeInterval(7200), continuous: 7300, boot: "old")), 0)
     }
-    @MainActor func testUnreadableStoreKeepsLastGoodAndRefusesEdits() throws {
+    @MainActor func testFileChangedUnderRunningGoalongIsRestoredAndMarkerFollowsLocks() throws {
         let store = try temporaryStore(), now = date(), list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
         let doc = BlockingDocument(lists: [list], sessions: [BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(3600), lock: .locked)])
         try store.save(doc)
-        let c = BlockingController(clock: { now }, store: store)
+        var clockNow = now
+        let c = BlockingController(clock: { clockNow }, store: store, continuous: { clockNow.timeIntervalSince1970 })
+        let marker = store.directory.appendingPathComponent("locked-until")
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "\(Int(now.timeIntervalSince1970) + 3600)\n")
         try Data("bad-json".utf8).write(to: store.directory.appendingPathComponent("blocking.json"))
-        c.refresh(); XCTAssertTrue(c.hasLocks); XCTAssertEqual(c.activeBlocks.count, 1)
-        c.delete(list.id); XCTAssertEqual(c.lists.count, 1); XCTAssertNotNil(c.error)
+        c.refresh(); XCTAssertTrue(c.hasLocks); XCTAssertEqual(c.activeBlocks.count, 1); XCTAssertNotNil(c.error)
+        XCTAssertEqual(try store.load().sessions.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.directory.appendingPathComponent("blocking.damaged.json").path))
+        c.delete(list.id); XCTAssertEqual(c.lists.count, 1)
+        clockNow = now.addingTimeInterval(3601); c.refresh()
+        XCTAssertFalse(c.hasLocks); XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
+    @MainActor func testDamagedStoreIsNeverALockAndAcceptsEdits() throws {
+        let store = try temporaryStore(), now = date()
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try Data("bad-json".utf8).write(to: store.directory.appendingPathComponent("blocking.json"))
+        let c = BlockingController(clock: { now }, store: store, continuous: { now.timeIntervalSince1970 })
+        XCTAssertFalse(c.hasLocks); XCTAssertNotNil(c.error)
+        c.startFreeze(until: now.addingTimeInterval(600), mode: .shield, allowedApps: [])
+        XCTAssertTrue(c.hasLocks); XCTAssertNotNil(try store.load().freeze)
+    }
+    func testStoreKeepsPreviousGenerationAndRecovers() throws {
+        let store = try temporaryStore(), directory = store.directory
+        let first = BlockingDocument(lists: [BlockList(name: "Un")]), second = BlockingDocument(lists: [BlockList(name: "Deux")])
+        try store.save(first); try store.save(second)
+        XCTAssertEqual(try store.loadRecovering().recovery, .none)
+        try Data("bad-json".utf8).write(to: directory.appendingPathComponent("blocking.json"))
+        var loaded = try store.loadRecovering()
+        XCTAssertEqual(loaded.recovery, .previous); XCTAssertEqual(loaded.document, first); XCTAssertEqual(try store.load(), first)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("blocking.damaged.json")), Data("bad-json".utf8))
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("blocking.json"))
+        loaded = try store.loadRecovering(); XCTAssertEqual(loaded.recovery, .previous); XCTAssertEqual(loaded.document, first)
+        for name in ["blocking.json", "blocking.previous.json"] { try Data("{}".utf8).write(to: directory.appendingPathComponent(name)) }
+        loaded = try store.loadRecovering()
+        XCTAssertEqual(loaded.recovery, .reset); XCTAssertEqual(loaded.document, BlockingDocument())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("blocking.previous.damaged.json").path))
     }
     @MainActor func testUnlockedProgramStopAndLockedProgramRefusal() {
         let now = date(); var list = BlockList(name: "Programme", sites: [BlockSiteRule(pattern: "youtube.com")])

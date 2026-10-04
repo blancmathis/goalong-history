@@ -304,19 +304,22 @@
             // Known browsers follow site rules and fail closed. Any other app follows app rules, unless an
             // address is actually read from it: showing web content does not make an app a browser.
             guard known || isBrowser(app: app, config: configManager.config) || AXReader.containsWebArea(window) else { return result }
-            if known {
-                let key = BlockingWindowKey(pid: running.processIdentifier, window: result.windowIdentity)
-                if let cached = blockingPrivateWindows[key], result.at.timeIntervalSince(cached.at) < 30 {
-                    result.privateWindow = cached.isPrivate
-                } else {
-                    var signals: [String?] = [AXReader.string(window, attribute: "AXTitle" as CFString),
-                                             AXReader.string(window, attribute: "AXDescription" as CFString)]
-                    signals.append(contentsOf: AXReader.browserChromeLabels(window, limit: 80))
-                    result.privateWindow = PrivacyClassifier.containsPrivateMarker(in: signals, markers: configManager.config.privateWindowMarkers)
-                    if blockingPrivateWindows.count >= 64 { blockingPrivateWindows.removeAll() }
-                    blockingPrivateWindows[key] = (result.privateWindow, result.at)
-                }
-                guard !result.privateWindow else { return result }
+            // Every app that may show a page is checked for a private window before any address read.
+            let key = BlockingWindowKey(pid: running.processIdentifier, window: result.windowIdentity)
+            if let cached = blockingPrivateWindows[key], result.at.timeIntervalSince(cached.at) < 30 {
+                result.privateWindow = cached.isPrivate
+            } else {
+                var signals: [String?] = [AXReader.string(window, attribute: "AXTitle" as CFString),
+                                         AXReader.string(window, attribute: "AXDescription" as CFString)]
+                signals.append(contentsOf: AXReader.browserChromeLabels(window, limit: 80))
+                result.privateWindow = PrivacyClassifier.containsPrivateMarker(in: signals, markers: configManager.config.privateWindowMarkers)
+                if blockingPrivateWindows.count >= 64 { blockingPrivateWindows.removeAll() }
+                blockingPrivateWindows[key] = (result.privateWindow, result.at)
+            }
+            if result.privateWindow {
+                // An unknown app counts as a browser only when it shows an address field, found without reading it.
+                if !known { result.isBrowser = AXReader.hasAddressField(in: window, addressFieldMarkers: configManager.config.addressFieldMarkers) }
+                return result
             }
             if let raw = AXReader.browserURL(from: window, addressFieldMarkers: configManager.config.addressFieldMarkers) {
                 result.isBrowser = true

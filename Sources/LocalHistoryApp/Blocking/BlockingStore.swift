@@ -7,6 +7,9 @@ struct BlockingStore {
     var directory: URL
     static var standard: BlockingStore { BlockingStore(directory: AppPaths.applicationSupportDirectory.appendingPathComponent("Blocking", isDirectory: true)) }
     enum Failure: Error { case unsafePath, unreadable, invalidDocument }
+    /// How `loadRecovering` obtained its document.
+    enum Recovery: Equatable { case none, previous, reset }
+    private static let current = "blocking.json", previous = "blocking.previous.json", lockMarker = "locked-until"
 
     private func openDirectory(create: Bool) throws -> Int32? {
         var fd = Darwin.open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
@@ -35,8 +38,41 @@ struct BlockingStore {
     func load() throws -> BlockingDocument {
         guard let directoryFD = try openDirectory(create: false) else { return BlockingDocument() }
         defer { close(directoryFD) }
-        let fd = openat(directoryFD, "blocking.json", O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-        if fd < 0, errno == ENOENT { return BlockingDocument() }
+        return try readDocument(Self.current, in: directoryFD) ?? BlockingDocument()
+    }
+
+    /// A damaged or missing file gives way to the previous generation; a damaged file is set aside, never
+    /// deleted. When neither is usable the store starts empty. Only an unusable directory throws.
+    func loadRecovering() throws -> (document: BlockingDocument, recovery: Recovery) {
+        guard let directoryFD = try openDirectory(create: false) else { return (BlockingDocument(), .none) }
+        defer { close(directoryFD) }
+        var damaged = false
+        do { if let document = try readDocument(Self.current, in: directoryFD) { return (document, .none) } }
+        catch { damaged = true; guard setAside(Self.current, in: directoryFD) else { throw Failure.unsafePath } }
+        let restored: BlockingDocument?
+        do { restored = try readDocument(Self.previous, in: directoryFD) }
+        catch { damaged = true; restored = nil; guard setAside(Self.previous, in: directoryFD) else { throw Failure.unsafePath } }
+        if let restored { try save(restored); return (restored, .previous) }
+        return (BlockingDocument(), damaged ? .reset : .none)
+    }
+
+    /// The running state replaces a file changed under it; the changed file is set aside.
+    func replaceDamaged(with document: BlockingDocument) throws {
+        if let directoryFD = try openDirectory(create: false) {
+            defer { close(directoryFD) }
+            guard setAside(Self.current, in: directoryFD) else { throw Failure.unsafePath }
+        }
+        try save(document)
+    }
+
+    private func setAside(_ name: String, in directoryFD: Int32) -> Bool {
+        renameat(directoryFD, name, directoryFD, name.replacingOccurrences(of: ".json", with: ".damaged.json")) == 0 || errno == ENOENT
+    }
+
+    /// nil when the file does not exist.
+    private func readDocument(_ name: String, in directoryFD: Int32) throws -> BlockingDocument? {
+        let fd = openat(directoryFD, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        if fd < 0, errno == ENOENT { return nil }
         guard fd >= 0 else { throw Failure.unreadable }
         defer { close(fd) }
         var info = stat()
@@ -63,7 +99,7 @@ struct BlockingStore {
         defer { close(directoryFD) }
         // Refuse an existing link or other special file rather than replacing it silently.
         var existing = stat()
-        let status = fstatat(directoryFD, "blocking.json", &existing, AT_SYMLINK_NOFOLLOW)
+        let status = fstatat(directoryFD, Self.current, &existing, AT_SYMLINK_NOFOLLOW)
         guard (status < 0 && errno == ENOENT) || (status == 0 && existing.st_mode & S_IFMT == S_IFREG && existing.st_nlink == 1) else { throw Failure.unsafePath }
         let temporary = ".blocking-" + UUID().uuidString
         let fd = openat(directoryFD, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
@@ -79,8 +115,28 @@ struct BlockingStore {
                 offset += count
             }
         }
-        guard fsync(fd) == 0, renameat(directoryFD, temporary, directoryFD, "blocking.json") == 0,
-              fsync(directoryFD) == 0 else { throw Failure.unreadable }
+        guard fsync(fd) == 0 else { throw Failure.unreadable }
+        // The swap keeps blocking.json present at every instant; the replaced generation becomes the backup.
+        if status == 0, renameatx_np(directoryFD, temporary, directoryFD, Self.current, UInt32(RENAME_SWAP)) == 0 {
+            _ = renameat(directoryFD, temporary, directoryFD, Self.previous)
+        } else {
+            guard renameat(directoryFD, temporary, directoryFD, Self.current) == 0 else { throw Failure.unreadable }
+        }
+        guard fsync(directoryFD) == 0 else { throw Failure.unreadable }
+    }
+
+    /// Read by uninstall.sh: end of the latest lock in Unix seconds, absent when nothing is locked.
+    func writeLockMarker(until: Date?) {
+        guard let directoryFD = try? openDirectory(create: until != nil) else { return }
+        defer { close(directoryFD) }
+        guard let until else { unlinkat(directoryFD, Self.lockMarker, 0); return }
+        let temporary = ".locked-until-" + UUID().uuidString
+        let fd = openat(directoryFD, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { return }
+        defer { close(fd); unlinkat(directoryFD, temporary, 0) }
+        let bytes = Array("\(Int(until.timeIntervalSince1970.rounded(.up)))\n".utf8)
+        guard write(fd, bytes, bytes.count) == bytes.count else { return }
+        renameat(directoryFD, temporary, directoryFD, Self.lockMarker)
     }
 }
 
