@@ -110,8 +110,38 @@ import SwiftUI
                 }
                 .disabled(stricterOnly)
             }
-            BlockingModePicture(mode: list.mode)
-            part(list.mode == .block ? "Sites bloqués" : "Sites permis") {
+            BlockingModePicture(mode: list.mode, slowed: list.effectiveAction == .slowDown)
+            part("À l’ouverture") {
+                VStack(alignment: .leading, spacing: 12) {
+                    GoalongSegmentedControl("Action", selection: Binding(get: { list.effectiveAction }, set: { action in
+                        var next = list; next.action = action == .block ? nil : .slowDown; controller.save(next)
+                    }), options: [BlockList.Action.block, .slowDown]) {
+                        $0 == .block ? "Bloquer" : "Ralentir"
+                    }
+                    .disabled(stricterOnly && list.effectiveAction == .block)
+                    .accessibilityIdentifier("blocking-list-action")
+                    BlockingActionPicture(list: list)
+                    if list.effectiveAction == .slowDown {
+                        HStack(spacing: 16) {
+                            Stepper(value: Binding(get: { list.delaySeconds }, set: { value in
+                                var next = list; next.slowDownSeconds = value; controller.save(next)
+                            }), in: (stricterOnly ? list.delaySeconds : 3)...60) {
+                                Text("Attendre \(list.delaySeconds) s").monospacedDigit()
+                            }.fixedSize()
+                            Stepper(value: Binding(get: { list.allowanceMinutes }, set: { value in
+                                var next = list; next.continueMinutes = value; controller.save(next)
+                            }), in: 1...(stricterOnly ? list.allowanceMinutes : 60)) {
+                                Text("Puis libre \(list.allowanceMinutes) min").monospacedDigit()
+                            }.fixedSize()
+                        }
+                        if let counts = frictionLine {
+                            Text(counts).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                                .accessibilityIdentifier("blocking-friction-counts")
+                        }
+                    }
+                }
+            }
+            part(list.mode == .block ? (list.effectiveAction == .slowDown ? "Sites ralentis" : "Sites bloqués") : "Sites permis") {
                 VStack(alignment: .leading, spacing: 10) {
                     BlockingFlow(spacing: 6) {
                         ForEach(list.sites) { site in
@@ -133,7 +163,7 @@ import SwiftUI
                     }
                 }
             }
-            part(list.mode == .block ? "Apps bloquées" : "Apps permises") {
+            part(list.mode == .block ? (list.effectiveAction == .slowDown ? "Apps ralenties" : "Apps bloquées") : "Apps permises") {
                 BlockingFlow(spacing: 6) {
                     ForEach(list.apps) { app in
                         BlockingItemChip(item: .app(app), removable: canRemove) {
@@ -196,7 +226,9 @@ import SwiftUI
             part("Limites") {
                 VStack(alignment: .leading, spacing: 12) {
                     limitRow(on: list.quotaMinutesPerDay != nil, title: "Laisser du temps chaque jour",
-                             detail: "Les éléments de la liste restent ouverts jusqu’à ce temps, puis se bloquent.") { on in
+                             detail: list.effectiveAction == .slowDown
+                                 ? "Les éléments de la liste sont ralentis jusqu’à ce temps, puis se bloquent."
+                                 : "Les éléments de la liste restent ouverts jusqu’à ce temps, puis se bloquent.") { on in
                         var next = list; next.quotaMinutesPerDay = on ? 30 : nil; controller.save(next)
                     } value: {
                         if let quota = list.quotaMinutesPerDay {
@@ -250,6 +282,15 @@ import SwiftUI
             Button("Annuler", role: .cancel) {}
             Button("Supprimer", role: .destructive) { controller.delete(list.id) }
         } message: { Text("Son programme s’arrête aussi.") }
+    }
+
+    /// Today's « Ralentir » counts for this list, as facts.
+    private var frictionLine: String? {
+        let usage = controller.frictionCounts(day: BlockingController.dayKey(now))
+        let shown = usage.slowDownShown?[list.id] ?? 0
+        guard shown > 0 else { return nil }
+        let renounced = usage.renounced?[list.id] ?? 0, continued = usage.continued?[list.id] ?? 0
+        return "Aujourd’hui : ralenti \(shown) fois, \(renounced) renoncement\(renounced > 1 ? "s" : ""), continué \(continued) fois."
     }
 
     /// Under a lock, removing from « Tout bloquer sauf » is stricter; adding to it is not.
@@ -329,8 +370,10 @@ import SwiftUI
 /// What the mode does, drawn: four tiles, the blocked ones struck through.
 struct BlockingModePicture: View {
     let mode: BlockList.Mode
+    var slowed = false
     var body: some View {
-        HStack(spacing: 10) {
+        let verb = slowed ? "ralenti" : "bloqué"
+        return HStack(spacing: 10) {
             HStack(spacing: 4) {
                 ForEach(0..<5) { index in
                     let listed = index < 2
@@ -348,12 +391,52 @@ struct BlockingModePicture: View {
                     .frame(width: 18, height: 18)
                 }
             }
-            Text(mode == .block ? "Ce qui est dans la liste est bloqué. Le reste est libre."
-                                : "Tout est bloqué, sauf ce qui est dans la liste. Goalong et le Finder restent ouverts.")
+            Text(mode == .block ? "Ce qui est dans la liste est \(verb). Le reste est libre."
+                                : "Tout est \(verb), sauf ce qui est dans la liste. Goalong et le Finder restent ouverts.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(mode == .block ? "Mode : la liste est bloquée" : "Mode : tout est bloqué sauf la liste")
+        .accessibilityLabel(mode == .block ? "Mode : la liste est \(slowed ? "ralentie" : "bloquée")" : "Mode : tout est \(verb) sauf la liste")
+    }
+}
+
+/// What happens when something on the list opens, drawn: struck at once, or a wait then a choice.
+struct BlockingActionPicture: View {
+    let list: BlockList
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack(alignment: .leading) {
+                if list.effectiveAction == .block {
+                    tile.overlay {
+                        Path { path in path.move(to: CGPoint(x: 4, y: 14)); path.addLine(to: CGPoint(x: 14, y: 4)) }
+                            .stroke(LHTheme.text, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    }
+                } else {
+                    HStack(spacing: 4) {
+                        tile
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(LHTheme.text.opacity(0.16)).frame(width: 40, height: 4)
+                            Capsule().fill(LHTheme.text).frame(width: 26, height: 4)
+                            Circle().fill(LHTheme.accent).frame(width: 8, height: 8).offset(x: 22)
+                        }
+                    }
+                }
+            }
+            .frame(width: 66, alignment: .leading)
+            Text(list.effectiveAction == .block
+                 ? "Bloqué tout de suite : le site est couvert, l’app est fermée."
+                 : "Attendre \(list.delaySeconds) s, puis renoncer ou continuer \(list.allowanceMinutes) min. Une app est masquée, jamais fermée.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(list.effectiveAction == .block ? "Action : bloquer" : "Action : ralentir de \(list.delaySeconds) secondes")
+    }
+
+    private var tile: some View {
+        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(LHTheme.controlBackground)
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(LHTheme.controlBorder))
+            .frame(width: 18, height: 18)
     }
 }
 

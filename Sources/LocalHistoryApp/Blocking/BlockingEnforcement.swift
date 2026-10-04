@@ -12,11 +12,24 @@ import SwiftUI
     func observeBrowser(_ target: BlockingObservation)
     func updateProtection(locked: Bool) -> BlockingProtectionState
     func blockApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String)
+    func blockSlowDownApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String)
     func blockSite(_ target: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void)
     func clearSite()
+    func slowDown(_ target: BlockingObservation, presentation: BlockingFrictionPresentation, onRenounce: @escaping () -> Void, onContinue: @escaping () -> Void)
+    func clearSlowDown()
+    func renounceSlowDown(_ target: BlockingObservation)
+    func continueSlowDown(_ target: BlockingObservation)
     func updateFreeze(_ freeze: BlockFreeze?)
     func returnToShield()
     func shutdown()
+}
+
+extension BlockingEnforcementBackend {
+    func blockSlowDownApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) {}
+    func slowDown(_ target: BlockingObservation, presentation: BlockingFrictionPresentation, onRenounce: @escaping () -> Void, onContinue: @escaping () -> Void) {}
+    func clearSlowDown() {}
+    func renounceSlowDown(_ target: BlockingObservation) {}
+    func continueSlowDown(_ target: BlockingObservation) {}
 }
 
 private final class BlockingPanel: NSPanel {
@@ -51,6 +64,7 @@ private final class BlockingFreezePanel: NSPanel {
         }
         return result
     }
+    private var frictionPanel: SlowDownPanel?
     private var veil: NSPanel?
     private var veilHost: NSHostingView<AnyView>?
     private var veilPresentation: BlockingVeilPresentation?
@@ -98,6 +112,9 @@ private final class BlockingFreezePanel: NSPanel {
             terminations[target.pid] = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
         }
+        showAppNotice(target, app: app, block: block, listName: listName)
+    }
+    private func showAppNotice(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) {
         let screen = target.windowFrame.flatMap { frame in NSScreen.screens.first { $0.frame.intersects(Self.appKitFrame(frame)) } } ?? NSScreen.main
         guard let screen else { return }
         let frame = NSRect(x: screen.visibleFrame.midX - 190, y: screen.visibleFrame.maxY - 84, width: 380, height: 68)
@@ -107,6 +124,14 @@ private final class BlockingFreezePanel: NSPanel {
         noticeClear?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.notice?.close(); self?.notice = nil }
         noticeClear = work; DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
+    }
+    /// Even an exhausted quota of a slow-down list preserves the member's open work.
+    func blockSlowDownApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) {
+        guard !BlockingRules.exempt(target), let running = NSRunningApplication(processIdentifier: target.pid),
+              running.bundleIdentifier == target.bundleIdentifier, running.activationPolicy == .regular else { return }
+        terminations[target.pid]?.cancel(); terminations[target.pid] = nil
+        running.hide()
+        showAppNotice(target, app: app, block: block, listName: listName)
     }
     func blockSite(_ target: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) {
         veilClear?.cancel(); veilClear = nil
@@ -143,6 +168,21 @@ private final class BlockingFreezePanel: NSPanel {
             self.veil = nil; self.veilHost = nil; self.veilPresentation = nil; self.veilTarget = nil; self.veilClear = nil
         }
         veilClear = work; DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
+    func slowDown(_ target: BlockingObservation, presentation: BlockingFrictionPresentation, onRenounce: @escaping () -> Void, onContinue: @escaping () -> Void) {
+        if !target.isBrowser {
+            guard let app = NSRunningApplication(processIdentifier: target.pid), app.bundleIdentifier == target.bundleIdentifier, app.activationPolicy == .regular else { return }
+            app.hide()
+        }
+        let panel = frictionPanel ?? SlowDownPanel()
+        panel.show(target, presentation: presentation, onRenounce: onRenounce, onContinue: onContinue)
+        frictionPanel = panel
+    }
+    func clearSlowDown() { frictionPanel?.close(); frictionPanel = nil }
+    func renounceSlowDown(_ target: BlockingObservation) { if target.isBrowser { closeTab(pid: target.pid) } }
+    func continueSlowDown(_ target: BlockingObservation) {
+        guard !target.isBrowser, let app = NSRunningApplication(processIdentifier: target.pid), app.bundleIdentifier == target.bundleIdentifier, app.activationPolicy == .regular else { return }
+        app.unhide(); app.activate(options: [.activateIgnoringOtherApps])
     }
     func updateFreeze(_ proposed: BlockFreeze?) {
         var value = proposed
@@ -222,6 +262,7 @@ private final class BlockingFreezePanel: NSPanel {
         down?.post(tap: .cghidEventTap); up?.post(tap: .cghidEventTap)
     }
     func shutdown() {
+        clearSlowDown()
         updateFreeze(nil)
         veilClear?.cancel(); noticeClear?.cancel()
         for work in terminations.values { work.cancel() }; terminations.removeAll()

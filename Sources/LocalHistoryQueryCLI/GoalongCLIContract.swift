@@ -11,6 +11,7 @@ public enum GoalongCLIEffect: String, Codable, Sendable {
     case writesExplicitOutputFile
     case sendsExplicitSiteImport
     case writesExplicitHealthArchive
+    case writesExplicitFocusState
 }
 
 public struct GoalongCLICommandDefinition: Codable, Equatable, Identifiable, Sendable {
@@ -63,6 +64,14 @@ public enum GoalongCLIContract {
     public static let stableExecutablePath = "$HOME/.local/bin/goalong"
 
     public static let commands: [GoalongCLICommandDefinition] = [
+        .init(name: "focus", syntax: "focus status|watch", summary: "Local focus status, or change-only NDJSON with restart recovery (at most eight watchers)."),
+        .init(name: "session", syntax: "session start --intent TEXT (--minutes 5…240 | --open | --pomodoro [25/5/15/4]) [--cycles 1…16] [--plan-item ID] [--block ID] [--block-during-breaks] [--lock] [--ambiance] | current | skip | stop [--outcome done|partly|not-done] [--note TEXT]", summary: "Read or explicitly change the running focus session through the app; current locked blocks refuse skip and stop.", effect: .writesExplicitFocusState),
+        .init(name: "sessions", syntax: "sessions [DAY]", summary: "Read local focus sessions from the running app."),
+        .init(name: "plan", syntax: "plan show [DAY] | add TITLE [--day DAY] [--project NAME] [--estimate 5…600] | done|drop ID [--day DAY] | move ID --to DAY [--day DAY] | set [--day DAY] --file PATH|-", summary: "Read or explicitly edit the member’s daily plan; JSON input is bounded to 64 KiB.", effect: .writesExplicitFocusState),
+        .init(name: "review", syntax: "review show [DAY] | set [--day DAY] --file PATH|-", summary: "Read or explicitly save the member’s review and carry-forward items.", effect: .writesExplicitFocusState),
+        .init(name: "limits", syntax: "limits", summary: "Read the member’s optional limits and recorded crossings."),
+        .init(name: "block-lists", syntax: "block-lists", summary: "Read the member’s Blocking list IDs, mode, action and current locks."),
+        .init(name: "friction", syntax: "friction [DAY]", summary: "Read daily Ralentir shown, renounced and continued counts per list."),
         .init(name: "analysis-evidence", syntax: "analysis-evidence --start-utc ISO-8601Z --end-utc ISO-8601Z [--include-rich-context] [--include-conversations --conversations-from YYYY-MM-DD] [--conversations-only]", summary: "Export selected timestamped local evidence for the universal analysis CLI. No agent or website send."),
         .init(name: "analysis-prompt", syntax: "analysis-prompt --request FILE", summary: "Render the fixed analysis prompt from a private prepared request.", outputFormat: .text),
         .init(name: "analysis-review", syntax: "analysis-review --request FILE --file RESPONSE", summary: "Validate and redact the agent response locally."),
@@ -201,7 +210,7 @@ public enum GoalongCLIContract {
             dataCommandOutput: "sorted JSON on stdout",
             helpOutput: "human text on stdout; `help --json` returns this JSON contract",
             errorOutput: "sorted JSON on stderr with a nonzero exit status",
-            sourceMutationPolicy: "Original Computer History, Apple and provider sources are read-only. Active-day Screen Time may replace Goalong's one compact daily record. Only export-proof writes a user-requested output file. import-health explicitly writes selected compact Apple Health days to the local archive; its source XML stays read-only. Only send-site sends an explicitly requested unverified website import; configured website sharing rules apply.",
+            sourceMutationPolicy: "Focus/session/plan/review edits explicitly write only local module data through the already-running app. Concentration data is never exported. Original Computer History, Apple and provider sources are read-only. Active-day Screen Time may replace Goalong's one compact daily record. Only export-proof writes a user-requested output file. import-health explicitly writes selected compact Apple Health days to the local archive; its source XML stays read-only. Only send-site sends an explicitly requested unverified website import; configured website sharing rules apply.",
             commands: commands
         )
     }

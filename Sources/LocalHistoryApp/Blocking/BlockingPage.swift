@@ -154,11 +154,16 @@ import SwiftUI
     }
 
     private func lockLine(_ block: BlockingActiveBlock) -> some View {
-        let symbol: String, words: String
+        let symbol: String
+        var words: String
         switch block.lock {
         case .locked: symbol = "lock.fill"; words = "Verrouillé jusqu’à \(BlockingFormat.time(block.end))"
         case .typing: symbol = "lock"; words = "Difficile à arrêter · jusqu’à \(BlockingFormat.time(block.end))"
         case .free: symbol = "lock.open"; words = "Bloqué jusqu’à \(BlockingFormat.time(block.end))"
+        }
+        let lists = block.listIDs.compactMap(controller.list)
+        if !lists.isEmpty, lists.allSatisfy({ $0.effectiveAction == .slowDown }) {
+            words = words.replacingOccurrences(of: "Bloqué jusqu", with: "Ralenti jusqu")
         }
         let origin: String
         if case .program = block.origin { origin = " · programme" } else { origin = "" }
