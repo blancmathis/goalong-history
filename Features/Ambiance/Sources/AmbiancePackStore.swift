@@ -51,6 +51,13 @@ public struct AmbiancePackStore {
         } && !files.isEmpty
     }
     public func install(_ pack: AmbiancePack, archive: URL, progress: (Double) -> Void = { _ in }) throws {
+        try withoutActuallyEscaping(progress) { callback in
+            try installVerified(pack, archive: archive, progress: callback)
+        }
+    }
+    // Keep one extraction body instead of cloning it for each progress closure.
+    // The callback is used synchronously and never retained beyond this call.
+    @inline(never) private func installVerified(_ pack: AmbiancePack, archive: URL, progress: @escaping (Double) -> Void) throws {
         try checkCancellation()
         try validate(pack)
         guard isRegularFile(archive),
