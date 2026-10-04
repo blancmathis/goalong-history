@@ -24,6 +24,8 @@ pass, the project supports these claims:
   index and never a transcript body, snapshot, version or second conversation vault;
 - the Screen Time CLI asks the running, consented app through a user-only Unix socket only for the
   active day; completed days are read from Goalong's daily archive without opening Apple stores;
+- Concentration commands (`goalong focus`, `session`, `plan`, `review`, `limits`, `friction`) use the
+  same user-only socket only while that module is on; the app is their only writer;
 - optional ChatGPT analysis launches only the reviewed Codex executable with the fixed
   `app-server` argument after a separate consent;
 - the optional website connector exports selected saved fields offline and sends only after an
