@@ -2,6 +2,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+@testable import LocalHistoryCore
 @testable import LocalHistoryApp
 
 /// Opt-in renders of the Concentration page, its panels and the « Ralentir » veil, with fixed data only.
@@ -104,6 +105,26 @@ final class ConcentrationRenderingTests: XCTestCase {
             try render("blocking-list-ralentir-\(s)", width: 900, height: 2_500,
                        BlockingPageContent(controller: f.blocking, now: now, expanded: f.social.id))
             try render("modules-\(s)", width: 760, GoalongModulesSettings(onOpen: { _ in }).padding(32))
+            try render("commitments-\(s)", width: 824,
+                       FocusCommitmentsSection(controller: f.committed, now: now, onEdit: { _ in }).padding(32))
+            try render("commitments-empty-\(s)", width: 824,
+                       FocusCommitmentsSection(controller: f.empty, now: now, onEdit: { _ in }).padding(32))
+            try render("panel-commitment-\(s)", width: 420,
+                       FocusCommitmentPanelView(cards: f.settledCards, lists: [f.social, f.video], now: f.settledAt,
+                                                onJoker: { _ in }, onDeclare: { _ in }, onClose: {}))
+            let today = FocusCommitmentPeriod(kind: .day, key: FocusCalendar.dayKey(now))
+            let tomorrow = FocusCommitmentPeriod(kind: .day, key: FocusCalendar.dayKey(now.addingTimeInterval(86_400)))
+            var newDraft = FocusCommitmentDraft(period: today)
+            newDraft.target = 420; newDraft.stakeLists = [f.social.id]
+            try render("commitment-editor-new-\(s)", width: 600,
+                       FocusCommitmentEditor(controller: f.empty, request: .init(periods: [today, tomorrow]), now: now,
+                                             draft: newDraft, onClose: {}))
+            try render("commitment-editor-harder-\(s)", width: 600,
+                       FocusCommitmentEditor(controller: f.committed, request: .init(periods: [today], existing: f.committed.todayCommitment?.commitment),
+                                             now: now, onClose: {}))
+            try render("review-sheet-commit-\(s)", width: 640,
+                       ConcentrationReviewSheet(controller: f.committed, plan: f.committed.plan, review: nil, commitTomorrow: true,
+                                                now: now, onClose: {}))
         }
     }
 
@@ -122,6 +143,9 @@ final class ConcentrationRenderingTests: XCTestCase {
         let pomodoro: ConcentrationController
         let locked: ConcentrationController
         let open: ConcentrationController
+        let committed: ConcentrationController
+        var settledCards: [FocusCommitmentCard] = []
+        var settledAt = Date()
         var measures: [FocusItemMeasure] = []
         let facts = FocusFacts(activeSeconds: 47 * 60, workSeconds: 38 * 60, otherSeconds: 6 * 60, unclassifiedSeconds: 3 * 60,
                                appSwitches: 14, longestStretchSeconds: 22 * 60, available: true)
@@ -200,8 +224,49 @@ final class ConcentrationRenderingTests: XCTestCase {
             var endless = FocusMode(); endless.minutes = nil
             try open.startSession(intent: "Lire la documentation de l’API", mode: endless)
 
+            // Engagements: yesterday missed with a stake, last week missed without; today and this week taken.
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+            func on(_ base: Date, _ hour: Int, _ minute: Int = 0) -> Date {
+                Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: base)!
+            }
+            func segment(_ base: Date, _ from: (Int, Int), _ to: (Int, Int), _ kind: GoalongLocalAnalytics.Kind,
+                         _ reason: GoalongCoverageReason? = nil) -> GoalongLocalAnalytics.Segment {
+                let start = on(base, from.0, from.1), end = to.0 == 24 ? Calendar.current.startOfDay(for: base).addingTimeInterval(86_400) : on(base, to.0, to.1)
+                return .init(start: start, end: end, kind: kind, application: kind.isActive ? "Xcode" : nil, bundleIdentifier: nil, host: nil, coverageReason: reason)
+            }
+            let sunday = GoalongLocalAnalytics.Day(date: Calendar.current.startOfDay(for: yesterday), end: on(now, 0), state: .ready, segments: [
+                segment(yesterday, (0, 0), (9, 0), .unobserved, .beforeFirstObservation), segment(yesterday, (9, 0), (12, 30), .work),
+                segment(yesterday, (12, 30), (13, 30), .unobserved, .recorderStopped), segment(yesterday, (13, 30), (16, 10), .work),
+                segment(yesterday, (16, 10), (17, 0), .other), segment(yesterday, (17, 0), (24, 0), .unobserved, .afterLastObservation)],
+                eventCount: 1, classifierVersions: [])
+            let monday = GoalongLocalAnalytics.Day(date: Calendar.current.startOfDay(for: now), end: now, state: .ready, segments: [
+                segment(now, (0, 0), (8, 30), .unobserved, .beforeFirstObservation), segment(now, (8, 30), (12, 0), .work),
+                segment(now, (12, 0), (13, 0), .idle), segment(now, (13, 0), (13, 40), .work), segment(now, (13, 40), (15, 10), .other)],
+                eventCount: 1, classifierVersions: [])
+            let stakes = BlockingController(document: BlockingDocument(lists: [social, video]), clock: { clock.now },
+                                            continuous: { clock.now.timeIntervalSince1970 })
+            clock.now = on(yesterday, 21)
+            committed = try ConcentrationController(store: FocusStore(directory: root.appendingPathComponent("committed")),
+                                                    clock: { clock.now }, blocking: { stakes })
+            _ = try committed.setCommitment(period: .init(kind: .day, key: FocusCalendar.dayKey(yesterday)), kind: .work, target: 420,
+                                            stake: FocusStake(listIds: [social.id], until: "18:00"))
+            _ = try committed.setCommitment(period: .init(kind: .week, key: FocusCalendar.weekKey(yesterday)), kind: .sessions, target: 10)
+            clock.now = on(now, 8, 40); settledAt = clock.now
+            committed.applyMeasurements([sunday], hasDefinition: true)
+            settledCards = committed.commitmentCards.filter { $0.commitment.result != nil }
+            committed.dismissPanel()
+            clock.now = on(now, 8, 50)
+            _ = try committed.setCommitment(period: .init(kind: .day, key: day), kind: .work, target: 420,
+                                            stake: FocusStake(listIds: [social.id, video.id], until: "12:00"))
+            _ = try committed.setCommitment(period: .init(kind: .week, key: FocusCalendar.weekKey(now)), kind: .plan, target: 10)
+            let first = try committed.addPlanItem(title: "Rédiger le chapitre 2", day: day, project: "Livre", estimateMinutes: 90)
+            _ = try committed.addPlanItem(title: "Envoyer le devis à Martin", day: day, project: "Clients", estimateMinutes: 30)
+            try committed.setItemStatus(first.id, day: day, status: .done)
+
             clock.now = now
-            for value in [empty, planned, self.pomodoro, locked, open] { value.refresh() }
+            committed.applyMeasurements([sunday, monday], hasDefinition: true)
+            committed.dismissPanel()
+            for value in [empty, planned, self.pomodoro, locked, open, committed] { value.refresh() }
             planned.dismissPanel()
         }
     }

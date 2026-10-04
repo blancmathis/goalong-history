@@ -48,7 +48,7 @@ import SwiftUI
         switch kind {
         case .phase: return 380
         case .sessionReview: return 460
-        case .morning, .evening, .limit: return 420
+        case .morning, .evening, .limit, .commitment: return 420
         }
     }
 
@@ -72,7 +72,19 @@ import SwiftUI
             FocusPromptPanelView(morning: content.kind == .morning, onNow: { controller.promptNow() }, onLater: { controller.promptLater() })
         case .limit:
             FocusLimitPanelView(text: content.text, onClose: { controller.dismissPanel() })
+        case .commitment:
+            FocusCommitmentPanelView(cards: controller.commitmentCards.filter { content.commitmentIDs.contains($0.id) },
+                                     lists: controller.blockLists, now: Date(),
+                                     onJoker: { period in exit { try controller.useCommitmentJoker(period: period) } },
+                                     onDeclare: { period in exit { try controller.declareCommitmentHeld(period: period) } },
+                                     onClose: { controller.dismissPanel() })
         }
+    }
+}
+
+extension ConcentrationPanelView {
+    private func exit(_ action: () throws -> Void) {
+        do { try action() } catch { controller.error = FocusCommitmentFormat.exitError(error) }
     }
 }
 
@@ -83,7 +95,7 @@ enum FocusPanelMath {
 }
 
 /// The raised surface every panel sits on, with the only shadow of the app (set on the window).
-private struct FocusPanelSurface<Content: View>: View {
+struct FocusPanelSurface<Content: View>: View {
     @ViewBuilder var content: () -> Content
     var body: some View {
         content()
@@ -289,9 +301,16 @@ struct FocusLimitPanelView: View {
     @State private var tomorrowFirst: String
     @State private var note: String
     @State private var error: String?
+    @State private var commitTomorrow: Bool
+    @State private var tomorrowDraft: FocusCommitmentDraft
 
-    init(controller: ConcentrationController, plan: FocusPlan, review: FocusReview?, onClose: @escaping () -> Void) {
+    /// Renders pin the clock; the app reads it when the sheet opens.
+    private let now: Date
+
+    init(controller: ConcentrationController, plan: FocusPlan, review: FocusReview?, commitTomorrow: Bool = false,
+         now: Date = Date(), onClose: @escaping () -> Void) {
         self.controller = controller
+        self.now = now
         self.plan = plan
         self.onClose = onClose
         var initial: [UUID: Choice] = [:]
@@ -311,6 +330,9 @@ struct FocusLimitPanelView: View {
         _choices = State(initialValue: initial)
         _tomorrowFirst = State(initialValue: review?.tomorrowFirst ?? "")
         _note = State(initialValue: review?.note ?? "")
+        _commitTomorrow = State(initialValue: commitTomorrow)
+        let next = FocusCalendar.dayInterval(plan.day).map { FocusCalendar.dayKey($0.end) } ?? plan.day
+        _tomorrowDraft = State(initialValue: FocusCommitmentDraft(period: .init(kind: .day, key: next)))
     }
 
     private var items: [FocusPlanItem] { plan.items.filter { $0.status != .dropped } }
@@ -350,6 +372,7 @@ struct FocusLimitPanelView: View {
                     }
                 }
             }
+            FocusReviewCommitmentPart(controller: controller, day: plan.day, commit: $commitTomorrow, draft: $tomorrowDraft, now: now)
             GoalongFormField(title: "Demain, je commence par") {
                 TextField("La première chose à faire demain", text: $tomorrowFirst)
                     .textFieldStyle(GoalongFieldStyle())
@@ -390,6 +413,13 @@ struct FocusLimitPanelView: View {
         let review = FocusReview(day: plan.day, items: reviewItems,
                                  tomorrowFirst: first.isEmpty ? nil : String(first.prefix(140)),
                                  note: text.isEmpty ? nil : String(text.prefix(500)))
+        if commitTomorrow, !controller.commitmentCards.contains(where: { $0.commitment.period == tomorrowDraft.period }) {
+            guard tomorrowDraft.complete else { self.error = "Donnez le nom de la tâche de demain."; return }
+            do {
+                try controller.setCommitment(period: tomorrowDraft.period, kind: tomorrowDraft.kind, target: tomorrowDraft.target,
+                                             task: tomorrowDraft.trimmedTask, stake: tomorrowDraft.stake)
+            } catch { self.error = FocusCommitmentFormat.error(error); return }
+        }
         do { try controller.setReview(review); onClose() } catch { self.error = FocusUIError.message(error) }
     }
 }

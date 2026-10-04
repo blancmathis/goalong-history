@@ -88,6 +88,7 @@ import Foundation
     }
 
     func shutdown() {
+        refresh(enforceLast: false)
         if !hasLocks {
             let hadSessions = !document.sessions.isEmpty
             document.sessions.removeAll()
@@ -204,9 +205,35 @@ import Foundation
         refresh(enforceLast: false)
         guard !storeFailed else { throw FocusFailure.storageFailed }
         guard !listIDs.isEmpty, end > clock(), Set(listIDs).isSubset(of: Set(lists.map(\.id))) else { throw FocusFailure.notFound }
-        if document.sessions.contains(where: { $0.id == id }) { return }
+        if let existing = document.sessions.first(where: { $0.id == id }) {
+            guard existing.origin == .manual else { throw FocusFailure.locked }; return
+        }
         document.sessions.append(BlockSession(id: id, listIDs: listIDs, start: clock(), end: end, lock: lock))
         commit()
+        guard !storeFailed else { throw FocusFailure.storageFailed }
+    }
+
+    /// `id` is the commitment ID; persistent ownership makes relaunch/replay idempotent.
+    func startCommitmentBlock(id: UUID, listIDs: [UUID], until end: Date) throws {
+        refresh(enforceLast: false)
+        guard !storeFailed else { throw FocusFailure.storageFailed }
+        if let existing = document.sessions.first(where: { $0.id == id }) {
+            guard existing.origin == .commitment(id), existing.lock == .locked else { throw FocusFailure.locked }
+            return
+        }
+        guard end > clock(), !listIDs.isEmpty, listIDs.count <= 200, Set(listIDs).count == listIDs.count,
+              Set(listIDs).isSubset(of: Set(lists.map(\.id))) else { throw FocusFailure.invalidArgument }
+        document.sessions.append(BlockSession(id: id, listIDs: listIDs, start: clock(), end: end, lock: .locked, origin: .commitment(id)))
+        commit()
+        guard !storeFailed else { throw FocusFailure.storageFailed }
+    }
+    /// Only the Concentration joker/declaration writer calls this early-release path.
+    func endCommitmentBlock(id: UUID) throws {
+        refresh(enforceLast: false)
+        guard !storeFailed else { throw FocusFailure.storageFailed }
+        guard let existing = document.sessions.first(where: { $0.id == id }) else { return }
+        guard existing.origin == .commitment(id) else { throw FocusFailure.locked }
+        document.sessions.removeAll { $0.id == id }; commit()
         guard !storeFailed else { throw FocusFailure.storageFailed }
     }
 
@@ -220,6 +247,7 @@ import Foundation
             commit(); return
         }
         guard let session = document.sessions.first(where: { $0.id == id }) else { return }
+        if case .commitment = session.origin { error = "L’enjeu est verrouillé : utilisez un joker ou une déclaration dans Concentration."; return }
         switch session.lock {
         case .locked:
             error = "Ce blocage est verrouillé jusqu’à la fin."
@@ -644,6 +672,7 @@ import Foundation
         self.modules = modules; self.monitor = monitor
         apply(enabled: modules.isEnabled(.blocking))
         modules.blockingDisableCheck = { [weak self] in
+            self?.controller?.refresh(enforceLast: false)
             if self?.controller?.hasLocks == true {
                 self?.controller?.error = "Le module ne peut pas être désactivé pendant un verrou."
                 return false
@@ -660,6 +689,7 @@ import Foundation
             monitor?.blockingSink = { [weak value] target in value?.observe(target) }
             monitor?.setBlockingObservationEnabled(value.needsObservation)
         } else if !enabled, let controller {
+            controller.refresh(enforceLast: false)
             if controller.hasLocks {
                 controller.error = "Le module ne peut pas être désactivé pendant un verrou."
                 modules?.setEnabled(.blocking, true)

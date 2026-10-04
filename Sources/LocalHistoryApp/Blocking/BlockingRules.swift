@@ -102,8 +102,10 @@ enum BlockingRules {
                     && (0...1440).contains($0.startMinute) && (0...1440).contains($0.endMinute) }) else { return false }
         }
         let ids = Set(document.lists.map(\.id))
-        guard document.sessions.allSatisfy({ $0.start < $0.end && !$0.listIDs.isEmpty
-            && Set($0.listIDs).isSubset(of: ids) }),
+        guard document.sessions.allSatisfy({ session in
+            if case .commitment(let id) = session.origin, (session.lock != .locked || session.id != id) { return false }
+            return session.start < session.end && !session.listIDs.isEmpty && Set(session.listIDs).isSubset(of: ids)
+        }),
             document.usage?.quotaSecondsUsed.values.allSatisfy({ $0.isFinite && $0 >= 0 }) ?? true,
             document.usage?.breaksTaken.values.allSatisfy({ $0 >= 0 }) ?? true,
             [document.usage?.slowDownShown, document.usage?.renounced, document.usage?.continued].allSatisfy({ $0?.values.allSatisfy { $0 >= 0 } ?? true }),

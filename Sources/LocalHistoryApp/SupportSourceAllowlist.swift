@@ -55,6 +55,7 @@ enum SupportSourceAllowlist {
         "CommitmentUploader.swift",
         "ComputerHistoryPage.swift",
         "ComputerHistoryStore.swift",
+        "ConcentrationCommitmentViews.swift",
         "ConcentrationController.swift",
         "ConcentrationModel.swift",
         "ConcentrationPage.swift",

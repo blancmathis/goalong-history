@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import LocalHistoryQueryCLI
 
 /// Local, member-authored data. No phase or inferred completion is persisted.
 struct FocusMode: Codable, Equatable {
@@ -122,7 +123,10 @@ struct FocusSettings: Codable, Equatable {
     var eveningPrompt = true
     var eveningMinute = 1110
     var limits = FocusLimits()
-    var valid: Bool { (0..<1440).contains(morningMinute) && (0..<1440).contains(eveningMinute) && limits.valid }
+    /// Optional for compatibility with settings saved before Engagements.
+    var commitmentJokers: FocusJokerSettings?
+    var jokerSettings: FocusJokerSettings { commitmentJokers ?? FocusJokerSettings() }
+    var valid: Bool { (0..<1440).contains(morningMinute) && (0..<1440).contains(eveningMinute) && limits.valid && jokerSettings.valid }
 }
 enum FocusFailure: String, Error { case moduleDisabled, invalidArgument, locked, notFound, storageFailed, appNotRunning }
 enum FocusValidation {
@@ -136,11 +140,118 @@ enum FocusValidation {
         return f.date(from: value).map { f.string(from: $0) == value } ?? false
     }
 }
-enum FocusCalendar {
-    static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+typealias FocusCalendar = GoalongFocusCalendar
+
+struct FocusJokerSettings: Codable, Equatable {
+    var day = 2
+    var week = 1
+    var valid: Bool { (0...5).contains(day) && (0...2).contains(week) }
+}
+struct FocusCommitmentPeriod: Codable, Equatable, Hashable {
+    enum Kind: String, Codable { case day, week }
+    var kind: Kind
+    var key: String
+    func interval(calendar: Calendar = .current) -> DateInterval? {
+        kind == .day ? FocusCalendar.dayInterval(key, calendar: calendar) : FocusCalendar.weekInterval(key, calendar: calendar)
     }
+    var valid: Bool { interval() != nil }
+}
+struct FocusStake: Codable, Equatable {
+    var listIds: [UUID]
+    var until = "12:00"
+    var minute: Int? {
+        let n = until.split(separator: ":", omittingEmptySubsequences: false)
+        guard until.count == 5, n.count == 2, let h = Int(n[0]), let m = Int(n[1]),
+              (0...23).contains(h), (0...59).contains(m), String(format: "%02d:%02d", h, m) == until else { return nil }
+        return h * 60 + m
+    }
+    var valid: Bool { !listIds.isEmpty && listIds.count <= 200 && Set(listIds).count == listIds.count && minute != nil }
+}
+struct FocusCommitmentResult: Codable, Equatable {
+    enum Outcome: String, Codable { case held, missed }
+    struct Stake: Codable, Equatable {
+        enum State: String, Codable { case none, applied, skipped, cancelled }
+        enum Reason: String, Codable { case late, noList, blockingOff }
+        var state: State = .none
+        var blockId: UUID?
+        var reason: Reason?
+        var at: Date?
+        var valid: Bool {
+            switch state {
+            case .none: return blockId == nil && reason == nil && at == nil
+            case .applied: return blockId != nil && reason == nil
+            case .skipped: return blockId == nil && reason != nil && at == nil
+            case .cancelled: return reason == nil && at != nil
+            }
+        }
+    }
+    var settledAt: Date
+    var measured: Double
+    var unmeasuredMinutes: Double
+    var outcome: Outcome
+    var declared = false
+    var jokerAt: Date?
+    var stake = Stake()
+    /// Keep the source label truthful if the work definition changes after settlement.
+    var usesActiveTime: Bool?
+    var valid: Bool {
+        measured.isFinite && measured >= 0 && unmeasuredMinutes.isFinite && unmeasuredMinutes >= 0 && stake.valid
+            && (!declared || outcome == .held) && !(declared && jokerAt != nil)
+            && (jokerAt.map { $0 >= settledAt } ?? true) && (stake.at.map { $0 >= settledAt } ?? true)
+    }
+}
+struct FocusCommitment: Codable, Equatable, Identifiable {
+    enum Kind: String, Codable { case work, task, sessions, plan }
+    struct Edit: Codable, Equatable { var at: Date; var target: Int; var stake: FocusStake? }
+    var id = UUID()
+    var period: FocusCommitmentPeriod
+    var kind: Kind
+    var target: Int
+    var task: String?
+    var stake: FocusStake?
+    var createdAt: Date
+    var edits: [Edit] = []
+    var result: FocusCommitmentResult?
+    static func validTarget(_ target: Int, kind: Kind, period: FocusCommitmentPeriod.Kind) -> Bool {
+        switch (kind, period) {
+        case (.work, .day): return (30...960).contains(target) && target % 15 == 0
+        case (.work, .week): return (60...4800).contains(target) && target % 15 == 0
+        case (.task, .day): return (15...960).contains(target) && target % 15 == 0
+        case (.task, .week): return (30...4800).contains(target) && target % 15 == 0
+        case (.sessions, .day): return (1...12).contains(target)
+        case (.sessions, .week): return (1...60).contains(target)
+        case (.plan, .day): return (1...10).contains(target)
+        case (.plan, .week): return (1...70).contains(target)
+        }
+    }
+    var valid: Bool {
+        period.valid && Self.validTarget(target, kind: kind, period: period.kind)
+            && (kind == .task ? task.map { FocusValidation.text($0, maximum: 140, required: true) } == true : task == nil)
+            && (stake?.valid ?? true) && (result?.valid ?? true) && (result?.stake.blockId.map { $0 == id } ?? true)
+            && (result?.stake.state != .applied || (stake != nil && result?.outcome == .missed && result?.jokerAt == nil && result?.declared == false))
+            && edits.count <= 1024
+            // The goal kind can change freely before commitment; old edits keep their original unit.
+            && edits.allSatisfy { $0.at >= createdAt && (1...4800).contains($0.target) && ($0.stake?.valid ?? true) }
+            && zip(edits, edits.dropFirst()).allSatisfy { $0.at <= $1.at }
+    }
+}
+struct FocusCommitmentProgress: Codable, Equatable {
+    var measured: Double = 0
+    var unmeasuredMinutes: Double = 0
+    var usesActiveTime = false
+}
+struct FocusCommitmentCard: Codable, Equatable, Identifiable {
+    var commitment: FocusCommitment
+    var progress: FocusCommitmentProgress
+    var series: Int
+    var jokersLeft: Int
+    var canUseJoker: Bool
+    var canDeclare: Bool
+    var exitUntil: Date?
+    var limitHours: Int?
+    var editMode: String
+    var editUntil: Date
+    var id: UUID { commitment.id }
 }
 enum FocusJSON {
     static func encode<T: Encodable>(_ value: T) throws -> Data {

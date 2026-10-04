@@ -25,8 +25,11 @@ import LocalHistoryQueryCLI
     private var measurementGeneration = UUID()
     private let blockingProvider: @MainActor () -> BlockingController?
     private let factory: ((FocusStore) throws -> ConcentrationController)?
-    init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true) {
+    private let clock: () -> Date
+    private let calendar: Calendar
+    init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .current) {
         self.storeFactory = storeFactory; self.factory = factory; self.blockingProvider = blockingProvider; self.presentsPanels = presentsPanels
+        self.clock = clock; self.calendar = calendar
     }
     func start(modules: GoalongModuleStore = .shared, monitor: ContextMonitor? = nil) {
         self.modules = modules; self.monitor = monitor
@@ -38,7 +41,7 @@ import LocalHistoryQueryCLI
         if enabled, controller == nil {
             do {
                 let store = storeFactory()
-                let value = try factory?(store) ?? ConcentrationController(store: store, blocking: blockingProvider, runsTimers: true)
+                let value = try factory?(store) ?? ConcentrationController(store: store, clock: clock, calendar: calendar, blocking: blockingProvider, runsTimers: true)
                 controller = value; error = nil
                 value.onStatusChange = { [weak self] status in if let data = try? FocusJSON.encode(status) { self?.statusHub.publish(data) } }
                 statusHub.publish(try FocusJSON.encode(value.status))
@@ -59,8 +62,10 @@ import LocalHistoryQueryCLI
                 menuBarSubscription = value.$phase.combineLatest(value.$currentSession).sink { [weak self] phase, session in
                     self?.updateMenuBar(phase: phase, session: session)
                 }
+                refreshMeasurements()
             } catch { self.error = String(describing: error) }
         } else if !enabled, let controller {
+            controller.refresh()
             if controller.hasLockedBlock { modules?.setEnabled(.concentration, true); error = FocusFailure.locked.rawValue; return }
             measurementTask?.cancel(); measurementTask = nil; measurementGeneration = UUID()
             controller.shutdown(); monitor?.concentrationSink = nil
@@ -91,6 +96,7 @@ import LocalHistoryQueryCLI
         menuBarTimer = timer
     }
     func deleteData() throws {
+        controller?.refresh()
         if controller?.hasLockedBlock == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
         let wasEnabled = modules?.isEnabled(.concentration) == true
         apply(enabled: false)
@@ -98,17 +104,26 @@ import LocalHistoryQueryCLI
         if wasEnabled { apply(enabled: true) }
     }
     private func refreshMeasurements() {
-        guard measurementTask == nil, let controller, GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory), !GoalongGlobalPause.isPaused() else { return }
-        let store = storeFactory(), calendar = Calendar.current, now = Date()
+        guard measurementTask == nil, let controller else { return }
+        let canRead = GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) && !GoalongGlobalPause.isPaused()
+        let store = storeFactory(), calendar = self.calendar, now = clock()
         let verdicts = GoalongWorkStore.shared.verdicts, hasDefinition = !GoalongWorkStore.shared.definition.isEmpty
         let generation = measurementGeneration
         measurementTask = Task { [weak self, weak controller] in
             let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.timeZone = calendar.timeZone
             var measured: [String: GoalongLocalAnalytics.Day] = [:]
             do {
-                let week = calendar.dateInterval(of: .weekOfYear, for: now)!.start
+                let week = FocusCalendar.weekInterval(now, calendar: calendar).start
                 var dates: [Date] = []
                 for n in 0...6 { if let d = calendar.date(byAdding: .day, value: n, to: week), d <= now { dates.append(d) } }
+                for value in controller?.commitments ?? [] where value.result == nil {
+                    guard let bounds = value.period.interval(calendar: calendar) else { continue }
+                    var day = bounds.start
+                    while day < min(now, bounds.end) {
+                        if !dates.contains(day) { dates.append(day) }
+                        day = calendar.date(byAdding: .day, value: 1, to: day)!
+                    }
+                }
                 if let current = controller?.currentSession {
                     var day = calendar.startOfDay(for: current.startedAt)
                     while day < now, dates.count < 4096 {
@@ -116,13 +131,14 @@ import LocalHistoryQueryCLI
                         day = calendar.date(byAdding: .day, value: 1, to: day)!
                     }
                 }
-                for date in dates {
+                for date in dates where canRead {
                     try Task.checkCancellation()
                     measured[BlockingController.dayKey(date, calendar: calendar)] = try await GoalongAnalyticsReader.shared.focusDay(date, verdicts: verdicts)
                 }
                 var valued = 0
                 for day in try store.planDays().reversed() {
                     try Task.checkCancellation()
+                    if !canRead { break }
                     guard let plan = try store.plan(day), plan.items.contains(where: { $0.estimateMinutes != nil }), let date = f.date(from: day) else { continue }
                     let value: GoalongLocalAnalytics.Day
                     if let cached = measured[day] { value = cached }
@@ -132,7 +148,7 @@ import LocalHistoryQueryCLI
                     if valued >= 20 { break }
                 }
                 guard let self, !Task.isCancelled, generation == self.measurementGeneration,
-                      GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory), !GoalongGlobalPause.isPaused() else { if self?.measurementGeneration == generation { self?.measurementTask = nil }; return }
+                      canRead == (GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) && !GoalongGlobalPause.isPaused()) else { if self?.measurementGeneration == generation { self?.measurementTask = nil }; return }
                 controller?.applyMeasurements(Array(measured.values), hasDefinition: hasDefinition)
             } catch {
                 if !(error is CancellationError) { self?.error = String(describing: error) }
@@ -155,6 +171,12 @@ import LocalHistoryQueryCLI
         guard modules?.isEnabled(.concentration) == true else { throw GoalongFocusError.moduleDisabled }
         guard let controller else { throw GoalongFocusError.storageFailed }
         let request = try request.validated()
+        if request.command.hasPrefix("commitment") {
+            do { controller.refresh(); return try handleCommitment(request, controller: controller) }
+            catch let error as FocusFailure { throw GoalongFocusError(rawValue: error.rawValue) ?? .invalidArgument }
+            catch let error as GoalongFocusError { throw error }
+            catch { throw GoalongFocusError.invalidArgument }
+        }
         let o = request.options, day = try resolveDay(o["--day"] ?? "today")
         do {
             switch request.command {
@@ -214,8 +236,8 @@ import LocalHistoryQueryCLI
     }
     private struct LimitsEnvelope: Encodable { var limits: FocusLimits; var marks: [FocusLimitMark] }
     private func resolveDay(_ input: String) throws -> String {
-        if input == "today" { return BlockingController.dayKey(Date()) }
-        if input == "yesterday" { return BlockingController.dayKey(Calendar.current.date(byAdding: .day, value: -1, to: Date())!) }
+        if input == "today" { return FocusCalendar.dayKey(clock(), calendar: calendar) }
+        if input == "yesterday" || input == "tomorrow" { return FocusCalendar.dayKey(calendar.date(byAdding: .day, value: input == "tomorrow" ? 1 : -1, to: clock())!, calendar: calendar) }
         guard FocusValidation.day(input) else { throw GoalongFocusError.invalidArgument }; return input
     }
     private func inputWithIDs(_ data: Data, day: String, plan: Bool) throws -> Data {
@@ -234,6 +256,79 @@ import LocalHistoryQueryCLI
         }
         object["items"] = items
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private func resolveWeek(_ input: String) throws -> String {
+        if input == "this" { return FocusCalendar.weekKey(clock(), calendar: calendar) }
+        if input == "next" { return FocusCalendar.weekKey(FocusCalendar.weekInterval(clock(), calendar: calendar).end, calendar: calendar) }
+        guard FocusCalendar.weekInterval(input, calendar: calendar) != nil else { throw FocusFailure.invalidArgument }; return input
+    }
+    private func selectedPeriod(_ options: [String: String]) throws -> FocusCommitmentPeriod {
+        if let day = options["--day"] { return .init(kind: .day, key: try resolveDay(day)) }
+        guard let week = options["--week"] else { throw FocusFailure.invalidArgument }
+        return .init(kind: .week, key: try resolveWeek(week))
+    }
+    private func commitmentObject(_ period: FocusCommitmentPeriod, controller: ConcentrationController) throws -> Any {
+        guard let card = controller.commitmentCards.first(where: { $0.commitment.period == period }) else { return NSNull() }
+        var object = try JSONSerialization.jsonObject(with: FocusJSON.encode(card.commitment)) as! [String: Any]
+        object["progress"] = try JSONSerialization.jsonObject(with: FocusJSON.encode(card.progress))
+        object["series"] = card.series; object["jokersLeft"] = card.jokersLeft
+        object["canUseJoker"] = card.canUseJoker; object["canDeclare"] = card.canDeclare
+        object["exitUntil"] = try JSONSerialization.jsonObject(with: FocusJSON.encode(card.exitUntil), options: [.fragmentsAllowed])
+        object["limitHours"] = card.limitHours.map { $0 as Any } ?? NSNull()
+        object["editMode"] = card.editMode
+        object["editUntil"] = try JSONSerialization.jsonObject(with: FocusJSON.encode(card.editUntil), options: [.fragmentsAllowed])
+        return object
+    }
+    private struct CommitmentInput: Decodable {
+        var period: FocusCommitmentPeriod?
+        var kind: FocusCommitment.Kind
+        var target: Int
+        var task: String?
+        var stake: FocusStake?
+    }
+    private func handleCommitment(_ request: GoalongFocusRequest, controller: ConcentrationController) throws -> Data {
+        let o = request.options
+        if request.command == "commitments" {
+            let lower = o["--from"].flatMap { FocusCalendar.dayInterval($0, calendar: calendar)?.start } ?? .distantPast
+            let upper = o["--to"].flatMap { FocusCalendar.dayInterval($0, calendar: calendar)?.end } ?? .distantFuture
+            let history = try controller.commitments.filter { value in
+                let bounds = value.period.interval(calendar: calendar)!
+                return bounds.start < upper && bounds.end > lower
+            }.sorted { $0.period.key < $1.period.key }.map { try commitmentObject($0.period, controller: controller) }
+            return try JSONSerialization.data(withJSONObject: ["schema": 1, "commitments": history,
+                "series": try JSONSerialization.jsonObject(with: FocusJSON.encode(controller.commitmentSeries)),
+                "jokersLeft": try JSONSerialization.jsonObject(with: FocusJSON.encode(controller.commitmentJokersLeft)),
+                "jokerSettings": try JSONSerialization.jsonObject(with: FocusJSON.encode(controller.settings.jokerSettings))], options: [.sortedKeys])
+        }
+        if request.command == "commitment show", o.count != 1 {
+            let day = FocusCommitmentPeriod(kind: .day, key: try resolveDay(o["--day"] ?? "today"))
+            let week = FocusCommitmentPeriod(kind: .week, key: try resolveWeek(o["--week"] ?? "this"))
+            return try JSONSerialization.data(withJSONObject: ["schema": 1, "day": try commitmentObject(day, controller: controller),
+                "week": try commitmentObject(week, controller: controller)], options: [.sortedKeys])
+        }
+        let period = try selectedPeriod(o)
+        switch request.command {
+        case "commitment show": break
+        case "commitment set":
+            if let body = request.body {
+                let input = try FocusJSON.decode(CommitmentInput.self, from: body)
+                guard input.period == nil || input.period == period else { throw FocusFailure.invalidArgument }
+                _ = try controller.setCommitment(period: period, kind: input.kind, target: input.target, task: input.task, stake: input.stake)
+            } else {
+                guard let kind = o["--kind"].flatMap(FocusCommitment.Kind.init(rawValue:)),
+                      let target = GoalongCommitmentCLI.target(o["--target"] ?? "", kind: kind.rawValue) else { throw FocusFailure.invalidArgument }
+                let stake = o["--stake"].map { FocusStake(listIds: $0.split(separator: ",").compactMap { UUID(uuidString: String($0)) }, until: o["--until"] ?? "12:00") }
+                _ = try controller.setCommitment(period: period, kind: kind, target: target, task: o["--task"], stake: stake)
+            }
+        case "commitment delete":
+            try controller.deleteCommitment(period: period)
+            return try JSONSerialization.data(withJSONObject: ["schema": 1, "deleted": true, "period": try JSONSerialization.jsonObject(with: FocusJSON.encode(period))], options: [.sortedKeys])
+        case "commitment joker": try controller.useCommitmentJoker(period: period)
+        case "commitment declare": try controller.declareCommitmentHeld(period: period)
+        default: throw FocusFailure.invalidArgument
+        }
+        return try JSONSerialization.data(withJSONObject: commitmentObject(period, controller: controller), options: [.sortedKeys, .fragmentsAllowed])
     }
 }
 #endif
