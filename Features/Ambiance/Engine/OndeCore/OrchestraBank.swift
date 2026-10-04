@@ -76,22 +76,28 @@ public enum OrchestraBank {
         deinit { munmap(address, byteCount) }
     }
     public static func instruments(for configuration: GenerativeSettings) -> Set<Int> {
+        let mask = instrumentMask(for: configuration)
+        var result = Set<Int>()
+        for instrument in 0...11 where mask & (1 << instrument) != 0 { result.insert(instrument) }
+        return result
+    }
+    private static func instrumentMask(for configuration: GenerativeSettings) -> Int32 {
         switch Int(configuration.composition) {
-        case 1, 7, 8, 13: return []
-        case 2: return [1, 2, 11]
-        case 3: return [0, 1, 2, 3, 4, 5, 6, 8, 9]
-        case 4: return [1, 2, 8, 10]
-        case 5: return [11]
-        case 6: return [2, 8, 10]
-        case 9: return [2, 11]
-        case 10: return [0, 1, 2, 5, 6, 7]
-        case 11, 12: return [2, 8]
-        default: return configuration.orchestra > 0 || configuration.piano > 0 ? Set(0...11) : []
+        case 1, 7, 8, 13: return 0x0000 // []
+        case 2: return 0x0806 // [1, 2, 11]
+        case 3: return 0x037f // [0, 1, 2, 3, 4, 5, 6, 8, 9]
+        case 4: return 0x0506 // [1, 2, 8, 10]
+        case 5: return 0x0800 // [11]
+        case 6: return 0x0504 // [2, 8, 10]
+        case 9: return 0x0804 // [2, 11]
+        case 10: return 0x00e7 // [0, 1, 2, 5, 6, 7]
+        case 11, 12: return 0x0104 // [2, 8]
+        default: return configuration.orchestra > 0 || configuration.piano > 0 ? 0x0fff : 0
         }
     }
     @discardableResult public static func load(into core: OpaquePointer, required: Bool,
                                                directory: URL?, configuration: GenerativeSettings) throws -> Loaded {
-        let instruments = instruments(for: configuration)
+        let requiredMask = instrumentMask(for: configuration)
         guard let directory else {
             if required { throw OndeError("orchestra_missing", "Le pack Orchestre est manquant.") }
             return Loaded(samples: 0, mappings: [])
@@ -109,7 +115,7 @@ public enum OrchestraBank {
             guard let instrument = item["instrument"] as? Int, (0...11).contains(instrument) else {
                 throw OndeError("orchestra_invalid", "Instrument invalide.")
             }
-            guard instruments.contains(instrument) else { continue }
+            guard requiredMask & (1 << instrument) != 0 else { continue }
             try autoreleasepool {
                 guard let name = item["filename"] as? String, !name.isEmpty, !name.hasPrefix("."),
                       name == URL(fileURLWithPath: name).lastPathComponent, !name.contains("\\"),
@@ -133,8 +139,7 @@ public enum OrchestraBank {
                 count += 1
             }
         }
-        let requiredMask = instruments.reduce(0) { $0 | (1 << $1) }
-        guard Int(onde_dsp_orchestra_families(core)) & requiredMask == requiredMask else {
+        guard onde_dsp_orchestra_families(core) & requiredMask == requiredMask else {
             throw OndeError("orchestra_incomplete", "Le pack ne contient pas les instruments de cette composition.")
         }
         return Loaded(samples: count, mappings: mappings)
