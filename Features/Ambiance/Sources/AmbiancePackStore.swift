@@ -1,4 +1,5 @@
 import CryptoKit
+import CoreFoundation
 import Foundation
 
 public struct AmbiancePack: Identifiable, Equatable {
@@ -40,11 +41,14 @@ public struct AmbiancePackStore {
         let folder = directory(pack)
         guard isRegularDirectory(folder),
               let data = try? Data(contentsOf: folder.appendingPathComponent(".installed.json")), data.count < 4096,
-              let receipt = try? JSONDecoder().decode(Receipt.self, from: data),
-              receipt.id == pack.id, receipt.sha256 == pack.sha256, receipt.bytes == pack.bytes else { return false }
-        return receipt.files.allSatisfy { name in
+              let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              receipt["id"] as? String == pack.id, receipt["sha256"] as? String == pack.sha256,
+              let number = receipt["bytes"] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              receipt["bytes"] as? Int64 == pack.bytes,
+              let files = receipt["files"] as? [String] else { return false }
+        return files.allSatisfy { name in
             safeName(name) && isRegularFile(folder.appendingPathComponent(name))
-        } && !receipt.files.isEmpty
+        } && !files.isEmpty
     }
     public func install(_ pack: AmbiancePack, archive: URL, progress: (Double) -> Void = { _ in }) throws {
         try checkCancellation()
@@ -120,8 +124,8 @@ public struct AmbiancePackStore {
               pack.id != "textures" || Set(AmbianceSource.textures.map { $0.0 + ".wav" }).isSubset(of: files) else {
             throw AmbianceError.invalidPack("contenu incomplet")
         }
-        let receipt = Receipt(id: pack.id, sha256: pack.sha256, bytes: pack.bytes, files: files.sorted())
-        try JSONEncoder().encode(receipt).write(to: staging.appendingPathComponent(".installed.json"), options: .withoutOverwriting)
+        let receipt: [String: Any] = ["id": pack.id, "sha256": pack.sha256, "bytes": pack.bytes, "files": files.sorted()]
+        try JSONSerialization.data(withJSONObject: receipt).write(to: staging.appendingPathComponent(".installed.json"), options: .withoutOverwriting)
         try checkCancellation()
         // Same-volume rename publishes the complete pack, never a partially extracted folder.
         try fm.moveItem(at: staging, to: destination)
@@ -135,7 +139,6 @@ public struct AmbiancePackStore {
               root.resolvingSymlinksInPath().path == root.standardizedFileURL.path else { throw AmbianceError.invalidPack("répertoire non sûr") }
         if FileManager.default.fileExists(atPath: folder.path) { try FileManager.default.removeItem(at: folder) }
     }
-    private struct Receipt: Codable { let id: String; let sha256: String; let bytes: Int64; let files: [String] }
     private func isRegularDirectory(_ url: URL) -> Bool {
         guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return false }
         return values.isDirectory == true && values.isSymbolicLink != true
