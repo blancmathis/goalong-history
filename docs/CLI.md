@@ -342,8 +342,8 @@ applied result acknowledges the Blocking write; an interrupted unacknowledged in
 
 Both exits require a missed result and an open `exitUntil`: the actual block end for an applied
 stake (including Blocking's clock protection), otherwise the end of the settle day. A joker
-consumes one reserve and preserves the series. Declaration requires `unmeasuredMinutes > 0` or
-kind `plan`; it freezes the measured facts, changes the outcome to held and marks `declared:true`.
+consumes one reserve and preserves the series. Declaration requires `measured + unmeasuredMinutes >= target`
+(with some unmeasured time) or kind `plan`; it freezes the measured facts, changes the outcome to held and marks `declared:true`.
 Neither exit can be applied twice. Day/week monthly reserves default to 2/1; module settings
 `commitmentJokers:{day:0…5,week:0…2}` override them. The month belongs to the period's last civil
 day (Sunday for a week), even when settlement occurs in another month. Remaining jokers are

@@ -90,6 +90,22 @@ final class ConcentrationCommitmentRulesTests: XCTestCase {
         XCTAssertEqual(FocusCommitmentRules.progress(v, days: [], sessions: [], plans: [], at: end, hasDefinition: true, calendar: calendar).unmeasuredMinutes, 1440)
         XCTAssertEqual(FocusCommitmentRules.progress(v, days: [day, day], sessions: [], plans: [], at: start.addingTimeInterval(1800), hasDefinition: true, calendar: calendar).measured, 30)
     }
+    func testSleepLockAndDayEdgesAreKnownAndDeclarationNeedsTheShortfall() {
+        let start = date("2026-10-04"), end = date("2026-10-05")
+        let reasons: [GoalongCoverageReason] = [.beforeFirstObservation, .sleep, .locked, .recorderStopped, .afterLastObservation]
+        let segments = reasons.enumerated().map { i, reason in
+            GoalongLocalAnalytics.Segment(start: start.addingTimeInterval(Double(i * 3600)), end: start.addingTimeInterval(Double((i + 1) * 3600)),
+                kind: .unobserved, application: nil, bundleIdentifier: nil, host: nil, coverageReason: reason)
+        } + [GoalongLocalAnalytics.Segment(start: start.addingTimeInterval(5 * 3600), end: end, kind: .idle, application: nil, bundleIdentifier: nil, host: nil)]
+        let day = GoalongLocalAnalytics.Day(date: start, end: end, state: .ready, segments: segments, eventCount: 1, classifierVersions: [])
+        var v = value(target: 120)
+        // Only the hour after Goalong stopped is uncertain; sleep, lock and the day's edges are not.
+        XCTAssertEqual(FocusCommitmentRules.progress(v, days: [day], sessions: [], plans: [], at: end, hasDefinition: true, calendar: calendar).unmeasuredMinutes, 60)
+        v.result = .init(settledAt: end, measured: 30, unmeasuredMinutes: 60, outcome: .missed)
+        XCTAssertFalse(FocusCommitmentRules.mayDeclare(v))
+        v.result?.unmeasuredMinutes = 90; XCTAssertTrue(FocusCommitmentRules.mayDeclare(v))
+        v.kind = .plan; v.target = 1; v.result?.unmeasuredMinutes = 0; XCTAssertTrue(FocusCommitmentRules.mayDeclare(v))
+    }
     func testSessionsCountWorkPhasesInsidePeriodAndPlanCountsOnlyDone() {
         let start = date("2026-10-04"), end = date("2026-10-05")
         func session(_ at: Date, _ minutes: Int) -> FocusSession { FocusSession(intent: "Lire", mode: FocusMode(minutes: minutes), startedAt: at, events: [.init(kind: .start, at: at)]) }

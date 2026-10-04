@@ -483,7 +483,7 @@ extension ConcentrationController {
         let value = commitments[i]
         guard let end = exitUntil(value), clock() < end else { throw FocusFailure.locked }
         if declare {
-            guard result.unmeasuredMinutes > 0 || value.kind == .plan else { throw FocusFailure.invalidArgument }
+            guard FocusCommitmentRules.mayDeclare(value) else { throw FocusFailure.invalidArgument }
             result.outcome = .held; result.declared = true
         } else {
             guard FocusCommitmentRules.jokersLeft(period: period, commitments: commitments, settings: settings.jokerSettings, calendar: calendar) > 0 else { throw FocusFailure.locked }
@@ -590,7 +590,7 @@ extension ConcentrationController {
                 case .locked: editMode = "locked"
                 }
                 return FocusCommitmentCard(commitment: value, progress: try commitmentProgress(value), series: value.period.kind == .day ? series.day : series.week,
-                    jokersLeft: jokers, canUseJoker: open && jokers > 0, canDeclare: open && ((value.result?.unmeasuredMinutes ?? 0) > 0 || value.kind == .plan), exitUntil: end,
+                    jokersLeft: jokers, canUseJoker: open && jokers > 0, canDeclare: open && FocusCommitmentRules.mayDeclare(value), exitUntil: end,
                     limitHours: (value.kind == .work || value.kind == .task) && limit.map({ value.target > $0 * 60 }) == true ? limit : nil,
                     editMode: editMode, editUntil: max(value.createdAt.addingTimeInterval(600), value.period.interval(calendar: calendar)!.start))
             }

@@ -184,13 +184,15 @@ locked-block rule also refuses turning Blocking or Concentration off.
 
 **Result.** A period settles at the first measurement refresh after it ends while the app runs
 (usually the next morning's first activity). `held` when measured ≥ target, else `missed`. The
-result stores `measured`, `unmeasuredMinutes` (period time while Goalong did not observe, plus
-unclassified time, for `work` and `task`) and `settledAt`. After `missed`, two exits stay open until
+result stores `measured`, `unmeasuredMinutes` (for `work` and `task`: period time Goalong could not
+read while the Mac may have been in use — app closed, observation gaps, days without any record,
+hidden contexts, unclassified time; sleep, a locked session, and the time before the first or after
+the last record of a day do not count) and `settledAt`. After `missed`, two exits stay open until
 the stake block ends (no stake: until the end of the settle day):
 - « Utiliser un joker »: uses one joker, cancels or ends the stake, keeps the series. Jokers per
   calendar month of the period end: day 2, week 1 by default; settings 0…5 and 0…2.
-- « J'ai tenu, hors mesure »: offered only when `unmeasuredMinutes > 0` or for kind `plan` (a status
-  may be set late). Outcome becomes `held` with `declared: true`; cancels or ends the stake; uses no
+- « J'ai tenu, hors mesure »: offered only when the shortfall fits in the unmeasured time
+  (`measured + unmeasuredMinutes >= target`), or for kind `plan` (a status may be set late). Outcome becomes `held` with `declared: true`; cancels or ends the stake; uses no
   joker. Card and CLI show « déclaré ».
 
 **Series.** Consecutive settled periods that are `held` (a joker keeps the series and shows as

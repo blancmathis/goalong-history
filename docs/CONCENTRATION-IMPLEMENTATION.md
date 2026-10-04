@@ -339,6 +339,10 @@ réelle d'une fenêtre de sortie.
 - Le résultat fige les faits au premier refresh après la fin. Un statut plan renseigné plus tard
   peut passer par déclaration ; il ne réécrit pas la mesure réglée. Joker ne transforme pas missed
   en held ; il préserve la série et affiche `jokerAt`. Déclaration marque held/declared sans joker.
+- Revue Claude (2026-10-04) : le sommeil, la session verrouillée et les bords d'une journée
+  enregistrée (avant la 1re / après la dernière observation) ne sont plus de l'incertitude, sinon
+  la nuit rendait « J'ai tenu, hors mesure » toujours disponible. La déclaration exige aussi que
+  l'écart tienne dans le temps non mesuré (`FocusCommitmentRules.isKnown`, `mayDeclare`).
 - Extensions additives pour une reprise honnête : `result.usesActiveTime` fige la provenance de
   mesure ; `result.stake.at` sur applied acquitte l'écriture Blocage (nil = intention à rejouer).
   Règlement et annulation sont persistés avant leurs effets Blocage. Une intention non acquittée

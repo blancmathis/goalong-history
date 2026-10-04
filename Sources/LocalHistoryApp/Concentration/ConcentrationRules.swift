@@ -249,14 +249,15 @@ enum FocusCommitmentRules {
             for day in days where day.state != .noSource {
                 for s in day.segments where s.end > s.start {
                     guard let clip = bounds.intersection(with: DateInterval(start: s.start, end: s.end)), clip.duration > 0 else { continue }
-                    if s.kind != .unobserved && s.kind != .concealed && s.kind != .unclassified { classified.append(clip) }
+                    if Self.isKnown(s) { classified.append(clip) }
                     let matches = commitment.kind == .work ? (hasDefinition ? s.kind == .work : s.kind.isActive)
                         : s.kind == .work && s.task?.localizedCaseInsensitiveCompare(commitment.task ?? "") == .orderedSame
                     if matches { measured.append(clip) }
                 }
             }
             result.measured = FocusMeasurement.unionSeconds(measured) / 60
-            // Missing days/gaps, concealed contexts and unclassified time stay explicit uncertainty.
+            // Missing days, gaps while the Mac was in use, concealed contexts and unclassified time stay
+            // explicit uncertainty. Sleep, a locked session and the edges of a recorded day do not.
             result.unmeasuredMinutes = max(0, bounds.duration - FocusMeasurement.unionSeconds(classified)) / 60
         case .sessions:
             var seen = Set<UUID>()
@@ -270,6 +271,20 @@ enum FocusCommitmentRules {
             }.reduce(0) { $0 + $1.items.filter { $0.status == .done }.count })
         }
         return result
+    }
+    /// Time Goalong saw, or saw the Mac was not in use (asleep, locked, before the first or after the last record).
+    static func isKnown(_ s: GoalongLocalAnalytics.Segment) -> Bool {
+        switch s.kind {
+        case .work, .other, .idle: return true
+        case .unclassified, .concealed: return false
+        case .unobserved: return [.sleep, .locked, .beforeFirstObservation, .afterLastObservation].contains(s.coverageReason)
+        }
+    }
+    /// « J'ai tenu, hors mesure » only when the shortfall fits in the unmeasured time, or for a plan (late status).
+    static func mayDeclare(_ commitment: FocusCommitment) -> Bool {
+        guard let result = commitment.result else { return false }
+        return commitment.kind == .plan
+            || (result.unmeasuredMinutes > 0 && result.measured + result.unmeasuredMinutes >= Double(commitment.target))
     }
     static func stakeEnd(_ stake: FocusStake, settledAt: Date, calendar: Calendar = .current) -> Date? {
         guard let minute = stake.minute else { return nil }
