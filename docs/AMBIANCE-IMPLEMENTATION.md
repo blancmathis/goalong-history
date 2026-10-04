@@ -1,233 +1,222 @@
-# Ambiance — état de l’implémentation (2026-10-04)
+# Ambiance — implémentation et vérification (2026-10-04)
 
-La plomberie sans UI est implémentée dans le worktree
-`/Users/mathisblanc/Developer/goalong-ambiance-onde-20261004`, branche
-`feat/ambiance-onde-20261004`. **La lecture sur périphérique et le téléchargement
-HTTPS restent bloqués par les audits existants.** Aucun audit n’a été affaibli,
-aucune release n’a été créée, aucun fichier n’a été téléversé ou poussé.
+Passe audio/réseau dans `/Users/mathisblanc/Developer/goalong-ambiance-audio-20261004`,
+branche `feat/ambiance-audio-20261004`, selon la décision
+[`AMBIANCE-AUDIO-NETWORK.md`](AMBIANCE-AUDIO-NETWORK.md). Aucun fichier SwiftUI,
+Réglages ou sidebar modifié. Aucun push, PR, upload ou création de release.
 
-## API pour la session UI
+## État et limite réseau
 
-Importer `Ambiance`. Le modèle `DashboardViewModel` expose la propriété paresseuse
-`ambianceModule`, sans modifier aucune vue, `DashboardSection` ou Réglages.
+La sortie audio est implémentée : compositions Onde, textures installées en boucle,
+fichiers personnels lus depuis leur emplacement. `play` publie `playing` après
+le démarrage réussi du moteur. Stop et désactivation arrêtent le graphe, détachent
+ses nœuds et libèrent le lecteur, le DSP et les mappings. Un échec de préparation
+ou de démarrage publie une erreur française et libère le runtime.
+
+Le téléchargement explicite est implémenté et testé sur loopback. La règle
+« aucune query string » demeure stricte, redirections comprises. **GitHub impose
+une query signée : les téléchargements passant par cette redirection restent
+bloqués jusqu’à une décision complémentaire du propriétaire.** La question a
+été posée ; aucune exception n’a été déduite de son silence.
+
+HEAD du 2026-10-04, sans télécharger l’asset : release publique `v0.6.2`, asset
+`Goalong-History-macOS-universal.dmg`, réponse 302 vers
+`release-assets.githubusercontent.com`. La query contient notamment `jwt`, `sig`
+et les paramètres de signature Azure. La même destination sans query renvoie
+HTTP 618. Aucune valeur signée n’est conservée. Preuve privée :
+`.ambiance-work/github-redirect-observation.json`.
+Les packs de cette tâche n’ont jamais été téléchargés depuis GitHub.
+
+## API UI : aucune signature changée
+
+Importer `Ambiance`, puis utiliser `model.ambianceModule` :
 
 ```swift
-let settings = model.ambianceModule.settings  // UserDefaults seulement
-model.ambianceModule.setEnabled(true)         // action explicite du membre
+model.ambianceModule.setEnabled(true)
 if let controller = model.ambianceModule.controller {
-    // Observer controller.state, sources, packs et volume (Combine).
     controller.download("orchestra")
     controller.play(controller.sources[0])
     controller.stop()
 }
-model.ambianceModule.setEnabled(false)        // arrêt et annulation des installations
+model.ambianceModule.setEnabled(false)
 ```
-
-La session UI doit utiliser `setEnabled` pour arrêter le module immédiatement et
-libérer sa référence au contrôleur quand elle le désactive. Lire `controller`
-réévalue aussi la préférence d’activation. Une construction du modèle d’application
-n’évalue pas même la propriété paresseuse du module.
 
 - `AmbianceSettings` : `isEnabled` (false par défaut), `volume` borné 0…1,
-  `ownFiles: [String]` (chemins uniquement), `lastSource: String?` (identifiant).
-- `AmbianceController` : `@MainActor`, `ObservableObject`, état
-  `idle | loading | playing(AmbianceSource) | error(String)`, liste française
-  `sources` et drapeaux `isAvailable`. Toutes les compositions exigent le pack
-  Orchestre, y compris celles composées uniquement par synthèse.
-- Actions : `play(_ source:)`, `stop()`, `download(_ id:)`, `cancelDownload(_ id:)`,
-  `remove(_ id:)`, `addOwnFiles(_ urls:)`, `removeOwnFile(_ source:)`, `refresh()`.
-- `diagnostics` : octets mappés, RSS du processus, échantillons copiés, runtime
-  présent, moteur de périphérique en marche. Le RSS concerne le processus entier.
-- `renderOffline(_ source:, seconds:)` est une action de diagnostic explicite,
-  sans sortie audio et avec destruction du runtime sur succès comme sur erreur.
-  Ne pas l’appeler pour simuler une lecture UI : `play` retourne actuellement
-  une erreur honnête et ne publie jamais `playing`.
+  `ownFiles: [String]` (chemins), `lastSource: String?`.
+- `AmbianceController` : MainActor/ObservableObject ; `state`, `sources`, `packs`,
+  `volume`, `diagnostics`. États inchangés : idle/loading/playing/error ; packs
+  notInstalled/downloading/installed/failed.
+- Actions inchangées : `play`, `stop`, `download`, `cancelDownload`, `remove`,
+  `addOwnFiles`, `removeOwnFile`, `refresh`, `renderOffline`.
+- `diagnostics.engineRunning` mesure désormais le vrai graphe de périphérique ;
+  `runtimeCreated` couvre aussi la lecture d’un fichier. Les octets résidents
+  concernent tout le processus. `renderOffline` reste sans périphérique et libère
+  toujours son runtime. Les anciens cas publics audioBoundary/networkBoundary
+  restent présents pour compatibilité ; ils ne bloquent plus les actions.
 
-Les textures n’apparaissent qu’après installation de leur pack. Un fichier
-personnel manquant reste dans la liste avec `isAvailable == false`. Aucun fichier
-personnel n’est copié ni envoyé. Les imports acceptent WAV, AIFF, M4A, MP3, CAF,
-FLAC et les fichiers audio d’un dossier choisi (sous-dossiers inclus).
+Toujours désactiver par `setEnabled(false)`, qui arrête immédiatement la lecture,
+annule les téléchargements et libère le contrôleur du module. Construire le modèle
+n’évalue pas la propriété paresseuse. Activer le module ne crée aucun moteur ni
+session réseau. Les textures n’apparaissent qu’après installation ; les fichiers
+personnels manquants restent listés avec `isAvailable == false`.
 
-## Moteur et packs
+L’UI choisit la musique via `NSOpenPanel` seulement à la demande du membre, puis
+transmet les URL à `addOwnFiles`. Ce chantier ne crée aucune UI. Goalong peut jouer
+de la musique ; il n’écoute jamais. Aucun micro, Apple Music, Full Disk Access ou
+appel de demande de permission pour Ambiance. Un éventuel prompt de dossier émis
+par macOS lors de l’accès à un fichier choisi reste un prompt du système.
 
-Onde est vendorisé au commit `dfa5ab747373d1eed324115db07971c4096ffc49`.
-Provenance, MIT et notices originales se trouvent dans `Features/Ambiance/Engine`.
-Le target C utilise la norme C11 du package, sans ajouter de flags non sûrs ou de
-dépendance distante. Les adaptations sont détaillées dans `Engine/ADAPTATIONS.md`.
+## Implémentation et fichiers par domaine
 
-Le cache global décodé d’Onde a été retiré. Les instruments d’une composition sont
-vérifiés par lectures de 64 Kio puis mappés en lecture seule. Le sampler interpole
-directement le PCM16 stéréo, sans copie PCM32. Les mappings ont une durée de vie
-explicite jusqu’à la destruction du DSP ; l’arrêt détruit le DSP avant de démapper.
-Le rendu C n’alloue pas et ne prend aucun verrou. L’équivalence PCM16/PCM32 est
-vérifiée sur une phrase qui contient effectivement des événements de piano.
+- Audio : `AmbianceAudioOutput.swift` (seule frontière AVFoundation de lecture),
+  `AmbianceRuntime.swift`, partie `play` de `AmbianceController.swift`.
+  Le callback source appelle directement `onde_dsp_render`, sans allocation ni
+  verrou. Volume du graphe : mixer AVFoundation, sans mutation concurrente du DSP.
+  `AVAudioFile` + `AVAudioPlayerNode.scheduleFile` lisent les fichiers sur disque,
+  sans décodage complet en mémoire ni copie. La fin d’un fichier personnel arrête
+  la lecture ; une texture est reschedulée. L’arrêt du moteur précède la destruction
+  du DSP, puis le démappage de ses instruments PCM16. Zéro copie PCM32.
+- Réseau : `AmbiancePackDownloader.swift`, partie `download` du contrôleur.
+  Une session éphémère par action, GET seulement, URL initiale égale au catalogue,
+  HTTPS et hôtes exacts contrôlés sur chaque redirection. Aucun cookie, cache,
+  credential, header personnalisé, identifiant ou retry. Les challenges autres
+  que la validation TLS standard sont refusés. Les tailles annoncée/réelle sont
+  bornées ; le store vérifie taille et SHA-256 avant extraction atomique. Le fichier
+  temporaire téléchargé est supprimé après succès, échec ou annulation.
+- Vérification : `AmbianceAudioTests.swift`, `AmbianceAudioNetworkTests.swift`,
+  adaptation de `AmbianceTests.swift`, fixtures privacy Python et inventaires.
+- Documentation : ce rapport, `NETWORK.md`, `PERMISSIONS.md`, `GUARANTEES.md`.
 
-Les archives USTAR non compressées ont une taille stable, des métadonnées
-déterministes et seulement des fichiers réguliers à plat. L’installation vérifie
-la taille et le SHA-256 **avant** toute extraction. Une extraction échouée ou
-annulée nettoie son dossier de staging ; un renommage sur le même volume publie
-le pack complet. Les liens, traversées de chemins et doublons sont rejetés.
+Le moteur reste vendorisé au commit Onde
+`dfa5ab747373d1eed324115db07971c4096ffc49`. Aucun changement de source C/Swift
+vendorisée, dépendance distante ou flag SwiftPM ajouté. `Package.swift` exclut
+maintenant trois fichiers sans aucun appelant Goalong : `GenerativeRenderer.swift`,
+`TransitionRenderer.swift`, `PlaybackSelection.swift`. Ils restent sur disque pour
+la provenance ; `Engine/ADAPTATIONS.md` l’explique. Ces trois types publics du target
+privé OndeCore ne sont plus compilés. L’API Ambiance documentée ci-dessus est stable,
+y compris `renderOffline`, qui passe directement par le runtime. Catalogue et
+archives restent ceux de la passe antérieure (77 158 400 / 83 363 840 octets).
 
-```bash
-python3 scripts/build_ambiance_packs.py --onde-source /tmp/onde-src
-GOALONG_AMBIANCE_PACK_DIR=/tmp/goalong-ambiance-packs swift test --filter AmbianceTests
-```
+## Audits : ancienne règle → nouvelle règle
 
-Le builder ne publie rien. Il fabrique les packs dans
-`/tmp/goalong-ambiance-packs/` et inscrit leurs empreintes dans le catalogue Swift.
-La variable de développement désigne le dossier contenant les archives, pas une
-banque décodée. `download(id)` n’installe un pack local qu’après une action explicite.
-Les packs vont dans `AppPaths.applicationSupportDirectory/Ambiance/<packId>/`.
+- `audit_privacy_boundaries.sh` : moteur audio interdit partout → sortie autorisée
+  uniquement dans `Features/Ambiance/Sources/AmbianceAudioOutput.swift`.
+  Source/player/mixer sont aussi confinés à ce fichier. AVAudioFile/PCMBuffer sous
+  `Ambiance/Sources` ont le même chemin unique autorisé ; les usages hors ligne
+  préexistants hors de ce sous-arbre conservent leurs règles de fichiers/buffers.
+- Même audit : absence de garde dédiée aux entrées → interdiction globale des neuf
+  tokens micro de la décision, y compris dans le fichier autorisé. Les quatre API
+  bas niveau de capture restent interdites partout. Usage descriptions micro et
+  Apple Music rejetées dans les builders shell/Python ; droits audio-input et
+  microphone rejetés dans les fichiers d’entitlements source. MediaPlayer/MusicKit
+  sont rejetés. Fixtures négatives lancées contre le véritable audit, copie isolée.
+- Même audit : URLSession limité aux fichiers site/Jev/retiré → une seule addition,
+  `Features/Ambiance/Sources/AmbiancePackDownloader.swift`. Les autres règles restent.
+- `generate_security_artifacts.py` / `verify_security_capabilities.py` : cinq chemins
+  externes actifs et packs inactifs → six chemins, avec GET, session, intégrité,
+  host de redirection et conflit des queries explicitement déclarés. Les droits
+  micro deviennent interdits dans le manifeste ; le vérificateur rejette aussi
+  les usage descriptions micro/Apple Music du bundle. Les autres invariants restent.
+- `audit_site_submission.py`, `audit_jev.py`, `audit_local_only.sh`,
+  `audit_update_dependency.py` : règles inchangées. Le premier ne contient aucun
+  inventaire global à étendre. Le message de `verify_source_security.sh` est actualisé.
 
-| Archive | Octets | SHA-256 |
-|---|---:|---|
-| `orchestra.tar` | 77 158 400 | `d8535aa60dbbb9b8b44897a3de0ef26c532b9e3f2a368a5fbe9c4f62462c2489` |
-| `textures.tar` | 83 363 840 | `eee48c8c039e50d1e23f824c3de4151252c5e66e8c42d1264c3daa3b2f5da3a2` |
-
-## Règles de la spécification qui restent bloquées
-
-1. **Sortie audio et musique personnelle en streaming** :
-   `scripts/audit_privacy_boundaries.sh:18` interdit la classe de moteur audio,
-   et les lignes 29–32 rejettent sa présence dans `Sources` ou `Features`, même
-   pour une sortie. Le port du graphe source et du lecteur de fichiers est donc
-   arrêté. Le DSP réel, la gestion des chemins et le rendu hors ligne sont prêts.
-2. **Téléchargement HTTPS éphémère** : les lignes 211–219 du même audit ne
-   permettent que les chemins site/Jev déjà approuvés. Les cinq émissions actives
-   restent inchangées. Les URL réservées de packs figurent séparément, comme
-   inactives, dans `docs/NETWORK.md` et `generate_security_artifacts.py`.
-3. **Mesures de lecture sur périphérique** : aucun moteur de périphérique n’est
-   créé. Les mesures portent sur le rendu hors ligne du DSP de production, comme
-   autorisé pour un environnement sans sortie audio utilisable.
-4. **Hébergement et disponibilité de la release** : la release
-   `ambiance-packs-v1` reste à créer et approuver par le propriétaire. Les URL du
-   catalogue sont réservées ; leur existence distante n’est pas affirmée.
-
-## Vérification et mesures
-
-Les preuves complètes sont dans le dossier privé `.ambiance-work/`, ignoré par Git.
-La comparaison avant modification utilise un snapshot immuable du commit de
-départ et des builds Release séparés arm64/x86_64 assemblés avec `lipo`. Le premier
-essai multi-architecture direct a rencontré le doublon de produit CLI du package ;
-la comparaison emploie les builds par architecture utilisés par le builder du dépôt.
+## Vérification
 
 - `swift build` : passé.
-- `xcrun swift test` avec HOME et CFFIXED_USER_HOME isolés, et vrais packs :
-  **1 544 tests, 43 skips opt-in, 0 échec**. Les tests keychain n’ont pas reproduit
-  le piège historique dans cet environnement.
-- Tests Ambiance et construction réelle du modèle : 14 tests, 0 échec ; seule la
-  mesure longue opt-in est séparée. Tous les Focus/Relax produisent du son.
-- Scripts du workflow : 20 commandes passées ; relancements natifs réels passés.
-- Interactions disclosure, rendu analytics, effets Jev, parcours natifs : passés.
-  Export de site vérifié en UTC, America/Chicago et Europe/Paris.
-- Audit source final : passé, sans modification de ses règles.
-- Bundle universel final arm64 + x86_64 : construit et signé, signature stricte
-  vérifiée, inventaire de sécurité vérifié, smoke tests CLI passés. ZIP et DMG
-  locaux fabriqués et vérifiés ; aucun upload. Les huit commandes bundle/package
-  du workflow passent également.
+- `swift test`, vrais packs locaux, CFFIXED_USER_HOME isolé, tests de périphérique
+  activés lors de la première suite corrigée : **1 548 tests, 48 skips opt-in, 0 échec**.
+  Suite finale après exclusions, sans périphérique concurrent aux mesures :
+  **1 548 tests, 49 skips opt-in, 0 échec** (560,59 s sous compilation concurrente).
+  Première passe : une assertion attendait encore l’ancien blocage audio ; corrigée,
+  puis suite entière relancée. Logs `.ambiance-work/full-tests*.log`.
+- Chaque `scripts/audit_*.sh` et `scripts/audit_*.py` : passé (cinq scripts).
+  Les **25 fixtures négatives** sont passées contre le vrai audit privacy après
+  exclusion du helper Onde ; baseline acceptée et 25 mutations rejetées.
+- `verify_source_security.sh` : passé. Tests de politique site/manifeste : 39 passés.
+- Transport réel via serveur HTTP de `/tmp/goalong-ambiance-packs/` : cinq scénarios
+  passés (succès, corruption, taille, redirection, annulation). Deux passes : dix GET
+  `/orchestra.tar`, aucun cookie/credential, aucun téléchargement temporaire restant.
+  `GOALONG_AMBIANCE_PACK_TEST_URL=http://127.0.0.1:<port>/` existe en Debug seulement ;
+  tous ses redirects sont refusés. `GOALONG_AMBIANCE_PACK_DIR` conserve l’installation
+  locale antérieure. Logs `.ambiance-work/network-tests-final-ownership.log` et
+  `.ambiance-work/pack-http-requests.jsonl`.
+- `bash scripts/build_local_app.sh`, `LOCALHISTORY_ARCHS="arm64 x86_64"`,
+  `LOCALHISTORY_RUN_TESTS=0` (suite exécutée séparément), jobs=4 : passé.
+  Bundle signé Apple Development, vérification stricte et inventaire de sécurité
+  passés ; architectures x86_64 + arm64, source `9df7065`, aucune usage description
+  micro/Apple Music. `.ambiance-work/universal-bundle-final.log`,
+  `dist/Goalong History.app`, `dist/security-capabilities.json`. Pas de notarisation
+  ni publication demandée. Les trois mesures de sortie sont terminées ci-dessous.
 
-### Taille de l’exécutable universel
+## Mesures réelles
 
-Comparaison à profil de signature identique : copies des deux exécutables
-signées ad hoc avec le même identifiant et des entitlements vides  pour éviter
-que la différence de format de signature compte comme du code Ambiance.
+Runner Swift `-O`, targets Ambiance/OndeCore/OndeDSP de production, sans rendu offline.
+Il initialise `NSApplication.shared` avec la politique `.accessory`, comme
+`Sources/LocalHistoryApp/main.swift`, avant le relevé ; aucun objet audio n’est
+préchauffé. C’est un hôte AppKit minimal, pas l’app Goalong complète. RSS de tout le
+processus, relevée chaque seconde ; CPU utilisateur+système / temps réel × 100.
+Après arrêt, RSS immédiate puis à cinq secondes. Sortie par défaut : AirPods Pro,
+48 kHz au relevé. Les JSON privés conservent les échantillons et les durées exactes.
 
-| Avant | Après | Surcroît |
-|---:|---:|---:|
-| 84 217 984 octets | 85 130 544 octets | **+912 560 octets** |
+| Source | Avant / pic / 5 s après stop (Mo décimaux) | CPU sur 300 s | Résidu après stop |
+|---|---:|---:|---:|
+| Ambre | 25,43 / 36,09 / 25,95 | 5,63 % (300,19 s) | +0,52 Mo |
+| Confluence | 23,49 / 44,37 / 29,41 | 3,53 % (300,32 s) | **+5,91 Mo : hors budget** |
+| Fichier personnel | 24,74 / 32,49 / 24,76 | 0,33 % (300,12 s) | +0,02 Mo |
 
-Le surcroît de 0 913 Mo reste sous le plafond de 1 000 000 octets. Marge restante
-pour la future UI : **87 440 octets** ; elle devra refaire la mesure.
-L’exécutable effectivement signé dans le bundle pèse 85 130 880 octets.
-Les deux architectures sont présentes. Aucun fichier audio ou archive de pack
-n’est dans le bundle. Données : `.ambiance-work/binary-measures.json`.
+Pour les trois passes : moteur/runtime absents et mappings nuls après stop ;
+pics < +90 Mo. Ambre et le fichier personnel reviennent à ±5 Mo ; **Confluence
+échoue de 914 624 octets**. Ambre dépasse la cible CPU de 5 % ; celle-ci est une
+cible à rapporter, pas un résultat à masquer. Mappings Ambre : 17 705 796 octets,
+zéro copie d’échantillons. Preuves : `.ambiance-work/appkit-live-pass/live-*.json`.
 
-### Mesures de production hors ligne
+La première passe AppKit Confluence s’est arrêtée à 119 s. Les logs natifs montrent
+`iounit configuration changed > stopping the engine` : changement de périphérique
+CoreAudio, sans appel Stop du runner. Cette passe n’est pas une mesure de 300 s.
+La seconde passe a tenu 300 s ; ses valeurs sont dans le tableau. Un changement
+de sortie peut interrompre le graphe ;
+il faut alors Stop puis Play. Aucun redémarrage automatique ou observateur ajouté.
 
-Code Swift compilé avec `-O`, Swift 5, cible macOS 13 ; objets C/OndeCore issus du
-build Release. Le runner indépendant utilise les mêmes targets, **pas le processus
-Goalong complet**. L’installation du pack est terminée avant de mesurer le repos.
-RSS = octets résidents du processus ; Mo = 1 000 000 octets. Le pic est échantillonné
-chaque seconde d’audio. Les 13 compositions sont mesurées sur 60 secondes d’audio,
-avec 300 secondes pour Ambre et Confluence. Aucun périphérique audio n’est ouvert.
+Une variante isolée remplaçant les lectures Foundation par un buffer réutilisé
+64 Kio, avec la même vérification SHA-256, a passé un essai court mais échoué après
+300 s (+8,09 Mo Confluence). Elle est **rejetée**, non intégrée et non commitée.
+Les essais d’engine reset et de purge d’allocateur n’ont pas résolu le résidu ; ils
+ne sont pas intégrés non plus. Aucune préinitialisation audio au repos, conservation
+de moteur après Stop ou relâchement d’audit n’a été utilisé pour faire passer le budget.
 
-| Composition | RSS repos | RSS pic du rendu | RSS après arrêt | CPU d’un cœur |
-|---|---:|---:|---:|---:|
-| Ambre (300 s) | 10,91 Mo | 19,73 Mo | 11,83 Mo | 1,429 % |
-| Confluence (300 s) | 18,79 Mo | 35,31 Mo | 19,09 Mo | 0,754 % |
+Le fichier personnel est un WAV synthétique stéréo PCM16 de 330 s, 58,2 Mo, ajouté
+via `addOwnFiles`. Il exerce le chemin personnel ; aucune musique privée recherchée.
 
-Ambre : 4,286752 s CPU et 10,775421 s murales pour 300 s d’audio.
-Confluence : 2,262433 s CPU et 4,321256 s murales pour 300 s d’audio.
-Le CPU rapporté vaut temps CPU / durée audio × 100 ; le temps mural est aussi
-conservé pour distinguer l’effet de la charge des autres processus du Mac.
+Les premiers runners CLI froids, sans initialisation AppKit, restent archivés :
+`.ambiance-work/first-live-pass/` (~315 s sous charge) et
+`.ambiance-work/final-live-pass/` (~300 s). La dernière passe CLI avait des résidus
+Ambre +4,52 Mo, Confluence +5,08 Mo, personnel +6,37 Mo : deux hors budget.
+Ils ne sont pas présentés comme verts. Le profil AppKit reproduit le démarrage du
+vrai produit et distingue ces caches de démarrage de ceux de la lecture audio.
 
-Sur les 13 compositions : plus grand surcroît de RSS **16 515 072 octets** ;
-plus grand écart absolu après arrêt **3 817 472 octets**, dans la tolérance ±5 Mo.
-Copies d’échantillons : **0 octet**. Mappings logiques : 17 705 796 octets pour
-Ambre, 53 569 492 pour Confluence ; ils sont tous libérés à l’arrêt. Ces résultats
-valident le runtime hors ligne. La RAM et le CPU du futur graphe audio complet
-restent à mesurer après revue de la frontière audio.
+## Taille du bundle
 
-Données complètes : `.ambiance-work/measures-final.jsonl`, runner
-`.ambiance-work/measure.swift`, logs `.ambiance-work/ci-*.log` et tableaux de statut
-`.ambiance-work/ci-static-status.tsv` / `ci-native-status.tsv`. Les captures natives
-sont conservées dans `.ambiance-work/qa-local-analytics/` et `qa/journey-ci/`.
+Dernière construction après exclusion du helper : **85 202 160 octets signés**.
+Aucun asset audio dans le bundle. Comparaison identique à la passe précédente :
+exécutable universel copié, signé ad hoc `ai.goalong.localhistory` avec entitlements
+vides, sans strip ajouté : **85 201 696 octets**. Référence avant Ambiance :
+84 217 984 ; passe précédente : 85 130 544 (rapport antérieur, références non
+reconstruites aujourd’hui). Delta avant Ambiance : **+983 712 octets**, sous le
+plafond strict de 1 000 000. Delta de cette passe audio/réseau : +71 152 octets.
+Preuve privée : `.ambiance-work/binary-audio-final-measures.json`.
+L’avant-dernière construction dépassait de 2 352 octets ; l’exclusion du helper
+inutilisé a résolu cet échec, sans changer la signature de comparaison.
+
+## Passation et reste
+
+Commits locaux : `e653cd2` (audio + gardes), `8b170ac` (transport + inventaires/docs),
+`7d74718` (25 fixtures et builders), `0a6d0d0` (exporters exclus), `420844e` (ownership
+session), `9df7065` (helper inutilisé exclu).
+Reste : résoudre le résidu RAM Confluence ; arbitrer la query signée GitHub. La sortie est implémentée, mais cette tâche ne constitue pas une acceptation
+finale des budgets. La cible CPU Ambre est manquée.
+La publication des packs reste réservée à l’accord du propriétaire. La session UI conserve son worktree séparé.
 
 Le `CONTEXT.md` partagé du checkout principal a été lu. L’interdiction de travailler
-hors de ce worktree empêche de l’éditer ; ce document constitue la passation locale.
-
-## Commits et fichiers ajoutés
-
-Commits de code/outillage : `67a9a79` (moteur et mappings), `fbb278b` (API et
-runtime), `832c71c` (packs et documentation des frontières), `21578a2` (buffers
-bornés, dossiers imbriqués et états de pack). Le dernier commit contient seulement
-cette passation et les mesures. Le bundle a été construit avec le code `21578a2`.
-
-La spec `docs/AMBIANCE.md` était déjà non suivie au début et reste intacte, non
-ajoutée aux commits. Aucune vue, aucun réglage UI ou `DashboardSection` n’a changé.
-
-<details>
-<summary>Nouveaux fichiers (41)</summary>
-
-- `Features/Ambiance/Engine/ADAPTATIONS.md`
-- `Features/Ambiance/Engine/LICENSE`
-- `Features/Ambiance/Engine/OndeCore/FocusCompositions.swift`
-- `Features/Ambiance/Engine/OndeCore/GenerativeRenderer.swift`
-- `Features/Ambiance/Engine/OndeCore/GenerativeSettings.swift`
-- `Features/Ambiance/Engine/OndeCore/OrchestraBank.swift`
-- `Features/Ambiance/Engine/OndeCore/PlaybackSelection.swift`
-- `Features/Ambiance/Engine/OndeCore/RelaxCompositions.swift`
-- `Features/Ambiance/Engine/OndeCore/RenderingTypes.swift`
-- `Features/Ambiance/Engine/OndeCore/TransitionRenderer.swift`
-- `Features/Ambiance/Engine/OndeDSP/GravityPlanner.c`
-- `Features/Ambiance/Engine/OndeDSP/GravityScore.h`
-- `Features/Ambiance/Engine/OndeDSP/OndeDSP.c`
-- `Features/Ambiance/Engine/OndeDSP/Orchestra.c`
-- `Features/Ambiance/Engine/OndeDSP/Orchestra.h`
-- `Features/Ambiance/Engine/OndeDSP/PhrasePlanner.c`
-- `Features/Ambiance/Engine/OndeDSP/PlaybackEnvelope.c`
-- `Features/Ambiance/Engine/OndeDSP/RelaxationPlanner.c`
-- `Features/Ambiance/Engine/OndeDSP/RelaxationScore.h`
-- `Features/Ambiance/Engine/OndeDSP/SceneMixer.c`
-- `Features/Ambiance/Engine/OndeDSP/SignatureScore.h`
-- `Features/Ambiance/Engine/OndeDSP/VowelChoir.c`
-- `Features/Ambiance/Engine/OndeDSP/VowelChoir.h`
-- `Features/Ambiance/Engine/OndeDSP/include/GravityPlanner.h`
-- `Features/Ambiance/Engine/OndeDSP/include/OndeDSP.h`
-- `Features/Ambiance/Engine/OndeDSP/include/PhrasePlanner.h`
-- `Features/Ambiance/Engine/OndeDSP/include/PlaybackEnvelope.h`
-- `Features/Ambiance/Engine/OndeDSP/include/RelaxationPlanner.h`
-- `Features/Ambiance/Engine/OndeDSP/include/SceneMixer.h`
-- `Features/Ambiance/Engine/SOURCE_COMMIT`
-- `Features/Ambiance/Engine/THIRD_PARTY_NOTICES.md`
-- `Features/Ambiance/Sources/AmbianceController.swift`
-- `Features/Ambiance/Sources/AmbianceModule.swift`
-- `Features/Ambiance/Sources/AmbiancePackCatalog.swift`
-- `Features/Ambiance/Sources/AmbiancePackStore.swift`
-- `Features/Ambiance/Sources/AmbianceRuntime.swift`
-- `Features/Ambiance/Sources/AmbianceSettings.swift`
-- `Features/Ambiance/Sources/AmbianceSource.swift`
-- `Features/Ambiance/Tests/AmbianceTests.swift`
-- `docs/AMBIANCE-IMPLEMENTATION.md`
-- `scripts/build_ambiance_packs.py`
-
-</details>
+hors de ce worktree empêche de l’éditer ; ce document tient lieu de passation locale.
+La décision `AMBIANCE-AUDIO-NETWORK.md`, initialement non suivie, reste intacte.
