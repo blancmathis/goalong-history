@@ -200,7 +200,25 @@ vrai produit et distingue ces caches de démarrage de ceux de la lecture audio.
 
 ## Taille du bundle
 
-Dernière construction après exclusion du helper : **85 202 160 octets signés**.
+### Réduction sur la branche courante (2026-10-04)
+
+Six lots mesurés depuis `bad0820`, code final `1f9d91b` : **239 424 octets gagnés sur l’universel**, sans changement des quinze morceaux, seeds, sons, fonctions ou rendu. Builds Release séparées puis `lipo -create`, sans strip ni signature supplémentaire :
+
+| Architecture | Avant `bad0820` | Après `1f9d91b` | Gain |
+|---|---:|---:|---:|
+| arm64 | 45 635 232 | 45 526 880 | 108 352 |
+| x86_64 | 46 103 560 | 45 983 776 | 119 784 |
+| universal | 91 756 192 | 91 516 768 | 239 424 |
+
+Principaux gains de symboles liés : `GenerativeSettings.swift` −36 150/−39 624 octets (arm64/x86_64), `AmbiancePackStore.swift` −17 001/−15 749, `FocusCompositions.swift` −9 989/−10 865 ; ils excluent les alignements, noms et symboles partagés. Reçus JSON compatibles, même API de progression non échappante, mêmes familles d’instruments et contrôles. `-Os` C conservé ; `-Oz`, formatter hexadécimal partagé et `@inline(never)` seul retirés car sans gain universel. `-Osize` Swift non réessayé, conformément au brief.
+
+Vérification finale : 27 tests Ambiance (3 skips), 1 592 tests complets (47 skips), zéro échec ; cinq audits, allowlist, sécurité source et 25 fixtures négatives verts. Quinze rendus de 20 s par architecture identiques octet par octet (écart 0) ; dix captures natives RGBA identiques pixel par pixel. Aucun test/audit affaibli. Aucun push, PR ou release.
+
+Rapport complet, top 20 initial, commits et limites : [rapport privé de taille](../.ambiance-work/size/REPORT.md). Statuts et cartes de lien dans `.ambiance-work/size/`. La référence signée sans Ambiance de 84 217 984 octets ci-dessous reste historique, issue d’une autre base ; cette passe ne la soustrait pas aux exécutables courants pour annoncer un nouveau surcoût absolu vérifié.
+
+### Mesure historique avant rebase
+
+Construction historique après exclusion du helper : **85 202 160 octets signés**.
 Aucun asset audio dans le bundle. Comparaison identique à la passe précédente :
 exécutable universel copié, signé ad hoc `ai.goalong.localhistory` avec entitlements
 vides, sans strip ajouté : **85 201 696 octets**. Référence avant Ambiance :
