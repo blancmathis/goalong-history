@@ -52,6 +52,7 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 | Quota | « X min par jour » |
 | Breaks | « Pauses » |
 | Frozen Turkey | « Geler le Mac » |
+| Friction instead of a block | « Ralentir » (list action), « Renoncer » / « Continuer » |
 | Protection level | Standard / Renforcée |
 
 ## Data model
@@ -137,6 +138,39 @@ if the wall clock jumps forward more than 60 s beyond the elapsed continuous tim
 end forward by the jump. Persist the last seen wall time every minute; after a reboot, a wall clock
 earlier than the last seen time keeps the remaining durations. Documented limit: across a reboot a
 forward clock change cannot be detected by the app alone.
+
+## Ralentir (friction)
+
+Decision 2026-10-04 (owner). A list can slow a target down instead of blocking it. Evidence: the
+one sec field experiment (Grüning, Riedel, Lorenz-Spreen, PNAS 2023; 280 people, 6 weeks) cut actual
+openings of target apps by 57 %. The option to give up had the strongest effect, the waiting time
+helped too, the deliberation message did nothing. So: a delay, a « Renoncer » button, no message.
+
+**Model.** `BlockList` gains `action` (`block` | `slowDown`, absent = `block`), `slowDownSeconds`
+(3…60, default 10) and `continueMinutes` (1…60, default 10). Additive optional fields, schema stays 1;
+an older build ignores them and blocks, which is stricter.
+
+**Rule.** For an active `slowDown` list (not on break, quota left), a target it would block is
+slowed instead. If any active `block` list blocks the same target, the block wins.
+
+**Site.** The site veil covers the browser window with the target's name, a countdown of
+`slowDownSeconds`, « Renoncer » (enabled at once: closes the tab like a block) and « Continuer »
+(enabled when the countdown ends). « Continuer » allows that host (or app) for `continueMinutes`;
+after that, the next sample in front shows the veil again. One fact line, no advice: « 3e fois
+aujourd'hui ».
+
+**App.** On activation or launch, the app is hidden (`hide()`, never terminated: the member may have
+work in it) and the same panel appears, non-activating, centred on the active screen. « Continuer »
+unhides and activates it; « Renoncer » leaves it hidden.
+
+**Counts.** `BlockDayUsage` gains, per list: `slowDownShown`, `renounced`, `continued`. The page
+shows them; `goalong friction [DAY]` prints them.
+
+**Lock.** Under a program lock or a locked session, `block` → `slowDown` and lowering
+`slowDownSeconds` or raising `continueMinutes` are refused (weaker); `slowDown` → `block`, raising
+the delay, lowering `continueMinutes` are allowed (stricter).
+
+**Freeze.** Unchanged: a freeze ignores `slowDown` lists.
 
 ## Observation (reuse, no second observer)
 
