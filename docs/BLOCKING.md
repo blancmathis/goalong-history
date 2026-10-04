@@ -215,3 +215,33 @@ Every refusal returns a short French reason the page shows as is.
 - Blocking-only observation records nothing and feeds neither Jev nor analysis.
 - All existing checks stay green: `.github/workflows/macos.yml` commands,
   `scripts/verify_source_security.sh`, `scripts/generate_support_source_allowlist.py --check`.
+
+## Engine handoff (Standard level)
+
+The design commit ships the page, the veils, the frozen shield, the module switch, the model and an
+in-memory `BlockingController` skeleton. The engine work completes it without changing the UI.
+
+- **Do not edit** (design owner): `Blocking/BlockingPage.swift`, `Blocking/BlockingPageLists.swift`,
+  `Blocking/BlockingWeek.swift`, `Blocking/BlockingShieldViews.swift`, `GoalongModulesSettings.swift`.
+  Host these views in windows; do not restyle them. If the UI API above must change, keep it
+  source-compatible and say so in the report.
+- **Scope**: the store (path, modes, atomic writes, versioning, unreadable = stays locked); controller
+  timers (refresh at each boundary and at least every 15 s while something is active or upcoming;
+  nothing at all while idle), `needsObservation`; the blocking-only mode of `ContextMonitor` and the
+  sink; every item of « Enforcement, Standard level »; quota accounting and breaks (the veil's
+  `onBreak` calls `takeBreak`); the freeze (shield on every screen with kiosk presentation options,
+  kept apps launchable; lockScreen mode with relock); the clock-jump rule; launch at login while
+  locked; quit refusal; the browser support list; `BlockingEnforcementBackend` with the Standard
+  backend only. No privileged component, helper, daemon, pf or hosts change: that is the Strict
+  level, decided separately.
+- **Module off** must stay inert (see « Module convention »): no controller, timer, window, file,
+  observer or permission request.
+- **Tests**: everything in « Tests » above, and fix the existing tests the design commit broke (the
+  sidebar now uses `DashboardSection.sidebarSections(modules:)`; Réglages has a new `.modules` pane).
+- **Inventories**: add new sources to the support allowlist and the security artifacts
+  (`scripts/generate_security_artifacts.py`); update `docs/PERMISSIONS.md` and `docs/GUARANTEES.md`
+  for what the module may do once on. No network use.
+- **Checks**: `swift build`; the full suite with an isolated `HOME` (two `ChatGPTRecapTests` keychain
+  failures are known there); `scripts/verify_source_security.sh`;
+  `scripts/generate_support_source_allowlist.py --check`; `./scripts/audit_privacy_boundaries.sh`.
+  Never run two `swift build` at once in one worktree.
