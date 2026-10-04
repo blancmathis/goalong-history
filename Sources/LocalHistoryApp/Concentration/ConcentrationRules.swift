@@ -201,15 +201,119 @@ enum FocusLimitRules {
     static func crossings(limits: FocusLimits, dailySeconds: Double, weeklySeconds: Double, hasDefinition: Bool,
                           at now: Date, calendar: Calendar = .current, marks: [FocusLimitMark]) -> [FocusLimitMark] {
         let day = FocusCalendar.dayKey(now, calendar: calendar)
-        let week = calendar.dateInterval(of: .weekOfYear, for: now)!.start
+        let week = FocusCalendar.weekKey(now, calendar: calendar)
         var candidates: [FocusLimitMark] = []
         if let hours = limits.dailyHours, dailySeconds >= Double(hours * 3600) { candidates.append(.init(kind: "daily", period: day, at: now, usesActiveTime: !hasDefinition)) }
-        if let hours = limits.weeklyHours, weeklySeconds >= Double(hours * 3600) { candidates.append(.init(kind: "weekly", period: FocusCalendar.dayKey(week, calendar: calendar), at: now, usesActiveTime: !hasDefinition)) }
+        if let hours = limits.weeklyHours, weeklySeconds >= Double(hours * 3600) { candidates.append(.init(kind: "weekly", period: week, at: now, usesActiveTime: !hasDefinition)) }
         if let minute = limits.endMinute, limits.weekdays.contains(BlockingSchedule.isoWeekday(now, calendar: calendar)),
            calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now) >= minute {
             candidates.append(.init(kind: "endOfDay", period: day, at: now, usesActiveTime: !hasDefinition))
         }
         return candidates.filter { candidate in !marks.contains { $0.kind == candidate.kind && $0.period == candidate.period } }
+    }
+}
+
+enum FocusCommitRule {
+    enum Check: Equatable { case free, harderOnly, locked(String) }
+    static func check(old: FocusCommitment, new: FocusCommitment?, now: Date, calendar: Calendar = .current) -> Check {
+        guard old.result == nil else { return .locked("Cet engagement est déjà réglé.") }
+        guard let interval = old.period.interval(calendar: calendar) else { return .locked("Période invalide.") }
+        if now < max(old.createdAt.addingTimeInterval(600), interval.start) { return .free }
+        guard let new else { return .locked("La fenêtre de modification est terminée.") }
+        guard new.id == old.id, new.period == old.period, new.kind == old.kind, new.task == old.task,
+              new.createdAt == old.createdAt, new.target >= old.target else { return .locked("L’engagement peut seulement devenir plus exigeant.") }
+        if let stake = old.stake {
+            guard let next = new.stake, Set(stake.listIds).isSubset(of: Set(next.listIds)),
+                  (next.minute ?? -1) >= (stake.minute ?? 1440) else { return .locked("L’enjeu ne peut pas être réduit.") }
+        }
+        return .harderOnly
+    }
+}
+
+enum FocusCommitmentRules {
+    static func mayCreate(_ period: FocusCommitmentPeriod, at now: Date, calendar: Calendar = .current) -> Bool {
+        guard let interval = period.interval(calendar: calendar) else { return false }
+        let c = FocusCalendar.civil(calendar)
+        let start = period.kind == .day ? c.startOfDay(for: now) : FocusCalendar.weekInterval(now, calendar: calendar).start
+        let last = c.date(byAdding: .day, value: 7, to: start)!
+        return interval.start >= start && interval.start <= last
+    }
+    static func progress(_ commitment: FocusCommitment, days: [GoalongLocalAnalytics.Day], sessions: [FocusSession],
+                         plans: [FocusPlan], at now: Date, hasDefinition: Bool, calendar: Calendar = .current) -> FocusCommitmentProgress {
+        var result = FocusCommitmentProgress(usesActiveTime: commitment.kind == .work && !hasDefinition)
+        guard let period = commitment.period.interval(calendar: calendar), now > period.start else { return result }
+        let bounds = DateInterval(start: period.start, end: min(now, period.end))
+        switch commitment.kind {
+        case .work, .task:
+            var measured: [DateInterval] = [], classified: [DateInterval] = []
+            for day in days where day.state != .noSource {
+                for s in day.segments where s.end > s.start {
+                    guard let clip = bounds.intersection(with: DateInterval(start: s.start, end: s.end)), clip.duration > 0 else { continue }
+                    if s.kind != .unobserved && s.kind != .concealed && s.kind != .unclassified { classified.append(clip) }
+                    let matches = commitment.kind == .work ? (hasDefinition ? s.kind == .work : s.kind.isActive)
+                        : s.kind == .work && s.task?.localizedCaseInsensitiveCompare(commitment.task ?? "") == .orderedSame
+                    if matches { measured.append(clip) }
+                }
+            }
+            result.measured = FocusMeasurement.unionSeconds(measured) / 60
+            // Missing days/gaps, concealed contexts and unclassified time stay explicit uncertainty.
+            result.unmeasuredMinutes = max(0, bounds.duration - FocusMeasurement.unionSeconds(classified)) / 60
+        case .sessions:
+            var seen = Set<UUID>()
+            result.measured = Double(sessions.filter { session in
+                seen.insert(session.id).inserted && FocusMeasurement.unionSeconds(FocusMeasurement.workIntervals(session, from: bounds.start, until: bounds.end)) >= 900
+            }.count)
+        case .plan:
+            result.measured = Double(plans.filter { plan in
+                guard let day = FocusCalendar.dayInterval(plan.day, calendar: calendar) else { return false }
+                return day.start >= bounds.start && day.start < bounds.end
+            }.reduce(0) { $0 + $1.items.filter { $0.status == .done }.count })
+        }
+        return result
+    }
+    static func stakeEnd(_ stake: FocusStake, settledAt: Date, calendar: Calendar = .current) -> Date? {
+        guard let minute = stake.minute else { return nil }
+        return FocusCalendar.civil(calendar).date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: settledAt,
+            matchingPolicy: .nextTime, repeatedTimePolicy: .first, direction: .forward)
+    }
+    static func settle(_ commitment: FocusCommitment, progress: FocusCommitmentProgress, at now: Date,
+                       blockingOn: Bool, listIDs: Set<UUID>, calendar: Calendar = .current) -> FocusCommitmentResult? {
+        guard commitment.result == nil, let period = commitment.period.interval(calendar: calendar), now >= period.end else { return nil }
+        var result = FocusCommitmentResult(settledAt: now, measured: progress.measured, unmeasuredMinutes: progress.unmeasuredMinutes,
+                                          outcome: progress.measured >= Double(commitment.target) ? .held : .missed)
+        result.usesActiveTime = progress.usesActiveTime
+        if result.outcome == .missed, let stake = commitment.stake {
+            if stakeEnd(stake, settledAt: now, calendar: calendar).map({ $0 <= now }) != false { result.stake = .init(state: .skipped, reason: .late) }
+            else if !blockingOn { result.stake = .init(state: .skipped, reason: .blockingOff) }
+            else if Set(stake.listIds).intersection(listIDs).isEmpty { result.stake = .init(state: .skipped, reason: .noList) }
+            else { result.stake = .init(state: .applied, blockId: commitment.id) }
+        }
+        return result
+    }
+    /// Month of the last civil day in the period, not the exclusive midnight end or settle month.
+    static func jokerMonth(_ period: FocusCommitmentPeriod, calendar: Calendar = .current) -> String? {
+        period.interval(calendar: calendar).map { String(FocusCalendar.dayKey($0.end.addingTimeInterval(-1), calendar: calendar).prefix(7)) }
+    }
+    static func jokersLeft(period: FocusCommitmentPeriod, commitments: [FocusCommitment], settings: FocusJokerSettings,
+                           calendar: Calendar = .current) -> Int {
+        let month = jokerMonth(period, calendar: calendar)
+        let used = commitments.filter { $0.period.kind == period.kind && $0.result?.jokerAt != nil && jokerMonth($0.period, calendar: calendar) == month }.count
+        return max(0, (period.kind == .day ? settings.day : settings.week) - used)
+    }
+    static func series(_ commitments: [FocusCommitment], kind: FocusCommitmentPeriod.Kind, calendar: Calendar = .current) -> Int {
+        let settled = commitments.filter { $0.period.kind == kind && $0.result != nil }.sorted { $0.period.key < $1.period.key }
+        var count = 0
+        for commitment in settled {
+            if commitment.result?.outcome == .held || commitment.result?.jokerAt != nil { count += 1 } else { count = 0 }
+        }
+        return count
+    }
+    static func stakeWindow(_ commitment: FocusCommitment, blockEnd: Date? = nil, calendar: Calendar = .current) -> Date? {
+        guard let result = commitment.result, result.outcome == .missed, result.jokerAt == nil, !result.declared else { return nil }
+        if result.stake.state == .applied, let stake = commitment.stake {
+            return blockEnd ?? stakeEnd(stake, settledAt: result.settledAt, calendar: calendar)
+        }
+        return FocusCalendar.civil(calendar).date(byAdding: .day, value: 1, to: FocusCalendar.civil(calendar).startOfDay(for: result.settledAt))
     }
 }
 #endif

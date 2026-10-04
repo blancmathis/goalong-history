@@ -107,6 +107,24 @@ struct FocusStore {
         guard value.valid else { throw FocusFailure.storageFailed }; return value
     }
     func saveSettings(_ value: FocusSettings) throws { guard value.valid else { throw FocusFailure.invalidArgument }; try save(value, area: nil, name: "settings.json") }
+    func commitments() throws -> [FocusCommitment] {
+        let values = try load([FocusCommitment].self, area: nil, name: "commitments.json") ?? []
+        guard values.count <= 800, Self.validCommitments(values) else { throw FocusFailure.storageFailed }
+        return values
+    }
+    @discardableResult func saveCommitments(_ values: [FocusCommitment]) throws -> [FocusCommitment] {
+        guard Self.validCommitments(values) else { throw FocusFailure.invalidArgument }
+        var retained = values
+        let removeCount = max(0, retained.count - 800)
+        let oldest = retained.filter { $0.result != nil }.sorted { $0.result!.settledAt < $1.result!.settledAt }.prefix(removeCount)
+        guard oldest.count == removeCount else { throw FocusFailure.invalidArgument }
+        let removed = Set(oldest.map(\.id)); retained.removeAll { removed.contains($0.id) }
+        try save(retained, area: nil, name: "commitments.json")
+        return retained
+    }
+    private static func validCommitments(_ values: [FocusCommitment]) -> Bool {
+        Set(values.map(\.id)).count == values.count && Set(values.map(\.period)).count == values.count && values.allSatisfy(\.valid)
+    }
     struct Transaction: Codable { var plans: [FocusPlan]; var review: FocusReview? }
     /// Preflighted multi-day changes are replayable after interruption; app remains the only writer.
     func savePlans(_ plans: [FocusPlan], review: FocusReview? = nil) throws {
