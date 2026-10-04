@@ -2,8 +2,8 @@
 import AppKit
 import SwiftUI
 
-/// The module on one page: the session (start one, or the one running), today's plan, today's
-/// sessions, then the settings, folded.
+/// The module on one page: the session (start one, or the one running), today's plan, the
+/// engagements of the day and the week, today's sessions, then the settings, folded.
 @MainActor struct ConcentrationPage: View {
     @ObservedObject private var runtime = ConcentrationRuntime.shared
 
@@ -32,6 +32,7 @@ import SwiftUI
     @ObservedObject private var modules = GoalongModuleStore.shared
     @State private var draft: FocusComposerDraft
     @State private var reviewing = false
+    @State private var editingCommitment: FocusCommitmentEditRequest?
     @State private var settingsOpen: Bool
     @FocusState private var addFocused: Bool
 
@@ -65,6 +66,7 @@ import SwiftUI
                         FocusPlanSection(controller: controller, now: now, measures: measures ?? controller.itemMeasures,
                                          draft: $draft, addFocused: $addFocused, onReview: { reviewing = true })
                             .id("plan")
+                        FocusCommitmentsSection(controller: controller, now: now, onEdit: { editingCommitment = $0 })
                         FocusSessionsSection(controller: controller, now: now)
                         FocusSettingsSection(controller: controller, open: $settingsOpen)
                     }
@@ -82,6 +84,10 @@ import SwiftUI
         .sheet(isPresented: $reviewing) {
             ConcentrationReviewSheet(controller: controller, plan: controller.plan, review: controller.review,
                                      onClose: { reviewing = false })
+                .goalongControls()
+        }
+        .sheet(item: $editingCommitment) { request in
+            FocusCommitmentEditor(controller: controller, request: request, now: Date(), onClose: { editingCommitment = nil })
                 .goalongControls()
         }
     }
@@ -1028,7 +1034,22 @@ struct FocusThreadModel: Equatable {
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                GoalongNote("Tout se pilote aussi avec la commande goalong : session, plan, review, focus watch. Voir la page Terminal.",
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Engagements").font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+                        .accessibilityAddTraits(.isHeader)
+                    LHCard(padding: 0) {
+                        HStack(alignment: .center, spacing: 12) {
+                            labels("Jokers par mois", "Un joker garde la série et lève l’enjeu d’une période non tenue.")
+                            Spacer(minLength: 12)
+                            Stepper(value: joker(\.day), in: 0...5) { Text("\(controller.settings.jokerSettings.day) pour les jours").monospacedDigit() }
+                                .fixedSize()
+                            Stepper(value: joker(\.week), in: 0...2) { Text("\(controller.settings.jokerSettings.week) pour les semaines").monospacedDigit() }
+                                .fixedSize()
+                        }
+                        .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 10).frame(minHeight: 52)
+                    }
+                }
+                GoalongNote("Tout se pilote aussi avec la commande goalong : session, plan, review, commitment, focus watch. Voir la page Terminal.",
                             symbol: "terminal")
             }
             .padding(.top, 14)
@@ -1049,6 +1070,13 @@ struct FocusThreadModel: Equatable {
     private func setting<T>(_ path: WritableKeyPath<FocusSettings, T>) -> Binding<T> {
         Binding(get: { controller.settings[keyPath: path] }, set: { value in
             var next = controller.settings; next[keyPath: path] = value; save(next)
+        })
+    }
+
+    private func joker(_ path: WritableKeyPath<FocusJokerSettings, Int>) -> Binding<Int> {
+        Binding(get: { controller.settings.jokerSettings[keyPath: path] }, set: { value in
+            var next = controller.settings, jokers = next.jokerSettings
+            jokers[keyPath: path] = value; next.commitmentJokers = jokers; save(next)
         })
     }
 

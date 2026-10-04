@@ -394,3 +394,23 @@ plomberie. L'inventaire reste inchangé et --check passe.
 Aucune question bloquante de plomberie. Le design doit remplacer le Text TODO, dessiner les
 cartes/éditeurs/panneaux et relier les actions ci-dessus (dont le verrou propre aux séances).
 Aucun parcours de l'app installée ni validation visuelle des Engagements n'est revendiqué ici.
+
+### Interface (Claude, 2026-10-04)
+
+`Concentration/ConcentrationCommitmentViews.swift` ; rendus `commitments-*`, `panel-commitment-*`,
+`commitment-editor-*`, `review-sheet-commit-*` dans `ConcentrationRenderingTests`.
+
+- Page : section « Engagements » entre le plan et les séances. Résultats dont une sortie est ouverte
+  (une ligne chacun, sorties à droite), puis deux cartes de même hauteur « Aujourd'hui » et « Cette
+  semaine » : phrase, jauge (couleur du travail ; segments jusqu'à 12 pour séances/plan ; pointillé =
+  pas d'engagement), mesure, enjeu, fenêtre de modification, période suivante. Série et jokers dans
+  l'en-tête de la carte seulement.
+- Éditeur (feuille) : la phrase d'abord, puis Quand / Objectif / Au moins / Enjeu (listes + heure).
+  En mode « plus exigeant », les contrôles qui allègeraient sont désactivés ou filtrés, et
+  `commitCheck` refuse le reste.
+- Panneau du résultat : `FocusCommitmentPanelView`, jour et semaine dans le même panneau.
+- Bilan du soir : progression du jour (faits seulement), puis « Prendre un engagement pour demain »
+  (formulaire en ligne, enregistré avec le bilan).
+- Réglages : « Jokers par mois » (jours 0…5, semaines 0…2).
+- Le plan du matin n'a pas de panneau à lui : « Faire le plan » descend au plan, et la section
+  Engagements est juste en dessous.
