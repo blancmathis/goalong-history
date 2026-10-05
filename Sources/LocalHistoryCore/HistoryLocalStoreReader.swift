@@ -207,8 +207,8 @@ package struct ComputerHistoryEvidenceLoadLimits: Equatable {
 
 /// In-memory checkpoint for Activité's append-only JSONL projection. It contains no
 /// event contents. A checkpoint is published only after a complete, stable read.
-public struct HistoryLocalAnalyticsCursor: Sendable, Equatable {
-    public struct File: Sendable, Equatable {
+public struct HistoryLocalAnalyticsCursor: Codable, Sendable, Equatable {
+    public struct File: Codable, Sendable, Equatable {
         public let name: String
         public let device: Int64
         public let inode: UInt64
@@ -248,7 +248,7 @@ public struct HistoryLocalAnalyticsCursor: Sendable, Equatable {
     fileprivate let lastBoundary: HistoryAnalyticsIntegrityBoundary?
 }
 
-fileprivate struct HistoryAnalyticsIntegrityBoundary: Sendable, Equatable {
+fileprivate struct HistoryAnalyticsIntegrityBoundary: Codable, Sendable, Equatable {
     let timestamp: Date
     let eventID: String
     let sequence: UInt64

@@ -58,8 +58,13 @@ public enum GoalongWorkContext {
     /// Events without a window snapshot (typing, clicks) belong to the window last seen in
     /// the same application on the same site, so one window stays one context. Gives the
     /// same keys whether titles are present or were replaced by their hash.
-    public struct Tracker {
-        private var last: [String: (host: String?, key: String)] = [:]
+    public struct Tracker: Codable {
+        private struct Entry: Codable {
+            let host: String?
+            let key: String
+        }
+        private var last: [String: Entry] = [:]
+        var checkpointEntryCount: Int { last.count }
         public init() {}
         /// `label` is nil when the key was inherited or read from the bounded reader.
         public mutating func context(for event: HistoryEvent) -> (key: String, label: Label?)? {
@@ -70,16 +75,16 @@ public enum GoalongWorkContext {
             let host = rawHost?.isEmpty == false ? rawHost : nil
             if let label = GoalongWorkContext.ownLabel(of: event) {
                 let key = label.key
-                last[appKey] = (host, key)
+                last[appKey] = Entry(host: host, key: key)
                 return (key, label)
             }
             if let key = event.metadata?[GoalongWorkContext.metadataKey], !key.isEmpty {
-                last[appKey] = (host, key)
+                last[appKey] = Entry(host: host, key: key)
                 return (key, nil)
             }
             if let previous = last[appKey], previous.host == host { return (previous.key, nil) }
             let label = Label(application: app.name, bundleIdentifier: app.bundleIdentifier, host: host, title: nil)
-            last[appKey] = (host, label.key)
+            last[appKey] = Entry(host: host, key: label.key)
             return (label.key, label)
         }
     }

@@ -53,6 +53,11 @@
                     allowedSuffixes: [".json"]
                 ),
                 HistoryRetentionArtifactDirectory(
+                    directory: AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongActivityDayStore.directoryName),
+                    dataClass: .detailedEvents,
+                    allowedSuffixes: [GoalongActivityCheckpointStore.suffix]
+                ),
+                HistoryRetentionArtifactDirectory(
                     directory: AppPaths.memoriesDirectory,
                     dataClass: .memories,
                     allowedSuffixes: [".memory.json", ".memory.md"]

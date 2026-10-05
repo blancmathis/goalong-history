@@ -80,7 +80,9 @@ actor GoalongAnalyticsReader {
     private var uses = 0
     /// Today's journal is read once, then only the lines appended since. The checkpoint
     /// holds derived segments and the last 15 minutes of rows (about 2 MB on a busy day).
-    private var today: (date: Date, state: GoalongLocalAnalytics.ResumableDayState)?
+    private var today: (date: Date, revision: String, state: GoalongLocalAnalytics.ResumableDayState)?
+    private(set) var todayCheckpointBytesHashed: Int64 = 0
+    private(set) var todayEventBytesRead: Int64 = 0
     private let root: URL
     init(root: URL) { self.root = root }
 
@@ -97,6 +99,7 @@ actor GoalongAnalyticsReader {
         try Task.checkCancellation()
         // Preview exits before looking at caches, journals, daily reports or project archives.
         if preview { return GoalongAnalyticsPreview.make(ending: day, count: count) }
+        _ = try GoalongGlobalPause.admit(in: root)
         let calendar = Calendar.current, now = Date()
         let count = [1, 7, 28].contains(count) ? count : 7
         let last = calendar.startOfDay(for: day)
@@ -129,6 +132,10 @@ actor GoalongAnalyticsReader {
     }
 
     private func days(ending last: Date, count: Int, now: Date, calendar: Calendar) throws -> [GoalongLocalAnalytics.Day] {
+        let pause = try GoalongGlobalPause.admit(in: root)
+        let barrier = DerivedHistoryWriteBarrier.shared
+        guard let permit = barrier.beginJob() else { throw CancellationError() }
+        defer { barrier.endJob(permit) }
         var days: [GoalongLocalAnalytics.Day] = []
         for offset in (0..<count).reversed() {
             try Task.checkCancellation()
@@ -136,23 +143,25 @@ actor GoalongAnalyticsReader {
             let revision = sourceRevision(date, calendar: calendar)
             let value: GoalongLocalAnalytics.Day
             if calendar.isDate(date, inSameDayAs: now) {
-                value = try readToday(date, calendar: calendar)
+                value = try readToday(date, now: now, calendar: calendar)
             } else if let cached = cache[date], cached.0 == revision {
                 value = cached.1
             } else if let held = today, calendar.isDate(held.date, inSameDayAs: date) {
                 // The day that just ended is finished from its checkpoint, not read again.
-                value = try readToday(date, calendar: calendar)
-                if value.state != .incomplete { cache[date] = (revision, value) }
+                value = try readToday(date, now: now, calendar: calendar)
+                if value.state != .incomplete { cache[date] = (sourceRevision(date, calendar: calendar), value) }
             } else {
                 value = GoalongActivityDayReader.load(root: root, day: date, now: now, calendar: calendar,
                     shouldContinue: { !Task.isCancelled })
                 try Task.checkCancellation()
-                if value.state != .incomplete { cache[date] = (revision, value) }
+                if value.state != .incomplete { cache[date] = (sourceRevision(date, calendar: calendar), value) }
             }
             days.append(value)
             uses += 1
             if cache[date] != nil { lastUse[date] = uses }
         }
+        try GoalongGlobalPause.revalidate(pause, in: root)
+        guard barrier.isCurrent(permit) else { throw CancellationError() }
         if cache.count > Self.maximumCachedDays {
             let evicted = cache.keys.sorted { (lastUse[$0] ?? 0) < (lastUse[$1] ?? 0) }.prefix(cache.count - Self.maximumCachedDays)
             for date in evicted { cache[date] = nil; lastUse[date] = nil }
@@ -160,20 +169,45 @@ actor GoalongAnalyticsReader {
         return days
     }
 
-    private func readToday(_ date: Date, calendar: Calendar) throws -> GoalongLocalAnalytics.Day {
-        let previous = today.flatMap { calendar.isDate($0.date, inSameDayAs: date) ? $0.state : nil }
-        let loaded = GoalongLocalAnalytics.load(root: root, day: date, resuming: previous, now: Date(),
+    func readToday(_ date: Date, now: Date, calendar: Calendar) throws -> GoalongLocalAnalytics.Day {
+        // Close the previous in-memory day before the regular refresh switches to today.
+        // No new timer; the adapter still applies pause, retention and deletion admission.
+        if calendar.isDate(date, inSameDayAs: now), let held = today,
+           held.date < calendar.startOfDay(for: now) {
+            _ = try readToday(held.date, now: now, calendar: calendar)
+        }
+        let revision = GoalongActivityCheckpointStore(root: root).sourceRevision(day: date, calendar: calendar)
+        let previous = today.flatMap { calendar.isDate($0.date, inSameDayAs: date)
+                && Self.canResumeInMemory(from: $0.revision, to: revision) ? $0.state : nil }
+        let loaded = GoalongActivityDayReader.loadResumable(root: root, day: date, resuming: previous, now: now,
             calendar: calendar, shouldContinue: { !Task.isCancelled })
-        today = loaded.state.map { (date, $0) }
+        todayCheckpointBytesHashed = loaded.checkpointBytesHashed
+        todayEventBytesRead = loaded.eventBytesRead
+        // The cursor validates device/inode, consumed size, last line and the stable read.
+        // Growth can use that bounded check; same-size edits still take disk validation.
+        today = loaded.state.flatMap {
+            revision == GoalongActivityCheckpointStore(root: root).sourceRevision(day: date, calendar: calendar)
+                ? (date, revision, $0) : nil
+        }
         try Task.checkCancellation()
         return loaded.day
+    }
+
+    private static func canResumeInMemory(from previous: String, to current: String) -> Bool {
+        if previous == current { return true }
+        let old = previous.split(separator: "|"), new = current.split(separator: "|")
+        // sourceRevision: device, inode, size, mtime, ctime, timezone.
+        guard old.count == 6, new.count == 6, old[0] == new[0], old[1] == new[1], old[5] == new[5],
+              let oldSize = Int64(old[2]), let newSize = Int64(new[2]) else { return false }
+        return newSize > oldSize
     }
 
     /// Moves today's checkpoint forward between visits, so opening Activité decodes
     /// minutes of journal rather than everything written since the last visit.
     func advanceToday() {
         let calendar = Calendar.current
-        _ = try? readToday(calendar.startOfDay(for: Date()), calendar: calendar)
+        let now = Date()
+        _ = try? readToday(calendar.startOfDay(for: now), now: now, calendar: calendar)
     }
 
     /// The period's days when none needs a journal read, nil otherwise.

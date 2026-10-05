@@ -70,19 +70,34 @@ public struct GoalongActivityDayStore: Sendable {
         return [0, 2].allSatisfy { a[$0] == b[$0] || b[$0] == "missing" }
     }
 
-    public func read(day: Date, sourceRevision: String? = nil, calendar: Calendar = .current) throws -> GoalongLocalAnalytics.Day {
-        let key = Self.dayKey(day, calendar: calendar)
+    package func readPrivateFile(name: String, maximumBytes: Int) throws -> Data {
         let fd = try directory(create: false); defer { close(fd) }
-        let file = openat(fd, key + ".json", O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        let file = openat(fd, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         guard file >= 0 else { throw Failure.unavailable }
         let handle = FileHandle(fileDescriptor: file, closeOnDealloc: true)
         var info = stat()
         guard fstat(file, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(),
-              info.st_nlink == 1, info.st_mode & 0o777 == 0o600, info.st_size > 0, info.st_size <= Self.maximumBytes,
-              let bytes = try handle.read(upToCount: Self.maximumBytes + 1), bytes.count == info.st_size else { throw Failure.unsafePath }
+              info.st_nlink == 1, info.st_mode & 0o777 == 0o600, info.st_size > 0, info.st_size <= maximumBytes,
+              let bytes = try handle.read(upToCount: maximumBytes + 1), bytes.count == info.st_size else { throw Failure.unsafePath }
         var after = stat()
         guard fstat(file, &after) == 0, info.st_size == after.st_size,
               info.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec, info.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec else { throw Failure.sourceChanged }
+        return bytes
+    }
+
+    /// Metadata only, through the same private, no-follow directory as checkpoint I/O.
+    package func privateFileModificationDate(name: String, maximumBytes: Int) throws -> Date {
+        let fd = try directory(create: false); defer { close(fd) }
+        var info = stat()
+        guard fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) == 0,
+              info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(), info.st_nlink == 1,
+              info.st_mode & 0o777 == 0o600, info.st_size > 0, info.st_size <= maximumBytes else { throw Failure.unsafePath }
+        return Date(timeIntervalSince1970: Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000)
+    }
+
+    public func read(day: Date, sourceRevision: String? = nil, calendar: Calendar = .current) throws -> GoalongLocalAnalytics.Day {
+        let key = Self.dayKey(day, calendar: calendar)
+        let bytes = try readPrivateFile(name: key + ".json", maximumBytes: Self.maximumBytes)
         let e = try JSONDecoder().decode(Envelope.self, from: bytes)
         let start = calendar.startOfDay(for: day)
         let end = calendar.date(byAdding: .day, value: 1, to: start)!
@@ -164,8 +179,15 @@ public struct GoalongActivityDayStore: Sendable {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let bytes = try encoder.encode(e)
         guard bytes.count <= Self.maximumBytes else { throw Failure.invalidSummary }
+        try writePrivateFile(bytes, name: e.date + ".json")
+    }
+
+    package func writePrivateFile(_ bytes: Data, name: String) throws {
+        guard name.range(of: #"^\d{4}-\d{2}-\d{2}(\.json|\.resume\.plist)$"#, options: .regularExpression) != nil else {
+            throw Failure.unsafePath
+        }
         let fd = try directory(create: true); defer { close(fd) }
-        let name = e.date + ".json", temporary = ".activity-" + UUID().uuidString
+        let temporary = ".activity-" + UUID().uuidString
         var existing = stat()
         let status = fstatat(fd, name, &existing, AT_SYMLINK_NOFOLLOW)
         guard status != 0 ? errno == ENOENT : (existing.st_mode & S_IFMT == S_IFREG && existing.st_nlink == 1) else { throw Failure.unsafePath }
@@ -198,6 +220,7 @@ public struct GoalongActivityDayStore: Sendable {
     }
 
     public func load(day: Date, now: Date = Date(), calendar: Calendar = .current, retentionDays: Int? = 30, summaryRetentionDays: Int? = nil,
+                     allowsCheckpoints: Bool = true,
                      shouldContinue: () -> Bool = { true }) -> GoalongLocalAnalytics.Day {
         let start = calendar.startOfDay(for: day)
         let past = start < calendar.startOfDay(for: now)
@@ -208,7 +231,8 @@ public struct GoalongActivityDayStore: Sendable {
         if past, shouldContinue(), var saved = try? read(day: start, sourceRevision: absent ? nil : revision, calendar: calendar) {
             saved.hasDetailedSource = !absent; return saved
         }
-        var value = GoalongLocalAnalytics.load(root: root, day: start, now: now, calendar: calendar, shouldContinue: shouldContinue)
+        var value = loadResumable(day: start, now: now, calendar: calendar,
+            retentionDays: retentionDays, allowsCheckpoints: allowsCheckpoints, shouldContinue: shouldContinue).day
         if value.state == .noSource, absent, let days = retentionDays, days > 0,
            let cutoff = calendar.date(byAdding: .day, value: -days, to: now), start < calendar.startOfDay(for: cutoff) {
             value.dayReason = .purgedWithoutSummary
@@ -223,6 +247,37 @@ public struct GoalongActivityDayStore: Sendable {
             try? write(value, sourceRevision: revision, now: now, calendar: calendar)
         }
         return value
+    }
+
+    /// The same fold serves today and a recently ended day. It is always disposable:
+    /// deleted/truncated/rewritten sources reject it instead of becoming summary data.
+    public func loadResumable(day: Date, resuming state: GoalongLocalAnalytics.ResumableDayState? = nil,
+                             now: Date = Date(), calendar: Calendar = .current, retentionDays: Int? = 30,
+                             allowsCheckpoints: Bool = true,
+                             shouldContinue: () -> Bool = { true }) -> GoalongLocalAnalytics.ResumableDayLoad {
+        let checkpoints = GoalongActivityCheckpointStore(root: root)
+        var checkpointBytesHashed: Int64 = 0
+        let revision = checkpoints.sourceRevision(day: day, calendar: calendar)
+        let previous = allowsCheckpoints ? state ?? (shouldContinue() ? try? checkpoints.read(day: day, calendar: calendar,
+            shouldContinue: shouldContinue, prefixBytesHashed: { checkpointBytesHashed += Int64($0) }) : nil) : nil
+        var loaded = GoalongLocalAnalytics.load(root: root, day: day, resuming: previous,
+            now: now, calendar: calendar, shouldContinue: shouldContinue)
+        // Disk-prefix validation and suffix decoding are separate reads. A rewrite
+        // between them must reject the old fold even if its last line is unchanged.
+        if loaded.didResume, revision != checkpoints.sourceRevision(day: day, calendar: calendar), shouldContinue() {
+            loaded = GoalongLocalAnalytics.load(root: root, day: day, resuming: nil,
+                now: now, calendar: calendar, shouldContinue: shouldContinue)
+        }
+        if allowsCheckpoints, !loaded.wasCancelled, loaded.day.state != .incomplete, let next = loaded.state,
+           (next.cursor != previous?.cursor || (next.isFinished && previous?.isFinished == false)),
+           checkpoints.shouldWrite(day: day, now: now, calendar: calendar), shouldContinue(),
+           retains(day: day, now: now, days: retentionDays, calendar: calendar) {
+            try? checkpoints.write(next, day: day, sourceRevision: revision,
+                calendar: calendar, shouldContinue: shouldContinue,
+                prefixBytesHashed: { checkpointBytesHashed += Int64($0) })
+        }
+        loaded.checkpointBytesHashed = checkpointBytesHashed
+        return loaded
     }
 
     public func journalDays(before now: Date = Date(), calendar: Calendar = .current) throws -> [Date] {
