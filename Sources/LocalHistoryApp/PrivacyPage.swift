@@ -1,4 +1,5 @@
 #if os(macOS)
+    import LocalHistoryCore
     import SwiftUI
 
     struct PrivacyPage: View {
@@ -282,9 +283,15 @@
             }
         }
 
+        /// Only this open panel refreshes the live timestamps; the rest of the window stays still.
         private var captureHealthPanel: some View {
+            TimelineView(.periodic(from: Date(), by: 5)) { _ in
+                captureHealthDetails(snapshot: model.liveCaptureHealthSnapshot())
+            }
+        }
+
+        private func captureHealthDetails(snapshot: CaptureHealthSnapshot?) -> some View {
             let assessment = model.runtime.captureHealth
-            let snapshot = model.runtime.captureHealthSnapshot
             return VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: assessment?.captureProven == true ? "checkmark.shield.fill" : "waveform.path.ecg")

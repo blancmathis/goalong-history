@@ -926,6 +926,9 @@
             )
         }
 
+        /// Read on demand by the diagnostics panel; never published, see RuntimePresentation.==.
+        func liveCaptureHealthSnapshot() -> CaptureHealthSnapshot { captureHealthSnapshot() }
+
         private func refreshRuntime() {
             guard dashboardIsVisible else { return }
             let status = permissions.snapshot
@@ -965,8 +968,7 @@
                 verificationServer: GoalongBuildCapabilities.permitsRemoteVerification
                     ? configManager.config.verificationServerURL
                     : nil,
-                captureHealth: health,
-                captureHealthSnapshot: healthSnapshot
+                captureHealth: health
             )
             if next != runtime { runtime = next }
         }
