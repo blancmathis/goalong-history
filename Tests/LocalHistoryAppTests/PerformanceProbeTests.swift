@@ -85,8 +85,8 @@ final class PerformanceProbeTests: XCTestCase {
 
     @MainActor func testActivityPage() async throws {
         let (root, day) = try setting()
-        let model = GoalongAnalyticsModel(root: root)
         for count in [1, 7] {
+            let model = GoalongAnalyticsModel(root: root)
             let start = ProcessInfo.processInfo.systemUptime, cpu = cpuSeconds()
             await model.load(day: day, count: count)
             print(String(format: "PERF activity page %d j (cold): %.3f s (cpu %.3f s), peak footprint %.0f MB", count,
@@ -95,6 +95,15 @@ final class PerformanceProbeTests: XCTestCase {
             await model.load(day: day, count: count)
             print(String(format: "PERF activity page %d j (refresh): %.3f s (cpu %.3f s)", count,
                 ProcessInfo.processInfo.systemUptime - again, cpuSeconds() - againCPU))
+            let relaunched = GoalongAnalyticsModel(root: root)
+            let restart = ProcessInfo.processInfo.systemUptime, restartCPU = cpuSeconds()
+            await relaunched.load(day: day, count: count)
+            print(String(format: "PERF activity page %d j (relaunch): %.3f s (cpu %.3f s)", count,
+                ProcessInfo.processInfo.systemUptime - restart, cpuSeconds() - restartCPU))
+            XCTAssertNil(model.error)
+            XCTAssertNil(relaunched.error)
+            XCTAssertEqual(model.payload?.current, relaunched.payload?.current)
+            XCTAssertEqual(model.payload?.previous, relaunched.payload?.previous)
         }
     }
 
