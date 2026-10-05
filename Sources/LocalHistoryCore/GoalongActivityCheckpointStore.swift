@@ -38,7 +38,8 @@ public struct GoalongActivityCheckpointStore: Sendable {
     }
 
     public func read(day: Date, calendar: Calendar = .current,
-                     shouldContinue: () -> Bool = { true }) throws -> GoalongLocalAnalytics.ResumableDayState {
+                     shouldContinue: () -> Bool = { true },
+                     prefixBytesHashed: (Int) -> Void = { _ in }) throws -> GoalongLocalAnalytics.ResumableDayState {
         let store = GoalongActivityDayStore(root: root)
         let bytes = try store.readPrivateFile(name: name(day, calendar: calendar), maximumBytes: Self.maximumBytes)
         let envelope = try PropertyListDecoder().decode(Envelope.self, from: bytes)
@@ -50,7 +51,7 @@ public struct GoalongActivityCheckpointStore: Sendable {
         for (file, expected) in zip(cursor.files, envelope.prefixes) {
             guard file.name == expected.name, file.device == expected.device,
                   file.inode == expected.inode, file.consumedBytes == expected.count,
-                  try prefix(file, shouldContinue: shouldContinue).digest == expected.digest else {
+                  try prefix(file, shouldContinue: shouldContinue, bytesHashed: prefixBytesHashed).digest == expected.digest else {
                 throw GoalongActivityDayStore.Failure.sourceChanged
             }
         }
@@ -58,7 +59,8 @@ public struct GoalongActivityCheckpointStore: Sendable {
     }
 
     public func write(_ state: GoalongLocalAnalytics.ResumableDayState, day: Date, sourceRevision: String,
-                      calendar: Calendar = .current, shouldContinue: () -> Bool = { true }) throws {
+                      calendar: Calendar = .current, shouldContinue: () -> Bool = { true },
+                      prefixBytesHashed: (Int) -> Void = { _ in }) throws {
         guard state.isValidCheckpoint(day: day, calendar: calendar), let cursor = state.cursor,
               !cursor.files.isEmpty, shouldContinue(), sourceRevision == self.sourceRevision(day: day, calendar: calendar) else {
             throw GoalongActivityDayStore.Failure.sourceChanged
@@ -66,7 +68,7 @@ public struct GoalongActivityCheckpointStore: Sendable {
         let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
         let payload = try encoder.encode(state)
         guard payload.count <= Self.maximumBytes else { throw GoalongActivityDayStore.Failure.invalidSummary }
-        let prefixes = try cursor.files.map { try prefix($0, shouldContinue: shouldContinue) }
+        let prefixes = try cursor.files.map { try prefix($0, shouldContinue: shouldContinue, bytesHashed: prefixBytesHashed) }
         let bytes = try encoder.encode(Envelope(schema: Self.schema, method: GoalongLocalAnalytics.method,
             payload: payload, digest: Data(SHA256.hash(data: payload)), prefixes: prefixes))
         guard bytes.count <= Self.maximumBytes, shouldContinue(),
@@ -78,7 +80,8 @@ public struct GoalongActivityCheckpointStore: Sendable {
         GoalongActivityDayStore.dayKey(day, calendar: calendar) + Self.suffix
     }
 
-    private func prefix(_ file: HistoryLocalAnalyticsCursor.File, shouldContinue: () -> Bool) throws -> Prefix {
+    private func prefix(_ file: HistoryLocalAnalyticsCursor.File, shouldContinue: () -> Bool,
+                        bytesHashed: (Int) -> Void) throws -> Prefix {
         let rootFD = open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard rootFD >= 0 else { throw GoalongActivityDayStore.Failure.unsafePath }
         defer { close(rootFD) }
@@ -101,6 +104,7 @@ public struct GoalongActivityCheckpointStore: Sendable {
             if count < 0 && errno == EINTR { continue }
             guard count > 0 else { throw GoalongActivityDayStore.Failure.sourceChanged }
             buffer.withUnsafeBytes { hash.update(bufferPointer: UnsafeRawBufferPointer(rebasing: $0[..<count])) }
+            bytesHashed(count)
             offset += Int64(count)
         }
         var after = stat(), path = stat()

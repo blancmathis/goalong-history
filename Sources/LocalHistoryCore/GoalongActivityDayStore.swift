@@ -246,9 +246,10 @@ public struct GoalongActivityDayStore: Sendable {
                              allowsCheckpoints: Bool = true,
                              shouldContinue: () -> Bool = { true }) -> GoalongLocalAnalytics.ResumableDayLoad {
         let checkpoints = GoalongActivityCheckpointStore(root: root)
+        var checkpointBytesHashed: Int64 = 0
         let revision = checkpoints.sourceRevision(day: day, calendar: calendar)
         let previous = allowsCheckpoints ? state ?? (shouldContinue() ? try? checkpoints.read(day: day, calendar: calendar,
-            shouldContinue: shouldContinue) : nil) : nil
+            shouldContinue: shouldContinue, prefixBytesHashed: { checkpointBytesHashed += Int64($0) }) : nil) : nil
         var loaded = GoalongLocalAnalytics.load(root: root, day: day, resuming: previous,
             now: now, calendar: calendar, shouldContinue: shouldContinue)
         // Disk-prefix validation and suffix decoding are separate reads. A rewrite
@@ -261,8 +262,10 @@ public struct GoalongActivityDayStore: Sendable {
            next.cursor != previous?.cursor, shouldContinue(),
            retains(day: day, now: now, days: retentionDays, calendar: calendar) {
             try? checkpoints.write(next, day: day, sourceRevision: revision,
-                calendar: calendar, shouldContinue: shouldContinue)
+                calendar: calendar, shouldContinue: shouldContinue,
+                prefixBytesHashed: { checkpointBytesHashed += Int64($0) })
         }
+        loaded.checkpointBytesHashed = checkpointBytesHashed
         return loaded
     }
 

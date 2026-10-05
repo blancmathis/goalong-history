@@ -81,6 +81,7 @@ actor GoalongAnalyticsReader {
     /// Today's journal is read once, then only the lines appended since. The checkpoint
     /// holds derived segments and the last 15 minutes of rows (about 2 MB on a busy day).
     private var today: (date: Date, revision: String, state: GoalongLocalAnalytics.ResumableDayState)?
+    private(set) var todayCheckpointBytesHashed: Int64 = 0
     private let root: URL
     init(root: URL) { self.root = root }
 
@@ -172,6 +173,7 @@ actor GoalongAnalyticsReader {
         let previous = today.flatMap { calendar.isDate($0.date, inSameDayAs: date) && $0.revision == revision ? $0.state : nil }
         let loaded = GoalongActivityDayReader.loadResumable(root: root, day: date, resuming: previous, now: Date(),
             calendar: calendar, shouldContinue: { !Task.isCancelled })
+        todayCheckpointBytesHashed = loaded.checkpointBytesHashed
         // A changed source may append, but it may also rewrite any old prefix row.
         // Only a stable source can keep the actor's shortcut around disk validation.
         today = loaded.state.flatMap {

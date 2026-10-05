@@ -387,6 +387,9 @@ public enum GoalongLocalAnalytics {
         public let state: ResumableDayState?
         public let didResume: Bool
         public let eventBytesRead: Int64
+        /// Journal-prefix SHA-256 bytes for disk checkpoint validation/publication.
+        /// Excludes payload hashing and the cursor's bounded last-line check.
+        public var checkpointBytesHashed: Int64 = 0
         public let wasCancelled: Bool
     }
 

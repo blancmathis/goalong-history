@@ -142,6 +142,47 @@ final class PerformanceProbeTests: XCTestCase {
         print("PERF today decoded journal bytes: cold=\(reference.eventBytesRead) relaunch=\(relaunched.eventBytesRead) warm=\(warm.eventBytesRead)")
     }
 
+    func testActivityTodayGrowingJournal() async throws {
+        let (clone, _) = try setting()
+        // This opt-in probe mutates only a disposable copy inside the authorized clone.
+        let authorized = URL(fileURLWithPath: "/private/tmp/gl-perf-root-codex", isDirectory: true)
+        XCTAssertEqual(clone.standardizedFileURL, authorized.standardizedFileURL)
+        guard clone.standardizedFileURL == authorized.standardizedFileURL else { return }
+        let root = clone.appendingPathComponent("round2-append-" + UUID().uuidString, isDirectory: true)
+        let calendar = Calendar.current, day = calendar.startOfDay(for: Date())
+        let name = GoalongActivityDayStore.dayKey(day, calendar: calendar) + ".jsonl"
+        let journal = root.appendingPathComponent("events/" + name)
+        try FileManager.default.createDirectory(at: journal.deletingLastPathComponent(),
+            withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.copyItem(at: clone.appendingPathComponent("events/" + name), to: journal)
+        let reader = GoalongAnalyticsReader(root: root)
+        _ = try await reader.read(ending: day, count: 1, force: false, preview: false)
+        let initialSize = try FileManager.default.attributesOfItem(atPath: journal.path)[.size] as! NSNumber
+        print("PERF today append initial journal bytes=\(initialSize.int64Value) linesPerRefresh=100")
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        for refresh in 1...3 {
+            var extra = Data()
+            for index in 0..<100 {
+                let event = HistoryEvent(id: "round2-\(refresh)-\(index)", sessionID: "round2-probe",
+                    timestamp: Date().addingTimeInterval(-1), kind: .heartbeat,
+                    app: .init(name: "Probe", bundleIdentifier: "fixture.probe", processIdentifier: 1))
+                extra.append(try encoder.encode(event)); extra.append(10)
+            }
+            let handle = try FileHandle(forWritingTo: journal)
+            try handle.seekToEnd(); try handle.write(contentsOf: extra); try handle.close()
+            let start = ProcessInfo.processInfo.systemUptime, cpu = cpuSeconds()
+            let payload = try await reader.read(ending: day, count: 1, force: false, preview: false)
+            let elapsed = ProcessInfo.processInfo.systemUptime - start, usedCPU = cpuSeconds() - cpu
+            let hashed = await reader.todayCheckpointBytesHashed
+            print(String(format: "PERF today append refresh %d: %.6f s (cpu %.6f s) checkpointPrefixBytesHashed=%lld appendedBytes=%d",
+                refresh, elapsed, usedCPU, hashed, extra.count))
+            let measured = try XCTUnwrap(payload.current.days.first)
+            let reference = GoalongLocalAnalytics.load(root: root, day: day, now: measured.end, calendar: calendar)
+            XCTAssertEqual(measured, reference)
+        }
+    }
+
     func testHistoryPage() throws {
         let (root, day) = try setting()
         let store = ComputerHistoryStore(rootDirectory: root,
