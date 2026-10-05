@@ -179,7 +179,7 @@
         private func scheduleNextPoll() {
             // Preserve the one-shot cadence: a slow blocking read cannot build
             // an unbounded queue of missed polls behind the reserved reader.
-            guard blockingRequestID == nil, sampleJobs.isEmpty else { return }
+            guard blockingRequestID == nil, blockingObservationEnabled || sampleJobs.isEmpty else { return }
             timer?.invalidate()
             let configuredInterval = Double(configManager.config.pollIntervalMilliseconds) / 1_000.0
             guard pollingIsActive,
@@ -200,10 +200,17 @@
             let timer = Timer(timeInterval: boundedInterval, repeats: false) { [weak self] _ in
                 guard let self else { return }
                 self.timer = nil
-                self.scheduledPollInProgress = true
-                self.sampleNow { _ in
-                    self.scheduledPollInProgress = false
-                    self.scheduleNextPoll()
+                if self.blockingObservationEnabled {
+                    // History may still own its one pending sample. The fallback
+                    // blocking poll only depends on its reserved reader finishing.
+                    if self.sampleJobs.isEmpty { self.sampleNow() }
+                    else { self.requestBlockingPoll() }
+                } else {
+                    self.scheduledPollInProgress = true
+                    self.sampleNow { _ in
+                        self.scheduledPollInProgress = false
+                        self.scheduleNextPoll()
+                    }
                 }
             }
             // Give macOS a small coalescing window while keeping the fallback refresh
@@ -211,6 +218,18 @@
             timer.tolerance = min(1.0, interval * 0.1)
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
+        }
+
+        private func requestBlockingPoll() {
+            guard blockingObservationEnabled, blockingRequestID == nil else { return }
+            let requestID = UUID()
+            blockingRequestID = requestID
+            provider.requestBlocking { [weak self] observation in
+                guard let self, self.blockingRequestID == requestID else { return }
+                self.blockingRequestID = nil
+                if self.blockingObservationEnabled, let observation { self.blockingSink?(observation) }
+                self.scheduleNextPoll()
+            }
         }
 
         /// The event tap, workspace notifications and AX observers remain immediate.
@@ -306,7 +325,17 @@
                 finish(safeContext); return
             }
             publishesFocusSynchronously = false
-            provider.requestCapture(blockingSink: blockingObservationEnabled ? blockingSink : nil, includePresence: true) { [weak self] captured in
+            let blockingID = blockingObservationEnabled ? UUID() : nil
+            if blockingID != nil, blockingRequestID != nil { finish(nil); return }
+            blockingRequestID = blockingID
+            provider.requestCapture(blockingSink: blockingObservationEnabled ? { [weak self] observation in
+                guard let self, self.blockingObservationEnabled, self.blockingRequestID == blockingID else { return }
+                self.blockingSink?(observation)
+            } : nil, includePresence: true, blockingCompletion: { [weak self] in
+                guard let self, let blockingID, self.blockingRequestID == blockingID else { return }
+                self.blockingRequestID = nil
+                self.scheduleNextPoll()
+            }) { [weak self] captured in
                 guard let self, self.sampleGeneration == generation else { finish(nil); return }
                 guard let captured else {
                     self.markObservationUnavailable()

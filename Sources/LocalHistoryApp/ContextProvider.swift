@@ -136,9 +136,11 @@
         }
 
         func requestCapture(blockingSink: ((BlockingObservation) -> Void)? = nil, historyEnabled: Bool = true,
-                            includePresence: Bool = false, completion: @escaping (ContextSnapshot?) -> Void) {
+                            includePresence: Bool = false, blockingCompletion: (() -> Void)? = nil,
+                            completion: @escaping (ContextSnapshot?) -> Void) {
             if backend == .legacy {
                 legacyCapture(blockingSink: blockingSink, historyEnabled: historyEnabled, completion: completion)
+                blockingCompletion?()
                 return
             }
             let input = historyEnabled ? parameters() : nil
@@ -228,14 +230,15 @@
                 }
                 if blockingReady { read() } else { resume = read }
             }
-            guard accepted else { completion(nil); return }
-            if !finished { permits[jobID] = permit }
+            if !accepted { finished = true; completion(nil) }
+            if accepted && !finished { permits[jobID] = permit }
             // This reservation happens at admission, independently of the history FIFO.
             if let blockingSink {
                 requestBlocking { observation in
                     blockingResult = observation
                     blockingReady = true
                     if let observation { blockingSink(observation) }
+                    blockingCompletion?()
                     // An unavailable/revoked blocking observation never authorizes history.
                     if observation == nil { permit.revoke() }
                     let continuation = resume; resume = nil; continuation?()
