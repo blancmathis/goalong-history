@@ -12,7 +12,7 @@ public enum GoalongLocalAnalytics {
         public var isActive: Bool { self == .work || self == .other || self == .unclassified }
     }
     public enum State: String, Codable, Sendable { case ready, noSource, incomplete }
-    public struct Segment: Identifiable, Equatable, Sendable {
+    public struct Segment: Identifiable, Equatable, Codable, Sendable {
         public let start: Date
         public var end: Date
         /// Active time is `.unclassified` until the user's work definition labels its context.
@@ -200,7 +200,7 @@ public enum GoalongLocalAnalytics {
 
     /// The committed prefix has no leading/trailing extrapolation. Its last row is kept
     /// solely to form the next interval, including the last row of a timestamp tie.
-    fileprivate struct DayFold {
+    fileprivate struct DayFold: Codable {
         let start: Date
         let calendar: Calendar
         var segments: [Segment] = []
@@ -329,7 +329,7 @@ public enum GoalongLocalAnalytics {
     /// sorted window (including rows after `now`), never all of today's source events.
     /// The prefix holds derived segments, context hashes, counters and one boundary row.
     /// These value data contain no reader/file handle and stay owned by the app's actor.
-    public struct ResumableDayState: @unchecked Sendable {
+    public struct ResumableDayState: Codable, @unchecked Sendable {
         public let cursor: HistoryLocalAnalyticsCursor?
         public let events: [HistoryEvent]
         public let windowStart: Date
@@ -338,6 +338,47 @@ public enum GoalongLocalAnalytics {
         public var retainedEventCount: Int { fold.rowCount + events.count }
         fileprivate let fold: DayFold
         fileprivate let evaluatedThrough: Date
+
+        package func isValidCheckpoint(day: Date, calendar: Calendar) -> Bool {
+            let start = calendar.startOfDay(for: day)
+            guard let end = calendar.date(byAdding: .day, value: 1, to: start), let cursor,
+                  !incomplete, fold.start == start, fold.calendar == calendar,
+                  cursor.start == start, cursor.endExclusive == end,
+                  cursor.timeZoneIdentifier == calendar.timeZone.identifier,
+                  evaluatedThrough >= start, evaluatedThrough <= end,
+                  windowStart >= start, windowStart <= evaluatedThrough,
+                  fold.rowCount >= 0, fold.rowCount <= cursor.retainedRows, cursor.retainedRows <= 4_000_000,
+                  cursor.retainedRows == retainedEventCount,
+                  events.count <= 8_192, fold.segments.count <= GoalongActivityDayStore.maximumSegments,
+                  fold.modes.modes.count <= 1_560, fold.tracker.checkpointEntryCount <= 20_000,
+                  cursor.files.count <= 3, cursor.retainedRows >= 0, cursor.retainedBytes >= 0,
+                  cursor.files.allSatisfy({
+                      $0.name == GoalongActivityDayStore.dayKey(start, calendar: calendar) + ".jsonl"
+                          && $0.consumedBytes >= 0 && $0.nonEmptyLineCount >= 0
+                          && $0.retainedEventCount >= 0 && $0.retainedEventCount <= 4_000_000
+                  }),
+                  cursor.files.reduce(0, { $0 + $1.retainedEventCount }) == retainedEventCount else { return false }
+            var previous = windowStart
+            for event in events {
+                guard event.timestamp >= previous, event.timestamp <= end,
+                      event.isDerivedAnalysisEvidence else { return false }
+                previous = event.timestamp
+            }
+            if fold.rowCount == 0 {
+                guard fold.firstTimestamp == nil, fold.last == nil, fold.segments.isEmpty else { return false }
+            } else {
+                guard let first = fold.firstTimestamp, let last = fold.last,
+                      first >= start, first <= last.timestamp, last.timestamp < windowStart else { return false }
+                var position = first
+                for segment in fold.segments {
+                    guard segment.start == position, segment.end > position, segment.end <= last.timestamp,
+                          segment.task == nil, !segment.kind.isActive || segment.kind == .unclassified else { return false }
+                    position = segment.end
+                }
+                guard position == last.timestamp else { return false }
+            }
+            return true
+        }
     }
 
     public struct ResumableDayLoad: Sendable {
