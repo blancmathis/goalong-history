@@ -31,10 +31,11 @@ final class AXObservationThread {
             runLoop = loop
             let commands = pending
             pending.removeAll()
-            lock.unlock()
+            // Schedule pending commands before submit() can see the live loop.
             for command in commands {
                 CFRunLoopPerformBlock(loop, CFRunLoopMode.defaultMode.rawValue, command)
             }
+            lock.unlock()
             CFRunLoopRun()
             CFRunLoopRemoveSource(loop, keepAlive, .defaultMode)
             lock.lock()

@@ -491,3 +491,16 @@
         }
     }
 #endif
+
+#if os(macOS) && DEBUG
+// Test fixture: configure observation without installing app/AX observers.
+extension ContextMonitor {
+    func configureForAdversarialReview(blocking: Bool, polling: Bool) {
+        historyRequested = true
+        blockingObservationEnabled = blocking
+        pollingIsActive = polling
+        if !polling { timer?.invalidate(); timer = nil }
+    }
+    var hasPollForAdversarialReview: Bool { timer != nil }
+}
+#endif

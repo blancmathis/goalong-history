@@ -561,6 +561,7 @@
                     let reference = try semanticContextStore.append(
                         capture: capture,
                         context: snapshot,
+                        timestamp: admittedAt,
                         deduplicationScope: additionalMetadata[
                             ComputerHistoryMetadata.interactionID
                         ],
@@ -580,7 +581,7 @@
                         kind: .semanticSnapshot,
                         context: snapshot,
                         semanticContext: reference,
-                        metadata: metadata, identifier: identifier
+                        metadata: metadata, timestamp: admittedAt, identifier: identifier
                     )
                     let committedAt = Date()
                     DispatchQueue.main.async {

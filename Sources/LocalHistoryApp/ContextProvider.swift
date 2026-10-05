@@ -325,8 +325,13 @@
                 completion(AXAccess.withClient(client) { read(input) }); return
             }
             let jobID = UUID(), permit = AXRequestPermit()
+            // enqueue() may finish synchronously, so register before admission.
+            permits[jobID] = permit
             let accepted = operations.enqueue { done in
-                guard self.valid(input, generation: generation) else { completion(revoked); done(); return }
+                guard self.valid(input, generation: generation) else {
+                    self.permits[jobID] = nil
+                    completion(revoked); done(); return
+                }
                 self.historyQueue.async {
                     let result = self.workerPermits(input, permit: permit)
                         ? AXAccess.withBackgroundClient(self.client, permit: permit) { read(input) } : revoked
@@ -337,7 +342,7 @@
                     }
                 }
             }
-            if accepted { permits[jobID] = permit } else { completion(revoked) }
+            if !accepted { permits[jobID] = nil; completion(revoked) }
         }
 
         func requestSuppression(completion: @escaping (SuppressionReason?) -> Void) {
