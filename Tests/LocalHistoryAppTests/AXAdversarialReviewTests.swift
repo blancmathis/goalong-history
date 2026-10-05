@@ -358,6 +358,41 @@ final class AXAdversarialReviewTests: XCTestCase {
         XCTAssertEqual(bursts[0], [2])
         XCTAssertEqual(bursts[1], bursts[0], "Moving AX off-main must not let the flush timer split an already-pending input burst")
     }
+    func testReviewScrollBurstParityWhileSecondInputAXCrossesFlushDeadline() throws {
+        richConsent(false)
+        var bursts: [[Int]] = []
+        for backend in [ContextProvider.Backend.legacy, .background] {
+            let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
+            let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: params).snapshot })
+            let provider = ContextProvider(client: tree.client, backend: backend, parameters: { params })
+            let tap = monitor(rig, provider: provider)
+            func replay(_ kind: EventTapPendingInput.Kind) {
+                let done = expectation(description: "one input reduced")
+                tap.replayInputsForTesting([.init(kind: kind, observedAt: Date(), targetProcessIdentifier: 42, observedContext: snapshot)]) { done.fulfill() }
+                wait(for: [done], timeout: 4)
+            }
+            replay(.scrollWheel)
+            tick(0.85)
+            var delayedReads = 0
+            tree.beforeRead = { _ in
+                if delayedReads < 4 {
+                    delayedReads += 1
+                    Thread.sleep(forTimeInterval: 0.075)
+                }
+            }
+            replay(.scrollWheel)
+            replay(.keyDown)
+            tap.stop()
+            XCTAssertEqual(tap.privacyInputDropCount, 0); XCTAssertEqual(tap.staleInputDropCount, 0)
+            let rows = try events(stream(rig, date: date))
+            let counts = rows.filter { $0.kind == .scrollBurst }.map { $0.scroll?.eventCount ?? -1 }
+            print("REVIEW \(backend) scroll burst sizes after same two public scroll inputs and four 75ms AX reads across the 1.1s flush deadline: \(counts)")
+            bursts.append(counts)
+            try rig.recorder.closeAndWait()
+        }
+        XCTAssertEqual(bursts[0], [2])
+        XCTAssertEqual(bursts[1], bursts[0], "Moving AX off-main must not let the flush timer split an already-pending input burst")
+    }
 
 }
 #endif

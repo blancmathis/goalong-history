@@ -998,6 +998,7 @@
                 if self.ingress.finishDrainPass() {
                     DispatchQueue.main.async { [weak self] in self?.drainPendingEvents() }
                 } else {
+                    self.flushExpiredBursts(before: Date())
                     let completion = self.inputsDrainedForTesting; self.inputsDrainedForTesting = nil; completion?()
                 }
             }
@@ -1176,6 +1177,7 @@
                     else { self.cancelOpenInteractionsForBoundary() }
                     return
                 }
+                self.flushExpiredBursts(before: input.observedAt)
                 self.apply(input, context: context, target: result.element)
             }
         }
@@ -1483,12 +1485,15 @@
             }
 
             scrollFlushWorkItem?.cancel()
+            let interactionID = scrollInteractionID, lastAt = scrollLastAt
             let workItem = DispatchWorkItem { [weak self] in
-                self?.flushScrollBurst()
+                guard let self, self.scrollInteractionID == interactionID, self.scrollLastAt == lastAt,
+                      self.processingInputID == nil, !self.stopping, self.ingress.metrics.currentDepth == 0 else { return }
+                self.flushExpiredBursts(before: Date())
             }
             scrollFlushWorkItem = workItem
             DispatchQueue.main.asyncAfter(
-                deadline: .now() + Self.scrollBurstQuietInterval,
+                deadline: .now() + max(0, input.lastObservedAt.addingTimeInterval(Self.scrollBurstQuietInterval).timeIntervalSinceNow),
                 execute: workItem
             )
         }
@@ -1606,11 +1611,22 @@
             }
 
             typingFlushWorkItem?.cancel()
+            let interactionID = typingInteractionID, lastAt = typingLastAt
             let workItem = DispatchWorkItem { [weak self] in
-                self?.flushTypingBurst()
+                guard let self, self.typingInteractionID == interactionID, self.typingLastAt == lastAt,
+                      self.processingInputID == nil, !self.stopping, self.ingress.metrics.currentDepth == 0 else { return }
+                self.flushExpiredBursts(before: Date())
             }
             typingFlushWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(0, endedAt.addingTimeInterval(1.1).timeIntervalSinceNow), execute: workItem)
+        }
+
+        /// Compare the admitted input's logical date before reducing it. A timer
+        /// may be delivered during AX, but cannot overtake that admitted input.
+        /// Once the ring drains, overdue deadlines are resolved without a wait.
+        private func flushExpiredBursts(before date: Date) {
+            if let last = typingLastAt, last.addingTimeInterval(1.1) <= date { flushTypingBurst() }
+            if let last = scrollLastAt, last.addingTimeInterval(Self.scrollBurstQuietInterval) <= date { flushScrollBurst() }
         }
 
         private func flushTypingBurst() {
