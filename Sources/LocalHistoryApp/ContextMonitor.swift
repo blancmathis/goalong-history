@@ -30,6 +30,7 @@
             provider.invalidateHistory()
             sampleGeneration = UUID(); sampleJobs.removeAll()
             blockingRequestID = nil
+            mixedBlockingJobs.removeAll()
             blockingObservationEnabled = enabled
             accessibilityEventMonitor?.observesApplicationLaunches = enabled
             if enabled {
@@ -56,6 +57,7 @@
         private var pollingIsActive = false
         private var scheduledPollInProgress = false
         private var blockingRequestID: UUID?
+        private var mixedBlockingJobs = Set<UUID>()
         private var consecutiveCaptureFailures = 0
 
         private let snapshotLock = NSLock()
@@ -179,7 +181,8 @@
         private func scheduleNextPoll() {
             // Preserve the one-shot cadence: a slow blocking read cannot build
             // an unbounded queue of missed polls behind the reserved reader.
-            guard blockingRequestID == nil, blockingObservationEnabled || sampleJobs.isEmpty else { return }
+            guard blockingRequestID == nil, mixedBlockingJobs.isEmpty,
+                  blockingObservationEnabled || sampleJobs.isEmpty else { return }
             timer?.invalidate()
             let configuredInterval = Double(configManager.config.pollIntervalMilliseconds) / 1_000.0
             guard pollingIsActive,
@@ -221,7 +224,7 @@
         }
 
         private func requestBlockingPoll() {
-            guard blockingObservationEnabled, blockingRequestID == nil else { return }
+            guard blockingObservationEnabled, blockingRequestID == nil, mixedBlockingJobs.isEmpty else { return }
             let requestID = UUID()
             blockingRequestID = requestID
             provider.requestBlocking { [weak self] observation in
@@ -326,14 +329,12 @@
             }
             publishesFocusSynchronously = false
             let blockingID = blockingObservationEnabled ? UUID() : nil
-            if blockingID != nil, blockingRequestID != nil { finish(nil); return }
-            blockingRequestID = blockingID
+            if let blockingID { mixedBlockingJobs.insert(blockingID) }
             provider.requestCaptureOutcome(blockingSink: blockingObservationEnabled ? { [weak self] observation in
-                guard let self, self.blockingObservationEnabled, self.blockingRequestID == blockingID else { return }
+                guard let self, self.blockingObservationEnabled, let blockingID, self.mixedBlockingJobs.contains(blockingID) else { return }
                 self.blockingSink?(observation)
             } : nil, includePresence: true, blockingCompletion: { [weak self] in
-                guard let self, let blockingID, self.blockingRequestID == blockingID else { return }
-                self.blockingRequestID = nil
+                guard let self, let blockingID, self.mixedBlockingJobs.remove(blockingID) != nil else { return }
                 self.scheduleNextPoll()
             }) { [weak self] outcome in
                 guard let self, self.sampleGeneration == generation else { finish(nil); return }

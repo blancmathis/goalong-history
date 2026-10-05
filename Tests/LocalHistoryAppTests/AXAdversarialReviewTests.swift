@@ -1,4 +1,4 @@
-#if os(macOS)
+#if os(macOS) && DEBUG
 import ApplicationServices
 import Foundation
 import LocalHistoryCore
@@ -150,6 +150,29 @@ final class AXAdversarialReviewTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(blocking, 2, "The 0.75s blocking poll must run while history is held")
         monitor.configureForAdversarialReview(blocking: false, polling: false)
         release.signal(); wait(for: [terminal], timeout: 3)
+        try rig.recorder.closeAndWait()
+    }
+
+    func testReviewConcurrentMixedSamplesRetainTheirOwnBlockingAdmissions() throws {
+        richConsent(false)
+        let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
+        let provider = ContextProvider(client: tree.client, parameters: { params }), monitor = contextMonitor(rig, provider)
+        monitor.configureForAdversarialReview(blocking: true, polling: false)
+        let held = expectation(description: "first blocking read held"), done = expectation(description: "two admitted mixed samples")
+        done.expectedFulfillmentCount = 2
+        let release = DispatchSemaphore(value: 0), lock = NSLock()
+        var didHold = false, observations = 0
+        tree.beforeRead = { _ in
+            lock.lock(); let hold = !didHold; didHold = true; lock.unlock()
+            if hold { held.fulfill(); _ = release.wait(timeout: .now() + 4) }
+        }
+        monitor.blockingSink = { _ in observations += 1 }
+        monitor.sampleNow { XCTAssertEqual($0?.app.processIdentifier, 42); done.fulfill() }
+        wait(for: [held], timeout: 3)
+        monitor.sampleNow { XCTAssertEqual($0?.app.processIdentifier, 42); done.fulfill() }
+        release.signal(); wait(for: [done], timeout: 3)
+        XCTAssertEqual(observations, 2, "Polling bounds must not cancel an independently admitted mixed sample")
+        monitor.configureForAdversarialReview(blocking: false, polling: false)
         try rig.recorder.closeAndWait()
     }
 
