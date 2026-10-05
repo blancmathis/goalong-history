@@ -39,6 +39,13 @@
     /// the inline backend exists only for deterministic baseline parity fixtures.
     final class ContextProvider {
         enum Backend { case background, legacy }
+        enum CaptureOutcome {
+            case captured(ContextSnapshot), obsolete, revoked, admissionRejected, unavailable
+            var snapshot: ContextSnapshot? {
+                if case .captured(let snapshot) = self { return snapshot }
+                return nil
+            }
+        }
         let backend: Backend
         private let historyQueue = DispatchQueue(label: "Goalong.HistoryAX", qos: .userInitiated)
         private let operations = AXContinuationQueue()
@@ -138,8 +145,17 @@
         func requestCapture(blockingSink: ((BlockingObservation) -> Void)? = nil, historyEnabled: Bool = true,
                             includePresence: Bool = false, blockingCompletion: (() -> Void)? = nil,
                             completion: @escaping (ContextSnapshot?) -> Void) {
+            requestCaptureOutcome(blockingSink: blockingSink, historyEnabled: historyEnabled,
+                includePresence: includePresence, blockingCompletion: blockingCompletion) { completion($0.snapshot) }
+        }
+
+        func requestCaptureOutcome(blockingSink: ((BlockingObservation) -> Void)? = nil, historyEnabled: Bool = true,
+                            includePresence: Bool = false, blockingCompletion: (() -> Void)? = nil,
+                            completion: @escaping (CaptureOutcome) -> Void) {
             if backend == .legacy {
-                legacyCapture(blockingSink: blockingSink, historyEnabled: historyEnabled, completion: completion)
+                legacyCapture(blockingSink: blockingSink, historyEnabled: historyEnabled) { snapshot in
+                    completion(snapshot.map(CaptureOutcome.captured) ?? .unavailable)
+                }
                 blockingCompletion?()
                 return
             }
@@ -153,14 +169,14 @@
             var resume: (() -> Void)?
             var finished = false
             let accepted = operations.enqueue { done in
-                let finish: (ContextSnapshot?) -> Void = { snapshot in
+                let finish: (CaptureOutcome) -> Void = { outcome in
                     finished = true
                     self.permits[jobID] = nil
-                    self.client.measure(.publication, requestID: requestID) { completion(snapshot) }
+                    self.client.measure(.publication, requestID: requestID) { completion(outcome) }
                     done()
                 }
                 let read = {
-                    guard let input, self.valid(input, generation: generation) else { finish(nil); return }
+                    guard let input, self.valid(input, generation: generation) else { finish(.obsolete); return }
                     let privateApp = blockingResult.flatMap { observation in
                         observation.privateWindow ? AppSnapshot(name: observation.bundleIdentifier,
                             bundleIdentifier: observation.bundleIdentifier, processIdentifier: observation.pid) : nil
@@ -171,19 +187,19 @@
                         self.client.metric?(AXOperationMetric(requestID: requestID, stage: .waiting, operation: "history",
                             duration: max(0, self.client.clock.uptime() - admittedAt), onMain: false, error: 0))
                         guard self.workerPermits(input, permit: permit) else {
-                            DispatchQueue.main.async { finish(nil) }; return
+                            DispatchQueue.main.async { finish(.revoked) }; return
                         }
                         let focusPID = AXAccess.withBackgroundClient(self.client, requestID: requestID, permit: permit) {
                             input.pauseRevision != nil && privateApp == nil && input.accessibilityAvailable
                                 ? AXReader.focusedApplicationProcessIdentifier() : nil
                         }
                         DispatchQueue.main.async {
-                            guard self.valid(input, generation: generation), permit.isValid else { finish(nil); return }
+                            guard self.valid(input, generation: generation), permit.isValid else { finish(.obsolete); return }
                             let resolved = focusPID.flatMap { input.applications[$0] ?? self.applicationResolver($0) }
                                 .flatMap { $0.isTerminated ? nil : $0 } ?? input.foregroundApplication
                             self.historyQueue.async {
                                 guard self.workerPermits(input, permit: permit) else {
-                                    DispatchQueue.main.async { finish(nil) }; return
+                                    DispatchQueue.main.async { finish(.revoked) }; return
                                 }
                                 // The public blocking decision belongs to this window.
                                 // A private result bypasses *all* historical AX, including
@@ -193,7 +209,7 @@
                                     blockingBoundary?.matchesFocusedWindow(allowMainWindow: true) != false
                                 }
                                 guard blockingWindowMatches else {
-                                    DispatchQueue.main.async { finish(nil) }; return
+                                    DispatchQueue.main.async { finish(.obsolete) }; return
                                 }
                                 let result = self.client.measure(.execution, requestID: requestID) {
                                     AXAccess.withBackgroundClient(self.client, requestID: requestID, permit: permit) {
@@ -205,7 +221,7 @@
                                     result.boundary?.matchesFocusedWindow() != false
                                 }
                                 guard capturedWindowMatches else {
-                                    DispatchQueue.main.async { finish(nil) }; return
+                                    DispatchQueue.main.async { finish(.obsolete) }; return
                                 }
                                 let snapshot = result.snapshot.map { captured in
                                     guard includePresence else { return captured }
@@ -217,12 +233,12 @@
                                     return captured.withForegroundUsage(presence)
                                 }
                                 DispatchQueue.main.async {
-                                    guard self.valid(input, generation: generation), permit.isValid else { finish(nil); return }
+                                    guard self.valid(input, generation: generation), permit.isValid else { finish(.obsolete); return }
                                     self.lastCaptureProvedExternalAX = result.provedExternalAX
                                     self.lastCaptureBoundary = result.boundary
                                     if let browser = result.discoveredBrowser { self.blockingLane.rememberBrowser(browser) }
                                     if let update = result.privateWindowUpdate { self.privateWindowSink(update) }
-                                    finish(snapshot)
+                                    finish(snapshot.map(CaptureOutcome.captured) ?? .unavailable)
                                 }
                             }
                         }
@@ -230,7 +246,7 @@
                 }
                 if blockingReady { read() } else { resume = read }
             }
-            if !accepted { finished = true; completion(nil) }
+            if !accepted { finished = true; completion(.admissionRejected) }
             if accepted && !finished { permits[jobID] = permit }
             // This reservation happens at admission, independently of the history FIFO.
             if let blockingSink {

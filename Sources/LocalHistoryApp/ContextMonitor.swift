@@ -328,16 +328,19 @@
             let blockingID = blockingObservationEnabled ? UUID() : nil
             if blockingID != nil, blockingRequestID != nil { finish(nil); return }
             blockingRequestID = blockingID
-            provider.requestCapture(blockingSink: blockingObservationEnabled ? { [weak self] observation in
+            provider.requestCaptureOutcome(blockingSink: blockingObservationEnabled ? { [weak self] observation in
                 guard let self, self.blockingObservationEnabled, self.blockingRequestID == blockingID else { return }
                 self.blockingSink?(observation)
             } : nil, includePresence: true, blockingCompletion: { [weak self] in
                 guard let self, let blockingID, self.blockingRequestID == blockingID else { return }
                 self.blockingRequestID = nil
                 self.scheduleNextPoll()
-            }) { [weak self] captured in
+            }) { [weak self] outcome in
                 guard let self, self.sampleGeneration == generation else { finish(nil); return }
-                guard let captured else {
+                guard let captured = outcome.snapshot else {
+                    // Obsolescence/admission refusal is terminal for this ticket,
+                    // not evidence that the newer foreground authority is broken.
+                    guard case .unavailable = outcome else { finish(nil); return }
                     self.markObservationUnavailable()
                     self.consecutiveCaptureFailures = min(self.consecutiveCaptureFailures + 1, 1_000)
                     self.captureHealth.markAXFailure()
