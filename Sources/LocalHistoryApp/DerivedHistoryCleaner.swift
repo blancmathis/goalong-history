@@ -1,6 +1,7 @@
 #if os(macOS)
     import Darwin
     import Foundation
+    import LocalHistoryCore
 
     /// A no-follow deletion plan for exact, feature-owned regular files.
     ///
@@ -572,7 +573,7 @@
             )
             let summaryPlan = try deletionPlan(
                 in: rootDirectory.appendingPathComponent("activity-days"),
-                trustedAncestor: trustedAncestor, suffixes: [".json"],
+                trustedAncestor: trustedAncestor, suffixes: [".json", GoalongActivityCheckpointStore.suffix],
                 cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
             let computerHistoryPlans = try computerHistoryStore.deletionPlans(
                 cutoffKey: cutoffKey,

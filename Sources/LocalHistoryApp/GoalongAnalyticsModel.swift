@@ -80,7 +80,7 @@ actor GoalongAnalyticsReader {
     private var uses = 0
     /// Today's journal is read once, then only the lines appended since. The checkpoint
     /// holds derived segments and the last 15 minutes of rows (about 2 MB on a busy day).
-    private var today: (date: Date, state: GoalongLocalAnalytics.ResumableDayState)?
+    private var today: (date: Date, revision: String, state: GoalongLocalAnalytics.ResumableDayState)?
     private let root: URL
     init(root: URL) { self.root = root }
 
@@ -97,6 +97,7 @@ actor GoalongAnalyticsReader {
         try Task.checkCancellation()
         // Preview exits before looking at caches, journals, daily reports or project archives.
         if preview { return GoalongAnalyticsPreview.make(ending: day, count: count) }
+        _ = try GoalongGlobalPause.admit(in: root)
         let calendar = Calendar.current, now = Date()
         let count = [1, 7, 28].contains(count) ? count : 7
         let last = calendar.startOfDay(for: day)
@@ -129,6 +130,10 @@ actor GoalongAnalyticsReader {
     }
 
     private func days(ending last: Date, count: Int, now: Date, calendar: Calendar) throws -> [GoalongLocalAnalytics.Day] {
+        let pause = try GoalongGlobalPause.admit(in: root)
+        let barrier = DerivedHistoryWriteBarrier.shared
+        guard let permit = barrier.beginJob() else { throw CancellationError() }
+        defer { barrier.endJob(permit) }
         var days: [GoalongLocalAnalytics.Day] = []
         for offset in (0..<count).reversed() {
             try Task.checkCancellation()
@@ -142,17 +147,19 @@ actor GoalongAnalyticsReader {
             } else if let held = today, calendar.isDate(held.date, inSameDayAs: date) {
                 // The day that just ended is finished from its checkpoint, not read again.
                 value = try readToday(date, calendar: calendar)
-                if value.state != .incomplete { cache[date] = (revision, value) }
+                if value.state != .incomplete { cache[date] = (sourceRevision(date, calendar: calendar), value) }
             } else {
                 value = GoalongActivityDayReader.load(root: root, day: date, now: now, calendar: calendar,
                     shouldContinue: { !Task.isCancelled })
                 try Task.checkCancellation()
-                if value.state != .incomplete { cache[date] = (revision, value) }
+                if value.state != .incomplete { cache[date] = (sourceRevision(date, calendar: calendar), value) }
             }
             days.append(value)
             uses += 1
             if cache[date] != nil { lastUse[date] = uses }
         }
+        try GoalongGlobalPause.revalidate(pause, in: root)
+        guard barrier.isCurrent(permit) else { throw CancellationError() }
         if cache.count > Self.maximumCachedDays {
             let evicted = cache.keys.sorted { (lastUse[$0] ?? 0) < (lastUse[$1] ?? 0) }.prefix(cache.count - Self.maximumCachedDays)
             for date in evicted { cache[date] = nil; lastUse[date] = nil }
@@ -161,10 +168,16 @@ actor GoalongAnalyticsReader {
     }
 
     private func readToday(_ date: Date, calendar: Calendar) throws -> GoalongLocalAnalytics.Day {
-        let previous = today.flatMap { calendar.isDate($0.date, inSameDayAs: date) ? $0.state : nil }
-        let loaded = GoalongLocalAnalytics.load(root: root, day: date, resuming: previous, now: Date(),
+        let revision = GoalongActivityCheckpointStore(root: root).sourceRevision(day: date, calendar: calendar)
+        let previous = today.flatMap { calendar.isDate($0.date, inSameDayAs: date) && $0.revision == revision ? $0.state : nil }
+        let loaded = GoalongActivityDayReader.loadResumable(root: root, day: date, resuming: previous, now: Date(),
             calendar: calendar, shouldContinue: { !Task.isCancelled })
-        today = loaded.state.map { (date, $0) }
+        // A changed source may append, but it may also rewrite any old prefix row.
+        // Only a stable source can keep the actor's shortcut around disk validation.
+        today = loaded.state.flatMap {
+            revision == GoalongActivityCheckpointStore(root: root).sourceRevision(day: date, calendar: calendar)
+                ? (date, revision, $0) : nil
+        }
         try Task.checkCancellation()
         return loaded.day
     }
