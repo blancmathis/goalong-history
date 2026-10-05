@@ -41,7 +41,8 @@
             capture: AXRichContextCapture,
             context: ContextSnapshot,
             timestamp: Date = Date(),
-            deduplicationScope: String? = nil
+            deduplicationScope: String? = nil,
+            validateBeforeAppend: () -> Bool = { true }
         ) throws -> SemanticContextReference {
             let text = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty,
@@ -72,6 +73,7 @@
             )
 
             return try queue.sync {
+                guard validateBeforeAppend() else { throw SemanticContextStoreError.suppressedOrEmpty }
                 if let identity,
                     let existing = recentReferencesByIdentity[identity]
                 {
@@ -121,6 +123,7 @@
                 let handle = try FileHandle(forWritingTo: file)
                 defer { try? handle.close() }
                 try handle.seekToEnd()
+                guard validateBeforeAppend() else { throw SemanticContextStoreError.suppressedOrEmpty }
                 try handle.write(contentsOf: data)
                 if let identity {
                     remember(payload.reference, identity: identity)

@@ -355,6 +355,7 @@ struct SupportReport: Codable {
     static let shared = SupportDiagnosticsRuntime()
     private var timer: Timer?
     private let responsiveness = SupportResponsivenessMonitor()
+    private let stalls = SupportStallMonitor()
     private var lastTick = ProcessInfo.processInfo.systemUptime
     var provider: (() -> [SupportKey: SupportValue])?
     var previousWorkingBuildProvider: (() -> CaptureBuildIdentity?)?
@@ -362,6 +363,7 @@ struct SupportReport: Codable {
     func start(provider: @escaping () -> [SupportKey: SupportValue]) {
         self.provider = provider
         responsiveness.start()
+        stalls.start()
         SupportDiagnostics.shared.start()
         timer?.invalidate()
         lastTick = ProcessInfo.processInfo.systemUptime
@@ -415,6 +417,6 @@ struct SupportReport: Codable {
         }
         lowSpaceReported = low
     }
-    func stop() { responsiveness.stop(); timer?.invalidate(); timer = nil; SupportDiagnostics.shared.stop() }
+    func stop() { responsiveness.stop(); stalls.stop(); timer?.invalidate(); timer = nil; SupportDiagnostics.shared.stop() }
 }
 #endif

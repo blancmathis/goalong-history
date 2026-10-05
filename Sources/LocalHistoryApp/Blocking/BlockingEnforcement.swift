@@ -9,6 +9,8 @@ import SwiftUI
     var canLockScreen: Bool { get }
     var browsers: [BlockingBrowserSupport] { get }
     var appStillBlocked: ((BlockingObservation) -> Bool)? { get set }
+    var siteActionStillRequired: ((BlockingObservation) -> Bool)? { get set }
+    var siteActionDeadline: ((BlockingObservation) -> Date?)? { get set }
     func observeBrowser(_ target: BlockingObservation)
     func updateProtection(locked: Bool) -> BlockingProtectionState
     func blockApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String)
@@ -22,9 +24,13 @@ import SwiftUI
     func updateFreeze(_ freeze: BlockFreeze?)
     func returnToShield()
     func shutdown()
+    func invalidateSiteActions()
 }
 
 extension BlockingEnforcementBackend {
+    var siteActionStillRequired: ((BlockingObservation) -> Bool)? { get { nil } set {} }
+    var siteActionDeadline: ((BlockingObservation) -> Date?)? { get { nil } set {} }
+    func invalidateSiteActions() {}
     func blockSlowDownApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) {}
     func slowDown(_ target: BlockingObservation, presentation: BlockingFrictionPresentation, onRenounce: @escaping () -> Void, onContinue: @escaping () -> Void) {}
     func clearSlowDown() {}
@@ -46,6 +52,8 @@ private final class BlockingFreezePanel: NSPanel {
     var accessibilityAvailable: Bool { AXIsProcessTrusted() }
     var canLockScreen: Bool { accessibilityAvailable }
     var appStillBlocked: ((BlockingObservation) -> Bool)?
+    var siteActionStillRequired: ((BlockingObservation) -> Bool)?
+    var siteActionDeadline: ((BlockingObservation) -> Date?)?
     private var observedBrowserSupport: [String: Bool] = [:]
     private var observedBrowserNames: [String: String] = [:]
     func observeBrowser(_ target: BlockingObservation) {
@@ -64,6 +72,11 @@ private final class BlockingFreezePanel: NSPanel {
         }
         return result
     }
+    private let tabLane = BlockingTabAXLane()
+    private let tabRuleAuthority = BlockingTabRuleAuthority()
+    private var tabPermit: AXRequestPermit?
+    private var renouncedTarget: BlockingObservation?
+    private var tabIsRenounce = false
     private var frictionPanel: SlowDownPanel?
     private var veil: NSPanel?
     private var veilHost: NSHostingView<AnyView>?
@@ -82,17 +95,45 @@ private final class BlockingFreezePanel: NSPanel {
     private var requestedLogin = false
     private var registeredLogin = false
     private var loginError: String?
+    private var loginStatus: SMAppService.Status?
+    private var loginStatusRead = Date.distantPast
+    private var loginStatusReading = false
+
+    /// `SMAppService.status` is a synchronous XPC round trip to smd (measured at ~300 ms)
+    /// and `updateProtection` runs on every blocking refresh. The status is read once
+    /// synchronously, then refreshed off the main thread at most every 30 s.
+    private func currentLoginStatus() -> SMAppService.Status {
+        guard let status = loginStatus else {
+            let status = SMAppService.mainApp.status
+            loginStatus = status; loginStatusRead = Date()
+            return status
+        }
+        if Date().timeIntervalSince(loginStatusRead) > 30, !loginStatusReading {
+            loginStatusReading = true
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let next = SMAppService.mainApp.status
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.loginStatusReading = false
+                    if self.loginStatus != nil { self.loginStatus = next; self.loginStatusRead = Date() }
+                }
+            }
+        }
+        return status
+    }
 
     func updateProtection(locked: Bool) -> BlockingProtectionState {
-        if locked, SMAppService.mainApp.status != .enabled, !requestedLogin {
+        if locked, currentLoginStatus() != .enabled, !requestedLogin {
             requestedLogin = true
             do { try SMAppService.mainApp.register(); registeredLogin = true }
             catch { loginError = "Démarrage à la connexion indisponible : \(error.localizedDescription)" }
+            loginStatus = nil
         } else if !locked { requestedLogin = false }
         var result = BlockingProtectionState()
-        result.launchAtLogin = SMAppService.mainApp.status == .enabled
+        let status = currentLoginStatus()
+        result.launchAtLogin = status == .enabled
         if locked && !result.launchAtLogin {
-            result.component = SMAppService.mainApp.status == .requiresApproval ? .awaitingApproval : .failed(loginError ?? "Activez Goalong dans les éléments d’ouverture.")
+            result.component = status == .requiresApproval ? .awaitingApproval : .failed(loginError ?? "Activez Goalong dans les éléments d’ouverture.")
         }
         return result
     }
@@ -149,15 +190,16 @@ private final class BlockingFreezePanel: NSPanel {
         }
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         panel.alphaValue = 1; panel.orderFrontRegardless(); veil = panel
-        if veilTarget?.pid != target.pid || veilTarget?.windowIdentity != target.windowIdentity
+        if veilTarget?.pid != target.pid || veilTarget?.windowBoundary != target.windowBoundary
             || veilTarget?.url != target.url || veilTarget?.privateWindow != target.privateWindow
             || target.at.timeIntervalSince(lastTabClose) >= 1.5 {
             lastTabClose = target.at
-            closeTab(pid: target.pid)
+            closeTab(target)
         }
         veilTarget = target
     }
     func clearSite() {
+        if !tabIsRenounce { invalidateSiteActions() }
         guard veil != nil, veilClear == nil else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -178,8 +220,10 @@ private final class BlockingFreezePanel: NSPanel {
         panel.show(target, presentation: presentation, onRenounce: onRenounce, onContinue: onContinue)
         frictionPanel = panel
     }
-    func clearSlowDown() { frictionPanel?.close(); frictionPanel = nil }
-    func renounceSlowDown(_ target: BlockingObservation) { if target.isBrowser { closeTab(pid: target.pid) } }
+    func clearSlowDown() {
+        frictionPanel?.close(); frictionPanel = nil
+    }
+    func renounceSlowDown(_ target: BlockingObservation) { if target.isBrowser { closeTab(target, renounce: true) } }
     func continueSlowDown(_ target: BlockingObservation) {
         guard !target.isBrowser, let app = NSRunningApplication(processIdentifier: target.pid), app.bundleIdentifier == target.bundleIdentifier, app.activationPolicy == .regular else { return }
         app.unhide(); app.activate(options: [.activateIgnoringOtherApps])
@@ -262,12 +306,13 @@ private final class BlockingFreezePanel: NSPanel {
         down?.post(tap: .cghidEventTap); up?.post(tap: .cghidEventTap)
     }
     func shutdown() {
+        invalidateSiteActions()
         clearSlowDown()
         updateFreeze(nil)
         veilClear?.cancel(); noticeClear?.cancel()
         for work in terminations.values { work.cancel() }; terminations.removeAll()
         veil?.close(); veil = nil; veilHost = nil; veilPresentation = nil; notice?.close(); notice = nil
-        if registeredLogin { do { try SMAppService.mainApp.unregister() } catch { loginError = error.localizedDescription } }
+        if registeredLogin { do { try SMAppService.mainApp.unregister() } catch { loginError = error.localizedDescription }; loginStatus = nil }
     }
     private func makePanel(frame: CGRect) -> NSPanel {
         let panel = BlockingPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -287,29 +332,39 @@ private final class BlockingFreezePanel: NSPanel {
     static func appKitFrame(_ frame: CGRect) -> CGRect {
         CGRect(x: frame.minX, y: (NSScreen.screens.first?.frame.maxY ?? 0) - frame.maxY, width: frame.width, height: frame.height)
     }
-    private func closeTab(pid: Int32) {
-        guard accessibilityAvailable else { return }
-        let app = AXUIElementCreateApplication(pid); AXUIElementSetMessagingTimeout(app, 0.15)
-        var menu: CFTypeRef?
-        if AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &menu) == .success, let menu,
-           CFGetTypeID(menu) == AXUIElementGetTypeID() {
-            var queue = [unsafeBitCast(menu, to: AXUIElement.self)], visited = 0
-            while !queue.isEmpty, visited < 160 {
-                let item = queue.removeFirst(); visited += 1
-                var title: CFTypeRef?, command: CFTypeRef?
-                AXUIElementCopyAttributeValue(item, kAXTitleAttribute as CFString, &title)
-                AXUIElementCopyAttributeValue(item, kAXMenuItemCmdCharAttribute as CFString, &command)
-                if let title = title as? String, ["Fermer l’onglet", "Fermer l'onglet", "Close Tab"].contains(title),
-                   (command as? String)?.lowercased() == "w", AXUIElementPerformAction(item, kAXPressAction as CFString) == .success { return }
-                var children: CFTypeRef?
-                if AXUIElementCopyAttributeValue(item, kAXChildrenAttribute as CFString, &children) == .success,
-                   let children = children as? [AXUIElement] { queue.append(contentsOf: children.prefix(160 - visited)) }
-            }
-        }
-        let down = CGEvent(keyboardEventSource: nil, virtualKey: 13, keyDown: true)
-        let up = CGEvent(keyboardEventSource: nil, virtualKey: 13, keyDown: false)
-        down?.flags = .maskCommand; up?.flags = .maskCommand
-        down?.postToPid(pid); up?.postToPid(pid)
+    func invalidateSiteActions() { tabRuleAuthority.invalidate(); tabPermit?.revoke(); tabPermit = nil; renouncedTarget = nil }
+
+    private func closeTab(_ target: BlockingObservation, renounce: Bool = false) {
+        guard accessibilityAvailable, let application = NSRunningApplication(processIdentifier: target.pid),
+              application.bundleIdentifier == target.bundleIdentifier, !application.isTerminated else { return }
+        invalidateSiteActions()
+        guard let deadline = siteActionDeadline?(target), deadline > Date() else { return }
+        let rulePermit = tabRuleAuthority.permit(until: deadline)
+        let permit = AXRequestPermit(); tabPermit = permit
+        tabIsRenounce = renounce
+        if renounce { renouncedTarget = target }
+        tabLane.request(target, permit: permit, rulePermit: rulePermit, stillCurrent: {
+            !application.isTerminated && application.bundleIdentifier == target.bundleIdentifier
+                && NSWorkspace.shared.frontmostApplication?.processIdentifier == target.pid
+                && ForegroundSessionAvailability.isAvailable() && AXIsProcessTrusted()
+        }, revalidate: { [weak self] completion in
+            guard let self, permit.isValid else { completion(false); return }
+            let veiled = self.veilTarget.map {
+                $0.pid == target.pid && $0.windowBoundary == target.windowBoundary && $0.url == target.url
+                    && $0.privateWindow == target.privateWindow && (self.veilPresentation?.end ?? .distantPast) > Date()
+            } ?? false
+            let renounced = self.renouncedTarget.map {
+                $0.pid == target.pid && $0.windowBoundary == target.windowBoundary && $0.url == target.url
+
+            } ?? false
+            completion((veiled || renounced) && self.accessibilityAvailable
+                && (self.siteActionStillRequired?(target) ?? true))
+        }, fallback: {
+            let down = CGEvent(keyboardEventSource: nil, virtualKey: 13, keyDown: true)
+            let up = CGEvent(keyboardEventSource: nil, virtualKey: 13, keyDown: false)
+            down?.flags = .maskCommand; up?.flags = .maskCommand
+            down?.postToPid(target.pid); up?.postToPid(target.pid)
+        })
     }
 }
 #endif

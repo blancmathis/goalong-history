@@ -32,8 +32,8 @@
             guard !IsSecureEventInputEnabled() else { return nil }
             let characterLimit = min(max(maximumCharacters, 256), 20_000)
             let nodeLimit = min(max(maximumNodes, 0), 600)
-            let application = AXUIElementCreateApplication(processIdentifier)
-            AXUIElementSetMessagingTimeout(application, 0.35)
+            let application = AXAccess.application(processIdentifier)
+            AXAccess.setMessagingTimeout(application, 0.35)
             guard let window = AXReader.focusedWindow(for: application) else { return nil }
 
             var snippets: [String] = []
@@ -191,9 +191,12 @@
             ].contains(role)
         }
 
+        /// Password fields are `AXTextField` with the `AXSecureTextField` subrole (native and
+        /// web); the role alone misses them when protected content is not reported.
         private static func isSecure(_ element: AXUIElement, role: String) -> Bool {
             if AXReader.bool(element, attribute: protectedContent) == true { return true }
-            let roleValue = role.lowercased()
+            let roleValue = ([role] + [AXReader.string(element, attribute: "AXSubrole" as CFString)].compactMap { $0 })
+                .joined(separator: " ").lowercased()
             return roleValue.contains("secure") || roleValue.contains("password")
         }
 

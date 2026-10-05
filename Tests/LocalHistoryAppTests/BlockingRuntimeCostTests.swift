@@ -25,10 +25,16 @@ final class BlockingRuntimeCostTests: XCTestCase {
         let count = 400
         for (label, app) in [("browser", targets.first), ("app", others.first)] {
             guard let app else { continue }
-            _ = provider.captureBlocking(of: app)
+            let warm = expectation(description: "warm owned blocking lane")
+            provider.requestBlocking(of: app) { _ in warm.fulfill() }
+            wait(for: [warm], timeout: 10)
             let cpu = cpuSeconds(), wall = Date()
             var observation: BlockingObservation?
-            for _ in 0..<count { observation = provider.captureBlocking(of: app) }
+            for _ in 0..<count {
+                let result = expectation(description: "owned blocking lane")
+                provider.requestBlocking(of: app) { observation = $0; result.fulfill() }
+                wait(for: [result], timeout: 10)
+            }
             let perSample = (cpuSeconds() - cpu) / Double(count) * 1_000
             if observation?.sessionAvailable != true { print("BLOCKING_COST session locked: nothing is read") }
             print(String(format: "BLOCKING_COST sample %@ %@ cpu=%.2f ms wall=%.2f ms url=%@ browser=%@", label,

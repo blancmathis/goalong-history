@@ -10,12 +10,24 @@ import LocalHistoryCore
 /// This does not enable collection, grant permissions, persist text or make requests.
 final class JevVisibleContextSampler {
     private let queue = DispatchQueue(label: "ai.goalong.jev.visible-context", qos: .utility)
-    private var pending = false
+    private var pendingID: UUID?
+    private var permit: AXRequestPermit?
     private var generation: UInt64 = 0
     private var nextProbe: TimeInterval = 0
-    private let inbox = JevIngress.shared
+    private let inbox: JevIngress
+    private let client: AXClient
+    private let read: (pid_t, Bool) -> String?
+    private let onTerminal: (() -> Void)?
 
-    func invalidate() { generation &+= 1; nextProbe = 0 }
+    init(inbox: JevIngress = .shared, client: AXClient = .system,
+         read: ((pid_t, Bool) -> String?)? = nil, onTerminal: (() -> Void)? = nil) {
+        self.inbox = inbox; self.client = client
+        self.onTerminal = onTerminal
+        self.read = read ?? { JevVisibleTextReader.capture(processIdentifier: $0, browser: $1) }
+    }
+    var hasPendingReadForTesting: Bool { pendingID != nil }
+
+    func invalidate() { generation &+= 1; nextProbe = 0; permit?.revoke() }
 
     static func eligible(remoteText: Bool, localText: Bool, context: ContextSnapshot,
                          presence: ForegroundUsageObservation) -> Bool {
@@ -32,7 +44,7 @@ final class JevVisibleContextSampler {
     }
 
     func observe(_ context: ContextSnapshot, presence: ForegroundUsageObservation,
-                 revalidate: @escaping () -> ContextSnapshot?) {
+                 revalidate: @escaping (@escaping (AXContextEvidence?) -> Void) -> Void) {
         guard Self.eligible(remoteText: inbox.wantsVisibleText,
                             localText: ActivityAnalysisPreferences.richContextEnabled,
                             context: context, presence: presence),
@@ -40,28 +52,49 @@ final class JevVisibleContextSampler {
             invalidate(); return
         }
         let uptime = ProcessInfo.processInfo.systemUptime
-        guard !pending, uptime >= nextProbe else { return }
+        guard pendingID == nil, uptime >= nextProbe else { return }
         nextProbe = uptime + JevIngress.foregroundSampleInterval
-        pending = true
         let ownGeneration = generation, ingressGeneration = inbox.generation
-        let capturedAt = Date()
-        let browser = ForegroundActivityProbe.isBrowser(context)
-        queue.async { [weak self] in
-            let text = JevVisibleTextReader.capture(processIdentifier: context.app.processIdentifier, browser: browser)
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                defer { self.pending = false }
-                guard let text, Date().timeIntervalSince(capturedAt) < 2,
-                      let current = revalidate(),
-                      self.generation == ownGeneration, self.inbox.generation == ingressGeneration,
-                      Self.sameBoundary(current, context),
-                      let freshPresence = current.foregroundUsage,
-                      Self.eligible(remoteText: self.inbox.wantsVisibleText,
-                                    localText: ActivityAnalysisPreferences.richContextEnabled,
-                                    context: current, presence: freshPresence),
-                      ForegroundSessionAvailability.isAvailable(), !IsSecureEventInputEnabled(),
-                      JevIngress.permitsLiveContext(current) else { return }
-                self.inbox.offerVisibleText(text, context: current, at: capturedAt, generation: ingressGeneration)
+        let jobID = UUID(), ownPermit = AXRequestPermit { [inbox] in
+            inbox.generation == ingressGeneration && inbox.wantsVisibleText && ActivityAnalysisPreferences.richContextEnabled
+        }
+        pendingID = jobID; permit = ownPermit
+        let capturedAt = Date(), browser = ForegroundActivityProbe.isBrowser(context)
+        let finish = {
+            if self.pendingID == jobID { self.pendingID = nil; self.permit = nil; self.onTerminal?() }
+        }
+        revalidate { [weak self] evidence in
+            guard let self, ownPermit.isValid, let evidence,
+                  self.generation == ownGeneration, self.inbox.generation == ingressGeneration,
+                  Self.sameBoundary(evidence.snapshot, context) else { finish(); return }
+            let evidenceBoundary = evidence.boundary
+            self.queue.async {
+                guard ownPermit.isValid, ActivityAnalysisPreferences.richContextEnabled else {
+                    DispatchQueue.main.async { finish() }; return
+                }
+                let matchesWindow = AXAccess.withBackgroundClient(self.client, permit: ownPermit) { evidence.boundary?.matchesFocusedWindow() != false }
+                guard matchesWindow else {
+                    DispatchQueue.main.async { finish() }; return
+                }
+                let text = AXAccess.withBackgroundClient(self.client, requestID: jobID.uuidString, permit: ownPermit) {
+                    self.read(context.app.processIdentifier, browser)
+                }
+                DispatchQueue.main.async {
+                    guard ownPermit.isValid, let text else { finish(); return }
+                    revalidate { evidence in
+                        defer { finish() }
+                        guard ownPermit.isValid, let current = evidence?.snapshot,
+                              Date().timeIntervalSince(capturedAt) < 2,
+                              self.generation == ownGeneration, self.inbox.generation == ingressGeneration,
+                              Self.sameBoundary(current, context), evidence?.boundary == evidenceBoundary, let freshPresence = current.foregroundUsage,
+                              Self.eligible(remoteText: self.inbox.wantsVisibleText,
+                                            localText: ActivityAnalysisPreferences.richContextEnabled,
+                                            context: current, presence: freshPresence),
+                              ForegroundSessionAvailability.isAvailable(), !IsSecureEventInputEnabled(),
+                              JevIngress.permitsLiveContext(current) else { return }
+                        self.inbox.offerVisibleText(text, context: current, at: capturedAt, generation: ingressGeneration)
+                    }
+                }
             }
         }
     }
@@ -104,12 +137,12 @@ enum JevVisibleTextReader {
         guard AXIsProcessTrusted(), !IsSecureEventInputEnabled(), !GoalongGlobalPause.isPaused(),
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
         let deadline = ProcessInfo.processInfo.systemUptime + 0.20
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.025)
+        let app = AXAccess.application(pid)
+        AXAccess.setMessagingTimeout(app, 0.025)
         func value(_ node: AXUIElement, _ attribute: String) -> CFTypeRef? {
             guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
             var result: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(node, attribute as CFString, &result) == .success else { return nil }
+            guard AXAccess.copyAttributeValue(node, attribute as CFString, &result) == .success else { return nil }
             return result
         }
         func element(_ node: AXUIElement, _ attribute: String) -> AXUIElement? {
@@ -187,7 +220,7 @@ enum JevVisibleTextReader {
         guard !IsSecureEventInputEnabled(), !GoalongGlobalPause.isPaused(),
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
         var finalWindow: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &finalWindow) == .success,
+        guard AXAccess.copyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &finalWindow) == .success,
               let finalWindow, CFEqual(window, finalWindow) else { return nil }
         let text = JevVisibleTextPolicy.compact(content + links)
         return text.isEmpty ? nil : text

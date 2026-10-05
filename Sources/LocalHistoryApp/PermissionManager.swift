@@ -123,6 +123,8 @@
 
         private let statusLock = NSCondition()
         private let statusProbe: StatusProbe
+        private let liveProbe: Bool
+        private let probeQueue = DispatchQueue(label: "Goalong.PermissionAX", qos: .userInitiated)
         private let clock: () -> Date
         private var cachedStatus: PermissionStatus
         private var lastRefreshAt: Date
@@ -140,15 +142,21 @@
         var probeCount: Int { statusLock.lock(); defer { statusLock.unlock() }; return completedProbeCount }
 
         init(
-            statusProbe: @escaping StatusProbe = PermissionManager.liveStatus,
+            statusProbe: StatusProbe? = nil,
+            probeOnBackground: Bool? = nil,
             clock: @escaping () -> Date = Date.init
         ) {
-            self.statusProbe = statusProbe
+            self.statusProbe = statusProbe ?? PermissionManager.liveStatus
+            self.liveProbe = probeOnBackground ?? (statusProbe == nil)
             self.clock = clock
-            let initial = statusProbe()
+            let initial = liveProbe ? Self.pendingStatus : (statusProbe?() ?? Self.pendingStatus)
             cachedStatus = initial
             lastRefreshAt = clock()
-            completedProbeCount = 1
+            completedProbeCount = liveProbe ? 0 : 1
+            if liveProbe {
+                lastRefreshAt = .distantPast
+                probeQueue.async { _ = self.refresh(force: true) }
+            }
         }
 
         /// Shared, zero-probe snapshot used by AX readers, dashboard and menu.
@@ -198,8 +206,17 @@
             let requestGeneration = generation
             statusLock.unlock()
 
-            let value = statusProbe()
+            if liveProbe && Thread.isMainThread {
+                probeQueue.async { self.completeProbe(self.statusProbe(), generation: requestGeneration) }
+                var pending = snapshot
+                pending.observationPending = true
+                return pending
+            }
+            return completeProbe(statusProbe(), generation: requestGeneration)
+        }
 
+        @discardableResult
+        private func completeProbe(_ value: PermissionStatus, generation requestGeneration: UInt64) -> PermissionStatus {
             statusLock.lock()
             if requestGeneration == generation {
                 cachedStatus = value
@@ -295,10 +312,10 @@
                !candidates.contains(where: { $0.processIdentifier == finder.processIdentifier }) { candidates.append(finder) }
             var lastError: Int32?
             for candidate in candidates.prefix(2) {
-                let app = AXUIElementCreateApplication(candidate.processIdentifier)
-                AXUIElementSetMessagingTimeout(app, 0.12)
+                let app = AXAccess.application(candidate.processIdentifier)
+                AXAccess.setMessagingTimeout(app, 0.12)
                 var windows: CFTypeRef?
-                let error = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windows)
+                let error = AXAccess.copyAttributeValue(app, kAXWindowsAttribute as CFString, &windows)
                 if error == .apiDisabled || lastError != AXError.apiDisabled.rawValue { lastError = error.rawValue }
                 if error == .success, let windows, CFGetTypeID(windows) == CFArrayGetTypeID() { return (true, nil) }
             }

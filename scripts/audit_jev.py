@@ -48,9 +48,9 @@ REQUIRED = {
     'Sources/LocalHistoryApp/JevVisibleContextSampler.swift': [
         'inbox.wantsVisibleText', 'ActivityAnalysisPreferences.richContextEnabled',
         'remoteText && localText', 'self.inbox.generation == ingressGeneration',
-        'let current = revalidate()', 'Self.sameBoundary(current, context)',
+        'let current = evidence?.snapshot', 'Self.sameBoundary(current, context)',
         'JevVisibleTextPolicy.permitsTraversal', 'JevVisibleTextPolicy.isVisible(bounds, in: viewport)',
-        'private var pending = false', 'qos: .utility', 'index < 200',
+        'guard pendingID == nil', 'qos: .utility', 'index < 200',
         'AXProtectedContent', 'AXEditable', 'AXHidden',
     ],
     'Sources/LocalHistoryApp/JevLocalFiles.swift': [
@@ -58,7 +58,8 @@ REQUIRED = {
         '["api-key", "break.json", "work-context.json"].contains(name)',
     ],
     'Sources/LocalHistoryApp/CapabilityConsentStore.swift': ['case jevMonitoring', 'static let disabledByDefault'],
-    'Sources/LocalHistoryApp/ContextProvider.swift': ['JevIngress.shared.setPrivateWindow(cachedPrivateWindow)'],
+    'Sources/LocalHistoryApp/ContextProvider.swift': ['{ JevIngress.shared.setPrivateWindow($0) }', 'privateWindowSink(privateWindowUpdate)'],
+    'Sources/LocalHistoryApp/ContextAXReader.swift': ['privateWindowUpdate = cachedPrivateWindow'],
     'Sources/LocalHistoryApp/JevControls.swift': ['confirmingText = true'],
     'Sources/LocalHistoryApp/JevWarningPanel.swift': ['.nonactivatingPanel', 'overlay.ignoresMouseEvents = true', 'timeInterval: 30', 'RunLoop.main.add(lease, forMode: .common)', 'func hide(', 'canBecomeKey: Bool { false }', 'JevInterventionSettings.overlayOpacity(intensity: stage.intensity)', 'JevReminderPresentation.detail(after: content.seconds)'],
     'Sources/LocalHistoryCore/JevInterventions.swift': ['effectsEnabled = false', 'intensityRange = 10...85', 'intensities.contains(stage.intensity)', 'intensities: 10...40', 'durationThresholdSeconds = 600', 'appearance > 1', 'filter { $0 != previous }'],

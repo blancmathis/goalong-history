@@ -382,13 +382,19 @@
             guard event?.eventClass == AEEventClass(kCoreEventClass), event?.eventID == AEEventID(kAEQuitApplication),
                   PermissionRecovery.shouldAssistSettingsQuit(senderBundleID: senderID,
                     pendingSetup: PermissionRecovery.pendingSetup() != nil, alreadyRestarting: PermissionRecovery.isRestarting) else {
-                return .terminateNow
+                guard runtimeStarted, let eventTapMonitor else { return .terminateNow }
+                eventTapMonitor.stop {
+                    DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) }
+                }
+                return .terminateLater
             }
             // Assist only a fresh permission-session quit sent by Apple's System Settings.
             // Ordinary Quit, shutdown, logout and updater quits never arm this path.
             PermissionRecovery.prepareRelaunch { error in
                 if let error { Diagnostics.write("Permission relaunch preparation failed: \(error)") }
-                sender.reply(toApplicationShouldTerminate: error == nil)
+                if error == nil, self.runtimeStarted, let eventTapMonitor = self.eventTapMonitor {
+                    eventTapMonitor.stop { DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) } }
+                } else { sender.reply(toApplicationShouldTerminate: error == nil) }
             }
             return .terminateLater
         }
@@ -418,7 +424,7 @@
             if GoalongBuildCapabilities.permitsRemoteAnalysis {
                 ChatGPTRecapRuntime.shared.stop()
             }
-            GoalongCallPresenceMonitor.shared.stop()
+            GoalongCallPresenceMonitor.shared.stopForTermination()
             contextMonitor?.stop()
             eventTapMonitor?.stop()
             if capabilityConsents?.isEnabled(.localComputerHistory) == true {

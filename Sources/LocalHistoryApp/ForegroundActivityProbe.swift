@@ -217,10 +217,10 @@ enum ForegroundPlaybackControls {
                 "com.apple.TV", "com.apple.Music", "com.spotify.client", "com.apple.iWork.Keynote"]
                 .contains(context.app.bundleIdentifier ?? "")
         guard isBrowser || native else { return .unknown }
-        let application = AXUIElementCreateApplication(context.app.processIdentifier)
-        AXUIElementSetMessagingTimeout(application, 0.025)
+        let application = AXAccess.application(context.app.processIdentifier)
+        AXAccess.setMessagingTimeout(application, 0.025)
         var windowValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &windowValue) == .success,
+        guard AXAccess.copyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &windowValue) == .success,
               let windowValue, CFGetTypeID(windowValue) == AXUIElementGetTypeID() else { return .unknown }
         let window = unsafeBitCast(windowValue, to: AXUIElement.self)
         let deadline = ProcessInfo.processInfo.systemUptime + 0.10
@@ -229,7 +229,7 @@ enum ForegroundPlaybackControls {
         // ancestor chain belongs to this exact focused window. This avoids
         // exhausting the budget on browser chrome before reaching the player.
         var focusValue: CFTypeRef?
-        if AXUIElementCopyAttributeValue(application, kAXFocusedUIElementAttribute as CFString, &focusValue) == .success,
+        if AXAccess.copyAttributeValue(application, kAXFocusedUIElementAttribute as CFString, &focusValue) == .success,
            let focusValue, CFGetTypeID(focusValue) == AXUIElementGetTypeID() {
             var current = unsafeBitCast(focusValue, to: AXUIElement.self)
             var seeds: [AXUIElement] = []
@@ -238,7 +238,7 @@ enum ForegroundPlaybackControls {
                 if CFEqual(current, window) { queue = seeds + [window]; break }
                 seeds.append(current)
                 var parent: CFTypeRef?
-                guard AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent) == .success,
+                guard AXAccess.copyAttributeValue(current, kAXParentAttribute as CFString, &parent) == .success,
                       let parent, CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
                 current = unsafeBitCast(parent, to: AXUIElement.self)
             }
@@ -251,7 +251,7 @@ enum ForegroundPlaybackControls {
             func value(_ attribute: String) -> CFTypeRef? {
                 guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
                 var result: CFTypeRef?
-                guard AXUIElementCopyAttributeValue(element, attribute as CFString, &result) == .success else { return nil }
+                guard AXAccess.copyAttributeValue(element, attribute as CFString, &result) == .success else { return nil }
                 return result
             }
             if (value("AXHidden") as? Bool) == true { continue }

@@ -28,7 +28,7 @@ public struct GoalongActivityBreakdown: Codable, Equatable, Sendable {
 
     /// The strongest evidence of each calendar minute. Folded row by row, a day keeps at
     /// most one entry per minute instead of its rows.
-    struct MinuteModes {
+    struct MinuteModes: Codable {
         private(set) var modes: [Date: Mode] = [:]
 
         mutating func add(_ event: HistoryEvent, calendar: Calendar) {

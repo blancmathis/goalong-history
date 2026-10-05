@@ -926,6 +926,9 @@
             )
         }
 
+        /// Read on demand by the diagnostics panel; never published, see RuntimePresentation.==.
+        func liveCaptureHealthSnapshot() -> CaptureHealthSnapshot { captureHealthSnapshot() }
+
         private func refreshRuntime() {
             guard dashboardIsVisible else { return }
             let status = permissions.snapshot
@@ -965,8 +968,7 @@
                 verificationServer: GoalongBuildCapabilities.permitsRemoteVerification
                     ? configManager.config.verificationServerURL
                     : nil,
-                captureHealth: health,
-                captureHealthSnapshot: healthSnapshot
+                captureHealth: health
             )
             if next != runtime { runtime = next }
         }
@@ -983,7 +985,9 @@
                 cancelDataRequest()
                 dataRefreshPending = false
             }
-            isRefreshing = true
+            // The 60 s timer pass (force == false) stays silent: toggling the spinner would
+            // republish the whole dashboard twice a minute for no visible gain.
+            if force, !isRefreshing { isRefreshing = true }
             dataRequestSequence &+= 1
             let requestSequence = dataRequestSequence
             let day = selectedDay
@@ -997,7 +1001,7 @@
                 DispatchQueue.main.async {
                     guard self.dataRequestSequence == requestSequence else { return }
                     self.activeDataRequest = nil
-                    self.isRefreshing = false
+                    if self.isRefreshing { self.isRefreshing = false }
                     let shouldCatchUp = self.dataRefreshPending
                     self.dataRefreshPending = false
                     guard self.dashboardIsVisible, !token.isCancelled, let next else { return }

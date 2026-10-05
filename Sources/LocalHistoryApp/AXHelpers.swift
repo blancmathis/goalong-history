@@ -23,7 +23,7 @@
     enum AXReader {
         static func copyValue(_ element: AXUIElement, attribute: CFString) -> CFTypeRef? {
             var value: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(element, attribute, &value)
+            let result = AXAccess.copyAttributeValue(element, attribute, &value)
             guard result == .success else { return nil }
             return value
         }
@@ -67,23 +67,23 @@
         /// accurate foreground owner when available. This is one bounded AX read;
         /// callers retain their workspace value as the failure fallback.
         static func focusedApplicationProcessIdentifier() -> pid_t? {
-            let systemWide = AXUIElementCreateSystemWide()
-            AXUIElementSetMessagingTimeout(systemWide, 0.10)
+            let systemWide = AXAccess.systemWide()
+            AXAccess.setMessagingTimeout(systemWide, 0.10)
             guard let application = element(
                 systemWide,
                 attribute: kAXFocusedApplicationAttribute as CFString
             ) else { return nil }
             var processIdentifier: pid_t = 0
-            guard AXUIElementGetPid(application, &processIdentifier) == .success,
+            guard AXAccess.getPID(application, &processIdentifier) == .success,
                 processIdentifier > 0
             else { return nil }
             return processIdentifier
         }
 
         static func element(at point: CGPoint) -> AXUIElement? {
-            let systemWide = AXUIElementCreateSystemWide()
+            let systemWide = AXAccess.systemWide()
             var result: AXUIElement?
-            let error = AXUIElementCopyElementAtPosition(
+            let error = AXAccess.copyElementAtPosition(
                 systemWide,
                 Float(point.x),
                 Float(point.y),

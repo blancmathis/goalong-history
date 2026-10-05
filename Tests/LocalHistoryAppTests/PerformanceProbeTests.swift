@@ -85,8 +85,8 @@ final class PerformanceProbeTests: XCTestCase {
 
     @MainActor func testActivityPage() async throws {
         let (root, day) = try setting()
-        let model = GoalongAnalyticsModel(root: root)
         for count in [1, 7] {
+            let model = GoalongAnalyticsModel(root: root)
             let start = ProcessInfo.processInfo.systemUptime, cpu = cpuSeconds()
             await model.load(day: day, count: count)
             print(String(format: "PERF activity page %d j (cold): %.3f s (cpu %.3f s), peak footprint %.0f MB", count,
@@ -95,6 +95,92 @@ final class PerformanceProbeTests: XCTestCase {
             await model.load(day: day, count: count)
             print(String(format: "PERF activity page %d j (refresh): %.3f s (cpu %.3f s)", count,
                 ProcessInfo.processInfo.systemUptime - again, cpuSeconds() - againCPU))
+            let relaunched = GoalongAnalyticsModel(root: root)
+            let restart = ProcessInfo.processInfo.systemUptime, restartCPU = cpuSeconds()
+            await relaunched.load(day: day, count: count)
+            print(String(format: "PERF activity page %d j (relaunch): %.3f s (cpu %.3f s)", count,
+                ProcessInfo.processInfo.systemUptime - restart, cpuSeconds() - restartCPU))
+            XCTAssertNil(model.error)
+            XCTAssertNil(relaunched.error)
+            XCTAssertEqual(model.payload?.current, relaunched.payload?.current)
+            XCTAssertEqual(model.payload?.previous, relaunched.payload?.previous)
+        }
+    }
+
+    func testActivityCachedDaysMatchFullRead() throws {
+        let (root, day) = try setting()
+        let calendar = Calendar.current, now = Date()
+        for offset in 0..<14 {
+            let date = try XCTUnwrap(calendar.date(byAdding: .day, value: -offset, to: day))
+            let reference = GoalongLocalAnalytics.load(root: root, day: date, now: now, calendar: calendar)
+            var cached = GoalongActivityDayReader.load(root: root, day: date, now: now, calendar: calendar, shouldContinue: { true })
+            // Storage origin is the only expected difference; every segment, counter,
+            // coverage reason, context and mode must equal the journal projection.
+            cached.origin = reference.origin
+            XCTAssertEqual(cached, reference, GoalongActivityDayStore.dayKey(date, calendar: calendar))
+        }
+    }
+
+    func testActivityTodayRelaunch() throws {
+        let (root, _) = try setting()
+        let calendar = Calendar.current, now = Date(), day = calendar.startOfDay(for: now)
+        let reference = time("activity today without checkpoint") {
+            GoalongLocalAnalytics.load(root: root, day: day, resuming: nil, now: now, calendar: calendar)
+        }
+        let initial = time("activity today checkpoint bootstrap") {
+            GoalongActivityDayStore(root: root).loadResumable(day: day, now: now, calendar: calendar)
+        }
+        let relaunched = time("activity today checkpoint relaunch") {
+            GoalongActivityDayStore(root: root).loadResumable(day: day, now: now, calendar: calendar)
+        }
+        let warm = time("activity today checkpoint warm") {
+            GoalongLocalAnalytics.load(root: root, day: day, resuming: relaunched.state, now: now, calendar: calendar)
+        }
+        XCTAssertEqual(initial.day, reference.day); XCTAssertEqual(relaunched.day, reference.day)
+        XCTAssertEqual(warm.day, reference.day)
+        XCTAssertTrue(relaunched.didResume); XCTAssertEqual(relaunched.eventBytesRead, 0)
+        print("PERF today decoded journal bytes: cold=\(reference.eventBytesRead) relaunch=\(relaunched.eventBytesRead) warm=\(warm.eventBytesRead)")
+    }
+
+    func testActivityTodayGrowingJournal() async throws {
+        let (clone, _) = try setting()
+        // This opt-in probe mutates only a disposable copy inside the authorized clone.
+        let authorized = URL(fileURLWithPath: "/private/tmp/gl-perf-root-codex", isDirectory: true)
+        XCTAssertEqual(clone.standardizedFileURL, authorized.standardizedFileURL)
+        guard clone.standardizedFileURL == authorized.standardizedFileURL else { return }
+        let root = clone.appendingPathComponent("round2-append-" + UUID().uuidString, isDirectory: true)
+        let calendar = Calendar.current, day = calendar.startOfDay(for: Date())
+        let name = GoalongActivityDayStore.dayKey(day, calendar: calendar) + ".jsonl"
+        let journal = root.appendingPathComponent("events/" + name)
+        try FileManager.default.createDirectory(at: journal.deletingLastPathComponent(),
+            withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.copyItem(at: clone.appendingPathComponent("events/" + name), to: journal)
+        let reader = GoalongAnalyticsReader(root: root)
+        _ = try await reader.read(ending: day, count: 1, force: false, preview: false)
+        let initialSize = try FileManager.default.attributesOfItem(atPath: journal.path)[.size] as! NSNumber
+        print("PERF today append initial journal bytes=\(initialSize.int64Value) linesPerRefresh=100")
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        for refresh in 1...3 {
+            var extra = Data()
+            for index in 0..<100 {
+                let event = HistoryEvent(id: "round2-\(refresh)-\(index)", sessionID: "round2-probe",
+                    timestamp: Date().addingTimeInterval(-1), kind: .heartbeat,
+                    app: .init(name: "Probe", bundleIdentifier: "fixture.probe", processIdentifier: 1))
+                extra.append(try encoder.encode(event)); extra.append(10)
+            }
+            let handle = try FileHandle(forWritingTo: journal)
+            try handle.seekToEnd(); try handle.write(contentsOf: extra); try handle.close()
+            let start = ProcessInfo.processInfo.systemUptime, cpu = cpuSeconds()
+            let payload = try await reader.read(ending: day, count: 1, force: false, preview: false)
+            let elapsed = ProcessInfo.processInfo.systemUptime - start, usedCPU = cpuSeconds() - cpu
+            let hashed = await reader.todayCheckpointBytesHashed
+            let decoded = await reader.todayEventBytesRead
+            print(String(format: "PERF today append refresh %d: %.6f s (cpu %.6f s) checkpointPrefixBytesHashed=%lld decodedBytes=%lld appendedBytes=%d",
+                refresh, elapsed, usedCPU, hashed, decoded, extra.count))
+            let measured = try XCTUnwrap(payload.current.days.first)
+            let reference = GoalongLocalAnalytics.load(root: root, day: day, now: measured.end, calendar: calendar)
+            XCTAssertEqual(measured, reference)
         }
     }
 

@@ -2,7 +2,10 @@
 #if os(macOS)
 enum SupportSourceAllowlist {
     static let names: Set<String> = [
+        "AXClient.swift",
+        "AXContinuationQueue.swift",
         "AXHelpers.swift",
+        "AXObservationThread.swift",
         "AbandonedTemporaryScavenger.swift",
         "AccessibilityEventMonitor.swift",
         "ActivityAnalysisRuntime.swift",
@@ -29,6 +32,7 @@ enum SupportSourceAllowlist {
         "BackgroundContinuityController.swift",
         "BackgroundContinuityPolicy.swift",
         "BackgroundContinuitySettings.swift",
+        "BlockingAXLane.swift",
         "BlockingController.swift",
         "BlockingEnforcement.swift",
         "BlockingFormat.swift",
@@ -38,6 +42,7 @@ enum SupportSourceAllowlist {
         "BlockingRules.swift",
         "BlockingShieldViews.swift",
         "BlockingStore.swift",
+        "BlockingTabAXLane.swift",
         "BlockingWeek.swift",
         "BoundedDiagnosticsLog.swift",
         "BuildIdentityReader.swift",
@@ -63,8 +68,10 @@ enum SupportSourceAllowlist {
         "ConcentrationRules.swift",
         "ConcentrationRuntime.swift",
         "ConcentrationStore.swift",
+        "ContextAXReader.swift",
         "ContextMonitor.swift",
         "ContextProvider.swift",
+        "ContextReadParameters.swift",
         "DashboardComponents.swift",
         "DashboardDataReader.swift",
         "DashboardModels.swift",

@@ -68,11 +68,12 @@
             XCTAssertTrue(probe.contains("as String: false"))
             XCTAssertTrue(probe.contains("isExternalProbeTarget"))
             XCTAssertTrue(probe.contains("candidates.prefix(2)"))
-            XCTAssertTrue(probe.contains("AXUIElementSetMessagingTimeout(app, 0.12)"))
+            XCTAssertTrue(probe.contains("AXAccess.setMessagingTimeout(app, 0.12)"))
             XCTAssertFalse(probe.contains("kAXTitleAttribute"))
             XCTAssertFalse(probe.contains("CGRequest"))
             XCTAssertFalse(block.contains("canReadFocusedApplication"))
             XCTAssertFalse(block.contains("AXUIElementCopyAttributeValue"))
+            XCTAssertFalse(block.contains("AXAccess.copyAttributeValue"))
             XCTAssertFalse(block.contains("CGRequest"))
         }
     }

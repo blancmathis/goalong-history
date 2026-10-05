@@ -88,7 +88,10 @@
             }
         }
 
-        let sessionID = UUID().uuidString
+        let sessionID: String
+        private let eventIdentifier: () -> String
+        private let captureMetrics: ((AXOperationMetric) -> Void)?
+        private let captureClock: AXCaptureClock
         private let store: JSONLStore
         private let integrityJournal: IntegrityJournal
         private let minuteSealer: MinuteSealer
@@ -112,6 +115,7 @@
         private var pendingEventCount = 0
         private var writerQueueHighWaterMark = 0
         private var overflowEpisodeOpen = false
+        private var orderedCommitDepth = 0 // writer-owned
         private var observationGap = ObservationGap()
 
         private let statusLock = NSLock()
@@ -136,11 +140,19 @@
             isMainThread: @escaping () -> Bool = { Thread.isMainThread },
             beforePersist: ((HistoryEvent) -> Void)? = nil,
             clock: @escaping () -> Date = Date.init,
-            storageRetryDelays: [TimeInterval] = EventRecorder.defaultStorageRetryDelays
+            storageRetryDelays: [TimeInterval] = EventRecorder.defaultStorageRetryDelays,
+            sessionID: String = UUID().uuidString,
+            eventIdentifier: @escaping () -> String = { UUID().uuidString },
+            captureClock: AXCaptureClock = AXCaptureClock(),
+            captureMetrics: ((AXOperationMetric) -> Void)? = nil
         ) {
             precondition((2...512).contains(writerQueueCapacity))
             precondition(!storageRetryDelays.isEmpty)
             self.clock = clock
+            self.sessionID = sessionID
+            self.eventIdentifier = eventIdentifier
+            self.captureClock = captureClock
+            self.captureMetrics = captureMetrics
             self.storageRetryDelays = storageRetryDelays
             self.store = store
             self.integrityJournal = integrityJournal
@@ -184,7 +196,8 @@
             suppressionReason: SuppressionReason? = nil,
             message: String? = nil,
             metadata: [String: String]? = nil,
-            timestamp: Date = Date()
+            timestamp: Date = Date(),
+            identifier: String? = nil
         ) -> Bool {
             guard !GoalongGlobalPause.isPaused() else { return false }
             let pauseRevision = context?.globalPauseRevision ?? GoalongGlobalPause.load().revision
@@ -194,6 +207,7 @@
                 timestamp: timestamp, metadata: metadata, inputOrigin: inputOrigin)
             let base = HistoryEvent(
                 schemaVersion: 4,
+                id: identifier ?? eventIdentifier(),
                 sessionID: sessionID,
                 timestamp: timestamp,
                 kind: kind,
@@ -279,6 +293,36 @@
             return result
         }
 
+        /// Main reserves the event's FIFO position before a semantic payload write.
+        /// The existing bounded writer performs payload + reference together; AX
+        /// readers and main never wait for this operation or its capacity.
+        @discardableResult
+        func performOrderedCommit(timestamp: Date, operation: @escaping (String) -> Void,
+                                  completion: @escaping () -> Void) -> Bool {
+            precondition(isMainThread())
+            let identifier = eventIdentifier()
+            writerCondition.lock()
+            guard acceptingEvents else { writerCondition.unlock(); return false }
+            guard !overflowEpisodeOpen, writerTaskCount < writerQueueCapacity - 1 else {
+                let first = registerDroppedEventLocked(timestamp: timestamp)
+                writerCondition.unlock()
+                if first { noteFailure(operation: "writer_overflow", error: EventRecorderPersistenceError.writerCapacityExceeded(writerQueueCapacity)) }
+                return false
+            }
+            pendingEventCount += 1
+            writerTaskCount += 1
+            writerQueueHighWaterMark = max(writerQueueHighWaterMark, writerTaskCount)
+            writerQueue.async {
+                self.orderedCommitDepth += 1
+                operation(identifier)
+                self.orderedCommitDepth -= 1
+                self.finishEventTask()
+                DispatchQueue.main.async { completion() }
+            }
+            writerCondition.unlock()
+            return true
+        }
+
         func flush() {
             do {
                 try flushAndWait()
@@ -343,20 +387,21 @@
 
         private func recordFromWriterQueue(_ base: HistoryEvent, privacyRevision: String, globalPauseRevision: String) -> Bool {
             writerCondition.lock()
-            guard acceptingEvents else {
+            guard acceptingEvents || orderedCommitDepth > 0 else {
                 writerCondition.unlock()
                 noteFailure(operation: "record", error: EventRecorderPersistenceError.recorderClosed)
                 return false
             }
-            guard !overflowEpisodeOpen else {
+            guard !overflowEpisodeOpen || orderedCommitDepth > 0 else {
                 _ = registerDroppedEventLocked(timestamp: base.timestamp)
                 writerCondition.unlock()
                 return false
             }
             mutateStatus { acceptedEventCount &+= 1 }
             writerCondition.unlock()
-            persist(base, isObservationGap: false, privacyRevision: privacyRevision, globalPauseRevision: globalPauseRevision)
-            return true
+            // This path already owns the writer: report the persistence result,
+            // so semantic deduplication is never promoted for a failed append.
+            return persist(base, isObservationGap: false, privacyRevision: privacyRevision, globalPauseRevision: globalPauseRevision)
         }
 
         /// Called with `writerCondition` held. One task slot remains reserved for the
@@ -373,10 +418,15 @@
             writerQueueHighWaterMark = max(writerQueueHighWaterMark, writerTaskCount)
             mutateStatus { acceptedEventCount &+= 1 }
 
+            let admittedAt = captureMetrics.map { _ in captureClock.uptime() }
             writerQueue.async { [self] in
                 defer {
                     finishEventTask()
                     completion?.signal()
+                }
+                if let admittedAt {
+                    captureMetrics?(AXOperationMetric(requestID: base.id, stage: .waiting, operation: "writer",
+                        duration: max(0, captureClock.uptime() - admittedAt), onMain: Thread.isMainThread, error: 0))
                 }
                 persist(base, isObservationGap: false, privacyRevision: privacyRevision, globalPauseRevision: globalPauseRevision)
             }
@@ -449,6 +499,22 @@
             privacyRevision: String? = nil,
             globalPauseRevision: String? = nil,
             isStorageGap: Bool = false
+        ) -> Bool {
+            guard let captureMetrics else {
+                return persistTransaction(base, isObservationGap: isObservationGap, privacyRevision: privacyRevision,
+                                          globalPauseRevision: globalPauseRevision, isStorageGap: isStorageGap)
+            }
+            let start = captureClock.uptime()
+            let outcome = persistTransaction(base, isObservationGap: isObservationGap, privacyRevision: privacyRevision,
+                                             globalPauseRevision: globalPauseRevision, isStorageGap: isStorageGap)
+            captureMetrics(AXOperationMetric(requestID: base.id, stage: .commit, operation: "writer",
+                duration: max(0, captureClock.uptime() - start), onMain: Thread.isMainThread, error: outcome ? 0 : 1))
+            return outcome
+        }
+
+        private func persistTransaction(
+            _ base: HistoryEvent, isObservationGap: Bool, privacyRevision: String?,
+            globalPauseRevision: String?, isStorageGap: Bool
         ) -> Bool {
             guard !GoalongGlobalPause.isPaused() else { return false }
             beforePersist?(base)

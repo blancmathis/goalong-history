@@ -105,7 +105,18 @@
         let verificationEnabled: Bool
         let verificationServer: String?
         let captureHealth: CaptureHealthAssessment?
-        let captureHealthSnapshot: CaptureHealthSnapshot?
+
+        /// Publishing re-renders every view observing the dashboard model, so equality ignores
+        /// the assessment's English diagnostic detail (it counts idle seconds). The live
+        /// timestamps panel pulls its own snapshot instead of riding on this value.
+        static func == (a: Self, b: Self) -> Bool {
+            a.state == b.state && a.accessibilityGranted == b.accessibilityGranted
+                && a.inputMonitoringGranted == b.inputMonitoringGranted && a.eventTapRunning == b.eventTapRunning
+                && a.verificationEnabled == b.verificationEnabled && a.verificationServer == b.verificationServer
+                && a.captureHealth?.state == b.captureHealth?.state
+                && a.captureHealth?.captureProven == b.captureHealth?.captureProven
+                && a.captureHealth?.limitations == b.captureHealth?.limitations
+        }
 
         static let unavailable = RuntimePresentation(
             state: .permissionsMissing,
@@ -114,8 +125,7 @@
             eventTapRunning: false,
             verificationEnabled: false,
             verificationServer: nil,
-            captureHealth: nil,
-            captureHealthSnapshot: nil
+            captureHealth: nil
         )
     }
 
