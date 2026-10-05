@@ -15,6 +15,8 @@ struct BlockingObservation: Equatable {
     var sessionAvailable = true
     var idleSeconds: Double = 0
     var windowIdentity: Int = 0
+    var windowBoundary: AXReadBoundary? = nil
+    var addressFieldMarkers: [String]? = nil
     var isInternalPage = false
     var isForeground = true
     var isActivation = false

@@ -115,6 +115,7 @@
         private var pendingEventCount = 0
         private var writerQueueHighWaterMark = 0
         private var overflowEpisodeOpen = false
+        private var orderedCommitDepth = 0 // writer-owned
         private var observationGap = ObservationGap()
 
         private let statusLock = NSLock()
@@ -195,7 +196,8 @@
             suppressionReason: SuppressionReason? = nil,
             message: String? = nil,
             metadata: [String: String]? = nil,
-            timestamp: Date = Date()
+            timestamp: Date = Date(),
+            identifier: String? = nil
         ) -> Bool {
             guard !GoalongGlobalPause.isPaused() else { return false }
             let pauseRevision = context?.globalPauseRevision ?? GoalongGlobalPause.load().revision
@@ -205,7 +207,7 @@
                 timestamp: timestamp, metadata: metadata, inputOrigin: inputOrigin)
             let base = HistoryEvent(
                 schemaVersion: 4,
-                id: eventIdentifier(),
+                id: identifier ?? eventIdentifier(),
                 sessionID: sessionID,
                 timestamp: timestamp,
                 kind: kind,
@@ -291,6 +293,36 @@
             return result
         }
 
+        /// Main reserves the event's FIFO position before a semantic payload write.
+        /// The existing bounded writer performs payload + reference together; AX
+        /// readers and main never wait for this operation or its capacity.
+        @discardableResult
+        func performOrderedCommit(timestamp: Date, operation: @escaping (String) -> Void,
+                                  completion: @escaping () -> Void) -> Bool {
+            precondition(isMainThread())
+            let identifier = eventIdentifier()
+            writerCondition.lock()
+            guard acceptingEvents else { writerCondition.unlock(); return false }
+            guard !overflowEpisodeOpen, writerTaskCount < writerQueueCapacity - 1 else {
+                let first = registerDroppedEventLocked(timestamp: timestamp)
+                writerCondition.unlock()
+                if first { noteFailure(operation: "writer_overflow", error: EventRecorderPersistenceError.writerCapacityExceeded(writerQueueCapacity)) }
+                return false
+            }
+            pendingEventCount += 1
+            writerTaskCount += 1
+            writerQueueHighWaterMark = max(writerQueueHighWaterMark, writerTaskCount)
+            writerQueue.async {
+                self.orderedCommitDepth += 1
+                operation(identifier)
+                self.orderedCommitDepth -= 1
+                self.finishEventTask()
+                DispatchQueue.main.async { completion() }
+            }
+            writerCondition.unlock()
+            return true
+        }
+
         func flush() {
             do {
                 try flushAndWait()
@@ -355,12 +387,12 @@
 
         private func recordFromWriterQueue(_ base: HistoryEvent, privacyRevision: String, globalPauseRevision: String) -> Bool {
             writerCondition.lock()
-            guard acceptingEvents else {
+            guard acceptingEvents || orderedCommitDepth > 0 else {
                 writerCondition.unlock()
                 noteFailure(operation: "record", error: EventRecorderPersistenceError.recorderClosed)
                 return false
             }
-            guard !overflowEpisodeOpen else {
+            guard !overflowEpisodeOpen || orderedCommitDepth > 0 else {
                 _ = registerDroppedEventLocked(timestamp: base.timestamp)
                 writerCondition.unlock()
                 return false

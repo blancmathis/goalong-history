@@ -13,13 +13,18 @@ final class ScriptedAXTree {
     let system = AXUIElementCreateApplication(50_004)
     var attributes: [Int: [String: CFTypeRef]] = [:]
     var errors: [String: AXError] = [:]
-    var reads: [String] = []
+    private let readLock = NSLock()
+    private var readLog: [String] = []
+    var reads: [String] {
+        get { readLock.lock(); defer { readLock.unlock() }; return readLog }
+        set { readLock.lock(); readLog = newValue; readLock.unlock() }
+    }
     var beforeRead: ((String) -> Void)?
     lazy var client: AXClient = {
         let value = AXClient(read: { [unowned self] node, attribute in
             let name = attribute as String
             self.beforeRead?(name)
-            self.reads.append(name)
+            self.readLock.lock(); self.readLog.append(name); self.readLock.unlock()
             if let error = self.errors[name] { return AXReadResult(error: error, value: nil) }
             let value = self.attributes[Int(CFHash(node))]?[name]
             return AXReadResult(error: value == nil ? .attributeUnsupported : .success, value: value)

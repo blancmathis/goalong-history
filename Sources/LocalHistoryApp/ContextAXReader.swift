@@ -7,6 +7,7 @@
     /// immutable descriptor/configuration view and returns values, without effects.
     final class ContextAXReader {
         private let clock: AXCaptureClock
+        private var capturedBoundary: AXReadBoundary?
         private var privateWindowUpdate: Bool?
         private var discoveredBrowserUpdate: AppSnapshot?
         private struct BlockingWindowKey: Hashable { let pid: Int32; let window: Int }
@@ -34,6 +35,7 @@
         func capture(parameters: ContextReadParameters, blockingPrivateApp: AppSnapshot? = nil,
                      resolvedApplication: ForegroundAXApplication? = nil) -> ContextReadResult {
             lastCaptureProvedExternalAX = false
+            capturedBoundary = nil
             privateWindowUpdate = nil
             discoveredBrowserUpdate = nil
             guard let pauseRevision = parameters.pauseRevision else {
@@ -52,7 +54,7 @@
                     url: $0.url, suppressionReason: $0.suppressionReason,
                     privacyRevision: policy.revision, globalPauseRevision: pauseRevision)
             }, privateWindowUpdate: privateWindowUpdate, provedExternalAX: lastCaptureProvedExternalAX,
-               discoveredBrowser: discoveredBrowserUpdate)
+               discoveredBrowser: discoveredBrowserUpdate, boundary: capturedBoundary)
         }
 
         private func capture(privacy: GoalongPrivacyPolicy, parameters: ContextReadParameters,
@@ -109,6 +111,7 @@
             lastCaptureProvedExternalAX = Self.provesExternalAX(
                 pid: runningApplication.processIdentifier,
                 ownPID: ProcessInfo.processInfo.processIdentifier, protectedReadSucceeded: true)
+            capturedBoundary = AXReadBoundary(window: windowElement, pid: runningApplication.processIdentifier)
 
             let windowIdentity = [
                 String(runningApplication.processIdentifier),
@@ -258,6 +261,8 @@
             guard let window = AXReader.focusedWindow(for: element) ?? AXReader.element(element, attribute: kAXMainWindowAttribute as CFString)
             else { return result }
             result.windowIdentity = Int(CFHash(window))
+            result.windowBoundary = AXReadBoundary(window: window, pid: running.processIdentifier)
+            result.addressFieldMarkers = parameters.config.addressFieldMarkers
             var position: CFTypeRef?, size: CFTypeRef?
             AXAccess.copyAttributeValue(window, kAXPositionAttribute as CFString, &position)
             AXAccess.copyAttributeValue(window, kAXSizeAttribute as CFString, &size)

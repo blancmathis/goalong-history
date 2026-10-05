@@ -84,6 +84,7 @@ import Foundation
                     && BlockingRules.wouldBlock(target, list: list)
             }
         }
+        backend?.siteActionStillRequired = { [weak self] in self?.siteActionStillRequired($0) == true }
         refresh()
     }
 
@@ -424,6 +425,7 @@ import Foundation
     }
     private func admitEdit() -> Bool { refresh(); return !storeFailed }
     private func commit(reenforce: Bool = true) {
+        backend?.invalidateSiteActions()
         if let store {
             do { try store.save(document); lastGood = document; lastSavedAt = clock(); error = nil }
             catch { if let lastGood { document = lastGood }; failStore() }
@@ -542,6 +544,27 @@ import Foundation
             showFriction(target, list: list)
         } else if frictionTarget?.isBrowser == true { clearFriction() }
         else if let current = friction, !activeBlocks.contains(where: { $0.listIDs.contains(current.listID) }) { clearFriction() }
+    }
+
+    /// Final action admission reads current main-owned rules without a disk read,
+    /// AX RPC or history dependency. Expiry is checked even before the next timer.
+    func siteActionStillRequired(_ target: BlockingObservation) -> Bool {
+        guard target.isBrowser, target.isForeground, target.sessionAvailable, !BlockingRules.exempt(target) else { return false }
+        if let freeze, freeze.mode == .shield, !freeze.allowedApps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { return false }
+        let now = clock(), usage = todayUsage()
+        for list in lists {
+            guard activeBlocks.contains(where: { $0.listIDs.contains(list.id) && $0.start <= now && $0.end > now }),
+                  usage.breakEnds[list.id].map({ $0 > now }) != true else { continue }
+            if BlockingRules.hasSites(list) {
+                if target.privateWindow { return true }
+                if !target.isInternalPage, target.url == nil,
+                   !siteBlockingAvailable || unreadableSince[target.pid].map({ now.timeIntervalSince($0) >= 3 }) == true { return true }
+            }
+            guard BlockingRules.wouldBlock(target, list: list) else { continue }
+            if list.effectiveAction == .slowDown { return true }
+            if list.quotaMinutesPerDay.map({ (usage.quotaSecondsUsed[list.id] ?? 0) >= Double($0 * 60) }) ?? true { return true }
+        }
+        return false
     }
 
 

@@ -561,8 +561,9 @@
                 source.slice(from: "        private func handleMouseUp(", through: "        private func buttonName(")
             )
             XCTAssertFalse(mouseDown.contains("recorder.record("), "mouse-down must wait for click/drag classification")
-            XCTAssertTrue(mouseDown.contains("let interactionID = UUID().uuidString"))
-            XCTAssertTrue(mouseDown.contains("contextProvider.element("))
+            XCTAssertTrue(mouseDown.contains("let interactionID = interactionIdentifier()"))
+            XCTAssertTrue(mouseDown.contains("target: target"))
+            XCTAssertTrue(source.contains("contextProvider.requestInput("))
             XCTAssertTrue(mouseDragged.contains("interactionID: down.interactionID"))
             XCTAssertTrue(mouseUp.contains("timestamp: down.startedAt"))
             XCTAssertTrue(mouseUp.contains("completeDrag("))
@@ -582,7 +583,7 @@
             )
             let processing = try XCTUnwrap(
                 source.slice(
-                    from: "        private func process(_ input: EventTapPendingInput) {",
+                    from: "        private func process(_ input: EventTapPendingInput, completion: @escaping () -> Void = {}) {",
                     through: "        private func suppressForSecureInput(using context: ContextSnapshot?) {"
                 )
             )
@@ -607,7 +608,7 @@
 
             XCTAssertTrue(processing.contains("guard let context = input.observedContext else"))
             XCTAssertTrue(processing.contains("context.app.processIdentifier == frontmostPID"))
-            XCTAssertTrue(processing.contains("contextProvider.fastSuppressionReason()"))
+            XCTAssertTrue(processing.contains("contextProvider.requestInput"))
             XCTAssertTrue(processing.contains("let nearEventContext = context"))
             XCTAssertFalse(processing.contains("input.observedContext ?? context"))
             XCTAssertFalse(processing.contains("needsFreshPrivacyCheck"))
@@ -680,7 +681,8 @@
             XCTAssertTrue(source.contains("maximumPendingSemanticCaptures = 2"))
             XCTAssertTrue(persistence.contains("pendingSemanticCaptureCount < Self.maximumPendingSemanticCaptures"))
             XCTAssertTrue(persistence.contains("semanticCaptureQueue.async"))
-            XCTAssertTrue(persistence.contains("AXRichContextReader.capture("))
+            XCTAssertTrue(persistence.contains("self.semanticRead("))
+            XCTAssertTrue(source.contains("AXRichContextReader.capture("))
             XCTAssertTrue(persistence.contains("DispatchQueue.main.async"))
             XCTAssertTrue(persistence.contains("captureGeneration == self.interactionCaptureGeneration"))
             XCTAssertTrue(persistence.contains("Self.semanticBoundaryMatches("))

@@ -13,7 +13,7 @@ final class BlockingAXLane {
     func rememberBrowser(_ application: AppSnapshot) {
         queue.async { self.reader.rememberBrowser(application) }
     }
-    func request(_ input: ContextReadParameters, completion: @escaping (BlockingObservation?) -> Void) {
+    func request(_ input: ContextReadParameters, application: ForegroundAXApplication? = nil, completion: @escaping (BlockingObservation?) -> Void) {
         let requestID = client.clock.identifier()
         let admittedAt = client.clock.uptime()
         queue.async {
@@ -21,7 +21,7 @@ final class BlockingAXLane {
                 duration: max(0, self.client.clock.uptime() - admittedAt), onMain: false, error: 0))
             let result = self.client.measure(.execution, requestID: requestID) {
                 AXAccess.withBackgroundClient(self.client, requestID: requestID) {
-                    self.reader.captureBlocking(parameters: input)
+                    self.reader.captureBlocking(parameters: input, of: application)
                 }
             }
             DispatchQueue.main.async { completion(result) }

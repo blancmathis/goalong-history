@@ -1939,6 +1939,9 @@
     final class ConfigManager {
         private(set) var config: RecorderConfig
 
+        /// In-memory fixture; does not load or write the recording configuration.
+        init(config: RecorderConfig) { self.config = config }
+
         init() {
             do {
                 try AppPaths.prepare()

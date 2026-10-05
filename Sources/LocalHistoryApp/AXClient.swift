@@ -27,7 +27,7 @@ struct AXOperationMetric {
 /// Injectable C boundary. Handles never escape a reader in published snapshots.
 /// Tests supply local AX handles and scripted attribute/error responses, without TCC.
 final class AXClient {
-    static let system = AXClient()
+    static let system = AXClient(requiresBackgroundThread: true)
     let clock: AXCaptureClock
     let metric: ((AXOperationMetric) -> Void)?
     let requiresBackgroundThread: Bool
@@ -59,6 +59,7 @@ final class AXClient {
         if requiresBackgroundThread || AXAccess.backgroundRequired {
             precondition(!Thread.isMainThread, "Outbound AX RPC on main: \(operation)")
         }
+        guard AXAccess.requestPermitted else { return .cannotComplete }
         guard let metric else { return body() }
         let start = clock.uptime()
         let result = body()
@@ -85,6 +86,7 @@ enum AXAccess {
         let client: AXClient
         let requestID: String
         var backgroundRequired = false
+        var permit: AXRequestPermit?
         init(_ client: AXClient, _ requestID: String) { self.client = client; self.requestID = requestID }
     }
     private static let key = "ai.goalong.ax-client-scope"
@@ -92,6 +94,7 @@ enum AXAccess {
     static var backgroundRequired: Bool { scope?.backgroundRequired == true }
     static var client: AXClient { scope?.client ?? .system }
     static var requestID: String { scope?.requestID ?? "unscoped" }
+    static var requestPermitted: Bool { scope?.permit?.isValid != false }
 
     static func withClient<T>(_ client: AXClient, requestID: String = "fixture", _ body: () throws -> T) rethrows -> T {
         let previous = Thread.current.threadDictionary[key]
@@ -100,9 +103,11 @@ enum AXAccess {
         return try body()
     }
 
-    static func withBackgroundClient<T>(_ client: AXClient, requestID: String = "fixture", _ body: () throws -> T) rethrows -> T {
+    static func withBackgroundClient<T>(_ client: AXClient, requestID: String = "fixture",
+                                       permit: AXRequestPermit? = nil, _ body: () throws -> T) rethrows -> T {
         try withClient(client, requestID: requestID) {
             scope?.backgroundRequired = true
+            scope?.permit = permit
             return try body()
         }
     }

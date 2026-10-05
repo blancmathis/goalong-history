@@ -56,7 +56,7 @@ final class ContextReaderParityTests: XCTestCase {
         ]
         for (name, input, tree, baseline) in scenarios {
             var effects: [Bool] = []
-            let facade = ContextProvider(client: tree.client, parameters: { input }, privateWindowSink: { effects.append($0) })
+            let facade = ContextProvider(client: tree.client, backend: .legacy, parameters: { input }, privateWindowSink: { effects.append($0) })
             var completed = false
             facade.requestCapture { snapshot in
                 XCTAssertEqual(snapshot, baseline, name)
@@ -75,7 +75,7 @@ final class ContextReaderParityTests: XCTestCase {
     func testPausedReadDoesNotTouchAXAndDoesNotApplyEffects() {
         let tree = ScriptedAXTree(), input = parameters(pause: nil)
         var effects = 0
-        let facade = ContextProvider(client: tree.client, parameters: { input }, privateWindowSink: { _ in effects += 1 })
+        let facade = ContextProvider(client: tree.client, backend: .legacy, parameters: { input }, privateWindowSink: { _ in effects += 1 })
         facade.requestCapture { XCTAssertNil($0) }
         XCTAssertTrue(tree.reads.isEmpty); XCTAssertEqual(effects, 0)
     }
@@ -92,7 +92,7 @@ final class ContextReaderParityTests: XCTestCase {
 
     func testFreshSecureSuppressionAndHitTestUseImmutableConfiguration() {
         let tree = ScriptedAXTree(secure: true), input = parameters()
-        let facade = ContextProvider(client: tree.client, parameters: { input })
+        let facade = ContextProvider(client: tree.client, backend: .legacy, parameters: { input })
         facade.requestSuppression { XCTAssertEqual($0, .secureInput) }
         tree.reads.removeAll()
         facade.requestElement(at: .zero, expectedProcessIdentifier: 42) { snapshot in
@@ -118,7 +118,7 @@ final class ContextReaderParityTests: XCTestCase {
 
     func testSeparateBlockingCacheKeepsDiscoveredWrapperCapability() {
         let tree = ScriptedAXTree(browser: true), input = parameters(bundle: "test.wrapper")
-        let facade = ContextProvider(client: tree.client, parameters: { input })
+        let facade = ContextProvider(client: tree.client, backend: .legacy, parameters: { input })
         XCTAssertEqual(facade.capture()?.url?.host, "example.com")
         // A wrapper's following private/internal window may expose no web area.
         tree.attributes[Int(CFHash(tree.window))]?.removeValue(forKey: "AXDocument")
@@ -132,7 +132,7 @@ final class ContextReaderParityTests: XCTestCase {
         let tree = ScriptedAXTree(), input = parameters()
         tree.client.getPID = { _, result in result.pointee = 84; return .success }
         var resolutions: [pid_t] = []
-        let facade = ContextProvider(client: tree.client, parameters: { input }, applicationResolver: { pid in
+        let facade = ContextProvider(client: tree.client, backend: .legacy, parameters: { input }, applicationResolver: { pid in
             XCTAssertTrue(Thread.isMainThread)
             resolutions.append(pid)
             return ForegroundAXApplication(pid: pid, name: "Control Center", bundleIdentifier: "com.apple.controlcenter")
@@ -148,7 +148,7 @@ final class ContextReaderParityTests: XCTestCase {
     func testBlockingOnlyReadsNoHistoricalLabelsOrJevEffects() {
         let tree = ScriptedAXTree(), input = parameters()
         var effects = 0
-        let facade = ContextProvider(client: tree.client, parameters: { input }, privateWindowSink: { _ in effects += 1 })
+        let facade = ContextProvider(client: tree.client, backend: .legacy, parameters: { input }, privateWindowSink: { _ in effects += 1 })
         var observations = 0
         facade.requestCapture(blockingSink: { _ in observations += 1 }, historyEnabled: false) { XCTAssertNil($0) }
         XCTAssertEqual(observations, 1); XCTAssertEqual(effects, 0)
@@ -158,7 +158,7 @@ final class ContextReaderParityTests: XCTestCase {
 
     func testPublicInteractionEventFieldsAndJSONLHashChainMatchBaseline() throws {
         let tree = ScriptedAXTree(browser: true), input = parameters(bundle: "com.apple.Safari")
-        let actual = try XCTUnwrap(ContextProvider(client: tree.client, parameters: { input }).capture())
+        let actual = try XCTUnwrap(ContextProvider(client: tree.client, backend: .legacy, parameters: { input }).capture())
         let baseline = expected(input, url: "https://example.com/work")
         let kinds: [EventKind] = [.applicationActivated, .heartbeat, .mouseClick, .mouseClick,
                                  .mouseClick, .scrollBurst, .typingBurst, .keyPressed, .keyboardShortcut,

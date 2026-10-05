@@ -27,6 +27,8 @@
         func setBlockingObservationEnabled(_ enabled: Bool) {
             guard enabled != blockingObservationEnabled else { return }
             provider.invalidateBlocking()
+            provider.invalidateHistory()
+            sampleGeneration = UUID(); sampleJobs.removeAll()
             blockingRequestID = nil
             blockingObservationEnabled = enabled
             accessibilityEventMonitor?.observesApplicationLaunches = enabled
@@ -44,7 +46,8 @@
         private var accessibilityEventMonitor: AccessibilityEventMonitor?
         private var previous: ContextSnapshot?
         private var lastHeartbeat = Date.distantPast
-        private let foregroundActivityProbe = ForegroundActivityProbe()
+        private var sampleGeneration = UUID()
+        private var sampleJobs = Set<UUID>()
         private let jevVisibleContext = JevVisibleContextSampler()
         private var lastForegroundEvidence: ForegroundActivityEvidence?
         private var lastPresenceActive: Bool?
@@ -86,13 +89,10 @@
                     permissions?.currentStatus.accessibilityUsable == true || (self?.blockingObservationEnabled == true && AXIsProcessTrusted())
                 },
                 onChange: { [weak self] trigger in
-                    guard let self,
-                        let snapshot = self.sampleNow()
-                    else { return }
-                    ActivityAnalysisRuntime.shared.captureObservedContext(
-                        trigger: trigger,
-                        context: snapshot
-                    )
+                    self?.sampleNow { snapshot in
+                        guard let snapshot else { return }
+                        ActivityAnalysisRuntime.shared.captureObservedContext(trigger: trigger, context: snapshot)
+                    }
                 }
             )
             accessibilityEventMonitor?.onApplication = { [weak self] app in
@@ -114,11 +114,11 @@
                 recorder: recorder,
                 state: state,
                 configManager: configManager,
-                currentContext: { [weak self] in
-                    guard let self else { return nil }
+                currentContext: { [weak self] completion in
+                    guard let self else { completion(nil); return }
                     // Semantic text capture is privacy-sensitive. A failed fresh probe
                     // must not fall back to a previously safe window or URL.
-                    return self.sampleNow()
+                    self.requestEvidence(completion: completion)
                 },
                 semanticContextStore: semanticContextStore,
                 memoryStore: memoryStore
@@ -149,10 +149,12 @@
         }
 
         func invalidatePresence() {
+            sampleGeneration = UUID()
+            sampleJobs.removeAll()
+            provider.invalidateHistory()
             concentrationSink?(FocusObservation(at: Date(), observing: false))
             previous = nil
             setLatest(nil)
-            foregroundActivityProbe.reset()
             jevVisibleContext.invalidate()
             lastForegroundEvidence = nil
             lastPresenceActive = nil
@@ -177,7 +179,7 @@
         private func scheduleNextPoll() {
             // Preserve the one-shot cadence: a slow blocking read cannot build
             // an unbounded queue of missed polls behind the reserved reader.
-            guard blockingRequestID == nil else { return }
+            guard blockingRequestID == nil, sampleJobs.isEmpty else { return }
             timer?.invalidate()
             let configuredInterval = Double(configManager.config.pollIntervalMilliseconds) / 1_000.0
             guard pollingIsActive,
@@ -199,9 +201,10 @@
                 guard let self else { return }
                 self.timer = nil
                 self.scheduledPollInProgress = true
-                self.sampleNow()
-                self.scheduledPollInProgress = false
-                self.scheduleNextPoll()
+                self.sampleNow { _ in
+                    self.scheduledPollInProgress = false
+                    self.scheduleNextPoll()
+                }
             }
             // Give macOS a small coalescing window while keeping the fallback refresh
             // comfortably below one minute even after timer tolerance.
@@ -244,37 +247,43 @@
             return min(45.0, max(base, 30.0))
         }
 
-        @discardableResult
-        func sampleNow() -> ContextSnapshot? {
-            var focusSample = FocusObservation(at: Date(), observing: false)
-            defer { concentrationSink?(focusSample) }
-            defer {
-                if pollingIsActive, !scheduledPollInProgress {
-                    scheduleNextPoll()
-                }
+        func sampleNow(completion: @escaping (ContextSnapshot?) -> Void = { _ in }) {
+            let generation = sampleGeneration, jobID = UUID()
+            sampleJobs.insert(jobID)
+            var completed = false
+            let finish: (ContextSnapshot?) -> Void = { snapshot in
+                guard !completed else { return }; completed = true
+                self.sampleJobs.remove(jobID)
+                completion(snapshot)
+                if self.pollingIsActive, !self.scheduledPollInProgress { self.scheduleNextPoll() }
             }
+            var focusSample = FocusObservation(at: Date(), observing: false)
             if blockingObservationEnabled && (!historyRequested || !state.isCapturing || provider.historyPrivacyStopped || !ForegroundSessionAvailability.isAvailable() || IsSecureEventInputEnabled()) {
-                guard blockingRequestID == nil else { return nil }
+                guard blockingRequestID == nil else { finish(nil); return }
                 let requestID = UUID()
                 blockingRequestID = requestID
                 provider.requestBlocking { [weak self] observation in
-                    guard let self, self.blockingRequestID == requestID else { return }
+                    guard let self, self.blockingRequestID == requestID else { finish(nil); return }
                     self.blockingRequestID = nil
                     if self.blockingObservationEnabled, let observation { self.blockingSink?(observation) }
-                    if self.pollingIsActive { self.scheduleNextPoll() }
+                    finish(nil)
                 }
-                // No recorder, capture health, Jev, analysis or retained snapshot in this lane.
-                return nil
+                // Blocking-only retains no history snapshot and never calls a history consumer.
+                concentrationSink?(focusSample)
+                return
             }
+            var publishesFocusSynchronously = true
+            defer { if publishesFocusSynchronously { concentrationSink?(focusSample) } }
             guard historyRequested, state.isCapturing else {
-                invalidatePresence(); return nil
+                invalidatePresence(); finish(nil); return
             }
             guard ForegroundSessionAvailability.isAvailable() else {
                 focusSample.observing = true; focusSample.available = false
-                markObservationUnavailable(); return nil
+                markObservationUnavailable(); finish(nil); return
             }
             if IsSecureEventInputEnabled() {
-                foregroundActivityProbe.reset(); lastForegroundEvidence = nil
+                sampleGeneration = UUID(); sampleJobs.removeAll()
+                provider.invalidateHistory(); lastForegroundEvidence = nil
                 let safeContext = latestSnapshot.map { current in
                     ContextSnapshot(
                         app: current.app,
@@ -294,23 +303,30 @@
                 previous = safeContext
                 consecutiveCaptureFailures = 0
                 captureHealth.setSuppression(.secureInput)
-                return safeContext
+                finish(safeContext); return
             }
-            guard let captured = provider.capture(blockingSink: blockingObservationEnabled ? blockingSink : nil) else {
-                markObservationUnavailable()
-                consecutiveCaptureFailures = min(consecutiveCaptureFailures + 1, 1_000)
-                captureHealth.markAXFailure()
-                JevIngress.shared.boundary()
-                return nil
+            publishesFocusSynchronously = false
+            provider.requestCapture(blockingSink: blockingObservationEnabled ? blockingSink : nil, includePresence: true) { [weak self] captured in
+                guard let self, self.sampleGeneration == generation else { finish(nil); return }
+                guard let captured else {
+                    self.markObservationUnavailable()
+                    self.consecutiveCaptureFailures = min(self.consecutiveCaptureFailures + 1, 1_000)
+                    self.captureHealth.markAXFailure()
+                    JevIngress.shared.boundary()
+                    finish(nil); return
+                }
+                finish(self.publish(captured))
             }
+        }
+
+        private func publish(_ captured: ContextSnapshot) -> ContextSnapshot? {
+            var focusSample = FocusObservation(at: Date(), observing: false)
+            defer { concentrationSink?(focusSample) }
             consecutiveCaptureFailures = 0
             observationUnavailable = false
-            let observedAt = Date()
-            let observedIdleSeconds = idleSeconds()
-            let presence = foregroundActivityProbe.observe(captured,
-                labelsEnabled: configManager.config.captureElementLabels,
-                idleSeconds: observedIdleSeconds, idleLimitSeconds: configManager.config.effectiveForegroundIdleSeconds,
-                at: observedAt)
+            guard let presence = captured.foregroundUsage else { return nil }
+            let observedAt = presence.observedAt
+            let observedIdleSeconds = presence.idleSeconds
             guard state.isCapturing, ForegroundSessionAvailability.isAvailable(),
                   !IsSecureEventInputEnabled() else {
                 markObservationUnavailable(); return nil
@@ -319,7 +335,10 @@
             setLatest(current)
             let evidence = presence.evidence
             JevIngress.shared.observeContext(current, foregroundEvidence: evidence, presence: presence)
-            jevVisibleContext.observe(current, presence: presence) { [weak self] in self?.sampleNow() }
+            jevVisibleContext.observe(current, presence: presence) { [weak self] completion in
+                guard let self else { completion(nil); return }
+                self.requestEvidence(completion: completion)
+            }
             captureHealth.setSuppression(current.suppressionReason)
             if current.suppressionReason == .accessibilityUnavailable {
                 captureHealth.markAXFailure()
@@ -436,6 +455,12 @@
             snapshotLock.lock()
             _latestSnapshot = snapshot
             snapshotLock.unlock()
+        }
+
+        private func requestEvidence(completion: @escaping (AXContextEvidence?) -> Void) {
+            sampleNow { [weak self] snapshot in
+                completion(snapshot.map { AXContextEvidence(snapshot: $0, boundary: self?.provider.lastCaptureBoundary) })
+            }
         }
 
         private func suppressionMessage(for reason: SuppressionReason) -> String {

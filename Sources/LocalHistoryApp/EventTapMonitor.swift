@@ -580,6 +580,12 @@
         }
 
         private var secureInputWasActive = false
+        private var processingInputID: UUID?
+        private var stopping = false
+        private var stopCompletions: [() -> Void] = []
+        private var stopAfterInput: (() -> Void)?
+        private var inputsDrainedForTesting: (() -> Void)?
+        private let interactionIdentifier: () -> String
 
         private var typingCount = 0
         private var typingStartedAt: Date?
@@ -640,7 +646,8 @@
             state: CaptureState,
             configManager: ConfigManager,
             captureHealth: CaptureHealthStore,
-            unexpectedRestartGate: EventTapRestartGate = EventTapRestartGate()
+            unexpectedRestartGate: EventTapRestartGate = EventTapRestartGate(),
+            interactionIdentifier: @escaping () -> String = { UUID().uuidString }
         ) {
             self.recorder = recorder
             self.contextMonitor = contextMonitor
@@ -649,10 +656,12 @@
             self.configManager = configManager
             self.captureHealth = captureHealth
             self.unexpectedRestartGate = unexpectedRestartGate
+            self.interactionIdentifier = interactionIdentifier
         }
 
         @discardableResult
         func start() -> Bool {
+            guard !stopping else { return false }
             guard !isRunning else { return true }
             // The owned retry is the only tap-creation attempt during backoff.
             // Permission watchdog ticks may still refresh permissions, but cannot
@@ -773,7 +782,10 @@
             return true
         }
 
-        func stop() {
+        func stop(completion: @escaping () -> Void = {}) {
+            stopCompletions.append(completion)
+            guard !stopping else { return }
+            stopping = true
             unexpectedRestartGate.cancel()
             consecutiveUnexpectedRestartAttempts = 0
             lastSuccessfulStartAt = nil
@@ -784,12 +796,6 @@
                     $0.wait(timeout: .now() + 1.0) == .success
                 } ?? true
 
-            drainOnePendingInputForStop()
-            isRunning = false
-            stopDiscardedInputCount += ingress.discardPending()
-            reportIngressDropsIfNeeded(reason: "monitor_stopped")
-            flushObservationGap()
-            cancelOpenInteractionsForBoundary(discardPendingInput: false)
 
             if didStop {
                 runLoopSource = nil
@@ -801,6 +807,19 @@
                     "Event-tap thread did not stop within one second; restart remains blocked"
                 )
             }
+            let finish = {
+                self.isRunning = false
+                self.stopDiscardedInputCount += self.ingress.discardPending()
+                self.reportIngressDropsIfNeeded(reason: "monitor_stopped")
+                self.flushObservationGap()
+                self.cancelOpenInteractionsForBoundary(discardPendingInput: false)
+                self.stopping = false
+                let drained = self.inputsDrainedForTesting; self.inputsDrainedForTesting = nil; drained?()
+                let completions = self.stopCompletions; self.stopCompletions.removeAll()
+                for completion in completions { completion() }
+            }
+            let finalDrain = { self.drainOnePendingInputForStop(completion: finish) }
+            if processingInputID != nil { stopAfterInput = finalDrain } else { finalDrain() }
             captureHealth.markTapDisabled("Event tap stopped")
         }
 
@@ -950,29 +969,45 @@
             )
         }
 
+        /// Exercises the real bounded ring and reducers without installing a tap.
+        func replayInputsForTesting(_ inputs: [EventTapPendingInput], completion: @escaping () -> Void) {
+            precondition(eventTap == nil && !stopping)
+            isRunning = true
+            inputsDrainedForTesting = completion
+            for input in inputs { _ = ingress.enqueue(input) }
+            DispatchQueue.main.async { self.drainPendingEvents() }
+        }
+
         private func drainPendingEvents() {
             dispatchPrecondition(condition: .onQueue(.main))
+            guard processingInputID == nil, !stopping else { return }
             guard let input = ingress.popFirst() else {
                 reportIngressDropsIfNeeded()
                 return
             }
-            process(input)
-            reportIngressDropsIfNeeded()
-
-            // Yield between logical inputs. This lets due after/settled captures run
-            // between discrete actions instead of waiting behind an AX-heavy backlog.
-            if ingress.finishDrainPass() {
-                DispatchQueue.main.async { [weak self] in
-                    self?.drainPendingEvents()
+            guard processingInputID == nil else { return }
+            let jobID = UUID()
+            processingInputID = jobID
+            process(input) { [weak self] in
+                guard let self, self.processingInputID == jobID else { return }
+                self.processingInputID = nil
+                if let stop = self.stopAfterInput {
+                    self.stopAfterInput = nil; stop(); return
+                }
+                self.reportIngressDropsIfNeeded()
+                if self.ingress.finishDrainPass() {
+                    DispatchQueue.main.async { [weak self] in self?.drainPendingEvents() }
+                } else {
+                    let completion = self.inputsDrainedForTesting; self.inputsDrainedForTesting = nil; completion?()
                 }
             }
         }
 
-        private func drainOnePendingInputForStop() {
+        private func drainOnePendingInputForStop(completion: @escaping () -> Void) {
             dispatchPrecondition(condition: .onQueue(.main))
             if let input = ingress.popFirst() {
-                process(input)
-            }
+                process(input, completion: completion)
+            } else { completion() }
             reportIngressDropsIfNeeded()
         }
 
@@ -1047,7 +1082,9 @@
             )
         }
 
-        private func process(_ input: EventTapPendingInput) {
+        private func process(_ input: EventTapPendingInput, completion: @escaping () -> Void = {}) {
+            var suspended = false
+            defer { if !suspended { completion() } }
             guard isRunning else { return }
             if input.kind == .tapDisabled {
                 cancelOpenInteractionsForBoundary()
@@ -1074,8 +1111,11 @@
                 return
             }
             if input.secureInputWasEnabled || IsSecureEventInputEnabled() {
-                let freshSecureContext = contextMonitor.sampleNow()
-                suppressForSecureInput(using: freshSecureContext)
+                suspended = true
+                contextMonitor.sampleNow { [weak self] context in
+                    self?.suppressForSecureInput(using: context)
+                    completion()
+                }
                 return
             }
             if input.eventTimeContextIsPrivate, let observedContext = input.observedContext {
@@ -1086,7 +1126,7 @@
                     suppressForSecureInput(using: observedContext)
                 } else {
                     cancelOpenInteractionsForBoundary()
-                    _ = contextMonitor.sampleNow()
+                    contextMonitor.sampleNow()
                 }
                 return
             }
@@ -1118,35 +1158,54 @@
                 cancelOpenInteractionsForBoundary()
                 return
             }
-            if let suppressionReason = contextProvider.fastSuppressionReason() {
-                privacyInputDropCount += input.occurrences
-                if suppressionReason == .secureInput {
-                    suppressForSecureInput(using: context)
-                } else {
-                    cancelOpenInteractionsForBoundary()
+            let boundary = interactionBoundaryGeneration
+            suspended = true
+            let resolvesDown = [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(input.kind)
+            let resolvesDrag = [.leftMouseUp, .rightMouseUp, .otherMouseUp].contains(input.kind)
+                && activeDragStates[buttonName(for: input.kind)] != nil
+            let point = (resolvesDown || resolvesDrag) && configManager.config.captureClicks
+                ? CGPoint(x: resolvesDrag ? input.lastLocationX : input.locationX,
+                          y: resolvesDrag ? input.lastLocationY : input.locationY) : nil
+            contextProvider.requestInput(at: point, expectedProcessIdentifier: context.app.processIdentifier) { [weak self] result in
+                guard let self else { completion(); return }
+                defer { completion() }
+                guard self.inputStillValid(input, boundary: boundary) else { return }
+                if let suppressionReason = result.suppression {
+                    self.privacyInputDropCount += input.occurrences
+                    if suppressionReason == .secureInput { self.suppressForSecureInput(using: context) }
+                    else { self.cancelOpenInteractionsForBoundary() }
+                    return
                 }
-                return
+                self.apply(input, context: context, target: result.element)
             }
+        }
+
+        private func inputStillValid(_ input: EventTapPendingInput, boundary: UInt64) -> Bool {
+            guard isRunning, state.isCapturing, interactionBoundaryGeneration == boundary,
+                  !IsSecureEventInputEnabled(),
+                  input.targetIsRepresented(frontmostProcessIdentifier: contextProvider.frontmostProcessIdentifier()),
+                  Self.ingressAgeIsAcceptable(observedAt: input.lastObservedAt) else {
+                privacyInputDropCount += input.occurrences
+                cancelOpenInteractionsForBoundary()
+                return false
+            }
+            return true
+        }
+
+        private func apply(_ input: EventTapPendingInput, context: ContextSnapshot, target: ElementSnapshot?) {
             resumeAfterSecureInputIfNeeded(using: context)
             let nearEventContext = context
-            // A callback only proves healthy capture after it crosses the event-time
-            // privacy, target and freshness gates above.
             concentrationInputSink?(input.lastObservedAt, input.occurrences)
             captureHealth.markInputCallback(at: input.lastObservedAt)
-
             switch input.kind {
             case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-                handleMouseDown(input: input, context: context, nearEventContext: nearEventContext)
+                handleMouseDown(input: input, context: context, nearEventContext: nearEventContext, target: target)
             case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
                 handleMouseDragged(input: input, context: context, nearEventContext: nearEventContext)
-            case .leftMouseUp, .rightMouseUp, .otherMouseUp:
-                handleMouseUp(input: input, context: context)
-            case .scrollWheel:
-                handleScroll(input: input, context: context)
-            case .keyDown:
-                handleKeyDown(input: input, context: context)
-            default:
-                break
+            case .leftMouseUp, .rightMouseUp, .otherMouseUp: handleMouseUp(input: input, context: context, target: target)
+            case .scrollWheel: handleScroll(input: input, context: context)
+            case .keyDown: handleKeyDown(input: input, context: context)
+            default: break
             }
         }
 
@@ -1215,20 +1274,16 @@
         private func handleMouseDown(
             input: EventTapPendingInput,
             context: ContextSnapshot,
-            nearEventContext: ContextSnapshot
+            nearEventContext: ContextSnapshot,
+            target: ElementSnapshot?
         ) {
             guard configManager.config.captureClicks else { return }
             flushTypingBurst()
             flushScrollBurst()
 
-            let location = CGPoint(x: input.locationX, y: input.locationY)
             let button = buttonName(for: input.kind)
             let origin = inputOrigin(from: input)
-            let interactionID = UUID().uuidString
-            let target = contextProvider.element(
-                at: location,
-                expectedProcessIdentifier: context.app.processIdentifier
-            )
+            let interactionID = interactionIdentifier()
             // Classify the gesture only at mouse-up. The public context and actionable
             // target are sampled after the callback leaves the event-tap thread.
             activeDragStates.removeValue(forKey: button)
@@ -1260,7 +1315,7 @@
             let down =
                 pointerDownStates[button]
                 ?? PointerDownState(
-                    interactionID: UUID().uuidString,
+                    interactionID: interactionIdentifier(),
                     button: button,
                     startedAt: input.observedAt,
                     sequence: input.sequence,
@@ -1293,7 +1348,7 @@
             activeDragStates[button] = drag
         }
 
-        private func handleMouseUp(input: EventTapPendingInput, context: ContextSnapshot) {
+        private func handleMouseUp(input: EventTapPendingInput, context: ContextSnapshot, target: ElementSnapshot?) {
             flushTypingBurst()
             flushScrollBurst()
             let button = buttonName(for: input.kind)
@@ -1304,7 +1359,7 @@
             guard configManager.config.captureClicks else { return }
 
             if var drag = activeDragStates[button] {
-                completeDrag(drag: &drag, input: input, context: context, button: button)
+                completeDrag(drag: &drag, input: input, context: context, button: button, target: target)
                 return
             }
             guard let down = pointerDownStates[button] else { return }
@@ -1339,17 +1394,13 @@
             drag: inout ActiveDragState,
             input: EventTapPendingInput,
             context: ContextSnapshot,
-            button: String
+            button: String,
+            target: ElementSnapshot?
         ) {
 
             drag.lastX = input.lastLocationX
             drag.lastY = input.lastLocationY
             drag.origin = mergeOrigin(drag.origin, inputOrigin(from: input))
-            let endPoint = CGPoint(x: drag.lastX, y: drag.lastY)
-            let target = contextProvider.element(
-                at: endPoint,
-                expectedProcessIdentifier: context.app.processIdentifier
-            )
             let distance = min(
                 2_000_000,
                 hypot(drag.lastX - drag.down.startX, drag.lastY - drag.down.startY)
@@ -1412,7 +1463,7 @@
                 flushScrollBurst()
             }
             if scrollEventCount == 0 {
-                let interactionID = UUID().uuidString
+                let interactionID = interactionIdentifier()
                 scrollInteractionID = interactionID
                 scrollFirstSequence = input.sequence
             }
@@ -1450,7 +1501,7 @@
 
             if input.keyActivity == .shortcut, configManager.config.captureShortcuts {
                 flushTypingBurst()
-                let interactionID = UUID().uuidString
+                let interactionID = interactionIdentifier()
                 let keyboard = KeyboardSnapshot(
                     category: "shortcut",
                     key: nil,
@@ -1485,7 +1536,7 @@
             if input.keyActivity == .navigation {
                 flushTypingBurst()
                 guard configManager.config.captureKeyboardActivity else { return }
-                let interactionID = UUID().uuidString
+                let interactionID = interactionIdentifier()
                 let keyboard = KeyboardSnapshot(
                     category: "navigation",
                     key: nil,
@@ -1538,7 +1589,7 @@
             }
 
             if typingCount == 0 {
-                let interactionID = UUID().uuidString
+                let interactionID = interactionIdentifier()
                 typingInteractionID = interactionID
                 typingFirstSequence = sequence
             }
@@ -1574,7 +1625,7 @@
             let start = typingStartedAt ?? Date()
             let end = typingLastAt ?? start
             let durationMilliseconds = max(0, Int(end.timeIntervalSince(start) * 1_000))
-            let interactionID = typingInteractionID ?? UUID().uuidString
+            let interactionID = typingInteractionID ?? interactionIdentifier()
             var metadata = interactionMetadata(
                 interactionID: interactionID,
                 trigger: "typing",
@@ -1622,7 +1673,7 @@
                 resetScrollBurst()
                 return
             }
-            let interactionID = scrollInteractionID ?? UUID().uuidString
+            let interactionID = scrollInteractionID ?? interactionIdentifier()
             let end = scrollLastAt ?? scrollStartedAt ?? Date()
 
             recorder.record(
