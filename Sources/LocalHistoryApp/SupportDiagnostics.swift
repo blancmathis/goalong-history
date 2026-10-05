@@ -8,7 +8,7 @@ import Darwin
 // cases) and version numbers, each validated against a strict pattern.
 enum SupportComponent: String, Codable { case app, permissions, capture, monitoring, storage, updates, analysis, sharing, interface, support }
 enum SupportEvent: String, Codable {
-    case appStarted, appStopped, heartbeat, mainThreadDelayed, mainThreadUnresponsive, mainThreadRecovered, legacyLocation
+    case appStarted, appStopped, heartbeat, mainThreadDelayed, mainThreadUnresponsive, mainThreadRecovered, mainThreadStalled, legacyLocation
     case permissionChecked, permissionRepairStarted, permissionRepairFinished, permissionRecoveryAction
     case captureHealthChanged, inputTapChanged, monitorCycle, requestFinished
     case operationFailed, updateChanged, sourceCheck, userMarkedIssue, reportExported
@@ -29,6 +29,7 @@ enum SupportKey: String, Codable {
     case lostEvents, freeSpaceMB, storageInterrupted, storageFailure, suppressedCount, repeatedEvent
     case version, build, previousVersion, previousBuild, updateResult, userChoice, automaticChecks, availableVersion
     case monitoringEnabled, websiteLinked, websiteAutoSend
+    case stallFrame1, stallFrame2, stallFrame3, stallFrame4
 }
 enum SupportState: String, Codable {
     case unknown, ready, unavailable, denied, deferred, started, stopped, cancelled, timedOut
@@ -49,7 +50,8 @@ enum SupportState: String, Codable {
 /// produced at run time from user data; `isSafe` is enforced before persistence and
 /// again when a record is read back for export.
 enum SupportSymbol {
-    static let identifierKeys: Set<SupportKey> = [.errorType, .errorCase, .repeatedEvent]
+    static let identifierKeys: Set<SupportKey> = [.errorType, .errorCase, .repeatedEvent,
+                                                   .stallFrame1, .stallFrame2, .stallFrame3, .stallFrame4]
     static let versionKeys: Set<SupportKey> = [.version, .build, .previousVersion, .previousBuild, .availableVersion]
 
     static func isSafe(_ value: String, for key: SupportKey) -> Bool {

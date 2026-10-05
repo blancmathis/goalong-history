@@ -183,5 +183,24 @@ final class SupportDiagnosticsSignalTests: XCTestCase {
         XCTAssertTrue(body.contains("L’enregistrement est interrompu"))
         XCTAssertTrue(body.contains("aucun contenu d’activité"))
     }
+
+    @inline(never) static func stallTestBlockingWork() { usleep(300_000) }
+
+    func testStallMonitorNamesTheAppFrameThatBlockedMain() throws {
+        let monitor = SupportStallMonitor()
+        monitor.start()
+        defer { monitor.stop() }
+        let done = expectation(description: "stall")
+        DispatchQueue.main.async {
+            Self.stallTestBlockingWork()
+            DispatchQueue.main.async { done.fulfill() }
+        }
+        wait(for: [done], timeout: 5)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        let stall = try XCTUnwrap(monitor.lastStall)
+        XCTAssertGreaterThanOrEqual(stall.durationMS, 250)
+        XCTAssertFalse(stall.frames.isEmpty)
+        XCTAssertTrue(stall.frames.allSatisfy { $0.range(of: "^off_[0-9a-f]+$", options: .regularExpression) != nil })
+    }
 }
 #endif
