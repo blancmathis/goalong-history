@@ -37,6 +37,15 @@ public struct GoalongActivityCheckpointStore: Sendable {
             + calendar.timeZone.identifier
     }
 
+    /// An active journal needs a durable recovery point at most every ten minutes.
+    /// Past days, including the just-ended day, keep their existing write behavior.
+    package func shouldWrite(day: Date, now: Date, calendar: Calendar) -> Bool {
+        guard calendar.isDate(day, inSameDayAs: now) else { return true }
+        guard let savedAt = try? GoalongActivityDayStore(root: root).privateFileModificationDate(
+            name: name(day, calendar: calendar), maximumBytes: Self.maximumBytes) else { return true }
+        return now.timeIntervalSince(savedAt) >= 10 * 60
+    }
+
     public func read(day: Date, calendar: Calendar = .current,
                      shouldContinue: () -> Bool = { true },
                      prefixBytesHashed: (Int) -> Void = { _ in }) throws -> GoalongLocalAnalytics.ResumableDayState {

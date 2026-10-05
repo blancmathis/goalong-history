@@ -198,6 +198,57 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         XCTAssertEqual(deleted.current.days.first?.state, .noSource)
     }
 
+    func testTodayReaderResumesAppendsButRejectsSameSizeRewriteAndChangedLastLine() async throws {
+        let root = try root(), journal = try writeEvents(root: root), calendar = Calendar.current
+        let now = day.addingTimeInterval(300), reader = GoalongAnalyticsReader(root: root)
+        let first = try await reader.readToday(day, now: now, calendar: calendar)
+        XCTAssertEqual(first.activeSeconds, 120)
+        let saved = try Data(contentsOf: checkpoint(root: root))
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: checkpoint(root: root).path)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        var extra = try encoder.encode(HistoryEvent(sessionID: "fixture", timestamp: day.addingTimeInterval(180),
+            kind: .heartbeat, app: .init(name: "Editor", bundleIdentifier: "fixture.editor", processIdentifier: 1)))
+        extra.append(10)
+        let handle = try FileHandle(forWritingTo: journal)
+        try handle.seekToEnd(); try handle.write(contentsOf: extra); try handle.close()
+        let appended = try await reader.readToday(day, now: now.addingTimeInterval(30), calendar: calendar)
+        let hashBytes = await reader.todayCheckpointBytesHashed, readBytes = await reader.todayEventBytesRead
+        XCTAssertEqual(hashBytes, 0); XCTAssertEqual(readBytes, Int64(extra.count))
+        XCTAssertEqual(appended, GoalongLocalAnalytics.load(root: root, day: day, now: now.addingTimeInterval(30)))
+        XCTAssertEqual(try Data(contentsOf: checkpoint(root: root)), saved)
+        // Keep inode, size, last line and mtime: ctime still rejects an earlier edit.
+        let mtime = try FileManager.default.attributesOfItem(atPath: journal.path)[.modificationDate]!
+        var changed = try Data(contentsOf: journal)
+        let early = try XCTUnwrap(changed.range(of: Data("Editor".utf8)))
+        changed.replaceSubrange(early, with: Data("Writer".utf8))
+        let rewrite = try FileHandle(forWritingTo: journal)
+        try rewrite.write(contentsOf: changed); try rewrite.close()
+        try FileManager.default.setAttributes([.modificationDate: mtime], ofItemAtPath: journal.path)
+        let edited = try await reader.readToday(day, now: now.addingTimeInterval(60), calendar: calendar)
+        let editedBytes = await reader.todayEventBytesRead
+        XCTAssertEqual(editedBytes, Int64(changed.count))
+        XCTAssertEqual(edited, GoalongLocalAnalytics.load(root: root, day: day, now: now.addingTimeInterval(60)))
+        // Growth cannot bypass the cursor's last-line check.
+        let last = try XCTUnwrap(changed.range(of: Data("Editor".utf8), options: .backwards))
+        changed.replaceSubrange(last, with: Data("Writer".utf8)); changed.append(extra)
+        let growth = try FileHandle(forWritingTo: journal)
+        try growth.write(contentsOf: changed); try growth.close()
+        let invalid = try await reader.readToday(day, now: now.addingTimeInterval(90), calendar: calendar)
+        let invalidBytes = await reader.todayEventBytesRead
+        XCTAssertEqual(invalidBytes, Int64(changed.count))
+        XCTAssertEqual(invalid, GoalongLocalAnalytics.load(root: root, day: day, now: now.addingTimeInterval(90)))
+    }
+
+    func testReaderClosesHeldDayBeforeSwitchingToToday() async throws {
+        let root = try root(); _ = try writeEvents(root: root)
+        let calendar = Calendar.current, reader = GoalongAnalyticsReader(root: root)
+        _ = try await reader.readToday(day, now: day.addingTimeInterval(300), calendar: calendar)
+        XCTAssertFalse(try GoalongActivityCheckpointStore(root: root).read(day: day).isFinished)
+        let next = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: day))
+        _ = try await reader.readToday(next, now: next.addingTimeInterval(60), calendar: calendar)
+        XCTAssertTrue(try GoalongActivityCheckpointStore(root: root).read(day: day).isFinished)
+    }
+
     @MainActor func testRetryAttemptsSurviveRestartLegacyDecodeAndOwnerCorrections() throws {
         let root = try root(), file = root.appendingPathComponent("work-classification.json")
         let definition = GoalongWorkDefinition(goals: "Project"), key = "abcdef0123456789"

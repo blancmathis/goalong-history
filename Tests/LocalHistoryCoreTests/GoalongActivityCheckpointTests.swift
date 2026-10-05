@@ -66,6 +66,43 @@ final class GoalongActivityCheckpointTests: XCTestCase {
         }
     }
 
+    func testTodayCheckpointThrottleAndDayEndWithoutJournalGrowth() throws {
+        try fixture { root, journal in
+            try bytes(rows()).write(to: journal)
+            let store = GoalongActivityDayStore(root: root), now = day.addingTimeInterval(3700)
+            let initial = store.loadResumable(day: day, now: now)
+            XCTAssertGreaterThan(initial.checkpointBytesHashed, 0)
+            let file = checkpoint(root), saved = try Data(contentsOf: file)
+            // Align filesystem mtime with the fixture clock, not the machine's real day.
+            try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: file.path)
+            let extra = try bytes([HistoryEvent(id: "appended", sessionID: "fixture",
+                timestamp: now, kind: .typingBurst, app: rows()[0].app)])
+            try append(extra, to: journal)
+            var warm = store.loadResumable(day: day, resuming: initial.state, now: now.addingTimeInterval(30))
+            XCTAssertTrue(warm.didResume); XCTAssertEqual(warm.eventBytesRead, Int64(extra.count))
+            XCTAssertEqual(warm.checkpointBytesHashed, 0)
+            XCTAssertEqual(try Data(contentsOf: file), saved)
+            // Even a new reader within the interval validates the old checkpoint once,
+            // then decodes its suffix without immediately hashing again to save it.
+            let relaunched = store.loadResumable(day: day, now: now.addingTimeInterval(30))
+            XCTAssertEqual(relaunched.day, warm.day)
+            XCTAssertEqual(relaunched.checkpointBytesHashed, initial.eventBytesRead)
+            XCTAssertEqual(try Data(contentsOf: file), saved)
+            try append(extra, to: journal)
+            warm = store.loadResumable(day: day, resuming: warm.state, now: now.addingTimeInterval(600))
+            XCTAssertTrue(warm.didResume)
+            XCTAssertEqual(warm.checkpointBytesHashed, initial.eventBytesRead + Int64(2 * extra.count))
+            XCTAssertNotEqual(try Data(contentsOf: file), saved)
+            // Closing the day must save even with an unchanged cursor and a recent mtime.
+            let finished = store.loadResumable(day: day, resuming: warm.state, now: end)
+            XCTAssertTrue(finished.didResume); XCTAssertEqual(finished.eventBytesRead, 0)
+            XCTAssertEqual(finished.checkpointBytesHashed, initial.eventBytesRead + Int64(2 * extra.count))
+            let disk = try GoalongActivityCheckpointStore(root: root).read(day: day)
+            XCTAssertTrue(disk.isFinished)
+            XCTAssertEqual(finished.day, GoalongLocalAnalytics.load(root: root, day: day, now: end))
+        }
+    }
+
     func testReplacementTruncationEarlierPrefixRewriteAndDeletionRejectCache() throws {
         for mutation in ["replace", "truncate", "prefix", "delete"] {
             try fixture { root, journal in

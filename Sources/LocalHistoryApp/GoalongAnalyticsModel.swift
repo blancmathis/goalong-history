@@ -82,6 +82,7 @@ actor GoalongAnalyticsReader {
     /// holds derived segments and the last 15 minutes of rows (about 2 MB on a busy day).
     private var today: (date: Date, revision: String, state: GoalongLocalAnalytics.ResumableDayState)?
     private(set) var todayCheckpointBytesHashed: Int64 = 0
+    private(set) var todayEventBytesRead: Int64 = 0
     private let root: URL
     init(root: URL) { self.root = root }
 
@@ -142,12 +143,12 @@ actor GoalongAnalyticsReader {
             let revision = sourceRevision(date, calendar: calendar)
             let value: GoalongLocalAnalytics.Day
             if calendar.isDate(date, inSameDayAs: now) {
-                value = try readToday(date, calendar: calendar)
+                value = try readToday(date, now: now, calendar: calendar)
             } else if let cached = cache[date], cached.0 == revision {
                 value = cached.1
             } else if let held = today, calendar.isDate(held.date, inSameDayAs: date) {
                 // The day that just ended is finished from its checkpoint, not read again.
-                value = try readToday(date, calendar: calendar)
+                value = try readToday(date, now: now, calendar: calendar)
                 if value.state != .incomplete { cache[date] = (sourceRevision(date, calendar: calendar), value) }
             } else {
                 value = GoalongActivityDayReader.load(root: root, day: date, now: now, calendar: calendar,
@@ -168,14 +169,22 @@ actor GoalongAnalyticsReader {
         return days
     }
 
-    private func readToday(_ date: Date, calendar: Calendar) throws -> GoalongLocalAnalytics.Day {
+    func readToday(_ date: Date, now: Date, calendar: Calendar) throws -> GoalongLocalAnalytics.Day {
+        // Close the previous in-memory day before the regular refresh switches to today.
+        // No new timer; the adapter still applies pause, retention and deletion admission.
+        if calendar.isDate(date, inSameDayAs: now), let held = today,
+           held.date < calendar.startOfDay(for: now) {
+            _ = try readToday(held.date, now: now, calendar: calendar)
+        }
         let revision = GoalongActivityCheckpointStore(root: root).sourceRevision(day: date, calendar: calendar)
-        let previous = today.flatMap { calendar.isDate($0.date, inSameDayAs: date) && $0.revision == revision ? $0.state : nil }
-        let loaded = GoalongActivityDayReader.loadResumable(root: root, day: date, resuming: previous, now: Date(),
+        let previous = today.flatMap { calendar.isDate($0.date, inSameDayAs: date)
+                && Self.canResumeInMemory(from: $0.revision, to: revision) ? $0.state : nil }
+        let loaded = GoalongActivityDayReader.loadResumable(root: root, day: date, resuming: previous, now: now,
             calendar: calendar, shouldContinue: { !Task.isCancelled })
         todayCheckpointBytesHashed = loaded.checkpointBytesHashed
-        // A changed source may append, but it may also rewrite any old prefix row.
-        // Only a stable source can keep the actor's shortcut around disk validation.
+        todayEventBytesRead = loaded.eventBytesRead
+        // The cursor validates device/inode, consumed size, last line and the stable read.
+        // Growth can use that bounded check; same-size edits still take disk validation.
         today = loaded.state.flatMap {
             revision == GoalongActivityCheckpointStore(root: root).sourceRevision(day: date, calendar: calendar)
                 ? (date, revision, $0) : nil
@@ -184,11 +193,21 @@ actor GoalongAnalyticsReader {
         return loaded.day
     }
 
+    private static func canResumeInMemory(from previous: String, to current: String) -> Bool {
+        if previous == current { return true }
+        let old = previous.split(separator: "|"), new = current.split(separator: "|")
+        // sourceRevision: device, inode, size, mtime, ctime, timezone.
+        guard old.count == 6, new.count == 6, old[0] == new[0], old[1] == new[1], old[5] == new[5],
+              let oldSize = Int64(old[2]), let newSize = Int64(new[2]) else { return false }
+        return newSize > oldSize
+    }
+
     /// Moves today's checkpoint forward between visits, so opening Activité decodes
     /// minutes of journal rather than everything written since the last visit.
     func advanceToday() {
         let calendar = Calendar.current
-        _ = try? readToday(calendar.startOfDay(for: Date()), calendar: calendar)
+        let now = Date()
+        _ = try? readToday(calendar.startOfDay(for: now), now: now, calendar: calendar)
     }
 
     /// The period's days when none needs a journal read, nil otherwise.

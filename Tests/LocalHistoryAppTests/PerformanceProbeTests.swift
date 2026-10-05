@@ -175,8 +175,9 @@ final class PerformanceProbeTests: XCTestCase {
             let payload = try await reader.read(ending: day, count: 1, force: false, preview: false)
             let elapsed = ProcessInfo.processInfo.systemUptime - start, usedCPU = cpuSeconds() - cpu
             let hashed = await reader.todayCheckpointBytesHashed
-            print(String(format: "PERF today append refresh %d: %.6f s (cpu %.6f s) checkpointPrefixBytesHashed=%lld appendedBytes=%d",
-                refresh, elapsed, usedCPU, hashed, extra.count))
+            let decoded = await reader.todayEventBytesRead
+            print(String(format: "PERF today append refresh %d: %.6f s (cpu %.6f s) checkpointPrefixBytesHashed=%lld decodedBytes=%lld appendedBytes=%d",
+                refresh, elapsed, usedCPU, hashed, decoded, extra.count))
             let measured = try XCTUnwrap(payload.current.days.first)
             let reference = GoalongLocalAnalytics.load(root: root, day: day, now: measured.end, calendar: calendar)
             XCTAssertEqual(measured, reference)

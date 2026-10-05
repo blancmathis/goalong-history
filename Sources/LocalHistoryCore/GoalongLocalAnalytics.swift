@@ -338,6 +338,7 @@ public enum GoalongLocalAnalytics {
         public var retainedEventCount: Int { fold.rowCount + events.count }
         fileprivate let fold: DayFold
         fileprivate let evaluatedThrough: Date
+        package var isFinished: Bool { evaluatedThrough == cursor?.endExclusive }
 
         package func isValidCheckpoint(day: Date, calendar: Calendar) -> Bool {
             let start = calendar.startOfDay(for: day)

@@ -85,6 +85,16 @@ public struct GoalongActivityDayStore: Sendable {
         return bytes
     }
 
+    /// Metadata only, through the same private, no-follow directory as checkpoint I/O.
+    package func privateFileModificationDate(name: String, maximumBytes: Int) throws -> Date {
+        let fd = try directory(create: false); defer { close(fd) }
+        var info = stat()
+        guard fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) == 0,
+              info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(), info.st_nlink == 1,
+              info.st_mode & 0o777 == 0o600, info.st_size > 0, info.st_size <= maximumBytes else { throw Failure.unsafePath }
+        return Date(timeIntervalSince1970: Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000)
+    }
+
     public func read(day: Date, sourceRevision: String? = nil, calendar: Calendar = .current) throws -> GoalongLocalAnalytics.Day {
         let key = Self.dayKey(day, calendar: calendar)
         let bytes = try readPrivateFile(name: key + ".json", maximumBytes: Self.maximumBytes)
@@ -259,7 +269,8 @@ public struct GoalongActivityDayStore: Sendable {
                 now: now, calendar: calendar, shouldContinue: shouldContinue)
         }
         if allowsCheckpoints, !loaded.wasCancelled, loaded.day.state != .incomplete, let next = loaded.state,
-           next.cursor != previous?.cursor, shouldContinue(),
+           (next.cursor != previous?.cursor || (next.isFinished && previous?.isFinished == false)),
+           checkpoints.shouldWrite(day: day, now: now, calendar: calendar), shouldContinue(),
            retains(day: day, now: now, days: retentionDays, calendar: calendar) {
             try? checkpoints.write(next, day: day, sourceRevision: revision,
                 calendar: calendar, shouldContinue: shouldContinue,
