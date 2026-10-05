@@ -295,10 +295,10 @@
                !candidates.contains(where: { $0.processIdentifier == finder.processIdentifier }) { candidates.append(finder) }
             var lastError: Int32?
             for candidate in candidates.prefix(2) {
-                let app = AXUIElementCreateApplication(candidate.processIdentifier)
-                AXUIElementSetMessagingTimeout(app, 0.12)
+                let app = AXAccess.application(candidate.processIdentifier)
+                AXAccess.setMessagingTimeout(app, 0.12)
                 var windows: CFTypeRef?
-                let error = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windows)
+                let error = AXAccess.copyAttributeValue(app, kAXWindowsAttribute as CFString, &windows)
                 if error == .apiDisabled || lastError != AXError.apiDisabled.rawValue { lastError = error.rawValue }
                 if error == .success, let windows, CFGetTypeID(windows) == CFArrayGetTypeID() { return (true, nil) }
             }

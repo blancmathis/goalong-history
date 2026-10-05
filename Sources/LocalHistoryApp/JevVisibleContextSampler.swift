@@ -104,12 +104,12 @@ enum JevVisibleTextReader {
         guard AXIsProcessTrusted(), !IsSecureEventInputEnabled(), !GoalongGlobalPause.isPaused(),
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
         let deadline = ProcessInfo.processInfo.systemUptime + 0.20
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.025)
+        let app = AXAccess.application(pid)
+        AXAccess.setMessagingTimeout(app, 0.025)
         func value(_ node: AXUIElement, _ attribute: String) -> CFTypeRef? {
             guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
             var result: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(node, attribute as CFString, &result) == .success else { return nil }
+            guard AXAccess.copyAttributeValue(node, attribute as CFString, &result) == .success else { return nil }
             return result
         }
         func element(_ node: AXUIElement, _ attribute: String) -> AXUIElement? {
@@ -187,7 +187,7 @@ enum JevVisibleTextReader {
         guard !IsSecureEventInputEnabled(), !GoalongGlobalPause.isPaused(),
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
         var finalWindow: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &finalWindow) == .success,
+        guard AXAccess.copyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &finalWindow) == .success,
               let finalWindow, CFEqual(window, finalWindow) else { return nil }
         let text = JevVisibleTextPolicy.compact(content + links)
         return text.isEmpty ? nil : text

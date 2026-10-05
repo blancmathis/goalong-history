@@ -178,7 +178,7 @@
 
             detachObserver()
             var created: AXObserver?
-            let result = AXObserverCreate(
+            let result = AXAccess.createObserver(
                 application.processIdentifier,
                 computerHistoryAXObserverCallback,
                 &created
@@ -190,11 +190,11 @@
                 return
             }
 
-            let appElement = AXUIElementCreateApplication(application.processIdentifier)
-            AXUIElementSetMessagingTimeout(appElement, 0.20)
+            let appElement = AXAccess.application(application.processIdentifier)
+            AXAccess.setMessagingTimeout(appElement, 0.20)
             let refcon = Unmanaged.passUnretained(self).toOpaque()
             for notification in applicationNotifications {
-                let error = AXObserverAddNotification(
+                let error = AXAccess.addNotification(
                     created,
                     appElement,
                     notification,
@@ -225,15 +225,15 @@
             let refcon = Unmanaged.passUnretained(self).toOpaque()
             if let previous = focusedElement {
                 for notification in focusedNotifications {
-                    _ = AXObserverRemoveNotification(observer, previous, notification)
+                    _ = AXAccess.removeNotification(observer, previous, notification)
                 }
             }
             registeredFocusedNotifications.removeAll()
             focusedElement = AXReader.focusedElement(for: applicationElement)
             guard let focusedElement else { return }
-            AXUIElementSetMessagingTimeout(focusedElement, 0.15)
+            AXAccess.setMessagingTimeout(focusedElement, 0.15)
             for notification in focusedNotifications {
-                let error = AXObserverAddNotification(
+                let error = AXAccess.addNotification(
                     observer,
                     focusedElement,
                     notification,
@@ -263,12 +263,12 @@
             }
             if let focusedElement {
                 for notification in focusedNotifications {
-                    _ = AXObserverRemoveNotification(observer, focusedElement, notification)
+                    _ = AXAccess.removeNotification(observer, focusedElement, notification)
                 }
             }
             if let applicationElement {
                 for notification in applicationNotifications {
-                    _ = AXObserverRemoveNotification(observer, applicationElement, notification)
+                    _ = AXAccess.removeNotification(observer, applicationElement, notification)
                 }
             }
             CFRunLoopRemoveSource(

@@ -124,8 +124,8 @@
                 )
             }
 
-            let applicationElement = AXUIElementCreateApplication(runningApplication.processIdentifier)
-            AXUIElementSetMessagingTimeout(applicationElement, 0.30)
+            let applicationElement = AXAccess.application(runningApplication.processIdentifier)
+            AXAccess.setMessagingTimeout(applicationElement, 0.30)
             guard let windowElement = AXReader.focusedWindow(for: applicationElement) else {
                 return ContextSnapshot(
                     app: app,
@@ -285,15 +285,15 @@
                 privateWindow: false, at: Date(), regular: running.activationPolicy == .regular,
                 sessionAvailable: ForegroundSessionAvailability.isAvailable(), idleSeconds: UserInputActivityClock.secondsSinceLastInput())
             guard result.sessionAvailable, AXIsProcessTrusted() else { return result }
-            let element = AXUIElementCreateApplication(running.processIdentifier)
-            AXUIElementSetMessagingTimeout(element, 0.20)
+            let element = AXAccess.application(running.processIdentifier)
+            AXAccess.setMessagingTimeout(element, 0.20)
             // The main window stands in while no window holds focus (an open menu, a sheet closing).
             guard let window = AXReader.focusedWindow(for: element) ?? AXReader.element(element, attribute: kAXMainWindowAttribute as CFString)
             else { return result }
             result.windowIdentity = Int(CFHash(window))
             var position: CFTypeRef?, size: CFTypeRef?
-            AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position)
-            AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &size)
+            AXAccess.copyAttributeValue(window, kAXPositionAttribute as CFString, &position)
+            AXAccess.copyAttributeValue(window, kAXSizeAttribute as CFString, &size)
             if let position, let size, CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() {
                 var point = CGPoint.zero, dimensions = CGSize.zero
                 if AXValueGetValue(unsafeBitCast(position, to: AXValue.self), .cgPoint, &point),
@@ -353,8 +353,8 @@
                 return .accessibilityUnavailable
             }
 
-            let applicationElement = AXUIElementCreateApplication(runningApplication.processIdentifier)
-            AXUIElementSetMessagingTimeout(applicationElement, 0.12)
+            let applicationElement = AXAccess.application(runningApplication.processIdentifier)
+            AXAccess.setMessagingTimeout(applicationElement, 0.12)
             if let focusedElement = AXReader.focusedElement(for: applicationElement),
                 AXReader.isSecureElement(focusedElement)
             {
@@ -440,7 +440,7 @@
             guard let element = AXReader.actionableElement(at: point) else { return nil }
             if let expectedProcessIdentifier {
                 var actual: pid_t = 0
-                guard AXUIElementGetPid(element, &actual) == .success,
+                guard AXAccess.getPID(element, &actual) == .success,
                     actual == expectedProcessIdentifier
                 else { return nil }
             }

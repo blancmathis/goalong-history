@@ -32,8 +32,8 @@
             guard !IsSecureEventInputEnabled() else { return nil }
             let characterLimit = min(max(maximumCharacters, 256), 20_000)
             let nodeLimit = min(max(maximumNodes, 0), 600)
-            let application = AXUIElementCreateApplication(processIdentifier)
-            AXUIElementSetMessagingTimeout(application, 0.35)
+            let application = AXAccess.application(processIdentifier)
+            AXAccess.setMessagingTimeout(application, 0.35)
             guard let window = AXReader.focusedWindow(for: application) else { return nil }
 
             var snippets: [String] = []

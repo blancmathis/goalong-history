@@ -7,9 +7,11 @@
         private let stateStore: IntegrityStateStore
         private let encoder: JSONEncoder
         private let lock = NSLock()
+        private let saltBytes: (Int) -> Data
 
-        init(stateStore: IntegrityStateStore) {
+        init(stateStore: IntegrityStateStore, saltBytes: @escaping (Int) -> Data = { IntegrityJournal.randomBytes(count: $0) }) {
             self.stateStore = stateStore
+            self.saltBytes = saltBytes
             encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -60,7 +62,7 @@
                 .map(SHA256Digest.hashHex) ?? "encoding-error"
             let fields = EventIntegrityMaterial.makeFieldCommitments(
                 for: event,
-                salts: fieldOrder.map { _ in Self.randomBytes(count: 32) },
+                salts: fieldOrder.map { _ in saltBytes(32) },
                 rawEventDigest: rawEventDigest
             )
             let byName = Dictionary(uniqueKeysWithValues: fields.map { ($0.name, $0.commitmentHex) })

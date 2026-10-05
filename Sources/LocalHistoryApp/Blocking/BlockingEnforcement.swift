@@ -317,20 +317,20 @@ private final class BlockingFreezePanel: NSPanel {
     }
     private func closeTab(pid: Int32) {
         guard accessibilityAvailable else { return }
-        let app = AXUIElementCreateApplication(pid); AXUIElementSetMessagingTimeout(app, 0.15)
+        let app = AXAccess.application(pid); AXAccess.setMessagingTimeout(app, 0.15)
         var menu: CFTypeRef?
-        if AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &menu) == .success, let menu,
+        if AXAccess.copyAttributeValue(app, kAXMenuBarAttribute as CFString, &menu) == .success, let menu,
            CFGetTypeID(menu) == AXUIElementGetTypeID() {
             var queue = [unsafeBitCast(menu, to: AXUIElement.self)], visited = 0
             while !queue.isEmpty, visited < 160 {
                 let item = queue.removeFirst(); visited += 1
                 var title: CFTypeRef?, command: CFTypeRef?
-                AXUIElementCopyAttributeValue(item, kAXTitleAttribute as CFString, &title)
-                AXUIElementCopyAttributeValue(item, kAXMenuItemCmdCharAttribute as CFString, &command)
+                AXAccess.copyAttributeValue(item, kAXTitleAttribute as CFString, &title)
+                AXAccess.copyAttributeValue(item, kAXMenuItemCmdCharAttribute as CFString, &command)
                 if let title = title as? String, ["Fermer l’onglet", "Fermer l'onglet", "Close Tab"].contains(title),
-                   (command as? String)?.lowercased() == "w", AXUIElementPerformAction(item, kAXPressAction as CFString) == .success { return }
+                   (command as? String)?.lowercased() == "w", AXAccess.performAction(item, kAXPressAction as CFString) == .success { return }
                 var children: CFTypeRef?
-                if AXUIElementCopyAttributeValue(item, kAXChildrenAttribute as CFString, &children) == .success,
+                if AXAccess.copyAttributeValue(item, kAXChildrenAttribute as CFString, &children) == .success,
                    let children = children as? [AXUIElement] { queue.append(contentsOf: children.prefix(160 - visited)) }
             }
         }

@@ -88,7 +88,10 @@
             }
         }
 
-        let sessionID = UUID().uuidString
+        let sessionID: String
+        private let eventIdentifier: () -> String
+        private let captureMetrics: ((AXOperationMetric) -> Void)?
+        private let captureClock: AXCaptureClock
         private let store: JSONLStore
         private let integrityJournal: IntegrityJournal
         private let minuteSealer: MinuteSealer
@@ -136,11 +139,19 @@
             isMainThread: @escaping () -> Bool = { Thread.isMainThread },
             beforePersist: ((HistoryEvent) -> Void)? = nil,
             clock: @escaping () -> Date = Date.init,
-            storageRetryDelays: [TimeInterval] = EventRecorder.defaultStorageRetryDelays
+            storageRetryDelays: [TimeInterval] = EventRecorder.defaultStorageRetryDelays,
+            sessionID: String = UUID().uuidString,
+            eventIdentifier: @escaping () -> String = { UUID().uuidString },
+            captureClock: AXCaptureClock = AXCaptureClock(),
+            captureMetrics: ((AXOperationMetric) -> Void)? = nil
         ) {
             precondition((2...512).contains(writerQueueCapacity))
             precondition(!storageRetryDelays.isEmpty)
             self.clock = clock
+            self.sessionID = sessionID
+            self.eventIdentifier = eventIdentifier
+            self.captureClock = captureClock
+            self.captureMetrics = captureMetrics
             self.storageRetryDelays = storageRetryDelays
             self.store = store
             self.integrityJournal = integrityJournal
@@ -194,6 +205,7 @@
                 timestamp: timestamp, metadata: metadata, inputOrigin: inputOrigin)
             let base = HistoryEvent(
                 schemaVersion: 4,
+                id: eventIdentifier(),
                 sessionID: sessionID,
                 timestamp: timestamp,
                 kind: kind,
@@ -373,10 +385,15 @@
             writerQueueHighWaterMark = max(writerQueueHighWaterMark, writerTaskCount)
             mutateStatus { acceptedEventCount &+= 1 }
 
+            let admittedAt = captureMetrics.map { _ in captureClock.uptime() }
             writerQueue.async { [self] in
                 defer {
                     finishEventTask()
                     completion?.signal()
+                }
+                if let admittedAt {
+                    captureMetrics?(AXOperationMetric(requestID: base.id, stage: .waiting, operation: "writer",
+                        duration: max(0, captureClock.uptime() - admittedAt), onMain: Thread.isMainThread, error: 0))
                 }
                 persist(base, isObservationGap: false, privacyRevision: privacyRevision, globalPauseRevision: globalPauseRevision)
             }
@@ -449,6 +466,22 @@
             privacyRevision: String? = nil,
             globalPauseRevision: String? = nil,
             isStorageGap: Bool = false
+        ) -> Bool {
+            guard let captureMetrics else {
+                return persistTransaction(base, isObservationGap: isObservationGap, privacyRevision: privacyRevision,
+                                          globalPauseRevision: globalPauseRevision, isStorageGap: isStorageGap)
+            }
+            let start = captureClock.uptime()
+            let outcome = persistTransaction(base, isObservationGap: isObservationGap, privacyRevision: privacyRevision,
+                                             globalPauseRevision: globalPauseRevision, isStorageGap: isStorageGap)
+            captureMetrics(AXOperationMetric(requestID: base.id, stage: .commit, operation: "writer",
+                duration: max(0, captureClock.uptime() - start), onMain: Thread.isMainThread, error: outcome ? 0 : 1))
+            return outcome
+        }
+
+        private func persistTransaction(
+            _ base: HistoryEvent, isObservationGap: Bool, privacyRevision: String?,
+            globalPauseRevision: String?, isStorageGap: Bool
         ) -> Bool {
             guard !GoalongGlobalPause.isPaused() else { return false }
             beforePersist?(base)
