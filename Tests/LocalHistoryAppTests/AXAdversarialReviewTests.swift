@@ -248,6 +248,36 @@ final class AXAdversarialReviewTests: XCTestCase {
     }
     private final class Counter { var value = 0 }
 
+    func testReviewConsentRevokedBetweenSemanticPayloadAndReference() throws {
+        richConsent(true)
+        let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
+        let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: params).snapshot })
+        let evidence = AXContextEvidence(snapshot: snapshot, boundary: AXReadBoundary(window: tree.window, pid: 42))
+        let runtime = ActivityAnalysisRuntime(client: tree.client, applicationWitness: { _ in { true } },
+            allowsSemantic: { _ in ActivityAnalysisPreferences.richContextEnabled }, semanticRead: { _, _, _ in
+                AXRichContextCapture(text: "Public payload boundary fixture", source: "visible", redacted: false, truncated: false, fingerprint: "reference-F")
+            })
+        let appended = expectation(description: "payload appended before consent revocation")
+        runtime.afterSemanticAppendForTesting = {
+            XCTAssertFalse(Thread.isMainThread)
+            UserDefaults.standard.set(false, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
+            appended.fulfill()
+        }
+        runtime.start(recorder: rig.recorder, state: rig.state, configManager: rig.config,
+            currentContext: { $0(evidence) }, semanticContextStore: rig.semantic, memoryStore: rig.memory, automaticWork: false)
+        runtime.captureObservedContext(trigger: "focus_changed", context: snapshot)
+        wait(for: [appended], timeout: 3)
+        try rig.recorder.flushAndWait(); tick()
+        let payload = try Data(contentsOf: rig.root.appendingPathComponent("semantic/" + AppPaths.localDayString(for: date) + ".semantic.jsonl"))
+        XCTAssertEqual(payload.split(separator: 10).count, 1, "The probe must cross a real payload append")
+        let rawFile = rig.root.appendingPathComponent("events/" + AppPaths.localDayString(for: date) + ".jsonl")
+        let rows = FileManager.default.fileExists(atPath: rawFile.path) ? try events(stream(rig, date: date)) : []
+        XCTAssertEqual(rows.filter { $0.kind == .semanticSnapshot }.count, 0,
+            "Revoking rich consent after payload append must prevent its raw reference")
+        XCTAssertEqual(runtime.pendingSemanticJobsForTesting, 0)
+        runtime.stop(); try rig.recorder.closeAndWait()
+    }
+
     func testReviewSemanticTimestampMustNotMovePastLaterReservedEvent() throws {
         richConsent(true)
         let held = expectation(description: "writer held"), release = DispatchSemaphore(value: 0)

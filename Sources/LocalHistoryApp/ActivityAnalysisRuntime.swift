@@ -195,6 +195,9 @@
         }
 
         var pendingSemanticJobsForTesting: Int { semanticJobs.count }
+        #if DEBUG
+        var afterSemanticAppendForTesting: (() -> Void)?
+        #endif
 
         func start(
             recorder: EventRecorder,
@@ -575,6 +578,10 @@
                         ],
                         validateBeforeAppend: valid
                     )
+                    #if DEBUG
+                    self.afterSemanticAppendForTesting?()
+                    #endif
+                    guard valid() else { return }
                     var metadata: [String: String] = [
                         ActivitySemanticMetadata.version: "4",
                         ActivitySemanticMetadata.source: capture.source,
