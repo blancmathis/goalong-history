@@ -26,6 +26,8 @@
         private var historyRequested = false
         func setBlockingObservationEnabled(_ enabled: Bool) {
             guard enabled != blockingObservationEnabled else { return }
+            provider.invalidateBlocking()
+            blockingRequestID = nil
             blockingObservationEnabled = enabled
             accessibilityEventMonitor?.observesApplicationLaunches = enabled
             if enabled {
@@ -50,6 +52,7 @@
         private var observationUnavailable = false
         private var pollingIsActive = false
         private var scheduledPollInProgress = false
+        private var blockingRequestID: UUID?
         private var consecutiveCaptureFailures = 0
 
         private let snapshotLock = NSLock()
@@ -172,6 +175,9 @@
         }
 
         private func scheduleNextPoll() {
+            // Preserve the one-shot cadence: a slow blocking read cannot build
+            // an unbounded queue of missed polls behind the reserved reader.
+            guard blockingRequestID == nil else { return }
             timer?.invalidate()
             let configuredInterval = Double(configManager.config.pollIntervalMilliseconds) / 1_000.0
             guard pollingIsActive,
@@ -248,7 +254,15 @@
                 }
             }
             if blockingObservationEnabled && (!historyRequested || !state.isCapturing || provider.historyPrivacyStopped || !ForegroundSessionAvailability.isAvailable() || IsSecureEventInputEnabled()) {
-                _ = provider.capture(blockingSink: blockingSink, historyEnabled: false)
+                guard blockingRequestID == nil else { return nil }
+                let requestID = UUID()
+                blockingRequestID = requestID
+                provider.requestBlocking { [weak self] observation in
+                    guard let self, self.blockingRequestID == requestID else { return }
+                    self.blockingRequestID = nil
+                    if self.blockingObservationEnabled, let observation { self.blockingSink?(observation) }
+                    if self.pollingIsActive { self.scheduleNextPoll() }
+                }
                 // No recorder, capture health, Jev, analysis or retained snapshot in this lane.
                 return nil
             }

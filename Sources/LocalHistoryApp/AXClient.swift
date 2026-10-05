@@ -56,7 +56,7 @@ final class AXClient {
     }
 
     fileprivate func call(_ operation: String, _ body: () -> AXError) -> AXError {
-        if requiresBackgroundThread {
+        if requiresBackgroundThread || AXAccess.backgroundRequired {
             precondition(!Thread.isMainThread, "Outbound AX RPC on main: \(operation)")
         }
         guard let metric else { return body() }
@@ -84,10 +84,12 @@ enum AXAccess {
     private final class Scope: NSObject {
         let client: AXClient
         let requestID: String
+        var backgroundRequired = false
         init(_ client: AXClient, _ requestID: String) { self.client = client; self.requestID = requestID }
     }
     private static let key = "ai.goalong.ax-client-scope"
     private static var scope: Scope? { Thread.current.threadDictionary[key] as? Scope }
+    static var backgroundRequired: Bool { scope?.backgroundRequired == true }
     static var client: AXClient { scope?.client ?? .system }
     static var requestID: String { scope?.requestID ?? "unscoped" }
 
@@ -96,6 +98,13 @@ enum AXAccess {
         Thread.current.threadDictionary[key] = Scope(client, requestID)
         defer { Thread.current.threadDictionary[key] = previous }
         return try body()
+    }
+
+    static func withBackgroundClient<T>(_ client: AXClient, requestID: String = "fixture", _ body: () throws -> T) rethrows -> T {
+        try withClient(client, requestID: requestID) {
+            scope?.backgroundRequired = true
+            return try body()
+        }
     }
 
     static func application(_ pid: pid_t) -> AXUIElement { client.application(pid) }

@@ -46,6 +46,8 @@
         private let client: AXClient
         private let historyReader: ContextAXReader
         private let blockingReader: ContextAXReader
+        private let blockingLane: BlockingAXLane
+        private var blockingGeneration = UUID()
         private let blockingProbe: (() -> BlockingObservation?)?
         private let privateWindowSink: (Bool) -> Void
         private(set) var lastCaptureProvedExternalAX = false
@@ -57,6 +59,7 @@
             self.privateWindowSink = { JevIngress.shared.setPrivateWindow($0) }
             historyReader = ContextAXReader(clock: client.clock)
             blockingReader = ContextAXReader(clock: client.clock)
+            blockingLane = BlockingAXLane(client: client)
             parameters = { Self.liveParameters(config: configManager.config, accessibility: permissions.currentStatus.accessibility, history: true) }
             blockingParameters = { Self.liveParameters(config: configManager.config, accessibility: false, history: false) }
             foregroundPID = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
@@ -76,6 +79,7 @@
             self.blockingProbe = nil
             historyReader = ContextAXReader(clock: client.clock)
             blockingReader = ContextAXReader(clock: client.clock)
+            blockingLane = BlockingAXLane(client: client)
         }
 
         var historyPrivacyStopped: Bool {
@@ -130,7 +134,10 @@
             client.measure(.publication, requestID: requestID) {
                 lastCaptureProvedExternalAX = result.provedExternalAX
                 // Transfer immutable capability evidence, never share mutable caches.
-                if let browser = result.discoveredBrowser { blockingReader.rememberBrowser(browser) }
+                if let browser = result.discoveredBrowser {
+                    blockingReader.rememberBrowser(browser)
+                    blockingLane.rememberBrowser(browser)
+                }
                 if let privateWindowUpdate = result.privateWindowUpdate { privateWindowSink(privateWindowUpdate) }
                 completion(result.snapshot)
             }
@@ -140,6 +147,25 @@
             var result: ContextSnapshot?
             requestCapture(blockingSink: blockingSink, historyEnabled: historyEnabled) { result = $0 }
             return result
+        }
+
+        func invalidateBlocking() { blockingGeneration = UUID() }
+
+        func requestBlocking(completion: @escaping (BlockingObservation?) -> Void) {
+            // Fixture probes remain synchronous and do not issue AX calls.
+            if let blockingProbe { completion(blockingProbe()); return }
+            let input = blockingParameters()
+            let generation = blockingGeneration
+            blockingLane.request(input) { [weak self] observation in
+                guard let self, self.blockingGeneration == generation else { completion(nil); return }
+                let current = self.blockingParameters()
+                guard current.config == input.config,
+                      current.foregroundApplication?.processIdentifier == input.foregroundApplication?.processIdentifier,
+                      current.foregroundApplication?.instanceStartedAt == input.foregroundApplication?.instanceStartedAt,
+                      current.sessionAvailable == input.sessionAvailable,
+                      current.blockingAXTrusted == input.blockingAXTrusted else { completion(nil); return }
+                completion(observation)
+            }
         }
 
         func captureBlocking(of application: NSRunningApplication? = nil) -> BlockingObservation? {

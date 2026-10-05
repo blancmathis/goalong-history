@@ -357,7 +357,7 @@ final class BlockingEngineTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryApp/ContextMonitor.swift"))
         let lane = source.components(separatedBy: "if blockingObservationEnabled &&")[1].components(separatedBy: "guard historyRequested, state.isCapturing")[0]
-        XCTAssertTrue(lane.contains("historyEnabled: false")); XCTAssertTrue(lane.contains("return nil"))
+        XCTAssertTrue(lane.contains("provider.requestBlocking")); XCTAssertTrue(lane.contains("return nil"))
         for forbidden in ["recorder.record", "JevIngress.", "ActivityAnalysisRuntime.", "setLatest("] { XCTAssertFalse(lane.contains(forbidden)) }
     }
 }
