@@ -46,7 +46,7 @@ final class AXAsyncWorkflowTests: XCTestCase {
     private func input() -> ContextReadParameters {
         let app = ForegroundAXApplication(pid: 42, name: "Fixture", bundleIdentifier: "test.native")
         var config = RecorderConfig.default; config.captureElementLabels = true; config.captureWindowTitles = true
-        var privacy = GoalongPrivacyPolicy(); privacy.revision = "none"
+        let privacy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory) // same policy ContextProvider revalidates
         return ContextReadParameters(foregroundApplication: app, applications: [42: app], config: config,
             accessibilityAvailable: true, blockingAXTrusted: true, sessionAvailable: true, idleSeconds: 1,
             privacy: privacy, pauseRevision: try? GoalongGlobalPause.admit())
