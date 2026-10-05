@@ -107,6 +107,41 @@ final class PerformanceProbeTests: XCTestCase {
         }
     }
 
+    func testActivityCachedDaysMatchFullRead() throws {
+        let (root, day) = try setting()
+        let calendar = Calendar.current, now = Date()
+        for offset in 0..<14 {
+            let date = try XCTUnwrap(calendar.date(byAdding: .day, value: -offset, to: day))
+            let reference = GoalongLocalAnalytics.load(root: root, day: date, now: now, calendar: calendar)
+            var cached = GoalongActivityDayReader.load(root: root, day: date, now: now, calendar: calendar, shouldContinue: { true })
+            // Storage origin is the only expected difference; every segment, counter,
+            // coverage reason, context and mode must equal the journal projection.
+            cached.origin = reference.origin
+            XCTAssertEqual(cached, reference, GoalongActivityDayStore.dayKey(date, calendar: calendar))
+        }
+    }
+
+    func testActivityTodayRelaunch() throws {
+        let (root, _) = try setting()
+        let calendar = Calendar.current, now = Date(), day = calendar.startOfDay(for: now)
+        let reference = time("activity today without checkpoint") {
+            GoalongLocalAnalytics.load(root: root, day: day, resuming: nil, now: now, calendar: calendar)
+        }
+        let initial = time("activity today checkpoint bootstrap") {
+            GoalongActivityDayStore(root: root).loadResumable(day: day, now: now, calendar: calendar)
+        }
+        let relaunched = time("activity today checkpoint relaunch") {
+            GoalongActivityDayStore(root: root).loadResumable(day: day, now: now, calendar: calendar)
+        }
+        let warm = time("activity today checkpoint warm") {
+            GoalongLocalAnalytics.load(root: root, day: day, resuming: relaunched.state, now: now, calendar: calendar)
+        }
+        XCTAssertEqual(initial.day, reference.day); XCTAssertEqual(relaunched.day, reference.day)
+        XCTAssertEqual(warm.day, reference.day)
+        XCTAssertTrue(relaunched.didResume); XCTAssertEqual(relaunched.eventBytesRead, 0)
+        print("PERF today decoded journal bytes: cold=\(reference.eventBytesRead) relaunch=\(relaunched.eventBytesRead) warm=\(warm.eventBytesRead)")
+    }
+
     func testHistoryPage() throws {
         let (root, day) = try setting()
         let store = ComputerHistoryStore(rootDirectory: root,
