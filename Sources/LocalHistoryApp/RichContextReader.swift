@@ -191,9 +191,12 @@
             ].contains(role)
         }
 
+        /// Password fields are `AXTextField` with the `AXSecureTextField` subrole (native and
+        /// web); the role alone misses them when protected content is not reported.
         private static func isSecure(_ element: AXUIElement, role: String) -> Bool {
             if AXReader.bool(element, attribute: protectedContent) == true { return true }
-            let roleValue = role.lowercased()
+            let roleValue = ([role] + [AXReader.string(element, attribute: "AXSubrole" as CFString)].compactMap { $0 })
+                .joined(separator: " ").lowercased()
             return roleValue.contains("secure") || roleValue.contains("password")
         }
 
