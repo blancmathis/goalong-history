@@ -82,17 +82,45 @@ private final class BlockingFreezePanel: NSPanel {
     private var requestedLogin = false
     private var registeredLogin = false
     private var loginError: String?
+    private var loginStatus: SMAppService.Status?
+    private var loginStatusRead = Date.distantPast
+    private var loginStatusReading = false
+
+    /// `SMAppService.status` is a synchronous XPC round trip to smd (measured at ~300 ms)
+    /// and `updateProtection` runs on every blocking refresh. The status is read once
+    /// synchronously, then refreshed off the main thread at most every 30 s.
+    private func currentLoginStatus() -> SMAppService.Status {
+        guard let status = loginStatus else {
+            let status = SMAppService.mainApp.status
+            loginStatus = status; loginStatusRead = Date()
+            return status
+        }
+        if Date().timeIntervalSince(loginStatusRead) > 30, !loginStatusReading {
+            loginStatusReading = true
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let next = SMAppService.mainApp.status
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.loginStatusReading = false
+                    if self.loginStatus != nil { self.loginStatus = next; self.loginStatusRead = Date() }
+                }
+            }
+        }
+        return status
+    }
 
     func updateProtection(locked: Bool) -> BlockingProtectionState {
-        if locked, SMAppService.mainApp.status != .enabled, !requestedLogin {
+        if locked, currentLoginStatus() != .enabled, !requestedLogin {
             requestedLogin = true
             do { try SMAppService.mainApp.register(); registeredLogin = true }
             catch { loginError = "Démarrage à la connexion indisponible : \(error.localizedDescription)" }
+            loginStatus = nil
         } else if !locked { requestedLogin = false }
         var result = BlockingProtectionState()
-        result.launchAtLogin = SMAppService.mainApp.status == .enabled
+        let status = currentLoginStatus()
+        result.launchAtLogin = status == .enabled
         if locked && !result.launchAtLogin {
-            result.component = SMAppService.mainApp.status == .requiresApproval ? .awaitingApproval : .failed(loginError ?? "Activez Goalong dans les éléments d’ouverture.")
+            result.component = status == .requiresApproval ? .awaitingApproval : .failed(loginError ?? "Activez Goalong dans les éléments d’ouverture.")
         }
         return result
     }
@@ -267,7 +295,7 @@ private final class BlockingFreezePanel: NSPanel {
         veilClear?.cancel(); noticeClear?.cancel()
         for work in terminations.values { work.cancel() }; terminations.removeAll()
         veil?.close(); veil = nil; veilHost = nil; veilPresentation = nil; notice?.close(); notice = nil
-        if registeredLogin { do { try SMAppService.mainApp.unregister() } catch { loginError = error.localizedDescription } }
+        if registeredLogin { do { try SMAppService.mainApp.unregister() } catch { loginError = error.localizedDescription }; loginStatus = nil }
     }
     private func makePanel(frame: CGRect) -> NSPanel {
         let panel = BlockingPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
