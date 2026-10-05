@@ -144,7 +144,8 @@ final class GoalongActivityCheckpointTests: XCTestCase {
             let rollback = save(root, now: day.addingTimeInterval(1800))
             XCTAssertFalse(rollback.didResume)
             XCTAssertEqual(rollback.day, GoalongLocalAnalytics.build(events: rows() + [early], day: day, now: day.addingTimeInterval(1800)))
-            var otherZone = calendar; otherZone.timeZone = TimeZone(secondsFromGMT: 0)!
+            // Any zone other than the current one (CI runs in UTC).
+            var otherZone = calendar; otherZone.timeZone = TimeZone(secondsFromGMT: calendar.timeZone.secondsFromGMT(for: day) == 0 ? 3_600 : 0)!
             XCTAssertThrowsError(try GoalongActivityCheckpointStore(root: root).read(day: day, calendar: otherZone))
         }
     }
