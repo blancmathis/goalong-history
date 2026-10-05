@@ -418,7 +418,7 @@
             if GoalongBuildCapabilities.permitsRemoteAnalysis {
                 ChatGPTRecapRuntime.shared.stop()
             }
-            GoalongCallPresenceMonitor.shared.stop()
+            GoalongCallPresenceMonitor.shared.stopForTermination()
             contextMonitor?.stop()
             eventTapMonitor?.stop()
             if capabilityConsents?.isEnabled(.localComputerHistory) == true {

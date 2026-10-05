@@ -21,8 +21,10 @@ final class GoalongCallPresenceMonitor {
     private var pendingRebuild = false
     init(root: URL) { self.root = root }
 
+    /// Called from the main thread: asynchronous, so a busy CoreAudio queue never stalls the UI.
+    /// The serial queue keeps it ordered before any later `stop()`.
     func configure(enabled: Bool, config: RecorderConfig) {
-        queue.sync {
+        queue.async { [self] in
             self.config = config
             let next = enabled && config.effectiveCaptureCallPresence && !GoalongGlobalPause.isPaused(in: root)
             if !next { closeActive(at: Date()); removeListeners(); self.enabled = false; sourceStatus = .disabled; return }
@@ -34,6 +36,13 @@ final class GoalongCallPresenceMonitor {
         }
     }
     func stop() { queue.sync { closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled } }
+    /// At quit, the open call is saved if the queue answers within `timeout`; the app never
+    /// hangs on quit (0.6.64 hung there forever, blocking its own update).
+    func stopForTermination(timeout: TimeInterval = 1) {
+        let done = DispatchSemaphore(value: 0)
+        queue.async { [self] in closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled; done.signal() }
+        _ = done.wait(timeout: .now() + timeout)
+    }
     func lane(day: Date, enabled: Bool, privacy: GoalongPrivacyPolicy = .init()) -> GoalongCallLane {
         queue.sync {
             let live = self.enabled ? active.values.map {
