@@ -399,8 +399,9 @@
             }
             mutateStatus { acceptedEventCount &+= 1 }
             writerCondition.unlock()
-            persist(base, isObservationGap: false, privacyRevision: privacyRevision, globalPauseRevision: globalPauseRevision)
-            return true
+            // This path already owns the writer: report the persistence result,
+            // so semantic deduplication is never promoted for a failed append.
+            return persist(base, isObservationGap: false, privacyRevision: privacyRevision, globalPauseRevision: globalPauseRevision)
         }
 
         /// Called with `writerCondition` held. One task slot remains reserved for the

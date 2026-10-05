@@ -217,6 +217,37 @@ final class AXAdversarialReviewTests: XCTestCase {
         runtime.stop(); try rig.recorder.closeAndWait()
     }
 
+    func testReviewOlderSemanticTerminalCannotReleaseNewReservation() throws {
+        richConsent(true)
+        let held = expectation(description: "writer held"), release = DispatchSemaphore(value: 0)
+        let date = Date(), params = input(), tree = ScriptedAXTree()
+        let rig = try rig(at: date) { row in
+            if row.kind == .heartbeat { held.fulfill(); _ = release.wait(timeout: .now() + 5) }
+        }
+        let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: params).snapshot })
+        let evidence = AXContextEvidence(snapshot: snapshot, boundary: AXReadBoundary(window: tree.window, pid: 42))
+        let runtime = ActivityAnalysisRuntime(client: tree.client, applicationWitness: { _ in { true } }, allowsSemantic: { _ in true }, semanticRead: { _, _, _ in
+            AXRichContextCapture(text: "Public reservation fixture", source: "visible", redacted: false, truncated: false, fingerprint: "owned-F")
+        })
+        func reserve() {
+            let prepared = expectation(description: "capture reserved"), validations = Counter()
+            runtime.start(recorder: rig.recorder, state: rig.state, configManager: rig.config, currentContext: { completion in
+                validations.value += 1; completion(evidence)
+                if validations.value == 2 { DispatchQueue.main.async { prepared.fulfill() } }
+            }, semanticContextStore: rig.semantic, memoryStore: rig.memory, automaticWork: false)
+            runtime.captureObservedContext(trigger: "focus_changed", context: snapshot)
+            wait(for: [prepared], timeout: 3)
+        }
+        rig.recorder.record(kind: .heartbeat, timestamp: date); wait(for: [held], timeout: 3)
+        reserve(); runtime.stop(); reserve()
+        XCTAssertEqual(runtime.pendingSemanticJobsForTesting, 2)
+        release.signal(); try rig.recorder.flushAndWait(); tick()
+        XCTAssertEqual(runtime.pendingSemanticJobsForTesting, 0)
+        XCTAssertEqual(try events(stream(rig, date: date)).filter { $0.kind == .semanticSnapshot }.count, 1)
+        runtime.stop(); try rig.recorder.closeAndWait()
+    }
+    private final class Counter { var value = 0 }
+
     func testReviewSemanticTimestampMustNotMovePastLaterReservedEvent() throws {
         richConsent(true)
         let held = expectation(description: "writer held"), release = DispatchSemaphore(value: 0)

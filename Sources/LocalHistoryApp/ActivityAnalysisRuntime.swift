@@ -145,6 +145,7 @@
         private var richContextTimer: Timer?
         private var analysisTimer: Timer?
         private var lastRichContextFingerprints: [String: String] = [:]
+        private var pendingRichContextFingerprints: [String: (jobID: UUID, fingerprint: String)] = [:]
         private var lastSemanticCaptureDates: [String: Date] = [:]
         private var lastRichContextCapture = Date.distantPast
         private var interactionCaptureGeneration: UInt64 = 0
@@ -231,6 +232,7 @@
         func stop() {
             interactionCaptureGeneration &+= 1
             for permit in semanticJobs.values { permit.revoke() }
+            pendingRichContextFingerprints.removeAll(keepingCapacity: false)
             started = false
             richContextTimer?.invalidate()
             analysisTimer?.invalidate()
@@ -337,6 +339,7 @@
         func prepareForHistoryClear() {
             interactionCaptureGeneration &+= 1
             for permit in semanticJobs.values { permit.revoke() }
+            pendingRichContextFingerprints.removeAll(keepingCapacity: false)
             lastRichContextFingerprints.removeAll(keepingCapacity: false)
             lastSemanticCaptureDates.removeAll(keepingCapacity: false)
             lastRichContextCapture = .distantPast
@@ -424,6 +427,7 @@
             // A pending AX read cannot commit after its independent consent was revoked.
             interactionCaptureGeneration &+= 1
             for permit in semanticJobs.values { permit.revoke() }
+            pendingRichContextFingerprints.removeAll(keepingCapacity: false)
             if ActivityAnalysisPreferences.richContextEnabled {
                 scheduleRichContextTimer()
             } else {
@@ -538,16 +542,20 @@
         ) {
             guard let semanticContextStore, let state else { completion(); return }
             let contextKey = Self.semanticContextKey(snapshot)
+            let commitID = UUID()
             if deduplicate {
-                guard self.lastRichContextFingerprints[contextKey] != capture.fingerprint else {
+                guard lastRichContextFingerprints[contextKey] != capture.fingerprint,
+                      pendingRichContextFingerprints[contextKey]?.fingerprint != capture.fingerprint else {
                     completion(); return
                 }
-                self.lastRichContextFingerprints[contextKey] = capture.fingerprint
-                if self.lastRichContextFingerprints.count > 256,
-                    let firstKey = self.lastRichContextFingerprints.keys.first
-                {
-                    self.lastRichContextFingerprints.removeValue(forKey: firstKey)
+                pendingRichContextFingerprints[contextKey] = (commitID, capture.fingerprint)
+            }
+            let finish = {
+                // An older terminal must never release a newer reservation.
+                if self.pendingRichContextFingerprints[contextKey]?.jobID == commitID {
+                    self.pendingRichContextFingerprints[contextKey] = nil
                 }
+                completion()
             }
 
             let admittedAt = Date()
@@ -577,15 +585,23 @@
                         "semantic_storage": "separate_local_jsonl",
                     ]
                     for (key, value) in additionalMetadata { metadata[key] = value }
-                    recorder.record(
+                    let recorded = recorder.record(
                         kind: .semanticSnapshot,
                         context: snapshot,
                         semanticContext: reference,
                         metadata: metadata, timestamp: admittedAt, identifier: identifier
                     )
+                    guard recorded else { return }
                     let committedAt = Date()
                     DispatchQueue.main.async {
                         guard permit.isValid else { return }
+                        if deduplicate, self.pendingRichContextFingerprints[contextKey]?.jobID == commitID {
+                            self.lastRichContextFingerprints[contextKey] = capture.fingerprint
+                            if self.lastRichContextFingerprints.count > 256,
+                               let firstKey = self.lastRichContextFingerprints.keys.first {
+                                self.lastRichContextFingerprints[firstKey] = nil
+                            }
+                        }
                         self.lastSemanticCaptureDates[contextKey] = committedAt
                         if self.lastSemanticCaptureDates.count > 256,
                            let oldest = self.lastSemanticCaptureDates.min(by: { $0.value < $1.value })?.key {
@@ -596,8 +612,8 @@
                     SupportDiagnostics.shared.failure(error, component: .analysis)
                     Diagnostics.write("Semantic context persistence failed: \(error)")
                 }
-            }, completion: completion)
-            if !accepted { completion() }
+            }, completion: finish)
+            if !accepted { finish() }
         }
 
         static func semanticBoundaryMatches(
