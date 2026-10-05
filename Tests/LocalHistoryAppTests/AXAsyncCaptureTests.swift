@@ -244,7 +244,7 @@ final class AXAsyncCaptureTests: XCTestCase {
             isBrowser: true, url: "example.com/work", privateWindow: false, at: Date())
         target.windowBoundary = AXReadBoundary(window: tree.window, pid: 42)
         let lane = BlockingTabAXLane(client: tree.client), done = expectation(description: "ambiguous action")
-        lane.request(target, permit: AXRequestPermit(), stillCurrent: { true }, revalidate: {
+        lane.request(target, permit: AXRequestPermit(), rulePermit: BlockingTabRuleAuthority().permit(until: .distantFuture), stillCurrent: { true }, revalidate: {
             XCTAssertTrue(Thread.isMainThread); validations += 1; $0(true)
         }, fallback: { fallbacks += 1 }) { result in
             XCTAssertEqual(result, .uncertain); done.fulfill()

@@ -10,6 +10,7 @@ import SwiftUI
     var browsers: [BlockingBrowserSupport] { get }
     var appStillBlocked: ((BlockingObservation) -> Bool)? { get set }
     var siteActionStillRequired: ((BlockingObservation) -> Bool)? { get set }
+    var siteActionDeadline: ((BlockingObservation) -> Date?)? { get set }
     func observeBrowser(_ target: BlockingObservation)
     func updateProtection(locked: Bool) -> BlockingProtectionState
     func blockApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String)
@@ -28,6 +29,7 @@ import SwiftUI
 
 extension BlockingEnforcementBackend {
     var siteActionStillRequired: ((BlockingObservation) -> Bool)? { get { nil } set {} }
+    var siteActionDeadline: ((BlockingObservation) -> Date?)? { get { nil } set {} }
     func invalidateSiteActions() {}
     func blockSlowDownApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) {}
     func slowDown(_ target: BlockingObservation, presentation: BlockingFrictionPresentation, onRenounce: @escaping () -> Void, onContinue: @escaping () -> Void) {}
@@ -51,6 +53,7 @@ private final class BlockingFreezePanel: NSPanel {
     var canLockScreen: Bool { accessibilityAvailable }
     var appStillBlocked: ((BlockingObservation) -> Bool)?
     var siteActionStillRequired: ((BlockingObservation) -> Bool)?
+    var siteActionDeadline: ((BlockingObservation) -> Date?)?
     private var observedBrowserSupport: [String: Bool] = [:]
     private var observedBrowserNames: [String: String] = [:]
     func observeBrowser(_ target: BlockingObservation) {
@@ -70,6 +73,7 @@ private final class BlockingFreezePanel: NSPanel {
         return result
     }
     private let tabLane = BlockingTabAXLane()
+    private let tabRuleAuthority = BlockingTabRuleAuthority()
     private var tabPermit: AXRequestPermit?
     private var renouncedTarget: BlockingObservation?
     private var tabIsRenounce = false
@@ -328,16 +332,18 @@ private final class BlockingFreezePanel: NSPanel {
     static func appKitFrame(_ frame: CGRect) -> CGRect {
         CGRect(x: frame.minX, y: (NSScreen.screens.first?.frame.maxY ?? 0) - frame.maxY, width: frame.width, height: frame.height)
     }
-    func invalidateSiteActions() { tabPermit?.revoke(); tabPermit = nil; renouncedTarget = nil }
+    func invalidateSiteActions() { tabRuleAuthority.invalidate(); tabPermit?.revoke(); tabPermit = nil; renouncedTarget = nil }
 
     private func closeTab(_ target: BlockingObservation, renounce: Bool = false) {
         guard accessibilityAvailable, let application = NSRunningApplication(processIdentifier: target.pid),
               application.bundleIdentifier == target.bundleIdentifier, !application.isTerminated else { return }
         invalidateSiteActions()
+        guard let deadline = siteActionDeadline?(target), deadline > Date() else { return }
+        let rulePermit = tabRuleAuthority.permit(until: deadline)
         let permit = AXRequestPermit(); tabPermit = permit
         tabIsRenounce = renounce
         if renounce { renouncedTarget = target }
-        tabLane.request(target, permit: permit, stillCurrent: {
+        tabLane.request(target, permit: permit, rulePermit: rulePermit, stillCurrent: {
             !application.isTerminated && application.bundleIdentifier == target.bundleIdentifier
                 && NSWorkspace.shared.frontmostApplication?.processIdentifier == target.pid
                 && ForegroundSessionAvailability.isAvailable() && AXIsProcessTrusted()

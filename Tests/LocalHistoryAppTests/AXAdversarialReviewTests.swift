@@ -300,7 +300,12 @@ final class AXAdversarialReviewTests: XCTestCase {
         let tree = ScriptedAXTree(browser: true), menu = AXUIElementCreateApplication(50_095)
         tree.attributes[Int(CFHash(tree.app))]?["AXMenuBar"] = menu
         tree.attributes[Int(CFHash(menu))] = ["AXTitle": "Close Tab" as CFString, "AXMenuItemCmdChar": "w" as CFString]
+        let deadline = Date().addingTimeInterval(1), authority = BlockingTabRuleAuthority()
         let lock = NSLock(); var finalPhase = false, expired = false, actions = 0
+        let rulePermit = authority.permit(until: deadline, clock: {
+            lock.lock(); defer { lock.unlock() }
+            return expired ? deadline : deadline.addingTimeInterval(-1)
+        })
         tree.beforeRead = { name in
             lock.lock(); defer { lock.unlock() }
             if finalPhase && name == "AXDocument" { expired = true }
@@ -313,7 +318,7 @@ final class AXAdversarialReviewTests: XCTestCase {
             isBrowser: true, url: "example.com/work", privateWindow: false, at: Date())
         target.windowBoundary = AXReadBoundary(window: tree.window, pid: 42)
         let done = expectation(description: "tab action terminal")
-        BlockingTabAXLane(client: tree.client).request(target, permit: AXRequestPermit(), stillCurrent: { true }, revalidate: { completion in
+        BlockingTabAXLane(client: tree.client).request(target, permit: AXRequestPermit(), rulePermit: rulePermit, stillCurrent: { true }, revalidate: { completion in
             lock.lock(); let allowed = !expired; finalPhase = true; lock.unlock()
             completion(allowed)
         }, fallback: { XCTFail("Unexpected keyboard fallback") }) { result in
@@ -323,6 +328,41 @@ final class AXAdversarialReviewTests: XCTestCase {
         }
         wait(for: [done], timeout: 3); XCTAssertEqual(actions, 0)
     }
+    func testReviewRuleEpochAndExpiryGuardActionAndFallback() {
+        for scenario in ["epoch-final-AX", "expiry-unsupported-action", "active-unsupported-action"] {
+            let tree = ScriptedAXTree(browser: true), menu = AXUIElementCreateApplication(50_095)
+            tree.attributes[Int(CFHash(tree.app))]?["AXMenuBar"] = menu
+            tree.attributes[Int(CFHash(menu))] = ["AXTitle": "Close Tab" as CFString, "AXMenuItemCmdChar": "w" as CFString]
+            let authority = BlockingTabRuleAuthority(), deadline = Date().addingTimeInterval(1), lock = NSLock()
+            var finalPhase = false, expired = false, actions = 0, fallbacks = 0
+            let rulePermit = authority.permit(until: deadline, clock: {
+                lock.lock(); defer { lock.unlock() }
+                return expired ? deadline : deadline.addingTimeInterval(-1)
+            })
+            tree.beforeRead = { name in
+                if finalPhase && name == "AXDocument" && scenario == "epoch-final-AX" { authority.invalidate() }
+            }
+            tree.client.perform = { _, _ in
+                actions += 1
+                lock.lock(); expired = scenario == "expiry-unsupported-action"; lock.unlock()
+                return .actionUnsupported
+            }
+            var target = BlockingObservation(bundleIdentifier: "com.apple.Safari", pid: 42, windowFrame: nil,
+                isBrowser: true, url: "example.com/work", privateWindow: false, at: Date())
+            target.windowBoundary = AXReadBoundary(window: tree.window, pid: 42)
+            let done = expectation(description: scenario)
+            BlockingTabAXLane(client: tree.client).request(target, permit: AXRequestPermit(), rulePermit: rulePermit,
+                stillCurrent: { true }, revalidate: { completion in finalPhase = true; completion(true) },
+                fallback: { XCTAssertFalse(Thread.isMainThread); fallbacks += 1 }) { result in
+                    XCTAssertEqual(result, scenario == "active-unsupported-action" ? .closed : .revoked)
+                    done.fulfill()
+                }
+            wait(for: [done], timeout: 3)
+            XCTAssertEqual(actions, scenario == "epoch-final-AX" ? 0 : 1)
+            XCTAssertEqual(fallbacks, scenario == "active-unsupported-action" ? 1 : 0)
+        }
+    }
+
     func testReviewTypingBurstParityWhileSecondInputAXCrossesFlushDeadline() throws {
         richConsent(false)
         var bursts: [[Int]] = []

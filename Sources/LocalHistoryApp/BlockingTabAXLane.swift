@@ -3,6 +3,30 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+/// Main advances rule authority; workers only consult this short epoch check
+/// and the immutable deadline. No rule structures or AX handles enter the lock.
+final class BlockingTabRuleAuthority {
+    private let lock = NSLock()
+    private var epoch = UUID()
+    func invalidate() { lock.lock(); epoch = UUID(); lock.unlock() }
+    func permit(until deadline: Date, clock: @escaping () -> Date = Date.init) -> BlockingTabRulePermit {
+        lock.lock(); let admittedEpoch = epoch; lock.unlock()
+        return BlockingTabRulePermit(epoch: admittedEpoch, deadline: deadline, authority: self, clock: clock)
+    }
+    fileprivate func isCurrent(_ admittedEpoch: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return epoch == admittedEpoch
+    }
+}
+
+struct BlockingTabRulePermit {
+    let epoch: UUID
+    let deadline: Date
+    fileprivate let authority: BlockingTabRuleAuthority
+    fileprivate let clock: () -> Date
+    var isValid: Bool { authority.isCurrent(epoch) && clock() < deadline }
+}
+
 /// Separate action owner. A slow menu/action RPC cannot occupy observation,
 /// history or main. An ambiguous action failure never retries with Cmd-W.
 final class BlockingTabAXLane {
@@ -11,7 +35,7 @@ final class BlockingTabAXLane {
     private let client: AXClient
     init(client: AXClient = .system) { self.client = client }
 
-    func request(_ target: BlockingObservation, permit: AXRequestPermit,
+    func request(_ target: BlockingObservation, permit: AXRequestPermit, rulePermit: BlockingTabRulePermit,
                  stillCurrent: @escaping () -> Bool,
                  revalidate: @escaping (@escaping (Bool) -> Void) -> Void,
                  fallback: @escaping () -> Void,
@@ -19,12 +43,12 @@ final class BlockingTabAXLane {
         let finish: (Result) -> Void = { result in DispatchQueue.main.async { completion(result) } }
         queue.async {
             AXAccess.withBackgroundClient(self.client, permit: permit) {
-                guard permit.isValid, stillCurrent(), self.matches(target) else { finish(.revoked); return }
+                guard permit.isValid, rulePermit.isValid, stillCurrent(), self.matches(target) else { finish(.revoked); return }
                 let app = AXAccess.application(target.pid)
                 AXAccess.setMessagingTimeout(app, 0.15)
                 var candidates: [AXUIElement] = AXReader.element(app, attribute: kAXMenuBarAttribute as CFString).map { [$0] } ?? []
                 var visited = 0, closeItem: AXUIElement?
-                while !candidates.isEmpty, visited < 160, permit.isValid {
+                while !candidates.isEmpty, visited < 160, permit.isValid, rulePermit.isValid {
                     let item = candidates.removeFirst(); visited += 1
                     let title = AXReader.string(item, attribute: kAXTitleAttribute as CFString)
                     let command = AXReader.string(item, attribute: kAXMenuItemCmdCharAttribute as CFString)
@@ -37,10 +61,13 @@ final class BlockingTabAXLane {
                 let item = closeItem
                 DispatchQueue.main.async {
                     revalidate { allowed in
-                        guard allowed, permit.isValid else { completion(.revoked); return }
+                        guard allowed, permit.isValid, rulePermit.isValid else { completion(.revoked); return }
                         self.queue.async {
                             AXAccess.withBackgroundClient(self.client, permit: permit) {
-                                guard permit.isValid, stillCurrent(), self.matches(target) else { finish(.revoked); return }
+                                guard permit.isValid, rulePermit.isValid, stillCurrent(), self.matches(target) else { finish(.revoked); return }
+                                // matches() performs RPCs: expiry/epoch must be
+                                // checked again after its final read, at the action.
+                                guard permit.isValid, rulePermit.isValid else { finish(.revoked); return }
                                 if let item {
                                     let error = AXAccess.performAction(item, kAXPressAction as CFString)
                                     if error == .success { finish(.closed); return }
@@ -48,7 +75,7 @@ final class BlockingTabAXLane {
                                         finish(.uncertain); return
                                     }
                                 }
-                                guard permit.isValid, stillCurrent() else { finish(.revoked); return }
+                                guard permit.isValid, rulePermit.isValid, stillCurrent() else { finish(.revoked); return }
                                 fallback()
                                 finish(.closed)
                             }

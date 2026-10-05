@@ -85,6 +85,7 @@ import Foundation
             }
         }
         backend?.siteActionStillRequired = { [weak self] in self?.siteActionStillRequired($0) == true }
+        backend?.siteActionDeadline = { [weak self] in self?.siteActionDeadline($0) }
         refresh()
     }
 
@@ -549,22 +550,26 @@ import Foundation
     /// Final action admission reads current main-owned rules without a disk read,
     /// AX RPC or history dependency. Expiry is checked even before the next timer.
     func siteActionStillRequired(_ target: BlockingObservation) -> Bool {
-        guard target.isBrowser, target.isForeground, target.sessionAvailable, !BlockingRules.exempt(target) else { return false }
-        if let freeze, freeze.mode == .shield, !freeze.allowedApps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { return false }
+        siteActionDeadline(target) != nil
+    }
+
+    func siteActionDeadline(_ target: BlockingObservation) -> Date? {
+        guard target.isBrowser, target.isForeground, target.sessionAvailable, !BlockingRules.exempt(target) else { return nil }
+        if let freeze, freeze.mode == .shield, !freeze.allowedApps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { return nil }
         let now = clock(), usage = todayUsage()
+        var deadline: Date?
         for list in lists {
-            guard activeBlocks.contains(where: { $0.listIDs.contains(list.id) && $0.start <= now && $0.end > now }),
+            guard let end = activeBlocks.filter({ $0.listIDs.contains(list.id) && $0.start <= now && $0.end > now }).map(\.end).max(),
                   usage.breakEnds[list.id].map({ $0 > now }) != true else { continue }
-            if BlockingRules.hasSites(list) {
-                if target.privateWindow { return true }
-                if !target.isInternalPage, target.url == nil,
-                   !siteBlockingAvailable || unreadableSince[target.pid].map({ now.timeIntervalSince($0) >= 3 }) == true { return true }
-            }
-            guard BlockingRules.wouldBlock(target, list: list) else { continue }
-            if list.effectiveAction == .slowDown { return true }
-            if list.quotaMinutesPerDay.map({ (usage.quotaSecondsUsed[list.id] ?? 0) >= Double($0 * 60) }) ?? true { return true }
+            let special = BlockingRules.hasSites(list) && (target.privateWindow
+                || (!target.isInternalPage && target.url == nil && (!siteBlockingAvailable
+                    || unreadableSince[target.pid].map({ now.timeIntervalSince($0) >= 3 }) == true)))
+            let required = special || (BlockingRules.wouldBlock(target, list: list)
+                && (list.effectiveAction == .slowDown
+                    || (list.quotaMinutesPerDay.map({ (usage.quotaSecondsUsed[list.id] ?? 0) >= Double($0 * 60) }) ?? true)))
+            if required { deadline = max(deadline ?? end, end) }
         }
-        return false
+        return deadline
     }
 
 
