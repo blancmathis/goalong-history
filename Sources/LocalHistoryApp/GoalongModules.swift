@@ -7,6 +7,7 @@ enum GoalongModule: String, CaseIterable, Identifiable {
     case blocking
     case concentration
     case ambiance
+    case braise
 
     var id: String { rawValue }
     var defaultsKey: String { "goalong.module.\(rawValue).enabled" }
@@ -16,6 +17,7 @@ enum GoalongModule: String, CaseIterable, Identifiable {
         case .blocking: return "Blocage"
         case .concentration: return "Concentration"
         case .ambiance: return "Ambiance"
+        case .braise: return "Braise"
         }
     }
 
@@ -24,6 +26,7 @@ enum GoalongModule: String, CaseIterable, Identifiable {
         case .concentration: return "Séances, Pomodoro, plan du jour et bilan, statut."
         case .blocking: return "Bloquer des sites et des apps, verrouiller un blocage, geler le Mac."
         case .ambiance: return "De la musique pour travailler ou souffler, téléchargée à la demande."
+        case .braise: return "Filtre rouge, luminosité et horaires, sans accès supplémentaire."
         }
     }
 
@@ -32,6 +35,7 @@ enum GoalongModule: String, CaseIterable, Identifiable {
         case .blocking: return "lock"
         case .concentration: return "scope"
         case .ambiance: return "waveform"
+        case .braise: return "sun.horizon"
         }
     }
 }
@@ -45,6 +49,7 @@ final class GoalongModuleStore: ObservableObject {
     var blockingDisableCheck: (() -> Bool)?
     var concentrationDisableCheck: (() -> Bool)?
     var onConcentrationEnabledChange: ((Bool) -> Void)?
+    var onBraiseEnabledChange: ((Bool) -> Void)?
     var onBlockingEnabledChange: ((Bool) -> Void)?
 
     init(defaults: UserDefaults = .standard) {
@@ -60,6 +65,7 @@ final class GoalongModuleStore: ObservableObject {
         if module == .concentration, !value, concentrationDisableCheck?() == false { return }
         defaults.set(value, forKey: module.defaultsKey)
         if value { enabled.insert(module) } else { enabled.remove(module) }
+        if module == .braise { onBraiseEnabledChange?(value) }
         if module == .blocking { onBlockingEnabledChange?(value) }
         if module == .concentration { onConcentrationEnabledChange?(value) }
         NotificationCenter.default.post(name: .goalongModulesDidChange, object: self)

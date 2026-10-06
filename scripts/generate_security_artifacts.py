@@ -287,6 +287,16 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
             "privilegedComponent": False, "forcedQuitProtection": False,
             "clockLimit": "forward wall-clock change across reboot cannot be detected",
         },
+        "braise": {
+            "defaultEnabled": False, "network": False, "newPermissions": [],
+            "gammaSource": "BraiseGammaController.swift", "shortcutSource": "BraiseRuntime.swift",
+            "effects": ["public-display-gamma-tables", "fixed-control-option-command-R-hotkey"],
+            "hardwareBrightnessChanges": False, "contentCapture": False,
+            "guardian": "same-executable-fixed-braise-guardian-arguments-stdin-EOF",
+            "store": {"directory": "Braise", "file": "settings.json", "directoryMode": "0700", "fileMode": "0600"},
+            "legacyImport": "first-explicit-enable-owner-only-bounded-read-only",
+            "loginItem": "existing-Goalong-SMAppService-on-explicit-action",
+        },
         "jevInterventions": {
             "defaultEnabled": False, "firstWarningSeconds": 15,
             "closeBehavior": "rearm-next-positive-window-preserve-duration-and-effects",

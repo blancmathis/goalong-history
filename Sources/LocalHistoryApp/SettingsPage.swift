@@ -340,7 +340,7 @@ enum SettingsPane: Hashable {
         case .applications: return "ignorer exclure exclusions masquer application navigateur domaine"
         case .connections: return "connexions"
         case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"
-        case .modules: return "module modules ambiance musique son sons concentration détente activer"
+        case .modules: return "module modules ambiance braise filtre rouge luminosité horaires musique son sons concentration détente activer"
         case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
         case .modules: return "module modules blocage bloquer site sites app apps verrouiller cold turkey geler activer"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"

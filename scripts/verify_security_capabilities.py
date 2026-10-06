@@ -88,6 +88,18 @@ def verify_manifest(value: dict, info: dict, edition: str) -> int:
         fail("update/network key inventory does not match the app")
     if value.get("network", {}).get("osEnforcedDeny") is not False:
         fail("network sandbox state is not reported honestly")
+    expected_braise = {
+        "defaultEnabled": False, "network": False, "newPermissions": [],
+        "gammaSource": "BraiseGammaController.swift", "shortcutSource": "BraiseRuntime.swift",
+        "effects": ["public-display-gamma-tables", "fixed-control-option-command-R-hotkey"],
+        "hardwareBrightnessChanges": False, "contentCapture": False,
+        "guardian": "same-executable-fixed-braise-guardian-arguments-stdin-EOF",
+        "store": {"directory": "Braise", "file": "settings.json", "directoryMode": "0700", "fileMode": "0600"},
+        "legacyImport": "first-explicit-enable-owner-only-bounded-read-only",
+        "loginItem": "existing-Goalong-SMAppService-on-explicit-action",
+    }
+    if value.get("braise") != expected_braise:
+        fail("Braise differs from its optional local gamma/restoration contract")
     expected_pairing = {"trigger": "native-confirmed-goalong-history-link", "path": "/api/goalong/v1/native/pairing/claim", "method": "POST", "codeLifetimeSeconds": 300, "singleUse": True, "redirects": "refused", "responseMaximumBytes": 8192, "tokenStorage": "user-owned-0600-file", "activityDataSent": False}
     if value.get("network", {}).get("sitePairing") != expected_pairing:
         fail("explicit pairing differs from the reviewed contract")

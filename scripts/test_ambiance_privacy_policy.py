@@ -40,6 +40,10 @@ def main():
         fixtures += [("Features/Ambiance/Sources/ForbiddenAudioFixture.swift", "AVAudioEngine")]
         fixtures += [("Features/Ambiance/Sources/ForbiddenAudioFixture.swift", token)
                      for token in ("AVAudioFile", "AVAudioPCMBuffer")]
+        fixtures += [("Features/Braise/Sources/Schedule.swift", token) for token in
+                     ("CGSetDisplayTransferByTable", "CGGetDisplayTransferByTable", "CGDisplayRestoreColorSyncSettings", "Process()")]
+        fixtures += [("Sources/LocalHistoryApp/Braise/BraiseGammaController.swift", token) for token in
+                     ("URLSession", "CGEventTap", "DistributedNotificationCenter")]
         for index, (relative, token) in enumerate(fixtures):
             path = root / relative
             original = path.read_text() if path.exists() else None
@@ -51,7 +55,7 @@ def main():
                     path.unlink()
                 else:
                     path.write_text(original)
-        print(f"Ambiance privacy fixtures passed: baseline accepted, {len(fixtures)} forbidden fixtures rejected")
+        print(f"Ambiance/Braise privacy fixtures passed: baseline accepted, {len(fixtures)} forbidden fixtures rejected")
 
 
 if __name__ == "__main__":

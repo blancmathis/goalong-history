@@ -295,6 +295,8 @@
                 ConcentrationRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .concentration) }
                 ConcentrationRuntime.shared.onMenuBarText = { [weak self] text in self?.menuBarController?.setFocusTitle(text) }
                 ConcentrationRuntime.shared.start(monitor: contextMonitor)
+                BraiseRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .braise) }
+                BraiseRuntime.shared.start()
             }
             eventTapMonitor.concentrationInputSink = { date, count in MainActor.assumeIsolated { ConcentrationRuntime.shared.noteInput(at: date, count: count) } }
             applyCapabilityConsents(recordTransition: false)
@@ -405,6 +407,7 @@
                 UserDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
                 UserDefaults.standard.set(dashboardViewModel.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
             }
+            MainActor.assumeIsolated { BraiseRuntime.shared.shutdown() }
             SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()
             screenTimeArchiveTimer?.invalidate()
@@ -1120,7 +1123,10 @@
                         if request.command == "focus unwatch" { hub.remove(id); return Data("{}".utf8) }
                         return try JSONEncoder().encode(hub.poll(id: id, cursor: request.options["cursor"]))
                     }
-                    return try DispatchQueue.main.sync { try MainActor.assumeIsolated { try ConcentrationRuntime.shared.handle(request) } }
+                    return try DispatchQueue.main.sync { try MainActor.assumeIsolated {
+                        if request.command.hasPrefix("braise ") { return try BraiseRuntime.shared.handle(request) }
+                        return try ConcentrationRuntime.shared.handle(request)
+                    } }
                 }
             )
             do {

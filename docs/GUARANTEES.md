@@ -86,3 +86,7 @@ Kiosk options are effective while Goalong is foreground. Shutdown/restart remain
 `disableSessionTermination` is intentionally excluded. Screen locking is a best-effort fixed macOS
 shortcut, dependent on Accessibility and OS shortcut behavior, with a one-second unlock fallback.
 Standard cannot promise tamper resistance or a system-level network deny. See [BLOCKING.md](BLOCKING.md).
+
+## Braise
+
+The red-screen filter is optional and off by default. No controller, file access, timer, shortcut or guardian exists while disabled. First enable may read only the existing Braise settings, once, without changing them. No network, new permission, privileged helper, screen capture or hardware-brightness change. The same-executable restoration guardian sleeps on a pipe only while gamma is changed; disabling the module restores colors. [Details and physical-test limits](BRAISE.md).
