@@ -12,6 +12,7 @@ public enum GoalongCLIEffect: String, Codable, Sendable {
     case sendsExplicitSiteImport
     case writesExplicitHealthArchive
     case writesExplicitFocusState
+    case writesExplicitBraiseState
 }
 
 public struct GoalongCLICommandDefinition: Codable, Equatable, Identifiable, Sendable {
@@ -64,6 +65,7 @@ public enum GoalongCLIContract {
     public static let stableExecutablePath = "$HOME/.local/bin/goalong"
 
     public static let commands: [GoalongCLICommandDefinition] = [
+        .init(name: "braise", syntax: "braise enable|disable|status|probe|show|on|off|auto|pause|resume | intensity 0…100 | brightness 20…100 | schedule list|add DAYS HH:mm HH:mm|remove ID|enable ID|disable ID | login on|off | quit", summary: "Optional local red-screen filter. Explicit enable imports legacy Braise settings once; off restores colors, quit disables only this module, login changes Goalong startup. Same-UID app broker; no network or new permission.", effect: .writesExplicitBraiseState),
         .init(name: "focus", syntax: "focus status|watch", summary: "Local focus status, or change-only NDJSON with restart recovery (at most eight watchers)."),
         .init(name: "session", syntax: "session start --intent TEXT (--minutes 5…240 | --open | --pomodoro [25/5/15/4]) [--cycles 1…16] [--plan-item ID] [--block ID] [--block-during-breaks] [--lock] [--ambiance] | current | skip | stop [--outcome done|partly|not-done] [--note TEXT]", summary: "Read or explicitly change the running focus session through the app; current locked blocks refuse skip and stop.", effect: .writesExplicitFocusState),
         .init(name: "sessions", syntax: "sessions [DAY]", summary: "Read local focus sessions from the running app."),

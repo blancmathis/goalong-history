@@ -6,6 +6,17 @@
     import LocalHistoryQueryCLI
     import ServiceManagement
 
+    // The color-restoration child never starts the app, its migration or observers.
+    if CommandLine.arguments.dropFirst().first == "--braise-guardian" {
+        guard CommandLine.arguments.count == 3 else { exit(2) }
+        let path = URL(fileURLWithPath: CommandLine.arguments[2]).standardizedFileURL
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let expected = support.appendingPathComponent("LocalHistory/Braise", isDirectory: true).standardizedFileURL
+        guard path.deletingLastPathComponent() == expected, path.lastPathComponent.hasPrefix("display-recovery-"),
+              path.pathExtension == "json" else { exit(2) }
+        GammaController.guardianMain(path: path.path)
+    }
+
     if URL(fileURLWithPath: CommandLine.arguments.first ?? "").lastPathComponent == "goalong" {
         GoalongQueryCLI.main()
         exit(0)

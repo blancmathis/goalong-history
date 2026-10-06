@@ -70,6 +70,7 @@ import SwiftUI
         case .blocking: return .blocking
         case .concentration: return .concentration
         case .ambiance: return .ambiance
+        case .braise: return .braise
         }
     }
 }

@@ -48,3 +48,7 @@ termination works and known browsers with active site rules are covered as unsup
 A freeze using screen locking requires Accessibility; shield mode remains available.
 The locked module requests `SMAppService.mainApp` launch at login and publishes enabled,
 awaiting approval or failure. It adds no helper/daemon and does not grant itself permission.
+
+## Optional Braise module
+
+Braise defaults to off and asks for no new macOS permission. When explicitly enabled, it uses public display-gamma tables and a fixed Carbon emergency hotkey, without screen capture or keyboard-content access. Turning it off restores colors and releases its runtime. Its explicit login setting changes the existing Goalong login item. [Behavior and migration](BRAISE.md).

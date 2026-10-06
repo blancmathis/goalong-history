@@ -10,6 +10,7 @@ var packageDependencies: [Package.Dependency] = [
 ]
 var appDependencies: [Target.Dependency] = [
     "Ambiance",
+    "BraiseCore",
     "LocalHistoryCore",
     "AppleScreenTime",
     "AppleSystemScreenTime",
@@ -34,6 +35,7 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
+        .library(name: "BraiseCore", targets: ["BraiseCore"]),
         .library(name: "Ambiance", targets: ["Ambiance"]),
         .executable(name: "goalong-relauncher", targets: ["GoalongRelauncher"]),
         .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
@@ -45,6 +47,8 @@ let package = Package(
     ],
     dependencies: packageDependencies,
     targets: [
+        .target(name: "BraiseCore", path: "Features/Braise/Sources"),
+        .testTarget(name: "BraiseCoreTests", dependencies: ["BraiseCore"], path: "Features/Braise/Tests"),
         // Size over speed: keeps Ambiance under its 1 MB binary budget for ~0.1 % of one core.
         .target(name: "OndeDSP", path: "Features/Ambiance/Engine/OndeDSP", publicHeadersPath: "include",
                 cSettings: [.unsafeFlags(["-Os"], .when(configuration: .release))]),
@@ -142,14 +146,14 @@ let package = Package(
         ),
         .testTarget(
             name: "LocalHistoryAppTests",
-            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "Ambiance"],
+            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "Ambiance", "BraiseCore"],
             path: "Tests/LocalHistoryAppTests",
             exclude: appTestExcludes,
             swiftSettings: appSwiftSettings
         ),
         .testTarget(
             name: "LocalHistoryQueryCLITests",
-            dependencies: ["LocalHistoryQueryCLI", "AppleScreenTime", "AppleSystemScreenTime"],
+            dependencies: ["LocalHistoryQueryCLI", "AppleScreenTime", "AppleSystemScreenTime", "BraiseCore"],
             path: "Tests/LocalHistoryQueryCLITests"
         ),
     ],

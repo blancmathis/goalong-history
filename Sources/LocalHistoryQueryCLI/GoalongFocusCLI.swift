@@ -16,6 +16,7 @@ public struct GoalongFocusRequest: Codable, Equatable {
 }
 extension GoalongFocusRequest {
     public func validated() throws -> GoalongFocusRequest {
+        if command.hasPrefix("braise ") { return try GoalongBraiseCLI.validated(self) }
         let parts = command.split(separator: " ").map(String.init)
         guard let root = parts.first, parts.count <= 2 else { throw GoalongFocusError.invalidArgument }
         var args = Array(parts.dropFirst())
@@ -37,7 +38,7 @@ extension GoalongFocusRequest {
 /// The client validates syntax; the app validates the same normalized request and owns every write.
 public enum GoalongFocusCLI {
     public static let maximumInputBytes = 64 * 1024
-    public static let commands = ["focus", "session", "sessions", "plan", "review", "limits", "block-lists", "friction", "commitment", "commitments"]
+    public static let commands = ["focus", "session", "sessions", "plan", "review", "limits", "block-lists", "friction", "commitment", "commitments", "braise"]
     private static func text(_ value: String, max: Int = 140) -> Bool {
         !value.trimmingCharacters(in: .whitespaces).isEmpty && value.count <= max && value.utf8.count <= max * 32
             && !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
@@ -49,6 +50,7 @@ public enum GoalongFocusCLI {
     }
     public static func parse(command: String, arguments: [String], readFile: (String) throws -> Data = readInput) throws -> GoalongFocusRequest {
         guard commands.contains(command), arguments.count <= 420, arguments.allSatisfy({ text($0, max: 4096) }) else { throw GoalongFocusError.invalidArgument }
+        if command == "braise" { return try GoalongBraiseCLI.parse(arguments) }
         if command == "commitment" || command == "commitments" { return try GoalongCommitmentCLI.parse(command: command, arguments: arguments, readFile: readFile) }
         var args = arguments, action = "", options: [String: String] = [:], flags = Set<String>()
         if ["focus", "session", "plan", "review"].contains(command) {

@@ -21,6 +21,8 @@ AMBIANCE_PACK_DOWNLOADER="$ROOT_DIR/Features/Ambiance/Sources/AmbiancePackDownlo
 MICROPHONE_FORBIDDEN='inputNode|AVAudioInputNode|installTap|AVAudioRecorder|AVCaptureDevice|AudioQueueNewInput|kAudioOutputUnitProperty_EnableIO|requestRecordPermission|recordPermission'
 SHELL_EXECUTION_FORBIDDEN='NSAppleScript|osascript|NSTask|/bin/sh|/bin/bash'
 CODEX_BRIDGE="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/CodexAppServerClient.swift"
+BRAISE_GAMMA="$ROOT_DIR/Sources/LocalHistoryApp/Braise/BraiseGammaController.swift"
+BRAISE_RUNTIME="$ROOT_DIR/Sources/LocalHistoryApp/Braise/BraiseRuntime.swift"
 CLIPBOARD_WRITER="$ROOT_DIR/Sources/LocalHistoryApp/GoalongClipboardWriter.swift"
 CLI_CONTRACT="$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongCLIContract.swift"
 CLI_IMPLEMENTATION="$ROOT_DIR/Sources/LocalHistoryQueryCLI/LocalHistoryQueryCLI.swift"
@@ -151,11 +153,32 @@ fi
 # argument. No shell, arbitrary command, or user-provided argument vector is allowed.
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$CODEX_BRIDGE" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRepair.swift" ]]; then
-    echo "Unexpected Process API outside the fixed Codex, self-relaunch and user-confirmed TCC reset boundaries: $match" >&2
+  if [[ "$file" != "$BRAISE_GAMMA" && "$file" != "$CODEX_BRIDGE" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRepair.swift" ]]; then
+    echo "Unexpected Process API outside the fixed Codex, self-relaunch, Braise restoration guardian and user-confirmed TCC reset boundaries: $match" >&2
     failed=true
   fi
 done < <(grep -R -nE '(^|[^[:alnum:]_])Process[[:space:]]*\(' "${CODE_ROOTS[@]}" || true)
+
+# Braise changes only public gamma tables. No capture, event tap or arbitrary child process.
+while IFS= read -r match; do
+  file="${match%%:*}"
+  if [[ "$file" != "$BRAISE_GAMMA" ]]; then
+    echo "Gamma API outside the reviewed Braise driver: $match" >&2
+    failed=true
+  fi
+done < <(grep -R -nE 'CG(Get|Set)DisplayTransferByTable|CGDisplayGammaTableCapacity|CGDisplayRestoreColorSyncSettings' "${CODE_ROOTS[@]}" || true)
+if [[ -f "$BRAISE_GAMMA" ]]; then
+  for fragment in 'process.executableURL = executable' 'process.arguments = ["--braise-guardian", recoveryURL.path]' 'process.environment = [:]' 'Bundle.main.executableURL' 'FileHandle.standardInput.readDataToEndOfFile()'; do
+    if ! grep -Fq "$fragment" "$BRAISE_GAMMA"; then
+      echo "Braise fixed restoration guardian contract missing: $fragment" >&2
+      failed=true
+    fi
+  done
+  if grep -nE 'process.arguments.*CommandLine|/usr/bin/|CGEventTap|CGWindowList|URLSession|DistributedNotificationCenter' "$BRAISE_GAMMA" "$BRAISE_RUNTIME"; then
+    echo "Unexpected Braise process, capture or network behavior." >&2
+    failed=true
+  fi
+fi
 
 # User-confirmed recovery may only DELETE one Goalong approval. No grant, shell,
 # arbitrary executable, environment inheritance, database mutation, or reset All.
@@ -647,4 +670,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge, bundled one-shot self-relauncher and confirmed single-service Goalong permission reset; output-only Ambiance audio is confined to one file with microphone APIs and rights prohibited everywhere; first-party networking is confined to confirmed website pairing, reviewed sends, separately consented bounded Jev classification and explicit pinned Ambiance pack downloads; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge, bundled one-shot self-relauncher, confirmed single-service Goalong permission reset and same-executable Braise restoration guardian; public gamma APIs are confined to the Braise driver; output-only Ambiance audio is confined to one file with microphone APIs and rights prohibited everywhere; first-party networking is confined to confirmed website pairing, reviewed sends, separately consented bounded Jev classification and explicit pinned Ambiance pack downloads; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."

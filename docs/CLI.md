@@ -358,3 +358,11 @@ Each annotated commitment adds `progress`, `series`, `jokersLeft`, `canUseJoker`
 `exitUntil`, `limitHours`, `editMode` (`free`/`harderOnly`/`locked`) and `editUntil`. Successful delete returns `{schema:1,deleted:true,period}`.
 Errors use the same JSON stderr/exit contract: `appNotRunning`, `moduleDisabled`,
 `invalidArgument`, `locked`, `notFound`, `storageFailed`. No command launches the app.
+# Braise
+
+Le module filtre rouge dispose des commandes `goalong braise enable|disable|status|probe|show`,
+`on|off|auto`, `pause|resume`, `intensity 0…100`, `brightness 20…100`,
+`schedule list|add JOURS HH:mm HH:mm|remove UUID|enable UUID|disable UUID` et `login on|off`.
+`quit` désactive uniquement Braise. L’app doit être ouverte, le module explicitement activé.
+Socket du même UID, validation dans le client et l’app, aucun réseau ni nouvel accès.
+`status` d’un module désactivé ne le démarre pas. [Fonctions et migration](BRAISE.md).
