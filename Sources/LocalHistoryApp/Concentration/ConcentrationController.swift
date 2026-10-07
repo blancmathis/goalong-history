@@ -25,7 +25,13 @@ struct FocusPanel: Equatable {
 
 /// Main-actor writer; UI and socket actions share exactly these validated actions.
 @MainActor final class ConcentrationController: ObservableObject {
-    @Published private(set) var currentSession: FocusSession?
+    @Published private(set) var currentSession: FocusSession? {
+        didSet {
+            if oldValue?.id != currentSession?.id {
+                NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: self)
+            }
+        }
+    }
     @Published private(set) var phase: FocusPhase?
     @Published private(set) var status: FocusStatus
     @Published private(set) var sessions: [FocusSession] = []
@@ -112,6 +118,7 @@ struct FocusPanel: Equatable {
                 let restored = FocusPhases.phase(value, at: clock())
                 if restored.kind == .ended {
                     value.events.append(.init(kind: .stop, at: restored.startedAt, reason: .appClosed))
+                    value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
                     try persist(value)
                 } else { running.append(value) }
             }
@@ -183,7 +190,9 @@ struct FocusPanel: Equatable {
         try finish(value, at: clock(), reason: .member)
     }
     private func finish(_ session: FocusSession, at end: Date, reason: FocusSession.Event.Reason) throws {
-        var value = session; value.events.append(.init(kind: .stop, at: end, reason: reason)); try persist(value)
+        var value = session; value.events.append(.init(kind: .stop, at: end, reason: reason))
+        value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
+        try persist(value)
         if let id = phaseBlockID { blocking()?.stop(id) }
         currentSession = nil; phase = nil; phaseBlockID = nil; phaseBlockKey = nil; phaseIdentity = nil; audio.stop()
         sessionFacts = facts(value)
@@ -201,6 +210,53 @@ struct FocusPanel: Equatable {
         throw FocusFailure.notFound
     }
     func sessions(on day: String) throws -> [FocusSession] { try store.sessions(day) }
+    /// Pomodoro breaks remain part of the active session; detected focus is not a session.
+    var jevSessionID: UUID? {
+        guard !storageFailed, let value = currentSession, value.endedAt == nil,
+              FocusPhases.phase(value, at: clock()).kind != .ended || hasLockedPhaseBlock else { return nil }
+        return value.id
+    }
+    private var ignoredDistractionIDs: Set<String> { Set((settings.ignoredDistractionTargets ?? []).map(\.id)) }
+    /// Called only after JevMonitor revalidates consent, privacy generation and request freshness.
+    func recordJevDistraction(window: JevWindow, verdict: JevVerdict, sessionID: UUID) throws {
+        try admit()
+        guard jevSessionID == sessionID, var value = currentSession else { return }
+        var record = value.distractions ?? FocusDistractionRecord()
+        guard record.record(window, verdict: verdict, sessionStart: value.startedAt, now: clock()) else { return }
+        value.distractions = record; try persist(value); currentSession = value
+    }
+    private func endedSession(_ id: UUID) throws -> FocusSession {
+        try admit()
+        for day in try store.sessionDays().reversed() {
+            if let value = try store.sessions(day).first(where: { $0.id == id && $0.endedAt != nil }) { return value }
+        }
+        throw FocusFailure.notFound
+    }
+    func distractionSuggestions(sessionID: UUID) throws -> [FocusDistractionSuggestion] {
+        try endedSession(sessionID).distractions?.suggestions(lists: blockLists, ignored: ignoredDistractionIDs) ?? []
+    }
+    func acceptDistractionSuggestion(sessionID: UUID, targetID: String, listID: UUID) throws {
+        var value = try endedSession(sessionID)
+        guard let i = value.distractions?.counts.firstIndex(where: { $0.id == targetID }),
+              let suggestion = value.distractions?.suggestions(lists: blockLists, ignored: ignoredDistractionIDs).first(where: { $0.id == targetID }) else { throw FocusFailure.notFound }
+        guard let b = blocking() else { throw FocusFailure.moduleDisabled }
+        try b.addDistraction(suggestion.target, to: listID)
+        value.distractions?.counts[i].state = .accepted
+        value.distractions?.counts[i].acceptedListID = listID
+        try persist(value)
+    }
+    func ignoreDistractionSuggestion(sessionID: UUID, targetID: String, always: Bool = false) throws {
+        var value = try endedSession(sessionID)
+        guard let i = value.distractions?.counts.firstIndex(where: { $0.id == targetID }),
+              let suggestion = value.distractions?.suggestions(lists: blockLists, ignored: ignoredDistractionIDs).first(where: { $0.id == targetID }) else { throw FocusFailure.notFound }
+        if always {
+            var next = settings
+            next.ignoredDistractionTargets = (next.ignoredDistractionTargets ?? []) + [suggestion.target]
+            try updateSettings(next)
+        }
+        value.distractions?.counts[i].state = .ignored
+        try persist(value)
+    }
     func plan(on day: String) throws -> FocusPlan { try store.plan(day) ?? FocusPlan(day: day) }
     func review(on day: String) throws -> FocusReview { try store.review(day) ?? FocusReview(day: day) }
     func setPlan(_ value: FocusPlan) throws {

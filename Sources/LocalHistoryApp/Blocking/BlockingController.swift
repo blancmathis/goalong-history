@@ -2,6 +2,7 @@
 import AppKit
 import Combine
 import Foundation
+import LocalHistoryCore
 
 /// Owns the module while it is on. Created by `BlockingRuntime` only when
 /// `goalong.module.blocking.enabled` is true; destroyed when it is turned off.
@@ -207,6 +208,27 @@ import Foundation
             document.lists.append(next)
         }
         commit()
+    }
+
+    /// Explicit member acceptance only. Reuse save/editCheck; never grant access in allowOnly mode.
+    func addDistraction(_ target: JevDistractionTarget, to listID: UUID) throws {
+        guard admitEdit() else { throw BlockingListAdditionFailure.storageFailed }
+        guard target.isValid else { throw BlockingListAdditionFailure.invalidTarget }
+        guard var next = list(listID) else { throw BlockingListAdditionFailure.notFound }
+        guard next.mode == .block else { throw BlockingListAdditionFailure.notBlockList }
+        switch target.kind {
+        case .site:
+            if !next.sites.contains(where: { $0.pattern == target.value }) { next.sites.append(.init(pattern: target.value)) }
+        case .app:
+            guard !BlockingRules.neverBlocked.contains(target.value) else { throw BlockingListAdditionFailure.invalidTarget }
+            if !next.apps.contains(where: { $0.bundleIdentifier == target.value }) {
+                next.apps.append(.init(bundleIdentifier: target.value, name: target.name))
+            }
+        }
+        if case .refused(let reason) = editCheck(next) { throw BlockingListAdditionFailure.refused(reason) }
+        save(next)
+        guard !storeFailed else { throw BlockingListAdditionFailure.storageFailed }
+        guard error == nil else { throw BlockingListAdditionFailure.refused(error!) }
     }
 
     func delete(_ id: UUID) {

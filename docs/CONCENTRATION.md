@@ -36,7 +36,8 @@ on past estimates reduces the planning fallacy; an automatic « busy » light cu
   and the `JevWarningPanel` technique for every panel. No second foreground observer, no polling
   timer faster than the existing sample.
 - Data stays on this Mac under `~/Library/Application Support/LocalHistory/Focus/`. It is not added
-  to `export-site`, the website, the ChatGPT recap or Jev in this version.
+  to `export-site`, the website, the ChatGPT recap or Jev. Optional Jev suggestions consume existing
+  consented window verdicts; no Focus data or local suggestion identity is sent to Jev.
 - No network, no process launch, no new permission. `audit_privacy_boundaries.sh` passes unchanged.
 - Visual design (page, sheets, panels, menu bar item) is done by the design session. Plumbing never
   edits `ConcentrationPage*.swift` or `ConcentrationPanelViews.swift`; it exposes an
@@ -75,11 +76,47 @@ switches, longest stretch on one task. Dismissing records `outcome: nil`.
 
 **Model** (`Sources/LocalHistoryApp/Concentration/ConcentrationModel.swift`): `FocusSession { id,
 intent, planItemId?, mode, blockListIds, blockDuringBreaks, lock, ambiance, startedAt, plannedEndAt?,
-events: [start | skip(at) | stop(at, reason)], outcome?, note? }`. Phases are computed from the mode
+events: [start | skip(at) | stop(at, reason)], outcome?, note?, distractions? }`. Phases are computed from the mode
 and events (pure function, tested), never stored. Storage: one JSON file per local day
 `Focus/sessions/YYYY-MM-DD.json`, atomic writes, at most 200 sessions per day. A session running at
 launch is restored (phase recomputed from the clock); a session whose planned end passed while the app
 was closed ends with reason `appClosed`.
+
+## Suggestions de distractions après séance (2026-10-07)
+
+Pendant une séance active, les fenêtres Jev fraîches et confirmées `procrastination` alimentent
+`FocusSession.distractions: FocusDistractionRecord?`. Une fenêtre homogène de 15 s compte une
+fois pour son domaine enregistrable ou son bundle ID. Plusieurs cibles ou une identité manquante
+ne permettent pas d'attribuer le verdict global : ces fenêtres ne comptent pas dans les
+suggestions. Le moniteur conserve ses rappels. Aucun compte rétroactif depuis l'historique.
+
+Le record v1 garde au plus 200 cibles, leurs secondes confirmées et leur état
+`pending | accepted | ignored` dans le fichier existant `Focus/sessions/YYYY-MM-DD.json` (0600).
+Les anciens fichiers sans ce champ restent lisibles sans réécriture. À la fin (manuelle,
+automatique, module désactivé ou restauration après fermeture), la sélection est figée à trois
+cibles maximum : ≥ 120 s, absentes de toutes les listes et des choix « Ignorer toujours », triées
+par durée décroissante, puis identifiant croissant. Ces secondes décrivent des fenêtres contenant
+une distraction, pas du temps mesuré hors travail ; les faits du bilan restent indépendants de Jev.
+
+`distractionSuggestions(sessionID:)` lit une séance terminée. Le membre choisit une carte et une
+liste `.block` pour `acceptDistractionSuggestion(sessionID:targetID:listID:)` ; l'ajout passe par
+`BlockingController.addDistraction(_:to:)`, `editCheck` et `save`. Les listes avec action
+`slowDown` fonctionnent aussi. Les listes `allowOnly` sont refusées, car ajouter leur donnerait
+accès ; aucun verrou ni autre réglage de liste n'est modifié. Les suggestions restent facultatives
+si Blocage est éteint ; l'acceptation retourne alors `moduleDisabled`.
+
+`ignoreDistractionSuggestion(sessionID:targetID:always:)` ignore la carte, ou la cible dans tous
+les bilans avec `always: true`. Le choix durable est dans le champ optionnel
+`FocusSettings.ignoredDistractionTargets` de `Focus/settings.json` (maximum 2 000 identités).
+Accepter/ignorer ne remplace jamais une carte par un quatrième candidat. Lecture et action
+revalident les listes et les préférences actuelles ; les refus/échecs de stockage sont exposés.
+Voir la [spec unifiée et son API UI exacte](CONCENTRATION-UNIFIED-20261007.md#api-pour-lui).
+
+Le scope Jev `.sessionsOnly` autorise la surveillance seulement lorsque
+`ConcentrationController.jevSessionID` existe, pauses Pomodoro comprises. Détection hors séance
+et module éteint ne démarrent rien. Changer le scope ne donne aucun consentement ; fin de séance
+annule immédiatement les requêtes, échantillons, rappels et effets, sans rattrapage.
+[Contrat Jev](JEV-MONITORING.md#périmètre--toujours-ou-seulement-pendant-les-séances).
 
 ## Plan and review
 
