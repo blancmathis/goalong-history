@@ -2,8 +2,8 @@
 import AppKit
 import SwiftUI
 
-/// The whole module on one page: what is blocked now, start a block, the lists, the week,
-/// freezing the Mac and how strong the protection is.
+/// The whole module on one page: what is blocked now, start a block (or freeze the whole Mac),
+/// the lists and the week where programs are drawn. Protection sits in a pill by the title.
 @MainActor struct BlockingPage: View {
     @ObservedObject private var runtime = BlockingRuntime.shared
 
@@ -27,40 +27,56 @@ import SwiftUI
     @ObservedObject var controller: BlockingController
     /// Renders and tests pin the clock; the app follows the real one.
     var now: Date?
-    @State private var expandedList: UUID?
+    @State private var editingList: UUID?
     @State private var stopping: BlockingActiveBlock?
+    @State private var composing = false
 
     init(controller: BlockingController, now: Date? = nil, expanded: UUID? = nil) {
         self.controller = controller
         self.now = now
-        _expandedList = State(initialValue: expanded)
+        _editingList = State(initialValue: expanded)
     }
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 30)) { context in
             let now = self.now ?? context.date
+            let frozen = controller.freeze.map { $0.end > now } ?? false
+            let blocking = controller.activeBlocks.contains { $0.end > now }
             ScrollView {
                 VStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Blocage").goalongPageTitle()
-                        Text("Coupez ce qui vous distrait. Verrouillé, un blocage tient jusqu’au bout.")
-                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    VStack(alignment: .leading, spacing: 22) {
+                        HStack(alignment: .center) {
+                            Text("Blocage").goalongPageTitle()
+                            Spacer(minLength: 12)
+                            BlockingProtectionPill(controller: controller)
+                        }
+                        BlockingStateHero(controller: controller, now: now, onStop: { stopping = $0 })
                     }
-                    BlockingStateHero(controller: controller, now: now, onStop: { stopping = $0 })
-                    if let error = controller.error {
+                    if let error = controller.error, editingList == nil {
                         GoalongNote(error, tone: .warning)
                             .onTapGesture { controller.error = nil }
                             .accessibilityIdentifier("blocking-error")
                     }
-                    BlockingNowComposer(controller: controller, now: now, expandedList: $expandedList)
-                    BlockingListsSection(controller: controller, now: now, expanded: $expandedList)
-                    if controller.lists.contains(where: { !$0.program.ranges.isEmpty }) {
-                        GoalongSection(title: "Semaine", subtitle: "Quand vos listes bloquent d’elles-mêmes.") {
-                            BlockingWeekView(lists: controller.lists, now: now, compact: false)
+                    // No list yet: the starters come first, the composer then only offers the whole Mac.
+                    if controller.lists.isEmpty {
+                        BlockingListsSection(controller: controller, now: now, editing: $editingList)
+                    }
+                    if !frozen {
+                        if blocking && !composing {
+                            Button { composing = true } label: { Label("Bloquer autre chose", systemImage: "plus") }
+                                .buttonStyle(LHQuietButtonStyle())
+                                .accessibilityIdentifier("blocking-compose")
+                        } else {
+                            BlockingNowComposer(controller: controller, now: now)
                         }
                     }
-                    BlockingFreezeSection(controller: controller, now: now)
-                    BlockingProtectionSection(controller: controller)
+                    if !controller.lists.isEmpty {
+                        BlockingListsSection(controller: controller, now: now, editing: $editingList)
+                        GoalongSection(title: "Semaine",
+                                       subtitle: "Glissez sur un jour pour programmer un blocage. Cliquez une plage pour la changer.") {
+                            BlockingWeekEditor(controller: controller, now: now)
+                        }
+                    }
                 }
                 .font(.system(size: 13))
                 .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
@@ -70,12 +86,19 @@ import SwiftUI
         }
         .background(LHTheme.pageBackground)
         .accessibilityIdentifier("blocking-page")
+        .onChange(of: controller.activeBlocks.isEmpty) { empty in if empty { composing = false } }
         .sheet(item: $stopping) { block in
             BlockingTypingChallengeSheet(text: controller.typingChallenge(for: block.id)) { typed in
                 controller.stop(block.id, typed: typed)
                 stopping = nil
             } onCancel: { stopping = nil }
             .goalongControls()
+        }
+        .sheet(isPresented: Binding(get: { editingList != nil }, set: { if !$0 { editingList = nil } })) {
+            if let id = editingList {
+                BlockListSheet(controller: controller, listID: id, now: now ?? Date()) { editingList = nil }
+                    .goalongControls()
+            }
         }
     }
 }
@@ -302,17 +325,23 @@ struct BlockingMeter: View {
 
 // MARK: - Start now
 
+/// One sentence to fill: what (lists, or the whole Mac), for how long, how hard to stop.
+/// « Tout le Mac » is the freeze: always locked, with the apps the member keeps.
 @MainActor struct BlockingNowComposer: View {
     enum Span: Hashable { case minutes(Int), until }
 
     @ObservedObject var controller: BlockingController
     let now: Date
-    @Binding var expandedList: UUID?
     @State private var selected: Set<UUID> = []
+    @State private var wholeMac = false
     @State private var span: Span = .minutes(60)
     @State private var until = Calendar.current.date(byAdding: .hour, value: 2, to: Date()) ?? Date()
     @State private var lock: BlockLock = .free
+    @State private var freezeMode: BlockFreeze.Mode = .shield
+    @State private var kept: [BlockAppRule] = []
     @State private var confirmingLock = false
+    @State private var confirmingFreeze = false
+    @State private var picking = false
 
     private var end: Date {
         switch span {
@@ -327,35 +356,61 @@ struct BlockingMeter: View {
 
     var body: some View {
         GoalongSection(title: "Bloquer maintenant") {
-            if controller.lists.isEmpty {
-                BlockingFirstList(controller: controller, expandedList: $expandedList)
-            } else {
-                LHCard {
-                    VStack(alignment: .leading, spacing: 16) {
-                        row("Quoi") {
-                            BlockingFlow(spacing: 8) {
-                                ForEach(controller.lists) { list in
-                                    BlockingListChip(list: list, selected: selected.contains(list.id)) {
-                                        if selected.contains(list.id) { selected.remove(list.id) } else { selected.insert(list.id) }
-                                    }
+            LHCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    row("Quoi") {
+                        BlockingFlow(spacing: 8) {
+                            ForEach(controller.lists) { list in
+                                BlockingListChip(list: list, selected: !wholeMac && selected.contains(list.id)) {
+                                    wholeMac = false
+                                    if selected.contains(list.id) { selected.remove(list.id) } else { selected.insert(list.id) }
                                 }
                             }
+                            BlockingWholeMacChip(selected: wholeMac) { wholeMac.toggle() }
                         }
-                        row("Pendant") {
-                            HStack(spacing: 10) {
-                                GoalongSegmentedControl("Durée", selection: $span,
-                                                        options: [.minutes(25), .minutes(60), .minutes(120), .minutes(240), .until]) {
-                                    switch $0 {
-                                    case .minutes(let value): return BlockingFormat.duration(minutes: value)
-                                    case .until: return "Jusqu’à…"
-                                    }
-                                }
-                                if span == .until {
-                                    DatePicker("Heure de fin", selection: $until, displayedComponents: .hourAndMinute)
-                                        .labelsHidden().fixedSize()
+                    }
+                    row("Pendant") {
+                        HStack(spacing: 10) {
+                            GoalongSegmentedControl("Durée", selection: $span,
+                                                    options: [.minutes(25), .minutes(60), .minutes(120), .minutes(240), .until]) {
+                                switch $0 {
+                                case .minutes(let value): return BlockingFormat.duration(minutes: value)
+                                case .until: return "Jusqu’à…"
                                 }
                             }
+                            if span == .until {
+                                DatePicker("Heure de fin", selection: $until, displayedComponents: .hourAndMinute)
+                                    .labelsHidden().fixedSize()
+                                    .environment(\.locale, Locale(identifier: "fr_FR"))
+                            }
                         }
+                    }
+                    if wholeMac {
+                        row("Écran") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                GoalongSegmentedControl("Écran", selection: $freezeMode, options: BlockFreeze.Mode.allCases) {
+                                    $0 == .shield ? "Écran Goalong" : "Session verrouillée"
+                                }
+                                if freezeMode == .shield {
+                                    BlockingFlow(spacing: 6) {
+                                        ForEach(kept) { app in
+                                            BlockingItemChip(item: .app(app), removable: true) { kept.removeAll { $0 == app } }
+                                        }
+                                        Button { picking = true } label: { Label("Garder une app", systemImage: "plus") }
+                                            .buttonStyle(LHQuietButtonStyle())
+                                            .accessibilityIdentifier("blocking-freeze-keep")
+                                            .popover(isPresented: $picking) {
+                                                BlockingAppPicker(excluded: Set(kept.map(\.bundleIdentifier))) { kept.append($0) }
+                                            }
+                                    }
+                                }
+                                BlockingLockExplainer(lock: .locked,
+                                                      text: freezeMode == .shield
+                                                          ? "Un écran Goalong couvre tout, sauf les apps gardées. Toujours verrouillé."
+                                                          : "macOS verrouille la session, et la reverrouille à chaque ouverture. Toujours verrouillé.")
+                            }
+                        }
+                    } else {
                         row("Arrêt") {
                             VStack(alignment: .leading, spacing: 6) {
                                 GoalongSegmentedControl("Arrêt", selection: $lock, options: BlockLock.allCases) {
@@ -368,27 +423,40 @@ struct BlockingMeter: View {
                                 BlockingLockExplainer(lock: lock)
                             }
                         }
-                        HStack {
-                            Spacer()
-                            Button {
-                                if lock == .locked { confirmingLock = true } else { start() }
-                            } label: {
-                                Label("Bloquer jusqu’à \(BlockingFormat.time(end))",
-                                      systemImage: lock == .locked ? "lock.fill" : "lock")
-                            }
-                            .buttonStyle(LHPrimaryButtonStyle())
-                            .disabled(selected.isEmpty)
-                            .accessibilityIdentifier("blocking-start")
+                    }
+                    HStack {
+                        if controller.lists.isEmpty && !wholeMac {
+                            Text("Créez une liste ci-dessous pour couper des sites ou des apps.")
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         }
+                        Spacer()
+                        Button {
+                            if wholeMac { confirmingFreeze = true } else if lock == .locked { confirmingLock = true } else { start() }
+                        } label: {
+                            Label(wholeMac ? "Geler jusqu’à \(BlockingFormat.time(end))…" : "Bloquer jusqu’à \(BlockingFormat.time(end))",
+                                  systemImage: wholeMac ? "snowflake" : (lock == .locked ? "lock.fill" : "lock"))
+                        }
+                        .buttonStyle(LHPrimaryButtonStyle())
+                        .disabled(wholeMac ? controller.freeze != nil : selected.isDisjoint(with: controller.lists.map(\.id)))
+                        .accessibilityIdentifier(wholeMac ? "blocking-freeze" : "blocking-start")
                     }
                 }
-                .onAppear { if selected.isEmpty, let first = controller.lists.first { selected = [first.id] } }
-                .alert("Verrouiller jusqu’à \(BlockingFormat.time(end)) ?", isPresented: $confirmingLock) {
-                    Button("Annuler", role: .cancel) {}
-                    Button("Verrouiller") { start() }
-                } message: {
-                    Text("Personne ne pourra arrêter ce blocage avant \(BlockingFormat.time(end)), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas.")
+            }
+            .onAppear { if selected.isEmpty, let first = controller.lists.first { selected = [first.id] } }
+            .alert("Verrouiller jusqu’à \(BlockingFormat.time(end)) ?", isPresented: $confirmingLock) {
+                Button("Annuler", role: .cancel) {}
+                Button("Verrouiller") { start() }
+            } message: {
+                Text("Personne ne pourra arrêter ce blocage avant \(BlockingFormat.time(end)), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas.")
+            }
+            .alert("Geler le Mac jusqu’à \(BlockingFormat.time(end)) ?", isPresented: $confirmingFreeze) {
+                Button("Annuler", role: .cancel) {}
+                Button("Geler") {
+                    controller.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
+                    wholeMac = false
                 }
+            } message: {
+                Text("Jusqu’à \(BlockingFormat.time(end)), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.")
             }
         }
     }
@@ -407,9 +475,40 @@ struct BlockingMeter: View {
     }
 }
 
+/// « Tout le Mac » next to the lists: the freeze, drawn as a small covered screen.
+struct BlockingWholeMacChip: View {
+    let selected: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "snowflake").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(selected ? LHTheme.accent : LHTheme.secondaryText)
+                Text("Tout le Mac").font(.system(size: 13, weight: .medium))
+                Image(systemName: selected ? "checkmark" : "plus").font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(selected ? LHTheme.accent : LHTheme.tertiaryText)
+            }
+            .padding(.horizontal, 10).frame(height: 32)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
+                shape.fill(selected ? LHTheme.selectionBackground : LHTheme.controlBackground)
+                    .overlay(shape.strokeBorder(selected ? LHTheme.accent : LHTheme.controlBorder,
+                                                style: StrokeStyle(lineWidth: selected ? 1.5 : 1, dash: selected ? [] : [4, 3])))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Tout le Mac, geler")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("blocking-pick-mac")
+    }
+}
+
 /// Three ways to end a block, shown as what it costs to stop: nothing, a chore, impossible.
 struct BlockingLockExplainer: View {
     let lock: BlockLock
+    var text: String?
     var body: some View {
         HStack(spacing: 8) {
             HStack(spacing: 3) {
@@ -420,11 +519,12 @@ struct BlockingLockExplainer: View {
                 }
             }
             .accessibilityHidden(true)
-            Text(text).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            Text(text ?? defaultText).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
     private var level: Int { lock == .free ? 1 : lock == .typing ? 2 : 3 }
-    private var text: String {
+    private var defaultText: String {
         switch lock {
         case .free: return "Vous pouvez arrêter à tout moment."
         case .typing: return "Pour arrêter, recopier un texte de 120 caractères."
@@ -433,183 +533,76 @@ struct BlockingLockExplainer: View {
     }
 }
 
-/// No list yet: the catalog of starters, each one tap from a ready list.
-@MainActor struct BlockingFirstList: View {
-    @ObservedObject var controller: BlockingController
-    @Binding var expandedList: UUID?
-
-    var body: some View {
-        LHCard {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Commencez par une liste").font(LHTheme.cardTitleFont)
-                    Text("Choisissez un point de départ. Vous pourrez tout modifier.")
-                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                }
-                BlockingFlow(spacing: 8) {
-                    ForEach(controller.suggestions) { suggestion in
-                        Button {
-                            let list = BlockList(name: suggestion.title,
-                                                 sites: suggestion.sites.map { BlockSiteRule(pattern: $0) },
-                                                 apps: suggestion.apps)
-                            controller.save(list)
-                            expandedList = list.id
-                        } label: {
-                            Label(suggestion.title, systemImage: suggestion.symbol)
-                        }
-                        .accessibilityIdentifier("blocking-suggestion-\(suggestion.id)")
-                    }
-                    Button {
-                        let list = BlockList(name: "Ma liste")
-                        controller.save(list)
-                        expandedList = list.id
-                    } label: { Label("Liste vide", systemImage: "plus") }
-                    .buttonStyle(LHQuietButtonStyle())
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Freeze
-
-@MainActor struct BlockingFreezeSection: View {
-    @ObservedObject var controller: BlockingController
-    let now: Date
-    @State private var minutes = 60
-    @State private var mode: BlockFreeze.Mode = .shield
-    @State private var allowed: [BlockAppRule] = []
-    @State private var confirming = false
-    @State private var picking = false
-
-    var body: some View {
-        GoalongSection(title: "Geler le Mac", subtitle: "Tout s’arrête, sauf les apps que vous gardez. Toujours verrouillé.") {
-            LHCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 20) {
-                        BlockingFreezeGlyph(mode: mode, kept: allowed)
-                        VStack(alignment: .leading, spacing: 14) {
-                            GoalongSegmentedControl("Durée du gel", selection: $minutes, options: [30, 60, 120, 240]) {
-                                BlockingFormat.duration(minutes: $0)
-                            }
-                            GoalongSegmentedControl("Écran", selection: $mode, options: BlockFreeze.Mode.allCases) {
-                                $0 == .shield ? "Écran Goalong" : "Session verrouillée"
-                            }
-                            Text(mode == .shield
-                                 ? "Un écran Goalong couvre tout. Les apps gardées restent ouvertes."
-                                 : "macOS verrouille la session, et la reverrouille à chaque ouverture.")
-                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if mode == .shield {
-                                BlockingFlow(spacing: 6) {
-                                    ForEach(allowed) { app in
-                                        BlockingItemChip(item: .app(app), removable: true) { allowed.removeAll { $0 == app } }
-                                    }
-                                    Button { picking = true } label: { Label("Garder une app", systemImage: "plus") }
-                                        .buttonStyle(LHQuietButtonStyle())
-                                        .accessibilityIdentifier("blocking-freeze-keep")
-                                        .popover(isPresented: $picking) {
-                                            BlockingAppPicker(excluded: Set(allowed.map(\.bundleIdentifier))) { allowed.append($0) }
-                                        }
-                                }
-                            }
-                        }
-                    }
-                    HStack {
-                        Spacer()
-                        Button {
-                            confirming = true
-                        } label: {
-                            Label("Geler jusqu’à \(BlockingFormat.time(now.addingTimeInterval(TimeInterval(minutes * 60))))…",
-                                  systemImage: "snowflake")
-                        }
-                        .disabled(controller.freeze != nil)
-                        .accessibilityIdentifier("blocking-freeze")
-                    }
-                }
-            }
-            .alert("Geler le Mac \(BlockingFormat.duration(minutes: minutes)) ?", isPresented: $confirming) {
-                Button("Annuler", role: .cancel) {}
-                Button("Geler") {
-                    controller.startFreeze(until: Date().addingTimeInterval(TimeInterval(minutes * 60)), mode: mode,
-                                           allowedApps: mode == .shield ? allowed : [])
-                }
-            } message: {
-                Text("Jusqu’à \(BlockingFormat.time(now.addingTimeInterval(TimeInterval(minutes * 60)))), seul\(allowed.isEmpty || mode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.")
-            }
-        }
-    }
-}
-
-/// A small screen: covered by the shield with the kept apps on it, or the macOS lock.
-struct BlockingFreezeGlyph: View {
-    let mode: BlockFreeze.Mode
-    let kept: [BlockAppRule]
-    var body: some View {
-        VStack(spacing: 4) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous).fill(LHTheme.pageBackground)
-                RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(LHTheme.controlBorder, lineWidth: 1.5)
-                if mode == .shield {
-                    VStack(spacing: 7) {
-                        GoalongMark().stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                            .frame(width: 22, height: 15)
-                        HStack(spacing: 3) {
-                            ForEach(kept.prefix(3)) { AppIconView(bundleIdentifier: $0.bundleIdentifier, appName: $0.name, size: 12) }
-                        }.frame(height: 12)
-                    }
-                } else {
-                    Image(systemName: "lock.fill").font(.system(size: 20, weight: .semibold)).foregroundStyle(LHTheme.text)
-                }
-            }
-            .frame(width: 112, height: 70)
-            RoundedRectangle(cornerRadius: 1).fill(LHTheme.controlBorder).frame(width: 36, height: 6)
-        }
-        .accessibilityHidden(true)
-    }
-}
-
 // MARK: - Protection
 
-@MainActor struct BlockingProtectionSection: View {
+/// How strong the protection is, as one quiet pill by the title; the details open in a popover.
+/// A missing permission turns it into a warning, since sites are then not covered.
+@MainActor struct BlockingProtectionPill: View {
+    @ObservedObject var controller: BlockingController
+    @State private var open = false
+
+    var body: some View {
+        let ok = controller.siteBlockingAvailable
+        Button { open.toggle() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: ok ? "shield.lefthalf.filled" : "exclamationmark.triangle")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(ok ? (controller.protection.level == .strict ? "Protection renforcée" : "Protection standard")
+                        : "Sites non couverts")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(ok ? LHTheme.secondaryText : LHTheme.warning)
+            .padding(.horizontal, 10).frame(height: 26)
+            .background(Capsule().fill(LHTheme.controlBackground).overlay(Capsule().strokeBorder(LHTheme.controlBorder)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("blocking-protection")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            BlockingProtectionDetails(controller: controller)
+                .padding(18).frame(width: 440)
+                .goalongControls()
+        }
+    }
+}
+
+@MainActor struct BlockingProtectionDetails: View {
     @ObservedObject var controller: BlockingController
 
     var body: some View {
-        GoalongSection(title: "Protection") {
-            VStack(alignment: .leading, spacing: 12) {
-                LHCard(padding: 0) {
-                    VStack(spacing: 0) {
-                        statusRow(symbol: "arrow.clockwise", title: "Relance à l’ouverture de session",
-                                  ok: controller.protection.launchAtLogin,
-                                  value: controller.protection.launchAtLogin ? "Active" : "Activée au premier verrou")
-                        GoalongRowDivider()
-                        statusRow(symbol: "globe", title: "Lecture des adresses",
-                                  ok: controller.siteBlockingAvailable,
-                                  value: controller.siteBlockingAvailable ? "Autorisée" : "Nécessaire pour les sites")
-                        if !controller.browsers.isEmpty {
-                            GoalongRowDivider()
-                            browsersRow
-                        }
-                        GoalongRowDivider()
-                        statusRow(symbol: "shield.lefthalf.filled", title: "Niveau",
-                                  ok: controller.protection.level == .strict,
-                                  value: controller.protection.level == .strict ? "Renforcé" : "Standard")
-                    }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Protection").font(LHTheme.cardTitleFont)
+            VStack(spacing: 0) {
+                statusRow(symbol: "arrow.clockwise", title: "Relance à l’ouverture de session",
+                          ok: controller.protection.launchAtLogin,
+                          value: controller.protection.launchAtLogin ? "Active" : "Au premier verrou")
+                GoalongRowDivider()
+                statusRow(symbol: "globe", title: "Lecture des adresses",
+                          ok: controller.siteBlockingAvailable,
+                          value: controller.siteBlockingAvailable ? "Autorisée" : "Nécessaire pour les sites")
+                if !controller.browsers.isEmpty {
+                    GoalongRowDivider()
+                    browsersRow
                 }
-                GoalongDisclosureGroup("Ce qui reste contournable") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(BlockingProtectionSection.limits, id: \.self) { line in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text("•").foregroundStyle(LHTheme.tertiaryText)
-                                Text(line).fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).padding(.top, 10)
-                }
-                .accessibilityIdentifier("blocking-limits")
+                GoalongRowDivider()
+                statusRow(symbol: "shield.lefthalf.filled", title: "Niveau",
+                          ok: controller.protection.level == .strict,
+                          value: controller.protection.level == .strict ? "Renforcé" : "Standard")
             }
+            GoalongDisclosureGroup("Ce qui reste contournable") {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Self.limits, id: \.self) { line in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("•").foregroundStyle(LHTheme.tertiaryText)
+                            Text(line).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).padding(.top, 10)
+            }
+            .accessibilityIdentifier("blocking-limits")
         }
+        .font(.system(size: 13))
     }
 
     /// What the Standard level cannot stop. Kept in step with docs/BLOCKING.md.
@@ -625,31 +618,31 @@ struct BlockingFreezeGlyph: View {
 
     private func statusRow(symbol: String, title: String, ok: Bool, value: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                .frame(width: 22).accessibilityHidden(true)
+            Image(systemName: symbol).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                .frame(width: 20).accessibilityHidden(true)
             Text(title).font(.system(size: 13, weight: .medium))
             Spacer(minLength: 12)
             Image(systemName: ok ? "checkmark.circle.fill" : "circle.dashed")
                 .foregroundStyle(ok ? LHTheme.success : LHTheme.tertiaryText).accessibilityHidden(true)
             Text(value).foregroundStyle(LHTheme.secondaryText)
         }
-        .padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
+        .frame(minHeight: 38)
         .accessibilityElement(children: .combine)
     }
 
     private var browsersRow: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "macwindow").font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                .frame(width: 22).accessibilityHidden(true)
+            Image(systemName: "macwindow").font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                .frame(width: 20).accessibilityHidden(true)
             Text("Navigateurs").font(.system(size: 13, weight: .medium))
             Spacer(minLength: 12)
             HStack(spacing: 10) {
                 ForEach(controller.browsers) { browser in
                     ZStack(alignment: .bottomTrailing) {
-                        AppIconView(bundleIdentifier: browser.bundleIdentifier, appName: browser.name, size: 22)
+                        AppIconView(bundleIdentifier: browser.bundleIdentifier, appName: browser.name, size: 20)
                             .opacity(browser.supported ? 1 : 0.45)
                         Image(systemName: browser.supported ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(browser.supported ? LHTheme.success : LHTheme.secondaryText)
                             .background(Circle().fill(LHTheme.cardBackground).padding(1))
                             .offset(x: 3, y: 3)
@@ -660,7 +653,7 @@ struct BlockingFreezeGlyph: View {
                 }
             }
         }
-        .padding(.horizontal, LHTheme.cardInset).frame(minHeight: 48)
+        .frame(minHeight: 42)
     }
 }
 
