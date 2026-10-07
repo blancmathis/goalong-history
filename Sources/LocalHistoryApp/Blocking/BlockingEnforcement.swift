@@ -93,7 +93,6 @@ private final class BlockingFreezePanel: NSPanel {
     private var screenToken: NSObjectProtocol?
     private var lockTimer: Timer?
     private var requestedLogin = false
-    private var registeredLogin = false
     private var loginError: String?
     private var loginStatus: SMAppService.Status?
     private var loginStatusRead = Date.distantPast
@@ -123,9 +122,9 @@ private final class BlockingFreezePanel: NSPanel {
     }
 
     func updateProtection(locked: Bool) -> BlockingProtectionState {
-        if locked, currentLoginStatus() != .enabled, !requestedLogin {
+        if locked, currentLoginStatus() != .enabled, currentLoginStatus() != .requiresApproval, !requestedLogin {
             requestedLogin = true
-            do { try SMAppService.mainApp.register(); registeredLogin = true }
+            do { try SMAppService.mainApp.register() }
             catch { loginError = "Démarrage à la connexion indisponible : \(error.localizedDescription)" }
             loginStatus = nil
         } else if !locked { requestedLogin = false }
@@ -312,7 +311,8 @@ private final class BlockingFreezePanel: NSPanel {
         veilClear?.cancel(); noticeClear?.cancel()
         for work in terminations.values { work.cancel() }; terminations.removeAll()
         veil?.close(); veil = nil; veilHost = nil; veilPresentation = nil; notice?.close(); notice = nil
-        if registeredLogin { do { try SMAppService.mainApp.unregister() } catch { loginError = error.localizedDescription }; loginStatus = nil }
+        // mainApp is shared with LaunchAtLoginManager. Keep registration: ownership may
+        // have become the member's preference since this backend first registered it.
     }
     private func makePanel(frame: CGRect) -> NSPanel {
         let panel = BlockingPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
