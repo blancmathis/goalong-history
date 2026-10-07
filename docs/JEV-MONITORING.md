@@ -25,6 +25,46 @@ l’inspection du dernier envoi et l’option séparée d’extraits à portée 
 sans surcharger l’écran. Les vérifications récentes sont repliées par défaut.
 Les réglages généraux ne contiennent plus de rubrique Jev.
 
+## Périmètre : toujours ou seulement pendant les séances
+
+`JevMonitor.scope: JevMonitoringScope` prend `.always` (défaut historique) ou `.sessionsOnly` ;
+`setScope(_:)` ne modifie aucun consentement. Le réglage v1 est local dans UserDefaults
+(`goalong.jev.scope.v1`, JSON `schema: 1`, `scope`). Un ancien profil sans ce réglage reste en
+`.always` sans écriture sur lecture. Un réglage illisible ou d'une version inconnue suspend Jev
+jusqu'à un nouveau choix explicite ; il ne reprend jamais implicitement la surveillance continue.
+
+En `.sessionsOnly`, Jev activé affiche « En attente d’une séance » tant qu'aucune séance
+Concentration ne tourne : aucun appel, rappel ou effet, tampon désactivé, aucune minuterie de
+classification. Une pause Jev explicite garde son décompte. Les pauses Pomodoro font partie de
+la séance active ; le focus détecté hors séance ne suffit pas. Blocage/Concentration éteints,
+confidentialité, historique suspendu, connexion et exclusions conservent leurs propres règles.
+
+Les transitions de séance et de scope annulent la requête en vol, retirent les effets, remettent
+la série à zéro et vident les échantillons. Les réponses revalident aussi l'identité de séance :
+une réponse de la séance précédente ne peut ni rappeler ni alimenter la suivante. La reprise
+commence une nouvelle fenêtre, sans arriéré. Voir les [noms et états de l'API UI](CONCENTRATION-UNIFIED-20261007.md#api-pour-lui).
+
+## Suggestions locales par séance
+
+Une fenêtre fraîche Jev confirmée `procrastination` peut alimenter le champ optionnel
+`FocusSession.distractions` : 15 s par fenêtre, une seule fois, uniquement dans sa séance active.
+Les identités sont un domaine enregistrable (Public Suffix List locale, suffixes privés inclus)
+ou un bundle ID d'app. Elles restent locales, à côté du total, dans le fichier de séance 0600.
+`JevSample.distractionTarget` n'est pas transmis dans le JSON TypeSafe. Aucune URL complète,
+titre, extrait ou réponse fournisseur n'est ajouté au stockage de suggestions.
+
+Jev ne désigne pas quelle ligne est distrayante : les fenêtres comprenant plusieurs cibles ou
+une identité manquante sont omises du comptage de suggestions, sans modifier les rappels.
+Fenêtres privées, exclusions, contexte protégé, pause et retours tardifs restent exclus par les
+mêmes contrôles de génération et de consentement que les rappels.
+
+Au bilan, la séance fige jusqu'à trois cibles, chacune ≥ 120 s confirmées, absentes de toutes
+les listes et des choix « Ignorer toujours ». Accepter nécessite un clic, une liste de blocage
+choisie et la validation du contrôleur Blocage ; aucune écriture automatique, aucun choix de
+liste par Jev. Ignorer traite seulement la carte ; Ignorer toujours conserve l'identité dans
+les réglages locaux Concentration. Ces totaux ne remplacent pas les faits mesurés du bilan.
+Le contrat des actions et erreurs est dans la [spec unifiée](CONCENTRATION-UNIFIED-20261007.md#suggestions-au-bilan).
+
 ## Fenêtres et avertissement
 
 Un minuteur local traite des fenêtres distinctes de 15 secondes `[début, fin)`.

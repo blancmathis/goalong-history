@@ -5,23 +5,24 @@ import XCTest
 
 final class JevMonitoringUXTests: XCTestCase {
     func testMonitoringIsItsOwnPrimaryDestination() {
-        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .monitoring, .settings])
-        XCTAssertEqual(DashboardSection.monitoring.sidebarParent, .monitoring)
+        // Jev lives in Réglages › Jev; the old destination still opens it.
+        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .concentration, .settings])
+        XCTAssertEqual(DashboardSection.monitoring.sidebarParent, .settings)
+        XCTAssertFalse(ConcentrationHubPage.tabs.contains(.monitoring))
         XCTAssertEqual(DashboardSection.monitoring.simpleTitle, "Surveillance temps réel")
         XCTAssertEqual(DashboardSection(rawValue: "monitoring"), .monitoring)
         XCTAssertEqual(DashboardSection.analytics.sidebarParent, .overview)
         XCTAssertEqual(DashboardSection.privacy.sidebarParent, .settings)
     }
 
-    func testSettingsNoLongerContainMonitoringOrItsConnection() throws {
-        XCTAssertEqual(SettingsPane.matches(""), [.applications, .modules, .permissions, .storage, .advanced])
-        for query in ["jev", "typesafe", "surveillance", "minuterie"] {
-            XCTAssertTrue(SettingsPane.matches(query).isEmpty, query)
+    func testSettingsHoldJevAndTheOldDestinationOpensIt() throws {
+        XCTAssertEqual(SettingsPane.matches(""), [.applications, .jev, .modules, .permissions, .storage, .advanced])
+        for query in ["jev", "typesafe", "surveillance"] {
+            XCTAssertEqual(SettingsPane.matches(query), [.jev], query)
         }
-        let settings = try source("SettingsPage.swift")
-        XCTAssertFalse(settings.contains("JevSettingsView"))
-        XCTAssertFalse(settings.contains("case .jev"))
-        XCTAssertFalse(settings.contains("JevMonitoringPage"))
+        XCTAssertTrue(try source("SettingsPage.swift").contains("JevMonitoringPage(onOpenRecording:"))
+        let model = try source("DashboardViewModel.swift")
+        XCTAssertTrue(model.contains("if section == .monitoring {\n                selectSection(.settings)\n                settingsPane = .jev"))
     }
 
     func testActivationRequiresSetupButDeactivationNeverDoes() {
@@ -53,9 +54,9 @@ final class JevMonitoringUXTests: XCTestCase {
 
     func testMenuAndSidebarReachThePageWithoutTruncatingItsName() throws {
         let root = try source("DashboardRootView.swift")
-        XCTAssertTrue(root.contains("case .monitoring:\n                JevMonitoringPage"))
-        XCTAssertTrue(root.contains("wraps: section == .monitoring"))
-        XCTAssertTrue(root.contains(".lineLimit(wraps ? 2 : 1)"))
+        XCTAssertTrue(root.contains("case .concentration, .distractions, .blocking:\n                ConcentrationHubPage(model: model)"))
+        XCTAssertTrue(root.contains("case .settings, .monitoring:\n                SettingsPage(model: model)"))
+        XCTAssertTrue(try source("Concentration/ConcentrationHubPage.swift").contains(".environment(\\.openJevSettings) { model.selectSection(.monitoring) }"))
         XCTAssertTrue(try source("AppDelegate.swift").contains("onOpenMonitoring: { [weak self] in self?.dashboardWindowController.show(section: .monitoring) }"))
         XCTAssertTrue(try source("JevControls.swift").contains("Ouvrir la surveillance…"))
     }

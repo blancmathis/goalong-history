@@ -25,6 +25,10 @@ struct JevRecentCheck: Identifiable {
     @Published private(set) var lastPayload = ""
     @Published private(set) var recentChecks: [JevRecentCheck] = []
     @Published private(set) var error: String?
+    @Published private(set) var scope: JevMonitoringScope = .always
+    private let scopePreferences: JevMonitoringPreferences
+    private let consents: GoalongCapabilityConsentStore
+    private let sessionProvider: () -> UUID?
     private var apiKey = ""
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
@@ -44,14 +48,21 @@ struct JevRecentCheck: Identifiable {
     private var retryAfter = Date.distantPast
     private var settingsSignature = ""
     private var started = false
-    private let inbox = JevIngress.shared
+    private let inbox: JevIngress
 
-    var enabled: Bool { GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring) }
+    var enabled: Bool { consents.isEnabled(.jevMonitoring) }
     var includeText: Bool {
         UserDefaults.standard.bool(forKey: Self.excerptKey)
             && UserDefaults.standard.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey)
     }
-    private init() {
+    init(scopePreferences: JevMonitoringPreferences? = nil, consents: GoalongCapabilityConsentStore? = nil,
+         sessionProvider: (() -> UUID?)? = nil, inbox: JevIngress? = nil, loadLocalSettings: Bool = true) {
+        self.scopePreferences = scopePreferences ?? .shared
+        self.consents = consents ?? .shared
+        self.sessionProvider = sessionProvider ?? { ConcentrationRuntime.shared.controller?.jevSessionID }
+        self.inbox = inbox ?? .shared
+        scope = self.scopePreferences.scope
+        guard loadLocalSettings else { return }
         do {
             if let data = try JevLocalFiles.read("api-key"), let key = String(data: data, encoding: .utf8) {
                 apiKey = key; hasKey = Self.validKey(key)
@@ -68,6 +79,12 @@ struct JevRecentCheck: Identifiable {
     func start() {
         guard !started else { return }; started = true
         let center = NotificationCenter.default
+        // These notifications are posted on the main actor. End/disable cancels synchronously.
+        for name in [Notification.Name.goalongFocusSessionDidChange, .jevMonitoringScopeDidChange] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.reconfigure() }
+            })
+        }
         for name in [Notification.Name.goalongGlobalPauseDidChange, .goalongCapabilityConsentDidChange,
                      .goalongExclusionsDidChange, .jevInterventionsDidChange, .jevWorkContextDidChange,
                      NSApplication.didChangeScreenParametersNotification] {
@@ -103,16 +120,19 @@ struct JevRecentCheck: Identifiable {
         reconfigure()
     }
     private var signature: String {
-        "\(enabled)|\(GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory))|\(BackgroundContinuityPreferences().manuallyPaused)|\(includeText)"
+        "\(enabled)|\(consents.isEnabled(.localComputerHistory))|\(BackgroundContinuityPreferences().manuallyPaused)|\(includeText)|\(scopePreferences.scope.rawValue)"
     }
+    private var focusSessionID: UUID? { sessionProvider() }
     private var gate: String? {
         if timedBreak != nil || breakStorageInvalid { return "Surveillance en pause : aucun appel ni rappel" }
         if !enabled { return "Surveillance désactivée" }
+        if let issue = scopePreferences.error { return issue }
+        if !scopePreferences.scope.permits(sessionActive: focusSessionID != nil) { return "En attente d’une séance" }
         if let issue = JevWorkContextStore.shared.error { return issue }
         if !hasKey { return "Configurez la connexion API pour activer la surveillance" }
         if circuitOpen { return circuitReason?.errorDescription ?? "Surveillance suspendue après erreur : vérifiez la connexion" }
         if GoalongGlobalPause.isPaused() { return "Arrêt de confidentialité : historique et surveillance suspendus" }
-        if !GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) { return "Activez l’historique de ce Mac pour utiliser la surveillance" }
+        if !consents.isEnabled(.localComputerHistory) { return "Activez l’historique de ce Mac pour utiliser la surveillance" }
         if BackgroundContinuityPreferences().manuallyPaused { return "Enregistrement en pause : aucune analyse temps réel" }
         if !sessionAvailable { return "Mac inactif ou verrouillé : aucune analyse temps réel" }
         if GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).blocked { return "Exclusions illisibles : aucune analyse temps réel" }
@@ -120,7 +140,7 @@ struct JevRecentCheck: Identifiable {
     }
     func setEnabled(_ value: Bool) {
         if !value { JevWarningPanel.shared.hide(resetPosition: true) }
-        if !GoalongCapabilityConsentStore.shared.set(.jevMonitoring, enabled: value, surface: .settings) {
+        if !consents.set(.jevMonitoring, enabled: value, surface: .settings) {
             error = "Le choix de surveillance n’a pas pu être enregistré."
         }
         reconfigure()
@@ -128,6 +148,10 @@ struct JevRecentCheck: Identifiable {
     func setIncludeText(_ value: Bool) {
         UserDefaults.standard.set(value, forKey: Self.excerptKey)
         reconfigure()
+    }
+    func setScope(_ value: JevMonitoringScope) {
+        scopePreferences.setScope(value)
+        if !started { reconfigure() }
     }
     func saveKey(_ value: String) {
         let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -196,10 +220,11 @@ struct JevRecentCheck: Identifiable {
     }
     func reconfigure() {
         cancelPending(); timer?.invalidate(); timer = nil
+        scope = scopePreferences.scope
         settingsSignature = signature
         boundary = Date(); previousWall = boundary; previousUptime = ProcessInfo.processInfo.systemUptime
         let available = gate == nil
-        inbox.configure(enabled: available, includeText: includeText)
+        inbox.configure(enabled: available, includeText: includeText, collectDistractions: focusSessionID != nil)
         status = gate ?? "En attente d’activité · vérification toutes les 15 s"
         if timedBreak != nil && !breakStorageInvalid {
             scheduleTimer(seconds: 1)
@@ -241,11 +266,12 @@ struct JevRecentCheck: Identifiable {
         let policy = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)
         let pause = GoalongGlobalPause.load()
         guard !policy.blocked, !pause.blocksActivity, gate == nil else { reconfigure(); return }
-        let token = epoch, generation = inbox.generation, key = apiKey
+        let token = epoch, generation = inbox.generation, key = apiKey, focusID = focusSessionID
         lastRequestBytes = body.count; lastPayload = String(data: body, encoding: .utf8) ?? ""
         status = "Classification des 15 dernières secondes…"
         request = Task { @MainActor [weak self] in
             guard let self, self.gate == nil, self.epoch == token,
+                  self.focusSessionID == focusID,
                   self.inbox.generation == generation, workStore.revision == workRevision,
                   GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == policy.revision,
                   GoalongGlobalPause.load().revision == pause.revision else { return }
@@ -254,12 +280,21 @@ struct JevRecentCheck: Identifiable {
                 guard !Task.isCancelled, self.epoch == token else { return }
                 self.request = nil
                 guard self.gate == nil, self.inbox.generation == generation, workStore.revision == workRevision,
+                      self.focusSessionID == focusID,
                       Date().timeIntervalSince(end) < 15,
                       GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == policy.revision,
                       GoalongGlobalPause.load().revision == pause.revision else {
                     self.resetInterventions(); return
                 }
                 let verdict = JevWorkContextStore.reviewedVerdict(decision.verdict, work: workStore.context, window: window)
+                if verdict == .procrastination, let focusID {
+                    do {
+                        try ConcentrationRuntime.shared.controller?.recordJevDistraction(window: window, verdict: verdict, sessionID: focusID)
+                    } catch {
+                        SupportDiagnostics.shared.failure(error, component: .monitoring)
+                        ConcentrationRuntime.shared.controller?.error = "Les suggestions de cette séance n’ont pas pu être enregistrées."
+                    }
+                }
                 self.consecutiveFailures = 0
                 SupportDiagnostics.shared.recordIfChanged(.monitorCycle, component: .monitoring, values: [
                     .state: .state(.ready), .success: .flag(true)])

@@ -14,10 +14,13 @@ public struct JevSample: Equatable, Sendable {
     public let isActivity: Bool
     /// Read-only visible text, only after its separate remote consent.
     public let excerpt: String
+    /// Optional local identity; not part of the remote classification contract.
+    public let distractionTarget: JevDistractionTarget?
     public init(date: Date, resource: String, title: String, action: String,
-                surface: String, isActivity: Bool, excerpt: String = "") {
+                surface: String, isActivity: Bool, excerpt: String = "", distractionTarget: JevDistractionTarget? = nil) {
         self.date = date; self.resource = resource; self.title = title
         self.action = action; self.surface = surface; self.isActivity = isActivity; self.excerpt = excerpt
+        self.distractionTarget = distractionTarget
     }
 }
 

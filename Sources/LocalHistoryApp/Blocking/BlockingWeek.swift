@@ -279,6 +279,7 @@ struct BlockingRangeDraft: Identifiable {
                             if draft.listIDs.contains(list.id) { draft.listIDs.remove(list.id) } else { draft.listIDs.insert(list.id) }
                         }
                     }
+                    BlockingNewListChip { draft.listIDs.insert($0) }
                 }
             }
             HStack(spacing: 3) {

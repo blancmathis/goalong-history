@@ -49,12 +49,12 @@
             )
             let view = try XCTUnwrap(controller.mainMenu.items.first { $0.submenu?.title == "Présentation" }?.submenu)
             let entries = view.items.filter { $0.representedObject is String }
-            XCTAssertEqual(entries.map(\.title), ["Activité", "Mon travail", "Historique", "Surveillance temps réel"])
+            XCTAssertEqual(entries.map(\.title), ["Activité", "Mon travail", "Historique", "Concentration"])
             XCTAssertEqual(entries.map(\.keyEquivalent), ["1", "2", "3", "4"])
             for entry in entries {
                 _ = (entry.target as? NSObject)?.perform(entry.action, with: entry)
             }
-            XCTAssertEqual(opened, [.overview, .work, .history, .monitoring])
+            XCTAssertEqual(opened, [.overview, .work, .history, .concentration])
         }
 
         func testUpdateItemTracksWhetherTheInstalledBuildCanCheck() throws {

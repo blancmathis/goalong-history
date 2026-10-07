@@ -5,20 +5,14 @@ import SwiftUI
 /// The whole module on one page: what is blocked now, start a block (or freeze the whole Mac),
 /// the lists and the week where programs are drawn. Protection sits in a pill by the title.
 @MainActor struct BlockingPage: View {
+    var onOpenLists: () -> Void = {}
     @ObservedObject private var runtime = BlockingRuntime.shared
 
     var body: some View {
         if let controller = runtime.controller {
-            BlockingPageContent(controller: controller)
+            BlockingPageContent(controller: controller, onOpenLists: onOpenLists)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Blocage").goalongPageTitle()
-                Text("Le module est désactivé. Activez-le dans Réglages › Modules.")
-                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-            }
-            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(LHTheme.pageBackground)
+            GoalongModuleOffNote(module: .blocking, text: "Le programme bloque vos listes à heures fixes. Il vient du module Blocage, désactivé.")
         }
     }
 }
@@ -27,14 +21,16 @@ import SwiftUI
     @ObservedObject var controller: BlockingController
     /// Renders and tests pin the clock; the app follows the real one.
     var now: Date?
+    var onOpenLists: () -> Void = {}
     @State private var editingList: UUID?
     @State private var stopping: BlockingStopRequest?
     @State private var unlocking: BlockingStopRequest?
     @State private var composing = false
 
-    init(controller: BlockingController, now: Date? = nil, expanded: UUID? = nil) {
+    init(controller: BlockingController, now: Date? = nil, expanded: UUID? = nil, onOpenLists: @escaping () -> Void = {}) {
         self.controller = controller
         self.now = now
+        self.onOpenLists = onOpenLists
         _editingList = State(initialValue: expanded)
     }
 
@@ -47,7 +43,8 @@ import SwiftUI
                 VStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
                     VStack(alignment: .leading, spacing: 22) {
                         HStack(alignment: .center) {
-                            Text("Blocage").goalongPageTitle()
+                            Text("Bloquez vos listes maintenant ou à heures fixes, verrous compris.")
+                                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                             Spacer(minLength: 12)
                             BlockingProtectionPill(controller: controller)
                         }
@@ -68,9 +65,11 @@ import SwiftUI
                             .onTapGesture { controller.error = nil }
                             .accessibilityIdentifier("blocking-error")
                     }
-                    // No list yet: the starters come first, the composer then only offers the whole Mac.
+                    // Lists are made in Distractions; with none yet, the composer only offers the whole Mac.
                     if controller.lists.isEmpty {
-                        BlockingListsSection(controller: controller, now: now, editing: $editingList)
+                        GoalongNote("Aucune liste pour l’instant. Créez-en une dans Distractions, ou avec « Nouvelle liste… ».",
+                                    symbol: "list.bullet")
+                            .onTapGesture(perform: onOpenLists)
                     }
                     if !frozen {
                         if blocking && !composing {
@@ -82,7 +81,6 @@ import SwiftUI
                         }
                     }
                     if !controller.lists.isEmpty {
-                        BlockingListsSection(controller: controller, now: now, editing: $editingList)
                         GoalongSection(title: "Semaine",
                                        subtitle: "Glissez sur un jour pour programmer un blocage. Cliquez une plage pour la changer.") {
                             BlockingWeekEditor(controller: controller, now: now)
@@ -417,6 +415,7 @@ struct BlockingMeter: View {
                                     if selected.contains(list.id) { selected.remove(list.id) } else { selected.insert(list.id) }
                                 }
                             }
+                            BlockingNewListChip { id in wholeMac = false; selected.insert(id) }
                             BlockingWholeMacChip(selected: wholeMac) { wholeMac.toggle() }
                         }
                     }
@@ -480,10 +479,6 @@ struct BlockingMeter: View {
                         row("Arrêt") { BlockingLockPicker(controller: controller, lock: $lock) }
                     }
                     HStack {
-                        if controller.lists.isEmpty && !wholeMac {
-                            Text("Créez une liste ci-dessous pour couper des sites ou des apps.")
-                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                        }
                         Spacer()
                         Button {
                             if wholeMac { confirmingFreeze = true } else if lock.protectsLists { confirmingLock = true } else { start() }

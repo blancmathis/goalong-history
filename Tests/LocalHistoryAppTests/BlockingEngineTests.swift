@@ -107,7 +107,8 @@ final class BlockingEngineTests: XCTestCase {
         let runtime = BlockingRuntime(); runtime.start(modules: modules)
         XCTAssertNil(runtime.controller)
         XCTAssertEqual(DashboardSection.sidebarSections(modules: modules.enabled), DashboardSection.primarySections)
-        XCTAssertTrue(DashboardSection.sidebarSections(modules: [.blocking]).contains(.blocking))
+        XCTAssertFalse(DashboardSection.sidebarSections(modules: [.blocking]).contains(.blocking))
+        XCTAssertEqual(DashboardSection.blocking.sidebarParent, .concentration)
         XCTAssertTrue(SettingsPane.primary.contains(.modules))
     }
     func testModuleDisableRefusalPreservesSwitch() {

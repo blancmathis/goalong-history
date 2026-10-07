@@ -103,7 +103,7 @@
             XCTAssertTrue(source.contains("private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled) }"))
             XCTAssertTrue(
                 source.contains(
-                    "static let primarySections: [DashboardSection] = [.overview, .work, .history, .monitoring, .settings]"
+                    "static let primarySections: [DashboardSection] = [.overview, .work, .history, .concentration, .settings]"
                 )
             )
             XCTAssertTrue(source.contains("case .history:\n                UnifiedHistoryPage(model: model)"))

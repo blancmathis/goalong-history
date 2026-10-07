@@ -43,6 +43,7 @@ import LocalHistoryQueryCLI
                 let store = storeFactory()
                 let value = try factory?(store) ?? ConcentrationController(store: store, clock: clock, calendar: calendar, blocking: blockingProvider, runsTimers: true)
                 controller = value; error = nil
+                NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: self)
                 value.onStatusChange = { [weak self] status in if let data = try? FocusJSON.encode(status) { self?.statusHub.publish(data) } }
                 statusHub.publish(try FocusJSON.encode(value.status))
                 value.onPanelChange = { [weak self, weak value] panel in
@@ -71,6 +72,7 @@ import LocalHistoryQueryCLI
             controller.shutdown(); monitor?.concentrationSink = nil
             menuBarSubscription = nil; menuBarTimer?.invalidate(); menuBarTimer = nil; onMenuBarText?(nil)
             presenter?.close(); presenter = nil; self.controller = nil
+            NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: self)
         }
     }
     func noteInput(at: Date, count: Int) { controller?.noteInput(at: at, count: count) }

@@ -22,7 +22,8 @@ final class ConcentrationControllerTests: XCTestCase {
         for command in ["focus status", "session current", "sessions", "plan show", "review show", "limits"] {
             XCTAssertThrowsError(try runtime.handle(.init(command: command))) { XCTAssertEqual($0 as? GoalongFocusError, .moduleDisabled) }
         }
-        XCTAssertFalse(DashboardSection.sidebarSections(modules: modules.enabled).contains(.concentration))
+        // The entry stays: its tab says the module is off and offers to turn it on.
+        XCTAssertTrue(DashboardSection.sidebarSections(modules: modules.enabled).contains(.concentration))
     }
     @MainActor func testRestoreRunningAndAppClosedEnd() throws {
         let s = store(); try quiet(s)

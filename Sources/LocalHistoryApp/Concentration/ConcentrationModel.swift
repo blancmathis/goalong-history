@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import LocalHistoryCore
 import LocalHistoryQueryCLI
 
 /// Local, member-authored data. No phase or inferred completion is persisted.
@@ -43,6 +44,8 @@ struct FocusSession: Codable, Equatable, Identifiable {
     var events: [Event] = []
     var outcome: Outcome?
     var note: String?
+    /// Absent in sessions written before per-session Jev suggestions.
+    var distractions: FocusDistractionRecord?
     var endedAt: Date? { events.first { $0.kind == .stop }?.at }
     var valid: Bool {
         FocusValidation.text(intent, maximum: 140, required: true) && mode.valid
@@ -54,6 +57,7 @@ struct FocusSession: Codable, Equatable, Identifiable {
             && events.filter { $0.kind == .stop }.count <= 1
             && (endedAt == nil || events.last?.kind == .stop)
             && (note.map { FocusValidation.text($0, maximum: 140) } ?? true)
+            && (distractions.map { $0.valid && ($0.lastWindowEnd.map { $0 >= startedAt && $0 <= (endedAt ?? .distantFuture) } ?? true) } ?? true)
     }
 }
 struct FocusPhase: Equatable {
@@ -125,8 +129,11 @@ struct FocusSettings: Codable, Equatable {
     var limits = FocusLimits()
     /// Optional for compatibility with settings saved before Engagements.
     var commitmentJokers: FocusJokerSettings?
+    /// Explicit member choices, never inferred from a classification.
+    var ignoredDistractionTargets: [JevDistractionTarget]?
     var jokerSettings: FocusJokerSettings { commitmentJokers ?? FocusJokerSettings() }
-    var valid: Bool { (0..<1440).contains(morningMinute) && (0..<1440).contains(eveningMinute) && limits.valid && jokerSettings.valid }
+    var valid: Bool { (0..<1440).contains(morningMinute) && (0..<1440).contains(eveningMinute) && limits.valid && jokerSettings.valid
+        && (ignoredDistractionTargets.map { $0.count <= 2000 && $0.allSatisfy(\.isValid) && Set($0.map(\.id)).count == $0.count } ?? true) }
 }
 enum FocusFailure: String, Error { case moduleDisabled, invalidArgument, locked, notFound, storageFailed, appNotRunning }
 enum FocusValidation {

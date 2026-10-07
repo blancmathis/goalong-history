@@ -19,9 +19,9 @@ final class GoalongFinalUXTests: XCTestCase {
         XCTAssertTrue(SettingsPane.matches("JSON").contains(.advanced))
         XCTAssertTrue(SettingsPane.matches("remplacement").contains(.chatGPT))
         XCTAssertTrue(SettingsPane.matches("quotidien").contains(.website))
-        XCTAssertEqual(SettingsPane.matches("  \n "), [.applications, .modules, .permissions, .storage, .advanced])
+        XCTAssertEqual(SettingsPane.matches("  \n "), [.applications, .jev, .modules, .permissions, .storage, .advanced])
         XCTAssertTrue(SettingsPane.matches("fichier signé").contains(.tools))
-        XCTAssertTrue(SettingsPane.matches("typesafe").isEmpty)
+        XCTAssertEqual(SettingsPane.matches("typesafe"), [.jev])
         XCTAssertTrue(SettingsPane.matches("minuterie").isEmpty)
     }
     func testIncompleteReplacementCannotBeSavedSilently() {

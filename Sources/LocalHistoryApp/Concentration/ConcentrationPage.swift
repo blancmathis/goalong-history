@@ -11,15 +11,14 @@ import SwiftUI
         if let controller = runtime.controller {
             ConcentrationPageContent(controller: controller)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Concentration").goalongPageTitle()
-                Text(runtime.error == nil ? "Le module est désactivé. Activez-le dans Réglages › Modules."
-                                          : "Concentration n’a pas pu démarrer. Vos données restent intactes.")
+            if runtime.error == nil {
+                GoalongModuleOffNote(module: .concentration, text: "Séances, Pomodoro, plan du jour et bilan. Le module est désactivé.")
+            } else {
+                Text("Concentration n’a pas pu démarrer. Vos données restent intactes.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(LHTheme.pageBackground)
         }
     }
 }
@@ -57,6 +56,8 @@ import SwiftUI
                         } else {
                             FocusComposer(controller: controller, now: now, draft: $draft,
                                           blockingEnabled: modules.isEnabled(.blocking))
+                            FocusDistractionSuggestionsCard(controller: controller)
+                            JevConnectHint(text: "Avec Jev, Goalong repère vos distractions pendant la séance et vous propose de les bloquer.")
                         }
                         if let error = controller.error {
                             GoalongNote(FocusUIError.message(raw: error), tone: .warning)
@@ -72,7 +73,7 @@ import SwiftUI
                     }
                     .font(.system(size: 13))
                     .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 48)
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, 48)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .onAppear { openRequestedEditor(controller.requestedEditor, proxy: proxy) }
@@ -94,11 +95,8 @@ import SwiftUI
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Concentration").goalongPageTitle()
-                Text("Une chose à la fois. Goalong garde le temps et la mesure.")
-                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-            }
+            Text("Une chose à la fois. Goalong garde le temps et la mesure.")
+                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
             Spacer(minLength: 12)
             FocusStatusLabel(status: controller.status)
         }
@@ -278,7 +276,7 @@ struct FocusComposerDraft: Equatable {
                             .accessibilityLabel(previewDescription)
                     }
                 }
-                if !lists.isEmpty { blockingRow }
+                if blockingEnabled { blockingRow }
                 if let mark = controller.sessionStartLimitWarnings.last {
                     Label(FocusUIFormat.limitLine(mark, settings: controller.settings), systemImage: "flag")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -368,6 +366,7 @@ struct FocusComposerDraft: Equatable {
                             if draft.blockListIds.contains(list.id) { draft.blockListIds.remove(list.id) } else { draft.blockListIds.insert(list.id) }
                         }
                     }
+                    BlockingNewListChip { draft.blockListIds.insert($0) }
                 }
                 if !chosenLists.isEmpty {
                     HStack(spacing: 18) {
