@@ -225,6 +225,8 @@ struct FocusComposerDraft: Equatable {
     }
 }
 
+enum FocusDurationChoice: Hashable { case minutes(Int), open, pomodoro, custom }
+
 @MainActor struct FocusComposer: View {
     @ObservedObject var controller: ConcentrationController
     let now: Date
@@ -265,14 +267,15 @@ struct FocusComposerDraft: Equatable {
                         }
                     }
                 }
-                row("Rythme") {
+                row("Durée") {
                     VStack(alignment: .leading, spacing: 12) {
-                        GoalongSegmentedControl("Rythme", selection: $draft.kind, options: [.free, .pomodoro]) {
-                            $0 == .free ? "Libre" : "Pomodoro"
+                        durationOptions
+                        // The end time already sits on the button; only Pomodoro needs its phases drawn.
+                        if draft.kind == .pomodoro {
+                            pomodoroOptions
+                            FocusSessionThread(model: preview, now: nil)
+                                .accessibilityLabel(previewDescription)
                         }
-                        if draft.kind == .free { freeOptions } else { pomodoroOptions }
-                        FocusSessionThread(model: preview, now: nil)
-                            .accessibilityLabel(previewDescription)
                     }
                 }
                 if blockingEnabled { blockingRow }
@@ -312,17 +315,37 @@ struct FocusComposerDraft: Equatable {
         return "\(mode.workMinutes) min de travail, \(mode.shortBreakMinutes) min de pause, \(mode.longBreakMinutes) min toutes les \(mode.longBreakEvery) phases"
     }
 
-    private var freeOptions: some View {
+    /// One row for every rhythm: the free lengths, then Pomodoro, then a custom length.
+    private var duration: Binding<FocusDurationChoice> {
+        Binding(get: {
+            if draft.kind == .pomodoro { return .pomodoro }
+            switch draft.free {
+            case .minutes(let value): return .minutes(value)
+            case .open: return .open
+            case .custom: return .custom
+            }
+        }, set: { choice in
+            switch choice {
+            case .pomodoro: draft.kind = .pomodoro
+            case .minutes(let value): draft.kind = .free; draft.free = .minutes(value)
+            case .open: draft.kind = .free; draft.free = .open
+            case .custom: draft.kind = .free; draft.free = .custom
+            }
+        })
+    }
+
+    private var durationOptions: some View {
         HStack(spacing: 10) {
-            GoalongSegmentedControl("Durée", selection: $draft.free,
-                                    options: [.minutes(25), .minutes(50), .minutes(90), .open, .custom]) {
+            GoalongSegmentedControl("Durée", selection: duration,
+                                    options: [.minutes(25), .minutes(50), .minutes(90), .open, .pomodoro, .custom]) {
                 switch $0 {
                 case .minutes(let value): return BlockingFormat.duration(minutes: value)
                 case .open: return "Sans fin"
+                case .pomodoro: return "Pomodoro"
                 case .custom: return "Autre"
                 }
             }
-            if draft.free == .custom {
+            if draft.kind == .free && draft.free == .custom {
                 Stepper(value: $draft.customMinutes, in: 5...240, step: 5) {
                     Text(BlockingFormat.duration(minutes: draft.customMinutes)).monospacedDigit()
                 }
@@ -829,22 +852,25 @@ struct FocusThreadModel: Equatable {
                     .focused(addFocused)
                     .onSubmit(add)
                     .accessibilityIdentifier("concentration-add-item")
-                TextField("Projet", text: $newProject)
-                    .textFieldStyle(GoalongFieldStyle()).frame(width: 120)
-                    .onSubmit(add)
-                    .help("Facultatif. Relié par son nom à une tâche de « Mon travail » pour mesurer le temps.")
-                TextField("min", text: $newEstimate)
-                    .textFieldStyle(GoalongFieldStyle()).frame(width: 64)
-                    .onSubmit(add)
-                    .help("Estimation, facultative : de 5 à 600 minutes.")
-                    .accessibilityLabel("Estimation en minutes")
-                if let ratio = controller.estimateRatio {
-                    Text("×\(FocusUIFormat.decimal(ratio))")
-                        .font(.system(size: 12, weight: .medium).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
-                        .help("Vos estimations : ×\(FocusUIFormat.decimal(ratio)). Médiane du temps mesuré sur le temps prévu, sur vos 20 dernières tâches estimées.")
+                // The optional fields appear once there is a task to describe.
+                if !newTitle.trimmingCharacters(in: .whitespaces).isEmpty {
+                    TextField("Projet", text: $newProject)
+                        .textFieldStyle(GoalongFieldStyle()).frame(width: 120)
+                        .onSubmit(add)
+                        .help("Facultatif. Relié par son nom à une tâche de « Mon travail » pour mesurer le temps.")
+                    TextField("min", text: $newEstimate)
+                        .textFieldStyle(GoalongFieldStyle()).frame(width: 64)
+                        .onSubmit(add)
+                        .help("Estimation, facultative : de 5 à 600 minutes.")
+                        .accessibilityLabel("Estimation en minutes")
+                    if let ratio = controller.estimateRatio {
+                        Text("×\(FocusUIFormat.decimal(ratio))")
+                            .font(.system(size: 12, weight: .medium).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                            .help("Vos estimations : ×\(FocusUIFormat.decimal(ratio)). Médiane du temps mesuré sur le temps prévu, sur vos 20 dernières tâches estimées.")
+                    }
+                    Button("Ajouter", action: add)
+                        .disabled(plan.items.count >= 10)
                 }
-                Button("Ajouter", action: add)
-                    .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty || plan.items.count >= 10)
             }
             if let addError {
                 Text(addError).font(.system(size: 12)).foregroundStyle(LHTheme.warning).padding(.leading, 28)

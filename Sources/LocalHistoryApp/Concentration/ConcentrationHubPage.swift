@@ -236,22 +236,39 @@ struct ConcentrationHubHeader: View {
     @ObservedObject private var blocking = BlockingRuntime.shared
     @State private var error: String?
     @State private var editingList: UUID?
+    /// Every suggestion starts chosen; a click on its chip leaves it out.
+    @State private var skipped: Set<String> = []
+    @State private var picking = false
 
     var body: some View {
         Group {
             if let current = latest() {
-                GoalongSection(title: "Après « \(current.session.intent) »",
-                               subtitle: "La surveillance a vu ces distractions pendant la séance. Rien n’est ajouté sans votre clic.") {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(current.items.enumerated()), id: \.element.id) { index, item in
-                            if index > 0 { Rectangle().fill(LHTheme.separator).frame(height: 1) }
-                            row(item, session: current.session.id)
+                GoalongSection(title: "Repéré pendant « \(current.session.intent) »",
+                               subtitle: "À bloquer la prochaine fois ? Rien n’est ajouté sans votre clic.") {
+                    LHCard {
+                        VStack(alignment: .leading, spacing: 14) {
+                            BlockingFlow(spacing: 8) {
+                                ForEach(current.items) { item in chip(item, session: current.session.id) }
+                            }
+                            HStack(spacing: 10) {
+                                if blocking.controller != nil {
+                                    Button("Ajouter à une liste…") { picking = true }
+                                        .disabled(chosen(current.items).isEmpty)
+                                        .accessibilityIdentifier("suggestion-add")
+                                        .popover(isPresented: $picking, arrowEdge: .bottom) {
+                                            listPicker(current.items, session: current.session.id)
+                                        }
+                                } else {
+                                    Text("Activez Blocage pour les ajouter à une liste.")
+                                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                }
+                                Button("Ignorer") { ignore(current.items, session: current.session.id) }
+                                    .buttonStyle(LHQuietButtonStyle())
+                                    .accessibilityIdentifier("suggestion-ignore")
+                                Spacer(minLength: 0)
+                            }
+                            if let error { GoalongNote(error, tone: .warning) }
                         }
-                        if blocking.controller == nil {
-                            Text("Activez Blocage pour les ajouter à une liste.")
-                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).padding(.top, 8)
-                        }
-                        if let error { GoalongNote(error, tone: .warning).padding(.top, 8) }
                     }
                 }
                 .accessibilityIdentifier("focus-distraction-suggestions")
@@ -264,52 +281,95 @@ struct ConcentrationHubHeader: View {
         }
     }
 
-    private func row(_ item: FocusDistractionSuggestion, session: UUID) -> some View {
-        let lists = controller.blockLists.filter { $0.mode == .block }
-        return HStack(spacing: 12) {
-            Group {
-                switch item.target.kind {
-                case .site: BlockingSiteTile(host: item.target.value, size: 24)
-                case .app: AppIconView(bundleIdentifier: item.target.value, appName: item.target.name, size: 24)
-                }
-            }
-            .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.target.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                Text("\(FocusDistractionFormat.minutes(item.confirmedSeconds)) de distraction repérée")
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-            }
-            Spacer(minLength: 8)
-            if blocking.controller != nil {
-                Menu {
-                    ForEach(lists) { list in
-                        Button(list.name) { act { try controller.acceptDistractionSuggestion(sessionID: session, targetID: item.id, listID: list.id) } }
-                    }
-                    if !lists.isEmpty { Divider() }
-                    Button("Nouvelle liste…") { addToNewList(item, session: session) }
-                } label: { Text("Ajouter à…") }
-                .menuStyle(.borderlessButton).fixedSize()
-                .accessibilityIdentifier("suggestion-add-\(item.target.value)")
-            }
-            Menu {
-                Button("Cette fois") { act { try controller.ignoreDistractionSuggestion(sessionID: session, targetID: item.id) } }
-                Button("Toujours pour \(item.target.name)") {
-                    act { try controller.ignoreDistractionSuggestion(sessionID: session, targetID: item.id, always: true) }
-                }
-            } label: { Text("Ignorer") }
-            .menuStyle(.borderlessButton).fixedSize()
-            .foregroundStyle(LHTheme.secondaryText)
-            .accessibilityIdentifier("suggestion-ignore-\(item.target.value)")
-        }
-        .padding(.vertical, 10)
+    private func chosen(_ items: [FocusDistractionSuggestion]) -> [FocusDistractionSuggestion] {
+        items.filter { !skipped.contains($0.id) }
     }
 
-    private func addToNewList(_ item: FocusDistractionSuggestion, session: UUID) {
+    /// Icon, name and minutes; « Ne plus proposer » stays in the context menu.
+    private func chip(_ item: FocusDistractionSuggestion, session: UUID) -> some View {
+        let on = !skipped.contains(item.id)
+        return Button {
+            if on { skipped.insert(item.id) } else { skipped.remove(item.id) }
+        } label: {
+            HStack(spacing: 8) {
+                Group {
+                    switch item.target.kind {
+                    case .site: BlockingSiteTile(host: item.target.value, size: 18)
+                    case .app: AppIconView(bundleIdentifier: item.target.value, appName: item.target.name, size: 18)
+                    }
+                }
+                .accessibilityHidden(true)
+                Text(item.target.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                Text(FocusDistractionFormat.minutes(item.confirmedSeconds))
+                    .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                Image(systemName: on ? "checkmark" : "plus").font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(on ? LHTheme.accent : LHTheme.tertiaryText)
+            }
+            .padding(.horizontal, 10).frame(height: 32)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
+                shape.fill(on ? LHTheme.selectionBackground : LHTheme.controlBackground)
+                    .overlay(shape.strokeBorder(on ? LHTheme.accent : LHTheme.controlBorder, lineWidth: on ? 1.5 : 1))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(item.target.name), \(FocusDistractionFormat.minutes(item.confirmedSeconds)) de distraction")
+        .accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityIdentifier("suggestion-\(item.target.value)")
+        .contextMenu {
+            Button("Ne plus proposer \(item.target.name)") {
+                act { try controller.ignoreDistractionSuggestion(sessionID: session, targetID: item.id, always: true) }
+            }
+        }
+    }
+
+    private func listPicker(_ items: [FocusDistractionSuggestion], session: UUID) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(controller.blockLists.filter { $0.mode == .block }) { list in
+                Button { picking = false; add(items, session: session, to: list.id) } label: {
+                    HStack(spacing: 8) {
+                        BlockingIconCluster(lists: [list], size: 16, limit: 3)
+                        Text(list.name).font(.system(size: 13, weight: .medium))
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10).frame(height: 30).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Button { picking = false; addToNewList(items, session: session) } label: {
+                Label("Nouvelle liste…", systemImage: "plus").font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 10).frame(height: 30).frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(6).frame(minWidth: 220)
+    }
+
+    /// The chosen go to the list; the ones left out are passed over for this session only.
+    private func add(_ items: [FocusDistractionSuggestion], session: UUID, to listID: UUID) {
+        let chosen = chosen(items)
+        act {
+            for item in chosen { try controller.acceptDistractionSuggestion(sessionID: session, targetID: item.id, listID: listID) }
+            for item in items where skipped.contains(item.id) {
+                try controller.ignoreDistractionSuggestion(sessionID: session, targetID: item.id)
+            }
+        }
+        skipped = []
+    }
+
+    private func ignore(_ items: [FocusDistractionSuggestion], session: UUID) {
+        act { for item in items { try controller.ignoreDistractionSuggestion(sessionID: session, targetID: item.id) } }
+        skipped = []
+    }
+
+    private func addToNewList(_ items: [FocusDistractionSuggestion], session: UUID) {
         guard let lists = blocking.controller else { return }
         let list = BlockList(name: "Distractions")
         lists.save(list)
         guard lists.list(list.id) != nil else { error = lists.error ?? FocusUIError.message(FocusFailure.storageFailed); return }
-        act { try controller.acceptDistractionSuggestion(sessionID: session, targetID: item.id, listID: list.id) }
+        add(items, session: session, to: list.id)
         editingList = list.id
     }
 

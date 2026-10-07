@@ -31,10 +31,13 @@ struct JevActivationAvailability: Equatable {
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 monitoringCard
                 GoalongWorkDefinitionSummary(onOpen: onOpenWork)
-                JevBreakControls()
-                GoalongDisclosureGroup("Configurer les rappels et les effets") {
-                    JevInterventionControls().padding(.top, 12)
-                }.accessibilityIdentifier("jev-intervention-settings")
+                // Pause and reminder settings only matter once monitoring runs.
+                if enabled {
+                    JevBreakControls()
+                    GoalongDisclosureGroup("Configurer les rappels et les effets") {
+                        JevInterventionControls().padding(.top, 12)
+                    }.accessibilityIdentifier("jev-intervention-settings")
+                }
                 if !monitor.recentChecks.isEmpty {
                     GoalongDisclosureGroup("Dernières vérifications · cette session") {
                         JevRecentChecksView(checks: Array(monitor.recentChecks.prefix(6)))
@@ -87,8 +90,10 @@ struct JevActivationAvailability: Equatable {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("jev-status")
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
-                JevScopeControl()
-                Rectangle().fill(LHTheme.separator).frame(height: 1)
+                if enabled {
+                    JevScopeControl()
+                    Rectangle().fill(LHTheme.separator).frame(height: 1)
+                }
                 connectionRow
                 if !availability.localHistoryEnabled {
                     HStack(alignment: .top, spacing: 12) {

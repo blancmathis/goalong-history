@@ -253,6 +253,16 @@ struct FocusCommitmentEditRequest: Identifiable {
                         }
                     }
                 }
+                if controller.commitmentCards.isEmpty {
+                    // Nothing taken yet: one sentence and one button, not two empty cards.
+                    HStack(spacing: 12) {
+                        Text("Un objectif que Goalong mesure, avec un enjeu si vous voulez.")
+                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                        Spacer(minLength: 8)
+                        Button("Prendre un engagement") { onEdit(.init(periods: [day(0), day(1), week(0), week(1)])) }
+                            .accessibilityIdentifier("concentration-commitment-create")
+                    }
+                } else {
                 HStack(alignment: .top, spacing: 16) {
                     periodCard("Aujourd’hui", current: day(0), next: day(1), nextTitle: "Prévoir demain",
                                series: controller.commitmentSeries.day, jokers: controller.commitmentJokersLeft.day)
@@ -260,6 +270,7 @@ struct FocusCommitmentEditRequest: Identifiable {
                                series: controller.commitmentSeries.week, jokers: controller.commitmentJokersLeft.week)
                 }
                 .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .accessibilityIdentifier("concentration-commitments")
