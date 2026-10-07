@@ -418,7 +418,7 @@ struct BlockingMeter: View {
                                     switch $0 {
                                     case .free: return "Libre"
                                     case .typing: return "Difficile"
-                                    case .locked: return "Verrouillé"
+                                    case .locked, .password: return "Verrouillé" // TODO(UI): password option.
                                     }
                                 }
                                 BlockingLockExplainer(lock: lock)

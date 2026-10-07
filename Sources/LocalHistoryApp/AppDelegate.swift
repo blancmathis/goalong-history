@@ -339,12 +339,16 @@
         }
 
         private func confirmUserQuitIfNeeded() -> Bool {
+            var approved = false
+            defer {
+                if !approved { MainActor.assumeIsolated { BlockingRuntime.shared.controller?.revokeQuitAuthorization() } }
+            }
             guard confirmBlockingQuitIfNeeded(consumeAuthorization: false) else { return false }
             guard !userQuitConfirmed,
                   BackgroundContinuityPreferences.shouldConfirmQuit(
                     keepRunning: continuityPreferences.keepRunning,
                     hasEnabledSources: hasEnabledBackgroundSources
-                  ) else { return true }
+                  ) else { approved = true; return true }
             guard !quitAlertIsVisible else { return false }
             quitAlertIsVisible = true
             defer { quitAlertIsVisible = false }
@@ -354,7 +358,8 @@
             alert.addButton(withTitle: "Continuer en arrière-plan")
             alert.addButton(withTitle: "Quitter et arrêter")
             NSApplication.shared.activate(ignoringOtherApps: true)
-            return alert.runModal() == .alertSecondButtonReturn
+            approved = alert.runModal() == .alertSecondButtonReturn
+            return approved
         }
 
         private func confirmBlockingQuitIfNeeded(consumeAuthorization: Bool) -> Bool {

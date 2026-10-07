@@ -142,11 +142,12 @@ import Foundation
 
     func editCheck(_ next: BlockList) -> BlockingEditCheck {
         if storeFailed { return .refused("Le fichier de blocage doit être réparé avant toute modification.") }
-        guard let current = list(next.id) else { return .allowed }
+        let existing = list(next.id)
         if next.program.ranges.contains(where: { $0.effectiveLock == .password }), !hasPassword,
-           next.program.ranges != current.program.ranges {
+           next.program.ranges != existing?.program.ranges {
             return .refused("Définissez d’abord le mot de passe de blocage.")
         }
+        guard let current = existing else { return .allowed }
         guard isStricterOnly(current.id) else { return .allowed }
         let passwordProtected = activeBlocks.contains { $0.lock == .password && $0.listIDs.contains(current.id) }
         let prefix = passwordProtected ? "Pendant un blocage par mot de passe, " : "Pendant un verrou, "
@@ -412,6 +413,8 @@ import Foundation
         guard let authorization = quitAuthorization, authorization.expires > clock() else { return false }
         return authorization.blocks == Set(activeBlocks.filter { $0.lock == .password })
     }
+
+    func revokeQuitAuthorization() { quitAuthorization = nil }
 
     private func refusePassword(_ reason: String) -> BlockingPasswordResult {
         error = reason; return .refused(reason: reason)

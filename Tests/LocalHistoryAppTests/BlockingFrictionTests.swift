@@ -51,6 +51,38 @@ final class BlockingFrictionTests: XCTestCase {
         freeze.startFreeze(until: now.addingTimeInterval(600), mode: .shield, allowedApps: [])
         freeze.observe(target(now)); XCTAssertNil(freeze.friction); XCTAssertEqual(backend.shields, 1)
     }
+    @MainActor func testPasswordAllowsPlannedBreaksAndRequiresPasswordForExtraBreak() throws {
+        var now = Date()
+        let list = BlockList(name: "Sites", sites: [.init(pattern: "example.org")], breaks: .init(count: 1, minutes: 1))
+        let backend = FrictionBackend(), credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        let c = BlockingController(document: .init(lists: [list], passwordLock: credential), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .password)
+        c.takeBreak(listID: list.id); XCTAssertEqual(c.snapshot.usage?.breaksTaken[list.id], 1)
+        c.observe(target(now)); XCTAssertEqual(backend.blocks, 0)
+        now = now.addingTimeInterval(61); c.refresh(); c.observe(target(now)); XCTAssertGreaterThan(backend.blocks, 0)
+        c.takeBreak(listID: list.id); XCTAssertEqual(c.snapshot.usage?.breaksTaken[list.id], 1)
+        c.takeBreak(listID: list.id, password: "wrong"); XCTAssertEqual(c.snapshot.usage?.breaksTaken[list.id], 1)
+        c.takeBreak(listID: list.id, password: "fixture"); XCTAssertEqual(c.snapshot.usage?.breaksTaken[list.id], 2)
+        c.endBreak(listID: list.id)
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .locked)
+        c.takeBreak(listID: list.id, password: "fixture"); XCTAssertEqual(c.snapshot.usage?.breaksTaken[list.id], 2)
+        c.startFreeze(until: now.addingTimeInterval(600), mode: .shield, allowedApps: [])
+        c.takeBreak(listID: list.id, password: "fixture"); XCTAssertNil(c.snapshot.usage?.breakEnds[list.id])
+    }
+
+    @MainActor func testPasswordSlowDownCannotBecomeEasierButKeepsChosenAllowance() throws {
+        var now = Date()
+        let list = BlockList(name: "Slow", sites: [.init(pattern: "example.org")], action: .slowDown, slowDownSeconds: 3, continueMinutes: 1)
+        let credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now)), backend = FrictionBackend()
+        let c = BlockingController(document: .init(lists: [list], passwordLock: credential), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .password)
+        var next = list; next.continueMinutes = 2; XCTAssertNotEqual(c.editCheck(next), .allowed)
+        next = list; next.action = .block; XCTAssertEqual(c.editCheck(next), .allowed)
+        c.observe(target(now)); XCTAssertNotNil(c.friction)
+        now = now.addingTimeInterval(3); c.continueFriction(); XCTAssertEqual(backend.continues, 1)
+        XCTAssertEqual(c.activeBlocks.first?.lock, .password); XCTAssertTrue(c.quitRequiresPassword)
+    }
+
     @MainActor func testAppRenounceRequiresNewActivationAndCountsSurviveMidnight() {
         var now = Calendar.current.startOfDay(for: Date()).addingTimeInterval(86399)
         let list = BlockList(name: "Apps", apps: [.init(bundleIdentifier: "editor", name: "Editor")], action: .slowDown)
