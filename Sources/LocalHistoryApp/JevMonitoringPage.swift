@@ -27,8 +27,8 @@ struct JevActivationAvailability: Equatable {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                PageHeader(title: "Surveillance temps réel",
-                           subtitle: "Des rappels pour rester sur vos projets de travail. Vos pauses n’arrêtent pas l’historique.")
+                Text("Des rappels pour rester sur vos projets de travail. Vos pauses n’arrêtent pas l’historique.")
+                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 monitoringCard
                 GoalongWorkDefinitionSummary(onOpen: onOpenWork)
                 JevBreakControls()
@@ -49,7 +49,7 @@ struct JevActivationAvailability: Equatable {
             }
             .font(.system(size: 13))
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 40)
+            .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, 40)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(LHTheme.pageBackground)
@@ -86,6 +86,8 @@ struct JevActivationAvailability: Equatable {
                     .font(.system(size: 13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("jev-status")
+                Rectangle().fill(LHTheme.separator).frame(height: 1)
+                JevScopeControl()
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 connectionRow
                 if !availability.localHistoryEnabled {

@@ -5,8 +5,10 @@ import XCTest
 
 final class JevMonitoringUXTests: XCTestCase {
     func testMonitoringIsItsOwnPrimaryDestination() {
-        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .monitoring, .settings])
-        XCTAssertEqual(DashboardSection.monitoring.sidebarParent, .monitoring)
+        // Monitoring is the Surveillance tab of Concentration, always in the sidebar.
+        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .concentration, .settings])
+        XCTAssertEqual(DashboardSection.monitoring.sidebarParent, .concentration)
+        XCTAssertEqual(ConcentrationHubPage.tabTitle(.monitoring), "Surveillance")
         XCTAssertEqual(DashboardSection.monitoring.simpleTitle, "Surveillance temps réel")
         XCTAssertEqual(DashboardSection(rawValue: "monitoring"), .monitoring)
         XCTAssertEqual(DashboardSection.analytics.sidebarParent, .overview)
@@ -53,9 +55,8 @@ final class JevMonitoringUXTests: XCTestCase {
 
     func testMenuAndSidebarReachThePageWithoutTruncatingItsName() throws {
         let root = try source("DashboardRootView.swift")
-        XCTAssertTrue(root.contains("case .monitoring:\n                JevMonitoringPage"))
-        XCTAssertTrue(root.contains("wraps: section == .monitoring"))
-        XCTAssertTrue(root.contains(".lineLimit(wraps ? 2 : 1)"))
+        XCTAssertTrue(root.contains("case .concentration, .distractions, .blocking, .monitoring:\n                ConcentrationHubPage(model: model)"))
+        XCTAssertTrue(try source("Concentration/ConcentrationHubPage.swift").contains("JevMonitoringPage(onOpenRecording:"))
         XCTAssertTrue(try source("AppDelegate.swift").contains("onOpenMonitoring: { [weak self] in self?.dashboardWindowController.show(section: .monitoring) }"))
         XCTAssertTrue(try source("JevControls.swift").contains("Ouvrir la surveillance…"))
     }

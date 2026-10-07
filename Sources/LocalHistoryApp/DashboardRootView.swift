@@ -77,13 +77,8 @@
                 GoalongWorkPage(model: model)
             case .history:
                 UnifiedHistoryPage(model: model)
-            case .monitoring:
-                JevMonitoringPage(onOpenRecording: { model.openRecordingSettings() },
-                                  onOpenWork: { model.selectSection(.work) })
-            case .concentration:
-                ConcentrationPage()
-            case .blocking:
-                BlockingPage()
+            case .concentration, .distractions, .blocking, .monitoring:
+                ConcentrationHubPage(model: model)
             case .activity:
                 ActivityPage(
                     model: model,
@@ -203,8 +198,7 @@
                 navigationLabel(
                     title: section.simpleTitle,
                     symbol: section == .overview ? "chart.bar.xaxis" : section.symbol,
-                    selected: model.highlightedSidebarSection == section,
-                    wraps: section == .monitoring
+                    selected: model.highlightedSidebarSection == section
                 )
             }
             .buttonStyle(LHNavigationButtonStyle())
@@ -229,8 +223,7 @@
         private func navigationLabel(
             title: String,
             symbol: String,
-            selected: Bool,
-            wraps: Bool = false
+            selected: Bool
         ) -> some View {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
@@ -239,14 +232,14 @@
                     .frame(width: 20)
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
-                    .lineLimit(wraps ? 2 : 1)
+                    .lineLimit(1)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(selected ? LHTheme.text : LHTheme.secondaryText)
             .padding(.leading, 16).padding(.trailing, 10)
-            .frame(maxWidth: .infinity, minHeight: wraps ? 46 : 34)
+            .frame(maxWidth: .infinity, minHeight: 34)
             .contentShape(Rectangle())
         }
 
@@ -348,13 +341,12 @@
     }
 
     extension DashboardSection {
-        static let primarySections: [DashboardSection] = [.overview, .work, .history, .monitoring, .settings]
+        static let primarySections: [DashboardSection] = [.overview, .work, .history, .concentration, .settings]
 
         /// An enabled module's page joins the sidebar before Réglages; a disabled one has no entry.
+        /// Blocage and Surveillance live in Concentration's tabs, which is always there.
         static func sidebarSections(modules: Set<GoalongModule>) -> [DashboardSection] {
             var sections = primarySections
-            if modules.contains(.blocking) { sections.insert(.blocking, at: sections.count - 1) }
-            if modules.contains(.concentration) { sections.insert(.concentration, at: sections.count - 1) }
             if modules.contains(.ambiance) { sections.insert(.ambiance, at: sections.count - 1) }
             if modules.contains(.braise) { sections.insert(.braise, at: sections.count - 1) }
             return sections
@@ -368,6 +360,7 @@
             case .monitoring: return "Surveillance temps réel"
             case .blocking: return "Blocage"
             case .concentration: return "Concentration"
+            case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"
             case .braise: return "Braise"
             case .activity: return "Historique de ce Mac"
@@ -385,11 +378,8 @@
             switch self {
             case .overview, .analytics, .chatGPTRecap, .share:
                 return .overview
-            case .monitoring:
-                return .monitoring
-            case .concentration: return .concentration
-            case .blocking:
-                return .blocking
+            case .concentration, .distractions, .blocking, .monitoring:
+                return .concentration
             case .braise: return .braise
             case .ambiance:
                 return .ambiance

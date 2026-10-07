@@ -70,6 +70,7 @@ enum SupportSourceAllowlist {
         "ComputerHistoryStore.swift",
         "ConcentrationCommitmentViews.swift",
         "ConcentrationController.swift",
+        "ConcentrationHubPage.swift",
         "ConcentrationModel.swift",
         "ConcentrationPage.swift",
         "ConcentrationPanelViews.swift",

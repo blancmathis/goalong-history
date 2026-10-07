@@ -644,7 +644,7 @@ struct FocusCommitmentDraft: Equatable {
                     }
                 }
             }
-            if !lists.isEmpty { stakeRow }
+            if !lists.isEmpty || BlockingRuntime.shared.controller != nil { stakeRow }
         }
     }
 
@@ -686,6 +686,7 @@ struct FocusCommitmentDraft: Equatable {
                             .disabled(kept)
                             .help(kept ? "Déjà dans l’enjeu : il ne peut pas être réduit." : "")
                     }
+                    BlockingNewListChip { toggle($0) }
                 }
                 if let stake = draft.stake {
                     HStack(spacing: 10) {

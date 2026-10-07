@@ -9,6 +9,7 @@
         case monitoring
         case blocking
         case concentration
+        case distractions
         case ambiance
         case braise
         case analytics
@@ -32,6 +33,7 @@
             case .monitoring: return "Surveillance temps réel"
             case .blocking: return "Blocage"
             case .concentration: return "Concentration"
+            case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"
             case .braise: return "Braise"
             case .activity: return "Historique de ce Mac"
@@ -54,6 +56,7 @@
             case .monitoring: return "eye.circle"
             case .blocking: return "lock"
             case .concentration: return "scope"
+            case .distractions: return "hand.raised.slash"
             case .ambiance: return "waveform"
             case .braise: return "sun.horizon"
             case .activity: return "clock.arrow.circlepath"
@@ -78,7 +81,7 @@
         var isSecondary: Bool {
             switch self {
             case .screenTime, .agentActivity, .chatGPTRecap, .share, .privacy, .cli: return true
-            case .overview, .work, .history, .monitoring, .blocking, .concentration, .ambiance, .braise, .analytics, .activity, .settings: return false
+            case .overview, .work, .history, .monitoring, .blocking, .concentration, .distractions, .ambiance, .braise, .analytics, .activity, .settings: return false
             }
         }
 
