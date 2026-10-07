@@ -23,6 +23,7 @@ import SwiftUI
         var start: Int
         var end: Int
         var locked: Bool
+        var lock: BlockLock
         var slowed: Bool
         var name: String
         var lane = 0
@@ -43,7 +44,8 @@ import SwiftUI
             for range in list.program.ranges {
                 func add(_ day: Int, _ start: Int, _ end: Int) {
                     result[day, default: []].append(Span(listID: list.id, rangeID: range.id, start: start, end: end,
-                                                         locked: locked, slowed: slowed, name: list.name))
+                                                         locked: locked, lock: locked ? .locked : range.effectiveLock,
+                                                         slowed: slowed, name: list.name))
                 }
                 for day in range.weekdays {
                     if range.crossesMidnight {
@@ -135,7 +137,7 @@ import SwiftUI
                         guard let list = controller.list(span.listID),
                               let range = list.program.ranges.first(where: { $0.id == span.rangeID }) else { return }
                         editing = BlockingRangeDraft(existing: span.rangeID, listIDs: [list.id], days: range.weekdays,
-                                                     start: range.startMinute, end: range.endMinute,
+                                                     start: range.startMinute, end: range.endMinute, lock: range.effectiveLock,
                                                      anchor: CGRect(x: origin + x(span.start), y: top, width: x(span.end) - x(span.start), height: Self.rowHeight))
                     }
             }
@@ -183,7 +185,7 @@ import SwiftUI
     }
 
     private func spanView(_ span: Span, width: CGFloat) -> some View {
-        let ink = LHTheme.text.opacity(span.slowed ? 1 : (span.locked ? 1 : 0.42))
+        let ink = LHTheme.text.opacity(span.slowed ? 1 : (span.lock.protectsLists ? 1 : 0.42))
         return ZStack(alignment: .leading) {
             if span.slowed {
                 Capsule().fill(LHTheme.pageBackground)
@@ -195,7 +197,7 @@ import SwiftUI
             }
             if width > CGFloat(span.name.count) * 6.5 + 26 {
                 HStack(spacing: 4) {
-                    if span.locked { Image(systemName: "lock.fill").font(.system(size: 8, weight: .bold)) }
+                    if span.lock != .free { Image(systemName: span.lock.symbol).font(.system(size: 8, weight: .bold)) }
                     Text(span.name).font(.system(size: 10.5, weight: .semibold)).lineLimit(1)
                 }
                 .foregroundStyle(span.slowed || !span.locked ? LHTheme.text : LHTheme.pageBackground)
@@ -235,6 +237,7 @@ struct BlockingRangeDraft: Identifiable {
     var days: Set<Int>
     var start: Int
     var end: Int
+    var lock: BlockLock = .free
     var anchor: CGRect = .zero
 }
 
@@ -259,6 +262,12 @@ struct BlockingRangeDraft: Identifiable {
 
     private var list: BlockList? { draft.existing == nil ? nil : draft.listIDs.first.flatMap(controller.list) }
     private var locked: Bool { list?.program.isLocked(at: now) ?? false }
+    /// While the program is locked, a range's lock can only rise.
+    private var minimumLock: BlockLock {
+        guard locked, let existing = draft.existing,
+              let range = list?.program.ranges.first(where: { $0.id == existing }) else { return .free }
+        return range.effectiveLock
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -303,8 +312,15 @@ struct BlockingRangeDraft: Identifiable {
                     Text("le lendemain").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
             }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Arrêt").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                BlockingLockPicker(controller: controller, lock: $draft.lock, minimum: minimumLock)
+            }
             if locked {
-                GoalongNote("Programme verrouillé : la plage peut seulement s’allonger.", symbol: "lock.fill")
+                GoalongNote("Programme verrouillé : la plage peut seulement s’allonger ou se durcir.", symbol: "lock.fill")
+            }
+            if let error = controller.error {
+                GoalongNote(error, tone: .warning)
             }
             HStack {
                 if draft.existing != nil, !locked {
@@ -315,12 +331,13 @@ struct BlockingRangeDraft: Identifiable {
                 Button(draft.existing == nil ? "Programmer" : "Enregistrer", action: save)
                     .buttonStyle(LHPrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
-                    .disabled(draft.days.isEmpty || draft.listIDs.isEmpty || minutes(start) == minutes(end))
+                    .disabled(draft.days.isEmpty || draft.listIDs.isEmpty || minutes(start) == minutes(end)
+                              || (draft.lock == .password && !controller.hasPassword))
                     .accessibilityIdentifier("blocking-range-save")
             }
         }
         .font(.system(size: 13))
-        .padding(18).frame(width: 400)
+        .padding(18).frame(width: 440)
         .goalongControls()
     }
 
@@ -331,7 +348,7 @@ struct BlockingRangeDraft: Identifiable {
 
     private func range(id: UUID = UUID()) -> BlockProgramRange {
         BlockProgramRange(id: id, weekdays: draft.days, startMinute: minutes(start),
-                          endMinute: minutes(end) == 0 ? 1_440 : minutes(end))
+                          endMinute: minutes(end) == 0 ? 1_440 : minutes(end), lock: draft.lock == .free ? nil : draft.lock)
     }
 
     private func save() {

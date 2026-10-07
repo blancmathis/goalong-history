@@ -28,7 +28,8 @@ import SwiftUI
     /// Renders and tests pin the clock; the app follows the real one.
     var now: Date?
     @State private var editingList: UUID?
-    @State private var stopping: BlockingActiveBlock?
+    @State private var stopping: BlockingStopRequest?
+    @State private var unlocking: BlockingStopRequest?
     @State private var composing = false
 
     init(controller: BlockingController, now: Date? = nil, expanded: UUID? = nil) {
@@ -50,7 +51,17 @@ import SwiftUI
                             Spacer(minLength: 12)
                             BlockingProtectionPill(controller: controller)
                         }
-                        BlockingStateHero(controller: controller, now: now, onStop: { stopping = $0 })
+                        BlockingStateHero(controller: controller, now: now,
+                                          onStop: { stopping = BlockingStopRequest(id: $0.id, what: "") },
+                                          onUnlock: { block in
+                                              unlocking = BlockingStopRequest(id: block.id, what: unlockText(block.origin, end: block.end))
+                                          })
+                        BlockingScheduledList(controller: controller, now: now,
+                                              onTyping: { stopping = BlockingStopRequest(id: $0.id, what: "") },
+                                              onPassword: { session in
+                                                  unlocking = BlockingStopRequest(id: session.id,
+                                                      what: "Le blocage prévu \(BlockingFormat.moment(session.start, now: now)) sera annulé.")
+                                              })
                     }
                     if let error = controller.error, editingList == nil {
                         GoalongNote(error, tone: .warning)
@@ -87,6 +98,10 @@ import SwiftUI
         .background(LHTheme.pageBackground)
         .accessibilityIdentifier("blocking-page")
         .onChange(of: controller.activeBlocks.isEmpty) { empty in if empty { composing = false } }
+        .sheet(item: $unlocking) { request in
+            BlockingPasswordSheet(controller: controller, purpose: .unlock(request.id, what: request.what)) { unlocking = nil }
+                .goalongControls()
+        }
         .sheet(item: $stopping) { block in
             BlockingTypingChallengeSheet(text: controller.typingChallenge(for: block.id)) { typed in
                 controller.stop(block.id, typed: typed)
@@ -101,6 +116,17 @@ import SwiftUI
             }
         }
     }
+
+    private func unlockText(_ origin: BlockSession.Origin, end: Date) -> String {
+        if case .program = origin { return "Cette plage du programme s’arrête pour aujourd’hui. Elle revient la prochaine fois." }
+        return "Le blocage s’arrête maintenant, avant \(BlockingFormat.time(end))."
+    }
+}
+
+/// A block to stop or cancel, by id: active or scheduled for later.
+struct BlockingStopRequest: Identifiable {
+    var id: UUID
+    var what: String
 }
 
 // MARK: - State
@@ -111,12 +137,12 @@ import SwiftUI
     @ObservedObject var controller: BlockingController
     let now: Date
     var onStop: (BlockingActiveBlock) -> Void
+    var onUnlock: (BlockingActiveBlock) -> Void = { _ in }
 
-    /// The strongest block leads: locked, then hard to stop, then the one that lasts longest.
+    /// The strongest block leads, then the one that lasts longest.
     private var blocks: [BlockingActiveBlock] {
-        let rank: [BlockLock: Int] = [.locked: 0, .typing: 1, .free: 2]
-        return controller.activeBlocks.filter { $0.end > now }.sorted {
-            (rank[$0.lock]!, -$0.end.timeIntervalSince1970) < (rank[$1.lock]!, -$1.end.timeIntervalSince1970)
+        controller.activeBlocks.filter { $0.end > now }.sorted {
+            (-$0.lock.strength, -$0.end.timeIntervalSince1970) < (-$1.lock.strength, -$1.end.timeIntervalSince1970)
         }
     }
 
@@ -157,7 +183,7 @@ import SwiftUI
                     .goalongNumericTransition()
                     .accessibilityLabel("Encore \(BlockingFormat.remaining(block.end.timeIntervalSince(now)))")
             }
-            BlockingSessionThread(start: block.start, end: block.end, now: now, locked: block.lock == .locked)
+            BlockingSessionThread(start: block.start, end: block.end, now: now, locked: block.lock.protectsLists)
             HStack(alignment: .center, spacing: 12) {
                 BlockingIconCluster(lists: lists, size: 22, limit: 7)
                 Text(lists.map(\.name).joined(separator: ", "))
@@ -177,13 +203,13 @@ import SwiftUI
     }
 
     private func lockLine(_ block: BlockingActiveBlock) -> some View {
-        let symbol: String
+        let symbol = block.lock.symbol
         var words: String
         switch block.lock {
-        case .locked, .password: // TODO(UI): password-specific label and unlock sheet.
-            symbol = "lock.fill"; words = "Verrouillé jusqu’à \(BlockingFormat.time(block.end))"
-        case .typing: symbol = "lock"; words = "Difficile à arrêter · jusqu’à \(BlockingFormat.time(block.end))"
-        case .free: symbol = "lock.open"; words = "Bloqué jusqu’à \(BlockingFormat.time(block.end))"
+        case .locked: words = "Verrouillé jusqu’à \(BlockingFormat.time(block.end))"
+        case .password: words = "Protégé par mot de passe · jusqu’à \(BlockingFormat.time(block.end))"
+        case .typing: words = "Difficile à arrêter · jusqu’à \(BlockingFormat.time(block.end))"
+        case .free: words = "Bloqué jusqu’à \(BlockingFormat.time(block.end))"
         }
         let lists = block.listIDs.compactMap(controller.list)
         if !lists.isEmpty, lists.allSatisfy({ $0.effectiveAction == .slowDown }) {
@@ -214,7 +240,10 @@ import SwiftUI
                 }
             case .typing:
                 Button("Arrêter…") { onStop(block) }.accessibilityIdentifier("blocking-stop")
-            case .locked, .password: // TODO(UI): password unlock action.
+            case .password:
+                Button { onUnlock(block) } label: { Label("Débloquer…", systemImage: "key") }
+                    .accessibilityIdentifier("blocking-unlock")
+            case .locked:
                 EmptyView()
             }
         }
@@ -245,7 +274,7 @@ import SwiftUI
             BlockingIconCluster(lists: lists, size: 18, limit: 5)
             VStack(alignment: .leading, spacing: 2) {
                 Text(lists.map(\.name).joined(separator: ", ")).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text("\(block.lock == .locked ? "Verrouillé" : "Bloqué") jusqu’à \(BlockingFormat.time(block.end))")
+                Text("\(block.lock == .free ? "Bloqué" : block.lock.title) jusqu’à \(BlockingFormat.time(block.end))")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 12)
@@ -343,20 +372,41 @@ struct BlockingMeter: View {
     @State private var confirmingLock = false
     @State private var confirmingFreeze = false
     @State private var picking = false
+    /// « Plus tard »: a one-time block that starts by itself.
+    @State private var later = false
+    @State private var startAt = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date()
+
+    init(controller: BlockingController, now: Date, later: Bool = false, lock: BlockLock = .free) {
+        self.controller = controller
+        self.now = now
+        _later = State(initialValue: later)
+        _lock = State(initialValue: lock)
+        _startAt = State(initialValue: Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now)
+    }
+
+    /// Lists only: the whole Mac always starts now.
+    private var scheduling: Bool { later && !wholeMac }
+    private var begin: Date { scheduling ? max(startAt, now) : now }
 
     private var end: Date {
         switch span {
-        case .minutes(let value): return now.addingTimeInterval(TimeInterval(value * 60))
+        case .minutes(let value): return begin.addingTimeInterval(TimeInterval(value * 60))
         case .until:
-            // A time earlier than now means tomorrow.
+            // A time earlier than the start means the next day.
             let parts = Calendar.current.dateComponents([.hour, .minute], from: until)
-            let today = Calendar.current.date(bySettingHour: parts.hour ?? 0, minute: parts.minute ?? 0, second: 0, of: now) ?? now
-            return today > now ? today : today.addingTimeInterval(86_400)
+            let day = Calendar.current.date(bySettingHour: parts.hour ?? 0, minute: parts.minute ?? 0, second: 0, of: begin) ?? begin
+            return day > begin ? day : day.addingTimeInterval(86_400)
         }
     }
 
+    private var actionTitle: String {
+        if wholeMac { return "Geler jusqu’à \(BlockingFormat.time(end))…" }
+        if scheduling { return "Programmer \(BlockingFormat.moment(begin, now: now))" }
+        return "Bloquer jusqu’à \(BlockingFormat.time(end))"
+    }
+
     var body: some View {
-        GoalongSection(title: "Bloquer maintenant") {
+        GoalongSection(title: "Bloquer") {
             LHCard {
                 VStack(alignment: .leading, spacing: 16) {
                     row("Quoi") {
@@ -368,6 +418,21 @@ struct BlockingMeter: View {
                                 }
                             }
                             BlockingWholeMacChip(selected: wholeMac) { wholeMac.toggle() }
+                        }
+                    }
+                    if !wholeMac {
+                        row("Quand") {
+                            HStack(spacing: 10) {
+                                GoalongSegmentedControl("Quand", selection: $later, options: [false, true]) {
+                                    $0 ? "Plus tard" : "Maintenant"
+                                }
+                                if later {
+                                    DatePicker("Début", selection: $startAt, in: now..., displayedComponents: [.date, .hourAndMinute])
+                                        .labelsHidden().fixedSize()
+                                        .environment(\.locale, Locale(identifier: "fr_FR"))
+                                        .accessibilityIdentifier("blocking-start-at")
+                                }
+                            }
                         }
                     }
                     row("Pendant") {
@@ -412,18 +477,7 @@ struct BlockingMeter: View {
                             }
                         }
                     } else {
-                        row("Arrêt") {
-                            VStack(alignment: .leading, spacing: 6) {
-                                GoalongSegmentedControl("Arrêt", selection: $lock, options: BlockLock.allCases) {
-                                    switch $0 {
-                                    case .free: return "Libre"
-                                    case .typing: return "Difficile"
-                                    case .locked, .password: return "Verrouillé" // TODO(UI): password option.
-                                    }
-                                }
-                                BlockingLockExplainer(lock: lock)
-                            }
-                        }
+                        row("Arrêt") { BlockingLockPicker(controller: controller, lock: $lock) }
                     }
                     HStack {
                         if controller.lists.isEmpty && !wholeMac {
@@ -432,23 +486,26 @@ struct BlockingMeter: View {
                         }
                         Spacer()
                         Button {
-                            if wholeMac { confirmingFreeze = true } else if lock == .locked { confirmingLock = true } else { start() }
+                            if wholeMac { confirmingFreeze = true } else if lock.protectsLists { confirmingLock = true } else { start() }
                         } label: {
-                            Label(wholeMac ? "Geler jusqu’à \(BlockingFormat.time(end))…" : "Bloquer jusqu’à \(BlockingFormat.time(end))",
-                                  systemImage: wholeMac ? "snowflake" : (lock == .locked ? "lock.fill" : "lock"))
+                            Label(actionTitle, systemImage: wholeMac ? "snowflake" : (scheduling ? "calendar" : lock.symbol))
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
-                        .disabled(wholeMac ? controller.freeze != nil : selected.isDisjoint(with: controller.lists.map(\.id)))
+                        .disabled(wholeMac ? controller.freeze != nil
+                                           : selected.isDisjoint(with: controller.lists.map(\.id)) || (lock == .password && !controller.hasPassword))
                         .accessibilityIdentifier(wholeMac ? "blocking-freeze" : "blocking-start")
                     }
                 }
             }
             .onAppear { if selected.isEmpty, let first = controller.lists.first { selected = [first.id] } }
-            .alert("Verrouiller jusqu’à \(BlockingFormat.time(end)) ?", isPresented: $confirmingLock) {
+            .alert(lock == .password ? "Protéger par mot de passe jusqu’à \(BlockingFormat.time(end)) ?"
+                                     : "Verrouiller jusqu’à \(BlockingFormat.time(end)) ?", isPresented: $confirmingLock) {
                 Button("Annuler", role: .cancel) {}
-                Button("Verrouiller") { start() }
+                Button(lock == .password ? "Protéger" : "Verrouiller") { start() }
             } message: {
-                Text("Personne ne pourra arrêter ce blocage avant \(BlockingFormat.time(end)), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas.")
+                Text(lock == .password
+                     ? "Sans le mot de passe, ce blocage va jusqu’à \(BlockingFormat.time(end)). Ses listes peuvent seulement devenir plus strictes, et quitter Goalong demande le mot de passe."
+                     : "Personne ne pourra arrêter ce blocage avant \(BlockingFormat.time(end)), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas.")
             }
             .alert("Geler le Mac jusqu’à \(BlockingFormat.time(end)) ?", isPresented: $confirmingFreeze) {
                 Button("Annuler", role: .cancel) {}
@@ -463,7 +520,12 @@ struct BlockingMeter: View {
     }
 
     private func start() {
-        controller.start(listIDs: controller.lists.map(\.id).filter(selected.contains), until: end, lock: lock)
+        let ids = controller.lists.map(\.id).filter(selected.contains)
+        if scheduling {
+            if controller.schedule(listIDs: ids, start: begin, end: end, lock: lock) != nil { later = false }
+        } else {
+            controller.start(listIDs: ids, until: end, lock: lock)
+        }
     }
 
     /// The label sits on the centre line of the first row of controls (32 points high).
@@ -506,14 +568,14 @@ struct BlockingWholeMacChip: View {
     }
 }
 
-/// Three ways to end a block, shown as what it costs to stop: nothing, a chore, impossible.
+/// Four ways to end a block, shown as what it costs to stop: nothing, a chore, someone else, impossible.
 struct BlockingLockExplainer: View {
     let lock: BlockLock
     var text: String?
     var body: some View {
         HStack(spacing: 8) {
             HStack(spacing: 3) {
-                ForEach(0..<3) { index in
+                ForEach(0..<4) { index in
                     RoundedRectangle(cornerRadius: 1.5)
                         .fill(index < level ? LHTheme.text : LHTheme.text.opacity(0.16))
                         .frame(width: 14, height: 4)
@@ -524,13 +586,13 @@ struct BlockingLockExplainer: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
-    private var level: Int { lock == .free ? 1 : lock == .typing ? 2 : 3 }
+    private var level: Int { lock.strength + 1 }
     private var defaultText: String {
         switch lock {
         case .free: return "Vous pouvez arrêter à tout moment."
         case .typing: return "Pour arrêter, recopier un texte de 120 caractères."
-        case .locked, .password: // TODO(UI): password-specific copy.
-            return "Impossible d’arrêter avant la fin, même en quittant Goalong."
+        case .password: return "Pour arrêter, il faut le mot de passe de blocage. Confiez-le à un proche."
+        case .locked: return "Impossible d’arrêter avant la fin, même en quittant Goalong."
         }
     }
 }
@@ -570,6 +632,7 @@ struct BlockingLockExplainer: View {
 
 @MainActor struct BlockingProtectionDetails: View {
     @ObservedObject var controller: BlockingController
+    @State private var passwordPurpose: BlockingPasswordSheet.Purpose?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -577,7 +640,7 @@ struct BlockingLockExplainer: View {
             VStack(spacing: 0) {
                 statusRow(symbol: "arrow.clockwise", title: "Relance à l’ouverture de session",
                           ok: controller.protection.launchAtLogin,
-                          value: controller.protection.launchAtLogin ? "Active" : "Au premier verrou")
+                          value: controller.protection.launchAtLogin ? "Active" : "Pas encore")
                 GoalongRowDivider()
                 statusRow(symbol: "globe", title: "Lecture des adresses",
                           ok: controller.siteBlockingAvailable,
@@ -586,6 +649,8 @@ struct BlockingLockExplainer: View {
                     GoalongRowDivider()
                     browsersRow
                 }
+                GoalongRowDivider()
+                passwordRow
                 GoalongRowDivider()
                 statusRow(symbol: "shield.lefthalf.filled", title: "Niveau",
                           ok: controller.protection.level == .strict,
@@ -605,11 +670,39 @@ struct BlockingLockExplainer: View {
             .accessibilityIdentifier("blocking-limits")
         }
         .font(.system(size: 13))
+        .sheet(isPresented: Binding(get: { passwordPurpose != nil }, set: { if !$0 { passwordPurpose = nil } })) {
+            if let purpose = passwordPurpose {
+                BlockingPasswordSheet(controller: controller, purpose: purpose) { passwordPurpose = nil }
+                    .goalongControls()
+            }
+        }
+    }
+
+    /// The blocking password: set it here, or with the « Mot de passe » lock when first chosen.
+    private var passwordRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "key").font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                .frame(width: 20).accessibilityHidden(true)
+            Text("Mot de passe de blocage").font(.system(size: 13, weight: .medium))
+            Spacer(minLength: 12)
+            if controller.hasPassword {
+                Menu("Défini") {
+                    Button("Changer…") { passwordPurpose = .change }
+                    Button("Supprimer…") { passwordPurpose = .remove }
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .foregroundStyle(LHTheme.secondaryText)
+            } else {
+                Button("Choisir…") { passwordPurpose = .create }.buttonStyle(LHQuietButtonStyle())
+            }
+        }
+        .frame(minHeight: 38)
+        .accessibilityIdentifier("blocking-password-row")
     }
 
     /// What the Standard level cannot stop. Kept in step with docs/BLOCKING.md.
     static let limits = [
-        "Forcer Goalong à quitter arrête le blocage jusqu’à la prochaine ouverture de session.",
+        "Forcer Goalong à quitter arrête le blocage jusqu’à la prochaine ouverture de session, même avec un mot de passe.",
         "Retirer Goalong des éléments d’ouverture, ou supprimer l’app à la main, met fin au blocage.",
         "Supprimer le dossier de blocage puis relancer Goalong efface les verrous.",
         "Changer l’heure du Mac puis redémarrer peut raccourcir un verrou.",
