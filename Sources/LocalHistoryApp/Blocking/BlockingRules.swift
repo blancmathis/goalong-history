@@ -93,6 +93,8 @@ enum BlockingRules {
     static func validate(_ document: BlockingDocument) -> Bool {
         guard document.version == 1, Set(document.lists.map(\.id)).count == document.lists.count,
               Set(document.sessions.map(\.id)).count == document.sessions.count else { return false }
+        let rangeIDs = document.lists.flatMap { $0.program.ranges.map(\.id) }
+        guard Set(rangeIDs).count == rangeIDs.count, Set(rangeIDs).isDisjoint(with: Set(document.sessions.map(\.id))) else { return false }
         for list in document.lists {
             guard !list.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   list.sites.allSatisfy({ normalize($0.pattern) != nil }),

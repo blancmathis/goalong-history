@@ -180,7 +180,8 @@ import SwiftUI
         let symbol: String
         var words: String
         switch block.lock {
-        case .locked: symbol = "lock.fill"; words = "Verrouillé jusqu’à \(BlockingFormat.time(block.end))"
+        case .locked, .password: // TODO(UI): password-specific label and unlock sheet.
+            symbol = "lock.fill"; words = "Verrouillé jusqu’à \(BlockingFormat.time(block.end))"
         case .typing: symbol = "lock"; words = "Difficile à arrêter · jusqu’à \(BlockingFormat.time(block.end))"
         case .free: symbol = "lock.open"; words = "Bloqué jusqu’à \(BlockingFormat.time(block.end))"
         }
@@ -213,7 +214,7 @@ import SwiftUI
                 }
             case .typing:
                 Button("Arrêter…") { onStop(block) }.accessibilityIdentifier("blocking-stop")
-            case .locked:
+            case .locked, .password: // TODO(UI): password unlock action.
                 EmptyView()
             }
         }
@@ -528,7 +529,8 @@ struct BlockingLockExplainer: View {
         switch lock {
         case .free: return "Vous pouvez arrêter à tout moment."
         case .typing: return "Pour arrêter, recopier un texte de 120 caractères."
-        case .locked: return "Impossible d’arrêter avant la fin, même en quittant Goalong."
+        case .locked, .password: // TODO(UI): password-specific copy.
+            return "Impossible d’arrêter avant la fin, même en quittant Goalong."
         }
     }
 }
