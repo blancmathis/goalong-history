@@ -372,8 +372,6 @@ struct BlockingMeter: View {
     @State private var picking = false
     /// « Plus tard »: a one-time block that starts by itself.
     @State private var later = false
-    /// « Plus tard » and the lock stay folded: most blocks start now and stop freely.
-    @State private var moreOpen = false
     @State private var startAt = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date()
 
     init(controller: BlockingController, now: Date, later: Bool = false, lock: BlockLock = .free) {
@@ -421,6 +419,21 @@ struct BlockingMeter: View {
                             BlockingWholeMacChip(selected: wholeMac) { wholeMac.toggle() }
                         }
                     }
+                    if !wholeMac {
+                        row("Quand") {
+                            HStack(spacing: 10) {
+                                GoalongSegmentedControl("Quand", selection: $later, options: [false, true]) {
+                                    $0 ? "Plus tard" : "Maintenant"
+                                }
+                                if later {
+                                    DatePicker("Début", selection: $startAt, in: now..., displayedComponents: [.date, .hourAndMinute])
+                                        .labelsHidden().fixedSize()
+                                        .environment(\.locale, Locale(identifier: "fr_FR"))
+                                        .accessibilityIdentifier("blocking-start-at")
+                                }
+                            }
+                        }
+                    }
                     row("Pendant") {
                         HStack(spacing: 10) {
                             GoalongSegmentedControl("Durée", selection: $span,
@@ -462,28 +475,10 @@ struct BlockingMeter: View {
                                                           : "macOS verrouille la session, et la reverrouille à chaque ouverture. Toujours verrouillé.")
                             }
                         }
-                    } else if moreOpen {
-                        row("Quand") {
-                            HStack(spacing: 10) {
-                                GoalongSegmentedControl("Quand", selection: $later, options: [false, true]) {
-                                    $0 ? "Plus tard" : "Maintenant"
-                                }
-                                if later {
-                                    DatePicker("Début", selection: $startAt, in: now..., displayedComponents: [.date, .hourAndMinute])
-                                        .labelsHidden().fixedSize()
-                                        .environment(\.locale, Locale(identifier: "fr_FR"))
-                                        .accessibilityIdentifier("blocking-start-at")
-                                }
-                            }
-                        }
+                    } else {
                         row("Arrêt") { BlockingLockPicker(controller: controller, lock: $lock) }
                     }
                     HStack {
-                        if !wholeMac && !moreOpen {
-                            Button("Plus d’options") { moreOpen = true }
-                                .buttonStyle(LHQuietButtonStyle())
-                                .accessibilityIdentifier("blocking-more-options")
-                        }
                         Spacer()
                         Button {
                             if wholeMac { confirmingFreeze = true } else if lock.protectsLists { confirmingLock = true } else { start() }
