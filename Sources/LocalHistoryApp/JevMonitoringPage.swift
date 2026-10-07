@@ -40,6 +40,8 @@ struct JevActivationAvailability: Equatable {
                 .background(LHTheme.pageBackground)
             }
         }
+        // A container: without it the page's identifier would replace its controls' own.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jev-monitoring-page")
         .sheet(isPresented: $showingConnection) { JevConnectionSheet().goalongControls() }
         .alert("Activer la surveillance du travail ?", isPresented: $confirming) {

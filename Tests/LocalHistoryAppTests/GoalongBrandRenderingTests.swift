@@ -415,10 +415,13 @@ final class GoalongBrandRenderingTests: XCTestCase {
         let controller = NSHostingController(rootView: LocalHistoryDashboardView(model: model))
         window.contentViewController = controller
         window.makeKeyAndOrderFront(nil); pump()
-        let sidebar = try XCTUnwrap(accessibleElement("sidebar-monitoring", within: window))
-        XCTAssertGreaterThanOrEqual(sidebar.accessibilityFrame().height, 44)
-        XCTAssertTrue(sidebar.accessibilityPerformPress()); pump()
-        XCTAssertEqual(model.selectedSection, .monitoring)
+        // Jev lives in Réglages › Jev, reached from the Settings home.
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("sidebar-settings", within: window)).accessibilityPerformPress()); pump()
+        let entry = try XCTUnwrap(accessibleElement("settings-jev", within: window))
+        XCTAssertGreaterThanOrEqual(entry.accessibilityFrame().height, 44)
+        XCTAssertTrue(entry.accessibilityPerformPress()); pump()
+        XCTAssertEqual(model.selectedSection, .settings)
+        XCTAssertEqual(model.settingsPane, .jev)
         let offState = consents.document
         for dark in [true, false] {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -437,8 +440,9 @@ final class GoalongBrandRenderingTests: XCTestCase {
         pump()
         XCTAssertEqual(model.selectedSection, .settings)
         XCTAssertEqual(model.settingsPane, .recording)
-        XCTAssertTrue(try XCTUnwrap(accessibleElement("sidebar-monitoring", within: window)).accessibilityPerformPress())
-        pump()
+        // The old destination (menu bar, notifications) opens the same pane.
+        model.selectSection(.monitoring); pump()
+        XCTAssertEqual(model.settingsPane, .jev)
         XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-open-connection", within: window)).accessibilityPerformPress())
         pump(); pump()
         let sheet = try XCTUnwrap(window.attachedSheet)
