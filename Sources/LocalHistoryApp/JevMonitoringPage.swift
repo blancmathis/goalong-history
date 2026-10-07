@@ -13,6 +13,8 @@ struct JevActivationAvailability: Equatable {
 @MainActor struct JevMonitoringPage: View {
     var onOpenRecording: () -> Void
     var onOpenWork: () -> Void = {}
+    /// Inside Réglages › Jev: the settings page brings the title and the scrolling.
+    var embedded = false
     @ObservedObject private var monitor = JevMonitor.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @State private var showingConnection = false
@@ -25,7 +27,30 @@ struct JevActivationAvailability: Equatable {
     }
 
     var body: some View {
-        ScrollView {
+        Group {
+            if embedded {
+                content
+            } else {
+                ScrollView {
+                    content
+                        .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
+                        .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, 40)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .background(LHTheme.pageBackground)
+            }
+        }
+        .accessibilityIdentifier("jev-monitoring-page")
+        .sheet(isPresented: $showingConnection) { JevConnectionSheet().goalongControls() }
+        .alert("Activer la surveillance du travail ?", isPresented: $confirming) {
+            Button("Annuler", role: .cancel) {}
+            Button("Autoriser les envois à TypeSafe") { monitor.setEnabled(true) }
+        } message: {
+            Text("Toutes les 15 secondes avec activité observable, Goalong transmet les critères de travail et exemples hors travail enregistrés, ainsi qu’un extrait compact (applications, domaines, titres et interactions) à api.typesafe.ai. Ces données peuvent être personnelles. L’API est payante. Une détection suffisamment fiable affiche un rappel, sans attendre une deuxième fenêtre. Les autres sources restent inchangées.")
+        }
+    }
+
+    private var content: some View {
             VStack(alignment: .leading, spacing: 24) {
                 Text("Des rappels pour rester sur vos projets de travail. Vos pauses n’arrêtent pas l’historique.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
@@ -48,19 +73,6 @@ struct JevActivationAvailability: Equatable {
                 .accessibilityIdentifier("jev-privacy-details")
             }
             .font(.system(size: 13))
-            .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-            .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, 40)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .background(LHTheme.pageBackground)
-        .accessibilityIdentifier("jev-monitoring-page")
-        .sheet(isPresented: $showingConnection) { JevConnectionSheet().goalongControls() }
-        .alert("Activer la surveillance du travail ?", isPresented: $confirming) {
-            Button("Annuler", role: .cancel) {}
-            Button("Autoriser les envois à TypeSafe") { monitor.setEnabled(true) }
-        } message: {
-            Text("Toutes les 15 secondes avec activité observable, Goalong transmet les critères de travail et exemples hors travail enregistrés, ainsi qu’un extrait compact (applications, domaines, titres et interactions) à api.typesafe.ai. Ces données peuvent être personnelles. L’API est payante. Une détection suffisamment fiable affiche un rappel, sans attendre une deuxième fenêtre. Les autres sources restent inchangées.")
-        }
     }
 
     private var monitoringCard: some View {

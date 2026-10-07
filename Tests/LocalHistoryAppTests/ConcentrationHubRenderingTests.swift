@@ -109,7 +109,14 @@ final class ConcentrationHubRenderingTests: XCTestCase {
                        tab(.concentration, ConcentrationPageContent(controller: ended, now: now, measures: [], draft: draft)))
             try render("tab-distractions-\(s)", height: 820, tab(.distractions, DistractionsPage(runtime: lists, now: now)))
             try render("tab-programme-\(s)", height: 1_100, tab(.blocking, BlockingPageContent(controller: blocking, now: now)))
-            try render("tab-surveillance-\(s)", height: 1_000, tab(.monitoring, JevMonitoringPage(onOpenRecording: {})))
+            try render("reglages-jev-\(s)", height: 1_000,
+                       VStack(alignment: .leading, spacing: 24) {
+                           Text("Jev").goalongPageTitle()
+                           JevMonitoringPage(onOpenRecording: {}, embedded: true)
+                       }
+                       .padding(.horizontal, LHTheme.pageInset).padding(.top, 28)
+                       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                       .background(LHTheme.pageBackground))
         }
         try render("tab-off-light", height: 300,
                    tab(.concentration, GoalongModuleOffNote(module: .concentration,

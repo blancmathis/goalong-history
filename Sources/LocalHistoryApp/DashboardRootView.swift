@@ -77,7 +77,7 @@
                 GoalongWorkPage(model: model)
             case .history:
                 UnifiedHistoryPage(model: model)
-            case .concentration, .distractions, .blocking, .monitoring:
+            case .concentration, .distractions, .blocking:
                 ConcentrationHubPage(model: model)
             case .activity:
                 ActivityPage(
@@ -108,7 +108,7 @@
                 BraisePage()
             case .ambiance:
                 AmbiancePage(model: model)
-            case .settings:
+            case .settings, .monitoring:
                 SettingsPage(model: model)
             }
         }
@@ -378,7 +378,7 @@
             switch self {
             case .overview, .analytics, .chatGPTRecap, .share:
                 return .overview
-            case .concentration, .distractions, .blocking, .monitoring:
+            case .concentration, .distractions, .blocking:
                 return .concentration
             case .braise: return .braise
             case .ambiance:
@@ -387,7 +387,7 @@
                 return .work
             case .history, .activity, .screenTime:
                 return .history
-            case .agentActivity, .privacy, .cli, .settings:
+            case .agentActivity, .privacy, .cli, .settings, .monitoring:
                 return .settings
             }
         }

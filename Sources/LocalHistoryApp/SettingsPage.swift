@@ -88,7 +88,7 @@ import AppKit
             if search.isEmpty {
                 GoalongDisclosureGroup("Confidentialité · tout suspendre") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Surveillance temps réel : l’historique continue.")
+                        Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Réglages › Jev : l’historique continue.")
                             .font(.callout).foregroundStyle(.secondary)
                         GoalongGlobalPauseControl(model: model)
                     }.padding(.top, 12)
@@ -206,6 +206,9 @@ import AppKit
             GoalongWebsiteSettings(model: model)
         case .chatGPT:
             GoalongChatGPTSettings(model: model)
+        case .jev:
+            JevMonitoringPage(onOpenRecording: { model.openRecordingSettings() },
+                              onOpenWork: { model.selectSection(.work) }, embedded: true)
         case .modules:
             GoalongModulesSettings(onOpen: { model.selectSection($0) }, onChange: { module, on in
                 if module == .ambiance { model.ambianceModule.setEnabled(on) }
@@ -262,6 +265,7 @@ import AppKit
         case .connections: return "Choisir une connexion"
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
+        case .jev: return GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring) ? "Activé" : "Clé API et surveillance"
         case .modules: return modules.enabled.isEmpty ? "Aucun activé" : modules.enabled.map(\.title).sorted().joined(separator: ", ")
         case .permissions: return "Selon vos fonctions"
         case .storage: return "Conservation et effacement"
@@ -272,8 +276,8 @@ import AppKit
 }
 
 enum SettingsPane: Hashable {
-    case home, recording, applications, connections, website, chatGPT, modules, permissions, storage, advanced, tools
-    static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .modules, .permissions, .storage]
+    case home, recording, applications, connections, website, chatGPT, jev, modules, permissions, storage, advanced, tools
+    static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .jev, .modules, .permissions, .storage]
     /// Start at login and background running live on the Settings home, not in a pane.
     static func matchesStartup(_ raw: String) -> Bool {
         let keywords = "démarrage démarrer ouverture session connexion login arrière-plan fermer quitter"
@@ -285,7 +289,7 @@ enum SettingsPane: Hashable {
     }
     static func matches(_ raw: String) -> [Self] {
         let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty { return [.applications, .modules, .permissions, .storage, .advanced] }
+        if query.isEmpty { return [.applications, .jev, .modules, .permissions, .storage, .advanced] }
         return (primary + [.advanced, .tools]).filter { ($0.title + " " + $0.keywords).localizedStandardContains(query) }
     }
     var title: String {
@@ -296,6 +300,7 @@ enum SettingsPane: Hashable {
         case .connections: return "Connexions"
         case .website: return "Envoi à Goalong"
         case .chatGPT: return "Analyse ChatGPT"
+        case .jev: return "Jev"
         case .modules: return "Modules"
         case .permissions: return "Autorisations macOS"
         case .storage: return "Stockage"
@@ -312,6 +317,7 @@ enum SettingsPane: Hashable {
         case .connections: return "connections"
         case .website: return "website"
         case .chatGPT: return "chatGPT"
+        case .jev: return "jev"
         case .modules: return "modules"
         case .permissions: return "permissions"
         case .storage: return "storage"
@@ -328,6 +334,7 @@ enum SettingsPane: Hashable {
         case .connections: return "link"
         case .website: return "arrow.up.circle"
         case .chatGPT: return "sparkles"
+        case .jev: return "eye.circle"
         case .modules: return "square.stack.3d.up"
         case .permissions: return "hand.raised"
         case .storage: return "internaldrive"
@@ -341,6 +348,7 @@ enum SettingsPane: Hashable {
         case .connections: return "connexions"
         case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"
         case .modules: return "module modules ambiance braise filtre rouge luminosité horaires musique son sons concentration détente activer"
+        case .jev: return "jev surveillance temps réel clé api typesafe rappel rappels distraction pause"
         case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
         case .modules: return "module modules blocage bloquer site sites app apps verrouiller cold turkey geler activer"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"

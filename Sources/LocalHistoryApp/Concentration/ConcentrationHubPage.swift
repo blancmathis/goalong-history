@@ -8,13 +8,12 @@ import SwiftUI
 @MainActor struct ConcentrationHubPage: View {
     @ObservedObject var model: DashboardViewModel
 
-    nonisolated static let tabs: [DashboardSection] = [.concentration, .distractions, .blocking, .monitoring]
+    nonisolated static let tabs: [DashboardSection] = [.concentration, .distractions, .blocking]
 
     nonisolated static func tabTitle(_ section: DashboardSection) -> String {
         switch section {
         case .distractions: return "Distractions"
         case .blocking: return "Programme"
-        case .monitoring: return "Surveillance"
         default: return "Maintenant"
         }
     }
@@ -28,15 +27,14 @@ import SwiftUI
                 switch tab {
                 case .distractions: DistractionsPage()
                 case .blocking: BlockingPage(onOpenLists: { model.selectSection(.distractions) })
-                case .monitoring:
-                    JevMonitoringPage(onOpenRecording: { model.openRecordingSettings() },
-                                      onOpenWork: { model.selectSection(.work) })
                 default: ConcentrationPage()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .background(LHTheme.pageBackground)
+        // Jev's key and settings live in Réglages; the tabs only point there.
+        .environment(\.openJevSettings) { model.selectSection(.monitoring) }
     }
 }
 
@@ -106,6 +104,7 @@ struct ConcentrationHubHeader: View {
                     }
                 }
                 DistractionWordsSection()
+                JevConnectHint(text: "Jev repère aussi les distractions qu’aucune liste ne contient, avec ces exemples.")
             }
             .font(.system(size: 13))
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
@@ -336,6 +335,39 @@ enum FocusDistractionFormat {
     static func minutes(_ seconds: Int) -> String {
         let minutes = max(1, Int((Double(seconds) / 60).rounded()))
         return minutes >= 60 ? "\(minutes / 60) h \(String(format: "%02d", minutes % 60))" : "\(minutes) min"
+    }
+}
+
+// MARK: - Jev
+
+private struct OpenJevSettingsKey: EnvironmentKey { static let defaultValue: () -> Void = {} }
+
+extension EnvironmentValues {
+    /// Opens Réglages › Jev, where the key and the monitoring settings live.
+    var openJevSettings: () -> Void {
+        get { self[OpenJevSettingsKey.self] }
+        set { self[OpenJevSettingsKey.self] = newValue }
+    }
+}
+
+/// Shown while Jev is off: one sentence and a link to its settings.
+@MainActor struct JevConnectHint: View {
+    let text: String
+    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    @Environment(\.openJevSettings) private var open
+
+    var body: some View {
+        if !consents.isEnabled(.jevMonitoring) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "eye.circle").foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
+                Text(text).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Configurer Jev", action: open)
+                    .buttonStyle(LHQuietButtonStyle())
+                    .accessibilityIdentifier("jev-open-settings")
+                Spacer(minLength: 0)
+            }
+        }
     }
 }
 

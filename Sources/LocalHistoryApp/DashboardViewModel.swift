@@ -338,6 +338,12 @@
         }
 
         func selectSection(_ section: DashboardSection) {
+            // Jev has no page of its own any more: its key and settings live in Réglages › Jev.
+            if section == .monitoring {
+                selectSection(.settings)
+                settingsPane = .jev
+                return
+            }
             let previousSection = selectedSection
             if section.isSecondary {
                 // Re-selecting the same secondary page (e.g. reopening the window) keeps its origin.
