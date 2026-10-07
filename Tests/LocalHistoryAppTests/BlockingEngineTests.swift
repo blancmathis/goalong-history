@@ -272,6 +272,241 @@ final class BlockingEngineTests: XCTestCase {
         let d = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendar: calendar, continuous: { now.timeIntervalSince1970 })
         d.lockProgram(listID: list.id, until: now.addingTimeInterval(600)); d.stop(id); XCTAssertEqual(d.activeBlocks.count, 1)
     }
+    func testRangeLockLegacyDecodeAndPasswordCredentialEncoding() throws {
+        let vector = BlockPasswordLock(salt: Data(0..<16), hash: Data([UInt8](repeating: 0, count: 32)), iterations: 200_000, createdAt: date())
+        var expected = vector
+        let hex = "3f84897cea554f262085f818cba47df3ff873fbc9730534e3c7b47d123194432"
+        expected.hash = Data(stride(from: 0, to: hex.count, by: 2).map { index in
+            let start = hex.index(hex.startIndex, offsetBy: index), end = hex.index(start, offsetBy: 2)
+            return UInt8(hex[start..<end], radix: 16)!
+        })
+        XCTAssertTrue(expected.matches("blocking-test-vector"))
+        let range = try JSONDecoder().decode(BlockProgramRange.self, from: Data("{\"id\":\"\(UUID())\",\"weekdays\":[1],\"startMinute\":600,\"endMinute\":900}".utf8))
+        XCTAssertNil(range.lock); XCTAssertEqual(range.effectiveLock, .free)
+        let credential = try XCTUnwrap(BlockPasswordLock.make("blocking-test-secret-é\0suffix", at: date()))
+        XCTAssertEqual(credential.salt.count, 16); XCTAssertEqual(credential.hash.count, 32)
+        XCTAssertGreaterThanOrEqual(credential.iterations, 200_000)
+        XCTAssertTrue(credential.matches("blocking-test-secret-é\0suffix"))
+        XCTAssertFalse(credential.matches("blocking-test-secret-é"))
+        let encoded = try JSONEncoder().encode(credential)
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("blocking-test-secret"))
+        XCTAssertEqual(try JSONDecoder().decode(BlockPasswordLock.self, from: encoded), credential)
+        XCTAssertNotEqual(credential.salt, BlockPasswordLock.make("blocking-test-secret-é\0suffix", at: date())?.salt)
+    }
+
+    @MainActor func testProgramTypingSkipRequiresItsChallengeAndDoesNotSkipOverlap() {
+        let now = date()
+        let a = BlockProgramRange(weekdays: [1], startMinute: 600, endMinute: 900, lock: .typing)
+        let b = BlockProgramRange(weekdays: [1], startMinute: 660, endMinute: 840, lock: .locked)
+        let list = BlockList(name: "Programme", program: .init(ranges: [a, b]))
+        let c = BlockingController(document: .init(lists: [list]), clock: { now }, calendar: calendar)
+        XCTAssertEqual(c.activeBlocks.count, 2)
+        c.stop(a.id); XCTAssertEqual(c.activeBlocks.count, 2)
+        c.stop(a.id, typed: "incorrect"); XCTAssertEqual(c.activeBlocks.count, 2)
+        c.stop(a.id, typed: c.typingChallenge(for: a.id))
+        XCTAssertEqual(c.activeBlocks.map(\.id), [b.id]); XCTAssertEqual(c.snapshot.programSkips?[a.id], date(5, 15))
+        c.stop(b.id, typed: c.typingChallenge(for: b.id)); XCTAssertEqual(c.activeBlocks.count, 1)
+    }
+
+    @MainActor func testLockedProgramRangeLockCanOnlyIncreaseAcrossAllPairs() throws {
+        let now = date(), credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        for oldLock in BlockLock.allCases {
+            let range = BlockProgramRange(weekdays: [1], startMinute: 600, endMinute: 900, lock: oldLock)
+            let list = BlockList(name: "Programme", program: .init(ranges: [range], lockedUntil: now.addingTimeInterval(3600)))
+            let c = BlockingController(document: .init(lists: [list], passwordLock: credential), clock: { now }, calendar: calendar)
+            XCTAssertEqual(c.activeBlocks.first?.lock, .locked)
+            for newLock in BlockLock.allCases {
+                var next = list; next.program.ranges[0].lock = newLock
+                XCTAssertEqual(c.editCheck(next) == .allowed, newLock.strength >= oldLock.strength, "\(oldLock) → \(newLock)")
+            }
+        }
+    }
+
+    @MainActor func testScheduledSessionActivatesAtStartAndEndsExclusively() throws {
+        var now = date(); let list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")])
+        let backend = FakeBlockingBackend()
+        let c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, calendar: calendar,
+            continuous: { now.timeIntervalSince1970 }, runsTimers: true)
+        defer { c.shutdown() }
+        let start = now.addingTimeInterval(120), end = now.addingTimeInterval(300)
+        let id = try XCTUnwrap(c.schedule(listIDs: [list.id], start: start, end: end, lock: .locked))
+        XCTAssertTrue(c.activeBlocks.isEmpty); XCTAssertEqual(c.scheduledBlocks.map(\.id), [id]); XCTAssertTrue(c.hasTimer)
+        XCTAssertFalse(c.needsObservation); XCTAssertEqual(c.nextProgramStart?.date, start); XCTAssertTrue(backend.protectionRequired)
+        var relaxed = list; relaxed.sites = []; XCTAssertEqual(c.editCheck(relaxed), .allowed)
+        now = start.addingTimeInterval(-60); c.refresh(); XCTAssertTrue(c.needsObservation)
+        now = start; c.refresh(); XCTAssertEqual(c.activeBlocks.map(\.id), [id]); XCTAssertTrue(c.scheduledBlocks.isEmpty)
+        XCTAssertNotEqual(c.editCheck(relaxed), .allowed)
+        now = end; c.refresh(); XCTAssertTrue(c.activeBlocks.isEmpty); XCTAssertFalse(c.hasLocks); XCTAssertFalse(c.hasTimer)
+    }
+
+    @MainActor func testScheduledCancellationUsesEveryLockFriction() throws {
+        let now = date(), list = BlockList(name: "Sites"), credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        let c = BlockingController(document: .init(lists: [list], passwordLock: credential), clock: { now })
+        for lock in BlockLock.allCases {
+            let id = try XCTUnwrap(c.schedule(listIDs: [list.id], start: now.addingTimeInterval(60), end: now.addingTimeInterval(300), lock: lock))
+            switch lock {
+            case .free: XCTAssertEqual(c.cancelScheduled(id: id), .ok)
+            case .typing:
+                XCTAssertNotEqual(c.cancelScheduled(id: id), .ok)
+                XCTAssertEqual(c.cancelScheduled(id: id, typed: c.typingChallenge(for: id)), .ok)
+            case .password:
+                XCTAssertNotEqual(c.cancelScheduled(id: id), .ok)
+                XCTAssertEqual(c.cancelScheduled(id: id, password: "fixture"), .ok)
+            case .locked: XCTAssertNotEqual(c.cancelScheduled(id: id, password: "fixture"), .ok)
+            }
+        }
+        XCTAssertEqual(c.scheduledBlocks.count, 1); XCTAssertEqual(c.scheduledBlocks.first?.lock, .locked)
+        XCTAssertNil(c.schedule(listIDs: [list.id], start: now.addingTimeInterval(-1), end: now.addingTimeInterval(60), lock: .free))
+        XCTAssertNil(c.schedule(listIDs: [list.id, list.id], start: now.addingTimeInterval(60), end: now.addingTimeInterval(120), lock: .free))
+    }
+
+    @MainActor func testQuitPreservesFutureSessionsAndProgramRegistrationIncludesFreeRanges() throws {
+        let store = try temporaryStore(), now = date()
+        var list = BlockList(name: "Programme")
+        let future = BlockSession(listIDs: [list.id], start: now.addingTimeInterval(600), end: now.addingTimeInterval(1200), lock: .free)
+        try store.save(.init(lists: [list], sessions: [future]))
+        let c = BlockingController(clock: { now }, store: store, continuous: { now.timeIntervalSince1970 })
+        XCTAssertTrue(c.requiresLaunchAtLogin); XCTAssertFalse(c.hasLocks); c.shutdown()
+        XCTAssertEqual(try store.load().sessions, [future])
+        list.program.ranges = [.init(weekdays: [2], startMinute: 600, endMinute: 900)]
+        let backend = FakeBlockingBackend()
+        let d = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, calendar: calendar)
+        XCTAssertTrue(d.activeBlocks.isEmpty); XCTAssertTrue(backend.protectionRequired)
+        XCTAssertFalse(d.hasLocks)
+    }
+
+    @MainActor func testPasswordMustBeSetAndCannotChangeWhileReferenced() throws {
+        let now = date(), list = BlockList(name: "Sites")
+        let c = BlockingController(document: .init(lists: [list]), clock: { now })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .password); XCTAssertTrue(c.activeBlocks.isEmpty)
+        var program = list; program.program.ranges = [.init(weekdays: [1], startMinute: 600, endMinute: 900, lock: .password)]
+        c.save(program); XCTAssertTrue(c.list(list.id)!.program.ranges.isEmpty)
+        XCTAssertFalse(c.setPassword("")); XCTAssertTrue(c.setPassword("fixture")); XCTAssertTrue(c.hasPassword)
+        XCTAssertFalse(c.setPassword("replacement"))
+        XCTAssertEqual(c.changePassword(old: "wrong", new: "replacement"), .wrong(remaining: 4))
+        let id = try XCTUnwrap(c.schedule(listIDs: [list.id], start: now.addingTimeInterval(60), end: now.addingTimeInterval(300), lock: .password))
+        XCTAssertNotEqual(c.changePassword(old: "fixture", new: "replacement"), .ok)
+        XCTAssertNotEqual(c.removePassword(old: "fixture"), .ok)
+        c.delete(list.id); XCTAssertNotNil(c.list(list.id))
+        XCTAssertEqual(c.cancelScheduled(id: id, password: "fixture"), .ok)
+        XCTAssertEqual(c.changePassword(old: "fixture", new: "replacement"), .ok)
+        XCTAssertEqual(c.removePassword(old: "fixture"), .wrong(remaining: 4))
+        XCTAssertEqual(c.removePassword(old: "replacement"), .ok); XCTAssertFalse(c.hasPassword)
+    }
+
+    @MainActor func testPasswordActiveListStrictnessAndQuitAuthorizationAreScoped() throws {
+        var now = date(); let list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")])
+        let credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        let c = BlockingController(document: .init(lists: [list], passwordLock: credential), clock: { now }, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .password)
+        let id = c.activeBlocks[0].id
+        XCTAssertTrue(c.quitRequiresPassword); XCTAssertTrue(c.hasLocks); XCTAssertFalse(c.quitIsLocked)
+        var relaxed = list; relaxed.sites = []
+        if case .refused(let reason) = c.editCheck(relaxed) { XCTAssertTrue(reason.contains("mot de passe")) } else { XCTFail("Relaxation admitted") }
+        c.delete(list.id); XCTAssertNotNil(c.list(list.id)); c.stop(id); XCTAssertEqual(c.activeBlocks.count, 1)
+        XCTAssertFalse(c.consumeQuitAuthorization())
+        XCTAssertEqual(c.authorizeQuit(password: "fixture"), .ok); XCTAssertEqual(c.activeBlocks.count, 1)
+        XCTAssertTrue(c.consumeQuitAuthorization()); XCTAssertFalse(c.consumeQuitAuthorization())
+        XCTAssertEqual(c.authorizeQuit(password: "fixture"), .ok)
+        now = now.addingTimeInterval(31); XCTAssertFalse(c.consumeQuitAuthorization())
+        XCTAssertEqual(c.authorizeQuit(password: "fixture"), .ok)
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .password)
+        XCTAssertFalse(c.consumeQuitAuthorization())
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .locked)
+        XCTAssertNotEqual(c.authorizeQuit(password: "fixture"), .ok); XCTAssertTrue(c.quitIsLocked)
+        XCTAssertEqual(c.unlockWithPassword("fixture", blockID: id), .ok)
+        XCTAssertEqual(c.activeBlocks.count, 2)
+    }
+
+    @MainActor func testPasswordProgramSkipProtectsOnlyThisOccurrence() throws {
+        var now = date(); let credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        let range = BlockProgramRange(weekdays: [1], startMinute: 600, endMinute: 900, lock: .password)
+        let list = BlockList(name: "Programme", program: .init(ranges: [range]))
+        let c = BlockingController(document: .init(lists: [list], passwordLock: credential), clock: { now }, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        XCTAssertEqual(c.activeBlocks.first?.lock, .password)
+        XCTAssertEqual(c.unlockWithPassword("wrong", blockID: range.id), .wrong(remaining: 4)); XCTAssertEqual(c.activeBlocks.count, 1)
+        XCTAssertEqual(c.unlockWithPassword("fixture", blockID: range.id), .ok); XCTAssertTrue(c.activeBlocks.isEmpty)
+        XCTAssertNotEqual(c.removePassword(old: "fixture"), .ok)
+        now = date(12); c.refresh(); XCTAssertEqual(c.activeBlocks.first?.lock, .password)
+    }
+
+    @MainActor func testPasswordCooldownPersistsAndDoublesUpToOneHour() throws {
+        let store = try temporaryStore(); var now = date()
+        let list = BlockList(name: "Sites"), credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        let session = BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(86_400), lock: .password)
+        try store.save(.init(lists: [list], sessions: [session], passwordLock: credential))
+        let c = BlockingController(clock: { now }, store: store, continuous: { now.timeIntervalSince1970 })
+        for attempt in 1...4 { XCTAssertEqual(c.unlockWithPassword("wrong", blockID: session.id), .wrong(remaining: 5 - attempt)) }
+        let firstWait = now.addingTimeInterval(60)
+        XCTAssertEqual(c.unlockWithPassword("wrong", blockID: session.id), .wait(until: firstWait))
+        XCTAssertEqual(c.authorizeQuit(password: "fixture"), .wait(until: firstWait))
+        XCTAssertEqual(try store.load().passwordLock?.failedAttempts, 5)
+        let relaunched = BlockingController(clock: { now }, store: store, continuous: { now.timeIntervalSince1970 })
+        XCTAssertEqual(relaunched.unlockWithPassword("fixture", blockID: session.id), .wait(until: firstWait))
+        for delay in [120.0, 240, 480, 960, 1920, 3600, 3600] {
+            now = try XCTUnwrap(relaunched.snapshot.passwordLock?.retryAfter)
+            XCTAssertEqual(relaunched.unlockWithPassword("wrong", blockID: session.id), .wait(until: now.addingTimeInterval(delay)))
+        }
+        now = try XCTUnwrap(relaunched.snapshot.passwordLock?.retryAfter)
+        XCTAssertEqual(relaunched.unlockWithPassword("fixture", blockID: session.id), .ok)
+        XCTAssertEqual(try store.load().passwordLock?.failedAttempts, 0); XCTAssertNil(try store.load().passwordLock?.retryAfter)
+        XCTAssertTrue(relaunched.activeBlocks.isEmpty)
+    }
+
+    @MainActor func testMissingOrUnreadablePasswordNeverRecoversToWeakerDocument() throws {
+        let store = try temporaryStore(); var now = date(); let list = BlockList(name: "Sites")
+        let session = BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(600), lock: .password)
+        let doc = BlockingDocument(lists: [list], sessions: [session])
+        try store.save(.init(lists: [list])); try store.save(doc)
+        for badCredential in [NSNull(), "invalid", ["salt": "not-base64", "hash": 3], ["salt": "", "hash": "", "iterations": 1, "createdAt": 0]] as [Any] {
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(doc)) as? [String: Any])
+            object["passwordLock"] = badCredential
+            try JSONSerialization.data(withJSONObject: object).write(to: store.directory.appendingPathComponent("blocking.json"))
+            let recovered = try store.loadRecovering(); XCTAssertEqual(recovered.recovery, .none)
+            let c = BlockingController(document: recovered.document, clock: { now }, continuous: { now.timeIntervalSince1970 })
+            XCTAssertFalse(c.hasPassword); XCTAssertEqual(c.activeBlocks.first?.lock, .locked)
+            XCTAssertNotEqual(c.unlockWithPassword("anything", blockID: session.id), .ok)
+            XCTAssertFalse(c.setPassword("replacement")); c.stop(session.id); XCTAssertEqual(c.activeBlocks.count, 1)
+        }
+        let c = BlockingController(document: doc, clock: { now }, continuous: { now.timeIntervalSince1970 })
+        now = now.addingTimeInterval(600); c.refresh(); XCTAssertTrue(c.activeBlocks.isEmpty); XCTAssertFalse(c.hasLocks)
+    }
+
+    @MainActor func testPasswordLockRejectsRuntimeAndModuleSwitchDisable() throws {
+        let now = date(), list = BlockList(name: "Sites"), credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        let c = BlockingController(document: .init(lists: [list], sessions: [.init(listIDs: [list.id], start: now, end: now.addingTimeInterval(600), lock: .password)], passwordLock: credential), clock: { now })
+        let name = "blocking-password-runtime-" + UUID().uuidString, defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let modules = GoalongModuleStore(defaults: defaults); modules.setEnabled(.blocking, true)
+        let runtime = BlockingRuntime(controller: c); runtime.start(modules: modules)
+        modules.setEnabled(.blocking, false); XCTAssertTrue(modules.isEnabled(.blocking)); XCTAssertTrue(runtime.controller === c)
+        runtime.apply(enabled: false); XCTAssertTrue(runtime.controller === c); XCTAssertTrue(modules.isEnabled(.blocking))
+    }
+
+    @MainActor func testPasswordClockJumpPreservesSessionAndCooldown() throws {
+        var now = date(), uptime = 100.0; let list = BlockList(name: "Sites")
+        var credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        credential.failedAttempts = 5; credential.retryAfter = now.addingTimeInterval(60)
+        let session = BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(600), lock: .password)
+        let c = BlockingController(document: .init(lists: [list], sessions: [session], passwordLock: credential), clock: { now }, continuous: { uptime }, boot: { "test" })
+        now = now.addingTimeInterval(3601); uptime += 1; c.refresh()
+        XCTAssertEqual(c.activeBlocks.first?.end, date().addingTimeInterval(4200))
+        XCTAssertEqual(c.snapshot.passwordLock?.retryAfter, date().addingTimeInterval(3660))
+    }
+
+    @MainActor func testStoreFailureCannotAuthorizePasswordRelease() throws {
+        let store = try temporaryStore(), now = date(), list = BlockList(name: "Sites")
+        let credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        let session = BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(600), lock: .password)
+        try store.save(.init(lists: [list], sessions: [session], passwordLock: credential))
+        let c = BlockingController(clock: { now }, store: store, continuous: { now.timeIntervalSince1970 })
+        try FileManager.default.removeItem(at: store.directory)
+        try FileManager.default.createSymbolicLink(at: store.directory, withDestinationURL: store.directory.deletingLastPathComponent())
+        XCTAssertNotEqual(c.unlockWithPassword("fixture", blockID: session.id), .ok)
+        XCTAssertNotEqual(c.authorizeQuit(password: "fixture"), .ok)
+        XCTAssertFalse(c.consumeQuitAuthorization()); XCTAssertEqual(c.activeBlocks.count, 1)
+    }
+
     @MainActor func testActualBlockingOnlySamplesRecordNothingAndRetainNothing() throws {
         let store = try temporaryStore(), root = store.directory.deletingLastPathComponent()
         let config = ConfigManager()
@@ -378,7 +613,9 @@ private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {
     var siteBlocks = 0
     var appBlocks = 0
     var lastReason: BlockingVeilPresentation.Reason?
+    var protectionRequired = false
     func updateProtection(locked: Bool) -> BlockingProtectionState {
+        protectionRequired = locked
         var result = BlockingProtectionState()
         if locked && loginFailure { result.component = .failed("Démarrage à la connexion indisponible.") }
         return result

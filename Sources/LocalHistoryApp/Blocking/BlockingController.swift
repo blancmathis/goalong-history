@@ -9,6 +9,9 @@ import Foundation
 @MainActor final class BlockingController: ObservableObject {
     @Published private(set) var lists: [BlockList]
     @Published private(set) var activeBlocks: [BlockingActiveBlock] = []
+    @Published private(set) var scheduledBlocks: [BlockSession] = []
+    @Published private(set) var hasPassword = false
+    @Published private(set) var quitRequiresPassword = false
     @Published private(set) var freeze: BlockFreeze?
     @Published private(set) var nextProgramStart: (listID: UUID, date: Date)?
     @Published private(set) var siteBlockingAvailable = true
@@ -41,12 +44,14 @@ import Foundation
     private var unreadableSince: [Int32: Date] = [:]
     var onObservationRequirementChanged: ((Bool) -> Void)?
     private var observing = false
+    private var quitAuthorization: (blocks: Set<BlockingActiveBlock>, expires: Date)?
     var hasTimer: Bool { timer != nil }
     var snapshot: BlockingDocument { document }
     var needsObservation: Bool {
         guard !activeBlocks.isEmpty || freeze != nil || nextProgramStart.map({ $0.date.timeIntervalSince(clock()) <= 60 }) == true else { return false }
         return freeze != nil || lists.contains { list in
             (activeBlocks.contains { $0.listIDs.contains(list.id) }
+             || document.sessions.contains { $0.listIDs.contains(list.id) && $0.start > clock() && $0.start.timeIntervalSince(clock()) <= 60 }
              || BlockingSchedule.nextStart(of: list.program, after: clock(), calendar: calendar).map({ $0.timeIntervalSince(clock()) <= 60 }) == true)
              && (list.mode == .allowOnly || !list.apps.isEmpty || !list.sites.isEmpty)
         }
@@ -93,7 +98,8 @@ import Foundation
         refresh(enforceLast: false)
         if !hasLocks {
             let hadSessions = !document.sessions.isEmpty
-            document.sessions.removeAll()
+            // Quitting before a one-off start must preserve the scheduled commitment.
+            document.sessions.removeAll { $0.start <= clock() }
             if hadSessions, let store {
                 do { try store.save(document) } catch { failStore() }
             }
@@ -109,9 +115,23 @@ import Foundation
     /// End of the latest commitment. A store error is not a lock: it refuses edits, never quitting.
     var lockedUntil: Date? {
         let now = clock()
-        let ends = activeBlocks.filter { $0.lock == .locked }.map(\.end)
+        let ends = activeBlocks.filter { $0.lock.protectsLists }.map(\.end)
+            + document.sessions.filter { effectiveLock($0.lock).protectsLists }.map(\.end)
             + lists.compactMap { $0.program.lockedUntil } + [freeze?.end].compactMap { $0 }
         return ends.filter { $0 > now }.max()
+    }
+
+    /// A password cannot override an overlapping hard lock or a freeze.
+    var quitIsLocked: Bool {
+        activeBlocks.contains { $0.lock == .locked && $0.end > clock() }
+            || lists.contains { $0.program.isLocked(at: clock()) } || (freeze?.end ?? .distantPast) > clock()
+    }
+    var requiresLaunchAtLogin: Bool {
+        hasLocks || document.sessions.contains { $0.end > clock() && ($0.start > clock() || $0.lock != .free) }
+            || lists.contains { !$0.program.ranges.isEmpty }
+    }
+    private func effectiveLock(_ lock: BlockLock) -> BlockLock {
+        lock == .password && document.passwordLock?.isValid != true ? .locked : lock
     }
 
     var suggestions: [BlockSuggestion] { BlockSuggestion.catalog }
@@ -122,18 +142,25 @@ import Foundation
 
     func editCheck(_ next: BlockList) -> BlockingEditCheck {
         if storeFailed { return .refused("Le fichier de blocage doit être réparé avant toute modification.") }
-        guard let current = list(next.id) else { return .allowed }
+        let existing = list(next.id)
+        if next.program.ranges.contains(where: { $0.effectiveLock == .password }), !hasPassword,
+           next.program.ranges != existing?.program.ranges {
+            return .refused("Définissez d’abord le mot de passe de blocage.")
+        }
+        guard let current = existing else { return .allowed }
         guard isStricterOnly(current.id) else { return .allowed }
+        let passwordProtected = activeBlocks.contains { $0.lock == .password && $0.listIDs.contains(current.id) }
+        let prefix = passwordProtected ? "Pendant un blocage par mot de passe, " : "Pendant un verrou, "
         if (current.effectiveAction == .block && next.effectiveAction == .slowDown)
             || next.delaySeconds < current.delaySeconds || next.allowanceMinutes > current.allowanceMinutes {
-            return .refused("Pendant un verrou, Ralentir peut seulement devenir plus strict.")
+            return .refused(prefix + "Ralentir peut seulement devenir plus strict.")
         }
         if next.mode != current.mode { return .refused("Le mode ne change pas pendant un verrou.") }
         let oldSites = Set(current.sites.map(\.pattern)), newSites = Set(next.sites.map(\.pattern))
         let oldApps = Set(current.apps.map(\.bundleIdentifier)), newApps = Set(next.apps.map(\.bundleIdentifier))
         let sitesSafe = current.mode == .block ? oldSites.isSubset(of: newSites) : newSites.isSubset(of: oldSites)
         let appsSafe = current.mode == .block ? oldApps.isSubset(of: newApps) : newApps.isSubset(of: oldApps)
-        if !sitesSafe || !appsSafe { return .refused("Pendant un verrou, la liste peut seulement devenir plus stricte.") }
+        if !sitesSafe || !appsSafe { return .refused(prefix + "la liste peut seulement devenir plus stricte.") }
         if (next.quotaMinutesPerDay ?? 0) > (current.quotaMinutesPerDay ?? 0) {
             return .refused("Pendant un verrou, le temps permis peut seulement baisser.")
         }
@@ -148,12 +175,21 @@ import Foundation
         }
         let oldMinutes = Self.programCoverage(current.program), newMinutes = Self.programCoverage(next.program)
         if !oldMinutes.isSubset(of: newMinutes) { return .refused("Pendant un verrou, le programme peut seulement s’allonger.") }
+        for lock in BlockLock.allCases where lock != .free {
+            let old = Self.programCoverage(BlockProgram(ranges: current.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
+            let new = Self.programCoverage(BlockProgram(ranges: next.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
+            if !old.isSubset(of: new) { return .refused(prefix + "le verrou d’une plage peut seulement monter.") }
+        }
         return .allowed
     }
 
     func save(_ value: BlockList) {
         guard admitEdit() else { return }
         var next = value
+        guard !next.program.ranges.contains(where: { $0.effectiveLock == .password }) || hasPassword
+            || document.lists.first(where: { $0.id == next.id })?.program.ranges == next.program.ranges else {
+            error = "Définissez d’abord le mot de passe de blocage."; return
+        }
         guard next.sites.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse de site invalide."; return }
         next.sites = Array(Set(next.sites.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
         var candidate = document
@@ -176,6 +212,9 @@ import Foundation
     func delete(_ id: UUID) {
         guard admitEdit() else { return }
         if isStricterOnly(id) { error = "Une liste verrouillée ne peut pas être supprimée."; return }
+        if document.sessions.contains(where: { $0.start > clock() && $0.lock != .free && $0.listIDs.contains(id) }) {
+            error = "Annulez d’abord le blocage programmé avec son défi ou son mot de passe."; return
+        }
         document.lists.removeAll { $0.id == id }
         document.sessions = document.sessions.compactMap { session in
             var session = session
@@ -196,16 +235,32 @@ import Foundation
     // MARK: Sessions
 
     func start(listIDs: [UUID], until end: Date, lock: BlockLock) {
-        guard admitEdit() else { return }
+        _ = createSession(listIDs: listIDs, start: nil, end: end, lock: lock)
+    }
+
+    @discardableResult
+    func schedule(listIDs: [UUID], start: Date, end: Date, lock: BlockLock) -> UUID? {
+        createSession(listIDs: listIDs, start: start, end: end, lock: lock)
+    }
+    private func createSession(listIDs: [UUID], start: Date?, end: Date, lock: BlockLock) -> UUID? {
+        guard admitEdit() else { return nil }
         let now = clock()
-        guard !listIDs.isEmpty, Set(listIDs).isSubset(of: Set(lists.map(\.id))), end > now else { error = "Choisissez une liste et une fin future."; return }
-        document.sessions.append(BlockSession(listIDs: listIDs, start: now, end: end, lock: lock))
+        let start = start ?? now
+        guard !listIDs.isEmpty, Set(listIDs).count == listIDs.count, listIDs.count <= 200,
+              Set(listIDs).isSubset(of: Set(lists.map(\.id))), start >= now, end > start else {
+            error = "Choisissez une liste, un début présent ou futur et une fin après le début."; return nil
+        }
+        guard lock != .password || hasPassword else { error = "Définissez d’abord le mot de passe de blocage."; return nil }
+        let session = BlockSession(listIDs: listIDs, start: start, end: end, lock: lock)
+        document.sessions.append(session)
         commit()
+        return storeFailed ? nil : session.id
     }
 
     func startFocusBlock(id: UUID, listIDs: [UUID], until end: Date, lock: BlockLock) throws {
         refresh(enforceLast: false)
         guard !storeFailed else { throw FocusFailure.storageFailed }
+        guard lock != .password || hasPassword else { throw FocusFailure.locked }
         guard !listIDs.isEmpty, end > clock(), Set(listIDs).isSubset(of: Set(lists.map(\.id))) else { throw FocusFailure.notFound }
         if let existing = document.sessions.first(where: { $0.id == id }) {
             guard existing.origin == .manual else { throw FocusFailure.locked }; return
@@ -239,34 +294,154 @@ import Foundation
         guard !storeFailed else { throw FocusFailure.storageFailed }
     }
 
-    /// Ends a manual session. `typed` must match the challenge for `.typing`; `.locked` never stops.
-    func stop(_ id: UUID, typed: String? = nil) {
-        guard admitEdit() else { return }
-        if let block = activeBlocks.first(where: { $0.id == id }), case .program = block.origin {
-            guard block.lock != .locked else { error = "Ce programme est verrouillé jusqu’à la fin."; return }
+    /// The same admission protects manual blocks, future sessions and program skips.
+    func stop(_ id: UUID, typed: String? = nil, password: String? = nil) {
+        _ = endBlock(id, typed: typed, password: password)
+    }
+
+    @discardableResult
+    func cancelScheduled(id: UUID, typed: String? = nil, password: String? = nil) -> BlockingPasswordResult {
+        guard admitEdit() else { return refusePassword("Le fichier de blocage doit être réparé.") }
+        guard document.sessions.contains(where: { $0.id == id && $0.start > clock() }) else {
+            return refusePassword("Ce blocage n’est plus programmé : actualisez la page.")
+        }
+        return endBlock(id, typed: typed, password: password)
+    }
+
+    private func endBlock(_ id: UUID, typed: String?, password: String?) -> BlockingPasswordResult {
+        guard admitEdit() else { return refusePassword("Le fichier de blocage doit être réparé.") }
+        let block = activeBlocks.first { $0.id == id }
+        let session = document.sessions.first { $0.id == id }
+        guard let lock = block?.lock ?? session.map({ effectiveLock($0.lock) }) else {
+            return refusePassword("Ce blocage est terminé ou introuvable.")
+        }
+        if let session, case .commitment = session.origin {
+            return refusePassword("L’enjeu est verrouillé : utilisez un joker ou une déclaration dans Concentration.")
+        }
+        switch lock {
+        case .locked: return refusePassword("Ce blocage est verrouillé jusqu’à la fin.")
+        case .typing:
+            guard typed == typingChallenge(for: id) else { return refusePassword("Le texte ne correspond pas.") }
+        case .password:
+            guard let password else { return refusePassword("Le mot de passe de blocage est exigé.") }
+            let result = verifyPassword(password)
+            guard result == .ok else { return result }
+        case .free: break
+        }
+        if let block, case .program = block.origin {
             document.programSkips = document.programSkips ?? [:]
             document.programSkips?[id] = block.end
-            commit(); return
+            document.heldPrograms?.removeAll { $0.id == id }
+        } else {
+            document.sessions.removeAll { $0.id == id }
         }
-        guard let session = document.sessions.first(where: { $0.id == id }) else { return }
-        if case .commitment = session.origin { error = "L’enjeu est verrouillé : utilisez un joker ou une déclaration dans Concentration."; return }
-        switch session.lock {
-        case .locked:
-            error = "Ce blocage est verrouillé jusqu’à la fin."
-            return
-        case .typing:
-            guard let typed, typed == typingChallenge(for: id) else {
-                error = "Le texte ne correspond pas."
-                return
-            }
-        case .free:
-            break
-        }
-        document.sessions.removeAll { $0.id == id }
+        challenges[id] = nil
         commit()
+        return storeFailed ? refusePassword("L’arrêt n’a pas pu être enregistré.") : .ok
     }
 
     private var challenges: [UUID: String] = [:]
+
+    // MARK: Global blocking password
+
+    private var hasPasswordBlocks: Bool {
+        (document.sessions + (document.heldPrograms ?? [])).contains { $0.lock == .password && $0.end > clock() }
+            || document.lists.contains { $0.program.ranges.contains { $0.effectiveLock == .password } }
+    }
+
+    @discardableResult
+    func setPassword(_ password: String) -> Bool {
+        guard admitEdit() else { return false }
+        guard document.passwordLock == nil, !hasPasswordBlocks else {
+            error = "Le mot de passe existe déjà, ou un blocage par mot de passe doit d’abord finir."; return false
+        }
+        guard let credential = BlockPasswordLock.make(password, at: clock()) else {
+            error = "Choisissez un mot de passe non vide de 4 096 octets maximum."; return false
+        }
+        document.passwordLock = credential; commit(); return !storeFailed
+    }
+
+    @discardableResult
+    func changePassword(old: String, new: String) -> BlockingPasswordResult {
+        guard admitEdit() else { return refusePassword("Le fichier de blocage doit être réparé.") }
+        guard !hasPasswordBlocks else { return refusePassword("Le mot de passe ne change pas tant qu’un blocage par mot de passe est actif ou à venir.") }
+        let result = verifyPassword(old)
+        guard result == .ok else { return result }
+        guard let credential = BlockPasswordLock.make(new, at: clock()) else { return refusePassword("Choisissez un mot de passe non vide de 4 096 octets maximum.") }
+        document.passwordLock = credential; commit()
+        return storeFailed ? refusePassword("Le mot de passe n’a pas pu être enregistré.") : .ok
+    }
+
+    @discardableResult
+    func removePassword(old: String) -> BlockingPasswordResult {
+        guard admitEdit() else { return refusePassword("Le fichier de blocage doit être réparé.") }
+        guard !hasPasswordBlocks else { return refusePassword("Le mot de passe reste nécessaire pour un blocage actif ou à venir.") }
+        let result = verifyPassword(old)
+        guard result == .ok else { return result }
+        document.passwordLock = nil; quitAuthorization = nil; commit()
+        return storeFailed ? refusePassword("Le retrait du mot de passe n’a pas pu être enregistré.") : .ok
+    }
+
+    @discardableResult
+    func unlockWithPassword(_ password: String, blockID: UUID) -> BlockingPasswordResult {
+        guard admitEdit() else { return refusePassword("Le fichier de blocage doit être réparé.") }
+        let lock = activeBlocks.first(where: { $0.id == blockID })?.lock
+            ?? document.sessions.first(where: { $0.id == blockID }).map { effectiveLock($0.lock) }
+        guard lock == .password else { return refusePassword("Ce blocage ne peut pas être arrêté par mot de passe.") }
+        return endBlock(blockID, typed: nil, password: password)
+    }
+
+    @discardableResult
+    func authorizeQuit(password: String) -> BlockingPasswordResult {
+        refresh(enforceLast: false)
+        quitAuthorization = nil
+        guard !quitIsLocked else { return refusePassword("Un verrou sans arrêt possible ou un gel du Mac reste actif.") }
+        guard quitRequiresPassword else { return .ok }
+        let result = verifyPassword(password)
+        if result == .ok {
+            quitAuthorization = (Set(activeBlocks.filter { $0.lock == .password }), clock().addingTimeInterval(30))
+        }
+        return result
+    }
+
+    /// The app consumes a single authorization at the final termination hook.
+    func consumeQuitAuthorization() -> Bool {
+        refresh(enforceLast: false)
+        defer { quitAuthorization = nil }
+        guard !quitIsLocked else { return false }
+        guard quitRequiresPassword else { return true }
+        guard let authorization = quitAuthorization, authorization.expires > clock() else { return false }
+        return authorization.blocks == Set(activeBlocks.filter { $0.lock == .password })
+    }
+
+    func revokeQuitAuthorization() { quitAuthorization = nil }
+
+    private func refusePassword(_ reason: String) -> BlockingPasswordResult {
+        error = reason; return .refused(reason: reason)
+    }
+
+    private func verifyPassword(_ password: String) -> BlockingPasswordResult {
+        guard !storeFailed else { return refusePassword("Le fichier de blocage doit être réparé avant un essai.") }
+        guard var credential = document.passwordLock, credential.isValid else {
+            return refusePassword("Le mot de passe est illisible : les blocages restent verrouillés jusqu’à leur fin.")
+        }
+        if let until = credential.retryAfter, until > clock() { return .wait(until: until) }
+        let matches = credential.matches(password)
+        if matches { credential.failedAttempts = 0; credential.retryAfter = nil }
+        else {
+            credential.failedAttempts = min(credential.failedAttempts, 16) + 1
+            if credential.failedAttempts >= 5 {
+                let delay = min(3_600.0, 60 * pow(2, Double(min(credential.failedAttempts - 5, 6))))
+                credential.retryAfter = clock().addingTimeInterval(delay)
+            }
+        }
+        document.passwordLock = credential; commit()
+        guard !storeFailed else { return refusePassword("L’essai de mot de passe n’a pas pu être enregistré.") }
+        if matches { return .ok }
+        if let until = credential.retryAfter { error = "Trop d’essais : attendez avant de réessayer."; return .wait(until: until) }
+        error = "Le mot de passe ne correspond pas."
+        return .wrong(remaining: max(0, 5 - credential.failedAttempts))
+    }
 
     func typingChallenge(for id: UUID) -> String {
         if let value = challenges[id] { return value }
@@ -276,14 +451,20 @@ import Foundation
         return value
     }
 
-    func takeBreak(listID: UUID) {
+    func takeBreak(listID: UUID, password: String? = nil) {
         guard admitEdit() else { return }
         guard freeze == nil else { error = "Aucune pause pendant le gel du Mac."; return }
         guard activeBlocks.contains(where: { $0.listIDs.contains(listID) }), let breaks = list(listID)?.breaks else { error = "Cette liste n’a pas de pause disponible."; return }
         var usage = todayUsage()
         guard usage.breakEnds[listID].map({ $0 > clock() }) != true else { error = "Une pause est déjà en cours."; return }
         let taken = usage.breaksTaken[listID] ?? 0
-        guard taken < breaks.count else { error = "Toutes les pauses du jour sont utilisées."; return }
+        if taken >= breaks.count {
+            let locks = activeBlocks.filter { $0.listIDs.contains(listID) }.map(\.lock)
+            guard locks.contains(.password), !locks.contains(.locked), let password else {
+                error = "Toutes les pauses du jour sont utilisées. Un mot de passe est exigé pour une pause supplémentaire."; return
+            }
+            guard verifyPassword(password) == .ok else { return }
+        }
         usage.breaksTaken[listID] = taken + 1
         let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: clock()))!
         usage.breakEnds[listID] = min(midnight, clock().addingTimeInterval(TimeInterval(breaks.minutes * 60)))
@@ -367,7 +548,7 @@ import Foundation
         document.usage = document.usage == nil && usage.quotaSecondsUsed.isEmpty && usage.breaksTaken.isEmpty && usage.slowDownShown == nil ? nil : usage
         let blocks = (document.sessions + (document.heldPrograms ?? [])).filter { $0.start <= now && $0.end > now }.map { session in
             var block = BlockingActiveBlock(id: session.id, listIDs: session.listIDs, start: session.start,
-                                            end: session.end, lock: session.lock, origin: session.origin)
+                                            end: session.end, lock: effectiveLock(session.lock), origin: session.origin)
             for id in session.listIDs {
                 guard let list = list(id) else { continue }
                 if let breaks = list.breaks { block.breaksLeft[id] = max(0, breaks.count - (usage.breaksTaken[id] ?? 0)) }
@@ -379,6 +560,12 @@ import Foundation
             return block
         } + programBlocks(at: now, usage: usage)
         if activeBlocks != blocks { activeBlocks = blocks }
+        let scheduled = document.sessions.filter { $0.start > now && $0.end > now }.sorted { $0.start < $1.start }
+        if scheduledBlocks != scheduled { scheduledBlocks = scheduled }
+        let passwordAvailable = document.passwordLock?.isValid == true
+        if hasPassword != passwordAvailable { hasPassword = passwordAvailable }
+        let needsPassword = blocks.contains { $0.lock == .password }
+        if quitRequiresPassword != needsPassword { quitRequiresPassword = needsPassword }
         if let store, !storeFailed, lockMarker != .some(lockedUntil) {
             lockMarker = .some(lockedUntil); store.writeLockMarker(until: lockedUntil)
         }
@@ -389,7 +576,7 @@ import Foundation
         let support = backend?.browsers ?? []
         if browsers != support { browsers = support }
         if let backend {
-            let state = backend.updateProtection(locked: hasLocks)
+            let state = backend.updateProtection(locked: requiresLaunchAtLogin)
             if protection != state { protection = state }
             if !storeFailed {
                 let message: String?
@@ -412,7 +599,7 @@ import Foundation
         if enforceLast, var target = lastObservation { target.at = now; enforce(target) }
     }
 
-    private var hasPersistedWork: Bool { !document.lists.isEmpty || !document.sessions.isEmpty || document.freeze != nil }
+    private var hasPersistedWork: Bool { !document.lists.isEmpty || !document.sessions.isEmpty || document.freeze != nil || document.passwordLock != nil }
     private func failStore() {
         storeFailed = true
         error = "Goalong ne peut pas enregistrer le blocage : les modifications sont refusées. Relancez Goalong pour réessayer."
@@ -437,6 +624,8 @@ import Foundation
         timer?.invalidate(); timer = nil
         guard runsTimers else { return }
         var boundaries = activeBlocks.map(\.end) + document.sessions.map(\.start)
+        boundaries += document.sessions.map { $0.start.addingTimeInterval(-60) }
+        if let until = document.passwordLock?.retryAfter { boundaries.append(until) }
         boundaries += lists.compactMap { $0.program.lockedUntil }
         boundaries += (document.usage?.breakEnds.values).map(Array.init) ?? []
         if let end = freeze?.end { boundaries.append(end) }
@@ -449,21 +638,28 @@ import Foundation
         RunLoop.main.add(value, forMode: .common); timer = value
     }
     private func extendLocks(by jump: Double, at oldWall: Date) {
-        for index in document.sessions.indices where document.sessions[index].lock == .locked {
-            if jump < 0 { document.sessions[index].start = document.sessions[index].start.addingTimeInterval(jump) }
+        for index in document.sessions.indices where effectiveLock(document.sessions[index].lock).protectsLists {
+            if jump < 0 || document.sessions[index].start > oldWall { document.sessions[index].start = document.sessions[index].start.addingTimeInterval(jump) }
             document.sessions[index].end = document.sessions[index].end.addingTimeInterval(jump)
         }
         document.heldPrograms = (document.heldPrograms ?? []).filter { $0.end > oldWall }.map { value in
             var value = value; if jump < 0 { value.start = value.start.addingTimeInterval(jump) }; value.end = value.end.addingTimeInterval(jump); return value
         }
-        for index in document.lists.indices where document.lists[index].program.isLocked(at: oldWall) {
+        for index in document.lists.indices {
             let list = document.lists[index]
-            if let window = BlockingSchedule.currentWindow(of: list.program, at: oldWall, calendar: calendar),
-               document.heldPrograms?.contains(where: { $0.listIDs == [list.id] }) != true {
+            for window in BlockingSchedule.windows(of: list.program, at: oldWall, calendar: calendar)
+                where window.start <= oldWall && window.end > oldWall {
+                let lock = list.program.isLocked(at: oldWall) ? BlockLock.locked
+                    : effectiveLock(list.program.ranges.first { $0.id == window.rangeID }?.effectiveLock ?? .free)
+                guard lock.protectsLists, document.programSkips?[window.rangeID].map({ $0 > oldWall }) != true,
+                      document.heldPrograms?.contains(where: { $0.id == window.rangeID }) != true else { continue }
                 document.heldPrograms = (document.heldPrograms ?? []) + [BlockSession(id: window.rangeID, listIDs: [list.id], start: window.start.addingTimeInterval(min(0, jump)),
-                    end: window.end.addingTimeInterval(jump), lock: .locked, origin: .program(window.rangeID))]
+                    end: window.end.addingTimeInterval(jump), lock: lock, origin: .program(window.rangeID))]
             }
-            document.lists[index].program.lockedUntil = list.program.lockedUntil?.addingTimeInterval(jump)
+            if list.program.isLocked(at: oldWall) { document.lists[index].program.lockedUntil = list.program.lockedUntil?.addingTimeInterval(jump) }
+        }
+        if let until = document.passwordLock?.retryAfter, until > oldWall {
+            document.passwordLock?.retryAfter = until.addingTimeInterval(jump)
         }
         if var freeze = document.freeze { if jump < 0 { freeze.start = freeze.start.addingTimeInterval(jump) }; freeze.end = freeze.end.addingTimeInterval(jump); document.freeze = freeze }
     }
@@ -646,16 +842,18 @@ import Foundation
     private func isStricterOnly(_ listID: UUID) -> Bool {
         let now = clock()
         if list(listID)?.program.isLocked(at: now) == true { return true }
-        return activeBlocks.contains { $0.lock == .locked && $0.listIDs.contains(listID) }
+        return activeBlocks.contains { $0.lock.protectsLists && $0.listIDs.contains(listID) }
     }
 
     private func programBlocks(at now: Date, usage: BlockDayUsage) -> [BlockingActiveBlock] {
-        document.lists.compactMap { list in
-            guard let window = BlockingSchedule.currentWindow(of: list.program, at: now, calendar: calendar) else { return nil }
+        document.lists.flatMap { list -> [BlockingActiveBlock] in
+            BlockingSchedule.windows(of: list.program, at: now, calendar: calendar).compactMap { window in
+            guard window.start <= now, window.end > now else { return nil }
             guard document.programSkips?[window.rangeID].map({ $0 > now }) != true,
-                  document.heldPrograms?.contains(where: { $0.listIDs.contains(list.id) && $0.end > now }) != true else { return nil }
+                  document.heldPrograms?.contains(where: { $0.id == window.rangeID && $0.end > now }) != true else { return nil }
+            let rangeLock = effectiveLock(list.program.ranges.first { $0.id == window.rangeID }?.effectiveLock ?? .free)
             var block = BlockingActiveBlock(id: window.rangeID, listIDs: [list.id], start: window.start, end: window.end,
-                                            lock: list.program.isLocked(at: now) ? .locked : .free,
+                                            lock: list.program.isLocked(at: now) ? .locked : rangeLock,
                                             origin: .program(window.rangeID))
             if let breaks = list.breaks { block.breaksLeft[list.id] = max(0, breaks.count - (usage.breaksTaken[list.id] ?? 0)) }
             if let end = usage.breakEnds[list.id], end > now { block.breakEnds[list.id] = end }
@@ -663,13 +861,16 @@ import Foundation
                 block.quotaSecondsLeft[list.id] = max(0, Double(quota * 60) - (usage.quotaSecondsUsed[list.id] ?? 0))
             }
             return block
+            }
         }
     }
 
     private func nextStart(after now: Date) -> (listID: UUID, date: Date)? {
-        document.lists.compactMap { list in
+        let program = document.lists.compactMap { list in
             BlockingSchedule.nextStart(of: list.program, after: now, calendar: calendar).map { (list.id, $0) }
-        }.min { $0.1 < $1.1 }
+        }
+        let sessions = document.sessions.filter { $0.start > now }.compactMap { session in session.listIDs.first.map { ($0, session.start) } }
+        return (program + sessions).min { $0.1 < $1.1 }
     }
 
     /// Every (weekday, minute-of-week) the program covers, at minute resolution.
@@ -693,6 +894,8 @@ import Foundation
 @MainActor final class BlockingRuntime: ObservableObject {
     static let shared = BlockingRuntime()
     @Published private(set) var controller: BlockingController?
+
+    init(controller: BlockingController? = nil) { self.controller = controller }
 
     private var modules: GoalongModuleStore?
     private weak var monitor: ContextMonitor?

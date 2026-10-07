@@ -63,6 +63,10 @@ struct BlockProgramRange: Codable, Hashable, Identifiable {
     /// Minutes since local midnight, 0…1440. `end <= start` ends the next day.
     var startMinute: Int
     var endMinute: Int
+    /// Absent in older documents: an independently stoppable free range.
+    var lock: BlockLock?
+
+    var effectiveLock: BlockLock { lock ?? .free }
 
     var crossesMidnight: Bool { endMinute <= startMinute }
     var durationMinutes: Int { crossesMidnight ? 1_440 - startMinute + endMinute : endMinute - startMinute }
@@ -78,8 +82,15 @@ enum BlockLock: String, Codable, CaseIterable {
     case free
     /// « Difficile »: retype a random text to stop.
     case typing
+    /// « Mot de passe »: the global blocking password is required to stop.
+    case password
     /// « Verrouillé »: cannot be stopped before its end.
     case locked
+
+    var strength: Int {
+        switch self { case .free: return 0; case .typing: return 1; case .password: return 2; case .locked: return 3 }
+    }
+    var protectsLists: Bool { self == .password || self == .locked }
 }
 
 struct BlockSession: Codable, Identifiable, Hashable {
@@ -122,6 +133,33 @@ struct BlockingDocument: Codable, Equatable {
     var programSkips: [UUID: Date]?
     var heldPrograms: [BlockSession]?
     var usageHistory: [String: BlockDayUsage]?
+    var passwordLock: BlockPasswordLock?
+
+    enum CodingKeys: String, CodingKey {
+        case version, lists, sessions, usage, freeze, clock, programSkips, heldPrograms, usageHistory, passwordLock
+    }
+    init(version: Int = currentVersion, lists: [BlockList] = [], sessions: [BlockSession] = [],
+         usage: BlockDayUsage? = nil, freeze: BlockFreeze? = nil, clock: BlockingClockState? = nil,
+         programSkips: [UUID: Date]? = nil, heldPrograms: [BlockSession]? = nil,
+         usageHistory: [String: BlockDayUsage]? = nil, passwordLock: BlockPasswordLock? = nil) {
+        self.version = version; self.lists = lists; self.sessions = sessions; self.usage = usage
+        self.freeze = freeze; self.clock = clock; self.programSkips = programSkips
+        self.heldPrograms = heldPrograms; self.usageHistory = usageHistory; self.passwordLock = passwordLock
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(Int.self, forKey: .version)
+        lists = try c.decode([BlockList].self, forKey: .lists)
+        sessions = try c.decode([BlockSession].self, forKey: .sessions)
+        usage = try c.decodeIfPresent(BlockDayUsage.self, forKey: .usage)
+        freeze = try c.decodeIfPresent(BlockFreeze.self, forKey: .freeze)
+        clock = try c.decodeIfPresent(BlockingClockState.self, forKey: .clock)
+        programSkips = try c.decodeIfPresent([UUID: Date].self, forKey: .programSkips)
+        heldPrograms = try c.decodeIfPresent([BlockSession].self, forKey: .heldPrograms)
+        usageHistory = try c.decodeIfPresent([String: BlockDayUsage].self, forKey: .usageHistory)
+        // A damaged credential must not make the store recover an older, weaker document.
+        passwordLock = try? c.decodeIfPresent(BlockPasswordLock.self, forKey: .passwordLock)
+    }
 }
 
 /// One thing blocking right now, as the page shows it: a manual session or a program window.

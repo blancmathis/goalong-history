@@ -57,14 +57,35 @@ final class BlockingPageRenderingTests: XCTestCase {
             }
             let sunday = now.addingTimeInterval(-86_400)
             try render("page-empty-\(suffix)", width: 900, height: 900, page(fixtures.empty()))
-            try render("page-idle-\(suffix)", width: 900, height: 1_800, page(fixtures.idle(), at: sunday))
-            try render("page-active-\(suffix)", width: 900, height: 2_150, page(fixtures.active()))
+            try render("page-idle-\(suffix)", width: 900, height: 1_500, page(fixtures.idle(), at: sunday))
+            try render("page-active-\(suffix)", width: 900, height: 1_500, page(fixtures.active()))
             let editing = fixtures.idle()
-            try render("page-editing-\(suffix)", width: 900, height: 2_300,
-                       page(editing, expanded: editing.lists.first?.id, at: sunday))
+            try render("list-sheet-\(suffix)", width: 600, height: 900,
+                       BlockListSheet(controller: editing, listID: fixtures.social.id, now: sunday, onDone: {}))
             let locked = fixtures.active()
-            try render("page-editing-locked-\(suffix)", width: 900, height: 2_500,
-                       page(locked, expanded: locked.lists.first?.id))
+            try render("list-sheet-locked-\(suffix)", width: 600, height: 900,
+                       BlockListSheet(controller: locked, listID: fixtures.video.id, now: now, onDone: {}))
+            try render("range-popover-\(suffix)", width: 400,
+                       BlockingRangePopover(controller: editing,
+                                            draft: BlockingRangeDraft(existing: nil, listIDs: [fixtures.social.id], days: [1, 2, 3, 4, 5],
+                                                                      start: 540, end: 720),
+                                            now: sunday, onClose: {}))
+            try render("protection-\(suffix)", width: 440, BlockingProtectionDetails(controller: editing).padding(18))
+            let guarded = fixtures.guarded()
+            try render("page-password-\(suffix)", width: 900, height: 1_500, page(guarded))
+            try render("composer-later-\(suffix)", width: 820,
+                       BlockingNowComposer(controller: editing, now: sunday, later: true, lock: .password).padding(24))
+            try render("range-popover-password-\(suffix)", width: 440,
+                       BlockingRangePopover(controller: guarded,
+                                            draft: BlockingRangeDraft(existing: nil, listIDs: [fixtures.social.id], days: [1, 2, 3, 4, 5],
+                                                                      start: 540, end: 720, lock: .password),
+                                            now: now, onClose: {}))
+            try render("protection-password-\(suffix)", width: 440, BlockingProtectionDetails(controller: guarded).padding(18))
+            try render("password-create-\(suffix)", width: 480,
+                       BlockingPasswordSheet(controller: editing, purpose: .create, onClose: {}))
+            try render("password-unlock-\(suffix)", width: 480,
+                       BlockingPasswordSheet(controller: guarded,
+                                             purpose: .unlock(UUID(), what: "Le blocage s’arrête maintenant, avant 16:34."), onClose: {}))
             try render("modules-\(suffix)", width: 760, GoalongModulesSettings(onOpen: { _ in }).padding(32))
             try render("typing-\(suffix)", width: 560,
                        BlockingTypingChallengeSheet(text: String(repeating: "aB3kZ", count: 24), onSubmit: { _ in }, onCancel: {}))
@@ -132,6 +153,18 @@ final class BlockingPageRenderingTests: XCTestCase {
             usage.breaksTaken[social.id] = 1
             document.usage = usage
             return BlockingController(document: document, clock: { now })
+        }
+
+        /// A block protected by the password, and a one-time block set for tomorrow.
+        func guarded() -> BlockingController {
+            var document = BlockingDocument()
+            document.lists = [social, video, focus]
+            let controller = BlockingController(document: document, clock: { now })
+            controller.setPassword("rendu-fixe")
+            controller.start(listIDs: [social.id], until: now.addingTimeInterval(84 * 60), lock: .password)
+            controller.schedule(listIDs: [video.id, focus.id], start: now.addingTimeInterval(18 * 3_600 + 50 * 60),
+                                end: now.addingTimeInterval(21 * 3_600 + 50 * 60), lock: .typing)
+            return controller
         }
 
         var freeze: BlockFreeze {

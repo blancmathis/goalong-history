@@ -339,20 +339,16 @@
         }
 
         private func confirmUserQuitIfNeeded() -> Bool {
-            if MainActor.assumeIsolated({ BlockingRuntime.shared.controller?.hasLocks == true }) {
-                let alert = NSAlert()
-                alert.messageText = "Un blocage est verrouillé"
-                alert.informativeText = "Goalong reste ouvert jusqu’à la fin du verrou. Vous pouvez fermer la fenêtre."
-                alert.addButton(withTitle: "Fermer la fenêtre")
-                alert.addButton(withTitle: "Annuler")
-                if alert.runModal() == .alertFirstButtonReturn { dashboardWindowController?.window?.close() }
-                return false
+            var approved = false
+            defer {
+                if !approved { MainActor.assumeIsolated { BlockingRuntime.shared.controller?.revokeQuitAuthorization() } }
             }
+            guard confirmBlockingQuitIfNeeded(consumeAuthorization: false) else { return false }
             guard !userQuitConfirmed,
                   BackgroundContinuityPreferences.shouldConfirmQuit(
                     keepRunning: continuityPreferences.keepRunning,
                     hasEnabledSources: hasEnabledBackgroundSources
-                  ) else { return true }
+                  ) else { approved = true; return true }
             guard !quitAlertIsVisible else { return false }
             quitAlertIsVisible = true
             defer { quitAlertIsVisible = false }
@@ -362,7 +358,53 @@
             alert.addButton(withTitle: "Continuer en arrière-plan")
             alert.addButton(withTitle: "Quitter et arrêter")
             NSApplication.shared.activate(ignoringOtherApps: true)
-            return alert.runModal() == .alertSecondButtonReturn
+            approved = alert.runModal() == .alertSecondButtonReturn
+            return approved
+        }
+
+        private func confirmBlockingQuitIfNeeded(consumeAuthorization: Bool) -> Bool {
+            MainActor.assumeIsolated {
+            guard let controller = BlockingRuntime.shared.controller else { return true }
+            controller.refresh(enforceLast: false)
+            if controller.quitIsLocked {
+                let alert = NSAlert()
+                alert.messageText = "Un blocage est verrouillé"
+                alert.informativeText = "Goalong reste ouvert jusqu’à la fin du verrou. Vous pouvez fermer la fenêtre."
+                alert.addButton(withTitle: "Fermer la fenêtre")
+                alert.addButton(withTitle: "Annuler")
+                if alert.runModal() == .alertFirstButtonReturn { dashboardWindowController?.window?.close() }
+                return false
+            }
+            guard controller.quitRequiresPassword else { return true }
+            if consumeAuthorization, controller.consumeQuitAuthorization() { return true }
+            guard !quitAlertIsVisible else { return false }
+            quitAlertIsVisible = true
+            defer { quitAlertIsVisible = false }
+            let alert = NSAlert()
+            alert.messageText = "Mot de passe de blocage exigé"
+            alert.informativeText = "Quitter Goalong suspend le blocage jusqu’au prochain lancement. Le mot de passe choisi pour le blocage est nécessaire."
+            let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+            field.placeholderString = "Mot de passe de blocage"
+            alert.accessoryView = field
+            alert.addButton(withTitle: "Quitter")
+            alert.addButton(withTitle: "Annuler")
+            alert.window.initialFirstResponder = field
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertFirstButtonReturn else { field.stringValue = ""; return false }
+            let result = controller.authorizeQuit(password: field.stringValue)
+            field.stringValue = ""
+            guard result == .ok else {
+                let failure = NSAlert(); failure.messageText = "Goalong reste ouvert"
+                switch result {
+                case .wrong(let remaining): failure.informativeText = "Mot de passe incorrect. \(remaining) essai(s) avant l’attente."
+                case .wait(let until): failure.informativeText = "Réessayez \(BlockingFormat.moment(until))."
+                case .refused(let reason): failure.informativeText = reason
+                case .ok: break
+                }
+                failure.addButton(withTitle: "OK"); failure.runModal(); return false
+            }
+            return !consumeAuthorization || controller.consumeQuitAuthorization()
+            }
         }
 
         func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -370,16 +412,15 @@
             let senderPID = event?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
             let senderID = senderPID.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
             let systemQuit = ["com.apple.loginwindow", "com.apple.systempreferences", "com.apple.SystemSettings"].contains(senderID ?? "")
-            if !systemQuit, !PermissionRecovery.isRestarting, !SoftwareUpdateManager.shared.isRelaunchingForUpdate,
-               MainActor.assumeIsolated({ BlockingRuntime.shared.controller?.hasLocks == true }) {
-                _ = confirmUserQuitIfNeeded(); return .terminateCancel
-            }
             // Our menu and Command-Q use requestUserQuit(). Cover a direct Dock Quit
             // as well, but never intercept logout/shutdown, installers, or a restart.
-            if senderID == "com.apple.dock", !PermissionRecovery.isRestarting,
+            if senderID == "com.apple.dock", !userQuitConfirmed, !PermissionRecovery.isRestarting,
                !SoftwareUpdateManager.shared.isRelaunchingForUpdate {
                 guard confirmUserQuitIfNeeded() else { return .terminateCancel }
                 userQuitConfirmed = true
+            }
+            if !systemQuit, !PermissionRecovery.isRestarting, !SoftwareUpdateManager.shared.isRelaunchingForUpdate {
+                guard confirmBlockingQuitIfNeeded(consumeAuthorization: true) else { return .terminateCancel }
             }
             guard event?.eventClass == AEEventClass(kCoreEventClass), event?.eventID == AEEventID(kAEQuitApplication),
                   PermissionRecovery.shouldAssistSettingsQuit(senderBundleID: senderID,
