@@ -184,6 +184,9 @@ enum BlockingRules {
                   (list.keywords ?? []).count <= 50,
                   (list.keywords ?? []).allSatisfy({ keyword in normalizeKeyword(keyword).map { $0.utf8.elementsEqual(keyword.utf8) } ?? false }),
                   Set((list.keywords ?? []).map(foldKeyword)).count == (list.keywords ?? []).count,
+                  list.reason.map({ normalizeReason($0) == $0 }) ?? true,
+                  list.triggers.map({ validTriggers($0, list: list) }) ?? true,
+                  list.earn.map({ $0.valid && list.quotaMinutesPerDay != nil }) ?? true,
                   list.apps.allSatisfy({ !$0.bundleIdentifier.isEmpty }),
                   (3...60).contains(list.delaySeconds), (1...60).contains(list.allowanceMinutes),
                   list.quotaMinutesPerDay.map({ (1...720).contains($0) }) ?? true,
@@ -194,11 +197,15 @@ enum BlockingRules {
         let ids = Set(document.lists.map(\.id))
         guard document.sessions.allSatisfy({ session in
             if case .commitment(let id) = session.origin, (session.lock != .locked || session.id != id) { return false }
+            if case .trigger(let id) = session.origin, (session.lock != .free || session.listIDs != [id]) { return false }
+            if case .focus = session.origin { return false } // App Intents gate: no Focus support yet.
             return session.start < session.end && !session.listIDs.isEmpty && Set(session.listIDs).isSubset(of: ids)
         }),
             document.usage?.quotaSecondsUsed.values.allSatisfy({ $0.isFinite && $0 >= 0 }) ?? true,
             document.usage?.breaksTaken.values.allSatisfy({ $0 >= 0 }) ?? true,
             [document.usage?.slowDownShown, document.usage?.renounced, document.usage?.continued].allSatisfy({ $0?.values.allSatisfy { $0 >= 0 } ?? true }),
+            document.usage.map(validPlusUsage) ?? true,
+            document.usageHistory?.values.allSatisfy(validPlusUsage) ?? true,
             document.usageHistory.map({ $0.count <= 366 }) ?? true else { return false }
         if let freeze = document.freeze { return freeze.end > freeze.start }
         return true

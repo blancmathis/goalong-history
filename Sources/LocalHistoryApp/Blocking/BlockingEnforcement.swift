@@ -11,6 +11,7 @@ import SwiftUI
     var appStillBlocked: ((BlockingObservation) -> Bool)? { get set }
     var siteActionStillRequired: ((BlockingObservation) -> Bool)? { get set }
     var siteActionDeadline: ((BlockingObservation) -> Date?)? { get set }
+    var onBlockPresented: ((BlockingObservation, UUID) -> BlockingListFeedback?)? { get set }
     func observeBrowser(_ target: BlockingObservation)
     func updateProtection(locked: Bool) -> BlockingProtectionState
     func blockApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String)
@@ -30,6 +31,7 @@ import SwiftUI
 extension BlockingEnforcementBackend {
     var siteActionStillRequired: ((BlockingObservation) -> Bool)? { get { nil } set {} }
     var siteActionDeadline: ((BlockingObservation) -> Date?)? { get { nil } set {} }
+    var onBlockPresented: ((BlockingObservation, UUID) -> BlockingListFeedback?)? { get { nil } set {} }
     func invalidateSiteActions() {}
     func blockSlowDownApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) {}
     func slowDown(_ target: BlockingObservation, presentation: BlockingFrictionPresentation, onRenounce: @escaping () -> Void, onContinue: @escaping () -> Void) {}
@@ -54,6 +56,8 @@ private final class BlockingFreezePanel: NSPanel {
     var appStillBlocked: ((BlockingObservation) -> Bool)?
     var siteActionStillRequired: ((BlockingObservation) -> Bool)?
     var siteActionDeadline: ((BlockingObservation) -> Date?)?
+    var onBlockPresented: ((BlockingObservation, UUID) -> BlockingListFeedback?)?
+    private(set) var appNoticeFeedback: BlockingListFeedback?
     private var observedBrowserSupport: [String: Bool] = [:]
     private var observedBrowserNames: [String: String] = [:]
     func observeBrowser(_ target: BlockingObservation) {
@@ -157,12 +161,15 @@ private final class BlockingFreezePanel: NSPanel {
     private func showAppNotice(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) {
         let screen = target.windowFrame.flatMap { frame in NSScreen.screens.first { $0.frame.intersects(Self.appKitFrame(frame)) } } ?? NSScreen.main
         guard let screen else { return }
-        let frame = NSRect(x: screen.visibleFrame.midX - 190, y: screen.visibleFrame.maxY - 84, width: 380, height: 68)
+        if let id = block.feedback?.listID { appNoticeFeedback = onBlockPresented?(target, id) ?? block.feedback }
+        let height = BlockedAppNotice.height(appNoticeFeedback)
+        let frame = NSRect(x: screen.visibleFrame.midX - 190, y: screen.visibleFrame.maxY - 16 - height, width: 380, height: height)
         let panel = notice ?? makePanel(frame: frame)
-        panel.contentView = host(BlockedAppNotice(app: app, end: block.end, lock: block.lock, listName: listName), frame: frame)
+        panel.contentView = host(BlockedAppNotice(app: app, end: block.end, lock: block.lock, listName: listName,
+                                                  feedback: appNoticeFeedback), frame: frame)
         panel.setFrame(frame, display: true); panel.orderFrontRegardless(); notice = panel
         noticeClear?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.notice?.close(); self?.notice = nil }
+        let work = DispatchWorkItem { [weak self] in self?.notice?.close(); self?.notice = nil; self?.appNoticeFeedback = nil }
         noticeClear = work; DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
     /// Even an exhausted quota of a slow-down list preserves the member's open work.
@@ -174,6 +181,8 @@ private final class BlockingFreezePanel: NSPanel {
         showAppNotice(target, app: app, block: block, listName: listName)
     }
     func blockSite(_ target: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) {
+        var presentation = presentation
+        if let id = presentation.feedback?.listID { presentation.feedback = onBlockPresented?(target, id) ?? presentation.feedback }
         veilClear?.cancel(); veilClear = nil
         let frame = target.windowFrame.map(Self.appKitFrame) ?? (NSScreen.main?.frame ?? .zero)
         let panel = veil ?? makePanel(frame: frame)

@@ -5,6 +5,9 @@ import Foundation
 enum BlockingFormat {
     private static let locale = Locale(identifier: "fr_FR")
 
+    /// Blocks started by a trigger app have no end of their own.
+    static func isOpenEnded(_ end: Date) -> Bool { end.timeIntervalSinceReferenceDate > Date().timeIntervalSinceReferenceDate + 400 * 86_400 }
+
     static func time(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = locale

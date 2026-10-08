@@ -103,6 +103,8 @@ import SwiftUI
     @State private var addingException = false
     @State private var addingKeyword = false
     @State private var ruleError: String?
+    @State private var reasonDraft: String
+    @State private var pickingTrigger = false
     @State private var pickingApp = false
     @State private var confirmingDelete = false
     @State private var lockingProgram = false
@@ -114,11 +116,10 @@ import SwiftUI
         self.now = now
         self.onDone = onDone
         _moreOpen = State(initialValue: list.mode == .allowOnly || list.quotaMinutesPerDay != nil || list.breaks != nil)
+        _reasonDraft = State(initialValue: list.reason ?? "")
     }
 
-    private var stricterOnly: Bool {
-        list.program.isLocked(at: now) || controller.activeBlocks.contains { $0.lock == .locked && $0.listIDs.contains(list.id) }
-    }
+    private var stricterOnly: Bool { controller.isStricterOnly(list.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -130,6 +131,15 @@ import SwiftUI
                 .textFieldStyle(GoalongFieldStyle()).font(.system(size: 15, weight: .semibold))
                 .accessibilityIdentifier("blocking-list-name")
             }
+            TextField("Pourquoi ? ex. Finir le mémoire avant vendredi", text: $reasonDraft)
+                .textFieldStyle(GoalongFieldStyle())
+                .onSubmit(saveReason)
+                .onDisappear(perform: saveReason)
+                .onChange(of: reasonDraft) { value in
+                    if value.count > 140 { reasonDraft = String(value.prefix(140)) }
+                }
+                .accessibilityIdentifier("blocking-list-reason")
+                .accessibilityHint("Affiché sur l’écran de blocage")
             if stricterOnly {
                 GoalongNote(lockNote, symbol: "lock.fill", tone: .neutral)
             }
@@ -181,6 +191,7 @@ import SwiftUI
                         }
                         .accessibilityIdentifier("blocking-add-app")
                 }
+                triggerRow.padding(.top, 4)
             }
             part("Quand on l’ouvre") {
                 VStack(alignment: .leading, spacing: 12) {
@@ -236,6 +247,14 @@ import SwiftUI
                                 Text("\(BlockingFormat.duration(minutes: quota)) par jour").monospacedDigit()
                             }.fixedSize()
                         }
+                    }
+                    if list.quotaMinutesPerDay != nil {
+                        limitRow(on: list.earn != nil, title: "Gagner du temps en travaillant",
+                                 detail: earnDetail) { on in
+                            ruleError = message(controller.setEarn(on ? BlockEarn() : nil, for: list.id))
+                        }
+                        value: { EmptyView() }
+                        .accessibilityIdentifier("blocking-list-earn")
                     }
                     limitRow(on: list.breaks != nil, title: "Autoriser des pauses",
                              detail: "Choisies à l’avance, possibles même verrouillé.") { on in
@@ -312,7 +331,7 @@ import SwiftUI
         if let until = list.program.lockedUntil, until > now {
             return "Programme verrouillé jusqu’au \(BlockingFormat.day(until)). La liste peut seulement devenir plus stricte."
         }
-        return "Un blocage verrouillé utilise cette liste. Elle peut seulement devenir plus stricte."
+        return "Un blocage en cours utilise cette liste. Elle peut seulement devenir plus stricte jusqu’à son arrêt."
     }
 
     private var suggestionRow: some View {
@@ -361,6 +380,55 @@ import SwiftUI
             ruleError = message(controller.addKeyword(value, to: list.id), input: value, kind: "un mot-clé de 2 à 40 caractères")
         } remove: { keyword in
             ruleError = message(controller.removeKeyword(keyword, from: list.id))
+        }
+    }
+
+    private func saveReason() {
+        let trimmed = reasonDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != (list.reason ?? "") else { return }
+        ruleError = message(controller.setReason(trimmed, for: list.id))
+    }
+
+    private var earnDetail: String {
+        let earn = list.earn ?? BlockEarn()
+        var line = "Chaque séance de Concentration terminée : +\(earn.rewardMinutes) min toutes les \(earn.workMinutes) min, jusqu’à \(earn.capMinutes) min par jour."
+        if let earned = controller.earnedMinutesToday[list.id], earned >= 1 { line += " Aujourd’hui : +\(Int(earned)) min." }
+        return line
+    }
+
+    /// « Démarrer seule » : the list runs while one of these apps is open. Under a lock they can only be added.
+    private var triggerRow: some View {
+        let apps = list.triggers?.apps ?? []
+        return Group {
+            if apps.isEmpty {
+                Button { pickingTrigger = true } label: { Label("Démarrer quand j’ouvre une app…", systemImage: "app.badge") }
+                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
+                    .accessibilityIdentifier("blocking-open-trigger")
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    BlockingFlow(spacing: 6) {
+                        Text("Démarre avec").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                            .frame(height: 26)
+                        ForEach(apps) { app in
+                            BlockingItemChip(item: .app(app), removable: !stricterOnly) {
+                                ruleError = message(controller.removeAppTrigger(app, from: list.id))
+                            }
+                        }
+                        Button { pickingTrigger = true } label: { Image(systemName: "plus").frame(height: 26) }
+                            .buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Ajouter une app déclencheuse")
+                    }
+                    Text(list.mode == .block
+                         ? "La liste bloque tant qu’une de ces apps est ouverte. « Arrêter » la coupe jusqu’à leur prochaine ouverture."
+                         : "Tout est bloqué sauf la liste tant qu’une de ces apps est ouverte. Elles doivent faire partie des apps permises.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .popover(isPresented: $pickingTrigger) {
+            BlockingAppPicker(excluded: Set(apps.map(\.bundleIdentifier) + (list.mode == .block ? list.apps.map(\.bundleIdentifier) : []))) { app in
+                ruleError = message(controller.addAppTrigger(app, to: list.id))
+            }
         }
     }
 
