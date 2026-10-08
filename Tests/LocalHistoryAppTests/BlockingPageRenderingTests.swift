@@ -115,7 +115,8 @@ final class BlockingPageRenderingTests: XCTestCase {
                       apps: [BlockAppRule(bundleIdentifier: "com.apple.MobileSMS", name: "Messages")],
                       program: BlockProgram(ranges: [BlockProgramRange(weekdays: Set(1...5), startMinute: 540, endMinute: 1_080)],
                                             lockedUntil: nil),
-                      quotaMinutesPerDay: 20, breaks: BlockBreaks(count: 3, minutes: 5))
+                      quotaMinutesPerDay: 20, breaks: BlockBreaks(count: 3, minutes: 5),
+                      exceptions: [BlockSiteRule(pattern: "reddit.com/r/swift")], keywords: ["match en direct", "transfert"])
         }
         var video: BlockList {
             BlockList(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, name: "Vidéo",
@@ -123,7 +124,8 @@ final class BlockingPageRenderingTests: XCTestCase {
                       apps: [BlockAppRule(bundleIdentifier: "com.apple.TV", name: "TV"),
                              BlockAppRule(bundleIdentifier: "com.apple.Music", name: "Musique")],
                       program: BlockProgram(ranges: [BlockProgramRange(weekdays: Set(1...7), startMinute: 1_290, endMinute: 420)],
-                                            lockedUntil: now.addingTimeInterval(20 * 86_400)))
+                                            lockedUntil: now.addingTimeInterval(20 * 86_400)),
+                      exceptions: [BlockSiteRule(pattern: "youtube.com/@cs50")], keywords: ["bande-annonce"])
         }
         var focus: BlockList {
             BlockList(id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!, name: "Écriture", mode: .allowOnly,

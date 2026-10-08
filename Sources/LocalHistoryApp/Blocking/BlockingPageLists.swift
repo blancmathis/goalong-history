@@ -73,8 +73,10 @@ import SwiftUI
 
     static func contents(_ list: BlockList) -> String {
         let sites = list.sites.count, apps = list.apps.count
+        let words = list.keywords?.count ?? 0
         let parts = [sites > 0 ? (sites == 1 ? "1 site" : "\(sites) sites") : nil,
-                     apps > 0 ? (apps == 1 ? "1 app" : "\(apps) apps") : nil].compactMap { $0 }
+                     apps > 0 ? (apps == 1 ? "1 app" : "\(apps) apps") : nil,
+                     words > 0 ? (words == 1 ? "1 mot-clé" : "\(words) mots-clés") : nil].compactMap { $0 }
         if list.mode == .allowOnly { return parts.isEmpty ? "Tout" : "Tout sauf " + parts.joined(separator: " et ") }
         return parts.isEmpty ? "Vide" : parts.joined(separator: ", ")
     }
@@ -96,6 +98,11 @@ import SwiftUI
     var onDone: () -> Void = {}
     @State private var newSite = ""
     @State private var siteError: String?
+    @State private var newException = ""
+    @State private var newKeyword = ""
+    @State private var addingException = false
+    @State private var addingKeyword = false
+    @State private var ruleError: String?
     @State private var pickingApp = false
     @State private var confirmingDelete = false
     @State private var lockingProgram = false
@@ -148,6 +155,12 @@ import SwiftUI
                     }
                     if list.mode == .block {
                         suggestionRow
+                        exceptionRow
+                    }
+                    keywordRow
+                    if let ruleError {
+                        Text(ruleError).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -319,6 +332,77 @@ import SwiftUI
                         .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
                         .disabled(!canAdd)
                     }
+                }
+            }
+        }
+    }
+
+    /// « Sauf » : pages a blocked site keeps open. Only for « Bloquer ces éléments »; under a lock they can only go.
+    private var exceptionRow: some View {
+        let exceptions = list.exceptions ?? []
+        return ruleRow(label: "Sauf", symbol: "checkmark.circle", empty: "Autoriser une page…",
+                       detail: "Une page qui reste ouverte, ex. reddit.com/r/swift. Le reste du site reste bloqué.",
+                       items: exceptions.map(\.pattern), adding: $addingException, text: $newException,
+                       placeholder: "ex. youtube.com/@cours", canAdd: !stricterOnly, canRemove: true,
+                       identifier: "exception") { value in
+            ruleError = message(controller.addException(value, to: list.id), input: value, kind: "une adresse de page")
+        } remove: { pattern in
+            ruleError = message(controller.removeException(BlockSiteRule(pattern: pattern), from: list.id))
+        }
+    }
+
+    /// « Mots-clés » : any page whose address or tab title holds the word. Under a lock they can only be added.
+    private var keywordRow: some View {
+        ruleRow(label: "Mots-clés", symbol: "textformat", empty: "Bloquer des mots…",
+                detail: "Bloque toute page dont l’adresse ou le titre contient ce mot. Mot entier, accents ignorés.",
+                items: list.keywords ?? [], adding: $addingKeyword, text: $newKeyword,
+                placeholder: "ex. match en direct", canAdd: (list.keywords?.count ?? 0) < 50, canRemove: !stricterOnly,
+                identifier: "keyword") { value in
+            ruleError = message(controller.addKeyword(value, to: list.id), input: value, kind: "un mot-clé de 2 à 40 caractères")
+        } remove: { keyword in
+            ruleError = message(controller.removeKeyword(keyword, from: list.id))
+        }
+    }
+
+    private func message(_ check: BlockingEditCheck, input: String? = nil, kind: String = "") -> String? {
+        guard case .refused(let reason) = check else { return nil }
+        if let input, controller.error == nil, !reason.hasPrefix("Liste") { return "« \(input) » n’est pas \(kind)." }
+        return reason
+    }
+
+    /// A folded row: a quiet button while empty, then chips and a field.
+    private func ruleRow(label: String, symbol: String, empty: String, detail: String, items: [String],
+                         adding: Binding<Bool>, text: Binding<String>, placeholder: String,
+                         canAdd: Bool, canRemove: Bool, identifier: String,
+                         add: @escaping (String) -> Void, remove: @escaping (String) -> Void) -> some View {
+        Group {
+            if items.isEmpty && !adding.wrappedValue {
+                Button { adding.wrappedValue = true } label: { Label(empty, systemImage: symbol) }
+                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
+                    .disabled(!canAdd)
+                    .accessibilityIdentifier("blocking-open-\(identifier)")
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    BlockingFlow(spacing: 6) {
+                        Text(label).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                            .frame(height: 26)
+                        ForEach(items, id: \.self) { item in
+                            BlockingItemChip(item: .symbol(symbol), label: item, removable: canRemove) { remove(item) }
+                        }
+                        if canAdd {
+                            TextField(placeholder, text: text)
+                                .textFieldStyle(GoalongFieldStyle()).controlSize(.small).frame(width: 200)
+                                .onSubmit {
+                                    let value = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    guard !value.isEmpty else { return }
+                                    add(value)
+                                    if ruleError == nil { text.wrappedValue = "" }
+                                }
+                                .accessibilityIdentifier("blocking-add-\(identifier)")
+                        }
+                    }
+                    Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -553,6 +637,8 @@ struct BlockingSiteTile: View {
 /// One site or app in a list: icon, name, and a remove cross when removing is allowed.
 struct BlockingItemChip: View {
     let item: BlockingItem
+    /// Shown instead of the item's own name, e.g. a keyword next to its symbol.
+    var label: String? = nil
     var removable = true
     var onRemove: () -> Void = {}
 
@@ -575,6 +661,7 @@ struct BlockingItemChip: View {
     }
 
     private var title: String {
+        if let label { return label }
         switch item {
         case .site(let pattern): return pattern
         case .app(let app): return app.name
