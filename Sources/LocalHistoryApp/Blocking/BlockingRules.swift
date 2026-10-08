@@ -139,21 +139,23 @@ enum BlockingRules {
         if target.isBrowser {
             if list.mode == .block && appMatch { return .init(blocked: true, reason: .appRule) }
             if target.isInternalPage { return .init(blocked: false, reason: .internalPage) }
-            let url = target.privateWindow ? nil : target.url.flatMap(normalize)
+            let rawURL = target.privateWindow ? nil : target.url
+            let url = rawURL.flatMap(normalize)
             if list.mode == .block, let url,
                let rule = list.exceptions?.first(where: { matches($0, url: url) }) {
                 return .init(blocked: false, reason: .exception(rule.pattern))
             }
             if !target.privateWindow {
                 for keyword in list.keywords ?? [] {
-                    if let url, matchesKeyword(keyword, text: url) { return .init(blocked: true, reason: .keyword(keyword, .url)) }
+                    if let text = url ?? rawURL, matchesKeyword(keyword, text: text) { return .init(blocked: true, reason: .keyword(keyword, .url)) }
                     if target.titleKeywordMatches.contains(foldKeyword(keyword)) || title.map({ matchesKeyword(keyword, text: $0) }) == true {
                         return .init(blocked: true, reason: .keyword(keyword, .title))
                     }
                 }
             }
-            guard let url else { return .init(blocked: false, reason: .unreadableURL) }
-            if let rule = list.sites.first(where: { matches($0, url: url) }) {
+            guard rawURL != nil else { return .init(blocked: false, reason: .unreadableURL) }
+            // An address that does not normalize (IP, localhost) matches no rule: allowOnly still blocks it.
+            if let url, let rule = list.sites.first(where: { matches($0, url: url) }) {
                 return .init(blocked: list.mode == .block, reason: .siteRule(rule.pattern))
             }
             return .init(blocked: list.mode == .allowOnly, reason: list.mode == .allowOnly ? .unlistedSite : .noMatch)

@@ -268,6 +268,14 @@ final class BlockingExceptionsKeywordsTests: XCTestCase {
         value.titleKeywordMatches = []; controller.observe(value)
         XCTAssertFalse(controller.siteActionStillRequired(value))
     }
+
+    func testAllowOnlyStillBlocksAddressesThatDoNotNormalize() {
+        let list = BlockList(name: "Travail", mode: .allowOnly, sites: [.init(pattern: "github.com")])
+        for url in ["192.168.1.10/admin", "localhost/app", "[::1]/x"] {
+            XCTAssertTrue(BlockingRules.explain(url: url, list: list).blocked, url)
+        }
+        XCTAssertFalse(BlockingRules.explain(url: "192.168.1.10/admin", list: BlockList(name: "Vidéo", sites: [.init(pattern: "youtube.com")])).blocked)
+    }
 }
 
 @MainActor private final class ExceptionsKeywordsBackend: BlockingEnforcementBackend {
