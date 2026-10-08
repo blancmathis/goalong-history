@@ -1069,10 +1069,12 @@ import LocalHistoryCore
         return document.usageHistory?[day] ?? BlockDayUsage(day: day)
     }
 
-    private func isStricterOnly(_ listID: UUID) -> Bool {
+    /// Any active block that is not « Libre » freezes its lists: otherwise « Difficile » could be skipped
+    /// by removing the site instead of retyping the text.
+    func isStricterOnly(_ listID: UUID) -> Bool {
         let now = clock()
         if list(listID)?.program.isLocked(at: now) == true { return true }
-        return activeBlocks.contains { $0.lock.protectsLists && $0.listIDs.contains(listID) }
+        return activeBlocks.contains { $0.lock != .free && $0.listIDs.contains(listID) }
     }
 
     private func programBlocks(at now: Date, usage: BlockDayUsage) -> [BlockingActiveBlock] {

@@ -49,6 +49,19 @@ final class BlockingPlusTests: XCTestCase {
         XCTAssertEqual(c.setReason("Pour mon projet.", for: list.id), .allowed)
         XCTAssertTrue(c.hasLocks)
     }
+    @MainActor func testTypingBlockFreezesItsListsUntilStopped() {
+        let now = date(), list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")])
+        let c = BlockingController(document: .init(lists: [list]), clock: { now })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .typing)
+        XCTAssertTrue(c.isStricterOnly(list.id))
+        var looser = list; looser.sites = []
+        XCTAssertNotEqual(c.editCheck(looser), .allowed)
+        XCTAssertEqual(c.addKeyword("match", to: list.id), .allowed)
+        let free = BlockList(name: "Libre", sites: [.init(pattern: "x.com")])
+        let d = BlockingController(document: .init(lists: [free]), clock: { now })
+        d.start(listIDs: [free.id], until: now.addingTimeInterval(600), lock: .free)
+        XCTAssertFalse(d.isStricterOnly(free.id))
+    }
     @MainActor func testAttemptDedupWithinTenSecondsAndExactlyAtBoundary() {
         var now = date(); let list = BlockList(name: "Sites", sites: [.init(pattern: "example.org")])
         let backend = PlusBackend(), c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })

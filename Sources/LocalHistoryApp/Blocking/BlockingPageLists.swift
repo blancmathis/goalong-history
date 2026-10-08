@@ -116,9 +116,7 @@ import SwiftUI
         _moreOpen = State(initialValue: list.mode == .allowOnly || list.quotaMinutesPerDay != nil || list.breaks != nil)
     }
 
-    private var stricterOnly: Bool {
-        list.program.isLocked(at: now) || controller.activeBlocks.contains { $0.lock == .locked && $0.listIDs.contains(list.id) }
-    }
+    private var stricterOnly: Bool { controller.isStricterOnly(list.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -312,7 +310,7 @@ import SwiftUI
         if let until = list.program.lockedUntil, until > now {
             return "Programme verrouillé jusqu’au \(BlockingFormat.day(until)). La liste peut seulement devenir plus stricte."
         }
-        return "Un blocage verrouillé utilise cette liste. Elle peut seulement devenir plus stricte."
+        return "Un blocage en cours utilise cette liste. Elle peut seulement devenir plus stricte jusqu’à son arrêt."
     }
 
     private var suggestionRow: some View {
