@@ -187,12 +187,13 @@ struct FocusPanel: Equatable {
         if hasLockedPhaseBlock { throw FocusFailure.locked }
         guard note.map({ FocusValidation.text($0, maximum: 140) }) ?? true else { throw FocusFailure.invalidArgument }
         value.outcome = outcome; value.note = note
-        try finish(value, at: clock(), reason: .member)
+        try finish(value, at: clock(), reason: outcome == .done ? .completed : .member)
     }
     private func finish(_ session: FocusSession, at end: Date, reason: FocusSession.Event.Reason) throws {
         var value = session; value.events.append(.init(kind: .stop, at: end, reason: reason))
         value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
         try persist(value)
+        try blocking()?.creditEarnedTime(for: value)
         if let id = phaseBlockID { blocking()?.stop(id) }
         currentSession = nil; phase = nil; phaseBlockID = nil; phaseBlockKey = nil; phaseIdentity = nil; audio.stop()
         sessionFacts = facts(value)

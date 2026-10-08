@@ -11,6 +11,9 @@ struct BlockList: Codable, Identifiable, Equatable, Hashable {
     var sites: [BlockSiteRule]
     var exceptions: [BlockSiteRule]?
     var keywords: [String]?
+    var reason: String?
+    var triggers: BlockTriggers?
+    var earn: BlockEarn?
     var apps: [BlockAppRule]
     var program: BlockProgram
     /// Minutes the list allows per local day while it is active, before it blocks.
@@ -28,11 +31,13 @@ struct BlockList: Codable, Identifiable, Equatable, Hashable {
          apps: [BlockAppRule] = [], program: BlockProgram = BlockProgram(),
          quotaMinutesPerDay: Int? = nil, breaks: BlockBreaks? = nil, action: Action? = nil,
          slowDownSeconds: Int? = nil, continueMinutes: Int? = nil,
-         exceptions: [BlockSiteRule]? = nil, keywords: [String]? = nil) {
+         exceptions: [BlockSiteRule]? = nil, keywords: [String]? = nil,
+         reason: String? = nil, triggers: BlockTriggers? = nil, earn: BlockEarn? = nil) {
         self.id = id; self.name = name; self.mode = mode; self.sites = sites; self.apps = apps
         self.program = program; self.quotaMinutesPerDay = quotaMinutesPerDay; self.breaks = breaks
         self.action = action; self.slowDownSeconds = slowDownSeconds; self.continueMinutes = continueMinutes
         self.exceptions = exceptions; self.keywords = keywords
+        self.reason = reason; self.triggers = triggers; self.earn = earn
     }
 
     var isEmpty: Bool { sites.isEmpty && apps.isEmpty && (keywords ?? []).isEmpty && mode == .block }
@@ -98,7 +103,7 @@ enum BlockLock: String, Codable, CaseIterable {
 }
 
 struct BlockSession: Codable, Identifiable, Hashable {
-    enum Origin: Codable, Hashable { case manual, program(UUID), commitment(UUID) }
+    enum Origin: Codable, Hashable { case manual, program(UUID), commitment(UUID), trigger(UUID), focus }
     var id: UUID = UUID()
     var listIDs: [UUID]
     var start: Date
@@ -116,6 +121,10 @@ struct BlockDayUsage: Codable, Hashable {
     var slowDownShown: [UUID: Int]?
     var renounced: [UUID: Int]?
     var continued: [UUID: Int]?
+    var blocked: [UUID: Int]?
+    var earnedSeconds: [UUID: Double]?
+    /// Reward and receipt are saved in the same Blocking document, so replay cannot pay twice.
+    var earnedSessionIDs: [UUID]?
 }
 
 struct BlockFreeze: Codable, Hashable {
@@ -178,6 +187,8 @@ struct BlockingActiveBlock: Identifiable, Hashable {
     var breaksLeft: [UUID: Int] = [:]
     var breakEnds: [UUID: Date] = [:]
     var quotaSecondsLeft: [UUID: Double] = [:]
+    /// Feedback for the particular list selected by enforcement, including multi-list sessions.
+    var feedback: BlockingListFeedback?
 }
 
 struct BlockingBrowserSupport: Identifiable, Hashable {

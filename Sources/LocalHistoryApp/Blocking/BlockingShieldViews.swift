@@ -1,23 +1,6 @@
 #if os(macOS)
 import SwiftUI
 
-/// What a veil says. Built by the enforcement code, drawn by the views below.
-struct BlockingVeilPresentation: Equatable {
-    enum Reason: Equatable {
-        case site(String)
-        case privateWindow
-        case unsupportedBrowser(String)
-        case quotaUsed(String, minutes: Int)
-    }
-    var reason: Reason
-    var listName: String
-    var start: Date
-    var end: Date
-    var lock: BlockLock
-    var breakMinutes: Int?
-    var breaksLeft = 0
-}
-
 /// Covers a browser window showing a blocked page. It is the block page: struck icon, what is
 /// blocked, until when, and the one way out the member chose in advance (a break).
 struct BlockedSiteVeil: View {

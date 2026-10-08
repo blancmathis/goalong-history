@@ -455,3 +455,131 @@ in-memory `BlockingController` skeleton. The engine work completes it without ch
 - Local commits: `c8457e1` (rules/store/calendar), `5d6012d` (Standard backend), `75af45c`
   (lifecycle/observation/accounting and regression tests), followed by the documentation/inventory
   commit. Branch: `feat/cold-turkey-engine-20261004`; no push or PR. All design-owner files preserved.
+
+
+## Blocage + engine (2026-10-08)
+
+Spec: `docs/BLOCKING-PLUS-20261008.md`. This engine is stacked on the exceptions/keywords
+implementation (#77). Schema remains 1. `BlockList.reason`, `triggers`, `earn` and the new daily
+usage fields are optional; old documents decode unchanged. The presentation model now lives in
+`BlockingPlus.swift`; SwiftUI view bodies are unchanged, and the new UI is a separate delivery.
+
+### App Intents feasibility gate and fallback
+
+The gate was recorded in `.blocking-plus-work/REPORT.md` before engine work. On Swift 6.2.4,
+`AppIntent` and `SetFocusFilterIntent` compile in a SwiftPM executable, but the probe produced no
+`.swiftconstvalues` and no `Metadata.appintents`. The available metadata processor returned exit 0
+while warning that it extracted no relevant symbols. `scripts/build_app.sh` has no metadata step,
+and system discovery was not proved. This is a **NO-GO for this delivery**, not proof that SwiftPM
+can never support App Intents. No Xcode project or native intent action is shipped.
+
+The documented fallback is app triggers. `BlockTriggers.focus` and `.focus` origin are reserved;
+setting `focus: true` is refused explicitly, and unsupported Focus sessions fail validation.
+There is no fabricated Focus-state observer. Apple's actual filter contract uses
+[`SetFocusFilterIntent`](https://developer.apple.com/documentation/appintents/defining-your-app-s-focus-filter)
+with calls on activation and default parameters on deactivation; that contract remains unverified
+in Goalong's delivered bundle.
+
+For Shortcuts, use **Exécuter un script shell** with the existing local CLI (Goalong and both
+Blocage/Concentration modules must be running/enabled):
+
+```sh
+# Copy list UUIDs from this read-only command:
+/Applications/Goalong\ History.app/Contents/MacOS/goalong block-lists
+# One free Concentration session which also blocks the selected lists for 25 minutes:
+/Applications/Goalong\ History.app/Contents/MacOS/goalong session start --intent "Concentration" --minutes 25 --block LIST_UUID
+# Stops that free session and its own phase block; no earned reward for cancellation:
+/Applications/Goalong\ History.app/Contents/MacOS/goalong session stop
+```
+
+`--block LIST_UUID` can be repeated. These existing commands do **not** provide the two proposed
+native actions, a typing lock, or a global stop of all free blocks. The session stop path refuses
+a locked current phase and cannot stop unrelated password/typing/locked blocks. Do not advertise
+these shell examples as native App Intents parity. See `docs/CLI.md` for installation alternatives.
+No command above was run against the installed app during implementation.
+
+### Reason and attempts
+
+`reason` is trimmed and limited to 1…140 Swift characters; an empty edit clears it. It remains
+editable under password/program/hard locks. `BlockingListFeedback` supplies the member's sentence,
+`reasonLine` in French quotes, `attemptLine` from the second attempt, and `earnedLine`.
+`BlockingVeilPresentation.feedback` and the app enforcement block's `feedback` refer to the list
+actually selected for presentation, including sessions containing several lists. The Standard
+backend retains confirmed app-notice data as `appNoticeFeedback`. Rendering those new lines is
+left to the separately owned UI.
+
+Only a confirmed backend presentation records an attempt. A continuous veil or repeated
+reenforcement is one event. Leaving and returning to a blocked target (or a fresh app activation)
+can record another event; the same list + normalized host/app bundle identifier within 10 seconds
+is deduplicated, even across day boundaries. A path change on the same continuously blocked host
+does not create another target. Private/unreadable addresses use the browser bundle identifier
+for in-memory deduplication, without reading or retaining a private address. Slow-down presentations
+keep their existing counters; a firm quota-exhaustion block can count as a blocked attempt.
+
+Only `[list UUID: count]` is persisted as `BlockDayUsage.blocked`, alongside the existing local
+`usageHistory` (366 days maximum). Dedup keys and targets remain in memory. There is no Jev,
+analytics, site, network or diagnostic export of the reason or these counters.
+
+### Running-app triggers
+
+A configured app activates one free session with origin `.trigger(listID)` while any configured
+app is running, including in the background. The existing workspace launch/activation blocking
+path refreshes the inventory; the existing controller timer also checks
+`NSWorkspace.runningApplications` every five seconds while app triggers are configured. This
+covers launches when no observation lane is active and quits (there is no existing termination
+registration in this checkout). No new workspace observer, AX reader, history subscription or
+permission is added. Unconfigured/off modules have no inventory reads or polling timer.
+
+The last app quitting removes that trigger session by the next five-second check. Relaunch
+reconciles persisted trigger sessions against the current inventory, preserving independent
+manual/program/commitment sessions. Explicitly stopping a free trigger suppresses it for the
+current running-app episode; after all its trigger apps quit it rearms. This suppression is
+in-memory and ends when Goalong relaunches. While locked, trigger apps can be added but cannot
+be removed (including removing the whole optional configuration).
+
+Goalong and every `neverBlocked` app are refused as triggers. Duplicate/empty identifiers and
+empty names are refused. A block-list trigger cannot be in that list's blocked app rules; in an
+allow-only list it must be an allowed app. Browser site rules still apply separately.
+
+### Earned quota
+
+`BlockEarn` defaults to 25 work minutes / 5 reward minutes / 60 daily cap minutes. Validation
+requires a quota and work 10…120, reward 1…30, cap 5…240. For each eligible list a normally completed
+Concentration session adds `floor(work-phase seconds / (workMinutes × 60)) × rewardMinutes × 60`,
+limited by the remaining daily cap. Work-phase time is elapsed session time with Pomodoro breaks
+and skipped work excluded; it is **not** a Jev verdict or a measurement inferred from history.
+
+Normal completion means the scheduled end (`.completed`) or an explicit manual
+`stopSession(outcome: .done)`, including an open session. A bare manual stop, partly/not-done stop,
+app-close recovery, module disable or unfinished session grants nothing. Changing the review
+outcome later does not grant or replay rewards. Focus persistence must succeed before Blocking
+receives the completion. The reward and its optional `earnedSessionIDs` receipt are written in
+the same Blocking document, so repeated delivery/relaunch cannot pay the same session twice.
+
+`earnedSeconds` is credited to the local day of the session's actual end; a session spanning
+midnight credits its ending day, and a completion detected after midnight can credit history
+instead of the new day. Effective quota is base quota plus the recorded earned seconds in every
+enforcement/accounting path, including programs, app-force-termination admission and deferred
+site actions. Lowering a cap or turning earn off stops/reduces future grants; it does not revoke
+time already earned that day. While locked, enabling earn, lowering its work threshold, or
+raising its reward/cap is refused. Disabling it, raising the work threshold and reducing
+reward/cap are permitted. Remove earn together with a quota if removing the quota.
+
+### API for the separate UI
+
+- `setReason(_:for:)`, `setTriggers(_:for:)`, `setEarn(_:for:)` → `BlockingEditCheck`.
+- `addAppTrigger(_:to:)`, `removeAppTrigger(_:from:)` → `BlockingEditCheck`.
+- `editCheck(_:)` / `save(_:)` enforce the same normalization, limits and lock constraints.
+- Published `attemptsToday: [UUID: Int]`, computed `totalAttemptsToday: Int` (saturating sum),
+  published `earnedMinutesToday: [UUID: Double]`, `feedback(for:) → BlockingListFeedback`.
+- `BlockingVeilPresentation.feedback`, `BlockingActiveBlock.feedback` on app enforcement,
+  `StandardBlockingBackend.appNoticeFeedback` carry the selected list's display data.
+- `creditEarnedTime(for: FocusSession) throws → [UUID: Double]` is the Concentration completion
+  hook (newly granted seconds per list), not a UI action to award arbitrary minutes.
+- `runningApps` initializer injection provides fake workspace inventories for tests; production
+  uses the existing `NSWorkspace` inventory. No new observer lifecycle belongs to the UI.
+
+Tests cover reason limits, all new lock fields, confirmed attempts and deduplication, per-target/
+per-list counters, midnight and local persistence, background app launch/quit, the actual timer
+with a fake inventory, trigger refusal/relaunch/free-stop behavior, earn floor/cap/receipts,
+Pomodoro breaks/skips, normal versus cancelled completion, quota enforcement and old-file decoding.
