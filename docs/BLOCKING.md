@@ -71,7 +71,11 @@ and rewritten. A store error refuses edits; it is never a lock and never stops �
 
 - `BlockList`: `id`, `name`, `mode` (`block` | `allowOnly`), `sites: [BlockSiteRule]`,
   `apps: [BlockAppRule]`, `program: BlockProgram`, `quotaMinutesPerDay: Int?` (1…720),
-  `breaks: BlockBreaks?` (count 1…12 per day, minutes 1…30).
+  `breaks: BlockBreaks?` (count 1…12 per day, minutes 1…30), optional
+  `exceptions: [BlockSiteRule]?` and `keywords: [String]?` (absent = empty).
+  Exceptions use the same normalized host/path as sites. Keywords are trimmed, lowercased,
+  NFC, 2…40 characters, at most 50 per list, unique after case/diacritic folding.
+  These additive fields keep schema version 1 and old files decode unchanged.
 - `BlockSiteRule.pattern`: normalized `host[/path]`. Normalization: trim, lowercase, drop scheme,
   `www.`, credentials, port, query, fragment and trailing `/`; IDN to punycode; reject IPs, empty
   hosts and hosts without a dot (except `localhost` is rejected too). `youtube.com` matches
@@ -90,7 +94,8 @@ and rewritten. A store error refuses edits; it is never a lock and never stops �
 
 ## Rules
 
-**Matching.** A target is the foreground app (bundle id) plus, for a browser, its URL. A list is
+**Matching.** A target is the foreground app (bundle id) plus, for a browser, its URL and ephemeral
+keyword evidence from its tab/window title. A list is
 *active* when a manual session includes it or one of its program ranges contains now. For an active
 list that is not on break and has no quota left:
 
@@ -100,6 +105,17 @@ list that is not on break and has no quota left:
   `chrome://newtab`, `edge://newtab`, Safari start page without URL, `favorites://`) stay allowed.
 
 Several active lists combine: blocked if any active list blocks.
+
+Within a browser list, evaluate in this order: an explicitly blocked browser app; an allowed
+internal page; a matching URL exception in `block` mode; a matching keyword; existing site rules.
+An exception permits the URL only in its own list and never reopens an explicitly blocked browser
+app. `allowOnly` ignores exceptions, and keywords can block even a listed allowed site.
+
+Keywords match whole words, ignoring case and diacritics (`é` = `e`): `sex` does not match `essex`
+or `sex2`. A phrase matches consecutive words. URL matching uses the observed host and path,
+with `.`, `/`, `-`, `_` as separators; never query, fragment, credentials or port. Title matching
+can therefore catch a Google search such as « école - Recherche Google » without reading its query.
+Keywords do not apply to non-browser apps.
 
 **Never blocked.** Goalong itself, Finder, Dock, `loginwindow`, SystemUIServer, Control Center,
 Notification Center, Spotlight, `SecurityAgent`/`coreautha` prompts, screensaver, and any process
@@ -125,6 +141,10 @@ shortening, raising the quota, adding breaks, changing the mode, deleting the li
 Program sessions of a locked program are `locked`; of an unlocked program, `free`.
 
 A locked manual session also makes its lists stricter-only until its end.
+During either lock, adding keywords and removing exceptions are allowed; removing keywords or
+adding/widening exceptions is refused in French. Replacing an exception is removal plus addition
+and is refused even when the replacement narrows its scope. The same protection applies to
+password-protected lists.
 
 **Freeze.** `shield`: a full-screen Goalong shield on every display, kiosk presentation options
 (no Dock, menu bar, app switching, force quit, session termination); allowed apps can be opened from
@@ -177,19 +197,32 @@ the delay, lowering `continueMinutes` are allowed (stricter).
 `ContextMonitor` gains a blocking-only mode:
 
 - It runs when `BlockingController.needsObservation` is true (an active or upcoming-in-60-s list with
-  apps or sites, or a freeze), even if Computer History is off, manually paused or under the
+  apps, sites or keywords, or a freeze), even if Computer History is off, manually paused or under the
   privacy stop.
 - In that mode it samples and calls the blocking sink, but records nothing, feeds neither Jev nor
   activity analysis, and keeps no snapshot after the sample.
 - When Computer History is capturing normally, the same samples feed the sink: no extra sampling.
 - The sink receives `BlockingObservation`: bundle id, pid, window frame (AX, screen coordinates),
-  browser flag, URL (host + path only) when readable, private-window flag, at.
+  browser flag, URL (host + path only) when readable, private-window flag, at, and a set of
+  configured, folded keywords matched in this sample's title. It never contains a raw title.
 - Private windows are never read: the provider only reports the flag. The private check runs for
   every app that may show a page (known browser, configured browser or web content) before any
   address read. An unknown app with a private window counts as a browser only when it shows an
   address field, found without reading its value. Exclusions of Computer History
   do not hide URLs from the blocking sink (they are privacy choices for history), but the URL never
   reaches the recorder.
+- Keyword title reading happens only in the blocking reader, after the private-window check,
+  while at least one currently active list has keywords. Upcoming lists alone do not enable it.
+  No keyword title read happens in private windows or without active keywords. The raw title is
+  consumed within one read, never cached, compared in `BlockingObservation`, recorded, logged,
+  or sent to Jev, analytics or diagnostics. Matching evidence contains configured rules only and
+  is recomputed each sample. A pending tab action rechecks its matching keywords before closing.
+- Existing privacy classification remains separate: it already reads window `AXTitle`,
+  descriptions and chrome labels to detect private markers, even without keywords and in private
+  windows. These labels are discarded. Without keywords its 30-second flag cache is unchanged;
+  with keywords the flag is recomputed before every sample. Thus the literal prohibition of
+  **all** `AXTitle` reads without keywords or in private windows is not met by this existing
+  classifier; the new keyword path adds no title read in either case.
 
 App launches and activations also arrive through the existing `NSWorkspace` notification path in
 `AccessibilityEventMonitor`; reuse it, do not add another one.
@@ -271,6 +304,13 @@ before Developer ID and recovery tests on a dedicated Mac.
   `error: String?` (French).
 - Lists: `save(_:)`, `delete(_:)`, `editCheck(_ new: BlockList) -> BlockingEditCheck`
   (`allowed` | `refused(String)`), `suggestions: [BlockSuggestion]` (static catalog).
+- Rule edits: `addException(_:to:)` (raw URL string), `removeException(_:from:)`
+  (`BlockSiteRule`), `addKeyword(_:to:)`, `removeKeyword(_:from:)` (strings), all returning
+  `BlockingEditCheck`. Additions normalize and deduplicate; refusals preserve the list.
+- Pure explanation: `BlockingController.explain(url:title:list:) -> BlockingMatchExplanation`
+  with `blocked`, a typed `reason` and a French `message`. It evaluates one list's matching rules,
+  without sessions, quota, breaks or the private/unreadable-browser fallback. It consumes an
+  optional title for that call only. Runtime `activeKeywords` enables the sink's title reads.
 - Sessions: `start(listIDs:until:lock:)`, `stop(_:typed:)`, `typingChallenge(for:)`,
   `takeBreak(listID:)`, `endBreak(listID:)`.
 - Program: part of `BlockList`; `lockProgram(listID:until:)`.
@@ -285,6 +325,9 @@ Every refusal returns a short French reason the page shows as is.
 - Module off: building the app model creates no controller, timer, window or file under `Blocking/`,
   requests no permission.
 - Normalization and matching (subdomains, path boundary, IDN, rejected inputs).
+- Exceptions/keywords: per-list precedence, browser-app priority, ignored allowOnly exceptions,
+  whole words/diacritics/phrases, URL tokens without query/fragment, title evidence, lock edits in
+  both directions, validation limits, old-file decoding and guarded title reads.
 - Activity: overnight ranges, ISO weekdays, DST days, several lists, allowOnly with internal pages,
   never-blocked set.
 - Quota and breaks across midnight; breaks while locked; no break in a freeze.

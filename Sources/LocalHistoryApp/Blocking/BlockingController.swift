@@ -54,8 +54,15 @@ import LocalHistoryCore
             (activeBlocks.contains { $0.listIDs.contains(list.id) }
              || document.sessions.contains { $0.listIDs.contains(list.id) && $0.start > clock() && $0.start.timeIntervalSince(clock()) <= 60 }
              || BlockingSchedule.nextStart(of: list.program, after: clock(), calendar: calendar).map({ $0.timeIntervalSince(clock()) <= 60 }) == true)
-             && (list.mode == .allowOnly || !list.apps.isEmpty || !list.sites.isEmpty)
+             && (list.mode == .allowOnly || !list.apps.isEmpty || !list.sites.isEmpty || !(list.keywords ?? []).isEmpty)
         }
+    }
+    /// Read for each blocking request; upcoming lists do not read titles.
+    var activeKeywords: [String] {
+        let now = clock()
+        return Array(Set(lists.filter { list in
+            activeBlocks.contains { $0.listIDs.contains(list.id) && $0.start <= now && $0.end > now }
+        }.flatMap { $0.keywords ?? [] })).sorted()
     }
 
     init(document: BlockingDocument = BlockingDocument(), clock: @escaping () -> Date = Date.init,
@@ -162,6 +169,11 @@ import LocalHistoryCore
         let sitesSafe = current.mode == .block ? oldSites.isSubset(of: newSites) : newSites.isSubset(of: oldSites)
         let appsSafe = current.mode == .block ? oldApps.isSubset(of: newApps) : newApps.isSubset(of: oldApps)
         if !sitesSafe || !appsSafe { return .refused(prefix + "la liste peut seulement devenir plus stricte.") }
+        let oldKeywords = Set((current.keywords ?? []).map(BlockingRules.foldKeyword))
+        let newKeywords = Set((next.keywords ?? []).map(BlockingRules.foldKeyword))
+        if !oldKeywords.isSubset(of: newKeywords) { return .refused(prefix + "les mots-clés peuvent seulement être ajoutés.") }
+        let oldExceptions = Set(current.exceptions ?? []), newExceptions = Set(next.exceptions ?? [])
+        if !newExceptions.isSubset(of: oldExceptions) { return .refused(prefix + "les exceptions peuvent seulement être retirées.") }
         if (next.quotaMinutesPerDay ?? 0) > (current.quotaMinutesPerDay ?? 0) {
             return .refused("Pendant un verrou, le temps permis peut seulement baisser.")
         }
@@ -193,6 +205,15 @@ import LocalHistoryCore
         }
         guard next.sites.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse de site invalide."; return }
         next.sites = Array(Set(next.sites.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
+        if let exceptions = next.exceptions {
+            guard exceptions.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse d’exception invalide."; return }
+            next.exceptions = Array(Set(exceptions.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
+        }
+        if let keywords = next.keywords {
+            guard keywords.allSatisfy({ BlockingRules.normalizeKeyword($0) != nil }) else { error = "Chaque mot-clé doit contenir de 2 à 40 caractères."; return }
+            var seen = Set<String>()
+            next.keywords = keywords.compactMap(BlockingRules.normalizeKeyword).filter { seen.insert(BlockingRules.foldKeyword($0)).inserted }.sorted()
+        }
         var candidate = document
         candidate.lists.removeAll { $0.id == next.id }; candidate.lists.append(next)
         guard BlockingRules.validate(candidate) else { error = "Vérifiez la liste, les horaires, le quota et les pauses."; return }
@@ -208,6 +229,39 @@ import LocalHistoryCore
             document.lists.append(next)
         }
         commit()
+    }
+
+    @discardableResult func addException(_ input: String, to listID: UUID) -> BlockingEditCheck {
+        guard let pattern = BlockingRules.normalize(input) else { return .refused("Adresse d’exception invalide.") }
+        return editRules(listID) { list in
+            if !(list.exceptions ?? []).contains(.init(pattern: pattern)) { list.exceptions = (list.exceptions ?? []) + [.init(pattern: pattern)] }
+        }
+    }
+    @discardableResult func removeException(_ rule: BlockSiteRule, from listID: UUID) -> BlockingEditCheck {
+        editRules(listID) { $0.exceptions?.removeAll { $0.pattern == rule.pattern } }
+    }
+    @discardableResult func addKeyword(_ input: String, to listID: UUID) -> BlockingEditCheck {
+        guard let keyword = BlockingRules.normalizeKeyword(input) else { return .refused("Chaque mot-clé doit contenir de 2 à 40 caractères.") }
+        return editRules(listID) { list in
+            if !(list.keywords ?? []).contains(where: { BlockingRules.foldKeyword($0) == BlockingRules.foldKeyword(keyword) }) {
+                list.keywords = (list.keywords ?? []) + [keyword]
+            }
+        }
+    }
+    @discardableResult func removeKeyword(_ keyword: String, from listID: UUID) -> BlockingEditCheck {
+        editRules(listID) { $0.keywords?.removeAll { BlockingRules.foldKeyword($0) == BlockingRules.foldKeyword(keyword.trimmingCharacters(in: .whitespacesAndNewlines)) } }
+    }
+    private func editRules(_ listID: UUID, edit: (inout BlockList) -> Void) -> BlockingEditCheck {
+        guard admitEdit() else { return .refused(error ?? "Le fichier de blocage est indisponible.") }
+        guard var next = list(listID) else { return .refused("Cette liste n’existe plus.") }
+        edit(&next)
+        let check = editCheck(next)
+        guard check == .allowed else { return check }
+        save(next)
+        return error.map(BlockingEditCheck.refused) ?? .allowed
+    }
+    nonisolated static func explain(url: String?, title: String? = nil, list: BlockList) -> BlockingMatchExplanation {
+        BlockingRules.explain(url: url, title: title, list: list)
     }
 
     /// Explicit member acceptance only. Reuse save/editCheck; never grant access in allowOnly mode.
@@ -694,6 +748,7 @@ import LocalHistoryCore
         if clock().timeIntervalSince(lastRefresh) >= 5 { refresh(enforceLast: false) }
         if !target.isForeground { enforce(target); return }
         if let previous = lastObservation, previous.pid == target.pid, previous.url == target.url,
+           previous.titleKeywordMatches == target.titleKeywordMatches,
            previous.windowIdentity == target.windowIdentity, previous.sessionAvailable, target.sessionAvailable,
            previous.idleSeconds <= 120, target.idleSeconds <= 120, !previous.privateWindow && !target.privateWindow {
             let from = max(previous.at, calendar.startOfDay(for: target.at))
@@ -940,6 +995,7 @@ import LocalHistoryCore
             controller = value
             value.onObservationRequirementChanged = { [weak self] needed in self?.monitor?.setBlockingObservationEnabled(needed) }
             monitor?.blockingSink = { [weak value] target in value?.observe(target) }
+            monitor?.blockingKeywords = { [weak value] in value?.activeKeywords ?? [] }
             monitor?.setBlockingObservationEnabled(value.needsObservation)
         } else if !enabled, let controller {
             controller.refresh(enforceLast: false)
@@ -950,6 +1006,7 @@ import LocalHistoryCore
             }
             controller.shutdown()
             monitor?.blockingSink = nil
+            monitor?.blockingKeywords = nil
             monitor?.setBlockingObservationEnabled(false)
             self.controller = nil
         }

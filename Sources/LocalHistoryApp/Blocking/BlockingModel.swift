@@ -9,6 +9,8 @@ struct BlockList: Codable, Identifiable, Equatable, Hashable {
     var name: String
     var mode: Mode
     var sites: [BlockSiteRule]
+    var exceptions: [BlockSiteRule]?
+    var keywords: [String]?
     var apps: [BlockAppRule]
     var program: BlockProgram
     /// Minutes the list allows per local day while it is active, before it blocks.
@@ -25,13 +27,15 @@ struct BlockList: Codable, Identifiable, Equatable, Hashable {
     init(id: UUID = UUID(), name: String, mode: Mode = .block, sites: [BlockSiteRule] = [],
          apps: [BlockAppRule] = [], program: BlockProgram = BlockProgram(),
          quotaMinutesPerDay: Int? = nil, breaks: BlockBreaks? = nil, action: Action? = nil,
-         slowDownSeconds: Int? = nil, continueMinutes: Int? = nil) {
+         slowDownSeconds: Int? = nil, continueMinutes: Int? = nil,
+         exceptions: [BlockSiteRule]? = nil, keywords: [String]? = nil) {
         self.id = id; self.name = name; self.mode = mode; self.sites = sites; self.apps = apps
         self.program = program; self.quotaMinutesPerDay = quotaMinutesPerDay; self.breaks = breaks
         self.action = action; self.slowDownSeconds = slowDownSeconds; self.continueMinutes = continueMinutes
+        self.exceptions = exceptions; self.keywords = keywords
     }
 
-    var isEmpty: Bool { sites.isEmpty && apps.isEmpty && mode == .block }
+    var isEmpty: Bool { sites.isEmpty && apps.isEmpty && (keywords ?? []).isEmpty && mode == .block }
 }
 
 /// A normalized `host[/path]`. A host matches itself and every subdomain; a path matches on a

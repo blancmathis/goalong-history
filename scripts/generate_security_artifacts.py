@@ -279,7 +279,10 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         "blockingModule": {
             "defaultEnabled": False, "level": "standard-in-process",
             "sources": ["BlockingController.swift", "BlockingRules.swift", "BlockingStore.swift", "BlockingEnforcement.swift"],
-            "observations": "existing ContextMonitor/AccessibilityEventMonitor; ephemeral host and path only",
+            "observations": "existing ContextMonitor/AccessibilityEventMonitor; ephemeral host/path and configured keyword matches only; no retained title",
+            "keywordTitleRead": "blocking sink only, active-list keywords, after private-window classification",
+            "keywordPrivateTitleRead": False, "rawTitleRetention": False,
+            "privateClassifierReadsWindowTitle": True,
             "historyIndependent": True, "privateURLRead": False, "network": False,
             "effects": ["terminate-listed-apps", "AX-close-tab-or-fixed-pid-command-W", "click-absorbing-panels", "kiosk-shield", "fixed-control-command-Q-lock-shortcut"],
             "store": {"directory": "Blocking", "file": "blocking.json", "directoryMode": "0700", "fileMode": "0600", "symlinks": "refused", "replace": "atomic"},

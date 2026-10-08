@@ -2,6 +2,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import LocalHistoryCore
 
 /// Main advances rule authority; workers only consult this short epoch check
 /// and the immutable deadline. No rule structures or AX handles enter the lock.
@@ -94,7 +95,15 @@ final class BlockingTabAXLane {
         let raw = AXReader.browserURL(from: window, addressFieldMarkers: target.addressFieldMarkers ?? []).map {
             target.isInternalPage ? $0.lowercased().components(separatedBy: "?")[0].components(separatedBy: "#")[0] : BlockingRules.normalize($0)
         }
-        return raw == target.url
+        guard raw == target.url else { return false }
+        guard !target.titleKeywordMatches.isEmpty else { return true }
+        // A same-URL tab can change its title while an action waits. Only configured
+        // keyword evidence crosses the lane; the title is never stored in a continuation.
+        let title = AXReader.string(window, attribute: kAXTitleAttribute as CFString)
+        var signals: [String?] = [title, AXReader.string(window, attribute: kAXDescriptionAttribute as CFString)]
+        signals.append(contentsOf: AXReader.browserChromeLabels(window, limit: 80))
+        guard !PrivacyClassifier.containsPrivateMarker(in: signals, markers: target.privateWindowMarkers ?? []) else { return false }
+        return title.map { current in target.titleKeywordMatches.contains { BlockingRules.matchesKeyword($0, text: current) } } ?? false
     }
 }
 #endif

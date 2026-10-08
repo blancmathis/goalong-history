@@ -244,7 +244,7 @@
             )
         }
 
-        /// Ephemeral blocking lane. No history policy/cache, title snapshot, focused text or Jev call.
+        /// Ephemeral blocking lane. No history policy/cache, retained title, focused text or Jev call.
         /// The private flag is resolved before any address read, including capability discovery.
         func captureBlocking(parameters: ContextReadParameters, of application: ForegroundAXApplication? = nil) -> BlockingObservation? {
             guard let running = application ?? parameters.foregroundApplication else { return nil }
@@ -263,6 +263,7 @@
             result.windowIdentity = Int(CFHash(window))
             result.windowBoundary = AXReadBoundary(window: window, pid: running.processIdentifier)
             result.addressFieldMarkers = parameters.config.addressFieldMarkers
+            result.privateWindowMarkers = parameters.config.privateWindowMarkers
             var position: CFTypeRef?, size: CFTypeRef?
             AXAccess.copyAttributeValue(window, kAXPositionAttribute as CFString, &position)
             AXAccess.copyAttributeValue(window, kAXSizeAttribute as CFString, &size)
@@ -278,7 +279,7 @@
             guard known || isBrowser(app: app, config: parameters.config) || AXReader.containsWebArea(window) else { return result }
             // Every app that may show a page is checked for a private window before any address read.
             let key = BlockingWindowKey(pid: running.processIdentifier, window: result.windowIdentity)
-            if let cached = blockingPrivateWindows[key], result.at.timeIntervalSince(cached.at) < 30 {
+            if parameters.blockingKeywords.isEmpty, let cached = blockingPrivateWindows[key], result.at.timeIntervalSince(cached.at) < 30 {
                 result.privateWindow = cached.isPrivate
             } else {
                 var signals: [String?] = [AXReader.string(window, attribute: "AXTitle" as CFString),
@@ -302,6 +303,10 @@
             } else if known, result.bundleIdentifier == "com.apple.Safari" {
                 // An empty Safari start page has no web area. Missing address on real content fails closed.
                 result.isInternalPage = !AXReader.containsWebArea(window)
+            }
+            if result.isBrowser, !result.isInternalPage {
+                result.titleKeywordMatches = BlockingRules.matchingTitleKeywords(parameters.blockingKeywords,
+                    readTitle: { AXReader.string(window, attribute: kAXTitleAttribute as CFString) }, privateWindow: result.privateWindow)
             }
             return result
         }
