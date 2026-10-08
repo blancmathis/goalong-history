@@ -162,9 +162,11 @@ private final class BlockingFreezePanel: NSPanel {
         let screen = target.windowFrame.flatMap { frame in NSScreen.screens.first { $0.frame.intersects(Self.appKitFrame(frame)) } } ?? NSScreen.main
         guard let screen else { return }
         if let id = block.feedback?.listID { appNoticeFeedback = onBlockPresented?(target, id) ?? block.feedback }
-        let frame = NSRect(x: screen.visibleFrame.midX - 190, y: screen.visibleFrame.maxY - 84, width: 380, height: 68)
+        let height = BlockedAppNotice.height(appNoticeFeedback)
+        let frame = NSRect(x: screen.visibleFrame.midX - 190, y: screen.visibleFrame.maxY - 16 - height, width: 380, height: height)
         let panel = notice ?? makePanel(frame: frame)
-        panel.contentView = host(BlockedAppNotice(app: app, end: block.end, lock: block.lock, listName: listName), frame: frame)
+        panel.contentView = host(BlockedAppNotice(app: app, end: block.end, lock: block.lock, listName: listName,
+                                                  feedback: appNoticeFeedback), frame: frame)
         panel.setFrame(frame, display: true); panel.orderFrontRegardless(); notice = panel
         noticeClear?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.notice?.close(); self?.notice = nil; self?.appNoticeFeedback = nil }

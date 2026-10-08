@@ -164,6 +164,7 @@ struct BlockingStopRequest: Identifiable {
                     Text("Prochain blocage : \(list.name), \(BlockingFormat.moment(next.date, now: now)).")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
+                attemptsLine
             }
         }
         .accessibilityElement(children: .combine)
@@ -176,12 +177,18 @@ struct BlockingStopRequest: Identifiable {
         return VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
                 lockLine(block)
-                Text(BlockingFormat.remaining(block.end.timeIntervalSince(now)))
-                    .font(LHTheme.heroFont).tracking(LHTheme.heroTracking)
-                    .goalongNumericTransition()
-                    .accessibilityLabel("Encore \(BlockingFormat.remaining(block.end.timeIntervalSince(now)))")
+                if let apps = triggerApps(block) {
+                    Text(apps).font(LHTheme.heroFont).tracking(LHTheme.heroTracking).lineLimit(1).minimumScaleFactor(0.6)
+                } else {
+                    Text(BlockingFormat.remaining(block.end.timeIntervalSince(now)))
+                        .font(LHTheme.heroFont).tracking(LHTheme.heroTracking)
+                        .goalongNumericTransition()
+                        .accessibilityLabel("Encore \(BlockingFormat.remaining(block.end.timeIntervalSince(now)))")
+                }
             }
-            BlockingSessionThread(start: block.start, end: block.end, now: now, locked: block.lock.protectsLists)
+            if triggerApps(block) == nil {
+                BlockingSessionThread(start: block.start, end: block.end, now: now, locked: block.lock.protectsLists)
+            }
             HStack(alignment: .center, spacing: 12) {
                 BlockingIconCluster(lists: lists, size: 22, limit: 7)
                 Text(lists.map(\.name).joined(separator: ", "))
@@ -192,6 +199,7 @@ struct BlockingStopRequest: Identifiable {
             ForEach(lists.filter { block.breakEnds[$0.id] != nil || block.quotaSecondsLeft[$0.id] != nil }) { list in
                 allowanceLine(block, list: list)
             }
+            attemptsLine
             ForEach(Array(others)) { other in
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 secondary(other)
@@ -200,8 +208,28 @@ struct BlockingStopRequest: Identifiable {
         .accessibilityIdentifier("blocking-state-active")
     }
 
+    /// « Xcode ouvert » for a block started by a trigger app; nil for a block with an end.
+    private func triggerApps(_ block: BlockingActiveBlock) -> String? {
+        guard case .trigger(let id) = block.origin else { return nil }
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        let apps = controller.list(id)?.triggers?.apps ?? []
+        let names = apps.filter { running.contains($0.bundleIdentifier) }.map(\.name)
+        let shown = names.isEmpty ? apps.map(\.name) : names
+        guard !shown.isEmpty else { return "App de travail ouverte" }
+        return shown.prefix(2).joined(separator: ", ") + (shown.count > 1 ? " ouverts" : " ouvert")
+    }
+
+    @ViewBuilder private var attemptsLine: some View {
+        let total = controller.totalAttemptsToday
+        if total > 0 {
+            Text(total == 1 ? "Aujourd’hui : 1 tentative bloquée" : "Aujourd’hui : \(total) tentatives bloquées")
+                .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                .accessibilityIdentifier("blocking-attempts-today")
+        }
+    }
+
     private func lockLine(_ block: BlockingActiveBlock) -> some View {
-        let symbol = block.lock.symbol
+        var symbol = block.lock.symbol
         var words: String
         switch block.lock {
         case .locked: words = "Verrouillé jusqu’à \(BlockingFormat.time(block.end))"
@@ -215,6 +243,10 @@ struct BlockingStopRequest: Identifiable {
         }
         let origin: String
         if case .program = block.origin { origin = " · programme" } else { origin = "" }
+        if triggerApps(block) != nil {
+            words = lists.allSatisfy({ $0.effectiveAction == .slowDown }) ? "Ralenti tant que l’app est ouverte" : "Bloqué tant que l’app est ouverte"
+            symbol = "app.badge"
+        }
         return Label(words + origin, systemImage: symbol)
             .font(.system(size: 13, weight: .medium))
             .accessibilityIdentifier("blocking-lock-line")
@@ -256,11 +288,13 @@ struct BlockingStopRequest: Identifiable {
                 Spacer(minLength: 8)
                 Button("Reprendre") { controller.endBreak(listID: list.id) }.buttonStyle(LHQuietButtonStyle())
             } else if let left = block.quotaSecondsLeft[list.id], let quota = list.quotaMinutesPerDay {
+                let earned = Int(controller.earnedMinutesToday[list.id] ?? 0)
                 Image(systemName: "hourglass").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
-                Text(left > 0 ? "\(list.name) : encore \(BlockingFormat.remaining(left)) aujourd’hui"
-                              : "\(list.name) : vos \(BlockingFormat.duration(minutes: quota)) du jour sont passées")
+                Text((left > 0 ? "\(list.name) : encore \(BlockingFormat.remaining(left)) aujourd’hui"
+                               : "\(list.name) : vos \(BlockingFormat.duration(minutes: quota + earned)) du jour sont passées")
+                     + (earned > 0 ? " · +\(earned) min gagnées" : ""))
                 Spacer(minLength: 8)
-                BlockingMeter(fraction: 1 - left / Double(max(1, quota * 60))).frame(width: 120)
+                BlockingMeter(fraction: 1 - left / Double(max(1, (quota + earned) * 60))).frame(width: 120)
             }
         }
         .font(.system(size: 12)).foregroundStyle(LHTheme.text)
@@ -272,7 +306,8 @@ struct BlockingStopRequest: Identifiable {
             BlockingIconCluster(lists: lists, size: 18, limit: 5)
             VStack(alignment: .leading, spacing: 2) {
                 Text(lists.map(\.name).joined(separator: ", ")).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text("\(block.lock == .free ? "Bloqué" : block.lock.title) jusqu’à \(BlockingFormat.time(block.end))")
+                Text(triggerApps(block).map { "Bloqué tant que \($0)" }
+                     ?? "\(block.lock == .free ? "Bloqué" : block.lock.title) jusqu’à \(BlockingFormat.time(block.end))")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 12)

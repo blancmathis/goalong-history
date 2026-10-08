@@ -20,13 +20,24 @@ struct BlockedSiteVeil: View {
                     Label(untilLine, systemImage: presentation.lock == .locked ? "lock.fill" : "lock")
                         .font(.system(size: 15, weight: .medium))
                 }
-                TimelineView(.periodic(from: Date(), by: 15)) { context in
-                    BlockingSessionThread(start: presentation.start, end: presentation.end, now: now ?? context.date,
-                                          locked: presentation.lock == .locked)
+                if !BlockingFormat.isOpenEnded(presentation.end) {
+                    TimelineView(.periodic(from: Date(), by: 15)) { context in
+                        BlockingSessionThread(start: presentation.start, end: presentation.end, now: now ?? context.date,
+                                              locked: presentation.lock == .locked)
+                    }
+                    .frame(width: 320)
                 }
-                .frame(width: 320)
+                if let reason = presentation.feedback?.reasonLine {
+                    Text(reason).font(.system(size: 17, weight: .medium)).multilineTextAlignment(.center)
+                        .frame(maxWidth: 420).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("blocking-veil-reason")
+                }
                 Text(detail).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     .multilineTextAlignment(.center).frame(maxWidth: 380).fixedSize(horizontal: false, vertical: true)
+                if let counts = countsLine {
+                    Text(counts).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
+                        .accessibilityIdentifier("blocking-veil-attempts")
+                }
                 if let minutes = presentation.breakMinutes, presentation.breaksLeft > 0 {
                     VStack(spacing: 6) {
                         Button(action: onBreak) { Label("Pause de \(minutes) min", systemImage: "cup.and.saucer") }
@@ -69,7 +80,13 @@ struct BlockedSiteVeil: View {
     }
 
     private var untilLine: String {
-        "\(presentation.lock == .locked ? "Verrouillé" : "Bloqué") jusqu’à \(BlockingFormat.time(presentation.end))"
+        if BlockingFormat.isOpenEnded(presentation.end) { return "Bloqué pendant que vous travaillez" }
+        return "\(presentation.lock == .locked ? "Verrouillé" : "Bloqué") jusqu’à \(BlockingFormat.time(presentation.end))"
+    }
+
+    private var countsLine: String? {
+        let parts = [presentation.feedback?.attemptLine, presentation.feedback?.earnedLine].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private var detail: String {
@@ -88,14 +105,32 @@ struct BlockedAppNotice: View {
     let end: Date
     let lock: BlockLock
     var listName: String
+    var feedback: BlockingListFeedback? = nil
+
+    static func height(_ feedback: BlockingListFeedback?) -> CGFloat { feedback?.reasonLine == nil ? 68 : 86 }
+
+    private var untilText: String {
+        BlockingFormat.isOpenEnded(end) ? "Pendant votre travail" : "Jusqu’à \(BlockingFormat.time(end))"
+    }
+
+    private func detail(_ parts: [String?]) -> some View {
+        Text(parts.compactMap { $0 }.joined(separator: " · "))
+            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+    }
 
     var body: some View {
         HStack(spacing: 14) {
             BlockingStruckIcon(item: .app(app), size: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(app.name) est bloqué").font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                Text("Jusqu’à \(BlockingFormat.time(end)) · \(listName)").font(.system(size: 12))
-                    .foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+                if let reason = feedback?.reasonLine {
+                    Text(reason).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                }
+                // The attempt count matters more than the list name when both do not fit.
+                ViewThatFits(in: .horizontal) {
+                    detail([untilText, listName, feedback?.attemptLine])
+                    detail([untilText, feedback?.attemptLine])
+                }
             }
             Spacer(minLength: 8)
             if lock == .locked {
@@ -103,7 +138,7 @@ struct BlockedAppNotice: View {
                     .accessibilityLabel("Verrouillé")
             }
         }
-        .padding(.horizontal, 16).frame(width: 380, height: 68)
+        .padding(.horizontal, 16).frame(width: 380, height: Self.height(feedback))
         .background(GoalongSurface(corner: 14, fill: LHTheme.elevatedBackground, highlighted: true))
         .foregroundStyle(LHTheme.text)
         .accessibilityElement(children: .combine)
