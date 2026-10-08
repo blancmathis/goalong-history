@@ -20,6 +20,33 @@ struct BlockingObservation: Equatable {
     var isInternalPage = false
     var isForeground = true
     var isActivation = false
+    /// Only configured, folded keywords, never the tab/window title itself.
+    var titleKeywordMatches: Set<String> = []
+    var privateWindowMarkers: [String]? = nil
+}
+
+struct BlockingMatchExplanation: Equatable {
+    enum Reason: Equatable {
+        case exempt, appRule, internalPage, exception(String), keyword(String, Source)
+        case siteRule(String), unlistedSite, unlistedApp, unreadableURL, noMatch
+    }
+    enum Source: Equatable { case url, title }
+    var blocked: Bool
+    var reason: Reason
+    var message: String {
+        switch reason {
+        case .exempt: return "Cette application est toujours autorisée."
+        case .appRule: return "Cette application figure dans la liste."
+        case .internalPage: return "Les pages internes du navigateur sont autorisées."
+        case .exception(let rule): return "Exception de cette liste : \(rule)."
+        case .keyword(let keyword, let source): return "Mot-clé « \(keyword) » dans \(source == .url ? "l’adresse" : "le titre de l’onglet")."
+        case .siteRule(let rule): return "Règle de site de cette liste : \(rule)."
+        case .unlistedSite: return "Ce site ne figure pas parmi les sites autorisés."
+        case .unlistedApp: return "Cette application ne figure pas parmi les applications autorisées."
+        case .unreadableURL: return "L’adresse n’est pas lisible ; la protection du navigateur est évaluée séparément."
+        case .noMatch: return "Aucune règle de cette liste ne bloque cette cible."
+        }
+    }
 }
 
 enum BlockingRules {
@@ -76,18 +103,73 @@ enum BlockingRules {
         return candidate[1] == expected[1] || candidate[1].hasPrefix(expected[1] + "/")
     }
 
-    static func hasSites(_ list: BlockList) -> Bool { list.mode == .allowOnly || !list.sites.isEmpty }
+    static func normalizeKeyword(_ input: String) -> String? {
+        let value = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().precomposedStringWithCanonicalMapping
+        return (2...40).contains(value.count) ? value : nil
+    }
+
+    static func foldKeyword(_ input: String) -> String {
+        input.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .lowercased().precomposedStringWithCanonicalMapping
+    }
+
+    static func matchesKeyword(_ keyword: String, text: String) -> Bool {
+        let words = foldKeyword(keyword).split(whereSeparator: { $0.isWhitespace })
+        guard !words.isEmpty else { return false }
+        let sequence = words.map { NSRegularExpression.escapedPattern(for: String($0)) }.joined(separator: "[^\\p{L}\\p{N}]+")
+        guard let expression = try? NSRegularExpression(pattern: "(?<![\\p{L}\\p{N}])" + sequence + "(?![\\p{L}\\p{N}])") else { return false }
+        let target = foldKeyword(text)
+        return expression.firstMatch(in: target, range: NSRange(target.startIndex..., in: target)) != nil
+    }
+
+    static func matchingTitleKeywords(_ keywords: [String], readTitle: () -> String?, privateWindow: Bool) -> Set<String> {
+        guard !privateWindow, !keywords.isEmpty, let title = readTitle() else { return [] }
+        return Set(keywords.filter { matchesKeyword($0, text: title) }.map(foldKeyword))
+    }
+
+    static func hasSites(_ list: BlockList) -> Bool { list.mode == .allowOnly || !list.sites.isEmpty || !(list.keywords ?? []).isEmpty }
     static func wouldBlock(_ target: BlockingObservation, list: BlockList) -> Bool {
-        guard !exempt(target) else { return false }
+        explain(target, list: list).blocked
+    }
+
+    /// Pure, per-list explanation; title is consumed only for this call and never returned.
+    static func explain(_ target: BlockingObservation, list: BlockList, title: String? = nil) -> BlockingMatchExplanation {
+        guard !exempt(target) else { return .init(blocked: false, reason: .exempt) }
         let appMatch = list.apps.contains { $0.bundleIdentifier == target.bundleIdentifier }
         if target.isBrowser {
-            if list.mode == .block && appMatch { return true }
-            if target.isInternalPage { return false }
-            guard let url = target.url else { return false }
-            let siteMatch = list.sites.contains { matches($0, url: url) }
-            return list.mode == .block ? siteMatch : !siteMatch
+            if list.mode == .block && appMatch { return .init(blocked: true, reason: .appRule) }
+            if target.isInternalPage { return .init(blocked: false, reason: .internalPage) }
+            let rawURL = target.privateWindow ? nil : target.url
+            let url = rawURL.flatMap(normalize)
+            if list.mode == .block, let url,
+               let rule = list.exceptions?.first(where: { matches($0, url: url) }) {
+                return .init(blocked: false, reason: .exception(rule.pattern))
+            }
+            if !target.privateWindow {
+                for keyword in list.keywords ?? [] {
+                    if let text = url ?? rawURL, matchesKeyword(keyword, text: text) { return .init(blocked: true, reason: .keyword(keyword, .url)) }
+                    if target.titleKeywordMatches.contains(foldKeyword(keyword)) || title.map({ matchesKeyword(keyword, text: $0) }) == true {
+                        return .init(blocked: true, reason: .keyword(keyword, .title))
+                    }
+                }
+            }
+            guard rawURL != nil else { return .init(blocked: false, reason: .unreadableURL) }
+            // An address that does not normalize (IP, localhost) matches no rule: allowOnly still blocks it.
+            if let url, let rule = list.sites.first(where: { matches($0, url: url) }) {
+                return .init(blocked: list.mode == .block, reason: .siteRule(rule.pattern))
+            }
+            return .init(blocked: list.mode == .allowOnly, reason: list.mode == .allowOnly ? .unlistedSite : .noMatch)
         }
-        return list.mode == .block ? appMatch : !appMatch
+        return .init(blocked: list.mode == .block ? appMatch : !appMatch, reason: appMatch ? .appRule : (list.mode == .allowOnly ? .unlistedApp : .noMatch))
+    }
+
+    static func explain(url: String?, title: String? = nil, list: BlockList) -> BlockingMatchExplanation {
+        var target = BlockingObservation(bundleIdentifier: "", pid: -1, windowFrame: nil, isBrowser: true,
+                                         url: url, privateWindow: false, at: .distantPast)
+        let lower = url?.lowercased() ?? ""
+        target.isInternalPage = lower.hasPrefix("about:") || lower.hasPrefix("favorites:")
+            || lower.hasPrefix("chrome://newtab") || lower.hasPrefix("edge://newtab")
+        return explain(target, list: list, title: title)
     }
 
     static func validate(_ document: BlockingDocument) -> Bool {
@@ -98,6 +180,13 @@ enum BlockingRules {
         for list in document.lists {
             guard !list.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   list.sites.allSatisfy({ normalize($0.pattern) != nil }),
+                  (list.exceptions ?? []).allSatisfy({ normalize($0.pattern) == $0.pattern }),
+                  (list.keywords ?? []).count <= 50,
+                  (list.keywords ?? []).allSatisfy({ keyword in normalizeKeyword(keyword).map { $0.utf8.elementsEqual(keyword.utf8) } ?? false }),
+                  Set((list.keywords ?? []).map(foldKeyword)).count == (list.keywords ?? []).count,
+                  list.reason.map({ normalizeReason($0) == $0 }) ?? true,
+                  list.triggers.map({ validTriggers($0, list: list) }) ?? true,
+                  list.earn.map({ $0.valid && list.quotaMinutesPerDay != nil }) ?? true,
                   list.apps.allSatisfy({ !$0.bundleIdentifier.isEmpty }),
                   (3...60).contains(list.delaySeconds), (1...60).contains(list.allowanceMinutes),
                   list.quotaMinutesPerDay.map({ (1...720).contains($0) }) ?? true,
@@ -108,11 +197,15 @@ enum BlockingRules {
         let ids = Set(document.lists.map(\.id))
         guard document.sessions.allSatisfy({ session in
             if case .commitment(let id) = session.origin, (session.lock != .locked || session.id != id) { return false }
+            if case .trigger(let id) = session.origin, (session.lock != .free || session.listIDs != [id]) { return false }
+            if case .focus = session.origin { return false } // App Intents gate: no Focus support yet.
             return session.start < session.end && !session.listIDs.isEmpty && Set(session.listIDs).isSubset(of: ids)
         }),
             document.usage?.quotaSecondsUsed.values.allSatisfy({ $0.isFinite && $0 >= 0 }) ?? true,
             document.usage?.breaksTaken.values.allSatisfy({ $0 >= 0 }) ?? true,
             [document.usage?.slowDownShown, document.usage?.renounced, document.usage?.continued].allSatisfy({ $0?.values.allSatisfy { $0 >= 0 } ?? true }),
+            document.usage.map(validPlusUsage) ?? true,
+            document.usageHistory?.values.allSatisfy(validPlusUsage) ?? true,
             document.usageHistory.map({ $0.count <= 366 }) ?? true else { return false }
         if let freeze = document.freeze { return freeze.end > freeze.start }
         return true

@@ -22,6 +22,10 @@
 
         var concentrationSink: ((FocusObservation) -> Void)?
         var blockingSink: ((BlockingObservation) -> Void)?
+        var blockingKeywords: (() -> [String])? {
+            get { provider.blockingKeywords }
+            set { provider.blockingKeywords = newValue }
+        }
         private(set) var blockingObservationEnabled = false
         private var historyRequested = false
         func setBlockingObservationEnabled(_ enabled: Bool) {

@@ -47,6 +47,8 @@ struct ContextReadParameters {
     let pauseRevision: String?
     var secureInputEnabled: Bool = false
     var permissionRevision: UInt64 = 0
+    /// Explicit blocking rules only. The history reader never uses this field.
+    var blockingKeywords: [String] = []
 
     func hasSameAuthority(as other: Self) -> Bool {
         foregroundApplication == other.foregroundApplication && config == other.config

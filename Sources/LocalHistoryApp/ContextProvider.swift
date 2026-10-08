@@ -62,6 +62,7 @@
         private let blockingReader: ContextAXReader
         private let blockingLane: BlockingAXLane
         private var blockingGeneration = UUID()
+        var blockingKeywords: (() -> [String])?
         private let blockingProbe: (() -> BlockingObservation?)?
         private let privateWindowSink: (Bool) -> Void
         private(set) var lastCaptureProvedExternalAX = false
@@ -315,7 +316,8 @@
         func requestBlocking(of application: NSRunningApplication? = nil, completion: @escaping (BlockingObservation?) -> Void) {
             // Fixture probes remain synchronous and do not issue AX calls.
             if let blockingProbe { completion(blockingProbe()); return }
-            let input = blockingParameters()
+            var input = blockingParameters()
+            input.blockingKeywords = blockingKeywords?() ?? []
             let generation = blockingGeneration
             blockingLane.request(input, application: application.map(ForegroundAXApplication.init)) { [weak self] observation in
                 guard let self, self.blockingGeneration == generation else { completion(nil); return }
@@ -324,14 +326,16 @@
                       current.foregroundApplication?.processIdentifier == input.foregroundApplication?.processIdentifier,
                       current.foregroundApplication?.instanceStartedAt == input.foregroundApplication?.instanceStartedAt,
                       current.sessionAvailable == input.sessionAvailable,
-                      current.blockingAXTrusted == input.blockingAXTrusted else { completion(nil); return }
+                      current.blockingAXTrusted == input.blockingAXTrusted,
+                      input.blockingKeywords == (self.blockingKeywords?() ?? []) else { completion(nil); return }
                 completion(observation)
             }
         }
 
         func captureBlocking(of application: NSRunningApplication? = nil) -> BlockingObservation? {
             precondition(backend == .legacy, "Synchronous blocking capture is parity-only")
-            let input = blockingParameters()
+            var input = blockingParameters()
+            input.blockingKeywords = blockingKeywords?() ?? []
             return AXAccess.withClient(client, requestID: client.clock.identifier()) {
                 blockingReader.captureBlocking(parameters: input, of: application.map(ForegroundAXApplication.init))
             }

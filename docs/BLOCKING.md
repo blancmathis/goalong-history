@@ -71,7 +71,11 @@ and rewritten. A store error refuses edits; it is never a lock and never stops �
 
 - `BlockList`: `id`, `name`, `mode` (`block` | `allowOnly`), `sites: [BlockSiteRule]`,
   `apps: [BlockAppRule]`, `program: BlockProgram`, `quotaMinutesPerDay: Int?` (1…720),
-  `breaks: BlockBreaks?` (count 1…12 per day, minutes 1…30).
+  `breaks: BlockBreaks?` (count 1…12 per day, minutes 1…30), optional
+  `exceptions: [BlockSiteRule]?` and `keywords: [String]?` (absent = empty).
+  Exceptions use the same normalized host/path as sites. Keywords are trimmed, lowercased,
+  NFC, 2…40 characters, at most 50 per list, unique after case/diacritic folding.
+  These additive fields keep schema version 1 and old files decode unchanged.
 - `BlockSiteRule.pattern`: normalized `host[/path]`. Normalization: trim, lowercase, drop scheme,
   `www.`, credentials, port, query, fragment and trailing `/`; IDN to punycode; reject IPs, empty
   hosts and hosts without a dot (except `localhost` is rejected too). `youtube.com` matches
@@ -90,7 +94,8 @@ and rewritten. A store error refuses edits; it is never a lock and never stops �
 
 ## Rules
 
-**Matching.** A target is the foreground app (bundle id) plus, for a browser, its URL. A list is
+**Matching.** A target is the foreground app (bundle id) plus, for a browser, its URL and ephemeral
+keyword evidence from its tab/window title. A list is
 *active* when a manual session includes it or one of its program ranges contains now. For an active
 list that is not on break and has no quota left:
 
@@ -100,6 +105,17 @@ list that is not on break and has no quota left:
   `chrome://newtab`, `edge://newtab`, Safari start page without URL, `favorites://`) stay allowed.
 
 Several active lists combine: blocked if any active list blocks.
+
+Within a browser list, evaluate in this order: an explicitly blocked browser app; an allowed
+internal page; a matching URL exception in `block` mode; a matching keyword; existing site rules.
+An exception permits the URL only in its own list and never reopens an explicitly blocked browser
+app. `allowOnly` ignores exceptions, and keywords can block even a listed allowed site.
+
+Keywords match whole words, ignoring case and diacritics (`é` = `e`): `sex` does not match `essex`
+or `sex2`. A phrase matches consecutive words. URL matching uses the observed host and path,
+with `.`, `/`, `-`, `_` as separators; never query, fragment, credentials or port. Title matching
+can therefore catch a Google search such as « école - Recherche Google » without reading its query.
+Keywords do not apply to non-browser apps.
 
 **Never blocked.** Goalong itself, Finder, Dock, `loginwindow`, SystemUIServer, Control Center,
 Notification Center, Spotlight, `SecurityAgent`/`coreautha` prompts, screensaver, and any process
@@ -125,6 +141,10 @@ shortening, raising the quota, adding breaks, changing the mode, deleting the li
 Program sessions of a locked program are `locked`; of an unlocked program, `free`.
 
 A locked manual session also makes its lists stricter-only until its end.
+During either lock, adding keywords and removing exceptions are allowed; removing keywords or
+adding/widening exceptions is refused in French. Replacing an exception is removal plus addition
+and is refused even when the replacement narrows its scope. The same protection applies to
+password-protected lists.
 
 **Freeze.** `shield`: a full-screen Goalong shield on every display, kiosk presentation options
 (no Dock, menu bar, app switching, force quit, session termination); allowed apps can be opened from
@@ -177,19 +197,32 @@ the delay, lowering `continueMinutes` are allowed (stricter).
 `ContextMonitor` gains a blocking-only mode:
 
 - It runs when `BlockingController.needsObservation` is true (an active or upcoming-in-60-s list with
-  apps or sites, or a freeze), even if Computer History is off, manually paused or under the
+  apps, sites or keywords, or a freeze), even if Computer History is off, manually paused or under the
   privacy stop.
 - In that mode it samples and calls the blocking sink, but records nothing, feeds neither Jev nor
   activity analysis, and keeps no snapshot after the sample.
 - When Computer History is capturing normally, the same samples feed the sink: no extra sampling.
 - The sink receives `BlockingObservation`: bundle id, pid, window frame (AX, screen coordinates),
-  browser flag, URL (host + path only) when readable, private-window flag, at.
+  browser flag, URL (host + path only) when readable, private-window flag, at, and a set of
+  configured, folded keywords matched in this sample's title. It never contains a raw title.
 - Private windows are never read: the provider only reports the flag. The private check runs for
   every app that may show a page (known browser, configured browser or web content) before any
   address read. An unknown app with a private window counts as a browser only when it shows an
   address field, found without reading its value. Exclusions of Computer History
   do not hide URLs from the blocking sink (they are privacy choices for history), but the URL never
   reaches the recorder.
+- Keyword title reading happens only in the blocking reader, after the private-window check,
+  while at least one currently active list has keywords. Upcoming lists alone do not enable it.
+  No keyword title read happens in private windows or without active keywords. The raw title is
+  consumed within one read, never cached, compared in `BlockingObservation`, recorded, logged,
+  or sent to Jev, analytics or diagnostics. Matching evidence contains configured rules only and
+  is recomputed each sample. A pending tab action rechecks its matching keywords before closing.
+- Existing privacy classification remains separate: it already reads window `AXTitle`,
+  descriptions and chrome labels to detect private markers, even without keywords and in private
+  windows. These labels are discarded. Without keywords its 30-second flag cache is unchanged;
+  with keywords the flag is recomputed before every sample. Thus the literal prohibition of
+  **all** `AXTitle` reads without keywords or in private windows is not met by this existing
+  classifier; the new keyword path adds no title read in either case.
 
 App launches and activations also arrive through the existing `NSWorkspace` notification path in
 `AccessibilityEventMonitor`; reuse it, do not add another one.
@@ -271,6 +304,13 @@ before Developer ID and recovery tests on a dedicated Mac.
   `error: String?` (French).
 - Lists: `save(_:)`, `delete(_:)`, `editCheck(_ new: BlockList) -> BlockingEditCheck`
   (`allowed` | `refused(String)`), `suggestions: [BlockSuggestion]` (static catalog).
+- Rule edits: `addException(_:to:)` (raw URL string), `removeException(_:from:)`
+  (`BlockSiteRule`), `addKeyword(_:to:)`, `removeKeyword(_:from:)` (strings), all returning
+  `BlockingEditCheck`. Additions normalize and deduplicate; refusals preserve the list.
+- Pure explanation: `BlockingController.explain(url:title:list:) -> BlockingMatchExplanation`
+  with `blocked`, a typed `reason` and a French `message`. It evaluates one list's matching rules,
+  without sessions, quota, breaks or the private/unreadable-browser fallback. It consumes an
+  optional title for that call only. Runtime `activeKeywords` enables the sink's title reads.
 - Sessions: `start(listIDs:until:lock:)`, `stop(_:typed:)`, `typingChallenge(for:)`,
   `takeBreak(listID:)`, `endBreak(listID:)`.
 - Program: part of `BlockList`; `lockProgram(listID:until:)`.
@@ -285,6 +325,9 @@ Every refusal returns a short French reason the page shows as is.
 - Module off: building the app model creates no controller, timer, window or file under `Blocking/`,
   requests no permission.
 - Normalization and matching (subdomains, path boundary, IDN, rejected inputs).
+- Exceptions/keywords: per-list precedence, browser-app priority, ignored allowOnly exceptions,
+  whole words/diacritics/phrases, URL tokens without query/fragment, title evidence, lock edits in
+  both directions, validation limits, old-file decoding and guarded title reads.
 - Activity: overnight ranges, ISO weekdays, DST days, several lists, allowOnly with internal pages,
   never-blocked set.
 - Quota and breaks across midnight; breaks while locked; no break in a freeze.
@@ -412,3 +455,131 @@ in-memory `BlockingController` skeleton. The engine work completes it without ch
 - Local commits: `c8457e1` (rules/store/calendar), `5d6012d` (Standard backend), `75af45c`
   (lifecycle/observation/accounting and regression tests), followed by the documentation/inventory
   commit. Branch: `feat/cold-turkey-engine-20261004`; no push or PR. All design-owner files preserved.
+
+
+## Blocage + engine (2026-10-08)
+
+Spec: `docs/BLOCKING-PLUS-20261008.md`. This engine is stacked on the exceptions/keywords
+implementation (#77). Schema remains 1. `BlockList.reason`, `triggers`, `earn` and the new daily
+usage fields are optional; old documents decode unchanged. The presentation model now lives in
+`BlockingPlus.swift`; SwiftUI view bodies are unchanged, and the new UI is a separate delivery.
+
+### App Intents feasibility gate and fallback
+
+The gate was recorded in `.blocking-plus-work/REPORT.md` before engine work. On Swift 6.2.4,
+`AppIntent` and `SetFocusFilterIntent` compile in a SwiftPM executable, but the probe produced no
+`.swiftconstvalues` and no `Metadata.appintents`. The available metadata processor returned exit 0
+while warning that it extracted no relevant symbols. `scripts/build_app.sh` has no metadata step,
+and system discovery was not proved. This is a **NO-GO for this delivery**, not proof that SwiftPM
+can never support App Intents. No Xcode project or native intent action is shipped.
+
+The documented fallback is app triggers. `BlockTriggers.focus` and `.focus` origin are reserved;
+setting `focus: true` is refused explicitly, and unsupported Focus sessions fail validation.
+There is no fabricated Focus-state observer. Apple's actual filter contract uses
+[`SetFocusFilterIntent`](https://developer.apple.com/documentation/appintents/defining-your-app-s-focus-filter)
+with calls on activation and default parameters on deactivation; that contract remains unverified
+in Goalong's delivered bundle.
+
+For Shortcuts, use **Exécuter un script shell** with the existing local CLI (Goalong and both
+Blocage/Concentration modules must be running/enabled):
+
+```sh
+# Copy list UUIDs from this read-only command:
+/Applications/Goalong\ History.app/Contents/MacOS/goalong block-lists
+# One free Concentration session which also blocks the selected lists for 25 minutes:
+/Applications/Goalong\ History.app/Contents/MacOS/goalong session start --intent "Concentration" --minutes 25 --block LIST_UUID
+# Stops that free session and its own phase block; no earned reward for cancellation:
+/Applications/Goalong\ History.app/Contents/MacOS/goalong session stop
+```
+
+`--block LIST_UUID` can be repeated. These existing commands do **not** provide the two proposed
+native actions, a typing lock, or a global stop of all free blocks. The session stop path refuses
+a locked current phase and cannot stop unrelated password/typing/locked blocks. Do not advertise
+these shell examples as native App Intents parity. See `docs/CLI.md` for installation alternatives.
+No command above was run against the installed app during implementation.
+
+### Reason and attempts
+
+`reason` is trimmed and limited to 1…140 Swift characters; an empty edit clears it. It remains
+editable under password/program/hard locks. `BlockingListFeedback` supplies the member's sentence,
+`reasonLine` in French quotes, `attemptLine` from the second attempt, and `earnedLine`.
+`BlockingVeilPresentation.feedback` and the app enforcement block's `feedback` refer to the list
+actually selected for presentation, including sessions containing several lists. The Standard
+backend retains confirmed app-notice data as `appNoticeFeedback`. Rendering those new lines is
+left to the separately owned UI.
+
+Only a confirmed backend presentation records an attempt. A continuous veil or repeated
+reenforcement is one event. Leaving and returning to a blocked target (or a fresh app activation)
+can record another event; the same list + normalized host/app bundle identifier within 10 seconds
+is deduplicated, even across day boundaries. A path change on the same continuously blocked host
+does not create another target. Private/unreadable addresses use the browser bundle identifier
+for in-memory deduplication, without reading or retaining a private address. Slow-down presentations
+keep their existing counters; a firm quota-exhaustion block can count as a blocked attempt.
+
+Only `[list UUID: count]` is persisted as `BlockDayUsage.blocked`, alongside the existing local
+`usageHistory` (366 days maximum). Dedup keys and targets remain in memory. There is no Jev,
+analytics, site, network or diagnostic export of the reason or these counters.
+
+### Running-app triggers
+
+A configured app activates one free session with origin `.trigger(listID)` while any configured
+app is running, including in the background. The existing workspace launch/activation blocking
+path refreshes the inventory; the existing controller timer also checks
+`NSWorkspace.runningApplications` every five seconds while app triggers are configured. This
+covers launches when no observation lane is active and quits (there is no existing termination
+registration in this checkout). No new workspace observer, AX reader, history subscription or
+permission is added. Unconfigured/off modules have no inventory reads or polling timer.
+
+The last app quitting removes that trigger session by the next five-second check. Relaunch
+reconciles persisted trigger sessions against the current inventory, preserving independent
+manual/program/commitment sessions. Explicitly stopping a free trigger suppresses it for the
+current running-app episode; after all its trigger apps quit it rearms. This suppression is
+in-memory and ends when Goalong relaunches. While locked, trigger apps can be added but cannot
+be removed (including removing the whole optional configuration).
+
+Goalong and every `neverBlocked` app are refused as triggers. Duplicate/empty identifiers and
+empty names are refused. A block-list trigger cannot be in that list's blocked app rules; in an
+allow-only list it must be an allowed app. Browser site rules still apply separately.
+
+### Earned quota
+
+`BlockEarn` defaults to 25 work minutes / 5 reward minutes / 60 daily cap minutes. Validation
+requires a quota and work 10…120, reward 1…30, cap 5…240. For each eligible list a normally completed
+Concentration session adds `floor(work-phase seconds / (workMinutes × 60)) × rewardMinutes × 60`,
+limited by the remaining daily cap. Work-phase time is elapsed session time with Pomodoro breaks
+and skipped work excluded; it is **not** a Jev verdict or a measurement inferred from history.
+
+Normal completion means the scheduled end (`.completed`) or an explicit manual
+`stopSession(outcome: .done)`, including an open session. A bare manual stop, partly/not-done stop,
+app-close recovery, module disable or unfinished session grants nothing. Changing the review
+outcome later does not grant or replay rewards. Focus persistence must succeed before Blocking
+receives the completion. The reward and its optional `earnedSessionIDs` receipt are written in
+the same Blocking document, so repeated delivery/relaunch cannot pay the same session twice.
+
+`earnedSeconds` is credited to the local day of the session's actual end; a session spanning
+midnight credits its ending day, and a completion detected after midnight can credit history
+instead of the new day. Effective quota is base quota plus the recorded earned seconds in every
+enforcement/accounting path, including programs, app-force-termination admission and deferred
+site actions. Lowering a cap or turning earn off stops/reduces future grants; it does not revoke
+time already earned that day. While locked, enabling earn, lowering its work threshold, or
+raising its reward/cap is refused. Disabling it, raising the work threshold and reducing
+reward/cap are permitted. Remove earn together with a quota if removing the quota.
+
+### API for the separate UI
+
+- `setReason(_:for:)`, `setTriggers(_:for:)`, `setEarn(_:for:)` → `BlockingEditCheck`.
+- `addAppTrigger(_:to:)`, `removeAppTrigger(_:from:)` → `BlockingEditCheck`.
+- `editCheck(_:)` / `save(_:)` enforce the same normalization, limits and lock constraints.
+- Published `attemptsToday: [UUID: Int]`, computed `totalAttemptsToday: Int` (saturating sum),
+  published `earnedMinutesToday: [UUID: Double]`, `feedback(for:) → BlockingListFeedback`.
+- `BlockingVeilPresentation.feedback`, `BlockingActiveBlock.feedback` on app enforcement,
+  `StandardBlockingBackend.appNoticeFeedback` carry the selected list's display data.
+- `creditEarnedTime(for: FocusSession) throws → [UUID: Double]` is the Concentration completion
+  hook (newly granted seconds per list), not a UI action to award arbitrary minutes.
+- `runningApps` initializer injection provides fake workspace inventories for tests; production
+  uses the existing `NSWorkspace` inventory. No new observer lifecycle belongs to the UI.
+
+Tests cover reason limits, all new lock fields, confirmed attempts and deduplication, per-target/
+per-list counters, midnight and local persistence, background app launch/quit, the actual timer
+with a fake inventory, trigger refusal/relaunch/free-stop behavior, earn floor/cap/receipts,
+Pomodoro breaks/skips, normal versus cancelled completion, quota enforcement and old-file decoding.

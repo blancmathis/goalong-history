@@ -73,8 +73,10 @@ import SwiftUI
 
     static func contents(_ list: BlockList) -> String {
         let sites = list.sites.count, apps = list.apps.count
+        let words = list.keywords?.count ?? 0
         let parts = [sites > 0 ? (sites == 1 ? "1 site" : "\(sites) sites") : nil,
-                     apps > 0 ? (apps == 1 ? "1 app" : "\(apps) apps") : nil].compactMap { $0 }
+                     apps > 0 ? (apps == 1 ? "1 app" : "\(apps) apps") : nil,
+                     words > 0 ? (words == 1 ? "1 mot-clé" : "\(words) mots-clés") : nil].compactMap { $0 }
         if list.mode == .allowOnly { return parts.isEmpty ? "Tout" : "Tout sauf " + parts.joined(separator: " et ") }
         return parts.isEmpty ? "Vide" : parts.joined(separator: ", ")
     }
@@ -96,6 +98,13 @@ import SwiftUI
     var onDone: () -> Void = {}
     @State private var newSite = ""
     @State private var siteError: String?
+    @State private var newException = ""
+    @State private var newKeyword = ""
+    @State private var addingException = false
+    @State private var addingKeyword = false
+    @State private var ruleError: String?
+    @State private var reasonDraft: String
+    @State private var pickingTrigger = false
     @State private var pickingApp = false
     @State private var confirmingDelete = false
     @State private var lockingProgram = false
@@ -107,11 +116,10 @@ import SwiftUI
         self.now = now
         self.onDone = onDone
         _moreOpen = State(initialValue: list.mode == .allowOnly || list.quotaMinutesPerDay != nil || list.breaks != nil)
+        _reasonDraft = State(initialValue: list.reason ?? "")
     }
 
-    private var stricterOnly: Bool {
-        list.program.isLocked(at: now) || controller.activeBlocks.contains { $0.lock == .locked && $0.listIDs.contains(list.id) }
-    }
+    private var stricterOnly: Bool { controller.isStricterOnly(list.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -123,6 +131,15 @@ import SwiftUI
                 .textFieldStyle(GoalongFieldStyle()).font(.system(size: 15, weight: .semibold))
                 .accessibilityIdentifier("blocking-list-name")
             }
+            TextField("Pourquoi ? ex. Finir le mémoire avant vendredi", text: $reasonDraft)
+                .textFieldStyle(GoalongFieldStyle())
+                .onSubmit(saveReason)
+                .onDisappear(perform: saveReason)
+                .onChange(of: reasonDraft) { value in
+                    if value.count > 140 { reasonDraft = String(value.prefix(140)) }
+                }
+                .accessibilityIdentifier("blocking-list-reason")
+                .accessibilityHint("Affiché sur l’écran de blocage")
             if stricterOnly {
                 GoalongNote(lockNote, symbol: "lock.fill", tone: .neutral)
             }
@@ -148,6 +165,12 @@ import SwiftUI
                     }
                     if list.mode == .block {
                         suggestionRow
+                        exceptionRow
+                    }
+                    keywordRow
+                    if let ruleError {
+                        Text(ruleError).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -168,6 +191,7 @@ import SwiftUI
                         }
                         .accessibilityIdentifier("blocking-add-app")
                 }
+                triggerRow.padding(.top, 4)
             }
             part("Quand on l’ouvre") {
                 VStack(alignment: .leading, spacing: 12) {
@@ -223,6 +247,14 @@ import SwiftUI
                                 Text("\(BlockingFormat.duration(minutes: quota)) par jour").monospacedDigit()
                             }.fixedSize()
                         }
+                    }
+                    if list.quotaMinutesPerDay != nil {
+                        limitRow(on: list.earn != nil, title: "Gagner du temps en travaillant",
+                                 detail: earnDetail) { on in
+                            ruleError = message(controller.setEarn(on ? BlockEarn() : nil, for: list.id))
+                        }
+                        value: { EmptyView() }
+                        .accessibilityIdentifier("blocking-list-earn")
                     }
                     limitRow(on: list.breaks != nil, title: "Autoriser des pauses",
                              detail: "Choisies à l’avance, possibles même verrouillé.") { on in
@@ -299,7 +331,7 @@ import SwiftUI
         if let until = list.program.lockedUntil, until > now {
             return "Programme verrouillé jusqu’au \(BlockingFormat.day(until)). La liste peut seulement devenir plus stricte."
         }
-        return "Un blocage verrouillé utilise cette liste. Elle peut seulement devenir plus stricte."
+        return "Un blocage en cours utilise cette liste. Elle peut seulement devenir plus stricte jusqu’à son arrêt."
     }
 
     private var suggestionRow: some View {
@@ -319,6 +351,126 @@ import SwiftUI
                         .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
                         .disabled(!canAdd)
                     }
+                }
+            }
+        }
+    }
+
+    /// « Sauf » : pages a blocked site keeps open. Only for « Bloquer ces éléments »; under a lock they can only go.
+    private var exceptionRow: some View {
+        let exceptions = list.exceptions ?? []
+        return ruleRow(label: "Sauf", symbol: "checkmark.circle", empty: "Autoriser une page…",
+                       detail: "Une page qui reste ouverte, ex. reddit.com/r/swift. Le reste du site reste bloqué.",
+                       items: exceptions.map(\.pattern), adding: $addingException, text: $newException,
+                       placeholder: "ex. youtube.com/@cours", canAdd: !stricterOnly, canRemove: true,
+                       identifier: "exception") { value in
+            ruleError = message(controller.addException(value, to: list.id), input: value, kind: "une adresse de page")
+        } remove: { pattern in
+            ruleError = message(controller.removeException(BlockSiteRule(pattern: pattern), from: list.id))
+        }
+    }
+
+    /// « Mots-clés » : any page whose address or tab title holds the word. Under a lock they can only be added.
+    private var keywordRow: some View {
+        ruleRow(label: "Mots-clés", symbol: "textformat", empty: "Bloquer des mots…",
+                detail: "Bloque toute page dont l’adresse ou le titre contient ce mot. Mot entier, accents ignorés.",
+                items: list.keywords ?? [], adding: $addingKeyword, text: $newKeyword,
+                placeholder: "ex. match en direct", canAdd: (list.keywords?.count ?? 0) < 50, canRemove: !stricterOnly,
+                identifier: "keyword") { value in
+            ruleError = message(controller.addKeyword(value, to: list.id), input: value, kind: "un mot-clé de 2 à 40 caractères")
+        } remove: { keyword in
+            ruleError = message(controller.removeKeyword(keyword, from: list.id))
+        }
+    }
+
+    private func saveReason() {
+        let trimmed = reasonDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != (list.reason ?? "") else { return }
+        ruleError = message(controller.setReason(trimmed, for: list.id))
+    }
+
+    private var earnDetail: String {
+        let earn = list.earn ?? BlockEarn()
+        var line = "Chaque séance de Concentration terminée : +\(earn.rewardMinutes) min toutes les \(earn.workMinutes) min, jusqu’à \(earn.capMinutes) min par jour."
+        if let earned = controller.earnedMinutesToday[list.id], earned >= 1 { line += " Aujourd’hui : +\(Int(earned)) min." }
+        return line
+    }
+
+    /// « Démarrer seule » : the list runs while one of these apps is open. Under a lock they can only be added.
+    private var triggerRow: some View {
+        let apps = list.triggers?.apps ?? []
+        return Group {
+            if apps.isEmpty {
+                Button { pickingTrigger = true } label: { Label("Démarrer quand j’ouvre une app…", systemImage: "app.badge") }
+                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
+                    .accessibilityIdentifier("blocking-open-trigger")
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    BlockingFlow(spacing: 6) {
+                        Text("Démarre avec").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                            .frame(height: 26)
+                        ForEach(apps) { app in
+                            BlockingItemChip(item: .app(app), removable: !stricterOnly) {
+                                ruleError = message(controller.removeAppTrigger(app, from: list.id))
+                            }
+                        }
+                        Button { pickingTrigger = true } label: { Image(systemName: "plus").frame(height: 26) }
+                            .buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Ajouter une app déclencheuse")
+                    }
+                    Text(list.mode == .block
+                         ? "La liste bloque tant qu’une de ces apps est ouverte. « Arrêter » la coupe jusqu’à leur prochaine ouverture."
+                         : "Tout est bloqué sauf la liste tant qu’une de ces apps est ouverte. Elles doivent faire partie des apps permises.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .popover(isPresented: $pickingTrigger) {
+            BlockingAppPicker(excluded: Set(apps.map(\.bundleIdentifier) + (list.mode == .block ? list.apps.map(\.bundleIdentifier) : []))) { app in
+                ruleError = message(controller.addAppTrigger(app, to: list.id))
+            }
+        }
+    }
+
+    private func message(_ check: BlockingEditCheck, input: String? = nil, kind: String = "") -> String? {
+        guard case .refused(let reason) = check else { return nil }
+        if let input, controller.error == nil, !reason.hasPrefix("Liste") { return "« \(input) » n’est pas \(kind)." }
+        return reason
+    }
+
+    /// A folded row: a quiet button while empty, then chips and a field.
+    private func ruleRow(label: String, symbol: String, empty: String, detail: String, items: [String],
+                         adding: Binding<Bool>, text: Binding<String>, placeholder: String,
+                         canAdd: Bool, canRemove: Bool, identifier: String,
+                         add: @escaping (String) -> Void, remove: @escaping (String) -> Void) -> some View {
+        Group {
+            if items.isEmpty && !adding.wrappedValue {
+                Button { adding.wrappedValue = true } label: { Label(empty, systemImage: symbol) }
+                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
+                    .disabled(!canAdd)
+                    .accessibilityIdentifier("blocking-open-\(identifier)")
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    BlockingFlow(spacing: 6) {
+                        Text(label).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                            .frame(height: 26)
+                        ForEach(items, id: \.self) { item in
+                            BlockingItemChip(item: .symbol(symbol), label: item, removable: canRemove) { remove(item) }
+                        }
+                        if canAdd {
+                            TextField(placeholder, text: text)
+                                .textFieldStyle(GoalongFieldStyle()).controlSize(.small).frame(width: 200)
+                                .onSubmit {
+                                    let value = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    guard !value.isEmpty else { return }
+                                    add(value)
+                                    if ruleError == nil { text.wrappedValue = "" }
+                                }
+                                .accessibilityIdentifier("blocking-add-\(identifier)")
+                        }
+                    }
+                    Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -553,6 +705,8 @@ struct BlockingSiteTile: View {
 /// One site or app in a list: icon, name, and a remove cross when removing is allowed.
 struct BlockingItemChip: View {
     let item: BlockingItem
+    /// Shown instead of the item's own name, e.g. a keyword next to its symbol.
+    var label: String? = nil
     var removable = true
     var onRemove: () -> Void = {}
 
@@ -575,6 +729,7 @@ struct BlockingItemChip: View {
     }
 
     private var title: String {
+        if let label { return label }
         switch item {
         case .site(let pattern): return pattern
         case .app(let app): return app.name

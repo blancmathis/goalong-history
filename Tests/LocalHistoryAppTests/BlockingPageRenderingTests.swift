@@ -59,6 +59,7 @@ final class BlockingPageRenderingTests: XCTestCase {
             try render("page-empty-\(suffix)", width: 900, height: 900, page(fixtures.empty()))
             try render("page-idle-\(suffix)", width: 900, height: 1_500, page(fixtures.idle(), at: sunday))
             try render("page-active-\(suffix)", width: 900, height: 1_500, page(fixtures.active()))
+            try render("page-trigger-\(suffix)", width: 900, height: 1_500, page(fixtures.triggered()))
             let editing = fixtures.idle()
             try render("list-sheet-\(suffix)", width: 600, height: 900,
                        BlockListSheet(controller: editing, listID: fixtures.social.id, now: sunday, onDone: {}))
@@ -95,12 +96,16 @@ final class BlockingPageRenderingTests: XCTestCase {
                                    ("quota", .quotaUsed("instagram.com", minutes: 30))] {
                 let veil = BlockingVeilPresentation(reason: reason, listName: "Réseaux sociaux",
                     start: now.addingTimeInterval(-50 * 60), end: now.addingTimeInterval(70 * 60),
-                    lock: .locked, breakMinutes: 5, breaksLeft: 2)
+                    lock: .locked, breakMinutes: 5, breaksLeft: 2,
+                    feedback: BlockingListFeedback(listID: fixtures.social.id, reason: "Finir le mémoire avant vendredi.",
+                                                   attemptsToday: 3, earnedMinutesToday: 10))
                 try render("veil-\(name)-\(suffix)", width: 1_100, height: 720, BlockedSiteVeil(presentation: veil, now: now))
             }
             try render("app-notice-\(suffix)", width: 420,
                        BlockedAppNotice(app: BlockAppRule(bundleIdentifier: "com.apple.Music", name: "Musique"),
-                                        end: now.addingTimeInterval(4_200), lock: .locked, listName: "Distractions")
+                                        end: now.addingTimeInterval(4_200), lock: .locked, listName: "Distractions",
+                                        feedback: BlockingListFeedback(listID: UUID(), reason: "Finir le mémoire avant vendredi.",
+                                                                       attemptsToday: 2, earnedMinutesToday: 0))
                         .padding(20))
             try render("freeze-\(suffix)", width: 1_280, height: 800, FrozenMacShield(freeze: fixtures.freeze, now: now))
         }
@@ -115,7 +120,11 @@ final class BlockingPageRenderingTests: XCTestCase {
                       apps: [BlockAppRule(bundleIdentifier: "com.apple.MobileSMS", name: "Messages")],
                       program: BlockProgram(ranges: [BlockProgramRange(weekdays: Set(1...5), startMinute: 540, endMinute: 1_080)],
                                             lockedUntil: nil),
-                      quotaMinutesPerDay: 20, breaks: BlockBreaks(count: 3, minutes: 5))
+                      quotaMinutesPerDay: 20, breaks: BlockBreaks(count: 3, minutes: 5),
+                      exceptions: [BlockSiteRule(pattern: "reddit.com/r/swift")], keywords: ["match en direct", "transfert"],
+                      reason: "Finir le mémoire avant vendredi.",
+                      triggers: BlockTriggers(apps: [BlockAppRule(bundleIdentifier: "com.apple.dt.Xcode", name: "Xcode")]),
+                      earn: BlockEarn())
         }
         var video: BlockList {
             BlockList(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, name: "Vidéo",
@@ -123,7 +132,8 @@ final class BlockingPageRenderingTests: XCTestCase {
                       apps: [BlockAppRule(bundleIdentifier: "com.apple.TV", name: "TV"),
                              BlockAppRule(bundleIdentifier: "com.apple.Music", name: "Musique")],
                       program: BlockProgram(ranges: [BlockProgramRange(weekdays: Set(1...7), startMinute: 1_290, endMinute: 420)],
-                                            lockedUntil: now.addingTimeInterval(20 * 86_400)))
+                                            lockedUntil: now.addingTimeInterval(20 * 86_400)),
+                      exceptions: [BlockSiteRule(pattern: "youtube.com/@cs50")], keywords: ["bande-annonce"])
         }
         var focus: BlockList {
             BlockList(id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!, name: "Écriture", mode: .allowOnly,
@@ -151,7 +161,18 @@ final class BlockingPageRenderingTests: XCTestCase {
             var usage = BlockDayUsage(day: BlockingController.dayKey(now))
             usage.quotaSecondsUsed[social.id] = 13 * 60
             usage.breaksTaken[social.id] = 1
+            usage.blocked = [social.id: 4, focus.id: 3]
+            usage.earnedSeconds = [social.id: 600.0]
             document.usage = usage
+            return BlockingController(document: document, clock: { now })
+        }
+
+        /// A block started by Xcode, with no end of its own.
+        func triggered() -> BlockingController {
+            var document = BlockingDocument()
+            document.lists = [social, video, focus]
+            document.sessions = [BlockSession(listIDs: [social.id], start: now.addingTimeInterval(-25 * 60), end: .distantFuture,
+                                              lock: .free, origin: .trigger(social.id))]
             return BlockingController(document: document, clock: { now })
         }
 
