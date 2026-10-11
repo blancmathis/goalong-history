@@ -184,28 +184,55 @@ def main():
             # Wait for the exact request, not an unrelated run with the same main SHA.
             deadline = time.monotonic() + 3600
             publisher = None
-            while time.monotonic() < deadline:
-                rows = json.loads(output(["gh", "run", "list", "--repo", REPO, "--workflow", "continuous-release.yml", "--limit", "30", "--json", "databaseId,headSha,displayTitle,status,conclusion"]))
-                matches = [r for r in rows if r["headSha"] == revision and r["displayTitle"] == f"Publish {stage}"]
-                if matches:
-                    publisher = matches[0]
-                    jobs = json.loads(output(["gh", "run", "view", str(publisher["databaseId"]), "--repo", REPO, "--json", "jobs"]))["jobs"]
-                    full_jobs = [j for j in jobs if j["name"] == "publish-latest-main"]
-                    feed_steps = [s for j in full_jobs for s in j["steps"] if s["name"] == "Publish authenticated feed last"]
-                    if feed_steps and feed_steps[0]["conclusion"] == "success":
-                        metrics["feedVerifiedAt"] = feed_steps[0]["completedAt"]
-                        (run / "publisher-jobs.json").write_text(json.dumps(jobs, indent=2) + "\n")
-                        break
-                    if publisher["status"] == "completed" and publisher["conclusion"] != "success":
-                        break
-                time.sleep(15)
-            if not publisher or "feedVerifiedAt" not in metrics:
-                raise RuntimeError(f"Full feed publication did not succeed: {publisher}")
+            def wait_for_step(name):
+                nonlocal publisher
+                started = time.monotonic()
+                while time.monotonic() < deadline:
+                    rows = json.loads(output(["gh", "run", "list", "--repo", REPO, "--workflow", "continuous-release.yml", "--limit", "30", "--json", "databaseId,headSha,displayTitle,status,conclusion"]))
+                    matches = [r for r in rows if r["headSha"] == revision and r["displayTitle"] == f"Publish {stage}"]
+                    if matches:
+                        publisher = matches[0]
+                        jobs = json.loads(output(["gh", "run", "view", str(publisher["databaseId"]), "--repo", REPO, "--json", "jobs"]))["jobs"]
+                        steps = [s for j in jobs if j["name"] == "publish-latest-main" for s in j["steps"] if s["name"] == name]
+                        if steps and steps[0]["conclusion"] == "success":
+                            (run / "publisher-jobs.json").write_text(json.dumps(jobs, indent=2) + "\n")
+                            metrics["stages"][f"await-{name}"] = {"seconds": round(time.monotonic()-started, 3), "exitCode": 0}
+                            return steps[0]["completedAt"]
+                        if (steps and steps[0]["conclusion"] == "failure") or (publisher["status"] == "completed" and publisher["conclusion"] != "success"):
+                            raise RuntimeError(f"Publisher {name} did not succeed: {publisher}")
+                    time.sleep(5)
+                raise RuntimeError(f"Publisher {name} timed out: {publisher}")
+
+            wait_for_step("Publish immutable update archive")
             metrics["publisherRunId"] = publisher["databaseId"]
-            # Publisher repackages the staging bundle. Compare to its immutable final ZIP.
-            command("download-final", ["gh", "release", "download", f"main-{publisher['databaseId']}-1", "--repo", REPO,
-                                      "--pattern", "Goalong-History-macOS-universal.zip", "--dir", str(dist), "--clobber"], cwd=checkout)
-            command("verify-published", ["bash", "scripts/verify_published_update.sh", str(dist)], cwd=checkout)
+            # Bind the expected digest to the exact hosted publisher/source, then
+            # let the unchanged-URL verifier download/authenticate the archive once.
+            final = run / "final-manifest"
+            final.mkdir()
+            command("download-final-manifest", ["gh", "release", "download", f"main-{publisher['databaseId']}-1", "--repo", REPO,
+                                      "--pattern", "release-manifest.json", "--dir", str(final)], cwd=checkout)
+            manifest_path = final / "release-manifest.json"
+            command("verify-final-provenance", ["gh", "attestation", "verify", str(manifest_path), "--repo", REPO,
+                    "--source-digest", revision, "--source-ref", "refs/heads/main", "--deny-self-hosted-runners",
+                    "--signer-workflow", f"{REPO}/.github/workflows/continuous-release.yml"], cwd=checkout)
+            manifest = json.loads(manifest_path.read_text())
+            if manifest["sourceCommit"] != revision or manifest["product"]["build"] != resolved["build"]:
+                raise ValueError("Final attested inventory differs from the tested source/build")
+            entries = [a for a in manifest["artifacts"] if a["path"] == "Goalong-History-macOS-universal.zip"]
+            if len(entries) != 1:
+                raise ValueError("Expected one final attested archive")
+            # Download the same immutable public URL while the hosted writer finishes
+            # rolling assets/feed. The verifier still authenticates every byte and
+            # requires the signed enclosure to name this exact URL.
+            archive_url = f"https://github.com/{REPO}/releases/download/main-{publisher['databaseId']}-1/Goalong-History-macOS-universal.zip"
+            archive = final / "Goalong-History-macOS-universal.zip"
+            command("download-public-archive", ["curl", "--fail", "--location", "--silent", "--show-error", "--retry", "3",
+                    "--connect-timeout", "15", "--max-time", "300", "--max-filesize", "350000000",
+                    "--proto", "=https", "--proto-redir", "=https", archive_url, "-o", str(archive)], cwd=checkout)
+            metrics["feedVerifiedAt"] = wait_for_step("Publish authenticated feed last")
+            verify_env = {**env, "LOCALHISTORY_EXPECTED_ARCHIVE_SHA256": entries[0]["sha256"],
+                          "LOCALHISTORY_PREFETCHED_ARCHIVE": str(archive), "LOCALHISTORY_PREFETCHED_ARCHIVE_URL": archive_url}
+            command("verify-published", ["bash", "scripts/verify_published_update.sh", str(dist)], cwd=checkout, env=verify_env)
         metrics["status"] = "built" if args.build_only else "published-verified"
     except BaseException as error:
         metrics["status"] = "failed"
@@ -227,7 +254,8 @@ def main():
         metrics["totalSeconds"] = round(time.monotonic()-began, 3)
         if metrics.get("gates", {}).get("mergedAt"):
             merged = datetime.fromisoformat(metrics["gates"]["mergedAt"].replace("Z", "+00:00"))
-            metrics["mergeToVerifiedSeconds"] = round((datetime.now(timezone.utc)-merged).total_seconds(), 3)
+            key = "mergeToVerifiedSeconds" if metrics["status"] == "published-verified" else "mergeToStopSeconds"
+            metrics[key] = round((datetime.now(timezone.utc)-merged).total_seconds(), 3)
         save()
         if not args.build_only:
             atomic_json(state_file, {"lastAttempted": revision, "status": metrics["status"], "run": str(run)})

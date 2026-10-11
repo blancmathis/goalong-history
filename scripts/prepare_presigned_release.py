@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Accept an explicitly supplied, pinned-certificate local build without exporting its key."""
-import hashlib, json, os, plistlib, posixpath, re, stat, subprocess, sys, zipfile
+import hashlib, json, os, plistlib, posixpath, re, shutil, stat, subprocess, sys, zipfile
 from pathlib import Path
 
 def validate_archive(path: Path) -> None:
@@ -63,6 +63,9 @@ def main() -> None:
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", info.get("CFBundleVersion", "")):
         raise ValueError("Invalid supplied build number")
     subprocess.run(["bash", "scripts/verify_release_identity.sh", str(app)], check=True)
+    # These already signed, independently checked bytes can be published intact.
+    # No metadata or signature is changed after extraction/verification.
+    shutil.copyfile(archive, Path("dist") / name)
     print("Validated explicitly supplied signed build; private signing key stays with its owner.")
 
 if __name__ == "__main__":
