@@ -101,7 +101,7 @@ class UpdatePolicyTests(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/continuous-release.yml').read_text()
         self.assertIn('cancel-in-progress: false', workflow)
         self.assertLess(workflow.index('Publish immutable update archive'), workflow.index('Publish authenticated feed last'))
-        self.assertIn('dist/community-appcast.xml "$IMMUTABLE_TAG"', workflow)
+        self.assertIn("'dist/community-appcast.xml', os.environ['IMMUTABLE_TAG']", workflow)
         self.assertIn('LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1', workflow)
         self.assertIn('SPARKLE_PRIVATE_ED_KEY:', workflow)
 
