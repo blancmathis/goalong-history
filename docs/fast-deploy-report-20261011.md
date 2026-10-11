@@ -102,3 +102,13 @@ Checkout exact `24b2c3a0e1613634d38cfc18ff79d8507f896d55`, scratchs SwiftPM vide
 | Total préparation froide | **432.817 s** |
 
 Les voies tests/arm64/x86_64 sont parallèles : ne pas additionner leurs temps. Suite : **1 849 tests, 66 ignorés, zéro échec** ; runtime tests 192.363 s, compilation comprise dans la ligne tests. Version/build CLI contrôlés dans les deux tranches ; identité pin/DR et audit de confidentialité passés. Preuves : `/Users/mathisblanc/Library/Application Support/GoalongDeploy/runs/20261011T194451Z-24b2c3a0e161/timings.json`, logs par étape et `.fast-deploy-work/cold-coordinator.log`.
+
+## Régression cache chaud / métadonnées
+
+Deuxième checkout `c08f92af67371b7a90e144ca0419570fb74b1bf7` sur les mêmes scratchs : version de fixture **0.6.74**, build `30000000.3816946.129801`, après la préparation froide 0.6.73 / `30000000.3815916.806301`. Cette version de fixture utilise un plancher explicite uniquement en mode `--build-only` ; aucune publication.
+
+- arm64 **5.996 s**, x86_64 **5.863 s** ; build + signature + bundle/CLI/identité/audit **26.440 s**.
+- Tests **170.450 s**, 1 849 tests / 66 ignorés / zéro échec ; ZIP **20.021 s** ; état public authentifié **7.952 s**.
+- Total préparation **200.505 s (3 min 20.5 s)**. Le plist par hash provoque bien le relink pour version/build changés ; les deux tranches concordent avec le bundle extérieur.
+- Preuves : `/Users/mathisblanc/Library/Application Support/GoalongDeploy/runs/20261011T195340Z-c08f92af6737/timings.json` et logs ; `.fast-deploy-work/warm-metadata-coordinator.log`.
+- L’archive publique réelle 0.6.72, hash égal au manifeste attesté, passe le lecteur strict utilisé par les deltas. Le SBOM et les capabilities originaux restent inchangés ; seul le manifeste de génération décrit les nouveaux feed/deltas.

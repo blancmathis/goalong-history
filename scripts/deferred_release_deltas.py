@@ -10,7 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 from prepare_presigned_release import validate_archive
-from generate_security_artifacts import tree_digest
+from generate_security_artifacts import tree_digest, release_manifest, write_json
 
 REPO = "blancmathis/goalong-history"
 ROOT = Path(__file__).resolve().parents[1]
@@ -120,7 +120,10 @@ def main():
             if not enriched["deltas"]:
                 print("No applicable deltas; full feed retained.")
                 return
-            run(sys.executable, "scripts/generate_security_artifacts.py", "--app", str(target), "--edition", "unified", "--output-dir", str(dist), "--include-release-artifacts")
+            # The target bundle, capabilities and SBOM are the immutable full
+            # generation's original bytes. Only inventory/feed/deltas change.
+            capabilities = json.loads((dist / "security-capabilities.json").read_text())
+            write_json(dist / "release-manifest.json", release_manifest(dist, target, capabilities, True))
             run(sys.executable, "scripts/verify_security_capabilities.py", "--manifest", str(dist / "security-capabilities.json"), "--app", str(target), "--edition", "unified")
             generation = {"sourceCommit": revision, "tag": tag, "zipSHA256": expected,
                           "expectedFeedSHA256": digest(dist / "full-appcast.xml"),
