@@ -297,6 +297,32 @@
                 ConcentrationRuntime.shared.start(monitor: contextMonitor)
                 BraiseRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .braise) }
                 BraiseRuntime.shared.start()
+                let panel = MenuBarPanelModel(
+                    state: captureState, modules: .shared, concentration: { ConcentrationRuntime.shared.controller },
+                    ambianceModule: dashboardViewModel.ambianceModule,
+                    blocking: { BlockingRuntime.shared.controller },
+                    health: { [weak self] in self?.captureHealthStore.assessment.state ?? .paused },
+                    suppression: { [weak self] in self?.contextMonitor.latestSnapshot?.suppressionReason },
+                    localHistoryEnabled: { [weak self] in self?.capabilityConsents.isEnabled(.localComputerHistory) == true },
+                    loadDay: { now in
+                        let verdicts = GoalongWorkStore.shared.verdicts
+                        return try await GoalongAnalyticsReader.shared.readToday(
+                            Calendar.current.startOfDay(for: now), now: now, calendar: .current
+                        ).applying(verdicts)
+                    },
+                    onTogglePause: { [weak self] in self?.menuBarController.togglePauseFromPanel() },
+                    onOpenSection: { [weak self] section in
+                        self?.menuBarController.closePanel()
+                        self?.dashboardWindowController.show(section: section)
+                    },
+                    onOpenDay: { [weak self] in
+                        self?.menuBarController.closePanel()
+                        self?.dashboardViewModel.selectDay(Date())
+                        self?.dashboardWindowController.show(section: .overview)
+                    },
+                    onShowClassicMenu: { [weak self] in self?.menuBarController.showClassicMenu() }
+                )
+                menuBarController.configurePanel(model: panel)
             }
             eventTapMonitor.concentrationInputSink = { date, count in MainActor.assumeIsolated { ConcentrationRuntime.shared.noteInput(at: date, count: count) } }
             applyCapabilityConsents(recordTransition: false)
