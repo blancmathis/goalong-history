@@ -169,22 +169,39 @@ jobs:
           done
           ./scripts/verify_local_bundle.sh
 
-      - name: Create Community DMG and ZIP
-        run: |
-          set -euo pipefail
-          brew install create-dmg
-          env -u LOCALHISTORY_CODESIGN_IDENTITY ./scripts/package_release.sh
-
-      - name: Generate authenticated Community appcast
+      - name: Package DMG and generate authenticated Community appcast
         env:
+          LOCALHISTORY_VERIFIED_ZIP_SHA256: ${{ inputs.signed_sha256 }}
+          LOCALHISTORY_PACKAGE_STANDARD_DMG: 1
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
           LOCALHISTORY_DELTA_BASES_DIR: ''
+          VERSION_NAME: ${{ steps.version.outputs.value }}
         run: |
           set -euo pipefail
-          ./scripts/generate_sparkle_appcast.sh \
-            "${{ steps.version.outputs.value }}" \
-            dist/Goalong-History-macOS-universal.zip \
-            dist/community-appcast.xml "$IMMUTABLE_TAG"
+          python3 - <<'PY'
+          import concurrent.futures, os, subprocess, time
+          def execute(name, argv, env):
+              start = time.monotonic()
+              result = subprocess.run(argv, env=env)
+              print(f"{name}: {time.monotonic()-start:.3f} seconds, exit {result.returncode}", flush=True)
+              return result.returncode
+          package_env = dict(os.environ)
+          package_env.pop('LOCALHISTORY_CODESIGN_IDENTITY', None)
+          commands = [('package', ['bash', 'scripts/package_release.sh'], package_env),
+                      ('appcast', ['bash', 'scripts/generate_sparkle_appcast.sh', os.environ['VERSION_NAME'],
+                       'dist/Goalong-History-macOS-universal.zip', 'dist/community-appcast.xml', os.environ['IMMUTABLE_TAG']], dict(os.environ))]
+          if os.environ.get('LOCALHISTORY_VERIFIED_ZIP_SHA256'):
+              # The validated ZIP is immutable; these stages write separate outputs.
+              with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                  futures = [pool.submit(execute, *command) for command in commands]
+                  statuses = [future.result() for future in futures]
+          else:
+              statuses = []
+              for command in commands:
+                  statuses.append(execute(*command))
+                  if statuses[-1]: break
+          assert not any(statuses), f'Packaging/appcast failed: {statuses}'
+          PY
           grep -Fq "<sparkle:version>${{ steps.version.outputs.build }}</sparkle:version>" dist/community-appcast.xml
 
       - name: Generate auditable release inventory

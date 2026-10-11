@@ -20,9 +20,15 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
-rm -f "$OUTPUT_DIR/$DMG_NAME" "$OUTPUT_DIR/$ZIP_NAME"
+rm -f "$OUTPUT_DIR/$DMG_NAME"
 
-/usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUTPUT_DIR/$ZIP_NAME"
+if [[ -n "${LOCALHISTORY_VERIFIED_ZIP_SHA256:-}" ]]; then
+  [[ "$LOCALHISTORY_VERIFIED_ZIP_SHA256" =~ ^[0-9a-f]{64}$ ]]
+  test "$(shasum -a 256 "$OUTPUT_DIR/$ZIP_NAME" | cut -d' ' -f1)" = "$LOCALHISTORY_VERIFIED_ZIP_SHA256"
+else
+  rm -f "$OUTPUT_DIR/$ZIP_NAME"
+  /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUTPUT_DIR/$ZIP_NAME"
+fi
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/localhistory-dmg.XXXXXX")"
 STAGING="$WORK_DIR/staging"
@@ -38,7 +44,7 @@ if [[ ! -f "$BACKGROUND_SOURCE" && -f "$ROOT_DIR/scripts/generate_distribution_a
   BACKGROUND_SOURCE="$GENERATED_ASSETS/DMGBackground.png"
 fi
 
-if command -v create-dmg >/dev/null 2>&1; then
+if [[ "${LOCALHISTORY_PACKAGE_STANDARD_DMG:-0}" != 1 ]] && command -v create-dmg >/dev/null 2>&1; then
   CREATE_ARGS=(
     --volname "$DISPLAY_NAME"
     --window-pos 200 120
@@ -57,7 +63,7 @@ if command -v create-dmg >/dev/null 2>&1; then
   fi
   create-dmg "${CREATE_ARGS[@]}" "$OUTPUT_DIR/$DMG_NAME" "$STAGING"
 else
-  echo "create-dmg is unavailable; creating a standard Finder disk image."
+  echo "Creating a standard Finder disk image with native hdiutil."
   ln -s /Applications "$STAGING/Applications"
   /usr/bin/hdiutil create \
     -volname "$DISPLAY_NAME" \
