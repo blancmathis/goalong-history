@@ -6,6 +6,9 @@
     /// (Concentration, Ambiance, Blocage). See docs/MENUBAR-PANEL-20261011.md.
     struct MenuBarPanelView: View {
         @ObservedObject var model: MenuBarPanelModel
+        /// Reports the content's natural height so the popover can animate its own size
+        /// instead of jumping while the content animates.
+        var onHeightChange: (CGFloat) -> Void = { _ in }
 
         static let width: CGFloat = 340
 
@@ -23,9 +26,20 @@
                 PanelFooter(model: model)
             }
             .frame(width: Self.width)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(GeometryReader { Color.clear.preference(key: PanelHeightKey.self, value: $0.size.height) })
+            .onPreferenceChange(PanelHeightKey.self) { onHeightChange($0) }
+            // While the popover grows or shrinks, the content stays pinned to the top edge.
+            .frame(maxHeight: .infinity, alignment: .top)
             .background(LHTheme.pageBackground)
+            .clipped()
             .goalongControls()
         }
+    }
+
+    private struct PanelHeightKey: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
     }
 
     // MARK: - Shared pieces
@@ -268,6 +282,7 @@
 
     private struct FocusSetup: View {
         @ObservedObject var model: MenuBarPanelModel
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
@@ -295,6 +310,7 @@
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .animation(reduceMotion ? nil : LHTheme.settle, value: model.focusKind)
         }
     }
 

@@ -87,7 +87,21 @@
             panelModel = model
             popover.behavior = .transient
             popover.delegate = self
-            popover.contentViewController = NSHostingController(rootView: MenuBarPanelView(model: model))
+            popover.animates = true
+            let host = NSHostingController(rootView: MenuBarPanelView(model: model) { [weak self] height in
+                self?.resizePanel(to: height)
+            })
+            // The panel drives the popover size itself (see resizePanel), so AppKit animates the
+            // window frame instead of snapping it while SwiftUI animates the content.
+            host.sizingOptions = []
+            popover.contentViewController = host
+        }
+
+        @MainActor private func resizePanel(to height: CGFloat) {
+            guard height > 0 else { return }
+            let size = NSSize(width: MenuBarPanelView.width, height: ceil(height))
+            guard popover.contentSize != size else { return }
+            popover.contentSize = size
         }
 
         @MainActor func closePanel() {
@@ -129,6 +143,10 @@
                 }
                 if popover.isShown { closePanel(); return }
                 model.refresh()
+                if let view = popover.contentViewController?.view {
+                    view.layoutSubtreeIfNeeded()
+                    popover.contentSize = NSSize(width: MenuBarPanelView.width, height: ceil(view.fittingSize.height))
+                }
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
                     MainActor.assumeIsolated {
