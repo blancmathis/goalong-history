@@ -1,4 +1,4 @@
-.PHONY: test build app dmg audit install install-source uninstall clean
+.PHONY: test build app dmg audit install install-source uninstall clean dev dev-stop
 
 VERSION ?= 0.6.0
 ARCHS ?= $(shell uname -m)
@@ -11,6 +11,12 @@ build:
 
 app:
 	LOCALHISTORY_VERSION="$(VERSION)" LOCALHISTORY_ARCHS="$(ARCHS)" ./scripts/build_app.sh
+
+dev:
+	./scripts/dev_app.sh dev
+
+dev-stop:
+	./scripts/dev_app.sh stop
 
 dmg: app
 	./scripts/package_release.sh

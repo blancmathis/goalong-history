@@ -25,6 +25,23 @@ SIGN_IDENTITY="${LOCALHISTORY_CODESIGN_IDENTITY:--}"
 RUN_TESTS="${LOCALHISTORY_RUN_TESTS:-1}"
 BUILD_JOBS="${LOCALHISTORY_BUILD_JOBS:-2}"
 SCRATCH_ROOT="${LOCALHISTORY_SCRATCH_ROOT:-}"
+BUILD_CONFIGURATION="${LOCALHISTORY_BUILD_CONFIGURATION:-release}"
+DEVELOPMENT_BUILD="${LOCALHISTORY_DEVELOPMENT_BUILD:-0}"
+
+case "$BUILD_CONFIGURATION" in
+  debug|release) ;;
+  *) echo "LOCALHISTORY_BUILD_CONFIGURATION must be debug or release." >&2; exit 1 ;;
+esac
+case "$DEVELOPMENT_BUILD" in
+  0) ;;
+  1)
+    if [[ "$BUILD_CONFIGURATION" != debug || "${LOCALHISTORY_DISABLE_UPDATES:-0}" != 1 ]]; then
+      echo "Development bundles require debug configuration and disabled updates." >&2
+      exit 1
+    fi
+    ;;
+  *) echo "LOCALHISTORY_DEVELOPMENT_BUILD must be 0 or 1." >&2; exit 1 ;;
+esac
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build_app.sh must run on macOS." >&2
@@ -103,9 +120,11 @@ build_arch() {
   local arch="$1"
   local started="$(date +%s)"
   local scratch="${SCRATCH_ROOT:-$WORK_DIR}/build-$arch"
-  local log="$WORK_DIR/build-$arch.log"
-  local cli_log="$WORK_DIR/build-$arch-cli.log"
-  local command=(xcrun swift build -c release -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
+  local logs="${SCRATCH_ROOT:-$WORK_DIR}/logs"
+  mkdir -p "$logs"
+  local log="$logs/build-$arch.log"
+  local cli_log="$logs/build-$arch-cli.log"
+  local command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
 
   echo "Building ${arch}…"
   set +e
@@ -118,7 +137,7 @@ build_arch() {
     return "$status"
   fi
 
-  local bin_command=(xcrun swift build -c release -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch" --show-bin-path)
+  local bin_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch" --show-bin-path)
   local bin_dir
   bin_dir="$(cd "$ROOT_DIR" && "${bin_command[@]}")"
   local binary="$bin_dir/$PRODUCT_NAME"
@@ -128,7 +147,7 @@ build_arch() {
   fi
   cp "$binary" "$WORK_DIR/$PRODUCT_NAME-$arch"
 
-  local cli_command=(xcrun swift build -c release -j "$BUILD_JOBS" --product "$CLI_PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
+  local cli_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product "$CLI_PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
   if ! (cd "$ROOT_DIR" && "${cli_command[@]}") >"$cli_log" 2>&1; then
     cat "$cli_log" >&2
     return 1
@@ -139,7 +158,7 @@ build_arch() {
     return 1
   fi
   cp "$cli_binary" "$WORK_DIR/$CLI_PRODUCT_NAME-$arch"
-  local helper_command=(xcrun swift build -c release -j "$BUILD_JOBS" --product goalong-relauncher --arch "$arch" --scratch-path "$scratch")
+  local helper_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-relauncher --arch "$arch" --scratch-path "$scratch")
   (cd "$ROOT_DIR" && "${helper_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
   cp "$bin_dir/goalong-relauncher" "$WORK_DIR/goalong-relauncher-$arch"
   python3 - "$OUTPUT_DIR/build-$arch-timing.json" "$started" "$arch" <<'PY'
@@ -303,6 +322,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
+if [[ "$DEVELOPMENT_BUILD" == 1 ]]; then
+  /usr/bin/plutil -insert GoalongDevelopmentBuild -bool YES "$CONTENTS/Info.plist"
+fi
 /usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" --configure-info "$CONTENTS/Info.plist"
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
@@ -350,9 +372,12 @@ codesign --verify --strict --verbose=2 "$APP_DIR"
 rm -rf "$OUTPUT_DIR/$APP_NAME.app"
 ditto "$APP_DIR" "$OUTPUT_DIR/$APP_NAME.app"
 
-LOCALHISTORY_APP_PATH="$OUTPUT_DIR/$APP_NAME.app" "$ROOT_DIR/scripts/verify_local_bundle.sh"
-LOCALHISTORY_AUDIT_BINARY="$OUTPUT_DIR/$APP_NAME.app/Contents/MacOS/$EXECUTABLE_NAME" \
-  "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
+if [[ "$DEVELOPMENT_BUILD" == 0 ]]; then
+  LOCALHISTORY_APP_PATH="$OUTPUT_DIR/$APP_NAME.app" "$ROOT_DIR/scripts/verify_local_bundle.sh"
+  LOCALHISTORY_AUDIT_BINARY="$OUTPUT_DIR/$APP_NAME.app/Contents/MacOS/$EXECUTABLE_NAME" \
+    "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
+fi
+# dev_app.sh verifies the finalized identity/signature; audit/tests are separate iteration steps.
 
 echo
 printf 'Built %s %s (%s)\n' "$APP_NAME" "$VERSION" "$ARCHS"

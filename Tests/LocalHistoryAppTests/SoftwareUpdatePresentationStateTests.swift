@@ -35,6 +35,9 @@
                 "SUAllowsAutomaticUpdates": false, "SUEnableSystemProfiling": false,
             ]
             XCTAssertTrue(SoftwareUpdateManager.hasValidSparkleConfiguration(info: info, isApp: true))
+            var developmentInfo = info
+            developmentInfo["GoalongDevelopmentBuild"] = true
+            XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: developmentInfo, isApp: true))
             XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: info, isApp: false))
             info["SUFeedURL"] = "https://example.com/appcast.xml"
             XCTAssertFalse(SoftwareUpdateManager.hasValidSparkleConfiguration(info: info, isApp: true))

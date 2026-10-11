@@ -7,6 +7,8 @@
         private static let bundleIdentifier = "ai.goalong.localhistory"
 
         static func run() {
+            // Local iteration shares the production identity/data, never installation cleanup.
+            guard Bundle.main.object(forInfoDictionaryKey: "GoalongDevelopmentBuild") as? Bool != true else { return }
             migrateOnboardingState()
 
             let currentPID = ProcessInfo.processInfo.processIdentifier

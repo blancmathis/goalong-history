@@ -142,6 +142,11 @@
         func start() {
             guard !hasStarted else { return }
             hasStarted = true
+            // Do not initialize Sparkle or write release-version preferences in a dev bundle.
+            guard Bundle.main.object(forInfoDictionaryKey: "GoalongDevelopmentBuild") as? Bool != true else {
+                statusMessage = "Mises à jour désactivées pour cette copie de développement local."
+                return
+            }
             noteLaunchedVersion()
 
             guard Self.hasValidSparkleConfiguration(in: .main) else {
@@ -457,7 +462,8 @@
         }
 
         static func hasValidSparkleConfiguration(info: [String: Any], isApp: Bool) -> Bool {
-            guard isApp, info["SUFeedURL"] as? String == releaseFeedURL,
+            guard isApp, info["GoalongDevelopmentBuild"] as? Bool != true,
+                  info["SUFeedURL"] as? String == releaseFeedURL,
                   let key = info["SUPublicEDKey"] as? String,
                   key == releasePublicEDKey,
                   info["SUSignedFeedFailureExpirationInterval"] as? Int == 0,

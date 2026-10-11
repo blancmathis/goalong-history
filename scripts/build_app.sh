@@ -86,20 +86,21 @@ fi
 
 /usr/bin/codesign "${APP_SIGN_ARGS[@]}" "$APP_PATH"
 /usr/bin/codesign --verify --strict --verbose=2 "$APP_PATH"
-LOCALHISTORY_APP_PATH="$APP_PATH" \
-LOCALHISTORY_DISPLAY_NAME="$DISPLAY_NAME" \
-LOCALHISTORY_REQUIRE_LOCALIZED_NAME=1 \
-  "$ROOT_DIR/scripts/verify_local_bundle.sh"
-
-/usr/bin/python3 "$ROOT_DIR/scripts/generate_security_artifacts.py" \
-  --app "$APP_PATH" \
-  --edition "$BUILD_EDITION" \
-  --output-dir "$OUTPUT_DIR" \
-  --source-root "$ROOT_DIR"
-/usr/bin/python3 "$ROOT_DIR/scripts/verify_security_capabilities.py" \
-  --manifest "$OUTPUT_DIR/security-capabilities.json" \
-  --app "$APP_PATH" \
-  --edition "$BUILD_EDITION"
+if [[ "${LOCALHISTORY_DEVELOPMENT_BUILD:-0}" == 0 ]]; then
+  LOCALHISTORY_APP_PATH="$APP_PATH" \
+  LOCALHISTORY_DISPLAY_NAME="$DISPLAY_NAME" \
+  LOCALHISTORY_REQUIRE_LOCALIZED_NAME=1 \
+    "$ROOT_DIR/scripts/verify_local_bundle.sh"
+  /usr/bin/python3 "$ROOT_DIR/scripts/generate_security_artifacts.py" \
+    --app "$APP_PATH" \
+    --edition "$BUILD_EDITION" \
+    --output-dir "$OUTPUT_DIR" \
+    --source-root "$ROOT_DIR"
+  /usr/bin/python3 "$ROOT_DIR/scripts/verify_security_capabilities.py" \
+    --manifest "$OUTPUT_DIR/security-capabilities.json" \
+    --app "$APP_PATH" \
+    --edition "$BUILD_EDITION"
+fi
 
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")" = "$DISPLAY_NAME"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")" = "$DISPLAY_NAME"
@@ -109,4 +110,6 @@ for locale in en fr; do
   test "$(/usr/bin/plutil -extract CFBundleName raw -o - "$localized")" = "$DISPLAY_NAME"
 done
 printf 'Finalized %s at %s\n' "$DISPLAY_NAME" "$APP_PATH"
-printf 'Security artifacts: %s\n' "$OUTPUT_DIR/security-capabilities.json"
+if [[ "${LOCALHISTORY_DEVELOPMENT_BUILD:-0}" == 0 ]]; then
+  printf 'Security artifacts: %s\n' "$OUTPUT_DIR/security-capabilities.json"
+fi
