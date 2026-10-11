@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Fail closed BEFORE any job steps, independently of pull-request YAML.
+"""Origin check for defense in depth; NOT an admission security boundary.
 
 Install a reviewed copy outside both the checkout and the runner application.
-Called by ACTIONS_RUNNER_HOOK_JOB_STARTED, never by an untrusted workflow step.
+Called by ACTIONS_RUNNER_HOOK_JOB_STARTED behind independently enforced admission.
+Runner v2.338.0 can execute always()/failure() steps after a hook exits nonzero.
+Never expose the owner's Mac to a public repository relying only on this hook.
 """
 import json
 import os
@@ -61,9 +63,9 @@ def main():
     except (KeyError, OSError, ValueError, TypeError, AttributeError):
         accepted = False
     if not accepted:
-        print("Refusing job: owner Mac accepts only official main or trusted same-repository PRs in approved workflows.", file=sys.stderr)
+        print("Origin check failed. This hook alone cannot prevent later always()/failure() steps; independent admission is required.", file=sys.stderr)
         return 1
-    print("Owner Mac job origin verified before workflow steps.")
+    print("Job origin accepted by the defense-in-depth check.")
     return 0
 
 

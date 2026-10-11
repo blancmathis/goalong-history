@@ -24,6 +24,7 @@ OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
 SIGN_IDENTITY="${LOCALHISTORY_CODESIGN_IDENTITY:--}"
 RUN_TESTS="${LOCALHISTORY_RUN_TESTS:-1}"
 BUILD_JOBS="${LOCALHISTORY_BUILD_JOBS:-2}"
+SCRATCH_ROOT="${LOCALHISTORY_SCRATCH_ROOT:-}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build_app.sh must run on macOS." >&2
@@ -76,6 +77,20 @@ cat > "$CLI_INFO_PLIST" <<PLIST
 </plist>
 PLIST
 /usr/bin/plutil -lint "$CLI_INFO_PLIST" >/dev/null
+if [[ -n "$SCRATCH_ROOT" ]]; then
+  # The linker command must change when embedded metadata changes. Overwriting
+  # one plist path does not reliably invalidate SwiftPM's warm link cache.
+  mkdir -p "$SCRATCH_ROOT/metadata"
+  PLIST_HASH="$(shasum -a 256 "$CLI_INFO_PLIST" | cut -d' ' -f1)"
+  IMMUTABLE_PLIST="$SCRATCH_ROOT/metadata/$PLIST_HASH.plist"
+  if [[ -f "$IMMUTABLE_PLIST" ]]; then
+    cmp "$CLI_INFO_PLIST" "$IMMUTABLE_PLIST"
+  else
+    cp "$CLI_INFO_PLIST" "$IMMUTABLE_PLIST"
+    chmod 444 "$IMMUTABLE_PLIST"
+  fi
+  CLI_INFO_PLIST="$IMMUTABLE_PLIST"
+fi
 export LOCALHISTORY_CLI_INFO_PLIST="$CLI_INFO_PLIST"
 
 if [[ "$RUN_TESTS" == "1" ]]; then
@@ -86,7 +101,8 @@ fi
 
 build_arch() {
   local arch="$1"
-  local scratch="$WORK_DIR/build-$arch"
+  local started="$(date +%s)"
+  local scratch="${SCRATCH_ROOT:-$WORK_DIR}/build-$arch"
   local log="$WORK_DIR/build-$arch.log"
   local cli_log="$WORK_DIR/build-$arch-cli.log"
   local command=(xcrun swift build -c release -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
@@ -126,13 +142,24 @@ build_arch() {
   local helper_command=(xcrun swift build -c release -j "$BUILD_JOBS" --product goalong-relauncher --arch "$arch" --scratch-path "$scratch")
   (cd "$ROOT_DIR" && "${helper_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
   cp "$bin_dir/goalong-relauncher" "$WORK_DIR/goalong-relauncher-$arch"
+  python3 - "$OUTPUT_DIR/build-$arch-timing.json" "$started" "$arch" <<'PY'
+import json,sys,time
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({'stage':'build-'+sys.argv[3], 'seconds':round(time.time()-int(sys.argv[2]),3)})+'\n')
+PY
 }
 
 build_all_archs() {
   local arch
-  for arch in $ARCHS; do
-    build_arch "$arch" || return $?
-  done
+  if [[ "${LOCALHISTORY_PARALLEL_ARCHS:-0}" == 1 ]]; then
+    local pids=() status=0 pid
+    for arch in $ARCHS; do (build_arch "$arch") & pids+=("$!"); done
+    # Inspect every exit status before proceeding to lipo or signing.
+    for pid in "${pids[@]}"; do wait "$pid" || status=1; done
+    return "$status"
+  else
+    for arch in $ARCHS; do build_arch "$arch" || return $?; done
+  fi
 }
 
 build_all_archs
@@ -168,7 +195,7 @@ chmod 755 "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 chmod 755 "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
 # Embed the exact SwiftPM artifact. No replacement framework or unpinned download is used.
-SPARKLE_FRAMEWORK="$(find "$WORK_DIR" -type d -name Sparkle.framework -path '*/artifacts/sparkle/Sparkle/*' -print -quit)"
+SPARKLE_FRAMEWORK="$(find "${SCRATCH_ROOT:-$WORK_DIR}/build-${ARCHS%% *}/artifacts" -type d -name Sparkle.framework -path '*/artifacts/sparkle/Sparkle/*' -print -quit)"
 if [[ -z "$SPARKLE_FRAMEWORK" ]]; then
   echo "The pinned Sparkle.framework artifact is missing." >&2
   exit 1
@@ -292,7 +319,7 @@ fi
 # Ship the reviewed native sign-in runtime; end users never install a CLI.
 mkdir -p "$CONTENTS/Helpers" "$CONTENTS/Resources/ThirdParty"
 python3 "$ROOT_DIR/scripts/prepare_codex_runtime.py" \
-  --cache "$ROOT_DIR/.build/goalong-runtime-cache" \
+  --cache "${LOCALHISTORY_RUNTIME_CACHE:-$ROOT_DIR/.build/goalong-runtime-cache}" \
   --output "$CONTENTS/Helpers/codex" --archs $ARCHS
 mv "$CONTENTS/Helpers/CODEX-LICENSE.txt" "$CONTENTS/Resources/ThirdParty/CODEX-LICENSE.txt"
 mv "$CONTENTS/Helpers/codex-runtime.json" "$CONTENTS/Resources/ThirdParty/codex-runtime.json"

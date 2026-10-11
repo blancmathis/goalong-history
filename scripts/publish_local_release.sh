@@ -8,14 +8,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 RUN_ID=""
 PUBLISH=0
+LOCAL_DIST=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --run-id) RUN_ID="${2:-}"; shift 2 ;;
     --publish) PUBLISH=1; shift ;;
-    *) echo 'Usage: scripts/publish_local_release.sh --run-id RUN_ID [--publish]' >&2; exit 64 ;;
+    --dist) LOCAL_DIST="${2:-}"; shift 2 ;;
+    *) echo 'Usage: scripts/publish_local_release.sh (--run-id RUN_ID | --dist DIST) [--publish]' >&2; exit 64 ;;
   esac
 done
-[[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo 'An exact completed CI run ID is required.' >&2; exit 64; }
+[[ -n "$LOCAL_DIST" || "$RUN_ID" =~ ^[0-9]+$ ]] || { echo 'An exact CI run ID or locally built distribution is required.' >&2; exit 64; }
+[[ -z "$LOCAL_DIST" || -z "$RUN_ID" ]] || { echo 'Select only one signing input.' >&2; exit 64; }
 [[ "$(uname -s)" == Darwin ]] || { echo 'Local signing requires the owner’s Mac.' >&2; exit 1; }
 REPO=blancmathis/goalong-history
 REVISION="$(git rev-parse HEAD)"
@@ -25,6 +28,20 @@ REMOTE="$(git ls-remote origin refs/heads/main | cut -f1)"
 WORK="$(mktemp -d /tmp/goalong-local-publish.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 umask 077
+if [[ -n "$LOCAL_DIST" ]]; then
+  # This path is already signed by the pinned local identity. Hosted CI must
+  # independently re-read the three same-tree gates before reusing their tests.
+  python3 scripts/local_deploy_policy.py "$REVISION" "$WORK/source-gates.json"
+  OUT="$LOCAL_DIST"
+  APP="$OUT/Goalong History.app"
+  INFO="$APP/Contents/Info.plist"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :GoalongSourceRevision' "$INFO")" = "$REVISION"
+  bash scripts/verify_release_identity.sh "$APP"
+  LOCALHISTORY_APP_PATH="$APP" LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 bash scripts/verify_local_bundle.sh
+  for executable in 'Goalong History' goalong goalong-relauncher; do
+    lipo "$APP/Contents/MacOS/$executable" -verify_arch arm64 x86_64
+  done
+else
 gh run view "$RUN_ID" --repo "$REPO" --json conclusion,headSha,headBranch,workflowName > "$WORK/run.json"
 python3 - "$WORK/run.json" "$REVISION" <<'PY'
 import json,sys
@@ -74,6 +91,7 @@ codesign "${SIGN[@]}" --identifier ai.goalong.localhistory.relauncher "$APP/Cont
 codesign "${SIGN[@]}" --identifier ai.goalong.localhistory "$APP"
 bash scripts/verify_release_identity.sh "$APP"
 LOCALHISTORY_APP_PATH="$APP" LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 bash scripts/verify_local_bundle.sh
+fi
 ZIP="$OUT/Goalong-History-macOS-universal.zip"
 ditto -c -k --keepParent --norsrc "$APP" "$ZIP"
 SHA256="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
@@ -89,7 +107,10 @@ fi
 gh release create "$STAGE" --repo "$REPO" --target "$REVISION" --prerelease --latest=false \
   --title "Local signing input for Goalong $VERSION" \
   --notes "Locally signed input for $REVISION. Awaiting independent CI checks and Ed25519 release signatures. No private signing key was exported." "$ZIP"
-gh workflow run continuous-release.yml --repo "$REPO" --ref main -f "signed_stage=$STAGE" -f "signed_sha256=$SHA256"
+GATES=false
+[[ -z "$LOCAL_DIST" ]] || GATES=true
+gh workflow run continuous-release.yml --repo "$REPO" --ref main -f "signed_stage=$STAGE" -f "signed_sha256=$SHA256" -f "local_gates=$GATES"
+echo "SIGNED_STAGE=$STAGE"
 echo "Publication requested for $REVISION; wait for CI and verify the public feed before claiming delivery."
 echo "CI verifies the final published feed and repackaged archive with the committed public key."
 echo "The local ZIP is a signing input; it is not a byte-for-byte reference for CI packaging."

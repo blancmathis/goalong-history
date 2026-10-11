@@ -1,6 +1,6 @@
 # Fast deploy: merge-to-published in ≤ 10 min (2026-10-11)
 
-Owner decision: builds run on the owner's Mac (Apple M4 Pro, 14 cores) as a GitHub self-hosted runner. Target: PR checks ≤ ~7 min, merge → update published ≤ ~3 min. No check is removed; duplicates are.
+Historical initial proposal (superseded by the Revision below): builds run on the owner's Mac (Apple M4 Pro, 14 cores) as a GitHub self-hosted runner. Target: PR checks ≤ ~7 min, merge → update published ≤ ~3 min. No check is removed; duplicates are.
 
 ## Measured today (run 38140195716 / 38140195867)
 - PR "macOS quality gate": 22 min, sequential (tests 7, journeys/renders 4, app bundle 8).
@@ -26,3 +26,14 @@ Owner decision: builds run on the owner's Mac (Apple M4 Pro, 14 cores) as a GitH
 - Measure on real runs: PR wall time, merge → "Publish authenticated feed last" wall time; total ≤ 10 min.
 - An installed app sees the update (same check as the last release).
 - Fork-PR path still runs on GitHub-hosted runners and cannot reach the self-hosted runner.
+
+## Revision 2026-10-11 (after GPT Pro 812713) — supersedes §1 "Self-hosted runner"
+Owner decision: NO GitHub runner on the Mac (pre-job hook does not stop `always()`/`failure()` steps of hostile YAML; repo is public). Unregister runner `goalong-mac`, remove `~/actions-runner-goalong-history` service and the hooks.
+Replacement = local auto-deploy:
+- launchd agent (current user) polls `origin/main` every ~60 s (git ls-remote / fetch only; no inbound access). New main SHA → run the deploy command once per SHA (lock, state file, log; skip if superseded).
+- Deploy command (also runnable by hand): clean checkout of exact SHA in a dedicated dir with persistent per-arch scratch; tests ‖ arm64 build ‖ x86_64 build in parallel (bounded CPU), lipo, sign with the pinned local identity WITHOUT changing keychain search list, full bundle/identity/CLI-per-slice verification, then publish through the existing explicit local-signature path (`publish_local_release.sh` / `prepare-local-signed-release.yml` / `signed_stage`), full archive + feed first, deltas afterwards off the critical path. Keep every check and `verify_published_update.sh`.
+- Motion/UI tests that change system prefs stay on GitHub hosted VMs (PR CI), not on the Mac.
+- PR CI stays on GitHub hosted runners; parallelize/caching there is a bonus, not required.
+- Apply Pro's design where relevant: `~/.gpt-pro/tasks/812713/response.md` §3 (version monotonicity, CLI plist per slice, hash-addressed plist for warm cache), §6 (scratch, signing, fixture cleanup), §7 (single writer, full then deltas, no Sparkle global cache wipe). Feed atomicity: keep current fail-closed behaviour, out of scope.
+- Single writer: the hosted `continuous-release.yml` must no longer publish on push to main in parallel with the local deploy (make it manual/fallback, e.g. when the Mac deploy has not published a SHA within N min); never two writers of the feed.
+Acceptance: merge → authenticated feed live and `verify_published_update.sh` OK in ≤ 10 min, measured on a real merge (warm cache); report cold run too.
