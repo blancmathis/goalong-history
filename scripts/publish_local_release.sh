@@ -35,7 +35,7 @@ if [[ -n "$LOCAL_DIST" ]]; then
   OUT="$LOCAL_DIST"
   APP="$OUT/Goalong History.app"
   INFO="$APP/Contents/Info.plist"
-  test "$(/usr/libexec/PlistBuddy -c 'Print :GoalongSourceRevision' "$INFO")" = "$REVISION"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :GoalongSourceRevision' "$INFO")" = "$(git rev-parse "$REVISION^{tree}")"
   bash scripts/verify_release_identity.sh "$APP"
   LOCALHISTORY_APP_PATH="$APP" LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 bash scripts/verify_local_bundle.sh
   for executable in 'Goalong History' goalong goalong-relauncher; do
@@ -66,12 +66,12 @@ OUT="$(mktemp -d "$ROOT/dist/local-signed.XXXXXX")"
 ditto -x -k "$WORK/input/Goalong-History-macOS-universal.zip" "$OUT"
 APP="$OUT/Goalong History.app"
 INFO="$APP/Contents/Info.plist"
-python3 - "$INFO" "$REVISION" <<'PY'
+python3 - "$INFO" "$(git rev-parse "$REVISION^{tree}")" <<'PY'
 import plistlib,sys
 sys.path.insert(0,'scripts')
 from update_policy import validate_info
 p=plistlib.load(open(sys.argv[1],'rb'))
-assert p['GoalongSourceRevision']==sys.argv[2], 'Embedded source revision mismatch'
+assert p['GoalongSourceRevision']==sys.argv[2], 'Embedded source tree mismatch'
 assert p['CFBundleIdentifier']=='ai.goalong.localhistory'
 validate_info(p,require_configured=True)
 PY
@@ -104,7 +104,7 @@ if [[ "$PUBLISH" != 1 ]]; then
 fi
 [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$REVISION" ]] || { echo 'Main changed while signing; refusing stale publication.' >&2; exit 1; }
 # No clobber: the staging checksum is bound explicitly to the publication request.
-gh release create "$STAGE" --repo "$REPO" --target "$REVISION" --prerelease --latest=false \
+gh release create "$STAGE" --repo "$REPO" --target "$REVISION" --draft --prerelease --latest=false \
   --title "Local signing input for Goalong $VERSION" \
   --notes "Locally signed input for $REVISION. Awaiting independent CI checks and Ed25519 release signatures. No private signing key was exported." "$ZIP"
 GATES=false

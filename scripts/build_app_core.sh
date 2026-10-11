@@ -18,7 +18,9 @@ fi
 source "$CODESIGN_POLICY"
 VERSION="${LOCALHISTORY_VERSION:-0.6.0}"
 BUILD_NUMBER="${LOCALHISTORY_BUILD_NUMBER:-1}"
-SOURCE_REVISION="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf unknown)"
+# The git TREE, not the commit: a PR candidate and its merge commit share it.
+# The exact main commit is bound by the publisher attestation instead.
+SOURCE_REVISION="$(git -C "$ROOT_DIR" rev-parse 'HEAD^{tree}' 2>/dev/null || printf unknown)"
 ARCHS="${LOCALHISTORY_ARCHS:-$(uname -m)}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
 SIGN_IDENTITY="${LOCALHISTORY_CODESIGN_IDENTITY:--}"

@@ -56,7 +56,8 @@ def main() -> None:
     app = Path("dist/Goalong History.app")
     with (app / "Contents/Info.plist").open("rb") as stream:
         info = plistlib.load(stream)
-    if info.get("GoalongSourceRevision") != revision:
+    tree = subprocess.check_output(["git", "rev-parse", f"{revision}^{{tree}}"], text=True).strip()
+    if info.get("GoalongSourceRevision") != tree:
         raise ValueError("Supplied build is not bound to this main revision")
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", info.get("CFBundleShortVersionString", "")):
         raise ValueError("Invalid supplied version")

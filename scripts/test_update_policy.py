@@ -102,7 +102,12 @@ class UpdatePolicyTests(unittest.TestCase):
         self.assertIn('cancel-in-progress: false', workflow)
         self.assertLess(workflow.index('Publish immutable update archive'), workflow.index('Publish authenticated feed last'))
         self.assertIn("'dist/community-appcast.xml', os.environ['IMMUTABLE_TAG']", workflow)
-        self.assertIn('LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1', workflow)
+        self.assertIn('bash scripts/verify_release_bundle.sh', workflow)
+        self.assertIn('LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1', (ROOT / 'scripts/verify_release_bundle.sh').read_text())
+        promote = (ROOT / 'scripts/promote_prepared_release.py').read_text()
+        publish = promote[promote.index('def publish():'):]
+        self.assertLess(publish.index("stamp('immutable_release_public')"), publish.index("str(DIST / 'community-appcast.xml'), '--repo', REPO, '--clobber'"))
+        self.assertLess(publish.index("str(DIST / 'community-appcast.xml'), '--repo', REPO, '--clobber'"), publish.index("'scripts/verify_published_update.sh'"))
         self.assertIn('SPARKLE_PRIVATE_ED_KEY:', workflow)
 
     def test_updater_is_started_and_noop_is_not_compiled(self):

@@ -7,9 +7,12 @@ STABLE_WORKFLOW="$ROOT_DIR/.github/workflows/release.yml"
 INSTALLER="$ROOT_DIR/install.sh"
 
 /usr/bin/grep -Fq 'LOCALHISTORY_CODESIGN_IDENTITY:' "$WORKFLOW"
-/usr/bin/grep -Fq 'bash scripts/verify_release_identity.sh "$APP"' "$WORKFLOW"
+/usr/bin/grep -Fq 'bash scripts/verify_release_bundle.sh "dist/Goalong History.app"' "$WORKFLOW"
+/usr/bin/grep -Fq 'bash scripts/verify_release_bundle.sh "dist/Goalong History.app"' "$ROOT_DIR/.github/workflows/prepare-candidate-release.yml"
+/usr/bin/grep -Fq "'scripts/verify_release_bundle.sh'" "$ROOT_DIR/scripts/promote_prepared_release.py"
+/usr/bin/grep -Fq '/verify_release_identity.sh" "$APP"' "$ROOT_DIR/scripts/verify_release_bundle.sh"
 /usr/bin/grep -Fq 'bash scripts/verify_release_identity.sh "$APP"' "$STABLE_WORKFLOW"
-/usr/bin/grep -Fq 'Sigstore-backed build-provenance attestation' "$WORKFLOW"
+/usr/bin/grep -Fq 'Sigstore-backed build-provenance attestation' "$ROOT_DIR/Distribution/rolling-release-notes.md"
 /usr/bin/grep -Fq 'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6' "$WORKFLOW"
 /usr/bin/grep -Fq 'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6' "$STABLE_WORKFLOW"
 /usr/bin/grep -Fq 'Remove retired rolling-release assets' "$WORKFLOW"
@@ -28,7 +31,7 @@ fi
 # Authenticated updates are mandatory now; an unsigned fallback must never be published.
 /usr/bin/grep -Fq 'SPARKLE_PRIVATE_ED_KEY:' "$WORKFLOW"
 /usr/bin/grep -Fq 'LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY:' "$WORKFLOW"
-/usr/bin/grep -Fq 'LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1' "$WORKFLOW"
+/usr/bin/grep -Fq 'LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1' "$ROOT_DIR/scripts/verify_release_bundle.sh"
 /usr/bin/grep -Fq 'Publish immutable update archive' "$WORKFLOW"
 /usr/bin/grep -Fq 'Publish authenticated feed last' "$WORKFLOW"
 # Deltas are optional and published in the immutable release, never in latest-main.

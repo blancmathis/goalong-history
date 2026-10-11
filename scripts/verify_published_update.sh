@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="${1:-$ROOT/dist}"
 WORK="$(mktemp -d /tmp/goalong-published-update.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
-xcrun swiftc "$ROOT/scripts/verify_update_archive.swift" -o "$WORK/verify"
+if [[ -n "${LOCALHISTORY_UPDATE_VERIFIER:-}" ]]; then cp "$LOCALHISTORY_UPDATE_VERIFIER" "$WORK/verify"; else xcrun swiftc "$ROOT/scripts/verify_update_archive.swift" -o "$WORK/verify"; fi
 source "$ROOT/scripts/sparkle_release.env"
 EXPECTED_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$DIST/Goalong History.app/Contents/Info.plist")"
 # GitHub may briefly serve the previous authenticated generation after replacement.
@@ -34,6 +34,10 @@ PY
   sleep 2
 done
 URL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["url"])' "$WORK/feed.json")"
+PUBLIC_GET_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+if [[ -n "${LOCALHISTORY_PUBLIC_RECEIPT:-}" ]]; then
+  test -z "${LOCALHISTORY_PREFETCHED_ARCHIVE:-}"
+fi
 if [[ -n "${LOCALHISTORY_PREFETCHED_ARCHIVE:-}" ]]; then
   test "$URL" = "${LOCALHISTORY_PREFETCHED_ARCHIVE_URL:-}"
   # The coordinator downloaded this immutable public URL during rolling publication.
@@ -47,7 +51,8 @@ while IFS= read -r DELTA_URL; do
   curl --fail --location --silent --show-error --retry 3 --connect-timeout 15 --max-time 300 --max-filesize 350000000 --proto '=https' --proto-redir '=https' "$DELTA_URL" -o "$WORK/deltas/${DELTA_URL##*/}"
 done < <(python3 -c 'import json,sys;[print(d["url"]) for d in json.load(open(sys.argv[1]))["deltas"]]' "$WORK/feed.json")
 "$WORK/verify" "$DIST/Goalong History.app/Contents/Info.plist" "$WORK/update.zip" "$WORK/feed.xml" "$WORK/deltas"
-python3 - "$DIST" "$WORK" <<'PY'
+export PUBLIC_GET_STARTED
+python3 - "$DIST" "$WORK" <<'PY' 
 import hashlib,json,plistlib,sys
 from pathlib import Path
 dist,work=map(Path,sys.argv[1:])
@@ -66,5 +71,22 @@ else:expected=digest(dist/'Goalong-History-macOS-universal.zip')
 assert digest(work/'update.zip')==expected, 'Published ZIP differs from the tested release'
 for delta in (work/'deltas').iterdir():
  assert digest(delta)==digest(dist/delta.name), f'Published {delta.name} differs from the tested release'
-print('PUBLIC_UPDATE_VERIFIED',info['CFBundleShortVersionString'],info['CFBundleVersion'],info.get('GoalongSourceRevision','unknown'))
+print('PUBLIC_UPDATE_VERIFIED',info['CFBundleShortVersionString'],info['CFBundleVersion'],'tree',info.get('GoalongSourceRevision','unknown'))
+import os
+if os.environ.get('LOCALHISTORY_PUBLIC_RECEIPT'):
+ from datetime import datetime,timezone
+ feed=json.loads((work/'feed.json').read_text())
+ import subprocess
+ commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+ tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
+ assert info['GoalongSourceRevision']==tree, 'Published bundle tree differs from the publisher checkout'
+ receipt={'schemaVersion':1,'sourceCommit':commit,'sourceTree':tree,'tag':feed['url'].split('/')[-2],
+  'runId':int(os.environ['GITHUB_RUN_ID']),'runAttempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+  'version':info['CFBundleShortVersionString'],'build':info['CFBundleVersion'],
+  'manifestSha256':digest(dist/'release-manifest.json'),'feedSha256':digest(work/'feed.xml'),
+  'archive':{'url':feed['url'],'sizeBytes':(work/'update.zip').stat().st_size,
+             'sha256':digest(work/'update.zip'),'edSignature':feed['signature']},
+  'publicGET':{'authenticated':False,'complete':True,'startedAt':os.environ['PUBLIC_GET_STARTED']},
+  'verification':'PUBLIC_UPDATE_VERIFIED','verifiedAt':datetime.now(timezone.utc).isoformat()}
+ Path(os.environ['LOCALHISTORY_PUBLIC_RECEIPT']).write_text(json.dumps(receipt,indent=2)+'\n')
 PY

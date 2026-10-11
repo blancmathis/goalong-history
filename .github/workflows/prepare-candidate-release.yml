@@ -1,0 +1,104 @@
+name: Prepare candidate release
+run-name: Prepare PR ${{ github.event.pull_request.number }} tree for fast promotion
+
+# Builds, signs, packages, and signs the appcast for the exact PR merge tree.
+# The bytes stay in a private DRAFT release. Only the exact-main run of
+# continuous-release.yml may make them public, after it proves tree(main) == tree
+# here, all three gates, this run's attestation, and the authenticated feed state.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  actions: read
+
+concurrency:
+  group: goalong-prepare-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      GODEBUG: http2client=0
+      IMMUTABLE_TAG: main-${{ github.run_id }}-${{ github.run_attempt }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD: ${{ github.event.pull_request.head.sha }}
+      PR_BASE: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Require update signing credentials
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: test -n "$SPARKLE_PRIVATE_ED_KEY"
+
+      - name: Prepare stable code-signing identity
+        env:
+          MACOS_SIGNING_CERTIFICATE_P12: ${{ secrets.MACOS_SIGNING_CERTIFICATE_P12 }}
+          MACOS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: bash scripts/import_release_signing_identity.sh
+
+      - name: Resolve next rolling version
+        id: version
+        run: ./scripts/resolve_rolling_version.sh "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Build universal Community app
+        env:
+          LOCALHISTORY_VERSION: ${{ steps.version.outputs.value }}
+          LOCALHISTORY_BUILD_NUMBER: ${{ steps.version.outputs.build }}
+          LOCALHISTORY_DISPLAY_NAME: Goalong History
+          LOCALHISTORY_ARCHS: arm64 x86_64
+          LOCALHISTORY_APP_ENTITLEMENTS: Distribution/GoalongHistory.entitlements
+          # The three required gates test this same tree; promotion re-reads their evidence.
+          LOCALHISTORY_RUN_TESTS: 0
+          LOCALHISTORY_CODESIGN_IDENTITY: ${{ env.LOCALHISTORY_CODESIGN_IDENTITY }}
+          LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY || vars.SPARKLE_PUBLIC_ED_KEY }}
+        run: ./scripts/build_app.sh
+
+      - name: Verify architecture, stable signature, identity, and privacy policy
+        run: bash scripts/verify_release_bundle.sh "dist/Goalong History.app" "${{ steps.version.outputs.value }}" "${{ steps.version.outputs.build }}"
+
+      - name: Package DMG and sign the candidate appcast
+        env:
+          LOCALHISTORY_PACKAGE_STANDARD_DMG: 1
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+          LOCALHISTORY_DELTA_BASES_DIR: ''
+        run: |
+          set -euo pipefail
+          env -u LOCALHISTORY_CODESIGN_IDENTITY bash scripts/package_release.sh
+          bash scripts/generate_sparkle_appcast.sh "${{ steps.version.outputs.value }}" \
+            dist/Goalong-History-macOS-universal.zip dist/community-appcast.xml "$IMMUTABLE_TAG"
+          grep -Fq "<sparkle:version>${{ steps.version.outputs.build }}</sparkle:version>" dist/community-appcast.xml
+
+      - name: Write candidate receipt
+        run: python3 scripts/prepare_candidate_release.py receipt
+
+      - name: Attest candidate provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/prepared-release.json
+            dist/community-appcast.xml
+            dist/Goalong-History-macOS-universal.dmg
+            dist/Goalong-History-macOS-universal.dmg.sha256
+            dist/Goalong-History-macOS-universal.zip
+            dist/Goalong-History-macOS-universal.zip.sha256
+
+      - name: Stage private draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/prepare_candidate_release.py stage
+
+      - name: Remove temporary signing keychain
+        if: always()
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/goalong-release-signing.keychain-db"
+          if [[ -f "$KEYCHAIN" ]]; then security delete-keychain "$KEYCHAIN"; fi
+          rm -f "$RUNNER_TEMP/goalong-release-signing.p12"

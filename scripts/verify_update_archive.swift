@@ -113,7 +113,7 @@ do {
     let feed = try verifiedFeed(xml, key: key)
     if feedOnly {
         let deltas = feed.deltas.map { ["from": $0.from, "url": $0.file.url, "length": String($0.file.length)] }
-        let output: [String: Any] = ["url": feed.archive.url, "length": String(feed.archive.length), "version": feed.version, "deltas": deltas]
+        let output: [String: Any] = ["url": feed.archive.url, "length": String(feed.archive.length), "version": feed.version, "signature": feed.archive.signature.base64EncodedString(), "deltas": deltas]
         let data = try JSONSerialization.data(withJSONObject: output, options: [.sortedKeys])
         print(String(decoding: data, as: UTF8.self))
     } else {

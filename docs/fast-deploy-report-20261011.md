@@ -1,6 +1,6 @@
 # Fast deploy — round 2 (2026-10-11)
 
-**Implémentation locale livrée en PR #82, fusion réelle effectuée. Premier essai chaud non accepté : 648.456 s jusqu’à l’arrêt en échec ; aucun succès ≤10 min revendiqué. Correction de propagation et de transport en cours.**
+**PARTIEL — code livré en #82 et #83, runner retiré, agent local actif, feed 0.6.74 vérifié. Objectif ≤10 min NON atteint : premier essai 648.456 s jusqu’à l’échec, second essai 904.227 s jusqu’à vérification Mac. Arrêt après deux approches, sans troisième essai.**
 
 ## Architecture et contrôles conservés
 
@@ -57,7 +57,75 @@ Preuves complètes : `~/Library/Application Support/GoalongDeploy/runs/20261011T
 
 Le vérificateur garde la même URL client et authentifie chaque lecture ; seul un feed signé plus ancien peut être relu (20 tentatives, pause 2 s). Feed invalide ou plus récent : refus immédiat, avant le téléchargement des archives. Le ZIP signé fourni est conservé byte-for-byte après sa vérification indépendante. Le DMG utilise le fallback natif hdiutil déjà existant, sans installation Brew. Sur le Mac, l’inventaire final attesté pour le SHA exact fournit le digest attendu ; le ZIP de l’URL publique immuable est téléchargé pendant la publication rolling. Le vérificateur exige ensuite la même URL dans le feed signé, vérifie taille, signatures Ed25519 et hash attesté. Packaging DMG et génération appcast lisent le ZIP immuable en parallèle ; toutes leurs sorties/erreurs sont attendues avant inventaire et publication.
 
-Les contrôles Python/shell/actionlint et les politiques presigned/publication/signature/cryptographie ont réussi, `.fast-deploy-work/followup-checks.log`. La première CI corrective a échoué sur une assertion statique de syntaxe Bash ; l’assertion vise désormais le même argument de tag immuable dans l’appel Python. Tout le bloc « Validate scripts » exact a ensuite réussi localement en **16.410 s** (`.fast-deploy-work/validate-scripts-exact.{sh,json,log}`). Les tests du préchargement refusent URL/hash erronés, puis valident les octets signés réels (`.fast-deploy-work/followup-prefetch-checks.{json,log}`). Packaging natif : **18.475 s**, mauvais hash refusé, ZIP inchangé, `hdiutil imageinfo` réussi (`.fast-deploy-work/package-reuse.json`). Vérification publique de récupération : **PUBLIC_UPDATE_VERIFIED 0.6.73**, 82.492 s, zéro delta (`.fast-deploy-work/recovery-public-verify.{json,log}`) ; elle ne corrige pas rétroactivement l’échec du premier seuil. La validation finale reste un nouveau merge réel, sans réessai automatique du SHA déjà tenté.
+Les contrôles Python/shell/actionlint et les politiques presigned/publication/signature/cryptographie ont réussi, `.fast-deploy-work/followup-checks.log`. La première CI corrective a échoué sur une assertion statique de syntaxe Bash ; l’assertion vise désormais le même argument de tag immuable dans l’appel Python. Tout le bloc « Validate scripts » exact a ensuite réussi localement en **16.410 s** (`.fast-deploy-work/validate-scripts-exact.{sh,json,log}`). Les tests du préchargement refusent URL/hash erronés, puis valident les octets signés réels (`.fast-deploy-work/followup-prefetch-checks.{json,log}`). Packaging natif : **18.475 s**, mauvais hash refusé, ZIP inchangé, `hdiutil imageinfo` réussi (`.fast-deploy-work/package-reuse.json`). Vérification publique de récupération : **PUBLIC_UPDATE_VERIFIED 0.6.73**, 82.492 s, zéro delta (`.fast-deploy-work/recovery-public-verify.{json,log}`) ; elle ne corrige pas rétroactivement l’échec du premier seuil. Le second merge réel et son résultat figurent ci-dessous ; aucun réessai automatique du SHA déjà tenté.
+
+## Second merge chaud — publication vérifiée, seuil non atteint
+
+PR #83 https://github.com/blancmathis/goalong-history/pull/83 fusionnée en **69a25978929074c7305768b447f6d56a4110adb3**, à **21:22:19 UTC**. Les trois gates du head **5b87b669fd57cbec9d575196242e6cd194a8a8db** ont réussi : qualité `38174725337`, motion `38174725292`, sharing `38174725296`. Aucun troisième essai lancé : la règle d’arrêt de `/Users/mathisblanc/.claude/delegation/STANDING.md` s’applique après deux approches n’ayant pas passé le critère demandé.
+
+App/feed **0.6.74 / 30000000.3817472.533701**, SHA exact ci-dessus. **PUBLIC_UPDATE_VERIFIED** sur GitHub à 21:36:45 UTC (step terminé 21:36:46), puis sur le Mac ; `latest-main` pointe maintenant sur le bon SHA. **Merge → vérification hébergée : 867.000 s (14 min 27 s)**. **Merge → vérification Mac : 904.227 s (15 min 04.2 s)**. Le seuil **≤600 s échoue**, y compris en ne comptant que le contrôle hébergé.
+
+Détection launchd : **38.612 s**. Cache effectivement chaud : compilation tests **3.10 s**, builds par architecture **15.663 s**. La suite entière a pris **381.279 s** (1 849 tests, 66 ignorés, zéro échec), contre 162.439 s au premier merge ; transfert/dispatch **219.467 s**, contre 135.029 s. Le snapshot pendant cette mesure montre une charge **27.51 / 35.17 / 28.18** sur 14 cœurs, plusieurs processus concurrents actifs et 1 704 Mo de swap utilisé. Cette charge coïncide avec le ralentissement ; sa causalité n’a pas été isolée. Aucun processus externe n’a été modifié.
+
+| Étape locale | Wall time |
+| --- | ---: |
+| fetch | 0.778 s |
+| checkout | 0.151 s |
+| clean | 0.272 s |
+| hosted-gates | 4.383 s |
+| authenticated-public-state | 10.377 s |
+| signing-preflight | 0.125 s |
+| build-sign-verify | 80.568 s |
+| tests | 381.279 s |
+| build-x86_64 | 15.663 s |
+| build-arm64 | 15.663 s |
+| final-identity | 8.490 s |
+| handoff | 219.467 s |
+| await-Publish immutable update archive | 139.653 s |
+| download-final-manifest | 1.087 s |
+| verify-final-provenance | 8.422 s |
+| download-public-archive | 82.792 s |
+| await-Publish authenticated feed last | 2.946 s |
+| verify-published | 4.957 s |
+| total coordinateur | 865.613 s |
+| merge → vérification Mac | **904.227 s** |
+
+Tests/builds en parallèle ; téléchargement public chevauchant la publication rolling : ne pas additionner les voies indépendantes. Les métriques d’attente sont séparées des stages de commande.
+
+Publisher [38176855447](https://github.com/blancmathis/goalong-history/actions/runs/38176855447) : job full **success** ; workflow global encore en cours à l’arrêt du relevé (deltas).
+
+| Étape hébergée | Wall time |
+| --- | ---: |
+| Set up job | 2 s |
+| Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 | 3 s |
+| Require update signing credentials | 0 s |
+| Validate explicitly supplied local signature | 20 s |
+| Test source for supplied build | 10 s |
+| Resolve rolling version | 0 s |
+| Verify architecture, stable signature, identity, and privacy policy | 26 s |
+| Package DMG and generate authenticated Community appcast | 42 s |
+| Generate auditable release inventory | 3 s |
+| Attest Community release provenance | 2 s |
+| Refuse to publish a superseded or non-main commit | 1 s |
+| Publish immutable update archive | 12 s |
+| Require monotonic authenticated release state | 10 s |
+| Remove retired rolling-release assets | 3 s |
+| Publish rolling GitHub release | 27 s |
+| Publish authenticated feed last | 27 s |
+| Retain full generation for deferred deltas | 7 s |
+| Remove temporary signing keychain | 0 s |
+| Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 | 1 s |
+| Complete job | 1 s |
+
+Packaging natif **23.819 s**, appcast **42.329 s**, exécutés en parallèle (step GitHub 42 s) ; toutes erreurs et sorties attendues. L’ancienne voie séquentielle packaging + appcast avait pris 116 s au premier merge. Inventaire final attesté vérifié sur Mac pour ce SHA/ref/workflow GitHub-hosted exact ; URL publique préchargée identique à l’enclosure signée, signatures/taille/hash vérifiés. Contrôle final Mac **4.957 s** après préchargement de **82.792 s**.
+
+Search list de trousseaux et préférence Reduce Motion identiques avant/après, `.fast-deploy-work/after-second-merge-environment.json`. Runner GitHub absent, agent local actif et état `published-verified` pour ce SHA ; pas de répétition automatique du même SHA. Aucun service payant, exception de signature/provenance ni second écrivain ajouté.
+
+Deltas : `prepare-deltas` **in_progress** dans le snapshot final ; publication/application/attestations delta non revendiquées comme vérifiées de bout en bout. Le feed full vérifié contient **0 delta** et reste utilisable. Le calcul déjà engagé continue hors du chemin critique, avec la publication éventuelle sérialisée sous le même verrou hébergé. Aucun nouveau test ni merge lancé pour prolonger cet essai.
+
+Preuves : `/Users/mathisblanc/Library/Application Support/GoalongDeploy/runs/20261011T212257Z-69a259789290/timings.json`, `verify-published.log`, `verify-final-provenance.log`, `final-manifest/`, `publisher-jobs.json` ; `.fast-deploy-work/second-real-merge.json`, `second-publisher-jobs.json`, `second-publisher-full-job.log`, `second-merge-process-snapshot.log`, `pr83-final-completion.json`.
+
+**Suite nécessaire pour satisfaire l’objectif :** une nouvelle décision du propriétaire après ces deux échecs de délai, puis une mesure réelle admissible. Les chiffres locaux froids/chauds précédents et une extrapolation à charge réduite ne prouvent pas le seuil. Le rapport final est mis à jour localement dans le worktree ; le code est fusionné, les descriptions #82/#83 porteront ce résultat sans nouveau merge de documentation.
 
 ## Références historiques
 
