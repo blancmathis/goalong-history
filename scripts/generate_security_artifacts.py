@@ -569,7 +569,7 @@ def release_manifest(
                     "sha256": sha256_file(path),
                 }
             )
-    return {
+    result = {
         "schemaVersion": SCHEMA_VERSION,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "sourceCommit": capabilities["source"]["commit"],
@@ -577,6 +577,25 @@ def release_manifest(
         "product": capabilities["product"],
         "artifacts": artifacts,
     }
+    info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+    if os.environ.get("GITHUB_REF") == "refs/heads/main" and os.environ.get("GITHUB_WORKFLOW") == "Continuous Community macOS release":
+        result["sourceTree"] = git_value(Path(__file__).resolve().parents[1], "rev-parse", "HEAD^{tree}")
+        # The bundle embeds the source tree; the attestation binds main commit -> tree -> digests.
+        if info.get("GoalongSourceRevision") != result["sourceTree"] or result["sourceDirty"]:
+            raise ValueError("Final bundle provenance differs from the clean exact main tree")
+        result["publisher"] = {"runId": int(os.environ["GITHUB_RUN_ID"]), "runAttempt": int(os.environ["GITHUB_RUN_ATTEMPT"])}
+        binding = output / "prepared-binding.json"
+        result["compilation"] = json.loads(binding.read_text()) if binding.exists() else {"compiledFromCommit": result["sourceCommit"]}
+        import xml.etree.ElementTree as ET
+        xml = ET.parse(output / "community-appcast.xml")
+        enclosure = xml.find("./channel/item/enclosure")
+        archive = next(a for a in artifacts if a["path"] == "Goalong-History-macOS-universal.zip")
+        result["fullEnclosure"] = {"url": enclosure.attrib["url"], "sizeBytes": int(enclosure.attrib["length"]),
+            "edSignature": enclosure.attrib["{http://www.andymatuschak.org/xml-namespaces/sparkle}edSignature"], "sha256": archive["sha256"]}
+        if result["fullEnclosure"]["sizeBytes"] != archive["sizeBytes"]:
+            raise ValueError("Enclosure and final archive size disagree")
+    return result
+
 
 
 def write_json(path: Path, value: dict[str, Any]) -> None:

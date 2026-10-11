@@ -1,6 +1,8 @@
 name: History sharing acceptance
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -47,5 +49,15 @@ jobs:
         with:
           name: history-sharing-acceptance-${{ github.sha }}
           path: qa/sharing-acceptance/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Record successful exact-checkout gate
+        run: python3 scripts/write_gate_receipt.py
+      - name: Retain exact-checkout gate receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Goalong-Gate-${{ github.job }}-${{ github.run_attempt }}
+          path: gate-receipt.json
           if-no-files-found: error
           retention-days: 7

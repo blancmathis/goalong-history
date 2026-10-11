@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, motion/integration-20260917]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,6 +27,7 @@ jobs:
           # This job uses a disposable GitHub-hosted VM, never the user's Mac.
           # Exercise both real OS preferences; do not override them in the app.
           original=$(defaults read com.apple.universalaccess reduceMotion 2>/dev/null || true)
+          # shellcheck disable=SC2329
           restore_preference() {
             # `defaults read` returns 0/1; `write -bool` expects true/false.
             case "$original" in
@@ -56,3 +58,13 @@ jobs:
           retention-days: 7
       - name: Build and test on macOS
         run: swift test
+
+      - name: Record successful exact-checkout gate
+        run: python3 scripts/write_gate_receipt.py
+      - name: Retain exact-checkout gate receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Goalong-Gate-${{ github.job }}-${{ github.run_attempt }}
+          path: gate-receipt.json
+          if-no-files-found: error
+          retention-days: 7

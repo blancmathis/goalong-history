@@ -1,7 +1,10 @@
 name: Continuous Community macOS release
-run-name: ${{ inputs.signed_stage && format('Publish {0}', inputs.signed_stage) || 'Manual Community release' }}
+run-name: ${{ github.event_name == 'push' && format('Publish main {0}', github.sha) || inputs.signed_stage && format('Publish {0}', inputs.signed_stage) || 'Manual Community release' }}
 
 on:
+  # The exact-main run: promote the prepared PR candidate, or build in full as fallback.
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       signed_stage:
@@ -27,7 +30,72 @@ permissions:
   pull-requests: read
 
 jobs:
+  promote-prepared:
+    if: github.event_name == 'push'
+    runs-on: macos-15
+    timeout-minutes: 30
+    concurrency:
+      group: goalong-history-feed-writer
+      cancel-in-progress: false
+    outputs:
+      result: ${{ steps.admit.outputs.result }}
+      tag: ${{ steps.admit.outputs.tag }}
+    env:
+      GODEBUG: http2client=0
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Admit the prepared candidate for this exact main tree
+        id: admit
+        run: python3 scripts/promote_prepared_release.py admit
+
+      - name: Attest final release provenance at the exact main commit
+        if: steps.admit.outputs.result == 'admitted'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/community-appcast.xml
+            dist/Goalong-History-macOS-universal.dmg
+            dist/Goalong-History-macOS-universal.dmg.sha256
+            dist/Goalong-History-macOS-universal.zip
+            dist/Goalong-History-macOS-universal.zip.sha256
+            dist/security-capabilities.json
+            dist/sbom.spdx.json
+            dist/release-manifest.json
+
+      - name: Publish immutable release, then the authenticated feed last
+        if: steps.admit.outputs.result == 'admitted'
+        run: python3 scripts/promote_prepared_release.py publish
+
+      - name: Attest actual public verification
+        if: steps.admit.outputs.result == 'admitted'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/public-verification.json
+
+      - name: Publish attested public verification receipt
+        if: steps.admit.outputs.result == 'admitted'
+        run: gh release upload "${{ steps.admit.outputs.tag }}" dist/public-verification.json dist/promotion-timings.json
+
+      - name: Retain full generation for deferred deltas
+        if: steps.admit.outputs.result == 'admitted'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Goalong-Full-${{ github.run_id }}
+          path: |
+            dist/Goalong-History-macOS-universal.zip
+            dist/community-appcast.xml
+            dist/security-capabilities.json
+            dist/sbom.spdx.json
+            dist/release-manifest.json
+          retention-days: 3
+
   signing-plan:
+    needs: promote-prepared
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.promote-prepared.outputs.result == 'fallback')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -50,13 +118,15 @@ jobs:
           fi
   prepare-local-signature:
     needs: signing-plan
-    if: needs.signing-plan.outputs.mode == 'local'
+    if: always() && needs.signing-plan.result == 'success' && needs.signing-plan.outputs.mode == 'local'
     uses: ./.github/workflows/prepare-local-signed-release.yml
     secrets: inherit
   publish-latest-main:
     needs: signing-plan
-    if: needs.signing-plan.outputs.mode != 'local'
+    if: always() && needs.signing-plan.result == 'success' && needs.signing-plan.outputs.mode != 'local'
     runs-on: macos-15
+    outputs:
+      tag: ${{ steps.published.outputs.tag }}
     timeout-minutes: 80
     concurrency:
       group: goalong-history-feed-writer
@@ -143,35 +213,11 @@ jobs:
         run: ./scripts/build_app.sh
 
       - name: Verify architecture, stable signature, identity, and privacy policy
-        env:
-          LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
-          EXPECTED_VERSION: ${{ steps.version.outputs.value }}
-          EXPECTED_BUILD: ${{ steps.version.outputs.build }}
-          LOCALHISTORY_REQUIRE_LOCALIZED_NAME: 1
-          LOCALHISTORY_DISPLAY_NAME: Goalong History
-        run: |
-          set -euo pipefail
-          APP="dist/Goalong History.app"
-          INFO="$APP/Contents/Info.plist"
-          lipo -info "$APP/Contents/MacOS/Goalong History"
-          lipo "$APP/Contents/MacOS/Goalong History" -verify_arch arm64 x86_64
-          codesign --verify --strict --verbose=4 "$APP"
-          bash scripts/verify_release_identity.sh "$APP"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO")" = "$BUNDLE_ID"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")" = "$PRODUCT"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO")" = "$PRODUCT"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO")" = "$EXPECTED_VERSION"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")" = "$EXPECTED_BUILD"
-          for locale in en fr; do
-            STRINGS="$APP/Contents/Resources/$locale.lproj/InfoPlist.strings"
-            test "$(plutil -extract CFBundleDisplayName raw -o - "$STRINGS")" = "$DISPLAY_NAME"
-            test "$(plutil -extract CFBundleName raw -o - "$STRINGS")" = "$DISPLAY_NAME"
-          done
-          ./scripts/verify_local_bundle.sh
+        run: bash scripts/verify_release_bundle.sh "dist/Goalong History.app" "${{ steps.version.outputs.value }}" "${{ steps.version.outputs.build }}"
 
       - name: Package DMG and generate authenticated Community appcast
         env:
-          LOCALHISTORY_VERIFIED_ZIP_SHA256: ${{ inputs.signed_sha256 }}
+          SIGNED_ARCHIVE_HASH: ${{ inputs.signed_sha256 }}
           LOCALHISTORY_PACKAGE_STANDARD_DMG: 1
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
           LOCALHISTORY_DELTA_BASES_DIR: ''
@@ -185,6 +231,8 @@ jobs:
               result = subprocess.run(argv, env=env)
               print(f"{name}: {time.monotonic()-start:.3f} seconds, exit {result.returncode}", flush=True)
               return result.returncode
+          if os.environ.get('SIGNED_ARCHIVE_HASH'):
+              os.environ['LOCALHISTORY_VERIFIED_ZIP_SHA256'] = os.environ['SIGNED_ARCHIVE_HASH']
           package_env = dict(os.environ)
           package_env.pop('LOCALHISTORY_CODESIGN_IDENTITY', None)
           commands = [('package', ['bash', 'scripts/package_release.sh'], package_env),
@@ -281,21 +329,15 @@ jobs:
             done
           fi
 
+      - name: Render rolling release notes
+        run: python3 scripts/render_rolling_notes.py "${{ steps.version.outputs.value }}" "${{ steps.version.outputs.build }}" "$GITHUB_SHA" "$RUNNER_TEMP/rolling-notes.md"
+
       - name: Publish rolling GitHub release
         uses: softprops/action-gh-release@5113cdc90fd4d541c801c55356214017bf5ae34b # v3
         with:
           tag_name: latest-main
           name: Goalong History ${{ steps.version.outputs.value }} Community Build — latest main
-          body: |
-            Goalong History `${{ steps.version.outputs.value }}` (build `${{ steps.version.outputs.build }}`), built from `${{ github.sha }}` on `main`.
-
-            This is the single free Community Build. It is signed with a pinned, stable Apple Development identity. It is not Developer ID notarized. On first launch, macOS may require **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper globally.
-
-            Verify the downloaded SHA-256 file and `release-manifest.json`. GitHub also publishes a Sigstore-backed build-provenance attestation; with GitHub CLI, run `gh attestation verify <downloaded-file> --repo blancmathis/goalong-history`.
-
-            Updates are offered in the app through an Ed25519-authenticated Sparkle feed and archive. Click **Update available** or **Check for Updates…**, then approve installation. The first replacement of an older build without an updater must be installed once manually. Automatic installation is disabled.
-
-            Subsequent builds keep the same signing identity so updates do not intentionally invalidate permissions. Migration from old ad-hoc builds may require one final macOS approval. Existing history and settings remain in place. No activity contents or system profile are sent by the updater.
+          body_path: ${{ runner.temp }}/rolling-notes.md
           draft: false
           prerelease: true
           make_latest: false
@@ -319,10 +361,22 @@ jobs:
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA"
           python3 scripts/authenticated_release_state.py "$RUNNER_TEMP/current-public" "dist/Goalong History.app/Contents/Info.plist"
           gh release upload "$ROLLING_TAG" dist/community-appcast.xml --clobber
-          bash scripts/verify_published_update.sh dist
+          LOCALHISTORY_PUBLIC_RECEIPT=dist/public-verification.json bash scripts/verify_published_update.sh dist
           git tag --force "$ROLLING_TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$ROLLING_TAG" --force
           echo "Published signed update ${{ steps.version.outputs.value }} (${{ steps.version.outputs.build }}) from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest actual public verification
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/public-verification.json
+      - name: Publish attested public verification receipt
+        id: published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$IMMUTABLE_TAG" dist/public-verification.json
+          echo "tag=$IMMUTABLE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Retain full generation for deferred deltas
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -344,7 +398,8 @@ jobs:
           rm -f "$RUNNER_TEMP/goalong-release-signing.p12"
 
   prepare-deltas:
-    needs: publish-latest-main
+    needs: [promote-prepared, publish-latest-main]
+    if: always() && (needs.promote-prepared.outputs.result == 'admitted' && needs.promote-prepared.result == 'success' || needs.publish-latest-main.result == 'success')
     runs-on: macos-15
     timeout-minutes: 45
     outputs:
@@ -352,6 +407,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GODEBUG: http2client=0
+      RELEASE_TAG: ${{ needs.promote-prepared.outputs.tag || needs.publish-latest-main.outputs.tag }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -364,7 +420,7 @@ jobs:
         id: deltas
         env:
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
-        run: python3 scripts/deferred_release_deltas.py prepare "main-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+        run: python3 scripts/deferred_release_deltas.py prepare "$RELEASE_TAG"
       - name: Attest enriched generation
         if: steps.deltas.outputs.ready == 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -390,8 +446,8 @@ jobs:
           retention-days: 3
 
   publish-deltas:
-    needs: prepare-deltas
-    if: needs.prepare-deltas.outputs.ready == 'true'
+    needs: [prepare-deltas, promote-prepared, publish-latest-main]
+    if: always() && needs.prepare-deltas.outputs.ready == 'true'
     runs-on: macos-15
     timeout-minutes: 15
     concurrency:
@@ -400,6 +456,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GODEBUG: http2client=0
+      RELEASE_TAG: ${{ needs.promote-prepared.outputs.tag || needs.publish-latest-main.outputs.tag }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -409,4 +466,4 @@ jobs:
           name: Goalong-Deltas-${{ github.run_id }}
           path: dist
       - name: Commit eligible delta generation through the sole feed writer
-        run: python3 scripts/deferred_release_deltas.py publish "main-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+        run: python3 scripts/deferred_release_deltas.py publish "$RELEASE_TAG"
