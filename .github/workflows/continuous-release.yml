@@ -1,15 +1,17 @@
 name: Continuous Community macOS release
+run-name: ${{ inputs.signed_stage && format('Publish {0}', inputs.signed_stage) || 'Manual Community release' }}
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       signed_stage:
         description: Optional release staging tag for an already certificate-signed local build
         type: string
         required: false
+      local_gates:
+        description: Reuse only independently verified successful same-tree hosted gates
+        type: boolean
+        default: false
       signed_sha256:
         description: SHA-256 of the explicitly supplied signed ZIP
         type: string
@@ -20,10 +22,9 @@ permissions:
   id-token: write
   attestations: write
   artifact-metadata: write
-
-concurrency:
-  group: goalong-history-latest-main
-  cancel-in-progress: false
+  actions: read
+  checks: read
+  pull-requests: read
 
 jobs:
   signing-plan:
@@ -57,6 +58,9 @@ jobs:
     if: needs.signing-plan.outputs.mode != 'local'
     runs-on: macos-15
     timeout-minutes: 80
+    concurrency:
+      group: goalong-history-feed-writer
+      cancel-in-progress: false
     env:
       # Bound the GitHub CLI large-asset transport to HTTP/1.1; TLS and signature checks remain mandatory.
       GODEBUG: http2client=0
@@ -100,9 +104,15 @@ jobs:
 
       - name: Test source for supplied build
         if: inputs.signed_stage != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/test_permission_requirement_policy.py
-          xcrun swift test
+          if [[ "${{ inputs.local_gates }}" == true ]]; then
+            python3 scripts/local_deploy_policy.py "$GITHUB_SHA" "$RUNNER_TEMP/source-gates.json"
+          else
+            xcrun swift test
+          fi
           bash scripts/audit_privacy_boundaries.sh
           bash scripts/test_release_signing_policy.sh
 
@@ -165,47 +175,16 @@ jobs:
           brew install create-dmg
           env -u LOCALHISTORY_CODESIGN_IDENTITY ./scripts/package_release.sh
 
-      - name: Fetch recent update archives for delta updates
-        # Optional: without them, the feed offers the full archive only.
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CURRENT_BUILD: ${{ steps.version.outputs.build }}
-        run: |
-          set -euo pipefail
-          BASES="$RUNNER_TEMP/delta-bases"
-          mkdir -p "$BASES"
-          gh release list --limit 20 --exclude-drafts --json tagName,name > "$RUNNER_TEMP/releases.json"
-          python3 - "$RUNNER_TEMP/releases.json" "$CURRENT_BUILD" > "$RUNNER_TEMP/delta-base-tags" <<'PY'
-          import json, re, sys
-          releases, build = json.load(open(sys.argv[1])), sys.argv[2]
-          tags = [r["tagName"] for r in releases if re.fullmatch(r"main-[0-9]+-[0-9]+", r["tagName"]) and build not in (r.get("name") or "")]
-          tags.sort(key=lambda tag: [int(part) for part in tag.split("-")[1:]], reverse=True)
-          print("\n".join(tags[:3]))
-          PY
-          while IFS= read -r tag; do
-            [[ -n "$tag" ]] || continue
-            gh release download "$tag" --dir "$BASES/$tag" \
-              --pattern Goalong-History-macOS-universal.zip \
-              --pattern Goalong-History-macOS-universal.zip.sha256
-            (cd "$BASES/$tag" && shasum -a 256 -c Goalong-History-macOS-universal.zip.sha256)
-            mv "$BASES/$tag/Goalong-History-macOS-universal.zip" "$BASES/$tag.zip"
-            rm -rf "${BASES:?}/$tag"
-          done < "$RUNNER_TEMP/delta-base-tags"
-          ls -l "$BASES"
-
       - name: Generate authenticated Community appcast
         env:
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
-          LOCALHISTORY_DELTA_BASES_DIR: ${{ runner.temp }}/delta-bases
+          LOCALHISTORY_DELTA_BASES_DIR: ''
         run: |
           set -euo pipefail
           ./scripts/generate_sparkle_appcast.sh \
             "${{ steps.version.outputs.value }}" \
             dist/Goalong-History-macOS-universal.zip \
             dist/community-appcast.xml "$IMMUTABLE_TAG"
-          # Free the previous archives and Sparkle's extracted copies before packaging the release.
-          rm -rf "$LOCALHISTORY_DELTA_BASES_DIR" "$HOME/Library/Caches/Sparkle_generate_appcast"
           grep -Fq "<sparkle:version>${{ steps.version.outputs.build }}</sparkle:version>" dist/community-appcast.xml
 
       - name: Generate auditable release inventory
@@ -250,7 +229,7 @@ jobs:
           set -euo pipefail
           # An old feed must remain usable while latest-main assets are being replaced.
           # Never clobber these archives or use latest-main ZIP URLs in the appcast.
-          # Signed deltas live next to the ZIP, in the same immutable release.
+          # Deferred deltas will live next to this unchanged immutable ZIP.
           shopt -s nullglob
           deltas=(dist/Goalong-History-macOS-universal-from-*.delta)
           gh release create "$IMMUTABLE_TAG" \
@@ -261,6 +240,11 @@ jobs:
             dist/Goalong-History-macOS-universal.zip.sha256 \
             dist/security-capabilities.json dist/sbom.spdx.json dist/release-manifest.json \
             ${deltas[@]+"${deltas[@]}"}
+
+      - name: Require monotonic authenticated release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/authenticated_release_state.py "$RUNNER_TEMP/previous-public" "dist/Goalong History.app/Contents/Info.plist"
 
       - name: Remove retired rolling-release assets
         env:
@@ -314,11 +298,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Revalidate under the sole feed-writer lock, immediately before mutation.
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          python3 scripts/authenticated_release_state.py "$RUNNER_TEMP/current-public" "dist/Goalong History.app/Contents/Info.plist"
           gh release upload "$ROLLING_TAG" dist/community-appcast.xml --clobber
           bash scripts/verify_published_update.sh dist
           git tag --force "$ROLLING_TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$ROLLING_TAG" --force
           echo "Published signed update ${{ steps.version.outputs.value }} (${{ steps.version.outputs.build }}) from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain full generation for deferred deltas
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Goalong-Full-${{ github.run_id }}
+          path: |
+            dist/Goalong-History-macOS-universal.zip
+            dist/community-appcast.xml
+            dist/security-capabilities.json
+            dist/sbom.spdx.json
+            dist/release-manifest.json
+          retention-days: 3
 
       - name: Remove temporary signing keychain
         if: always()
@@ -326,3 +325,71 @@ jobs:
           KEYCHAIN="$RUNNER_TEMP/goalong-release-signing.keychain-db"
           if [[ -f "$KEYCHAIN" ]]; then security delete-keychain "$KEYCHAIN"; fi
           rm -f "$RUNNER_TEMP/goalong-release-signing.p12"
+
+  prepare-deltas:
+    needs: publish-latest-main
+    runs-on: macos-15
+    timeout-minutes: 45
+    outputs:
+      ready: ${{ steps.deltas.outputs.ready }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GODEBUG: http2client=0
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: Goalong-Full-${{ github.run_id }}
+          path: dist
+      - name: Prepare authenticated and applied deltas outside writer lock
+        id: deltas
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: python3 scripts/deferred_release_deltas.py prepare "main-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+      - name: Attest enriched generation
+        if: steps.deltas.outputs.ready == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/community-appcast.xml
+            dist/Goalong-History-macOS-universal-from-*.delta
+            dist/release-manifest.json
+            dist/delta-release-manifest.json
+            dist/delta-generation.json
+      - name: Retain prepared generation
+        if: steps.deltas.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Goalong-Deltas-${{ github.run_id }}
+          path: |
+            dist/Goalong-History-macOS-universal.zip
+            dist/Goalong-History-macOS-universal-from-*.delta
+            dist/community-appcast.xml
+            dist/release-manifest.json
+            dist/delta-release-manifest.json
+            dist/delta-generation.json
+          retention-days: 3
+
+  publish-deltas:
+    needs: prepare-deltas
+    if: needs.prepare-deltas.outputs.ready == 'true'
+    runs-on: macos-15
+    timeout-minutes: 15
+    concurrency:
+      group: goalong-history-feed-writer
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GODEBUG: http2client=0
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: Goalong-Deltas-${{ github.run_id }}
+          path: dist
+      - name: Commit eligible delta generation through the sole feed writer
+        run: python3 scripts/deferred_release_deltas.py publish "main-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"

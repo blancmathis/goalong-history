@@ -31,6 +31,8 @@ if ! /usr/bin/grep -Fq "Identifier=$EXPECTED_BUNDLE_ID" <<<"$CLI_SIGNATURE_DETAI
   exit 1
 fi
 
+/usr/bin/python3 "$ROOT_DIR/scripts/verify_cli_plist.py" "$APP_PATH"
+
 UPDATE_ARGS=(--verify-info "$INFO")
 if [[ "${LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED:-0}" == "1" ]]; then
   UPDATE_ARGS+=(--require-configured)

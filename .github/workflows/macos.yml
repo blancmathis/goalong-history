@@ -31,7 +31,13 @@ jobs:
             scripts/generate_security_artifacts.py \
             scripts/probe_computer_history_parity.py \
             scripts/verify_security_capabilities.py \
-            scripts/test_probe_computer_history_parity.py
+            scripts/test_probe_computer_history_parity.py \
+            scripts/local_auto_deploy.py \
+            scripts/install_local_auto_deploy.py \
+            scripts/local_deploy_policy.py \
+            scripts/authenticated_release_state.py \
+            scripts/deferred_release_deltas.py \
+            scripts/verify_cli_plist.py
           bash scripts/test_check_computer_history_memory.sh
           bash scripts/test_probe_computer_history_parity.sh
           bash scripts/test_public_install_safety.sh
