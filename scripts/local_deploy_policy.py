@@ -39,6 +39,7 @@ def source_gates(revision):
     for tested, merged_at in candidates:
         checks = api(f"commits/{tested}/check-runs?per_page=100")["check_runs"]
         runs = {}
+        attempts = {}
         for name, path in GATES.items():
             matching = [c for c in checks if c["name"] == name and c["app"]["slug"] == "github-actions"]
             if not matching:
@@ -54,9 +55,11 @@ def source_gates(revision):
                     or run["event"] not in {"pull_request", "push", "workflow_dispatch"}):
                 break
             runs[name] = run["id"]
+            attempts[name] = run["run_attempt"]
         if set(runs) == set(GATES):
             return {"sourceCommit": revision, "tree": tree, "testedCommit": tested,
-                    "runs": runs, "buildRunId": runs["build-test-package"], "mergedAt": merged_at}
+                    "runs": runs, "buildRunId": runs["build-test-package"],
+                    "buildRunAttempt": attempts["build-test-package"], "mergedAt": merged_at}
     raise ValueError("All three official hosted gates must pass for the exact main tree")
 
 

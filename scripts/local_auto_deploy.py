@@ -122,7 +122,8 @@ def main():
         command("authenticated-public-state", [sys.executable, "scripts/authenticated_release_state.py", str(run / "public")], cwd=checkout)
         # stdout contains gh tool progress only on stderr; the last JSON is retained.
         public = json.loads((run / "authenticated-public-state.log").read_text().splitlines()[-1])
-        env = {**os.environ, "GITHUB_RUN_ID": str(run_id), "GITHUB_RUN_ATTEMPT": "1",
+        attempt = 1 if args.build_only else gates["buildRunAttempt"]
+        env = {**os.environ, "GITHUB_RUN_ID": str(run_id), "GITHUB_RUN_ATTEMPT": str(attempt),
                "GOALONG_CURRENT_ROLLING_VERSION": public["versionName"]}
         version_output = subprocess.check_output(
             ["bash", "scripts/resolve_rolling_version.sh", str(run_id)], cwd=checkout, env=env, text=True)

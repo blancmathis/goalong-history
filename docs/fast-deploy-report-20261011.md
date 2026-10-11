@@ -82,3 +82,23 @@ La protection de main (404 lors du contrôle initial), les caches/parallélisme,
 - Préflight feed public et inventaire attesté réussi ; contrôle CLI par tranche réussi sur l’app installée. Actionlint, Python/shell et politiques de release/archives/motion vérifiés ; logs `.fast-deploy-work/`.
 - Réparation Git locale : objets archivés via liens NVME devenus pendants ; packs officiels récupérés par clone isolé, cibles d’origine conservées dans `.fast-deploy-work/git-object-directory-repair.json`. Aucun ref ni autre worktree changé.
 - Mesures froide et vraie fusion chaude : à renseigner avant de déclarer l’objectif atteint.
+
+## Mesure froide locale (préparation sans publication)
+
+Checkout exact `24b2c3a0e1613634d38cfc18ff79d8507f896d55`, scratchs SwiftPM vides au départ, Apple M4 Pro, macOS/Xcode locaux. Build `0.6.73` / `30000000.3815916.806301`. Cette mesure couvre clone, état public authentifié, tests, deux builds, signature/vérification et ZIP de staging ; aucune fusion ni écriture du feed.
+
+| Étape | Wall time |
+| --- | ---: |
+| clone | 4.563 s |
+| fetch | 0.491 s |
+| checkout | 0.169 s |
+| authenticated-public-state | 8.258 s |
+| tests | 335.762 s |
+| build-arm64 | 331.498 s |
+| build-x86_64 | 331.489 s |
+| build-sign-verify | 396.790 s |
+| final-identity | 1.012 s |
+| staging-archive | 19.974 s |
+| Total préparation froide | **432.817 s** |
+
+Les voies tests/arm64/x86_64 sont parallèles : ne pas additionner leurs temps. Suite : **1 849 tests, 66 ignorés, zéro échec** ; runtime tests 192.363 s, compilation comprise dans la ligne tests. Version/build CLI contrôlés dans les deux tranches ; identité pin/DR et audit de confidentialité passés. Preuves : `/Users/mathisblanc/Library/Application Support/GoalongDeploy/runs/20261011T194451Z-24b2c3a0e161/timings.json`, logs par étape et `.fast-deploy-work/cold-coordinator.log`.
