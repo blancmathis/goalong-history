@@ -2,10 +2,14 @@
     import AppKit
     import Foundation
     import LocalHistoryCore
+    import SwiftUI
 
-    final class MenuBarController: NSObject, NSMenuDelegate {
+    final class MenuBarController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         private let statusItem: NSStatusItem
         private let menu = NSMenu()
+        private let popover = NSPopover()
+        private var panelModel: MenuBarPanelModel?
+        private var panelTimer: Timer?
 
         private let state: CaptureState
         private let permissions: PermissionManager
@@ -76,6 +80,65 @@
 
         func menuWillOpen(_ menu: NSMenu) {
             updateStatus()
+        }
+
+        @MainActor func configurePanel(model: MenuBarPanelModel) {
+            closePanel()
+            panelModel = model
+            popover.behavior = .transient
+            popover.delegate = self
+            popover.contentViewController = NSHostingController(rootView: MenuBarPanelView(model: model))
+        }
+
+        @MainActor func closePanel() {
+            panelTimer?.invalidate(); panelTimer = nil
+            panelModel?.stopRefreshing()
+            popover.performClose(nil)
+        }
+
+        func popoverDidClose(_ notification: Notification) {
+            MainActor.assumeIsolated {
+                panelTimer?.invalidate(); panelTimer = nil
+                panelModel?.stopRefreshing()
+            }
+        }
+
+        @MainActor func showClassicMenu() {
+            closePanel()
+            // Attach only during native menu tracking, leaving left clicks to the popover.
+            statusItem.menu = menu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+        }
+
+        @MainActor func togglePauseFromPanel() {
+            closePanel()
+            togglePause()
+        }
+
+        @objc private func statusItemClicked() {
+            MainActor.assumeIsolated {
+                let event = NSApplication.shared.currentEvent
+                if event?.type == .rightMouseUp || event?.modifierFlags.contains(.option) == true {
+                    showClassicMenu()
+                    return
+                }
+                guard let model = panelModel, let button = statusItem.button else {
+                    showClassicMenu()
+                    return
+                }
+                if popover.isShown { closePanel(); return }
+                model.refresh()
+                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+                let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, self.popover.isShown else { return }
+                        self.panelModel?.refresh()
+                    }
+                }
+                panelTimer = timer
+                RunLoop.main.add(timer, forMode: .common)
+            }
         }
 
         func updateStatus() {
@@ -165,8 +228,10 @@
                 button.imageScaling = .scaleProportionallyDown
                 button.toolTip = ProductIdentity.displayName
                 button.setAccessibilityLabel(ProductIdentity.displayName)
+                button.target = self
+                button.action = #selector(statusItemClicked)
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             }
-            statusItem.menu = menu
             menu.delegate = self
         }
 
