@@ -50,6 +50,13 @@ def main():
     except BlockingIOError:
         print("Another local deployment owns the lock; no work started.")
         return
+    # A crashed run may leave fixture files. Only this controller's private
+    # run directories are reclaimed, after its inherited process lock clears.
+    for old in (state / "runs").glob("*"):
+        for name in ("test-home", "tmp"):
+            fixture = old / name
+            if fixture.is_dir() and not fixture.is_symlink():
+                shutil.rmtree(fixture)
     def output(argv, cwd=repo):
         return subprocess.check_output(argv, cwd=cwd, text=True).strip()
     if output(["git", "remote", "get-url", "origin"]) != f"https://github.com/{REPO}.git":
@@ -144,6 +151,9 @@ def main():
                    LOCALHISTORY_SCRATCH_ROOT=str(cache), LOCALHISTORY_PARALLEL_ARCHS="1", LOCALHISTORY_BUILD_JOBS="4",
                    LOCALHISTORY_RUNTIME_CACHE=str(state / "runtime-cache"),
                    LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY=(checkout / "Distribution/sparkle-public-ed-key.txt").read_text().strip())
+        temporary = run / "tmp"
+        temporary.mkdir()
+        env["TMPDIR"] = str(temporary) + "/"
         # No P12 import or keychain search-list/default mutation is used anywhere.
         command("signing-preflight", ["bash", "-c", 'source scripts/source_codesign_identity.sh; localhistory_verify_source_codesign_identity "$LOCALHISTORY_CODESIGN_IDENTITY"'], cwd=checkout, env=env)
         fixture = run / "test-home"
@@ -164,7 +174,8 @@ def main():
             timing = json.loads(file.read_text())
             metrics["stages"][timing["stage"]] = {"seconds": timing["seconds"], "exitCode": 0}
         command("final-identity", ["bash", "scripts/verify_release_identity.sh", str(dist / "Goalong History.app")], cwd=checkout)
-        command("staging-archive", ["ditto", "-c", "-k", "--keepParent", "--norsrc", str(dist / "Goalong History.app"), str(dist / "Goalong-History-macOS-universal.zip")], cwd=checkout)
+        if args.build_only:
+            command("staging-archive", ["ditto", "-c", "-k", "--keepParent", "--norsrc", str(dist / "Goalong History.app"), str(dist / "Goalong-History-macOS-universal.zip")], cwd=checkout)
         if not args.build_only:
             command("handoff", ["bash", "scripts/publish_local_release.sh", "--dist", str(dist), "--publish"], cwd=checkout, env=env)
             handoff = (run / "handoff.log").read_text()
@@ -208,9 +219,10 @@ def main():
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
-        fixture = run / "test-home"
-        if fixture.exists():
-            shutil.rmtree(fixture)
+        for name in ("test-home", "tmp"):
+            fixture = run / name
+            if fixture.exists():
+                shutil.rmtree(fixture)
         metrics["totalSeconds"] = round(time.monotonic()-began, 3)
         if metrics.get("gates", {}).get("mergedAt"):
             merged = datetime.fromisoformat(metrics["gates"]["mergedAt"].replace("Z", "+00:00"))
