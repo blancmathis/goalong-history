@@ -1,7 +1,9 @@
 #if os(macOS)
 import Ambiance
+import Combine
 import Foundation
 import LocalHistoryCore
+import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
 @testable import LocalHistoryCore
@@ -161,6 +163,26 @@ final class MenuBarPanelModelTests: XCTestCase {
         f.blocking?.start(listIDs: [first.id, second.id], until: f.now.addingTimeInterval(3600), lock: .free)
         model.setBlockList(first.id.uuidString, active: false)
         XCTAssertEqual(f.opened.last, .blocking); XCTAssertEqual(f.blocking?.activeBlocks.count, 1)
+    }
+
+    @MainActor func testBlockListBindingHopsToMainActorBeforePublishing() async {
+        let f = fixture(), list = LocalHistoryApp.BlockList(name: "Vidéo", sites: [.init(pattern: "example.invalid")])
+        f.blocking = BlockingController(document: BlockingDocument(lists: [list]), clock: { f.now },
+            calendar: f.calendar, continuous: { f.now.timeIntervalSince1970 }, runningApps: { [] })
+        f.modules.setEnabled(.blocking, true)
+        let model = f.model()
+        let published = expectation(description: "Blocking activation is published")
+        let subscription = f.blocking!.$activeBlocks.dropFirst().sink { blocks in
+            guard !blocks.isEmpty else { return }
+            XCTAssertTrue(Thread.isMainThread, "A SwiftUI binding must not enter the blocking engine off-main")
+            published.fulfill()
+        }
+        defer { subscription.cancel() }
+        let binding = Binding(get: { false }, set: { model.setBlockList(list.id.uuidString, active: $0) })
+        await Task.detached { binding.wrappedValue = true }.value
+        await fulfillment(of: [published], timeout: 2)
+        XCTAssertTrue(model.blockLists.first?.isActive == true)
+        XCTAssertEqual(f.blocking?.activeBlocks.first?.listIDs, [list.id])
     }
 
     @MainActor func testPlayNextStaysInCurrentFamilySkipsUnavailableAndWraps() throws {

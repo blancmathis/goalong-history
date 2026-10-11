@@ -330,7 +330,19 @@ import LocalHistoryCore
         }
     }
 
-    func setBlockList(_ id: String, active: Bool) {
+    // SwiftUI's synchronous Binding setter can lose actor isolation in Swift 5 mode.
+    // Marshal the whole action, including refresh/publication, before entering the engine.
+    nonisolated func setBlockList(_ id: String, active: Bool) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { setBlockListOnMainActor(id, active: active) }
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.setBlockListOnMainActor(id, active: active)
+            }
+        }
+    }
+
+    private func setBlockListOnMainActor(_ id: String, active: Bool) {
         guard modules.isEnabled(.blocking), let uuid = UUID(uuidString: id), let controller = blocking() else { return }
         controller.refresh(enforceLast: false)
         guard controller.list(uuid) != nil, !controller.isStricterOnly(uuid) else { refreshBlocking(); return }
