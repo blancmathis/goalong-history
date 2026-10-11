@@ -13,10 +13,13 @@ import SwiftUI
 
     func show(_ content: FocusPanel, controller: ConcentrationController) {
         let width = ConcentrationPanelView.width(content.kind)
-        let host = NSHostingView(rootView: ConcentrationPanelView(content: content, controller: controller)
-            .frame(width: width).fixedSize(horizontal: false, vertical: true).goalongControls())
+        let root = ConcentrationPanelView(content: content, controller: controller)
+            .frame(width: width).fixedSize(horizontal: false, vertical: true).goalongControls()
+        let host = NSHostingView(rootView: root)
         host.sizingOptions = []
-        let size = CGSize(width: width, height: ceil(max(56, host.fittingSize.height)))
+        // With no sizing options, fittingSize is zero; ask SwiftUI for the real height.
+        let ideal = NSHostingController(rootView: root).sizeThatFits(in: CGSize(width: width, height: 10_000))
+        let size = CGSize(width: width, height: ceil(max(56, ideal.height)))
         host.frame = NSRect(origin: .zero, size: size)
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1_280, height: 800)
