@@ -5,7 +5,7 @@ import Foundation
 /// Owner-only, no-follow traversal and fd-relative atomic writes, like BlockingStore.
 struct FocusStore {
     var directory: URL
-    static var standard: Self { Self(directory: AppPaths.applicationSupportDirectory.appendingPathComponent("Focus")) }
+    static var standard: Self { Self(directory: AppPaths.realApplicationSupportDirectory.appendingPathComponent("Focus")) }
     static let maximumBytes = 2 * 1024 * 1024
     private func openDirectory(_ area: String?, create: Bool) throws -> Int32? {
         let path = area.map { directory.appendingPathComponent($0) } ?? directory

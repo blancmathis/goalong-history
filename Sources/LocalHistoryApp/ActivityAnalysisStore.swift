@@ -26,10 +26,7 @@
     }
 
     enum ActivityAnalysisPaths {
-        static let applicationSupportDirectory: URL = {
-            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            return base.appendingPathComponent("LocalHistory", isDirectory: true)
-        }()
+        static let applicationSupportDirectory: URL = GoalongBuildChannel.dataRoot
 
         static let eventsDirectory = applicationSupportDirectory.appendingPathComponent("events", isDirectory: true)
         static let analysisDirectory = applicationSupportDirectory.appendingPathComponent("analysis", isDirectory: true)

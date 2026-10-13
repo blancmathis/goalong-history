@@ -17,7 +17,66 @@ func wait(seconds: TimeInterval, until predicate: () -> Bool) -> Bool {
     }
     return predicate()
 }
-guard CommandLine.arguments.count == 4 else { fail("Usage: dev-app-control quit-all|quit-dev|launch|status APP OTHER_APP") }
+guard CommandLine.arguments.count == 4 else {
+    fail("Usage: dev-app-control quit-all|quit-dev|launch|status APP OTHER_APP | badge-icon IN OUT | seed-data REAL DEV")
+}
+
+/// The DEV bundle icon: the release icon with an orange "DEV" band (Dock, Cmd-Tab, Finder, notifications).
+func badgeIcon(_ input: String, _ output: String) {
+    guard let source = NSImage(contentsOfFile: input),
+          let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1024, pixelsHigh: 1024, bitsPerSample: 8,
+                                     samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                     bytesPerRow: 0, bitsPerPixel: 0)?.retagging(with: .sRGB) else { fail("Cannot read icon: \(input)") }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    source.draw(in: NSRect(x: 0, y: 0, width: 1024, height: 1024))
+    // Clip to the icon's rounded square (Distribution/AppIcon.png: 844 px at x 90, y 102).
+    NSBezierPath(roundedRect: NSRect(x: 90, y: 102, width: 844, height: 844), xRadius: 212, yRadius: 212).addClip()
+    let band = NSRect(x: 0, y: 150, width: 1024, height: 205)
+    NSColor(srgbRed: 1.0, green: 0.584, blue: 0.0, alpha: 1).setFill()
+    band.fill()
+    let text = NSAttributedString(string: "DEV", attributes: [
+        .font: NSFont.systemFont(ofSize: 165, weight: .heavy), .kern: 14,
+        .foregroundColor: NSColor(srgbRed: 0.094, green: 0.129, blue: 0.051, alpha: 1)])
+    let size = text.size()
+    text.draw(at: NSPoint(x: (1024 - size.width) / 2 + 7, y: band.midY - size.height / 2))
+    NSGraphicsContext.restoreGraphicsState()
+    guard let png = rep.representation(using: .png, properties: [:]),
+          (try? png.write(to: URL(fileURLWithPath: output), options: .atomic)) != nil else { fail("Cannot write icon: \(output)") }
+    exit(0)
+}
+
+/// Re-seeds LocalHistory-Dev from LocalHistory with APFS clones (instant, no extra disk).
+/// Blocking and Focus stay in the real folder (the dev copy uses them there); backups and sockets are skipped.
+func seedData(_ realPath: String, _ devPath: String) {
+    let fileManager = FileManager.default
+    let real = URL(fileURLWithPath: realPath).standardizedFileURL, dev = URL(fileURLWithPath: devPath).standardizedFileURL
+    guard real.lastPathComponent == "LocalHistory", dev.lastPathComponent == "LocalHistory-Dev",
+          real.deletingLastPathComponent() == dev.deletingLastPathComponent() else { fail("Refusing seed paths: \(realPath) -> \(devPath)") }
+    var info = stat()
+    guard lstat(real.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { fail("Real data folder is missing or redirected: \(real.path)") }
+    if lstat(dev.path, &info) == 0 {
+        guard info.st_mode & S_IFMT == S_IFDIR else { fail("Dev data folder is not a plain folder: \(dev.path)") }
+        do { try fileManager.removeItem(at: dev) } catch { fail("Cannot remove the previous dev data: \(error.localizedDescription)") }
+    }
+    guard mkdir(dev.path, 0o700) == 0 else { fail("Cannot create \(dev.path): \(String(cString: strerror(errno)))") }
+    let skipped: Set<String> = ["Blocking", "Focus", "app-backups", "setup-backups", "runtime"]
+    let names: [String]
+    do { names = try fileManager.contentsOfDirectory(atPath: real.path) } catch { fail("Cannot list \(real.path)") }
+    for name in names.sorted() where !skipped.contains(name) {
+        let source = real.appendingPathComponent(name).path, target = dev.appendingPathComponent(name).path
+        guard clonefile(source, target, UInt32(CLONE_NOFOLLOW)) == 0 else {
+            fail("APFS clone failed for \(name): \(String(cString: strerror(errno))). No full copy was attempted.")
+        }
+    }
+    print("Dev data re-seeded by APFS clone: \(dev.path)")
+    exit(0)
+}
+switch CommandLine.arguments[1] {
+case "badge-icon": badgeIcon(CommandLine.arguments[2], CommandLine.arguments[3])
+case "seed-data": seedData(CommandLine.arguments[2], CommandLine.arguments[3])
+default: break
+}
 let action = CommandLine.arguments[1]
 let target = URL(fileURLWithPath: CommandLine.arguments[2]).standardizedFileURL
 let other = URL(fileURLWithPath: CommandLine.arguments[3]).standardizedFileURL

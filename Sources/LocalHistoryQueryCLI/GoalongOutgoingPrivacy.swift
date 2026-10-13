@@ -3,8 +3,7 @@ import LocalHistoryCore
 
 public enum GoalongOutgoingPrivacy {
     public static var defaultRoot: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("LocalHistory", isDirectory: true)
+        GoalongBuildChannel.dataRoot
     }
     /// Validates metadata and selected numeric exports without changing reviewed bytes.
     public static func validate(_ payload: Data, root: URL, expectedRevision: String?) throws -> GoalongPrivacyPolicy {

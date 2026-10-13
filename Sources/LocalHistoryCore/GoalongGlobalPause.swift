@@ -15,8 +15,7 @@ public struct GoalongGlobalPause: Codable, Equatable {
     public init() {}
     public var blocksActivity: Bool { paused || invalid }
     public static var defaultRoot: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("LocalHistory", isDirectory: true)
+        GoalongBuildChannel.dataRoot
     }
     public static func file(in root: URL) -> URL { root.appendingPathComponent("global-pause.json") }
     private static let lock = NSLock()

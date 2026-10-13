@@ -3865,7 +3865,7 @@ public enum GoalongQueryCLI {
         let base = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("Application Support", isDirectory: true)
-        return base.appendingPathComponent("LocalHistory", isDirectory: true)
+        return GoalongBuildChannel.current.dataRoot(base: base)
     }()
 
     private static let fractionalISO: ISO8601DateFormatter = {

@@ -10,6 +10,8 @@ BUILD_EDITION="unified"
 APP_NAME="${LOCALHISTORY_APP_NAME:-Goalong History}"
 BUNDLE_ID="${LOCALHISTORY_BUNDLE_ID:-ai.goalong.localhistory}"
 DISPLAY_NAME="${LOCALHISTORY_DISPLAY_NAME:-Goalong History}"
+# CFBundleName stays the public name; make dev changes only the display name.
+BUNDLE_NAME="${LOCALHISTORY_BUNDLE_NAME:-$DISPLAY_NAME}"
 OUTPUT_DIR="${LOCALHISTORY_OUTPUT_DIR:-$ROOT_DIR/dist}"
 if [[ ! -f "$SOURCE_CODESIGN_IDENTITY" ]]; then
   echo "Source code-signing identity resolver is missing: $SOURCE_CODESIGN_IDENTITY" >&2
@@ -52,7 +54,7 @@ if [[ ! -d "$APP_PATH" || ! -f "$INFO_PLIST" ]]; then
 fi
 
 /usr/bin/plutil -replace CFBundleDisplayName -string "$DISPLAY_NAME" "$INFO_PLIST"
-/usr/bin/plutil -replace CFBundleName -string "$DISPLAY_NAME" "$INFO_PLIST"
+/usr/bin/plutil -replace CFBundleName -string "$BUNDLE_NAME" "$INFO_PLIST"
 /usr/bin/plutil -replace NSAccessibilityUsageDescription -string \
   "$DISPLAY_NAME utilise l’accessibilité uniquement pour reconnaître l’app et la fenêtre au premier plan dans votre historique. Le Temps d’écran est lu directement dans les fichiers d’Apple, en arrière-plan ; Goalong ne pilote jamais Réglages Système et n’envoie aucune saisie." \
   "$INFO_PLIST"
@@ -66,7 +68,7 @@ for locale in en fr; do
   mkdir -p "$locale_dir"
   cat > "$locale_dir/InfoPlist.strings" <<STRINGS
 "CFBundleDisplayName" = "$DISPLAY_NAME";
-"CFBundleName" = "$DISPLAY_NAME";
+"CFBundleName" = "$BUNDLE_NAME";
 STRINGS
   /usr/bin/plutil -lint "$locale_dir/InfoPlist.strings" >/dev/null
 done
@@ -103,11 +105,11 @@ if [[ "${LOCALHISTORY_DEVELOPMENT_BUILD:-0}" == 0 ]]; then
 fi
 
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")" = "$DISPLAY_NAME"
-test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")" = "$DISPLAY_NAME"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")" = "$BUNDLE_NAME"
 for locale in en fr; do
   localized="$RESOURCES/$locale.lproj/InfoPlist.strings"
   test "$(/usr/bin/plutil -extract CFBundleDisplayName raw -o - "$localized")" = "$DISPLAY_NAME"
-  test "$(/usr/bin/plutil -extract CFBundleName raw -o - "$localized")" = "$DISPLAY_NAME"
+  test "$(/usr/bin/plutil -extract CFBundleName raw -o - "$localized")" = "$BUNDLE_NAME"
 done
 printf 'Finalized %s at %s\n' "$DISPLAY_NAME" "$APP_PATH"
 if [[ "${LOCALHISTORY_DEVELOPMENT_BUILD:-0}" == 0 ]]; then
