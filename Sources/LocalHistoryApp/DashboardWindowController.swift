@@ -99,7 +99,7 @@
             let rootView = LocalHistoryDashboardView(model: viewModel)
             let hostingController = NSHostingController(rootView: rootView)
             let window = NSWindow(contentViewController: hostingController)
-            window.title = ProductIdentity.displayName
+            window.title = ProductIdentity.mainWindowTitle
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.titleVisibility = .visible
             window.titlebarAppearsTransparent = true

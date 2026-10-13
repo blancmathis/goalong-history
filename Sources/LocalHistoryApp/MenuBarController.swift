@@ -254,6 +254,7 @@
                 button.action = #selector(statusItemClicked)
                 button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             }
+            MainActor.assumeIsolated { GoalongDevChannelMarks.badge(statusItem.button) }
             menu.delegate = self
         }
 
