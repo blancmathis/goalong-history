@@ -54,6 +54,8 @@ import LocalHistoryCore
     private var lastObservation: BlockingObservation?
     private var unreadableSince: [Int32: Date] = [:]
     var onObservationRequirementChanged: ((Bool) -> Void)?
+    /// Called after each refresh, sample or allowance: the timer capsule re-reads `timerInput`.
+    var onTimerInputChanged: (() -> Void)?
     private var observing = false
     private var quitAuthorization: (blocks: Set<BlockingActiveBlock>, expires: Date)?
     var hasTimer: Bool { timer != nil }
@@ -129,6 +131,7 @@ import LocalHistoryCore
         }
         timer?.invalidate(); timer = nil
         onObservationRequirementChanged?(false); onObservationRequirementChanged = nil
+        onTimerInputChanged = nil
         clearFriction(); frictionAllowances.removeAll()
         backend?.shutdown()
         backend?.onBlockPresented = nil
@@ -779,6 +782,21 @@ import LocalHistoryCore
         }
         scheduleTimer(at: now)
         if enforceLast, var target = lastObservation { target.at = now; target.isActivation = false; enforce(target) }
+        onTimerInputChanged?()
+    }
+
+    /// In-memory state only; upcoming starts are computed only while a foreground target is known.
+    var timerInput: BlockingTimerInput {
+        let now = clock()
+        var starts: [BlockingTimerInput.Start] = []
+        if lastObservation != nil {
+            starts = document.sessions.filter { $0.start > now }.flatMap { session in session.listIDs.map { .init(listID: $0, date: session.start) } }
+            starts += lists.compactMap { list in
+                BlockingSchedule.nextStart(of: list.program, after: now, calendar: calendar).map { .init(listID: list.id, date: $0) }
+            }
+        }
+        return BlockingTimerInput(lists: lists, activeBlocks: activeBlocks, usage: todayUsage(),
+                                  allowances: frictionAllowances.filter { $0.value > now }, upcomingStarts: starts, target: lastObservation)
     }
 
     private var hasPersistedWork: Bool { !document.lists.isEmpty || !document.sessions.isEmpty || document.freeze != nil || document.passwordLock != nil }
@@ -896,6 +914,7 @@ import LocalHistoryCore
         }
         lastObservation = target
         enforce(target)
+        onTimerInputChanged?()
     }
 
     private func enforce(_ target: BlockingObservation) {
@@ -1046,6 +1065,7 @@ import LocalHistoryCore
         guard !storeFailed else { return }
         frictionAllowances[value.key] = clock().addingTimeInterval(Double(list.allowanceMinutes * 60))
         backend?.continueSlowDown(target); clearFriction()
+        onTimerInputChanged?()
     }
     /// Only an explicit launch/activation releases a renounced hidden app, never an old sample.
     func frictionActivation(_ target: BlockingObservation) {
@@ -1131,6 +1151,7 @@ import LocalHistoryCore
 
     private var modules: GoalongModuleStore?
     private weak var monitor: ContextMonitor?
+    private var timerHUD: BlockingTimerHUD?
     func start(modules: GoalongModuleStore = .shared, monitor: ContextMonitor? = nil) {
         self.modules = modules; self.monitor = monitor
         apply(enabled: modules.isEnabled(.blocking))
@@ -1149,6 +1170,10 @@ import LocalHistoryCore
             let value = BlockingController(store: .standard, backend: StandardBlockingBackend(), runsTimers: true)
             controller = value
             value.onObservationRequirementChanged = { [weak self] needed in self?.monitor?.setBlockingObservationEnabled(needed) }
+            let hud = BlockingTimerHUD { [weak value] in value?.timerInput }
+            timerHUD = hud
+            value.onTimerInputChanged = { [weak hud] in hud?.update() }
+            hud.update()
             monitor?.blockingSink = { [weak value] target in value?.observe(target) }
             monitor?.blockingKeywords = { [weak value] in value?.activeKeywords ?? [] }
             monitor?.setBlockingObservationEnabled(value.needsObservation)
@@ -1160,6 +1185,7 @@ import LocalHistoryCore
                 return
             }
             controller.shutdown()
+            timerHUD?.hide(); timerHUD = nil
             monitor?.blockingSink = nil
             monitor?.blockingKeywords = nil
             monitor?.setBlockingObservationEnabled(false)

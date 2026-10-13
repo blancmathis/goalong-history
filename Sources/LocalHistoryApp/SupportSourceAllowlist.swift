@@ -47,6 +47,8 @@ enum SupportSourceAllowlist {
         "BlockingShieldViews.swift",
         "BlockingStore.swift",
         "BlockingTabAXLane.swift",
+        "BlockingTimer.swift",
+        "BlockingTimerHUD.swift",
         "BlockingWeek.swift",
         "BoundedDiagnosticsLog.swift",
         "BraiseController.swift",
