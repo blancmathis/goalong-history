@@ -196,6 +196,14 @@ final class BlockingTimerTests: XCTestCase {
         XCTAssertEqual(frame.midX, 756); XCTAssertLessThanOrEqual(frame.maxY, 944)
         XCTAssertGreaterThan(frame.minY, screen.midY + 300)
     }
+
+    /// The panel takes the host's fitting size: a zero size would hide the capsule for good.
+    @MainActor func testHUDHostMeasuresTheCapsule() {
+        let timer = BlockingVisibleTimer(kind: .quota, listID: chess.id, listName: "Échecs", remaining: 247)
+        let size = BlockingTimerHUD.makeHost(BlockingTimerCapsule(timer: timer, pulse: 0)).fittingSize
+        XCTAssertGreaterThan(size.width, 60)
+        XCTAssertEqual(size.height, BlockingTimerCapsule.height + 2 * BlockingTimerCapsule.inset, accuracy: 0.5)
+    }
 }
 
 private final class TimerBackend: BlockingEnforcementBackend {

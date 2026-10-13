@@ -18,15 +18,15 @@ import SwiftUI
     }
 
     func update() {
-        let now = clock()
-        guard let value = input().flatMap({ BlockingTimerSelection.select($0, at: now) }) else { hide(); return }
+        let now = clock(), snapshot = input()
+        guard let value = snapshot.flatMap({ BlockingTimerSelection.select($0, at: now) }) else { hide(); return }
         if let shown, value.urgency > shown.urgency { pulse += 1 }
         shown = value
         let view = BlockingTimerCapsule(timer: value, pulse: pulse)
         let panel = self.panel ?? makePanel(view)
         host?.rootView = view
         let size = host?.fittingSize ?? .zero
-        let frame = Self.frame(size: size, on: Self.screen(for: input()?.target))
+        let frame = Self.frame(size: size, on: Self.screen(for: snapshot?.target))
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         if !panel.isVisible { panel.orderFrontRegardless() }
         // Wake when the shown second changes; a paused quota is re-read once a second.
@@ -53,12 +53,19 @@ import SwiftUI
         value.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         value.ignoresMouseEvents = true; value.isExcludedFromWindowsMenu = true
         value.isOpaque = false; value.backgroundColor = .clear; value.hasShadow = false
-        let hosting = NSHostingView(rootView: view)
-        hosting.sizingOptions = []
-        hosting.autoresizingMask = [.width, .height]
+        let hosting = Self.makeHost(view)
         value.contentView = hosting
         panel = value; host = hosting
         return value
+    }
+
+    /// Intrinsic size only: measurable, without min/max constraints on the panel.
+    /// With no sizing options `fittingSize` is zero and the capsule never shows.
+    static func makeHost(_ view: BlockingTimerCapsule) -> NSHostingView<BlockingTimerCapsule> {
+        let hosting = NSHostingView(rootView: view)
+        hosting.sizingOptions = [.intrinsicContentSize]
+        hosting.autoresizingMask = [.width, .height]
+        return hosting
     }
 
     /// Screen of the foreground window, else the one under the pointer.
