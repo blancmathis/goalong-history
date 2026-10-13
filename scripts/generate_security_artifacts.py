@@ -578,7 +578,8 @@ def release_manifest(
         "artifacts": artifacts,
     }
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
-    if os.environ.get("GITHUB_REF") == "refs/heads/main" and os.environ.get("GITHUB_WORKFLOW") == "Continuous Community macOS release":
+    # Only the final inventory binds provenance: the build-time one runs before the appcast exists.
+    if include_release_artifacts and os.environ.get("GITHUB_REF") == "refs/heads/main" and os.environ.get("GITHUB_WORKFLOW") == "Continuous Community macOS release":
         result["sourceTree"] = git_value(Path(__file__).resolve().parents[1], "rev-parse", "HEAD^{tree}")
         # The bundle embeds the source tree; the attestation binds main commit -> tree -> digests.
         if info.get("GoalongSourceRevision") != result["sourceTree"] or result["sourceDirty"]:

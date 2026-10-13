@@ -8,10 +8,11 @@ trap 'rm -rf "$WORK"' EXIT
 if [[ -n "${LOCALHISTORY_UPDATE_VERIFIER:-}" ]]; then cp "$LOCALHISTORY_UPDATE_VERIFIER" "$WORK/verify"; else xcrun swiftc "$ROOT/scripts/verify_update_archive.swift" -o "$WORK/verify"; fi
 source "$ROOT/scripts/sparkle_release.env"
 EXPECTED_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$DIST/Goalong History.app/Contents/Info.plist")"
-# GitHub may briefly serve the previous authenticated generation after replacement.
+# GitHub may serve the previous authenticated generation for minutes after replacement
+# (45 s was too short on 2026-10-11), so wait up to about 5 minutes.
 # Retry only a VALID older feed, at the unchanged client URL. Malformed/unsigned
 # feeds and a newer unexpected generation fail immediately. Check before any ZIP.
-for ((attempt=0; attempt<20; attempt++)); do
+for ((attempt=0; attempt<60; attempt++)); do
   curl --fail --location --silent --show-error --retry 3 --connect-timeout 15 --max-time 90 \
     --header 'Cache-Control: no-cache' --header 'Pragma: no-cache' \
     --proto '=https' --proto-redir '=https' "$SPARKLE_FEED_URL" -o "$WORK/feed.xml"
@@ -30,8 +31,8 @@ PY
   STATUS=$?
   set -e
   if [[ "$STATUS" == 0 ]]; then break; fi
-  [[ "$STATUS" == 2 && "$attempt" -lt 19 ]] || { echo 'Expected authenticated public build is not visible.' >&2; exit 1; }
-  sleep 2
+  [[ "$STATUS" == 2 && "$attempt" -lt 59 ]] || { echo 'Expected authenticated public build is not visible.' >&2; exit 1; }
+  sleep 5
 done
 URL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["url"])' "$WORK/feed.json")"
 PUBLIC_GET_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
