@@ -143,9 +143,13 @@
                 }
                 if popover.isShown { closePanel(); return }
                 model.refresh()
-                if let view = popover.contentViewController?.view {
-                    view.layoutSubtreeIfNeeded()
-                    popover.contentSize = NSSize(width: MenuBarPanelView.width, height: ceil(view.fittingSize.height))
+                if let host = popover.contentViewController as? NSHostingController<MenuBarPanelView> {
+                    // With no sizing options, fittingSize is wrong; ask SwiftUI for the natural height.
+                    // A zero proposal returns the fixed-size content height (the outer frame never shrinks it).
+                    let ideal = host.sizeThatFits(in: NSSize(width: MenuBarPanelView.width, height: 0))
+                    if ideal.height > 0 {
+                        popover.contentSize = NSSize(width: MenuBarPanelView.width, height: ceil(ideal.height))
+                    }
                 }
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -250,6 +254,7 @@
                 button.action = #selector(statusItemClicked)
                 button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             }
+            MainActor.assumeIsolated { GoalongDevChannelMarks.badge(statusItem.button) }
             menu.delegate = self
         }
 

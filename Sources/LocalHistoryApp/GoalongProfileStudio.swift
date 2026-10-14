@@ -139,7 +139,7 @@ extension Notification.Name {
             .tint(LHTheme.accent)
             .accentColor(LHTheme.accent)
             .goalongControls()))
-        window.title = "Comprendre mon travail — Goalong History"
+        window.title = ProductIdentity.windowTitle("Comprendre mon travail — Goalong History")
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(LHTheme.pageBackground)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]

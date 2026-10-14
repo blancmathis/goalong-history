@@ -76,10 +76,11 @@
             ownedRemovalTestHookLock.unlock()
         }
 
-        static let applicationSupportDirectory: URL = {
-            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            return base.appendingPathComponent("LocalHistory", isDirectory: true)
-        }()
+        /// `LocalHistory`, or `LocalHistory-Dev` in an isolated `make dev` copy (see GoalongBuildChannel).
+        static let applicationSupportDirectory: URL = GoalongBuildChannel.dataRoot
+
+        /// Always the real `LocalHistory`: Blocking and Concentration stakes are shared with the dev copy.
+        static let realApplicationSupportDirectory: URL = GoalongBuildChannel.realDataRoot
 
         static let eventsDirectory = applicationSupportDirectory.appendingPathComponent("events", isDirectory: true)
         static let sealsDirectory = applicationSupportDirectory.appendingPathComponent("seals", isDirectory: true)

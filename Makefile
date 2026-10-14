@@ -13,7 +13,7 @@ app:
 	LOCALHISTORY_VERSION="$(VERSION)" LOCALHISTORY_ARCHS="$(ARCHS)" ./scripts/build_app.sh
 
 dev:
-	./scripts/dev_app.sh dev
+	./scripts/dev_app.sh dev $(or $(DATA),isolated)
 
 dev-stop:
 	./scripts/dev_app.sh stop

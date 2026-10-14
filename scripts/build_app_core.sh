@@ -44,6 +44,18 @@ case "$DEVELOPMENT_BUILD" in
     ;;
   *) echo "LOCALHISTORY_DEVELOPMENT_BUILD must be 0 or 1." >&2; exit 1 ;;
 esac
+# The make dev channel (data mode, DEV icon) exists only in development bundles; releases carry no key.
+DEV_DATA_MODE="${LOCALHISTORY_DEV_DATA_MODE:-}"
+DEV_ICON_SOURCE="${LOCALHISTORY_DEV_ICON_SOURCE:-}"
+if [[ "$DEVELOPMENT_BUILD" == 1 ]]; then
+  case "$DEV_DATA_MODE" in
+    isolated|real) ;;
+    *) echo "Development bundles require LOCALHISTORY_DEV_DATA_MODE=isolated or real." >&2; exit 1 ;;
+  esac
+elif [[ -n "$DEV_DATA_MODE" || -n "$DEV_ICON_SOURCE" ]]; then
+  echo "LOCALHISTORY_DEV_DATA_MODE and LOCALHISTORY_DEV_ICON_SOURCE are reserved for development bundles." >&2
+  exit 1
+fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build_app.sh must run on macOS." >&2
@@ -231,7 +243,7 @@ if ! /usr/bin/otool -L "$CONTENTS/MacOS/$EXECUTABLE_NAME" | /usr/bin/grep -q '@r
   exit 1
 fi
 
-ICON_SOURCE="$ROOT_DIR/Distribution/AppIcon.png"
+ICON_SOURCE="${DEV_ICON_SOURCE:-$ROOT_DIR/Distribution/AppIcon.png}"
 if [[ ! -f "$ICON_SOURCE" && -f "$ROOT_DIR/scripts/generate_distribution_assets.swift" ]]; then
   GENERATED_ASSETS="$WORK_DIR/generated-assets"
   mkdir -p "$GENERATED_ASSETS"
@@ -326,6 +338,8 @@ PLIST
 
 if [[ "$DEVELOPMENT_BUILD" == 1 ]]; then
   /usr/bin/plutil -insert GoalongDevelopmentBuild -bool YES "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongBuildChannel -string dev "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongDevDataMode -string "$DEV_DATA_MODE" "$CONTENTS/Info.plist"
 fi
 /usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" --configure-info "$CONTENTS/Info.plist"
 plutil -lint "$CONTENTS/Info.plist" >/dev/null

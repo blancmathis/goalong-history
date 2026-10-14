@@ -61,7 +61,7 @@ enum SupportReportStore {
         }
         let host = NSHostingController(rootView: SupportRequestView(controller: self).goalongControls())
         let window = NSWindow(contentViewController: host)
-        window.title = "Signaler un problème"
+        window.title = ProductIdentity.windowTitle("Signaler un problème")
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false

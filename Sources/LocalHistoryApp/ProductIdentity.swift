@@ -1,5 +1,6 @@
 #if os(macOS)
     import Foundation
+    import LocalHistoryCore
 
     enum ProductIdentity {
         static let canonicalDisplayName = "Goalong History"
@@ -22,6 +23,12 @@
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .first(where: { !$0.isEmpty && !legacyOrTechnicalNames.contains($0) })
                 ?? canonicalDisplayName
+        }
+
+        /// Window titles end with " — Dev" in the `make dev` copy only.
+        static func windowTitle(_ title: String) -> String { GoalongBuildChannel.current.windowTitle(title) }
+        static var mainWindowTitle: String {
+            GoalongBuildChannel.current.isDevelopment ? windowTitle(canonicalDisplayName) : displayName
         }
 
         static let rollingReleaseTag = "latest-main"

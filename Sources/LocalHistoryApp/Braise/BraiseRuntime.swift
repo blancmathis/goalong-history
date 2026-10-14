@@ -113,6 +113,7 @@ import SwiftUI
         item.button?.target = self; item.button?.action = #selector(clicked)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         item.button?.setAccessibilityLabel("Braise, filtre rouge de Goalong")
+        GoalongDevChannelMarks.badge(item.button)
         panel.behavior = .transient
         panel.contentSize = NSSize(width: 480, height: 680)
         panel.contentViewController = NSHostingController(rootView: BraisePageContent(controller: controller, compact: true).goalongControls())

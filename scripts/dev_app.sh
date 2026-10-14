@@ -4,8 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
 MODE="${1:-}"
-if [[ $# != 1 || ( "$MODE" != dev && "$MODE" != stop ) ]]; then
-  echo "Usage: $0 dev|stop" >&2; exit 2
+DATA="${2:-isolated}"
+if [[ $# -lt 1 || $# -gt 2 || ( "$MODE" != dev && "$MODE" != stop ) || ( "$MODE" == stop && $# == 2 ) ]] ||
+   [[ "$DATA" != isolated && "$DATA" != keep && "$DATA" != real ]]; then
+  echo "Usage: $0 dev [isolated|keep|real] | $0 stop" >&2; exit 2
 fi
 [[ "$(uname -s)" == Darwin ]] || { echo 'Local iteration requires macOS.' >&2; exit 1; }
 INSTALLED_APP='/Applications/Goalong History.app'
@@ -14,6 +16,23 @@ DEV_APP="$DEV_ROOT/Goalong History.app"
 STAGING="$DEV_ROOT/staging"
 CONTROL="$DEV_ROOT/dev-app-control"
 STARTED="$(python3 -c 'import time; print(time.monotonic())')"
+REAL_DATA="$HOME/Library/Application Support/LocalHistory"
+DEV_DATA="$HOME/Library/Application Support/LocalHistory-Dev"
+SWITCH_BACKUPS="$REAL_DATA/app-backups/dev-switch"
+
+# Blocking and Concentration stakes stay real in every mode; keep the last 20 states before each switch.
+backup_blocking_state() {
+  local stamp target name
+  stamp="$(date +%Y%m%d-%H%M%S)-$1"
+  target="$SWITCH_BACKUPS/$stamp"
+  mkdir -p -m 700 "$SWITCH_BACKUPS"
+  mkdir -m 700 "$target"
+  for name in Blocking Focus; do
+    if [[ -d "$REAL_DATA/$name" && ! -L "$REAL_DATA/$name" ]]; then cp -cRp "$REAL_DATA/$name" "$target/$name"; fi
+  done
+  ls -1 "$SWITCH_BACKUPS" | sort -r | tail -n +21 | while IFS= read -r name; do rm -rf -- "${SWITCH_BACKUPS:?}/$name"; done
+  echo "Blocking state saved: $target"
+}
 
 # Refuse redirected output before creating/removing anything or quitting an app.
 python3 - "$ROOT" "$INSTALLED_APP" <<'PY'
@@ -51,7 +70,11 @@ if [[ "$MODE" == dev ]]; then
   fi
   export LOCALHISTORY_APP_NAME='Goalong History'
   export LOCALHISTORY_EXECUTABLE_NAME='Goalong History'
-  export LOCALHISTORY_DISPLAY_NAME='Goalong History'
+  export LOCALHISTORY_DISPLAY_NAME='Goalong History Dev' LOCALHISTORY_BUNDLE_NAME='Goalong History'
+  # The bundle carries its data mode, so a relaunch keeps it (no environment variable).
+  export LOCALHISTORY_DEV_DATA_MODE="$([[ "$DATA" == real ]] && echo real || echo isolated)"
+  "$CONTROL" badge-icon "$ROOT/Distribution/AppIcon.png" "$DEV_ROOT/AppIcon-dev.png"
+  export LOCALHISTORY_DEV_ICON_SOURCE="$DEV_ROOT/AppIcon-dev.png"
   export LOCALHISTORY_BUNDLE_ID='ai.goalong.localhistory'
   export LOCALHISTORY_APP_ENTITLEMENTS="$ROOT/Distribution/GoalongHistory.entitlements"
   export LOCALHISTORY_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INSTALLED_APP/Contents/Info.plist")"
@@ -75,11 +98,23 @@ if [[ "$MODE" == dev ]]; then
   codesign --verify --strict "-R=$INSTALLED_REQUIREMENT" "$STAGING/Goalong History.app"
   "$CONTROL" quit-all "$DEV_APP" "$INSTALLED_APP"
   # Never replace files beneath a running process. Compilation/signing failures leave it running.
+  backup_blocking_state dev
+  if [[ "$DATA" == isolated || ( "$DATA" == keep && ! -d "$DEV_DATA" ) ]]; then
+    if ! "$CONTROL" seed-data "$REAL_DATA" "$DEV_DATA"; then
+      "$CONTROL" launch "$INSTALLED_APP" "$DEV_APP"; exit 1
+    fi
+  fi
   rm -rf -- "$DEV_APP"
   mv "$STAGING/Goalong History.app" "$DEV_APP"
   "$CONTROL" launch "$DEV_APP" "$INSTALLED_APP"
+  if [[ "$DATA" == real ]]; then
+    echo 'WARNING: DATA=real — this dev copy reads and WRITES your real Goalong data and preferences.' >&2
+  else
+    echo "Dev data: $DEV_DATA (blocking and Concentration stakes stay real; preferences are shared)."
+  fi
 else
   "$CONTROL" quit-dev "$DEV_APP" "$INSTALLED_APP"
+  backup_blocking_state stop
   "$CONTROL" launch "$INSTALLED_APP" "$DEV_APP"
 fi
 python3 - "$MODE" "$STARTED" <<'PY'

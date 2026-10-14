@@ -149,7 +149,7 @@
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Partager un historique signé"
+            window.title = ProductIdentity.windowTitle("Partager un historique signé")
             window.center()
             super.init(window: window)
             window.delegate = self

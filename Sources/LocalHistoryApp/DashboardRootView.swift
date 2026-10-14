@@ -51,6 +51,7 @@
                     }
                 }
             }
+            .safeAreaInset(edge: .top, spacing: 0) { GoalongDevBanner() }
             .overlay { GoalongToastHost() }
             .environment(\.goalongRecordingModel, model)
             .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay).goalongControls() }
