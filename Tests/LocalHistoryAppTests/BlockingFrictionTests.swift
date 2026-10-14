@@ -28,7 +28,7 @@ final class BlockingFrictionTests: XCTestCase {
         c.renounceFriction(); XCTAssertEqual(c.frictionUsage?.renounced?[list.id], 1); XCTAssertEqual(backend.renounces, 1)
         XCTAssertEqual(c.frictionUsage?.continued?[list.id], 1)
     }
-    @MainActor func testHardBlockAlwaysWinsAndPrivacyFailsClosed() {
+    @MainActor func testHardBlockAlwaysWinsAndPrivateWindowFollowsSlowDown() {
         let now = Date(); let slow = BlockList(name: "Slow", sites: [.init(pattern: "example.org")], action: .slowDown)
         let hard = BlockList(name: "Hard", sites: [.init(pattern: "example.org")])
         let backend = FrictionBackend(), c = BlockingController(document: .init(lists: [slow, hard]), clock: { now }, backend: backend)
@@ -37,7 +37,7 @@ final class BlockingFrictionTests: XCTestCase {
         let only = BlockingController(document: .init(lists: [slow]), clock: { now }, backend: backend)
         only.start(listIDs: [slow.id], until: now.addingTimeInterval(600), lock: .free)
         var privateTarget = target(now); privateTarget.privateWindow = true; only.observe(privateTarget)
-        XCTAssertNil(only.friction); XCTAssertEqual(backend.blocks, 2)
+        XCTAssertNotNil(only.friction); XCTAssertEqual(backend.blocks, 1)
     }
     @MainActor func testSlowDownLockStrictnessAndFreeze() {
         let now = Date(); var list = BlockList(name: "Slow", sites: [.init(pattern: "example.org")], action: .slowDown)

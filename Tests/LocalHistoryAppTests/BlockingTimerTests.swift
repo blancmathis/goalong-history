@@ -38,17 +38,15 @@ final class BlockingTimerTests: XCTestCase {
         XCTAssertEqual(BlockingTimerSelection.select(earned, at: now)?.text, "Échecs · 10:00")
     }
 
-    func testQuotaPausedWhenIdleOrPrivate() throws {
+    func testQuotaPausedWhenIdleButCountsInPrivateWindows() throws {
         let idle = try XCTUnwrap(BlockingTimerSelection.select(input(used: 3_000, target: target(now, idle: 200)), at: now.addingTimeInterval(5)))
         XCTAssertFalse(idle.counting); XCTAssertEqual(idle.text, "Échecs · 10:00")
         XCTAssertTrue(idle.accessibilityLabel.contains("en pause"))
-        // A private window hides the address: a site list veils it (fail closed), an app rule keeps
-        // the capsule but the controller does not charge the quota.
+        // A private window follows the same rules: the quota shows and counts as in a normal window.
         var hidden = target(now); hidden.privateWindow = true
-        XCTAssertNil(BlockingTimerSelection.select(input(used: 3_000, target: hidden), at: now.addingTimeInterval(5)))
-        var browser = chess; browser.apps = [.init(bundleIdentifier: "browser", name: "Navigateur")]
-        let app = BlockingTimerSelection.select(input(used: 3_000, target: hidden, lists: [browser]), at: now.addingTimeInterval(5))
-        XCTAssertEqual(app?.counting, false); XCTAssertEqual(app?.text, "Échecs · 10:00")
+        let shown = BlockingTimerSelection.select(input(used: 3_000, target: hidden), at: now.addingTimeInterval(5))
+        XCTAssertEqual(shown, BlockingTimerSelection.select(input(used: 3_000, target: target(now)), at: now.addingTimeInterval(5)))
+        XCTAssertEqual(shown?.counting, true)
     }
 
     func testBreakShowsWhateverTheForegroundApp() throws {

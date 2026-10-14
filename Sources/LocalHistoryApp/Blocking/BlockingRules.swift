@@ -22,7 +22,6 @@ struct BlockingObservation: Equatable {
     var isActivation = false
     /// Only configured, folded keywords, never the tab/window title itself.
     var titleKeywordMatches: Set<String> = []
-    var privateWindowMarkers: [String]? = nil
 }
 
 struct BlockingMatchExplanation: Equatable {
@@ -134,8 +133,8 @@ enum BlockingRules {
         return expression.firstMatch(in: target, range: NSRange(target.startIndex..., in: target)) != nil
     }
 
-    static func matchingTitleKeywords(_ keywords: [String], readTitle: () -> String?, privateWindow: Bool) -> Set<String> {
-        guard !privateWindow, !keywords.isEmpty, let title = readTitle() else { return [] }
+    static func matchingTitleKeywords(_ keywords: [String], readTitle: () -> String?) -> Set<String> {
+        guard !keywords.isEmpty, let title = readTitle() else { return [] }
         return Set(keywords.filter { matchesKeyword($0, text: title) }.map(foldKeyword))
     }
 
@@ -151,18 +150,16 @@ enum BlockingRules {
         if target.isBrowser {
             if list.mode == .block && appMatch { return .init(blocked: true, reason: .appRule) }
             if target.isInternalPage { return .init(blocked: false, reason: .internalPage) }
-            let rawURL = target.privateWindow ? nil : target.url
+            let rawURL = target.url
             let url = rawURL.flatMap(normalize)
             if list.mode == .block, let url,
                let rule = list.exceptions?.first(where: { matches($0, url: url) }) {
                 return .init(blocked: false, reason: .exception(rule.pattern))
             }
-            if !target.privateWindow {
-                for keyword in list.keywords ?? [] {
-                    if let text = url ?? rawURL, matchesKeyword(keyword, text: text) { return .init(blocked: true, reason: .keyword(keyword, .url)) }
-                    if target.titleKeywordMatches.contains(foldKeyword(keyword)) || title.map({ matchesKeyword(keyword, text: $0) }) == true {
-                        return .init(blocked: true, reason: .keyword(keyword, .title))
-                    }
+            for keyword in list.keywords ?? [] {
+                if let text = url ?? rawURL, matchesKeyword(keyword, text: text) { return .init(blocked: true, reason: .keyword(keyword, .url)) }
+                if target.titleKeywordMatches.contains(foldKeyword(keyword)) || title.map({ matchesKeyword(keyword, text: $0) }) == true {
+                    return .init(blocked: true, reason: .keyword(keyword, .title))
                 }
             }
             guard rawURL != nil else { return .init(blocked: false, reason: .unreadableURL) }

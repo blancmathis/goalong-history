@@ -95,7 +95,6 @@ final class BlockingTabAXLane {
 
     private func matches(_ target: BlockingObservation) -> Bool {
         guard target.windowBoundary?.matchesFocusedWindow(allowMainWindow: true) == true else { return false }
-        guard !target.privateWindow else { return true }
         let app = AXAccess.application(target.pid)
         guard let window = AXReader.focusedWindow(for: app) ?? AXReader.element(app, attribute: kAXMainWindowAttribute as CFString) else { return false }
         let raw = AXReader.browserURL(from: window, addressFieldMarkers: target.addressFieldMarkers ?? []).map {
@@ -106,9 +105,6 @@ final class BlockingTabAXLane {
         // A same-URL tab can change its title while an action waits. Only configured
         // keyword evidence crosses the lane; the title is never stored in a continuation.
         let title = AXReader.string(window, attribute: kAXTitleAttribute as CFString)
-        var signals: [String?] = [title, AXReader.string(window, attribute: kAXDescriptionAttribute as CFString)]
-        signals.append(contentsOf: AXReader.browserChromeLabels(window, limit: 80))
-        guard !PrivacyClassifier.containsPrivateMarker(in: signals, markers: target.privateWindowMarkers ?? []) else { return false }
         return title.map { current in target.titleKeywordMatches.contains { BlockingRules.matchesKeyword($0, text: current) } } ?? false
     }
 }

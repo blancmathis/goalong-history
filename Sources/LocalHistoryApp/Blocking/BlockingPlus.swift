@@ -53,7 +53,6 @@ struct BlockingListFeedback: Equatable, Hashable {
 struct BlockingVeilPresentation: Equatable {
     enum Reason: Equatable {
         case site(String)
-        case privateWindow
         case unsupportedBrowser(String)
         case quotaUsed(String, minutes: Int)
     }

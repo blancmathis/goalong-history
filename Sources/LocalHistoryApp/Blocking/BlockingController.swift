@@ -897,7 +897,7 @@ import LocalHistoryCore
         if let previous = lastObservation, previous.pid == target.pid, previous.url == target.url,
            previous.titleKeywordMatches == target.titleKeywordMatches,
            previous.windowIdentity == target.windowIdentity, previous.sessionAvailable, target.sessionAvailable,
-           previous.idleSeconds <= 120, target.idleSeconds <= 120, !previous.privateWindow && !target.privateWindow {
+           previous.idleSeconds <= 120, target.idleSeconds <= 120 {
             let from = max(previous.at, calendar.startOfDay(for: target.at))
             let seconds = min(15, max(0, target.at.timeIntervalSince(from)))
             var usage = todayUsage()
@@ -933,13 +933,12 @@ import LocalHistoryCore
                !list.apps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { continue }
             let siteRules = target.isBrowser && BlockingRules.hasSites(list)
             var special: BlockingVeilPresentation.Reason?
-            if siteRules && target.privateWindow { special = .privateWindow }
-            else if siteRules && !target.isInternalPage && target.url == nil {
+            if siteRules && !target.isInternalPage && target.url == nil {
                 let first = unreadableSince[target.pid] ?? target.at; unreadableSince[target.pid] = first
                 if !siteBlockingAvailable || target.at.timeIntervalSince(first) >= 3 { special = .unsupportedBrowser(NSRunningApplication(processIdentifier: target.pid)?.localizedName ?? target.bundleIdentifier) }
             } else { unreadableSince[target.pid] = nil }
             guard special != nil || BlockingRules.wouldBlock(target, list: list) else { continue }
-            // Privacy/unreadable addresses cannot establish eligible quota use: fail closed.
+            // Unreadable addresses cannot establish eligible quota use: fail closed.
             let quotaLeft = BlockingRules.effectiveQuotaSeconds(list, usage: usage).map { (usage.quotaSecondsUsed[list.id] ?? 0) < $0 } ?? true
             if special == nil, list.effectiveAction == .slowDown, quotaLeft, !storeFailed {
                 if target.isForeground || target.isActivation { slowCandidates.append((list, block)) }
@@ -985,9 +984,8 @@ import LocalHistoryCore
         for list in lists {
             guard let end = activeBlocks.filter({ $0.listIDs.contains(list.id) && $0.start <= now && $0.end > now }).map(\.end).max(),
                   usage.breakEnds[list.id].map({ $0 > now }) != true else { continue }
-            let special = BlockingRules.hasSites(list) && (target.privateWindow
-                || (!target.isInternalPage && target.url == nil && (!siteBlockingAvailable
-                    || unreadableSince[target.pid].map({ now.timeIntervalSince($0) >= 3 }) == true)))
+            let special = BlockingRules.hasSites(list) && !target.isInternalPage && target.url == nil && (!siteBlockingAvailable
+                || unreadableSince[target.pid].map({ now.timeIntervalSince($0) >= 3 }) == true)
             let required = special || (BlockingRules.wouldBlock(target, list: list)
                 && (list.effectiveAction == .slowDown
                     || (BlockingRules.effectiveQuotaSeconds(list, usage: usage).map({ (usage.quotaSecondsUsed[list.id] ?? 0) >= $0 }) ?? true)))

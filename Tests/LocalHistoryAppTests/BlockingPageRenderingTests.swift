@@ -91,7 +91,6 @@ final class BlockingPageRenderingTests: XCTestCase {
             try render("typing-\(suffix)", width: 560,
                        BlockingTypingChallengeSheet(text: String(repeating: "aB3kZ", count: 24), onSubmit: { _ in }, onCancel: {}))
             for (name, reason) in [("site", BlockingVeilPresentation.Reason.site("youtube.com")),
-                                   ("private", .privateWindow),
                                    ("unsupported", .unsupportedBrowser("Firefox")),
                                    ("quota", .quotaUsed("instagram.com", minutes: 30))] {
                 let veil = BlockingVeilPresentation(reason: reason, listName: "Réseaux sociaux",

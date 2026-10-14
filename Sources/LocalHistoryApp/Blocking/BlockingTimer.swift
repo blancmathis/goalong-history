@@ -27,7 +27,7 @@ struct BlockingVisibleTimer: Equatable {
     var listID: UUID
     var listName: String
     var remaining: TimeInterval
-    /// False only for a quota that does not count right now (idle, private window, locked session).
+    /// False only for a quota that does not count right now (idle, locked session).
     var counting = true
 
     /// Rounded up: the capsule reads 0:00 exactly when the time is used.
@@ -105,7 +105,7 @@ enum BlockingTimerSelection {
             }
             if !veiled {
                 // Mirrors the lists `BlockingController.observe` charges for this target.
-                let counting = target.sessionAvailable && target.idleSeconds <= idleLimit && !target.privateWindow
+                let counting = target.sessionAvailable && target.idleSeconds <= idleLimit
                 let elapsed = counting ? min(quotaExtrapolationLimit, max(0, now.timeIntervalSince(target.at))) : 0
                 for list in input.lists where list.quotaMinutesPerDay != nil && active(list.id) && !onBreak(list.id, at: now) {
                     guard let left = quotaLeft(list), left > 0, BlockingRules.wouldBlock(target, list: list) else { continue }

@@ -93,26 +93,25 @@ final class BlockingExceptionsKeywordsTests: XCTestCase {
         XCTAssertFalse(BlockingController.explain(url: "https://google.com/search?q=ecole", list: list).blocked)
         XCTAssertFalse(BlockingController.explain(url: "about:blank", title: "école", list: list).blocked)
     }
-    func testKeywordsNeverApplyToNonBrowserAppsOrPrivateTargets() {
+    func testKeywordsNeverApplyToNonBrowserAppsButApplyInPrivateWindows() {
         let list = BlockList(name: "Mots", keywords: ["video"])
         var value = target(url: "example.com/video", matches: ["video"])
         value.isBrowser = false
         XCTAssertFalse(BlockingRules.explain(value, list: list, title: "video").blocked)
         value.isBrowser = true; value.privateWindow = true
-        XCTAssertFalse(BlockingRules.explain(value, list: list, title: "video").blocked)
+        XCTAssertTrue(BlockingRules.explain(value, list: list, title: "video").blocked)
     }
     func testTitleMatchWorksWhenAddressIsMissing() {
         let list = BlockList(name: "Mots", keywords: ["video"])
         XCTAssertTrue(BlockingRules.wouldBlock(target(url: nil, matches: ["video"]), list: list))
         XCTAssertFalse(BlockingRules.wouldBlock(target(url: nil), list: list))
     }
-    func testTitleReadGateDoesNotInvokeReaderWithoutKeywordsOrInPrivate() {
+    func testTitleReadGateDoesNotInvokeReaderWithoutKeywords() {
         var reads = 0
         let read = { reads += 1; return Optional("Video - Recherche Google") }
-        XCTAssertTrue(BlockingRules.matchingTitleKeywords([], readTitle: read, privateWindow: false).isEmpty)
-        XCTAssertTrue(BlockingRules.matchingTitleKeywords(["video"], readTitle: read, privateWindow: true).isEmpty)
+        XCTAssertTrue(BlockingRules.matchingTitleKeywords([], readTitle: read).isEmpty)
         XCTAssertEqual(reads, 0)
-        XCTAssertEqual(BlockingRules.matchingTitleKeywords(["video"], readTitle: read, privateWindow: false), ["video"])
+        XCTAssertEqual(BlockingRules.matchingTitleKeywords(["video"], readTitle: read), ["video"])
         XCTAssertEqual(reads, 1)
     }
     func testReaderWithoutKeywordsAddsNoTitleReadToExistingPrivateClassifier() {
@@ -134,17 +133,17 @@ final class BlockingExceptionsKeywordsTests: XCTestCase {
         let next = AXAccess.withClient(tree.client) { reader.captureBlocking(parameters: input) }
         XCTAssertTrue(next?.titleKeywordMatches.isEmpty == true)
     }
-    func testPrivateReaderAddsNoKeywordTitleReadAndDoesNotReadAddress() {
+    func testPrivateReaderReadsAddressAndMatchesTitleKeywordsInMemory() {
         let baseline = ScriptedAXTree(browser: true), withKeywords = ScriptedAXTree(browser: true)
         for tree in [baseline, withKeywords] { tree.attributes[Int(CFHash(tree.window))]?["AXTitle"] = "Private Browsing video" as CFString }
         let first = AXAccess.withClient(baseline.client) { ContextAXReader().captureBlocking(parameters: parameters()) }
         let second = AXAccess.withClient(withKeywords.client) { ContextAXReader().captureBlocking(parameters: parameters(keywords: ["video"])) }
         XCTAssertTrue(first?.privateWindow == true); XCTAssertTrue(second?.privateWindow == true)
-        XCTAssertEqual(withKeywords.reads, baseline.reads)
-        XCTAssertFalse(withKeywords.reads.contains("AXDocument")); XCTAssertFalse(withKeywords.reads.contains("AXValue"))
-        XCTAssertTrue(second?.titleKeywordMatches.isEmpty == true)
+        XCTAssertEqual(first?.url, "example.com/work"); XCTAssertEqual(second?.url, "example.com/work")
+        XCTAssertEqual(second?.titleKeywordMatches, ["video"])
+        XCTAssertFalse(Mirror(reflecting: second!).children.contains { $0.label == "title" || $0.label == "windowTitle" })
     }
-    func testKeywordReaderRechecksPrivateFlagBeforeEachTitleMatch() {
+    func testKeywordReaderMatchesTitleInPrivateWindowToo() {
         let tree = ScriptedAXTree(browser: true), reader = ContextAXReader(), input = parameters(keywords: ["video"])
         tree.attributes[Int(CFHash(tree.window))]?["AXTitle"] = "video" as CFString
         XCTAssertEqual(AXAccess.withClient(tree.client) { reader.captureBlocking(parameters: input) }?.titleKeywordMatches, ["video"])
@@ -152,8 +151,7 @@ final class BlockingExceptionsKeywordsTests: XCTestCase {
         tree.reads = []
         let result = AXAccess.withClient(tree.client) { reader.captureBlocking(parameters: input) }
         XCTAssertTrue(result?.privateWindow == true)
-        XCTAssertTrue(result?.titleKeywordMatches.isEmpty == true)
-        XCTAssertFalse(tree.reads.contains("AXDocument"))
+        XCTAssertEqual(result?.titleKeywordMatches, ["video"])
     }
     func testNativeReaderNeverRequestsKeywordTitle() {
         let tree = ScriptedAXTree(), input = parameters(keywords: ["video"], bundle: "test.native")

@@ -355,7 +355,7 @@
                     symbol: "person.fill.questionmark",
                     title: "Navigation privée",
                     message:
-                        "Votre choix pour les fenêtres privées est indiqué ci-dessus. La détection dépend du navigateur ; utilisez la pause pour une activité sensible.",
+                        "Votre choix pour les fenêtres privées est indiqué ci-dessus. La détection dépend du navigateur ; utilisez la pause pour une activité sensible. Pendant un blocage, Goalong lit l’adresse en mémoire pour appliquer vos listes ; il ne l’enregistre jamais.",
                     tint: LHTheme.privateTint
                 )
                 protectionCard(

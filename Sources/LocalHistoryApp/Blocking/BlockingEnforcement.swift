@@ -61,7 +61,7 @@ private final class BlockingFreezePanel: NSPanel {
     private var observedBrowserSupport: [String: Bool] = [:]
     private var observedBrowserNames: [String: String] = [:]
     func observeBrowser(_ target: BlockingObservation) {
-        guard target.isForeground, target.isBrowser, !target.privateWindow, !target.bundleIdentifier.isEmpty else { return }
+        guard target.isForeground, target.isBrowser, !target.bundleIdentifier.isEmpty else { return }
         observedBrowserSupport[target.bundleIdentifier] = target.url != nil || target.isInternalPage
         if observedBrowserNames[target.bundleIdentifier] == nil {
             observedBrowserNames[target.bundleIdentifier] = NSRunningApplication(processIdentifier: target.pid)?.localizedName

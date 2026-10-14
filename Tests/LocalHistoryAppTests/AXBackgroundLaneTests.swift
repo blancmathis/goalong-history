@@ -61,15 +61,14 @@ final class AXBackgroundLaneTests: XCTestCase {
         wait(for: [finished], timeout: 3)
     }
 
-    func testPrivateBlockingLaneReadsNoAddressOrText() {
+    func testPrivateBlockingLaneReadsAddressButNoText() {
         let tree = ScriptedAXTree(browser: true)
         tree.attributes[Int(CFHash(tree.window))]?["AXTitle"] = "Private Browsing" as CFString
         let complete = expectation(description: "private observation")
         let lane = BlockingAXLane(client: tree.client)
         lane.request(input()) { result in
             XCTAssertTrue(result?.privateWindow == true)
-            XCTAssertNil(result?.url)
-            XCTAssertFalse(tree.reads.contains("AXDocument"))
+            XCTAssertEqual(result?.url, "example.com/work")
             XCTAssertFalse(tree.reads.contains("AXValue"))
             XCTAssertFalse(tree.reads.contains("AXSelectedText"))
             complete.fulfill()

@@ -76,7 +76,8 @@ final class AXAsyncCaptureTests: XCTestCase {
         wait(for: [done], timeout: 3)
         XCTAssertEqual(sequence, ["blocking", "history"])
         XCTAssertEqual(tree.reads, baselineTree.reads, "Only the blocking classifier may read; history adds zero RPCs")
-        for forbidden in ["AXFocusedApplication", "AXFocusedUIElement", "AXDocument", "AXValue", "AXSelectedText"] {
+        // The blocking lane reads the address in memory; history reads nothing beyond it.
+        for forbidden in ["AXFocusedApplication", "AXFocusedUIElement", "AXValue", "AXSelectedText"] {
             XCTAssertFalse(tree.reads.contains(forbidden), forbidden)
         }
     }

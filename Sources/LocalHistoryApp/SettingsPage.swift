@@ -152,7 +152,7 @@ import AppKit
                             else { var next = model.appliedSettings; next.redactAllURLQueryValues = true; _ = model.applyRecordingChoice(next) }
                         }))
                         .toggleStyle(.goalongSwitch)
-                    Text("La détection des fenêtres privées dépend du navigateur. Utilisez Pause pour une activité sensible.")
+                    Text("La détection des fenêtres privées dépend du navigateur. Utilisez Pause pour une activité sensible. Pendant un blocage, Goalong lit l’adresse en mémoire pour appliquer vos listes ; il ne l’enregistre jamais.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }.padding(.top, 12)
             }.font(.system(size: 13))

@@ -66,7 +66,6 @@ struct BlockedSiteVeil: View {
     private var icon: BlockingItem {
         switch presentation.reason {
         case .site(let host), .quotaUsed(let host, _): return .site(host)
-        case .privateWindow: return .symbol("eyeglasses")
         case .unsupportedBrowser(let name): return .app(BlockAppRule(bundleIdentifier: "", name: name))
         }
     }
@@ -74,7 +73,6 @@ struct BlockedSiteVeil: View {
     private var title: String {
         switch presentation.reason {
         case .site(let host), .quotaUsed(let host, _): return host
-        case .privateWindow: return "Navigation privée"
         case .unsupportedBrowser(let name): return "\(name) n’est pas pris en charge"
         }
     }
@@ -93,7 +91,6 @@ struct BlockedSiteVeil: View {
         switch presentation.reason {
         case .site: return "Liste « \(presentation.listName) »."
         case .quotaUsed(_, let minutes): return "Vos \(BlockingFormat.duration(minutes: minutes)) du jour sont passées. Liste « \(presentation.listName) »."
-        case .privateWindow: return "Pendant un blocage de sites, les fenêtres privées sont couvertes : Goalong ne lit jamais leur adresse."
         case .unsupportedBrowser: return "Goalong ne lit pas l’adresse dans ce navigateur. Pendant un blocage de sites, il reste couvert. Safari, Chrome, Edge, Brave, Arc et Aside sont pris en charge."
         }
     }

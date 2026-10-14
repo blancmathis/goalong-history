@@ -245,7 +245,8 @@
         }
 
         /// Ephemeral blocking lane. No history policy/cache, retained title, focused text or Jev call.
-        /// The private flag is resolved before any address read, including capability discovery.
+        /// A private window follows the same rules: its address and title are read here, in memory only,
+        /// to decide a block. The private flag stays on the observation so history never keeps them.
         func captureBlocking(parameters: ContextReadParameters, of application: ForegroundAXApplication? = nil) -> BlockingObservation? {
             guard let running = application ?? parameters.foregroundApplication else { return nil }
             let app = AppSnapshot(name: running.localizedName ?? "", bundleIdentifier: running.bundleIdentifier, processIdentifier: running.processIdentifier)
@@ -268,7 +269,6 @@
             result.windowIdentity = Int(CFHash(window))
             result.windowBoundary = AXReadBoundary(window: window, pid: running.processIdentifier)
             result.addressFieldMarkers = parameters.config.addressFieldMarkers
-            result.privateWindowMarkers = parameters.config.privateWindowMarkers
             var position: CFTypeRef?, size: CFTypeRef?
             AXAccess.copyAttributeValue(window, kAXPositionAttribute as CFString, &position)
             AXAccess.copyAttributeValue(window, kAXSizeAttribute as CFString, &size)
@@ -294,11 +294,6 @@
                 if blockingPrivateWindows.count >= 64 { blockingPrivateWindows.removeAll() }
                 blockingPrivateWindows[key] = (result.privateWindow, result.at)
             }
-            if result.privateWindow {
-                // An unknown app counts as a browser only when it shows an address field, found without reading it.
-                if !known { result.isBrowser = AXReader.hasAddressField(in: window, addressFieldMarkers: parameters.config.addressFieldMarkers) }
-                return result
-            }
             if let raw = AXReader.browserURL(from: window, addressFieldMarkers: parameters.config.addressFieldMarkers) {
                 result.isBrowser = true
                 let lower = raw.lowercased()
@@ -311,7 +306,7 @@
             }
             if result.isBrowser, !result.isInternalPage {
                 result.titleKeywordMatches = BlockingRules.matchingTitleKeywords(parameters.blockingKeywords,
-                    readTitle: { AXReader.string(window, attribute: kAXTitleAttribute as CFString) }, privateWindow: result.privateWindow)
+                    readTitle: { AXReader.string(window, attribute: kAXTitleAttribute as CFString) })
             }
             return result
         }

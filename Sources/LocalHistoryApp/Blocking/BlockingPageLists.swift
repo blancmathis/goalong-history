@@ -635,7 +635,7 @@ struct BlockingProgramLock: View {
 enum BlockingItem: Hashable {
     case site(String)
     case app(BlockAppRule)
-    /// A thing without an icon of its own, such as a private window.
+    /// A thing without an icon of its own.
     case symbol(String)
 }
 

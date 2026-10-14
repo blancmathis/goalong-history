@@ -1,5 +1,9 @@
 # Changelog
 
+## À publier — navigation privée pendant un blocage
+
+- **Les fenêtres privées suivent vos listes, comme les fenêtres normales.** Avant, une liste de sites active couvrait toute fenêtre privée, quel que soit le site. Maintenant, les sites autorisés restent utilisables ; les sites des listes, les exceptions, les mots-clés et le quota s’appliquent comme ailleurs. Pendant un blocage, Goalong lit l’adresse en mémoire pour appliquer vos listes ; il ne l’enregistre jamais. L’historique des fenêtres privées garde votre réglage.
+
 ## À publier — mises à jour plus légères
 
 - **Une mise à jour télécharge environ 10 Mo au lieu de 215 Mo.** Chaque version propose une mise à jour partielle depuis les trois versions précédentes : seuls les fichiers changés sont téléchargés. Elle est signée comme l’archive complète. Si elle ne s’applique pas, Goalong télécharge l’archive complète, comme avant.

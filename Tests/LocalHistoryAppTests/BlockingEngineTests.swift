@@ -196,16 +196,45 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertEqual(c.snapshot.usage?.quotaSecondsUsed[list.id], 5)
         XCTAssertEqual(c.snapshot.usage?.day, "2026-10-06")
     }
-    @MainActor func testPrivateAndUnsupportedBrowserFailClosed() {
-        var now = date(); let backend = FakeBlockingBackend()
-        let list = BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "youtube.com")], quotaMinutesPerDay: 30)
-        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
-        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .free)
-        var t = target(now, url: nil); t.privateWindow = true; c.observe(t); XCTAssertEqual(backend.lastReason, .privateWindow)
-        t.privateWindow = false; c.observe(t); let count = backend.siteBlocks
-        now = now.addingTimeInterval(3); t.at = now; c.observe(t); XCTAssertEqual(backend.siteBlocks, count + 1)
-        backend.accessibilityAvailable = false; c.refresh(); XCTAssertFalse(c.siteBlockingAvailable)
-        XCTAssertNil(c.snapshot.usage?.quotaSecondsUsed[list.id])
+    @MainActor func testUnreadableAddressFailsClosedInPrivateAndNormalWindows() {
+        for privateWindow in [true, false] {
+            var now = date(); let backend = FakeBlockingBackend()
+            let list = BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "youtube.com")], quotaMinutesPerDay: 30)
+            let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+            c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .free)
+            var t = target(now, url: nil); t.privateWindow = privateWindow; c.observe(t); let count = backend.siteBlocks
+            now = now.addingTimeInterval(3); t.at = now; c.observe(t); XCTAssertEqual(backend.siteBlocks, count + 1)
+            guard case .unsupportedBrowser? = backend.lastReason else { return XCTFail("\(String(describing: backend.lastReason))") }
+            backend.accessibilityAvailable = false; c.refresh(); XCTAssertFalse(c.siteBlockingAvailable)
+            XCTAssertNil(c.snapshot.usage?.quotaSecondsUsed[list.id])
+        }
+    }
+    /// A private window follows the lists, counts the quota, and no address of it reaches the Blocking folder.
+    @MainActor func testPrivateWindowFollowsListsAndWritesNoAddress() throws {
+        let store = try temporaryStore(); var now = date(); let backend = FakeBlockingBackend()
+        let quota = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")], quotaMinutesPerDay: 1)
+        let sites = BlockList(name: "Réseaux", sites: [BlockSiteRule(pattern: "instagram.com")])
+        try store.save(BlockingDocument(lists: [quota, sites]))
+        let c = BlockingController(clock: { now }, store: store, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [quota.id, sites.id], until: now.addingTimeInterval(3600), lock: .free)
+        func visit(_ url: String) { var t = target(now, url: url); t.privateWindow = true; c.observe(t) }
+        let start = backend.siteBlocks
+        visit("wikipedia.org/zq-private-allowed"); XCTAssertEqual(backend.siteBlocks, start)
+        visit("instagram.com/zq-private-listed"); XCTAssertEqual(backend.siteBlocks, start + 1)
+        XCTAssertEqual(backend.lastReason, .site("instagram.com/zq-private-listed"))
+        visit("youtube.com/zq-private-quota"); XCTAssertEqual(backend.siteBlocks, start + 1)
+        for _ in 0..<5 { now = now.addingTimeInterval(15); visit("youtube.com/zq-private-quota") }
+        XCTAssertEqual(c.snapshot.usage?.quotaSecondsUsed[quota.id], 60)
+        XCTAssertEqual(backend.lastReason, .quotaUsed("youtube.com/zq-private-quota", minutes: 1))
+        now = now.addingTimeInterval(20); c.refresh()
+        XCTAssertEqual(try store.load().usage?.quotaSecondsUsed[quota.id], 60)
+        let files = try XCTUnwrap(FileManager.default.enumerator(at: store.directory, includingPropertiesForKeys: nil))
+        var checked = 0
+        for case let file as URL in files where !file.hasDirectoryPath {
+            let text = String(decoding: try Data(contentsOf: file), as: UTF8.self)
+            XCTAssertFalse(text.contains("zq-private") || text.contains("wikipedia"), file.lastPathComponent); checked += 1
+        }
+        XCTAssertGreaterThan(checked, 0)
     }
     func testReadButUnlistedAddressKeepsSchemeAndHostOnly() {
         XCTAssertEqual(BlockingRules.blockingAddress("https://www.youtube.com/shorts?q=1"), "youtube.com/shorts")
