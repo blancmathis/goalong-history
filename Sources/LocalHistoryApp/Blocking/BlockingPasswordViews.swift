@@ -237,7 +237,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
             BlockingIconCluster(lists: lists, size: 18, limit: 5)
             VStack(alignment: .leading, spacing: 2) {
                 Text(lists.map(\.name).joined(separator: ", ")).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text("\(BlockingFormat.moment(session.start, now: now)) → \(BlockingFormat.time(session.end))")
+                Text("\(BlockingFormat.moment(session.start, now: now)) → \(BlockingFormat.endTime(session.end))")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 12)

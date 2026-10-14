@@ -69,7 +69,7 @@ private final class BlockingFreezePanel: NSPanel {
     }
     var browsers: [BlockingBrowserSupport] {
         var result = [("com.apple.Safari", "Safari"), ("com.google.Chrome", "Chrome"), ("com.microsoft.edgemac", "Edge"),
-         ("com.brave.Browser", "Brave"), ("company.thebrowser.Browser", "Arc"), ("org.mozilla.firefox", "Firefox")]
+         ("com.brave.Browser", "Brave"), ("company.thebrowser.Browser", "Arc"), ("at.studio.AsideBrowser", "Aside"), ("org.mozilla.firefox", "Firefox")]
             .map { BlockingBrowserSupport(bundleIdentifier: $0.0, name: $0.1, supported: accessibilityAvailable && (observedBrowserSupport[$0.0] ?? ($0.0 != "org.mozilla.firefox"))) }
         for (id, supported) in observedBrowserSupport where !result.contains(where: { $0.bundleIdentifier == id }) {
             result.append(BlockingBrowserSupport(bundleIdentifier: id, name: observedBrowserNames[id] ?? id, supported: accessibilityAvailable && supported))

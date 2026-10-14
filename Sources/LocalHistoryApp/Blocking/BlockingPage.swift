@@ -117,7 +117,7 @@ import SwiftUI
 
     private func unlockText(_ origin: BlockSession.Origin, end: Date) -> String {
         if case .program = origin { return "Cette plage du programme s’arrête pour aujourd’hui. Elle revient la prochaine fois." }
-        return "Le blocage s’arrête maintenant, avant \(BlockingFormat.time(end))."
+        return "Le blocage s’arrête maintenant, avant \(BlockingFormat.endTime(end))."
     }
 }
 
@@ -232,10 +232,10 @@ struct BlockingStopRequest: Identifiable {
         var symbol = block.lock.symbol
         var words: String
         switch block.lock {
-        case .locked: words = "Verrouillé jusqu’à \(BlockingFormat.time(block.end))"
-        case .password: words = "Protégé par mot de passe · jusqu’à \(BlockingFormat.time(block.end))"
-        case .typing: words = "Difficile à arrêter · jusqu’à \(BlockingFormat.time(block.end))"
-        case .free: words = "Bloqué jusqu’à \(BlockingFormat.time(block.end))"
+        case .locked: words = "Verrouillé jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .password: words = "Protégé par mot de passe · jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .typing: words = "Difficile à arrêter · jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .free: words = "Bloqué jusqu’à \(BlockingFormat.endTime(block.end))"
         }
         let lists = block.listIDs.compactMap(controller.list)
         if !lists.isEmpty, lists.allSatisfy({ $0.effectiveAction == .slowDown }) {
@@ -284,7 +284,7 @@ struct BlockingStopRequest: Identifiable {
         HStack(spacing: 10) {
             if let end = block.breakEnds[list.id] {
                 Image(systemName: "cup.and.saucer").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
-                Text("\(list.name) en pause jusqu’à \(BlockingFormat.time(end))")
+                Text("\(list.name) en pause jusqu’à \(BlockingFormat.endTime(end))")
                 Spacer(minLength: 8)
                 Button("Reprendre") { controller.endBreak(listID: list.id) }.buttonStyle(LHQuietButtonStyle())
             } else if let left = block.quotaSecondsLeft[list.id], let quota = list.quotaMinutesPerDay {
@@ -307,7 +307,7 @@ struct BlockingStopRequest: Identifiable {
             VStack(alignment: .leading, spacing: 2) {
                 Text(lists.map(\.name).joined(separator: ", ")).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 Text(triggerApps(block).map { "Bloqué tant que \($0)" }
-                     ?? "\(block.lock == .free ? "Bloqué" : block.lock.title) jusqu’à \(BlockingFormat.time(block.end))")
+                     ?? "\(block.lock == .free ? "Bloqué" : block.lock.title) jusqu’à \(BlockingFormat.endTime(block.end))")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 12)
@@ -318,7 +318,7 @@ struct BlockingStopRequest: Identifiable {
     private func frozen(_ freeze: BlockFreeze) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
-                Label("Mac gelé jusqu’à \(BlockingFormat.time(freeze.end))", systemImage: "snowflake")
+                Label("Mac gelé jusqu’à \(BlockingFormat.endTime(freeze.end))", systemImage: "snowflake")
                     .font(.system(size: 13, weight: .medium))
                 Text(BlockingFormat.remaining(freeze.end.timeIntervalSince(now)))
                     .font(LHTheme.heroFont).tracking(LHTheme.heroTracking)
@@ -362,12 +362,12 @@ struct BlockingSessionThread: View {
                 Text(BlockingFormat.time(start))
                 Spacer()
                 if locked { Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold)) }
-                Text(BlockingFormat.time(end))
+                Text(BlockingFormat.endTime(end))
             }
             .font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("De \(BlockingFormat.time(start)) à \(BlockingFormat.time(end)), \(Int(progress * 100)) % écoulés")
+        .accessibilityLabel("De \(BlockingFormat.time(start)) à \(BlockingFormat.endTime(end)), \(Int(progress * 100)) % écoulés")
     }
 }
 
@@ -433,9 +433,9 @@ struct BlockingMeter: View {
     }
 
     private var actionTitle: String {
-        if wholeMac { return "Geler jusqu’à \(BlockingFormat.time(end))…" }
+        if wholeMac { return "Geler jusqu’à \(BlockingFormat.endTime(end))…" }
         if scheduling { return "Programmer \(BlockingFormat.moment(begin, now: now))" }
-        return "Bloquer jusqu’à \(BlockingFormat.time(end))"
+        return "Bloquer jusqu’à \(BlockingFormat.endTime(end))"
     }
 
     var body: some View {
@@ -528,23 +528,23 @@ struct BlockingMeter: View {
                 }
             }
             .onAppear { if selected.isEmpty, let first = controller.lists.first { selected = [first.id] } }
-            .alert(lock == .password ? "Protéger par mot de passe jusqu’à \(BlockingFormat.time(end)) ?"
-                                     : "Verrouiller jusqu’à \(BlockingFormat.time(end)) ?", isPresented: $confirmingLock) {
+            .alert(lock == .password ? "Protéger par mot de passe jusqu’à \(BlockingFormat.endTime(end)) ?"
+                                     : "Verrouiller jusqu’à \(BlockingFormat.endTime(end)) ?", isPresented: $confirmingLock) {
                 Button("Annuler", role: .cancel) {}
                 Button(lock == .password ? "Protéger" : "Verrouiller") { start() }
             } message: {
                 Text(lock == .password
-                     ? "Sans le mot de passe, ce blocage va jusqu’à \(BlockingFormat.time(end)). Ses listes peuvent seulement devenir plus strictes, et quitter Goalong demande le mot de passe."
-                     : "Personne ne pourra arrêter ce blocage avant \(BlockingFormat.time(end)), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas.")
+                     ? "Sans le mot de passe, ce blocage va jusqu’à \(BlockingFormat.endTime(end)). Ses listes peuvent seulement devenir plus strictes, et quitter Goalong demande le mot de passe."
+                     : "Personne ne pourra arrêter ce blocage avant \(BlockingFormat.endTime(end)), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas.")
             }
-            .alert("Geler le Mac jusqu’à \(BlockingFormat.time(end)) ?", isPresented: $confirmingFreeze) {
+            .alert("Geler le Mac jusqu’à \(BlockingFormat.endTime(end)) ?", isPresented: $confirmingFreeze) {
                 Button("Annuler", role: .cancel) {}
                 Button("Geler") {
                     controller.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
                     wholeMac = false
                 }
             } message: {
-                Text("Jusqu’à \(BlockingFormat.time(end)), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.")
+                Text("Jusqu’à \(BlockingFormat.endTime(end)), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.")
             }
         }
     }

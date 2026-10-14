@@ -34,6 +34,7 @@ final class BlockingTabAXLane {
     enum Result: Equatable { case closed, unavailable, uncertain, revoked }
     private let queue = DispatchQueue(label: "Goalong.BlockingTabAX", qos: .userInteractive)
     private let client: AXClient
+    private static let closeTabTitles: Set<String> = ["fermer l’onglet", "fermer l'onglet", "close tab"]
     init(client: AXClient = .system) { self.client = client }
 
     func request(_ target: BlockingObservation, permit: AXRequestPermit, rulePermit: BlockingTabRulePermit,
@@ -48,18 +49,23 @@ final class BlockingTabAXLane {
                 let app = AXAccess.application(target.pid)
                 AXAccess.setMessagingTimeout(app, 0.15)
                 var candidates: [AXUIElement] = AXReader.element(app, attribute: kAXMenuBarAttribute as CFString).map { [$0] } ?? []
-                var visited = 0, closeItem: AXUIElement?
+                var visited = 0, closeItem: AXUIElement?, plainCommandWClosesOther = false
                 while !candidates.isEmpty, visited < 160, permit.isValid, rulePermit.isValid {
                     let item = candidates.removeFirst(); visited += 1
                     let title = AXReader.string(item, attribute: kAXTitleAttribute as CFString)
                     let command = AXReader.string(item, attribute: kAXMenuItemCmdCharAttribute as CFString)
-                    if let title, ["Fermer l’onglet", "Fermer l'onglet", "Close Tab"].contains(title), command?.lowercased() == "w" {
-                        closeItem = item; break
+                    if command?.lowercased() == "w" {
+                        if let title, Self.closeTabTitles.contains(title.lowercased()) { closeItem = item; break }
+                        // Some browsers (Aside) bind plain Cmd-W to "Close Window": the keystroke
+                        // fallback would close every tab of the window.
+                        let modifiers = AXReader.copyValue(item, attribute: kAXMenuItemCmdModifiersAttribute as CFString) as? NSNumber
+                        if (modifiers?.intValue ?? 0) == 0, title?.isEmpty == false { plainCommandWClosesOther = true }
                     }
                     candidates.append(contentsOf: AXReader.elements(item).prefix(160 - visited))
                 }
                 // The handle stays in the action owner; main receives only a continuation.
                 let item = closeItem
+                if item == nil, plainCommandWClosesOther { finish(.unavailable); return }
                 DispatchQueue.main.async {
                     revalidate { allowed in
                         guard allowed, permit.isValid, rulePermit.isValid else { completion(.revoked); return }

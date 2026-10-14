@@ -936,7 +936,7 @@ import LocalHistoryCore
             if siteRules && target.privateWindow { special = .privateWindow }
             else if siteRules && !target.isInternalPage && target.url == nil {
                 let first = unreadableSince[target.pid] ?? target.at; unreadableSince[target.pid] = first
-                if !siteBlockingAvailable || target.at.timeIntervalSince(first) >= 3 { special = .unsupportedBrowser(target.bundleIdentifier) }
+                if !siteBlockingAvailable || target.at.timeIntervalSince(first) >= 3 { special = .unsupportedBrowser(NSRunningApplication(processIdentifier: target.pid)?.localizedName ?? target.bundleIdentifier) }
             } else { unreadableSince[target.pid] = nil }
             guard special != nil || BlockingRules.wouldBlock(target, list: list) else { continue }
             // Privacy/unreadable addresses cannot establish eligible quota use: fail closed.

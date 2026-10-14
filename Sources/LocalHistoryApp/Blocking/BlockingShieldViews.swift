@@ -81,7 +81,7 @@ struct BlockedSiteVeil: View {
 
     private var untilLine: String {
         if BlockingFormat.isOpenEnded(presentation.end) { return "Bloqué pendant que vous travaillez" }
-        return "\(presentation.lock == .locked ? "Verrouillé" : "Bloqué") jusqu’à \(BlockingFormat.time(presentation.end))"
+        return "\(presentation.lock == .locked ? "Verrouillé" : "Bloqué") jusqu’à \(BlockingFormat.endTime(presentation.end))"
     }
 
     private var countsLine: String? {
@@ -94,7 +94,7 @@ struct BlockedSiteVeil: View {
         case .site: return "Liste « \(presentation.listName) »."
         case .quotaUsed(_, let minutes): return "Vos \(BlockingFormat.duration(minutes: minutes)) du jour sont passées. Liste « \(presentation.listName) »."
         case .privateWindow: return "Pendant un blocage de sites, les fenêtres privées sont couvertes : Goalong ne lit jamais leur adresse."
-        case .unsupportedBrowser: return "Goalong ne lit pas l’adresse dans ce navigateur. Pendant un blocage de sites, il reste couvert. Safari, Chrome, Edge, Brave et Arc sont pris en charge."
+        case .unsupportedBrowser: return "Goalong ne lit pas l’adresse dans ce navigateur. Pendant un blocage de sites, il reste couvert. Safari, Chrome, Edge, Brave, Arc et Aside sont pris en charge."
         }
     }
 }
@@ -110,7 +110,7 @@ struct BlockedAppNotice: View {
     static func height(_ feedback: BlockingListFeedback?) -> CGFloat { feedback?.reasonLine == nil ? 68 : 86 }
 
     private var untilText: String {
-        BlockingFormat.isOpenEnded(end) ? "Pendant votre travail" : "Jusqu’à \(BlockingFormat.time(end))"
+        BlockingFormat.isOpenEnded(end) ? "Pendant votre travail" : "Jusqu’à \(BlockingFormat.endTime(end))"
     }
 
     private func detail(_ parts: [String?]) -> some View {
@@ -163,7 +163,7 @@ struct FrozenMacShield: View {
                     VStack(spacing: 10) {
                         Text(clock(freeze.end.timeIntervalSince(now)))
                             .font(.system(size: 96, weight: .bold).monospacedDigit()).tracking(-3)
-                        Label("Mac gelé jusqu’à \(BlockingFormat.time(freeze.end))", systemImage: "snowflake")
+                        Label("Mac gelé jusqu’à \(BlockingFormat.endTime(freeze.end))", systemImage: "snowflake")
                             .font(.system(size: 17, weight: .semibold))
                     }
                     BlockingSessionThread(start: freeze.start, end: freeze.end, now: now, locked: true).frame(width: 440)

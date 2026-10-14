@@ -252,5 +252,32 @@ final class AXAsyncCaptureTests: XCTestCase {
         wait(for: [done], timeout: 3)
         XCTAssertEqual(actions, 1); XCTAssertEqual(fallbacks, 0); XCTAssertEqual(validations, 1)
     }
+
+    func testPlainCommandWClosingTheWindowNeverFallsBackToKeyboard() {
+        // Aside: no "Close Tab" item, and plain Cmd-W closes the whole window.
+        let tree = ScriptedAXTree(browser: true), menu = AXUIElementCreateApplication(50_096)
+        tree.attributes[Int(CFHash(tree.app))]?["AXMenuBar"] = menu
+        tree.attributes[Int(CFHash(menu))] = ["AXTitle": "Close Window" as CFString, "AXMenuItemCmdChar": "W" as CFString,
+                                              "AXMenuItemCmdModifiers": NSNumber(value: 0)]
+        var actions = 0, fallbacks = 0
+        tree.client.perform = { _, _ in actions += 1; return .success }
+        var target = BlockingObservation(bundleIdentifier: "at.studio.AsideBrowser", pid: 42, windowFrame: nil,
+            isBrowser: true, url: "example.com/work", privateWindow: false, at: Date())
+        target.windowBoundary = AXReadBoundary(window: tree.window, pid: 42)
+        let done = expectation(description: "no close-tab path")
+        BlockingTabAXLane(client: tree.client).request(target, permit: AXRequestPermit(),
+            rulePermit: BlockingTabRuleAuthority().permit(until: .distantFuture), stillCurrent: { true },
+            revalidate: { $0(true) }, fallback: { fallbacks += 1 }) { result in
+            XCTAssertEqual(result, .unavailable); done.fulfill()
+        }
+        wait(for: [done], timeout: 3)
+        XCTAssertEqual(actions, 0); XCTAssertEqual(fallbacks, 0)
+    }
+
+    func testBlockEndingAtMidnightReadsMinuit() {
+        let midnight = Calendar.current.startOfDay(for: Date())
+        XCTAssertEqual(BlockingFormat.endTime(midnight), "minuit")
+        XCTAssertEqual(BlockingFormat.endTime(midnight.addingTimeInterval(9 * 3600 + 30 * 60)), BlockingFormat.time(midnight.addingTimeInterval(9 * 3600 + 30 * 60)))
+    }
 }
 #endif

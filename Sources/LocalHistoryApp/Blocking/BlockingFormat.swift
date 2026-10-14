@@ -15,6 +15,12 @@ enum BlockingFormat {
         return formatter.string(from: date)
     }
 
+    /// An end at 0:00 reads « minuit », so an all-day block is not shown as « 0:00 → 0:00 ».
+    static func endTime(_ date: Date) -> String {
+        let value = time(date)
+        return value == "0:00" ? "minuit" : value
+    }
+
     static func minuteOfDay(_ minute: Int) -> String {
         let value = ((minute % 1_440) + 1_440) % 1_440
         return String(format: "%d:%02d", value / 60, value % 60)

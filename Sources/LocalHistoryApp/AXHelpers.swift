@@ -57,6 +57,14 @@
             element(application, attribute: AXAttribute.focusedWindow)
         }
 
+        /// True only when the application answers that it has neither a focused nor a main window.
+        static func hasNoWindow(_ application: AXUIElement) -> Bool {
+            [AXAttribute.focusedWindow, kAXMainWindowAttribute as CFString].allSatisfy { attribute in
+                var value: CFTypeRef?
+                return AXAccess.copyAttributeValue(application, attribute, &value) == .noValue
+            }
+        }
+
         static func focusedElement(for application: AXUIElement) -> AXUIElement? {
             element(application, attribute: AXAttribute.focusedElement)
         }

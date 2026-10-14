@@ -259,7 +259,12 @@
             AXAccess.setMessagingTimeout(element, 0.20)
             // The main window stands in while no window holds focus (an open menu, a sheet closing).
             guard let window = AXReader.focusedWindow(for: element) ?? AXReader.element(element, attribute: kAXMainWindowAttribute as CFString)
-            else { return result }
+            else {
+                // A browser without any window (its last one just closed) shows no page: nothing to
+                // cover. Only an explicit "no value" counts; a timeout or failed read still fails closed.
+                if known, AXReader.hasNoWindow(element) { result.isInternalPage = true }
+                return result
+            }
             result.windowIdentity = Int(CFHash(window))
             result.windowBoundary = AXReadBoundary(window: window, pid: running.processIdentifier)
             result.addressFieldMarkers = parameters.config.addressFieldMarkers
