@@ -207,6 +207,42 @@ final class BlockingEngineTests: XCTestCase {
         backend.accessibilityAvailable = false; c.refresh(); XCTAssertFalse(c.siteBlockingAvailable)
         XCTAssertNil(c.snapshot.usage?.quotaSecondsUsed[list.id])
     }
+    func testReadButUnlistedAddressKeepsSchemeAndHostOnly() {
+        XCTAssertEqual(BlockingRules.blockingAddress("https://www.youtube.com/shorts?q=1"), "youtube.com/shorts")
+        XCTAssertEqual(BlockingRules.blockingAddress("http://user:pw@127.0.0.1:7788/runs?id=1"), "http://127.0.0.1:7788")
+        XCTAssertEqual(BlockingRules.blockingAddress("localhost:3000/app"), "http://localhost:3000")
+        XCTAssertEqual(BlockingRules.blockingAddress("chrome-extension://abc/popup.html"), "chrome-extension://abc")
+        XCTAssertEqual(BlockingRules.blockingAddress("file:///Users/me/secret.pdf"), "file:")
+    }
+    /// A local page (127.0.0.1, localhost) is read, not unreadable: it never covers the whole browser.
+    @MainActor func testLocalPagesAreReadAddresses() {
+        var now = date(); let backend = FakeBlockingBackend()
+        let sites = BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "youtube.com")], quotaMinutesPerDay: 60)
+        let c = BlockingController(document: BlockingDocument(lists: [sites]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [sites.id], until: now.addingTimeInterval(3600), lock: .free)
+        for raw in ["http://127.0.0.1:7788/", "http://localhost:3000/dashboard"] {
+            var t = target(now, url: BlockingRules.blockingAddress(raw))
+            for _ in 0..<5 { c.observe(t); now = now.addingTimeInterval(1); t.at = now }
+            XCTAssertEqual(backend.siteBlocks, 0, raw); XCTAssertEqual(backend.appBlocks, 0, raw)
+            XCTAssertNil(backend.lastReason, raw); XCTAssertFalse(c.siteActionStillRequired(t), raw)
+        }
+        XCTAssertNil(c.snapshot.usage?.quotaSecondsUsed[sites.id])
+        // A truly unreadable address still covers the whole browser after 3 s.
+        var t = target(now, url: nil)
+        for _ in 0..<4 { c.observe(t); now = now.addingTimeInterval(1); t.at = now }
+        guard case .unsupportedBrowser = backend.lastReason else { return XCTFail("expected whole-browser cover") }
+    }
+    @MainActor func testLocalPagesUnderAllowOnlyAreTabBlocks() {
+        let now = date(); let backend = FakeBlockingBackend()
+        let list = BlockList(name: "Travail", mode: .allowOnly, sites: [BlockSiteRule(pattern: "example.com")])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(3600), lock: .free)
+        for raw in ["http://127.0.0.1:7788/", "http://localhost:3000/dashboard"] {
+            let address = BlockingRules.blockingAddress(raw)
+            c.observe(target(now, url: address))
+            XCTAssertEqual(backend.lastReason, .site(address), raw); XCTAssertEqual(backend.appBlocks, 0, raw)
+        }
+    }
     @MainActor func testClockJumpExtendsManualProgramAndFreeze() {
         var now = date(), uptime = 100.0
         var list = BlockList(name: "Programme", sites: [BlockSiteRule(pattern: "youtube.com")])

@@ -99,7 +99,7 @@ final class BlockingTabAXLane {
         let app = AXAccess.application(target.pid)
         guard let window = AXReader.focusedWindow(for: app) ?? AXReader.element(app, attribute: kAXMainWindowAttribute as CFString) else { return false }
         let raw = AXReader.browserURL(from: window, addressFieldMarkers: target.addressFieldMarkers ?? []).map {
-            target.isInternalPage ? $0.lowercased().components(separatedBy: "?")[0].components(separatedBy: "#")[0] : BlockingRules.normalize($0)
+            target.isInternalPage ? $0.lowercased().components(separatedBy: "?")[0].components(separatedBy: "#")[0] : BlockingRules.blockingAddress($0)
         }
         guard raw == target.url else { return false }
         guard !target.titleKeywordMatches.isEmpty else { return true }

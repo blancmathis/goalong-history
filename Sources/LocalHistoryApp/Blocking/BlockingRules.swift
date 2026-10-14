@@ -93,6 +93,18 @@ enum BlockingRules {
         return host + path
     }
 
+    /// The blocking form of an address that was read: normalized host and path, or, when it does not
+    /// normalize (IP, localhost, non-web scheme), its scheme and host only. Such an address is read, not
+    /// unreadable: no site rule matches it, so a block list leaves it alone and allowOnly blocks the tab.
+    static func blockingAddress(_ raw: String) -> String {
+        if let normalized = normalize(raw) { return normalized }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let parts = URLComponents(string: value.contains("://") ? value : "http://" + value)
+        guard let scheme = parts?.scheme, !scheme.isEmpty else { return "unknown:" }
+        guard let host = parts?.host, !host.isEmpty else { return scheme + ":" }
+        return scheme + "://" + host + (parts?.port.map { ":\($0)" } ?? "")
+    }
+
     static func matches(_ rule: BlockSiteRule, url: String) -> Bool {
         guard let normalized = normalize(url), let pattern = normalize(rule.pattern) else { return false }
         let candidate = normalized.split(separator: "/", maxSplits: 1).map(String.init)

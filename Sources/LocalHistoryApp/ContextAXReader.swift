@@ -304,7 +304,7 @@
                 let lower = raw.lowercased()
                 result.isInternalPage = lower.hasPrefix("about:") || lower.hasPrefix("favorites:")
                     || lower.hasPrefix("chrome://newtab") || lower.hasPrefix("edge://newtab")
-                result.url = result.isInternalPage ? lower.components(separatedBy: "?")[0].components(separatedBy: "#")[0] : BlockingRules.normalize(raw)
+                result.url = result.isInternalPage ? lower.components(separatedBy: "?")[0].components(separatedBy: "#")[0] : BlockingRules.blockingAddress(raw)
             } else if known, result.bundleIdentifier == "com.apple.Safari" {
                 // An empty Safari start page has no web area. Missing address on real content fails closed.
                 result.isInternalPage = !AXReader.containsWebArea(window)
