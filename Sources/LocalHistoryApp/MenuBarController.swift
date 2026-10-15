@@ -217,6 +217,8 @@
                 "Accessibilité : \(permissionStatus.accessibility ? "oui" : "non") · Surveillance de l’entrée : \(permissionStatus.inputMonitoringStatusLabel) · Interactions : \(eventTapStatus() ? "actives" : "inactives") · Preuve : \(health.captureProven ? "oui" : "non")"
             if let notice = DeviceTrustState.shared.sealingSuspendedNotice {
                 sealingSuspendedItem.title = "\(notice) · Réessayer…"
+                sealingSuspendedItem.toolTip = DeviceTrustState.shared.retryFeedback
+                sealingSuspendedItem.isEnabled = !DeviceTrustState.shared.isRetryInFlight
                 sealingSuspendedItem.isHidden = false
             } else {
                 sealingSuspendedItem.isHidden = true

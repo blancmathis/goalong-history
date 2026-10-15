@@ -669,10 +669,12 @@
         }
 
         private func reloadConfiguration() {
-            configManager.reload()
+            let reloaded = configManager.reload()
             configureCallPresence()
             contextMonitor.resetAndSample()
             configureUploader(for: configManager.config)
+            if reloaded { dashboardViewModel.reloadSettings(from: configManager.config) }
+            menuBarController.updateStatus()
         }
 
         private func configureUploader(for config: RecorderConfig) {
@@ -841,7 +843,7 @@
 
         /// Retries the keychain load off the main thread; resumes sealing on success.
         private func retryDeviceIdentity() {
-            guard deviceIdentityStartup.isDegraded else { return }
+            guard deviceIdentityStartup.isDegraded, DeviceTrustState.shared.beginRetry() else { return }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result { try DeviceIdentity.shared(attempts: 1) }
                 DispatchQueue.main.async {
@@ -865,6 +867,7 @@
                         DeviceTrustState.shared.setSealingSuspended(status: nil)
                     case .failure(let error):
                         Diagnostics.write("Keychain identity retry failed: \(error)")
+                        DeviceTrustState.shared.markRetryFailed()
                     }
                 }
             }
