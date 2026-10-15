@@ -106,6 +106,8 @@ final class ConcentrationCommitmentControllerTests: XCTestCase {
         XCTAssertThrowsError(try runtime.deleteData()) { XCTAssertEqual($0 as? FocusFailure, .locked) }
         // An unrelated free focus session can still stop; it does not own this stake.
         try c.startSession(intent: "Lire", mode: .init(minutes: 5)); XCTAssertFalse(c.hasLockedSessionBlock)
+        XCTAssertFalse(FocusActiveSession(controller: c, session: try XCTUnwrap(c.currentSession), now: now, live: false).locked,
+                       "the session card keeps Stop and Skip while the stake runs")
         try c.stopSession(); XCTAssertTrue(c.hasLockedBlock)
         try c.useCommitmentJoker(period: period)
         XCTAssertTrue(b.activeBlocks.isEmpty); XCTAssertFalse(c.hasLockedBlock)

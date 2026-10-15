@@ -96,7 +96,7 @@ import LocalHistoryCore
          suppression: @escaping () -> SuppressionReason? = { nil },
          localHistoryEnabled: @escaping () -> Bool = { true },
          globalPause: @escaping () -> GoalongGlobalPause = { GoalongGlobalPause.load() },
-         clock: @escaping () -> Date = Date.init, calendar: Calendar = .current,
+         clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
          loadDay: ((Date) async throws -> GoalongLocalAnalytics.Day)? = nil,
          playAmbiance: @escaping @MainActor (AmbianceController, AmbianceSource) -> Void = { $0.play($1) },
          onTogglePause: @escaping () -> Void, onOpenSection: @escaping (DashboardSection) -> Void,

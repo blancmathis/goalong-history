@@ -127,18 +127,31 @@ extension Notification.Name {
 /// A document-sized window keeps the long, scrollable review usable on smaller displays.
 @MainActor final class GoalongProfileWindow: NSObject, ObservableObject, NSWindowDelegate {
     private var studioWindow: NSWindow?
+    private var studioModel: GoalongProfileStudioModel?
+    private var studioDay: Date?
+    enum Reopen: Equatable { case front, rebuild, keepWork }
+    /// A new day replaces the window's content only while nothing is loaded, running or analysed there.
+    static func reopen(shownDay: Date?, requestedDay: Date?, idle: Bool, calendar: Calendar = .current) -> Reopen {
+        guard let requestedDay else { return .front }
+        if let shownDay, calendar.isDate(shownDay, inSameDayAs: requestedDay) { return .front }
+        return idle ? .rebuild : .keepWork
+    }
     func show(localOnly: Bool = false, initialDay: Date? = nil, onSend: @escaping (Data) -> Void) {
-        if let studioWindow { studioWindow.makeKeyAndOrderFront(nil); return }
-        let view = GoalongProfileStudio(onSend: { [weak self] data in
-            self?.studioWindow?.close()
-            onSend(data)
-        }, onClose: { [weak self] in self?.studioWindow?.close() }, localOnly: localOnly, initialDay: initialDay)
-        let window = NSWindow(contentViewController: NSHostingController(rootView: view
-            .background(LHTheme.pageBackground)
-            .foregroundStyle(LHTheme.text)
-            .tint(LHTheme.accent)
-            .accentColor(LHTheme.accent)
-            .goalongControls()))
+        if let studioWindow {
+            let model = studioModel
+            let idle = model.map { !$0.busy && $0.request == nil && $0.result == nil } ?? true
+            switch Self.reopen(shownDay: studioDay, requestedDay: initialDay, idle: idle) {
+            case .front: break
+            case .rebuild:
+                let frame = studioWindow.frame
+                studioWindow.contentViewController = content(localOnly: localOnly, initialDay: initialDay, onSend: onSend)
+                studioWindow.setFrame(frame, display: true)
+            case .keepWork:
+                model?.status = "Une analyse est déjà ouverte pour une autre journée. Fermez-la pour analyser la journée choisie."
+            }
+            studioWindow.makeKeyAndOrderFront(nil); return
+        }
+        let window = NSWindow(contentViewController: content(localOnly: localOnly, initialDay: initialDay, onSend: onSend))
         window.title = ProductIdentity.windowTitle("Comprendre mon travail — Goalong History")
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(LHTheme.pageBackground)
@@ -151,9 +164,23 @@ extension Notification.Name {
         studioWindow = window
         window.center(); window.makeKeyAndOrderFront(nil)
     }
+    private func content(localOnly: Bool, initialDay: Date?, onSend: @escaping (Data) -> Void) -> NSViewController {
+        let model = GoalongProfileStudioModel()
+        studioModel = model; studioDay = initialDay.map { Calendar.current.startOfDay(for: $0) }
+        let view = GoalongProfileStudio(onSend: { [weak self] data in
+            self?.studioWindow?.close()
+            onSend(data)
+        }, onClose: { [weak self] in self?.studioWindow?.close() }, localOnly: localOnly, initialDay: initialDay, model: model)
+        return NSHostingController(rootView: view
+            .background(LHTheme.pageBackground)
+            .foregroundStyle(LHTheme.text)
+            .tint(LHTheme.accent)
+            .accentColor(LHTheme.accent)
+            .goalongControls())
+    }
     func windowWillClose(_ notification: Notification) {
         studioWindow?.contentViewController = nil
-        studioWindow = nil
+        studioWindow = nil; studioModel = nil; studioDay = nil
     }
 }
 
@@ -162,7 +189,7 @@ struct GoalongProfileStudio: View {
     var onClose: (() -> Void)? = nil
     var localOnly = false
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var model = GoalongProfileStudioModel()
+    @StateObject private var model: GoalongProfileStudioModel
     @StateObject private var connection = GoalongSiteAnalysisModel()
     @StateObject private var windowHost = GoalongWebsiteWindowHost()
     @State private var start = Calendar.current.startOfDay(for: Date())
@@ -175,8 +202,10 @@ struct GoalongProfileStudio: View {
     @State private var exclusions = ""
     @State private var aliases = ""
     @State private var instructions = ""
-    init(onSend: @escaping (Data) -> Void, onClose: (() -> Void)? = nil, localOnly: Bool = false, initialDay: Date? = nil) {
+    init(onSend: @escaping (Data) -> Void, onClose: (() -> Void)? = nil, localOnly: Bool = false, initialDay: Date? = nil,
+         model: GoalongProfileStudioModel? = nil) {
         self.onSend = onSend; self.onClose = onClose; self.localOnly = localOnly
+        _model = StateObject(wrappedValue: model ?? GoalongProfileStudioModel())
         let day = Calendar.current.startOfDay(for: initialDay ?? Date())
         _start = State(initialValue: day)
         _end = State(initialValue: min(Date(), Calendar.current.date(byAdding: .day, value: 1, to: day) ?? Date()))

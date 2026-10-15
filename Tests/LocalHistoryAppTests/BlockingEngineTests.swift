@@ -769,6 +769,56 @@ final class BlockingEngineTests: XCTestCase {
         guard case .refused = c.removeKeyword("match", from: list.id) else { return XCTFail("a looser edit must be refused") }
         XCTAssertEqual(c.addKeyword("direct", to: list.id), .allowed)
     }
+    private func zone(_ id: String) -> Calendar {
+        var result = Calendar(identifier: .gregorian); result.timeZone = TimeZone(identifier: id)!; return result
+    }
+    /// R1-228: a zone change holds a locked window in progress, then future programs follow the new zone.
+    @MainActor func testZoneChangeHoldsTheActiveLockedProgramAndMovesFutureStarts() {
+        var current = zone("Europe/Paris"), now = date(5, 10)
+        var list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        list.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 540, endMinute: 720, lock: .locked)])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendarProvider: { current },
+                                   continuous: { now.timeIntervalSince1970 })
+        XCTAssertEqual(c.activeBlocks.first?.end, date(5, 12))
+        current = zone("America/New_York"); c.refresh()   // 04:00 in New York
+        XCTAssertEqual(c.activeBlocks.first?.end, date(5, 12), "the locked window keeps its Paris end")
+        XCTAssertEqual(c.activeBlocks.first?.lock, .locked)
+        now = date(5, 11, 59); c.refresh(); XCTAssertFalse(c.activeBlocks.isEmpty)
+        now = date(5, 12, 1); c.refresh(); XCTAssertTrue(c.activeBlocks.isEmpty)
+        XCTAssertEqual(c.nextProgramStart?.date, date(5, 15), "09:00 in New York")
+        XCTAssertEqual(c.nextProgramStart?.date, BlockingSchedule.nextStart(of: list.program, after: now, calendar: current))
+        now = date(5, 15, 1); c.refresh(); XCTAssertEqual(c.activeBlocks.first?.end, date(5, 18))
+    }
+    /// R1-228: moving east keeps the usage day in progress until its old midnight, then follows the new zone.
+    @MainActor func testZoneChangeKeepsTheQuotaDayUntilItsOldMidnight() {
+        var current = zone("America/New_York")
+        var now = zone("America/New_York").date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 20))!
+        let list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")], quotaMinutesPerDay: 20)
+        let document = BlockingDocument(lists: [list], usage: BlockDayUsage(day: "2026-10-05", quotaSecondsUsed: [list.id: 600]))
+        let c = BlockingController(document: document, clock: { now }, calendarProvider: { current }, continuous: { now.timeIntervalSince1970 })
+        XCTAssertEqual(c.frictionUsage?.quotaSecondsUsed[list.id], 600)
+        current = zone("Europe/Paris"); c.refresh()   // 02:00 on Tuesday in Paris
+        XCTAssertEqual(c.frictionUsage?.day, "2026-10-05"); XCTAssertEqual(c.frictionUsage?.quotaSecondsUsed[list.id], 600)
+        now = date(6, 5, 59); c.refresh()
+        XCTAssertEqual(c.frictionUsage?.day, "2026-10-05"); XCTAssertEqual(c.frictionUsage?.quotaSecondsUsed[list.id], 600)
+        now = date(6, 6, 1); c.refresh()
+        XCTAssertEqual(c.frictionUsage?.day, "2026-10-06"); XCTAssertNil(c.frictionUsage?.quotaSecondsUsed[list.id])
+        XCTAssertEqual(c.snapshot.usageHistory?["2026-10-05"]?.quotaSecondsUsed[list.id], 600)
+        now = date(7, 0, 1); c.refresh(); XCTAssertEqual(c.frictionUsage?.day, "2026-10-07", "Paris midnight now")
+    }
+    /// R1-228: the running controller re-reads the zone on the system notification, without waiting for a timer.
+    @MainActor func testZoneChangeNotificationRecomputesTheNextStart() {
+        var current = zone("Europe/Paris"); let now = date(5, 6)
+        var list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        list.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 540, endMinute: 720)])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendarProvider: { current },
+                                   continuous: { now.timeIntervalSince1970 }, runsTimers: true)
+        defer { c.shutdown() }
+        XCTAssertEqual(c.nextProgramStart?.date, date(5, 9))
+        current = zone("America/New_York")
+        NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
+        XCTAssertEqual(c.nextProgramStart?.date, date(5, 15))
+    }
 }
 
 private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {

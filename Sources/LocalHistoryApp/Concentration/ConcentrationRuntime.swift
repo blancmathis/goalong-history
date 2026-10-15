@@ -27,7 +27,9 @@ import LocalHistoryQueryCLI
     private let factory: ((FocusStore) throws -> ConcentrationController)?
     private let clock: () -> Date
     private let calendar: Calendar
-    init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .current) {
+    /// Set by the app before start(); the CLI and tests keep the silent default.
+    var audio: FocusSessionAudio = NoOpFocusSessionAudio()
+    init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) {
         self.storeFactory = storeFactory; self.factory = factory; self.blockingProvider = blockingProvider; self.presentsPanels = presentsPanels
         self.clock = clock; self.calendar = calendar
     }
@@ -41,7 +43,7 @@ import LocalHistoryQueryCLI
         if enabled, controller == nil {
             do {
                 let store = storeFactory()
-                let value = try factory?(store) ?? ConcentrationController(store: store, clock: clock, calendar: calendar, blocking: blockingProvider, runsTimers: true)
+                let value = try factory?(store) ?? ConcentrationController(store: store, clock: clock, calendar: calendar, blocking: blockingProvider, audio: audio, runsTimers: true)
                 controller = value; error = nil
                 NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: self)
                 value.onStatusChange = { [weak self] status in if let data = try? FocusJSON.encode(status) { self?.statusHub.publish(data) } }
@@ -135,7 +137,7 @@ import LocalHistoryQueryCLI
                 }
                 for date in dates where canRead {
                     try Task.checkCancellation()
-                    measured[BlockingController.dayKey(date, calendar: calendar)] = try await GoalongAnalyticsReader.shared.focusDay(date, verdicts: verdicts)
+                    measured[FocusCalendar.dayKey(date, calendar: calendar)] = try await GoalongAnalyticsReader.shared.focusDay(date, verdicts: verdicts)
                 }
                 var valued = 0
                 for day in try store.planDays().reversed() {

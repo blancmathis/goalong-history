@@ -62,9 +62,11 @@ import SwiftUI
                              intent: controller.currentSession?.intent, endsAt: controller.phase?.endsAt,
                              fallback: content.text)
         case .sessionReview:
-            let session = controller.sessions.first { $0.id == content.sessionID }
+            // The finished session may sit in yesterday's file after midnight: keep the value `finish` saw.
+            let session = controller.reviewedSession.flatMap { $0.id == content.sessionID ? $0 : nil }
+                ?? controller.sessions.first { $0.id == content.sessionID }
             FocusReviewPanelView(intent: session?.intent ?? "", seconds: session.map { FocusPanelMath.workSeconds($0) } ?? 0,
-                                 facts: controller.sessionFacts,
+                                 facts: controller.sessionFacts, initialNote: session?.note,
                                  onAnswer: { outcome, note in
                                      guard let id = content.sessionID else { return }
                                      do { try controller.recordOutcome(sessionID: id, outcome: outcome, note: note) }
@@ -153,7 +155,14 @@ struct FocusReviewPanelView: View {
     let facts: FocusFacts
     var onAnswer: (FocusSession.Outcome?, String?) -> Void
     var onClose: () -> Void
-    @State private var note = ""
+    @State private var note: String
+
+    /// Starts from the note already saved (for example by `goalong session stop --note`), so an answer keeps it.
+    init(intent: String, seconds: TimeInterval, facts: FocusFacts, initialNote: String? = nil,
+         onAnswer: @escaping (FocusSession.Outcome?, String?) -> Void, onClose: @escaping () -> Void) {
+        self.intent = intent; self.seconds = seconds; self.facts = facts; self.onAnswer = onAnswer; self.onClose = onClose
+        _note = State(initialValue: initialNote ?? "")
+    }
 
     var body: some View {
         FocusPanelSurface {
@@ -398,9 +407,12 @@ struct FocusLimitPanelView: View {
         .background(LHTheme.pageBackground)
     }
 
-    private func save() {
-        let tomorrow = BlockingController.dayKey(Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date())
-        let reviewItems: [FocusReview.Item] = items.compactMap { item in
+    /// Builds the review the sheet saves. « Demain » is the day after the reviewed plan, as setReview computes it,
+    /// even when the sheet is saved after midnight.
+    static func review(of plan: FocusPlan, choices: [UUID: Choice], tomorrowFirst: String, note: String,
+                       controller: ConcentrationController) throws -> FocusReview {
+        let tomorrow = try controller.dayAfter(plan.day)
+        let reviewItems: [FocusReview.Item] = plan.items.filter { $0.status != .dropped }.compactMap { item in
             switch choices[item.id] ?? .unset {
             case .unset: return nil
             case .done: return .init(id: item.id, outcome: .done, toDay: nil)
@@ -413,9 +425,14 @@ struct FocusLimitPanelView: View {
         }
         let first = tomorrowFirst.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        let review = FocusReview(day: plan.day, items: reviewItems,
-                                 tomorrowFirst: first.isEmpty ? nil : String(first.prefix(140)),
-                                 note: text.isEmpty ? nil : String(text.prefix(500)))
+        return FocusReview(day: plan.day, items: reviewItems,
+                           tomorrowFirst: first.isEmpty ? nil : String(first.prefix(140)),
+                           note: text.isEmpty ? nil : String(text.prefix(500)))
+    }
+
+    private func save() {
+        guard let review = try? Self.review(of: plan, choices: choices, tomorrowFirst: tomorrowFirst, note: note, controller: controller)
+        else { self.error = FocusUIError.message(FocusFailure.invalidArgument); return }
         if commitTomorrow, !controller.commitmentCards.contains(where: { $0.commitment.period == tomorrowDraft.period }) {
             guard tomorrowDraft.complete else { self.error = "Donnez le nom de la tâche de demain."; return }
             do {

@@ -1,4 +1,5 @@
 #if os(macOS)
+import Ambiance
 import XCTest
 import LocalHistoryQueryCLI
 @testable import LocalHistoryApp
@@ -144,8 +145,153 @@ final class ConcentrationControllerTests: XCTestCase {
         XCTAssertTrue(c.hasLockedBlock); XCTAssertEqual(c.phase?.kind, .work)
         XCTAssertThrowsError(try c.stopSession()) { XCTAssertEqual($0 as? FocusFailure, .locked) }
     }
-
+    @MainActor func testEarnedCreditFailureStillEndsTheSessionInMemory() throws {
+        let s = store(); try quiet(s); var now = Date(timeIntervalSince1970: 1791453600)
+        let list = BlockList(name: "Sites", quotaMinutesPerDay: 10, earn: .init())
+        var document = BlockingDocument(lists: [list]), usage = BlockDayUsage(day: BlockingController.dayKey(now))
+        usage.earnedSessionIDs = (0..<4096).map { _ in UUID() }; document.usage = usage
+        let b = BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 })
+        let c = try ConcentrationController(store: s, clock: { now }, blocking: { b })
+        try c.startSession(intent: "Écrire", mode: FocusMode(minutes: 60), blockListIds: [list.id])
+        now = now.addingTimeInterval(600)
+        XCTAssertNoThrow(try c.stopSession(outcome: .done))
+        XCTAssertNil(c.currentSession); XCTAssertNil(c.phase); XCTAssertTrue(b.activeBlocks.isEmpty); XCTAssertNotNil(c.error)
+        XCTAssertEqual(c.sessions.last?.events.filter { $0.kind == .stop }.count, 1)
+        // A timed session reaching its end through refresh also ends once.
+        try c.startSession(intent: "Lire", mode: FocusMode(minutes: 5))
+        now = now.addingTimeInterval(300); c.refresh(); c.refresh()
+        XCTAssertNil(c.currentSession)
+        XCTAssertEqual(c.sessions.last?.events.filter { $0.kind == .stop }.count, 1)
+        XCTAssertEqual(c.sessions.last?.events.last?.reason, .completed)
+    }
+    @MainActor func testReviewPanelKeepsCLINoteAndSessionAfterMidnight() throws {
+        let s = store(); try quiet(s); var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 23, minute: 30))!
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        try c.startSession(intent: "Écrire", mode: FocusMode(minutes: nil))
+        now = now.addingTimeInterval(50 * 60); c.refresh()
+        try c.stopSession(outcome: .partly, note: "reste les tests")
+        XCTAssertEqual(c.panel?.kind, .sessionReview)
+        XCTAssertFalse(c.sessions.contains { $0.id == c.panel?.sessionID }, "the session is stored under its start day")
+        let reviewed = try XCTUnwrap(c.reviewedSession); XCTAssertEqual(reviewed.id, c.panel?.sessionID)
+        XCTAssertEqual(reviewed.intent, "Écrire"); XCTAssertEqual(reviewed.note, "reste les tests")
+        XCTAssertEqual(FocusPanelMath.workSeconds(reviewed), 50 * 60, accuracy: 1)
+        try c.recordOutcome(sessionID: reviewed.id, outcome: .done, note: reviewed.note)
+        XCTAssertNil(c.reviewedSession)
+        let saved = try s.sessions("2026-10-05").first { $0.id == reviewed.id }
+        XCTAssertEqual(saved?.outcome, .done); XCTAssertEqual(saved?.note, "reste les tests")
+    }
+    @MainActor func testDayKeysStayCivilGregorianWithABuddhistSystemCalendar() throws {
+        let s = store(); try quiet(s); var calendar = Calendar(identifier: .buddhist); calendar.timeZone = TimeZone(identifier: "Europe/Paris")!
+        let now = Date(timeIntervalSince1970: 1791201600)
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        let today = FocusCalendar.dayKey(now, calendar: calendar)
+        XCTAssertTrue(today.hasPrefix("2026-")); XCTAssertEqual(c.plan.day, today)
+        _ = try c.setCommitment(period: .init(kind: .day, key: today), kind: .sessions, target: 1)
+        XCTAssertNotNil(c.todayCommitment)
+        XCTAssertEqual(try c.dayAfter("2026-10-31"), "2026-11-01")
+        try c.startSession(intent: "Écrire", mode: FocusMode(minutes: 5))
+        XCTAssertEqual(try s.sessions(today).count, 1)
+    }
+    @MainActor func testReviewSavedAfterMidnightMovesItemsToTheDayAfterThePlan() throws {
+        let s = store(); try quiet(s); var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 23, minute: 50))!
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        let item = try c.addPlanItem(title: "Rédiger", day: "2026-10-05")
+        now = now.addingTimeInterval(15 * 60); c.refresh()   // 00:05 on 2026-10-06
+        // The sheet path: it used Date() + 1 day, which gave 2026-10-07 here.
+        let review = try ConcentrationReviewSheet.review(of: try c.plan(on: "2026-10-05"), choices: [item.id: .tomorrow],
+                                                         tomorrowFirst: " Relire ", note: "", controller: c)
+        XCTAssertEqual(review.items.first?.toDay, "2026-10-06"); XCTAssertEqual(review.tomorrowFirst, "Relire")
+        try c.setReview(review)
+        XCTAssertEqual(try c.plan(on: "2026-10-06").items.map(\.title), ["Relire", "Rédiger"])
+        XCTAssertTrue(try c.plan(on: "2026-10-07").items.isEmpty)
+    }
+    @MainActor func testReReviewWithdrawsOnlyTheStillOpenMovedCopy() throws {
+        let s = store(); try quiet(s); var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 20))!
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        let (d0, d1, d2) = ("2026-10-05", "2026-10-06", "2026-10-07")
+        let item = try c.addPlanItem(title: "Rédiger", day: d0), human = try c.addPlanItem(title: "Appeler", day: d1)
+        // (a) moved, then answered done: the open copy leaves tomorrow; the human item stays.
+        try c.setReview(FocusReview(day: d0, items: [.init(id: item.id, toDay: d1)], tomorrowFirst: "Relire"))
+        XCTAssertTrue(try c.plan(on: d1).items.contains { $0.id == item.id })
+        try c.setReview(FocusReview(day: d0, items: [.init(id: item.id, outcome: .done)], tomorrowFirst: "Relire"))
+        XCTAssertEqual(try c.plan(on: d1).items.map(\.title), ["Relire", "Appeler"])
+        XCTAssertEqual(try c.plan(on: d0).items.first?.status, .done)
+        // (b) moved to D+1, then to D+2: one copy, in D+2 only.
+        try c.setReview(FocusReview(day: d0, items: [.init(id: item.id, toDay: d1)]))
+        try c.setReview(FocusReview(day: d0, items: [.init(id: item.id, toDay: d2)]))
+        XCTAssertFalse(try c.plan(on: d1).items.contains { $0.id == item.id })
+        XCTAssertEqual(try c.plan(on: d2).items.filter { $0.id == item.id }.count, 1)
+        // (c) a copy finished in its new day stays when the review changes again.
+        try c.setItemStatus(item.id, day: d2, status: .done)
+        try c.setReview(FocusReview(day: d0, items: [.init(id: item.id, outcome: .notDone)]))
+        XCTAssertEqual(try c.plan(on: d2).items.first { $0.id == item.id }?.status, .done)
+        // (d) a removal that empties the day is saved without error; reopen also withdraws the copy.
+        try c.movePlanItem(item.id, day: d0, to: "2026-10-08")
+        try c.reopenPlanItem(item.id, day: d0)
+        XCTAssertTrue(try c.plan(on: "2026-10-08").items.isEmpty)
+        XCTAssertEqual(try c.plan(on: d0).items.first?.status, .open)
+        XCTAssertTrue(try c.plan(on: d1).items.contains { $0.id == human.id })
+    }
+    @MainActor func testSessionsCommitmentProgressCountsOldOpenSessionsAndFollowsNewStops() throws {
+        let s = store(); try quiet(s); var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        // An open session started three days before the week (2026-W41 starts Monday 5 October).
+        var now = calendar.date(from: .init(year: 2026, month: 10, day: 2, hour: 9))!
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        try c.startSession(intent: "Longue", mode: FocusMode(minutes: nil))
+        now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 9))!; c.refresh()
+        let week = FocusCommitmentPeriod(kind: .week, key: "2026-W41")
+        let value = try c.setCommitment(period: week, kind: .sessions, target: 3)
+        now = now.addingTimeInterval(1800)
+        XCTAssertEqual(try c.commitmentProgress(value).measured, 1)
+        try c.stopSession()
+        try c.startSession(intent: "Courte", mode: FocusMode(minutes: 20))
+        now = now.addingTimeInterval(20 * 60); c.refresh()
+        XCTAssertNil(c.currentSession)
+        // The cached days follow every stop this controller writes.
+        XCTAssertEqual(try c.commitmentProgress(value).measured, 2)
+        XCTAssertEqual(try ConcentrationController(store: s, clock: { now }, calendar: calendar).commitmentProgress(value).measured, 2)
+        // Decoded once: an outside rewrite of the old day file is not read again by this controller.
+        try s.saveSessions([], day: "2026-10-02")
+        XCTAssertEqual(try c.commitmentProgress(value).measured, 2)
+        XCTAssertEqual(try ConcentrationController(store: s, clock: { now }, calendar: calendar).commitmentProgress(value).measured, 1)
+    }
 }
+extension ConcentrationControllerTests {
+    @MainActor func testAmbianceAdapterPicksAnInstalledFocusSourceAndNothingElse() {
+        let sources = [AmbianceSource(id: "calm", title: "Calme", kind: .focus, isAvailable: false),
+                       AmbianceSource(id: "rain", title: "Pluie", kind: .texture, isAvailable: true),
+                       AmbianceSource(id: "deep", title: "Profond", kind: .focus, isAvailable: true),
+                       AmbianceSource(id: "flow", title: "Flux", kind: .focus, isAvailable: true)]
+        XCTAssertEqual(AmbianceFocusSessionAudio.focusSource(in: sources, last: "flow")?.id, "flow")
+        XCTAssertEqual(AmbianceFocusSessionAudio.focusSource(in: sources, last: "rain")?.id, "deep")
+        XCTAssertEqual(AmbianceFocusSessionAudio.focusSource(in: sources, last: "calm")?.id, "deep")
+        XCTAssertNil(AmbianceFocusSessionAudio.focusSource(in: Array(sources.prefix(2)), last: nil))
+    }
+
+    @MainActor func testAmbianceAdapterIsSilentWhileTheModuleIsOff() {
+        var asked = 0
+        let audio = AmbianceFocusSessionAudio(controller: { asked += 1; return nil }, lastSource: { nil })
+        audio.startWork(); audio.startBreak(); audio.stop()
+        XCTAssertGreaterThan(asked, 0)
+    }
+
+    @MainActor func testRuntimeHandsItsAudioToTheController() throws {
+        let s = store(); try quiet(s)
+        let spy = AudioSpy()
+        let runtime = ConcentrationRuntime(storeFactory: { s }, blockingProvider: { nil }, presentsPanels: false)
+        runtime.audio = spy
+        runtime.apply(enabled: true)
+        defer { runtime.apply(enabled: false) }
+        let controller = try XCTUnwrap(runtime.controller)
+        var mode = FocusMode(); mode.kind = .pomodoro; mode.workMinutes = 5
+        try controller.startSession(intent: "Code", mode: mode, ambiance: true)
+        XCTAssertEqual(spy.actions.first, "work")
+    }
+}
+
 private final class AudioSpy: FocusSessionAudio {
     var actions: [String] = []
     func startWork() { actions.append("work") }; func startBreak() { actions.append("break") }; func stop() { actions.append("stop") }

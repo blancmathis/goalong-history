@@ -97,6 +97,21 @@ final class BraiseModuleTests: XCTestCase {
         let changes = gamma.changes.count; controller.evaluate(); XCTAssertEqual(gamma.changes.count, changes)
         XCTAssertThrowsError(try runtime.handle(GoalongBraiseCLI.parse(["on"])))
     }
+    @MainActor func testDefaultCalendarFollowsATimeZoneChangeWhileRunning() throws {
+        let saved = NSTimeZone.default
+        defer { NSTimeZone.default = saved }
+        NSTimeZone.default = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+        let root = try root(), gamma = BraiseTestGamma()
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-15T20:00:00Z")) // 22:00 Paris, 16:00 New York
+        let store = BraiseStore(directory: root.appendingPathComponent("Braise"), legacySettings: root.appendingPathComponent("missing"))
+        let controller = try BraiseController(store: store, gamma: gamma, runsTimers: false, clock: { now })
+        defer { controller.shutdown() }
+        controller.update { $0.mode = .auto; $0.rules = [ScheduleRule(startMinute: 21 * 60, endMinute: 7 * 60)] }
+        XCTAssertTrue(controller.active)
+        NSTimeZone.default = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        controller.evaluate()
+        XCTAssertFalse(controller.active)
+    }
     @MainActor func testUnsupportedDisplayFailsClosedAndSettingsArePreserved() throws {
         let root = try root(), gamma = BraiseTestGamma(); gamma.reject = true
         let store = BraiseStore(directory: root.appendingPathComponent("Braise"), legacySettings: root.appendingPathComponent("missing"))

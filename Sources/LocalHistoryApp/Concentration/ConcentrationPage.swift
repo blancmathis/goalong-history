@@ -453,7 +453,8 @@ struct FocusPlanChip: View {
     var live = true
 
     private var phase: FocusPhase { controller.phase ?? FocusPhases.phase(session, at: now) }
-    private var locked: Bool { controller.hasLockedBlock }
+    /// Only a block owned by this session locks its card; a commitment stake does not (R1-011).
+    var locked: Bool { controller.hasLockedSessionBlock }
     private var lists: [BlockList] { session.blockListIds.compactMap { id in controller.blockLists.first { $0.id == id } } }
 
     var body: some View {
@@ -857,7 +858,7 @@ struct FocusThreadModel: Equatable {
     }
 
     private var tomorrow: String {
-        BlockingController.dayKey(Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now)
+        (try? controller.dayAfter(plan.day)) ?? plan.day
     }
 
     private func reviewLine(_ review: FocusReview) -> String {
@@ -890,10 +891,8 @@ struct FocusThreadModel: Equatable {
     }
 
     private func reopen(_ item: FocusPlanItem) {
-        var next = plan
-        guard let index = next.items.firstIndex(where: { $0.id == item.id }) else { return }
-        next.items[index].status = .open; next.items[index].toDay = nil
-        act { try controller.setPlan(next) }
+        guard plan.items.contains(where: { $0.id == item.id }) else { return }
+        act { try controller.reopenPlanItem(item.id, day: plan.day) }
     }
 
     private func remove(_ item: FocusPlanItem) {
