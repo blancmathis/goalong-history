@@ -31,7 +31,9 @@ The anchor endpoint of this reference server receives only:
 - one-time challenge identifier
 - optional App Attest assertion/key identifier
 
-It does **not** receive app names, window titles, URLs, clicks, keyboard activity, event roots, event counts, or local timestamps during live capture.
+It does **not** receive app names, window titles, URLs, clicks, keyboard activity, event roots, event counts, or local timestamps.
+
+Reintroducing any remote verification path in the app requires a new explicit design review, consent surface, manifest entry and release gate.
 
 ## App Attest
 

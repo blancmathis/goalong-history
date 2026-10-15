@@ -345,10 +345,10 @@ public enum GoalongProofPackageVerifier {
         issues.append(contentsOf: bindingIssues)
         let bindingsValid = bindingIssues.isEmpty
 
-        // Only a valid run signature makes the signer's own claims worth showing, and even then they
+        // Only a fully valid package (run, definition and bindings) makes the signer's own claims worth showing, and even then they
         // are self-declared. Provider, external-receipt and App Attest states are independent checks
         // whose artifacts this verifier does not parse, so they are never copied from the payload.
-        let runStates = run.valid ? run.payload.flatMap(statusesFromRunPayload) : nil
+        let runStates = run.valid && definition.valid && bindingsValid ? run.payload.flatMap(statusesFromRunPayload) : nil
         return AnalysisProofVerificationReport(
             isLocallyValid: hashesValid && run.valid && definition.valid && contextValid && bindingsValid,
             runSignature: run.valid ? "valid" : "invalid",

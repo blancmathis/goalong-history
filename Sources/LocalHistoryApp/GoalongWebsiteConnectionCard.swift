@@ -183,6 +183,7 @@ struct GoalongWebsiteConnectionSheet: View {
                                     .font(.caption).lineLimit(1).truncationMode(.middle)
                                 Button("Oublier le fichier") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = ""; status = nil }
                                     .buttonStyle(LHQuietButtonStyle())
+                                    .help("Le fichier d’accès est supprimé de ce Mac. Pour révoquer l’accès, utilisez les réglages du site.")
                             }
                         }
                         GoalongDisclosureGroup("Autre méthode : coller le chemin du fichier", isExpanded: $showsTokenPath) {

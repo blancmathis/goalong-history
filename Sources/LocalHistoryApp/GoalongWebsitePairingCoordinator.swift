@@ -12,6 +12,7 @@ final class GoalongWebsitePairingCoordinator {
     /// Deletes the credential file when pairing created it (never a file the user picked) and drops
     /// the account details bound to it. The access stays valid on the site until it is revoked there.
     static func forgetStoredToken(path: String) {
+        GoalongWebsiteAutoSender.shared.forget()
         GoalongSitePairing.discardManagedToken(path: path, directory: connectionsDirectory)
         for key in ["goalong.website.accountID", "goalong.website.accountCredentialFingerprint"] {
             UserDefaults.standard.removeObject(forKey: key)

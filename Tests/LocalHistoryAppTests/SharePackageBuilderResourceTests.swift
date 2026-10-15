@@ -485,7 +485,7 @@
                 try builder.build(
                     for: fixture.day,
                     sharingRules: [:],
-                defaultVisibility: .identity,
+                    defaultVisibility: .identity,
                     privacy: GoalongPrivacyPolicy()
                 )
             ) { error in
@@ -524,7 +524,7 @@
                 try builder.build(
                     for: fixture.day,
                     sharingRules: [:],
-                defaultVisibility: .identity,
+                    defaultVisibility: .identity,
                     privacy: GoalongPrivacyPolicy()
                 )
             ) { error in
@@ -584,6 +584,34 @@
             XCTAssertThrowsError(try builder.build(
                 for: fixture.day, sharingRules: [:], defaultVisibility: .identity, privacy: blocked
             ))
+        }
+
+        func testGlobalDomainExclusionKeepsUrlEventPrivate() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let source = validEvent(
+                application: "Safari",
+                category: "work",
+                sequence: 1,
+                url: URLSnapshot(value: "https://mail.example.com/inbox", host: "mail.example.com", redactionApplied: false)
+            )
+            let eventRoot = try XCTUnwrap(source.integrity?.eventRoot)
+            let seal = try validSeal(
+                sequence: 1,
+                eventRoots: [eventRoot],
+                previousAnchorHash: String(repeating: "0", count: 64),
+                day: fixture.day
+            )
+            try writeLines([source], to: fixture.events)
+            try writeLines([seal], to: fixture.seals)
+            var excluded = GoalongPrivacyPolicy()
+            excluded.domains = ["example.com"]
+            let hidden = try fixture.builder().build(
+                for: fixture.day, sharingRules: [:], defaultVisibility: .identity, privacy: excluded
+            )
+            XCTAssertTrue(hidden.verificationReport().isLocallyValid)
+            XCTAssertEqual(hidden.minutes.first?.shareLevel, .privateOnly)
+            XCTAssertNil(hidden.minutes.first?.events)
         }
 
         func testUnreconstructibleEventFallsBackToSignedPrivateMinute() throws {
@@ -736,7 +764,8 @@
         private func validEvent(
             application: String,
             category: String,
-            sequence: UInt64
+            sequence: UInt64,
+            url: URLSnapshot? = nil
         ) -> HistoryEvent {
             let schemaVersion = 2
             let base = HistoryEvent(
@@ -750,6 +779,7 @@
                     bundleIdentifier: "test.\(application.lowercased())",
                     processIdentifier: 42
                 ),
+                url: url,
                 classification: LocalClassification(
                     category: category,
                     isWork: true,

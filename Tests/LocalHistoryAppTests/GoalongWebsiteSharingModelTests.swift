@@ -168,5 +168,21 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         model.draft.includeHourly = true
         XCTAssertFalse(model.autoSender.enabled, "Editing a running scope must pause it until reviewed")
     }
+
+    @MainActor func testDateOnlyDraftEditDoesNotPauseTheDailyPlanButClearsThePreview() async throws {
+        let (model, token, _, _) = try fixture(onSend: { _ in XCTFail("Activating a plan must not send the example") })
+        defer { model.autoSender.forget(); try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
+        await model.loadCatalog(); model.draft.deviceIDs = ["mac"]; model.draft.includeApplications = true; model.draft.applicationIDs = ["editor"]; model.draft.delivery = .daily; model.draft.timezone = "Europe/Paris"
+        await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
+        model.reviewed = true
+        await model.confirm(origin: "https://goalong.example", tokenPath: token.path)
+        XCTAssertTrue(model.autoSender.enabled)
+        model.draft.date = model.draft.date.addingTimeInterval(-86_400)
+        XCTAssertTrue(model.autoSender.enabled, "Browsing another sample day must not pause the plan")
+        XCTAssertNil(model.preview)
+        model.draft.includeHourly.toggle()
+        XCTAssertFalse(model.autoSender.enabled)
+    }
 }
+
 #endif
