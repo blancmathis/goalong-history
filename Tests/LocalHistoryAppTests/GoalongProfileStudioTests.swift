@@ -58,5 +58,19 @@ import LocalHistoryCore
         model.invalidate()
         XCTAssertNil(model.request); XCTAssertNil(model.result); XCTAssertFalse(model.consent); XCTAssertFalse(model.reviewed); XCTAssertTrue(model.selectedItems.isEmpty)
     }
+    func testPolicyOrPauseChangeAfterLoadBlocksTheSend() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-studio-guard-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let revisions = (privacy: GoalongPrivacyPolicy.load(in: root).revision, pause: try GoalongGlobalPause.admit(in: root))
+        XCTAssertNoThrow(try GoalongProfileStudioModel.revalidate(native: true, revisions: revisions, root: root))
+        XCTAssertNoThrow(try GoalongProfileStudioModel.revalidate(native: false, revisions: nil, root: root))
+        XCTAssertThrowsError(try GoalongProfileStudioModel.revalidate(native: true, revisions: nil, root: root))
+        var policy = GoalongPrivacyPolicy(); policy.applications = ["x": "X"]; try policy.save(in: root)
+        XCTAssertThrowsError(try GoalongProfileStudioModel.revalidate(native: true, revisions: revisions, root: root))
+        let fresh = (privacy: GoalongPrivacyPolicy.load(in: root).revision, pause: revisions.pause)
+        XCTAssertNoThrow(try GoalongProfileStudioModel.revalidate(native: true, revisions: fresh, root: root))
+        try GoalongGlobalPause.setPaused(true, in: root)
+        XCTAssertThrowsError(try GoalongProfileStudioModel.revalidate(native: true, revisions: fresh, root: root))
+    }
 }
 #endif

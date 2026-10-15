@@ -27,6 +27,33 @@ extension Notification.Name {
     private var nativeSource = false
     private var richSource = false
     private var conversationSource = false
+    /// Privacy-policy and pause revisions captured before the native events were read.
+    private var guardRevisions: (privacy: String, pause: String)?
+    private var pauseObserver: NSObjectProtocol?
+    init() {
+        pauseObserver = NotificationCenter.default.addObserver(forName: .goalongGlobalPauseDidChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.nativeSource, self.busy || self.request != nil, GoalongGlobalPause.isPaused(in: AppPaths.applicationSupportDirectory) else { return }
+                self.dropNativeSelection("Pause globale active : la sélection a été retirée. Rechargez-la après la reprise.")
+            }
+        }
+    }
+    deinit { if let pauseObserver { NotificationCenter.default.removeObserver(pauseObserver) } }
+    private func dropNativeSelection(_ message: String) {
+        invalidate(); evidence = []; selectedEvidence = []; guardRevisions = nil; error = message
+    }
+    /// Refuses a send when the global exclusions or the global pause changed since the events were read.
+    nonisolated static func revalidate(native: Bool, revisions: (privacy: String, pause: String)?, root: URL) throws {
+        guard native else { return }
+        guard let revisions, GoalongPrivacyPolicy.load(in: root).revision == revisions.privacy else {
+            throw GoalongProfileAnalysis.invalid("Les exclusions ont changé. Rechargez la sélection avant de continuer.")
+        }
+        try GoalongGlobalPause.revalidate(revisions.pause, in: root)
+    }
+    private func revalidateNative() throws {
+        do { try Self.revalidate(native: nativeSource, revisions: guardRevisions, root: AppPaths.applicationSupportDirectory) }
+        catch { dropNativeSelection(error.localizedDescription); throw error }
+    }
     var archive: GoalongProfileAnalysis.Archive? { guard let request, let result else { return nil }; return .init(request: request, result: result) }
     func invalidate() { cancel(); request = nil; result = nil; selectedItems = []; consent = false; reviewed = false }
     func cancel() { operation = UUID(); task?.cancel(); session?.close(); session = nil; busy = false }
@@ -34,6 +61,11 @@ extension Notification.Name {
     func load(start: Date, end: Date, rich: Bool, computer: Bool = true, conversations: Bool = false, conversationsFrom: Date? = nil) {
         invalidate(); evidence = []; selectedEvidence = []; nativeSource = computer; richSource = computer && rich; conversationSource = conversations
         guard computer || conversations, sourcesEnabled else { error = "Choisissez une source et activez-la dans les réglages."; return }
+        let root = AppPaths.applicationSupportDirectory
+        if computer {
+            do { guardRevisions = (GoalongPrivacyPolicy.load(in: root).revision, try GoalongGlobalPause.admit(in: root)) }
+            catch { guardRevisions = nil; self.error = error.localizedDescription; return }
+        } else { guardRevisions = nil }
         busy = true; error = nil; status = "Lecture locale des événements horodatés…"; let id = operation
         task = Task {
             do {
@@ -49,6 +81,7 @@ extension Notification.Name {
                 let rows = selection.0
                 guard operation == id else { return }
                 guard sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Une source a été désactivée pendant la lecture.") }
+                try Self.revalidate(native: computer, revisions: guardRevisions, root: root)
                 evidence = rows; selectedEvidence = Set(rows.map(\.id)); busy = false; status = "\(rows.count) événements chargés localement. Préparez ensuite le prompt pour appliquer vos règles. \(selection.1)"
             } catch { guard operation == id else { return }; self.error = error.localizedDescription; busy = false }
         }
@@ -57,6 +90,7 @@ extension Notification.Name {
         invalidate(); error = nil
         do {
             guard sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Une source sélectionnée a été désactivée.") }
+            try revalidateNative()
             let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
             request = try GoalongProfileAnalysis.prepare(date: formatter.string(from: day), timezone: TimeZone.current.identifier,
                 evidence: evidence.filter { selectedEvidence.contains($0.id) }, policy: policy, selected: GoalongProfileAnalysis.modules.filter { modules.contains($0) }, includeConversations: includeConversations)
@@ -65,7 +99,9 @@ extension Notification.Name {
     }
     func analyze() {
         guard !busy, consent, let selected = request, sourcesEnabled, GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { error = "Relisez la sélection et autorisez son envoi à l’agent."; return }
+        do { try revalidateNative() } catch { return }
         busy = true; result = nil; selectedItems = []; reviewed = false; error = nil; status = "Analyse des seules rubriques choisies…"; let id = UUID(); operation = id
+        let native = nativeSource, revisions = guardRevisions, root = AppPaths.applicationSupportDirectory
         task = Task {
             do {
                 guard let executable = CodexExecutableLocator.locate() else { throw CodexAppServerError.executableUnavailable }
@@ -73,11 +109,13 @@ extension Notification.Name {
                 session = active; defer { active.close(); if operation == id { session = nil } }
                 guard operation == id, sourcesEnabled, GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { throw GoalongProfileAnalysis.invalid("Autorisation retirée.") }
                 let output = try await Task.detached(priority: .userInitiated) {
+                    try Self.revalidate(native: native, revisions: revisions, root: root)
                     let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
                     return try active.generateProfileAnalysis(request: selected, workingDirectory: directory)
                 }.value
                 guard operation == id else { return }
                 guard sourcesEnabled, GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { throw GoalongProfileAnalysis.invalid("Autorisation retirée pendant l’analyse.") }
+                try Self.revalidate(native: native, revisions: revisions, root: root)
                 result = try GoalongProfileAnalysis.apply(output, to: selected); busy = false; consent = false
                 status = "Analyse terminée. Elle reste locale. Relisez, corrigez et choisissez éventuellement les résultats à transmettre."
             } catch { guard operation == id else { return }; self.error = error.localizedDescription; busy = false; consent = false }
@@ -110,7 +148,7 @@ extension Notification.Name {
             if let saved = try? GoalongProfileAnalysis.parseArchive(bytes) {
                 let checked = try GoalongProfileAnalysis.apply(saved.result, to: saved.request); request = saved.request; result = checked
             } else { let saved = try GoalongProfileAnalysis.parseRequest(bytes); _ = try saved.context(); request = saved }
-            nativeSource = false; richSource = false; conversationSource = false; evidence = []; selectedEvidence = []; status = "Dossier local rouvert. Relisez-le avant tout envoi."
+            nativeSource = false; richSource = false; conversationSource = false; guardRevisions = nil; evidence = []; selectedEvidence = []; status = "Dossier local rouvert. Relisez-le avant tout envoi."
         } catch { self.error = error.localizedDescription }
     }
     func correct(_ id: String, field: String, text: String) {
