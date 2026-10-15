@@ -112,9 +112,7 @@
     }
 
     private func durationText(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds / 60)
-        if minutes < 60 { return "\(minutes) min" }
-        return minutes % 60 == 0 ? "\(minutes / 60) h" : "\(minutes / 60) h \(String(format: "%02d", minutes % 60))"
+        GoalongAnalyticsFormatting.duration(seconds)
     }
 
     private func clockText(_ seconds: TimeInterval) -> String {
@@ -158,8 +156,8 @@
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 8)
                 PanelIconButton(
-                    symbol: paused ? "play.fill" : "pause.fill",
-                    label: paused ? "Reprendre le suivi" : "Mettre le suivi en pause",
+                    symbol: model.consentOff ? "gearshape.fill" : (paused ? "play.fill" : "pause.fill"),
+                    label: model.consentOff ? "Configurer l’enregistrement…" : (paused ? "Reprendre le suivi" : "Mettre le suivi en pause"),
                     prominent: paused,
                     action: model.togglePause
                 )
@@ -178,7 +176,7 @@
                 Button("Voir la journée", action: model.openDay).buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
             } content: {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    WorkFigure(seconds: model.workSeconds)
+                    WorkFigure(seconds: model.workSeconds, known: model.workKnown)
                     Text(model.otherSeconds >= 60
                         ? "de travail, \(durationText(model.otherSeconds)) hors travail" : "de travail")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
@@ -192,10 +190,17 @@
     /// « 3 h 12 »: hours large, minutes one step down, like the app's period figure.
     private struct WorkFigure: View {
         let seconds: TimeInterval
+        let known: Bool
         var body: some View {
-            let minutes = Int(seconds / 60)
+            // Rounded like the Activity page, so both show the same figure for the same day.
+            let minutes = Int((seconds / 60).rounded())
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                if minutes >= 60 {
+                if !known {
+                    Text("—").font(.system(size: 28, weight: .bold)).tracking(-0.6)
+                } else if seconds > 0 && seconds < 60 {
+                    Text("< 1").font(.system(size: 28, weight: .bold)).tracking(-0.6)
+                    Text("min").font(.system(size: 17, weight: .semibold)).tracking(-0.2)
+                } else if minutes >= 60 {
                     Text("\(minutes / 60) h").font(.system(size: 28, weight: .bold)).tracking(-0.6)
                     Text(String(format: "%02d", minutes % 60)).font(.system(size: 17, weight: .semibold)).tracking(-0.2)
                 } else {
@@ -205,7 +210,7 @@
             }
             .goalongNumericTransition()
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(durationText(seconds)) de travail aujourd’hui")
+            .accessibilityLabel(known ? "\(durationText(seconds)) de travail aujourd’hui" : "Temps de travail aujourd’hui : à classer")
         }
     }
 
@@ -272,6 +277,10 @@
                 Group {
                     if let run = model.focusRun {
                         FocusRunning(run: run, model: model).transition(.opacity.combined(with: .move(edge: .trailing)))
+                    } else if !model.concentrationEnabled {
+                        InactiveRow(text: "Séances libres ou Pomodoro, avec blocage.",
+                                    action: "Activer dans Réglages", perform: model.openModulesSettings)
+                            .transition(.opacity)
                     } else {
                         FocusSetup(model: model).transition(.opacity.combined(with: .move(edge: .leading)))
                     }
@@ -632,10 +641,10 @@
                         .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
                         .accessibilityLabel("Demander l’arrêt de \(list.title)")
                 } else {
-                    GoalongSwitch(isOn: Binding(get: { list.isActive }, set: { model.setBlockList(list.id, active: $0) }))
+                    Toggle("Bloquer \(list.title)", isOn: Binding(get: { list.isActive }, set: { model.setBlockList(list.id, active: $0) }))
+                        .toggleStyle(GoalongSwitchStyle(layout: .switchOnly))
                         .controlSize(.small)
                         .help(list.isActive ? "Arrêter ce blocage" : "Bloquer jusqu’à minuit")
-                        .accessibilityLabel("Bloquer \(list.title)")
                 }
             }
             .frame(minHeight: 40)
