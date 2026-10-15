@@ -178,10 +178,7 @@
                 }
                 let read = {
                     guard let input, self.valid(input, generation: generation) else { finish(.obsolete); return }
-                    let privateApp = blockingResult.flatMap { observation in
-                        observation.privateWindow ? AppSnapshot(name: observation.bundleIdentifier,
-                            bundleIdentifier: observation.bundleIdentifier, processIdentifier: observation.pid) : nil
-                    }
+                    let privateApp = input.blockingPrivateApp(for: blockingResult)
                     let blockingBoundary = privateApp == nil ? blockingResult?.windowBoundary : nil
                     // Resolve uncatalogued system focus by a main continuation, never a sync hop.
                     self.historyQueue.async {
@@ -265,17 +262,15 @@
 
         private func legacyCapture(blockingSink: ((BlockingObservation) -> Void)? = nil, historyEnabled: Bool = true,
                             completion: @escaping (ContextSnapshot?) -> Void) {
-            var blockingPrivateApp: AppSnapshot?
+            var blockingObservation: BlockingObservation?
             if let blockingSink, let observation = blockingProbe == nil ? captureBlocking() : blockingProbe?() {
                 blockingSink(observation)
-                if observation.privateWindow {
-                    blockingPrivateApp = AppSnapshot(name: observation.bundleIdentifier,
-                        bundleIdentifier: observation.bundleIdentifier, processIdentifier: observation.pid)
-                }
+                blockingObservation = observation
             }
             guard historyEnabled else { completion(nil); return }
             let requestID = client.clock.identifier()
             let input = parameters()
+            let blockingPrivateApp = input.blockingPrivateApp(for: blockingObservation)
             let result = client.measure(.execution, requestID: requestID) {
                 AXAccess.withClient(client, requestID: requestID) {
                     // The legacy bridge resolves an uncatalogued focus owner on

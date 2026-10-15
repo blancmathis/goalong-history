@@ -82,6 +82,34 @@ final class AXAsyncCaptureTests: XCTestCase {
         }
     }
 
+    func testPrivateWindowOptInIsHonoredWhenBlockingRuns() {
+        for backend in [ContextProvider.Backend.background, .legacy] {
+            let tree = ScriptedAXTree(browser: true)
+            let input = input(bundle: "com.apple.Safari") { $0.capturePrivateBrowsing = true }
+            tree.attributes[Int(CFHash(tree.window))]?["AXTitle"] = "Private Browsing" as CFString
+            let provider = ContextProvider(client: tree.client, backend: backend, parameters: { input })
+            let done = expectation(description: "history read with the opt-in")
+            var seen = false
+            provider.requestCapture(blockingSink: { seen = $0.privateWindow }) { snapshot in
+                XCTAssertNotEqual(snapshot?.suppressionReason, .privateBrowserWindow, "\(backend)")
+                XCTAssertNotNil(snapshot?.window, "\(backend)")
+                done.fulfill()
+            }
+            wait(for: [done], timeout: 3)
+            XCTAssertTrue(seen, "\(backend)")
+        }
+    }
+
+    func testBlockingPrivateAppFollowsTheOptInAndUsesTheAppName() {
+        let suppressed = input(bundle: "com.apple.Safari")
+        let observation = BlockingObservation(bundleIdentifier: "com.apple.Safari", pid: 42, windowFrame: .zero,
+                                              isBrowser: true, url: nil, privateWindow: true, at: Date())
+        XCTAssertEqual(suppressed.blockingPrivateApp(for: observation)?.name, "Fixture")
+        XCTAssertNil(input(bundle: "com.apple.Safari") { $0.capturePrivateBrowsing = true }.blockingPrivateApp(for: observation))
+        var normal = observation; normal.privateWindow = false
+        XCTAssertNil(suppressed.blockingPrivateApp(for: normal))
+    }
+
     func testBlockingStillCompletesWhenHistoryRPCIsHeldAndMainContinues() {
         let tree = ScriptedAXTree(browser: true), input = input(bundle: "com.apple.Safari")
         let entered = expectation(description: "held history RPC"), history = expectation(description: "history terminal")
