@@ -478,9 +478,21 @@
         private let analysisConsentProvider: () -> Bool
         private let analysisSelectionProvider: () -> GoalongAnalysisSelection
         private let analysisSigningIdentityProvider: (() throws -> AnalysisRunSigningIdentity)?
+        /// Test seam: replaces the local-history read of the day overview.
+        private let dayOverviewReader: ((Date) throws -> ChatGPTRecapDayOverview)?
         private let derivedWriteBarrier = DerivedHistoryWriteBarrier.shared
         private let sessionLock = NSLock()
         private let runStateLock = NSLock()
+        /// Day overviews and proof checks only read: they must not wait behind a recap run
+        /// that can hold `workQueue` for many minutes.
+        private let readQueue = DispatchQueue(
+            label: "ai.goalong.localhistory.chatgpt-recap-read",
+            qos: .userInitiated
+        )
+        private var dayOverviewRequestID = 0  // guarded by runStateLock
+        #if DEBUG
+            private var dayOverviewBuildCount = 0  // guarded by runStateLock
+        #endif
         private let loginQueue = DispatchQueue(
             label: "ai.goalong.localhistory.chatgpt-login",
             qos: .userInitiated
@@ -541,7 +553,8 @@
                 GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis)
             },
             analysisSelectionProvider: @escaping () -> GoalongAnalysisSelection = { GoalongAnalysisSelection.load() },
-            analysisSigningIdentityProvider: (() throws -> AnalysisRunSigningIdentity)? = nil
+            analysisSigningIdentityProvider: (() throws -> AnalysisRunSigningIdentity)? = nil,
+            dayOverviewReader: ((Date) throws -> ChatGPTRecapDayOverview)? = nil
         ) {
             self.chatHistoryStore = chatHistoryStore
             self.fileManager = fileManager
@@ -562,6 +575,7 @@
             self.analysisConsentProvider = analysisConsentProvider
             self.analysisSelectionProvider = analysisSelectionProvider
             self.analysisSigningIdentityProvider = analysisSigningIdentityProvider
+            self.dayOverviewReader = dayOverviewReader
             let today = Calendar.current.startOfDay(for: Date())
             selectedDay = today
             automaticRecapsEnabled =
@@ -635,6 +649,7 @@
             started = false
             removeSystemClockObservers()
             invalidateActiveRun(closeSession: true)
+            discardPendingDayOverview()
         }
 
         /// The daily timers count only awake time. A wake, a new day or a clock change re-arms
@@ -675,6 +690,27 @@
         /// clear-history path waits for the shared derived-write barrier to drain.
         func prepareForHistoryClear() {
             invalidateActiveRun(closeSession: true)
+            discardPendingDayOverview()
+        }
+
+        @discardableResult
+        private func nextDayOverviewRequest() -> Int {
+            runStateLock.lock()
+            defer { runStateLock.unlock() }
+            dayOverviewRequestID += 1
+            return dayOverviewRequestID
+        }
+
+        private func isLatestDayOverviewRequest(_ id: Int) -> Bool {
+            runStateLock.lock()
+            defer { runStateLock.unlock() }
+            return dayOverviewRequestID == id
+        }
+
+        /// An overview read before a clear or a stop must not be shown after it.
+        private func discardPendingDayOverview() {
+            nextDayOverviewRequest()
+            isLoadingDayOverview = false
         }
 
         func selectDay(_ date: Date) {
@@ -700,7 +736,7 @@
                 return
             }
             let requestedExecutionID = reference.executionID
-            workQueue.async { [weak self] in
+            readQueue.async { [weak self] in
                 guard let self else { return }
                 let report = try? self.proofStore.verify(reference: reference)
                 DispatchQueue.main.async {
@@ -725,23 +761,32 @@
             let includeAgentActivity = GoalongCapabilityConsentStore.shared.isEnabled(.aiConversations)
             isLoadingDayOverview = true
             dayOverviewError = nil
-            workQueue.async { [weak self] in
+            let requestID = nextDayOverviewRequest()
+            readQueue.async { [weak self] in
                 guard let self else { return }
+                // A later day was chosen meanwhile: skip this full read.
+                guard self.isLatestDayOverviewRequest(requestID) else { return }
+                #if DEBUG
+                    self.runStateLock.lock()
+                    self.dayOverviewBuildCount += 1
+                    self.runStateLock.unlock()
+                #endif
                 do {
-                    let context = try ChatGPTRecapContextBuilder.build(
-                        for: requestedDay,
-                        deviceID: self.deviceID,
-                        chatHistoryStore: self.chatHistoryStore,
-                        includeScreenTime: includeScreenTime,
-                        includeAgentActivity: includeAgentActivity,
-                        analyzeAgentContent: false
-                    )
-                    let measuredOverview = ChatGPTRecapContextBuilder.dayOverview(from: context)
+                    let measuredOverview = try self.dayOverviewReader?(requestedDay)
+                        ?? ChatGPTRecapContextBuilder.dayOverview(from: ChatGPTRecapContextBuilder.build(
+                            for: requestedDay,
+                            deviceID: self.deviceID,
+                            chatHistoryStore: self.chatHistoryStore,
+                            includeScreenTime: includeScreenTime,
+                            includeAgentActivity: includeAgentActivity,
+                            analyzeAgentContent: false
+                        ))
                     let overview = storedSourceCounts.map {
                         measuredOverview.replacingAgentMetrics(with: $0)
                     } ?? measuredOverview
                     DispatchQueue.main.async {
-                        guard Calendar.current.isDate(self.selectedDay, inSameDayAs: requestedDay) else {
+                        guard self.isLatestDayOverviewRequest(requestID),
+                              Calendar.current.isDate(self.selectedDay, inSameDayAs: requestedDay) else {
                             return
                         }
                         self.dayOverview = overview
@@ -751,7 +796,8 @@
                     let message = ActivitySemanticTextSanitizer.redact(error.localizedDescription)
                         ?? "La journée choisie n’a pas pu être chargée."
                     DispatchQueue.main.async {
-                        guard Calendar.current.isDate(self.selectedDay, inSameDayAs: requestedDay) else {
+                        guard self.isLatestDayOverviewRequest(requestID),
+                              Calendar.current.isDate(self.selectedDay, inSameDayAs: requestedDay) else {
                             return
                         }
                         self.dayOverview = nil
@@ -1393,6 +1439,17 @@
             var automaticRetryAttemptForTesting: Int { automaticRetryAttempt }
 
             func handleWakeOrDayChangeForTesting() { handleWakeOrDayChange() }
+
+            /// Holds the generation queue (as a long recap run does) or the read queue until `release` is signalled.
+            func blockQueueForTesting(reads: Bool, until release: DispatchSemaphore) {
+                (reads ? readQueue : workQueue).async { release.wait() }
+            }
+
+            var dayOverviewBuildCountForTesting: Int {
+                runStateLock.lock()
+                defer { runStateLock.unlock() }
+                return dayOverviewBuildCount
+            }
 
             var observesSystemClockForTesting: Bool { !systemClockObservers.isEmpty }
 
