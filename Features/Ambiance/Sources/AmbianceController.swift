@@ -20,7 +20,7 @@ import OndeCore
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var downloadTickets: [String: UUID] = [:]
     @Published public private(set) var importNotice: String?
-    private var importTask: Task<Void, Never>?
+    private var importTasks: [UUID: Task<Void, Never>] = [:]
     private var playTask: Task<Void, Never>?
     private var playTicket: UUID?
     init(settings: AmbianceSettings, supportDirectory: URL) {
@@ -99,12 +99,13 @@ import OndeCore
     }
     public func shutdown() {
         stop()
-        importTask?.cancel(); importTask = nil; importNotice = nil
+        for task in importTasks.values { task.cancel() }
+        importTasks.removeAll(); importNotice = nil
         for task in downloadTasks.values { task.cancel() }
         downloadTasks.removeAll(); downloadTickets.removeAll()
         sources = []; packs = []
     }
-    deinit { playTask?.cancel(); importTask?.cancel(); for task in downloadTasks.values { task.cancel() } }
+    deinit { playTask?.cancel(); for task in importTasks.values { task.cancel() }; for task in downloadTasks.values { task.cancel() } }
     /// Explicit diagnostic render. It emits no device audio and always tears
     /// down the runtime, including on validation, decode and render failures.
     public func renderOffline(_ source: AmbianceSource, seconds: Double) throws -> AmbianceRenderMeasure {
@@ -153,6 +154,10 @@ import OndeCore
             } catch {
                 guard let self, self.downloadTickets[id] == ticket else { return }
                 self.downloadTickets[id] = nil; self.downloadTasks[id] = nil
+                // A cancel is the user's own choice: back to idle, not a failure.
+                var wasCancelled = error is CancellationError
+                if case AmbianceError.cancelled = error { wasCancelled = true }
+                if wasCancelled { self.setStatus(id, .notInstalled); self.refresh(); return }
                 self.setStatus(id, .failed("Installation impossible : \(error.localizedDescription)")); self.refreshSources()
             }
         }
@@ -213,15 +218,16 @@ import OndeCore
             merge(Self.collectAudioFiles(urls, existing: settings.ownFiles)); return nil
         }
         let existing = settings.ownFiles
-        importTask?.cancel()
+        // Imports run side by side: merge() dedups against the current list, so none must cancel another.
+        let importID = UUID()
         let task = Task { [weak self] in
             let worker = Task.detached(priority: .userInitiated) { Self.collectAudioFiles(urls, existing: existing) }
             let result = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
             guard let self, !Task.isCancelled else { return }
-            self.importTask = nil
+            self.importTasks[importID] = nil
             self.merge(result)
         }
-        importTask = task
+        importTasks[importID] = task
         return task
     }
     func merge(_ result: (paths: [String], truncated: Truncation?)) {
