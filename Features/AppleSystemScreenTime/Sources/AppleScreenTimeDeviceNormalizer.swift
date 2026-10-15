@@ -274,7 +274,7 @@
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             if device.id == currentMacID {
-                return cleaned.isEmpty ? "This Mac" : cleaned
+                return cleaned.isEmpty ? "Ce Mac" : cleaned
             }
             return cleaned.isEmpty ? inferredKind(for: device).displayName : cleaned
         }
@@ -282,8 +282,8 @@
         private static func inferredKind(for device: AppleScreenTimeDevice) -> AppleScreenTimeDeviceKind {
             guard device.kind == .unknown else { return device.kind }
             let lower = device.displayName.lowercased()
-            if lower.contains("ipad") && !lower.contains("iphone or ipad") { return .iPad }
-            if lower.contains("iphone") && !lower.contains("iphone or ipad") { return .iPhone }
+            if lower.contains("ipad") && !AppleScreenTimeGenericDeviceName.isIPhoneOrIPad(lower) { return .iPad }
+            if lower.contains("iphone") && !AppleScreenTimeGenericDeviceName.isIPhoneOrIPad(lower) { return .iPhone }
             if lower.contains("ipod") { return .iPod }
             if lower.contains("watch") { return .appleWatch }
             if lower.contains("apple tv") || lower.contains("appletv") { return .appleTV }
@@ -309,9 +309,9 @@
                 .lowercased()
                 ?? device.displayName.lowercased()
             return inferredKind(for: device) == .unknown
-                || normalized == "apple device"
+                || AppleScreenTimeGenericDeviceName.isAppleDevice(normalized)
                 || normalized == "unknown device"
-                || normalized == "iphone or ipad"
+                || AppleScreenTimeGenericDeviceName.isIPhoneOrIPad(normalized)
         }
 
         private static func brandedStatus(_ status: AppleSystemScreenTimeStatus) -> AppleSystemScreenTimeStatus {

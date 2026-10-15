@@ -102,9 +102,13 @@
                 let url = fileURL(for: interval.start)
                 // A malformed active-day record from an older build must not block a valid
                 // Apple refresh. It is replaced only after the new payload validates.
-                if let existing = try? loadRecordLocked(at: url),
-                    Self.hasEquivalentPayload(existing.collection, collection)
-                {
+                let existing = try? loadRecordLocked(at: url)
+                // A completed day is never rewritten, even when a westward time zone change makes
+                // the new zone's "today" share its day name; its old-zone boundaries stay intact.
+                if let existing, existing.state == .completed {
+                    return existing
+                }
+                if let existing, Self.hasEquivalentPayload(existing.collection, collection) {
                     return existing
                 }
 
@@ -436,7 +440,12 @@
                 guard activityAdmission() == admission else { return pausedCollection() }
                 if live.storedExport != nil {
                     do {
-                        _ = try archive.storeActiveDay(live, for: requestedDay, storedAt: now)
+                        let stored = try archive.storeActiveDay(live, for: requestedDay, storedAt: now)
+                        if stored?.state == .completed {
+                            // The day was archived as completed in another time zone: show the
+                            // live read without claiming it was stored.
+                            return live.replacingStorageState(.directAppleRead)
+                        }
                         return live.replacingStorageState(.liveCurrentDayStored)
                     } catch {
                         return AppleSystemScreenTimeCollection(
@@ -444,9 +453,9 @@
                             availableDevices: live.availableDevices,
                             status: AppleSystemScreenTimeStatus(
                                 kind: .partial,
-                                title: "Screen Time read, local day could not be saved",
+                                title: "Temps d’écran lu, journée locale non enregistrée",
                                 message:
-                                    "Apple data is visible now, but Goalong could not update today's local day record: \(error)"
+                                    "Les données Apple sont visibles, mais Goalong n’a pas pu mettre à jour l’enregistrement local d’aujourd’hui."
                             ),
                             deviceSourceLabels: live.deviceSourceLabels,
                             latestAppleUpdate: live.latestAppleUpdate,
@@ -464,9 +473,9 @@
                         availableDevices: stored.availableDevices,
                         status: AppleSystemScreenTimeStatus(
                             kind: .partial,
-                            title: "Showing today's last stored Screen Time",
+                            title: "Dernier temps d’écran enregistré aujourd’hui",
                             message:
-                                "The current Apple read returned no usable data. Goalong kept the last successful update for today. \(live.status.message)"
+                                "La lecture Apple actuelle n’a renvoyé aucune donnée exploitable. Goalong a gardé la dernière mise à jour réussie d’aujourd’hui. \(live.status.message)"
                         ),
                         deviceSourceLabels: stored.deviceSourceLabels,
                         latestAppleUpdate: stored.latestAppleUpdate,
@@ -500,9 +509,9 @@
                 availableDevices: [],
                 status: AppleSystemScreenTimeStatus(
                     kind: .noAppleData,
-                    title: "No stored Screen Time for this completed day",
+                    title: "Aucun temps d’écran enregistré pour ce jour terminé",
                     message:
-                        "Goalong never reopens Apple history after a day ends. This day was not captured while it was active."
+                        "Goalong ne relit jamais l’historique d’Apple après la fin d’un jour. Ce jour n’a pas été capturé pendant qu’il était actif."
                 ),
                 deviceSourceLabels: [:],
                 latestAppleUpdate: nil,

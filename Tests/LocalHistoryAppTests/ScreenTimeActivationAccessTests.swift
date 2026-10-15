@@ -33,16 +33,16 @@ final class ScreenTimeActivationAccessTests: XCTestCase {
         let warned = source.makeStatus(hasData: true, permissionDenied: false, remoteDeviceCount: 0,
             warnings: ["daily block budget reached"], privateAggregateStore: true)
         XCTAssertEqual(warned.kind, .partial)
-        XCTAssertFalse(warned.message.contains("unavailable. The readable fallback"))
+        XCTAssertFalse(warned.message.contains("indisponible. La reconstruction lisible"))
         XCTAssertTrue(warned.message.contains("daily block budget reached"))
         let denied = source.makeStatus(hasData: true, permissionDenied: true, remoteDeviceCount: 0,
             warnings: [], privateAggregateStore: true)
         XCTAssertEqual(denied.kind, .partial)
-        XCTAssertFalse(denied.message.contains("unavailable"))
+        XCTAssertFalse(denied.message.contains("indisponible"))
         let fallback = source.makeStatus(hasData: true, permissionDenied: true, remoteDeviceCount: 0,
             warnings: ["w"], privateAggregateStore: false)
         XCTAssertEqual(fallback.kind, .partial)
-        XCTAssertTrue(fallback.message.contains("unavailable. The readable fallback is shown; w"))
+        XCTAssertTrue(fallback.message.contains("indisponible. La reconstruction lisible est affichée ; w"))
     }
 
     func testPreflightDistinguishesMissingReadableDeniedAndSymlinkWithoutCollecting() throws {

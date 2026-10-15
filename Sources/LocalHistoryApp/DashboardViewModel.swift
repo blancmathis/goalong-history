@@ -967,7 +967,7 @@
 
         /// A French message for an alert: the error's own description, never a Swift dump.
         static func userFacingMessage(_ error: Error) -> String {
-            (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            GoalongUserFacingError.message(error)
         }
 
         private static func isValidVerificationURL(_ raw: String) -> Bool {

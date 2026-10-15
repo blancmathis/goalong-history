@@ -30,8 +30,8 @@
 
         public static let loading = AppleSystemScreenTimeStatus(
             kind: .noAppleData,
-            title: "Reading Apple Screen Time",
-            message: "Goalong History is checking Apple’s local Screen Time and iCloud-synced device stores."
+            title: "Lecture du temps d’écran Apple",
+            message: "Goalong History consulte le temps d’écran local d’Apple et les appareils synchronisés par iCloud."
         )
     }
 
@@ -440,8 +440,8 @@
                 return emptyCollection(
                     status: AppleSystemScreenTimeStatus(
                         kind: .noAppleData,
-                        title: "Invalid day",
-                        message: "The selected calendar day could not be resolved."
+                        title: "Jour invalide",
+                        message: "Le jour choisi n’a pas pu être déterminé."
                     )
                 )
             }
@@ -2406,88 +2406,88 @@
             if permissionDenied, !hasData, activationAccess() == .permissionRequired {
                 return AppleSystemScreenTimeStatus(
                     kind: .fullDiskAccessRequired,
-                    title: "Full Disk Access required",
+                    title: "Accès complet au disque requis",
                     message:
-                        "Apple protects its Screen Time aggregate, ScreenTime.AppUsage, knowledgeC and Biome stores. Grant Goalong History Full Disk Access once, then reopen or refresh the app."
+                        "Apple protège ses données de temps d’écran (agrégat, ScreenTime.AppUsage, knowledgeC et Biome). Donne une fois l’accès complet au disque à Goalong History, puis rouvre ou actualise l’app."
                 )
             }
             if permissionDenied, !hasData {
                 return AppleSystemScreenTimeStatus(
                     kind: .partial,
-                    title: "Some Apple sources are unavailable",
-                    message: "Goalong can access an Apple source, but other stores are unavailable and no usage was loaded for this day. Try another day or refresh. Full Disk Access does not guarantee access to every private Apple store."
+                    title: "Certaines sources Apple sont indisponibles",
+                    message: "Goalong accède à une source Apple, mais les autres sont indisponibles et aucun usage n’a été chargé pour ce jour. Essaie un autre jour ou actualise. L’accès complet au disque ne garantit pas l’accès à toutes les sources privées d’Apple."
                 )
             }
             if hasData, permissionDenied || !warnings.isEmpty, privateAggregateStore {
                 return AppleSystemScreenTimeStatus(
                     kind: .partial,
-                    title: "Apple Screen Time partially available",
+                    title: "Temps d’écran Apple partiellement disponible",
                     message: warnings.first.map {
-                        "Apple’s private ScreenTimeAgent aggregate was read, but one of its stores is unavailable or incomplete; \($0)"
-                    } ?? "Apple’s private ScreenTimeAgent aggregate was read, but one of its stores is protected, so some devices or blocks may be missing."
+                        "L’agrégat privé ScreenTimeAgent d’Apple a été lu, mais l’une de ses sources est indisponible ou incomplète ; \($0)"
+                    } ?? "L’agrégat privé ScreenTimeAgent d’Apple a été lu, mais l’une de ses sources est protégée : des appareils ou des blocs peuvent manquer."
                 )
             }
             if hasData, permissionDenied || !warnings.isEmpty {
                 return AppleSystemScreenTimeStatus(
                     kind: .partial,
-                    title: "Apple Screen Time partially available",
+                    title: "Temps d’écran Apple partiellement disponible",
                     message: warnings.first.map {
-                        "Apple’s private ScreenTimeAgent aggregate is unavailable. The readable fallback is shown; \($0)"
-                    } ?? "Apple’s private ScreenTimeAgent aggregate is unavailable. This is a partial reconstruction from readable Apple usage streams and can differ from Settings."
+                        "L’agrégat privé ScreenTimeAgent d’Apple est indisponible. La reconstruction lisible est affichée ; \($0)"
+                    } ?? "L’agrégat privé ScreenTimeAgent d’Apple est indisponible. Il s’agit d’une reconstruction partielle à partir des flux d’usage lisibles d’Apple, qui peut différer de Réglages."
                 )
             }
             if hasData, remoteDeviceCount == 0 {
                 return AppleSystemScreenTimeStatus(
                     kind: .localOnly,
                     title: privateAggregateStore
-                        ? "Apple Screen Time aggregate for this Mac"
-                        : "Apple activity data for this Mac",
+                        ? "Agrégat de temps d’écran Apple pour ce Mac"
+                        : "Données d’activité Apple pour ce Mac",
                     message: privateAggregateStore
-                        ? "Goalong is reading an Apple-owned private aggregate in place. Apple does not guarantee exact parity with the values rendered by Settings, and no synchronized remote device is present for this day."
-                        : "No remote Apple device stream is present yet. Enable Screen Time → Share Across Devices on the same Apple Account to populate the All devices view automatically. Totals are reconstructed from Apple stores readable on this Mac and can differ from Settings."
+                        ? "Goalong lit sur place un agrégat privé d’Apple. Apple ne garantit pas les mêmes valeurs que Réglages, et aucun appareil distant synchronisé n’est présent pour ce jour."
+                        : "Aucun flux d’appareil Apple distant pour l’instant. Active Temps d’écran → Partager entre appareils sur le même compte Apple pour remplir la vue Tous les appareils. Les totaux sont reconstruits à partir des sources Apple lisibles sur ce Mac et peuvent différer de Réglages."
                 )
             }
             if hasData {
                 return AppleSystemScreenTimeStatus(
                     kind: .ready,
                     title: privateAggregateStore
-                        ? "Apple Screen Time aggregate connected"
-                        : "Apple activity sources connected",
+                        ? "Agrégat de temps d’écran Apple connecté"
+                        : "Sources d’activité Apple connectées",
                     message: privateAggregateStore
-                        ? "Goalong reads Apple-owned per-device aggregate blocks in place without copying them. This private format has not been certified as exactly identical to Settings."
-                        : "The view is reconstructed from Apple’s readable ScreenTime.AppUsage, knowledgeC and iCloud-synced Biome streams, never Goalong’s recorder. macOS may protect the private DeviceActivity summary used by Settings, so exact Settings parity is not guaranteed."
+                        ? "Goalong lit sur place les blocs d’agrégat par appareil d’Apple, sans les copier. Ce format privé n’est pas certifié identique à Réglages."
+                        : "La vue est reconstruite à partir des flux lisibles d’Apple (ScreenTime.AppUsage, knowledgeC et Biome synchronisé par iCloud), jamais de l’enregistreur de Goalong. macOS peut protéger le résumé DeviceActivity utilisé par Réglages : l’égalité exacte avec Réglages n’est pas garantie."
                 )
             }
             return AppleSystemScreenTimeStatus(
                 kind: .noAppleData,
-                title: "No Apple Screen Time data found",
+                title: "Aucune donnée de temps d’écran Apple",
                 message:
-                    "Turn on Screen Time and Share Across Devices for the same Apple Account. Apple may need a few minutes to create or synchronize the first App.InFocus records."
+                    "Active Temps d’écran et Partager entre appareils pour le même compte Apple. Apple peut mettre quelques minutes à créer ou synchroniser les premiers enregistrements App.InFocus."
             )
         }
 
         static func applicationDisplayName(_ bundleIdentifier: String) -> String? {
             let builtIns: [String: String] = [
                 "ai.goalong.localhistory": "Goalong History",
-                "com.apple.springboard": "Home & Lock Screen",
+                "com.apple.springboard": "Écran d’accueil et verrouillage",
                 "com.apple.mobilesafari": "Safari",
                 "com.apple.mobilesms": "Messages",
                 "com.apple.mobilemail": "Mail",
-                "com.apple.maps": "Maps",
-                "com.apple.camera": "Camera",
-                "com.apple.preferences": "Settings",
+                "com.apple.maps": "Plans",
+                "com.apple.camera": "Appareil photo",
+                "com.apple.preferences": "Réglages",
                 "com.apple.appstore": "App Store",
                 "com.apple.youtube": "YouTube",
                 "com.google.ios.youtube": "YouTube",
                 "com.apple.mobileslideshow": "Photos",
                 "com.burbn.instagram": "Instagram",
-                "com.apple.mobiletimer": "Clock",
-                "com.apple.mobilecal": "Calendar",
-                "com.apple.mobilephone": "Phone",
+                "com.apple.mobiletimer": "Horloge",
+                "com.apple.mobilecal": "Calendrier",
+                "com.apple.mobilephone": "Téléphone",
                 "com.apple.facetime": "FaceTime",
                 "com.apple.mobilenotes": "Notes",
                 "com.apple.podcasts": "Podcasts",
-                "com.apple.weather": "Weather",
+                "com.apple.weather": "Météo",
                 "com.spotify.client": "Spotify",
                 "com.openai.codex": "ChatGPT",
                 "com.openai.sky.cuaservice": "Codex Computer Use",
@@ -2567,7 +2567,7 @@
             func score(_ device: AppleScreenTimeDevice) -> Int {
                 var value = device.kind == .unknown ? 0 : 100
                 let base = device.displayName.components(separatedBy: " · ").first?.lowercased() ?? ""
-                if base != "apple device", base != "iphone or ipad" { value += 20 }
+                if !AppleScreenTimeGenericDeviceName.isAppleDevice(base), !AppleScreenTimeGenericDeviceName.isIPhoneOrIPad(base) { value += 20 }
                 return value
             }
             let left = score(lhs)
@@ -2602,7 +2602,7 @@
             } else if resolvedKind != .unknown {
                 name = "\(resolvedKind.displayName) · \(shortID)"
             } else {
-                name = "Apple device · \(shortID)"
+                name = "\(AppleScreenTimeGenericDeviceName.appleDevice) · \(shortID)"
             }
             return AppleScreenTimeDevice(id: id, name: name, kind: resolvedKind)
         }
