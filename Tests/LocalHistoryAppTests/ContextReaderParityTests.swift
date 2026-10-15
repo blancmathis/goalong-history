@@ -291,6 +291,9 @@ final class ContextReaderParityTests: XCTestCase {
     }
 
     func testWebPageEvidenceAcceptsOnlyHTTPAddresses() {
+        XCTAssertTrue(BrowserIdentity.isNamedBrowser(name: "ChatGPT Atlas", bundleIdentifier: "com.openai.atlas"))
+        XCTAssertTrue(BrowserIdentity.isNamedBrowser(name: "Comet", bundleIdentifier: "ai.perplexity.comet"))
+        XCTAssertTrue(BrowserIdentity.isNamedBrowser(name: "Whale", bundleIdentifier: "com.naver.Whale"))
         XCTAssertTrue(BrowserIdentity.isWebPageEvidence("https://youtube.com/watch"))
         XCTAssertTrue(BrowserIdentity.isWebPageEvidence("http://example.com"))
         XCTAssertTrue(BrowserIdentity.isWebPageEvidence("example.com/page"))
