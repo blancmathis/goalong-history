@@ -20,7 +20,7 @@
             guard !started else { update(hasEnabledSources: hasEnabledSources); return }
             started = true
             if journal.begin() {
-                interruptionNotice = "The previous session did not shut down cleanly. Check recording status. Activity while Goalong was closed cannot be reconstructed."
+                interruptionNotice = "La session précédente ne s’est pas fermée correctement. Vérifiez l’état de l’enregistrement. L’activité pendant la fermeture de Goalong ne peut pas être reconstituée."
                 Diagnostics.write("Previous Goalong session ended without a clean shutdown; cause unknown")
             }
             Diagnostics.write("Goalong runtime started")
