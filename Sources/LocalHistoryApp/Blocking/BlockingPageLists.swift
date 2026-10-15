@@ -531,6 +531,7 @@ import SwiftUI
         }
         .frame(width: 600).frame(minHeight: 420, idealHeight: 640, maxHeight: 760)
         .background(LHTheme.pageBackground)
+        .background(Button("") { onDone() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
     }
 }
 

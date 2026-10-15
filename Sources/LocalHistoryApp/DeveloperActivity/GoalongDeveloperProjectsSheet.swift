@@ -53,6 +53,7 @@ import SwiftUI
             }
         }
         .frame(minWidth: 560, idealWidth: 620, minHeight: 380, idealHeight: 480)
+        .background(Button("") { dismiss() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
         .task(id: revision) { await developer.refresh(day: Date()) }
         .accessibilityIdentifier("developer-projects-sheet")
     }

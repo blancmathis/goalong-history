@@ -430,6 +430,7 @@ struct GoalongWorkReviewRequest: Identifiable {
         .onChange(of: agent.isRunning) { running in
             if !running, let day = review.loadedDay { review.load(day: day) }
         }
+        .background(Button("") { dismiss() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
         .accessibilityIdentifier("work-review-sheet")
     }
 }

@@ -19,7 +19,7 @@ import LocalHistoryCore
                 .font(.system(size: 13)).foregroundStyle(.secondary)
             Divider()
             HStack {
-                Button("Annuler", role: .cancel) { dismiss() }
+                Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Effacer…", role: .destructive) { confirming = true }.buttonStyle(LHSecondaryButtonStyle())
             }
