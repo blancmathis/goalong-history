@@ -32,6 +32,39 @@
             XCTAssertEqual(repository.storedDayStrings().count, 1)
         }
 
+        func testAutoupdatingCalendarRoutesTodayToLiveReadAfterTimeZoneChange() throws {
+            let root = temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let originalZone = NSTimeZone.default
+            defer { NSTimeZone.default = originalZone }
+            let paris = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+            let newYork = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+            NSTimeZone.default = paris
+            // 2026-09-05 02:00 Paris = 2026-09-04 20:00 New York.
+            var parisCalendar = Calendar(identifier: .gregorian)
+            parisCalendar.timeZone = paris
+            let now = try date(2026, 9, 5, hour: 2, calendar: parisCalendar)
+            let mac = AppleScreenTimeDevice(id: "mac", name: "Mac", kind: .mac)
+            var reads = 0
+            let repository = try AppleSystemScreenTimeRepository(
+                rootDirectory: root,
+                currentMacDevice: mac,
+                calendar: .autoupdatingCurrent,
+                nowProvider: { now },
+                liveCollectionProvider: { requestedDay in
+                    reads += 1
+                    return self.collection(day: requestedDay, device: mac, seconds: 60, calendar: .autoupdatingCurrent)
+                }
+            )
+
+            NSTimeZone.default = newYork
+            var newYorkCalendar = Calendar(identifier: .gregorian)
+            newYorkCalendar.timeZone = newYork
+            let newYorkToday = newYorkCalendar.startOfDay(for: now)
+            XCTAssertNotNil(repository.collect(for: newYorkToday).storedExport)
+            XCTAssertEqual(reads, 1)
+        }
+
         func testCompletedDayLoadsFromSingleLocalRecordWithoutReopeningApple() throws {
             let root = temporaryRoot()
             defer { try? FileManager.default.removeItem(at: root) }
