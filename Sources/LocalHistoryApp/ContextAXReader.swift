@@ -211,6 +211,12 @@
                         showsWebPages = true
                         rememberBrowser(app)
                     }
+                    // Without a readable address, an address field next to a web area is browser
+                    // chrome: an unknown browser fails closed. Mail and Electron views have none.
+                    if !showsWebPages, inspectedURL == nil,
+                       AXReader.hasAddressField(in: windowElement, addressFieldMarkers: config.addressFieldMarkers) {
+                        showsWebPages = true
+                    }
                     if !Self.websiteAllowed(
                         address: inspectedURL, host: host, config: config, showsWebPages: showsWebPages) {
                         return ContextSnapshot(app: app, window: nil, focusedElement: nil, url: nil,

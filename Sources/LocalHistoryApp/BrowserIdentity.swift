@@ -11,11 +11,13 @@ enum BrowserIdentity {
         "com.google.chrome", "org.chromium.", "com.microsoft.edgemac", "com.brave.browser",
         "company.thebrowser.", "org.mozilla.", "com.operasoftware.", "com.vivaldi.",
         "app.zen-browser.", "com.kagi.kagimacos", "com.duckduckgo.macos.browser",
-        "com.sigmaos.", "com.apple.safari",
+        "com.sigmaos.", "com.apple.safari", "com.openai.atlas", "ai.perplexity.comet",
+        "com.naver.whale",
     ]
     private static let nameTokens: Set<String> = [
         "safari", "chrome", "chromium", "firefox", "librewolf", "floorp", "edge", "brave",
         "arc", "opera", "vivaldi", "orion", "duckduckgo", "dia", "sigmaos", "waterfox", "thorium",
+        "atlas", "comet", "whale", "ladybird",
     ]
 
     static func isNamedBrowser(name: String, bundleIdentifier: String?) -> Bool {
