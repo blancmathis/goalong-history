@@ -576,6 +576,42 @@ final class AgentActivityAdvancedTests: XCTestCase {
         XCTAssertEqual(summary.excerpt, "Real prompt from the user")
     }
 
+    func testClaudeSlashCommandAsFirstLineGivesNormalizedExcerpt() {
+        let lines = [
+            #"{"timestamp":"2026-08-27T09:00:01.000Z","type":"user","message":{"role":"user","content":"<command-name>/clear</command-name><command-message>clear</command-message><command-args></command-args>"}}"#,
+            #"{"timestamp":"2026-08-27T09:02:00.000Z","type":"user","message":{"role":"user","content":"<command-name>/review</command-name><command-args>PR 12 refactor</command-args>"}}"#,
+        ]
+        var parser = AgentTranscriptParser.IncrementalJSONLines(
+            fileURL: URL(fileURLWithPath: "/fixture/claude-slash.jsonl"),
+            provider: .claudeCode
+        )
+        parser.consume(Data((lines.joined(separator: "\n") + "\n").utf8))
+        let excerpt = parser.finish().excerpt
+        XCTAssertEqual(excerpt, "/review PR 12 refactor")
+        XCTAssertFalse(excerpt?.contains("<command-") ?? false)
+    }
+
+    func testUnsupportedSourceErrorDetailsAreFrench() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/SourceAdapters.swift")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        let markers = ["could not", "was not", "returned", "is unavailable", "were rejected", "would materialize"]
+        var rest = Substring(text)
+        var checked = 0
+        while let range = rest.range(of: ".unsupported(") {
+            rest = rest[range.upperBound...]
+            let literal = rest.prefix(400).drop(while: { $0.isWhitespace || $0.isNewline })
+            guard literal.first == "\"" else { continue }
+            let body = literal.dropFirst().prefix(while: { $0 != "\"" })
+            checked += 1
+            for marker in markers {
+                XCTAssertFalse(body.contains(marker), "English detail: \(body)")
+            }
+        }
+        XCTAssertGreaterThan(checked, 30)
+    }
+
     func testFirstCodexDiscoveryIndexes150MetadataOnlyThenUsesCursorWithoutReads() throws {
         let sourceRoot = try makeTemporaryDirectory("bulk-codex-source")
         let sessionDirectory = sourceRoot.appendingPathComponent("sessions/2026/08/23", isDirectory: true)
