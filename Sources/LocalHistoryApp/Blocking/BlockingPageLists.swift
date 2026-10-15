@@ -611,7 +611,19 @@ struct BlockingProgramLock: View {
     let current: Date?
     let now: Date
     var onLock: (Date) -> Void
-    @State private var until = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
+    @State private var until: Date
+
+    init(current: Date?, now: Date, onLock: @escaping (Date) -> Void) {
+        self.current = current
+        self.now = now
+        self.onLock = onLock
+        _until = State(initialValue: Self.initialUntil(current: current, now: now))
+    }
+
+    /// Two weeks from now, never before the lock in place: the button must name the real end.
+    static func initialUntil(current: Date?, now: Date, calendar: Calendar = .current) -> Date {
+        max(current ?? now, calendar.date(byAdding: .day, value: 14, to: now) ?? now)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -622,7 +634,7 @@ struct BlockingProgramLock: View {
                 .datePickerStyle(.field)
             HStack {
                 Spacer()
-                Button("Verrouiller jusqu’au \(BlockingFormat.day(until))") { onLock(Calendar.current.startOfDay(for: until).addingTimeInterval(86_399)) }
+                Button("Verrouiller jusqu’au \(BlockingFormat.day(until))") { onLock(BlockingWallClock.endOfDay(until)) }
             }
         }
         .padding(18).frame(width: 340)

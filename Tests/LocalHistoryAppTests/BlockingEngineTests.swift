@@ -210,6 +210,52 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertEqual(c.snapshot.usageHistory?["2026-10-05"]?.quotaSecondsUsed[list.id], 2)
         XCTAssertEqual(c.frictionCounts(day: "2026-10-05").quotaSecondsUsed[list.id], 2)
     }
+    @MainActor func testFreezeAlertEndIsTheEndTheEngineStores() {
+        let now = date(); let c = BlockingController(clock: { now }, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        XCTAssertEqual(BlockingWallClock.freezeEnd(now.addingTimeInterval(120), now: now), now.addingTimeInterval(300))
+        XCTAssertEqual(BlockingWallClock.freezeEnd(now.addingTimeInterval(1_800), now: now), now.addingTimeInterval(1_800))
+        XCTAssertEqual(BlockingWallClock.freezeEnd(now.addingTimeInterval(30 * 3_600), now: now), now.addingTimeInterval(24 * 3_600))
+        c.startFreeze(until: now.addingTimeInterval(120), mode: .shield, allowedApps: [])
+        XCTAssertEqual(c.freeze?.end, BlockingWallClock.freezeEnd(now.addingTimeInterval(120), now: now))
+    }
+    func testWallClockArithmeticHoldsOnDSTDays() {
+        func at(_ m: Int, _ d: Int, _ h: Int, _ min: Int = 0, _ s: Int = 0) -> Date {
+            calendar.date(from: DateComponents(year: 2026, month: m, day: d, hour: h, minute: min, second: s))!
+        }
+        XCTAssertEqual(BlockingWallClock.next(hour: 8, minute: 0, after: at(3, 28, 22), calendar: calendar), at(3, 29, 8))
+        XCTAssertEqual(BlockingWallClock.next(hour: 8, minute: 0, after: at(10, 24, 22), calendar: calendar), at(10, 25, 8))
+        XCTAssertEqual(BlockingWallClock.next(hour: 23, minute: 0, after: at(10, 25, 22), calendar: calendar), at(10, 25, 23))
+        for day in [(3, 29), (10, 25)] {
+            XCTAssertEqual(BlockingWallClock.endOfDay(at(day.0, day.1, 12), calendar: calendar), at(day.0, day.1, 23, 59, 59))
+            for minute in [600, 720] {
+                XCTAssertEqual(BlockingWallClock.minuteOfDay(BlockingWallClock.wallTime(minute, on: at(day.0, day.1, 12), calendar: calendar), calendar: calendar), minute)
+            }
+        }
+    }
+    func testPageStopsFreeManualTriggerAndProgramBlocksOnly() {
+        let id = UUID()
+        XCTAssertTrue(BlockSession.Origin.manual.stopsFromPage)
+        XCTAssertTrue(BlockSession.Origin.trigger(id).stopsFromPage)
+        XCTAssertTrue(BlockSession.Origin.program(id).stopsFromPage)
+        XCTAssertFalse(BlockSession.Origin.commitment(id).stopsFromPage)
+        XCTAssertFalse(BlockSession.Origin.focus.stopsFromPage)
+    }
+    func testProgramLockSheetNeverProposesAnEndBeforeTheCurrentLock() {
+        let now = date()
+        XCTAssertEqual(BlockingProgramLock.initialUntil(current: nil, now: now, calendar: calendar), calendar.date(byAdding: .day, value: 14, to: now))
+        let later = now.addingTimeInterval(30 * 86_400)
+        XCTAssertEqual(BlockingProgramLock.initialUntil(current: later, now: now, calendar: calendar), later)
+    }
+    func testSecondaryLineReadsAsASentenceAndSaysRalentiForSlowDown() {
+        var slow = BlockList(name: "Lent"); slow.action = .slowDown
+        let hard = BlockList(name: "Dur")
+        XCTAssertEqual(BlockingFormat.verb([slow]), "Ralenti")
+        XCTAssertEqual(BlockingFormat.verb([slow, hard]), "Bloqué")
+        XCTAssertEqual(BlockingFormat.verb([]), "Bloqué")
+        XCTAssertEqual(BlockingFormat.triggerPhrase(["Xcode"]), "tant que Xcode est ouvert")
+        XCTAssertEqual(BlockingFormat.triggerPhrase(["Xcode", "Figma", "Slack"]), "tant que Xcode, Figma sont ouverts")
+        XCTAssertEqual(BlockingFormat.triggerPhrase([]), "tant qu’une app de travail est ouverte")
+    }
     @MainActor func testLockedRefusalsNameThePasswordBlock() throws {
         let now = date()
         var list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")], quotaMinutesPerDay: 30, breaks: BlockBreaks(count: 1, minutes: 5))

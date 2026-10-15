@@ -669,7 +669,7 @@ import LocalHistoryQueryCLI
         guard freeze == nil else { error = "Le gel en cours ne peut pas être remplacé."; return }
         if mode == .lockScreen, backend?.canLockScreen == false { error = "Le verrouillage de session nécessite l’accessibilité. Choisissez le bouclier."; return }
         let now = clock()
-        let bounded = min(max(end, now.addingTimeInterval(5 * 60)), now.addingTimeInterval(24 * 3_600))
+        let bounded = BlockingWallClock.freezeEnd(end, now: now)
         document.freeze = BlockFreeze(start: now, end: bounded, mode: mode, allowedApps: allowedApps)
         commit()
     }

@@ -109,6 +109,17 @@ enum BlockingFormat {
         if let breaks = list.breaks { parts.append("\(breaks.count) pause\(breaks.count > 1 ? "s" : "") de \(breaks.minutes) min") }
         return parts.joined(separator: " · ")
     }
+
+    /// « Ralenti » when every list only slows down, else « Bloqué ».
+    static func verb(_ lists: [BlockList]) -> String {
+        !lists.isEmpty && lists.allSatisfy({ $0.effectiveAction == .slowDown }) ? "Ralenti" : "Bloqué"
+    }
+
+    /// « tant que Xcode est ouvert » for a trigger block; at most two app names.
+    static func triggerPhrase(_ names: [String]) -> String {
+        guard !names.isEmpty else { return "tant qu’une app de travail est ouverte" }
+        return "tant que " + names.prefix(2).joined(separator: ", ") + (names.count > 1 ? " sont ouverts" : " est ouvert")
+    }
 }
 
 extension BlockingRules {
@@ -134,6 +145,51 @@ extension BlockingRules {
               !labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) else { return nil }
         let ascii = host.unicodeScalars.allSatisfy(\.isASCII) ? host : (URL(string: "https://\(host)")?.host ?? host)
         return ascii + path
+    }
+}
+
+/// Wall-clock arithmetic for the page: calendar days, never fixed 86 400 s, so DST days stay right.
+enum BlockingWallClock {
+    /// The engine's freeze bounds: at least 5 min, at most 24 h from now.
+    static func freezeEnd(_ end: Date, now: Date) -> Date {
+        min(max(end, now.addingTimeInterval(5 * 60)), now.addingTimeInterval(24 * 3_600))
+    }
+
+    /// The next `hour:minute` after `begin`: a time not after the start means the next day.
+    static func next(hour: Int, minute: Int, after begin: Date, calendar: Calendar = .current) -> Date {
+        if let day = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: begin), day > begin { return day }
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: begin)),
+              let day = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: tomorrow), day > begin
+        else { return begin.addingTimeInterval(86_400) }
+        return day
+    }
+
+    /// The last second of `date`'s calendar day (23:59:59 even on a 23 h or 25 h day).
+    static func endOfDay(_ date: Date, calendar: Calendar = .current) -> Date {
+        let start = calendar.startOfDay(for: date)
+        return (calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)).addingTimeInterval(-1)
+    }
+
+    /// `minute` of the day as a wall-clock time on `date`'s day.
+    static func wallTime(_ minute: Int, on date: Date, calendar: Calendar = .current) -> Date {
+        calendar.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: date)
+            ?? calendar.startOfDay(for: date).addingTimeInterval(TimeInterval(minute * 60))
+    }
+
+    static func minuteOfDay(_ date: Date, calendar: Calendar = .current) -> Int {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+    }
+}
+
+extension BlockSession.Origin {
+    /// Free blocks the page may stop: manual, trigger and program. A commitment belongs to Concentration,
+    /// and so does a focus session.
+    var stopsFromPage: Bool {
+        switch self {
+        case .manual, .trigger, .program: return true
+        case .commitment, .focus: return false
+        }
     }
 }
 #endif
