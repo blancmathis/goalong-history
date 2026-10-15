@@ -807,7 +807,8 @@ import LocalHistoryQueryCLI
             onObservationRequirementChanged?(need)
         }
         scheduleTimer(at: now)
-        if enforceLast, var target = lastObservation { target.at = now; target.isActivation = false; enforce(target) }
+        // An activation carries no address read; replaying it must not count as an unreadable read.
+        if enforceLast, var target = lastObservation { target.at = now; target.isActivation = target.isActivation && target.url == nil; enforce(target) }
         onTimerInputChanged?()
     }
 
@@ -993,7 +994,10 @@ import LocalHistoryQueryCLI
                !list.apps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { continue }
             let siteRules = target.isBrowser && BlockingRules.hasSites(list)
             var special: BlockingVeilPresentation.Reason?
-            if siteRules && !target.isInternalPage && target.url == nil {
+            // An activation reads no address (by design), so it is not an unreadable read: it starts
+            // a fresh 3 s window instead of reusing one left over from an earlier visit.
+            if siteRules && target.isActivation && target.url == nil { unreadableSince[target.pid] = nil }
+            else if siteRules && !target.isInternalPage && target.url == nil {
                 let first = unreadableSince[target.pid] ?? target.at; unreadableSince[target.pid] = first
                 if !siteBlockingAvailable || target.at.timeIntervalSince(first) >= 3 { special = .unsupportedBrowser(NSRunningApplication(processIdentifier: target.pid)?.localizedName ?? target.bundleIdentifier) }
             } else { unreadableSince[target.pid] = nil }

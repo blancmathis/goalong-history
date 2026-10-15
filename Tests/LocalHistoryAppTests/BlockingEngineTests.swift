@@ -287,6 +287,25 @@ final class BlockingEngineTests: XCTestCase {
             XCTAssertNil(c.snapshot.usage?.quotaSecondsUsed[list.id])
         }
     }
+    /// Aside regression: an activation (address not read yet) left an unreadable clock behind when the
+    /// member switched away before the first read; every later activation then covered the browser at once.
+    @MainActor func testActivationDoesNotReuseAnEarlierUnreadableClock() {
+        var now = date(); let backend = FakeBlockingBackend()
+        let list = BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "x.com")])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(7200), lock: .free)
+        func activate() { var t = target(now, url: nil); t.isActivation = true; c.observe(t) }
+        activate()
+        now = now.addingTimeInterval(1); c.observe(BlockingObservation(bundleIdentifier: "com.apple.finder", pid: 43000, windowFrame: nil,
+            isBrowser: false, url: nil, privateWindow: false, at: now))
+        now = now.addingTimeInterval(1800); activate(); c.refresh()
+        XCTAssertEqual(backend.siteBlocks, 0); XCTAssertNil(backend.lastReason)
+        var t = target(now, url: "https://wikipedia.org/a"); c.observe(t)
+        XCTAssertEqual(backend.siteBlocks, 0); XCTAssertNil(backend.lastReason)
+        // A truly unreadable address still covers the browser after 3 s of reads.
+        t.url = nil; for _ in 0..<4 { c.observe(t); now = now.addingTimeInterval(1); t.at = now }
+        guard case .unsupportedBrowser = backend.lastReason else { return XCTFail("expected whole-browser cover") }
+    }
     /// A private window follows the lists, counts the quota, and no address of it reaches the Blocking folder.
     @MainActor func testPrivateWindowFollowsListsAndWritesNoAddress() throws {
         let store = try temporaryStore(); var now = date(); let backend = FakeBlockingBackend()
