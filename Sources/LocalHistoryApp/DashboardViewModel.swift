@@ -245,6 +245,15 @@
             }
         }
 
+        /// Re-reads the settings from the config file after a manual reload, so the
+        /// window never keeps (and later writes back) values the file no longer has.
+        func reloadSettings(from config: RecorderConfig) {
+            let draft = DashboardSettingsDraft(config: config)
+            settingsDraft = draft
+            savedSettingsDraft = draft
+            refreshRuntime()
+        }
+
         func refreshTrustNotices() {
             trustNotices = [
                 DeviceTrustState.shared.sealingSuspendedNotice,

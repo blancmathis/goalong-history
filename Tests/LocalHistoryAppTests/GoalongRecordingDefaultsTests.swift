@@ -143,6 +143,38 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
         XCTAssertFalse(resumed.settings.captureScroll); XCTAssertFalse(resumed.visibleText)
         XCTAssertTrue(resumed.settings.captureClicks)
     }
+    @MainActor func testReloadedConfigurationSurvivesALaterRecordingToggle() throws {
+        let (model, config) = try isolatedModel()
+        var edited = config.config
+        edited.foregroundIdleSeconds = (edited.foregroundIdleSeconds ?? 0) + 17
+        edited.captureURLs.toggle()
+        try edited.write(to: AppPaths.configFile)
+        XCTAssertTrue(config.reload())
+        model.reloadSettings(from: config.config)
+        XCTAssertEqual(model.appliedSettings, DashboardSettingsDraft(config: edited))
+        var next = model.appliedSettings
+        next.captureScroll.toggle()
+        XCTAssertTrue(model.applyRecordingChoice(next))
+        let saved = try RecorderConfig.load(from: AppPaths.configFile)
+        XCTAssertEqual(saved.foregroundIdleSeconds, edited.foregroundIdleSeconds)
+        XCTAssertEqual(saved.captureURLs, edited.captureURLs)
+    }
+    func testFailedKeychainRetryIsVisibleAndSuccessClearsIt() {
+        let state = DeviceTrustState()
+        state.setSealingSuspended(status: errSecInteractionNotAllowed)
+        let notice = state.sealingSuspendedNotice
+        XCTAssertNil(state.retryFeedback)
+        XCTAssertTrue(state.beginRetry())
+        XCTAssertFalse(state.beginRetry())
+        let posted = expectation(forNotification: DeviceTrustState.didChange, object: nil)
+        state.markRetryFailed()
+        wait(for: [posted], timeout: 1)
+        XCTAssertFalse(state.isRetryInFlight)
+        XCTAssertNotNil(state.retryFeedback)
+        XCTAssertEqual(state.sealingSuspendedNotice, notice)
+        state.setSealingSuspended(status: nil)
+        XCTAssertNil(state.retryFeedback)
+    }
     @MainActor func testConfigurationWriteFailureDoesNotAcceptOrEnableTheProposal() throws {
         let preferences = defaults()
         let (model, config) = try isolatedModel(save: { _ in throw CocoaError(.fileWriteNoPermission) })

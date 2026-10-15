@@ -1962,14 +1962,18 @@
             }
         }
 
-        func reload() {
+        /// Returns false when the file could not be read; the previous config is then kept.
+        @discardableResult
+        func reload() -> Bool {
             do {
                 config = try RecorderConfig.load(from: AppPaths.configFile)
                 try? FileManager.default.setAttributes(
                     [.posixPermissions: 0o600], ofItemAtPath: AppPaths.configFile.path)
                 Diagnostics.write("Configuration reloaded")
+                return true
             } catch {
                 Diagnostics.write("Configuration reload failed: \(error)")
+                return false
             }
         }
 

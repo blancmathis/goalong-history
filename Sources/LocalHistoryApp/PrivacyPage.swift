@@ -453,16 +453,26 @@
                     }
 
                     ForEach(model.trustNotices, id: \.self) { notice in
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(LHTheme.warning)
-                            Text(notice)
-                                .font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            if notice == DeviceTrustState.shared.sealingSuspendedNotice {
-                                Button("Réessayer") { model.onRetryKeychain() }
-                            } else {
-                                Button("Compris") { DeviceTrustState.acknowledgeRotation() }
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(LHTheme.warning)
+                                Text(notice)
+                                    .font(.system(size: 12, weight: .medium))
+                                Spacer()
+                                if notice == DeviceTrustState.shared.sealingSuspendedNotice {
+                                    Button("Réessayer") { model.onRetryKeychain() }
+                                        .disabled(DeviceTrustState.shared.isRetryInFlight)
+                                } else {
+                                    Button("Compris") { DeviceTrustState.acknowledgeRotation() }
+                                }
+                            }
+                            if notice == DeviceTrustState.shared.sealingSuspendedNotice,
+                                let feedback = DeviceTrustState.shared.retryFeedback
+                            {
+                                Text(feedback)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }

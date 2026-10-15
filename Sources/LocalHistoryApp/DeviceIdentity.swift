@@ -145,14 +145,49 @@
         static let didChange = Notification.Name("ai.goalong.deviceTrustDidChange")
         private let lock = NSLock()
         private var suspendedStatus: OSStatus?
+        private var retryInFlight = false
+        private var lastRetryFailedAt: Date?
 
         var sealingSuspendedNotice: String? {
             lock.lock(); defer { lock.unlock() }
             return suspendedStatus == nil ? nil : "Preuves suspendues : Trousseau inaccessible"
         }
 
+        /// Secondary line shown under the notice after a failed « Réessayer ». The notice
+        /// itself must not change: the Privacy page matches it by string equality.
+        var retryFeedback: String? {
+            lock.lock(); defer { lock.unlock() }
+            guard suspendedStatus != nil else { return nil }
+            if retryInFlight { return "Nouvelle tentative en cours…" }
+            guard let failedAt = lastRetryFailedAt else { return nil }
+            return "Échec à \(failedAt.formatted(date: .omitted, time: .shortened)) : trousseau toujours inaccessible. Déverrouillez-le puis réessayez."
+        }
+
+        var isRetryInFlight: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return retryInFlight
+        }
+
+        /// Returns false when a retry is already running, so double clicks never overlap.
+        func beginRetry() -> Bool {
+            lock.lock()
+            if retryInFlight { lock.unlock(); return false }
+            retryInFlight = true
+            lock.unlock()
+            Self.postChange()
+            return true
+        }
+
+        func markRetryFailed(at date: Date = Date()) {
+            lock.lock(); retryInFlight = false; lastRetryFailedAt = date; lock.unlock()
+            Self.postChange()
+        }
+
         func setSealingSuspended(status: OSStatus?) {
-            lock.lock(); suspendedStatus = status; lock.unlock()
+            lock.lock()
+            suspendedStatus = status
+            if status == nil { retryInFlight = false; lastRetryFailedAt = nil }
+            lock.unlock()
             Self.postChange()
         }
 
