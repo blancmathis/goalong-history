@@ -248,6 +248,7 @@ public final class AgentIntegrationInstaller: @unchecked Sendable {
     private func removeNestedHooks(at url: URL) throws {
         var root = try loadJSONObject(url)
         guard var hooks = root["hooks"] as? [String: Any] else { return }
+        guard Self.recursivelyContains(hooks, needle: marker) else { return }
         removeGoalongHooks(from: &hooks)
         root["hooks"] = hooks
         try writeJSONObject(root, to: url)
@@ -300,6 +301,7 @@ public final class AgentIntegrationInstaller: @unchecked Sendable {
         let url = configurationURL(for: .cursorHooks)
         var root = try loadJSONObject(url)
         guard var hooks = root["hooks"] as? [String: Any] else { return }
+        guard Self.recursivelyContains(hooks, needle: marker) else { return }
         removeGoalongHooks(from: &hooks)
         root["hooks"] = hooks
         try writeJSONObject(root, to: url)

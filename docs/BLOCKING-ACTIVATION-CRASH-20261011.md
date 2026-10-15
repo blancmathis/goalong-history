@@ -26,7 +26,7 @@ Journaux complets, conservés localement et ignorés par git, sous `.build/goalo
 - `binding-after-fix.log` : les 10 tests du modèle passent après correction.
 - `native-after-fix.log` : test natif en debug, activation/arrêt par AXPress dans un vrai NSPopover et démarrage direct par l’entrée utilisée par le compositeur Blocage de l’app.
 
-Le test natif utilise une liste en mémoire, un domaine `.invalid`, un PID fictif, des préférences isolées et le backend réel. Il vérifie également l’activation avec une observation de navigateur déjà présente, donc la création du voile. Il ne démarre pas les migrations, l’enregistrement ou les données de l’app installée. Commande : `GOALONG_BLOCKING_UI_TESTS=1 swift test --filter BlockingActivationRegressionTests`.
+Le test natif utilise une liste en mémoire, un domaine `.invalid`, un PID fictif, des préférences isolées et le backend réel. Il vérifie également l’activation avec une observation de navigateur déjà présente, donc la création du voile. Il ne démarre pas les migrations, l’enregistrement ou les données de l’app installée. Commande : `GOALONG_BLOCKING_UI_TESTS=1 swift test --filter BlockingActivationRegressionTests`. La CI l’exécute dans l’étape « Exercise the blocking activation regression » de `.github/workflows/macos.yml`, qui échoue si le test est ignoré.
 
 ## Vérification et limite
 

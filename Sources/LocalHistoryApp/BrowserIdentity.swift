@@ -17,7 +17,7 @@ enum BrowserIdentity {
     private static let nameTokens: Set<String> = [
         "safari", "chrome", "chromium", "firefox", "librewolf", "floorp", "edge", "brave",
         "arc", "opera", "vivaldi", "orion", "duckduckgo", "dia", "sigmaos", "waterfox", "thorium",
-        "atlas", "comet", "whale", "ladybird",
+        "ladybird",
     ]
 
     static func isNamedBrowser(name: String, bundleIdentifier: String?) -> Bool {
@@ -35,7 +35,11 @@ enum BrowserIdentity {
             .map(String.init)
         if tokens.contains(where: nameTokens.contains) { return true }
         // "Zen Browser", "Tor Browser": a bare "browser" word alone is not enough.
-        return tokens.contains("browser") && (tokens.contains("zen") || tokens.contains("tor"))
+        if tokens.contains("browser") && (tokens.contains("zen") || tokens.contains("tor")) { return true }
+        // Bare "atlas", "comet" or "whale" name ordinary apps; their bundle prefixes cover the real browsers.
+        return (tokens.contains("chatgpt") && tokens.contains("atlas"))
+            || (tokens.contains("naver") && tokens.contains("whale"))
+            || (tokens.contains("perplexity") && tokens.contains("comet"))
     }
 
     /// True only for a web page address: an http(s) URL with a host, or an
