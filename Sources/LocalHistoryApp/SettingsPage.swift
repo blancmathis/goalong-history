@@ -8,7 +8,6 @@ import AppKit
     @ObservedObject private var updates = SoftwareUpdateManager.shared
     @ObservedObject private var modules = GoalongModuleStore.shared
     @State private var search = ""
-    @State private var showingRetention = false
     @State private var showingDeveloperProjects = false
     @StateObject private var system = GoalongSystemSourcesModel()
     @State private var pendingPrivate = false
@@ -53,7 +52,6 @@ import AppKit
             }
         }
         .background(LHTheme.pageBackground)
-        .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet().goalongControls() }
         .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
         .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
             Button("Annuler", role: .cancel) {}

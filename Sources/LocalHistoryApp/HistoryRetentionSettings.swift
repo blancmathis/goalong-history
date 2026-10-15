@@ -32,10 +32,16 @@ extension HistoryRetentionPolicy {
         case .anchorReceipts: anchorReceipts = duration
         }
     }
+    /// Shared labels so every entry point names the same policy the same way.
+    static let noLimitLabel = "Jusqu’à ce que je supprime"
+    static let automaticCleanupLabel = "Supprimer automatiquement les données expirées"
+    static func automaticCleanupSummary(enabled: Bool) -> String {
+        enabled ? "Suppression automatique activée" : "Jusqu’à suppression manuelle"
+    }
     var includesProofExpiry: Bool { minuteSeals.days != nil || anchorReceipts.days != nil }
     var retentionDescription: String {
         HistoryDataClass.allCases.map { kind in
-            let duration = duration(for: kind).days.map { $0 == 1 ? "1 jour" : "\($0) jours" } ?? "sans limite"
+            let duration = duration(for: kind).days.map { $0 == 1 ? "1 jour" : "\($0) jours" } ?? "jusqu’à ce que je supprime"
             return "\(kind.retentionTitle) : \(duration)"
         }.joined(separator: "\n")
     }
@@ -49,8 +55,8 @@ extension HistoryRetentionPolicy {
     @Published private(set) var savedAutomaticCleanup: Bool
     private let store: HistoryRetentionStore
 
-    init(store: HistoryRetentionStore? = nil) {
-        let resolved = store ?? HistoryRetentionStore(legacyRetentionDays: 30)
+    init(store: HistoryRetentionStore? = nil, legacyRetentionDays: Int = 30) {
+        let resolved = store ?? HistoryRetentionStore(legacyRetentionDays: legacyRetentionDays)
         self.store = resolved
         draft = resolved.policy; savedPolicy = resolved.policy
         automaticCleanup = resolved.isAutomaticCleanupEnabled
@@ -84,8 +90,8 @@ extension HistoryRetentionPolicy {
     @State private var proofDeletionConfirmed = false
     @State private var showingConfirmation = false
 
-    init(model: HistoryRetentionSettingsModel? = nil) {
-        _model = StateObject(wrappedValue: model ?? HistoryRetentionSettingsModel())
+    init(model: HistoryRetentionSettingsModel? = nil, legacyRetentionDays: Int = 30) {
+        _model = StateObject(wrappedValue: model ?? HistoryRetentionSettingsModel(legacyRetentionDays: legacyRetentionDays))
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -100,7 +106,7 @@ extension HistoryRetentionPolicy {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Toggle("Supprimer automatiquement les données expirées", isOn: $model.automaticCleanup)
+                    Toggle(HistoryRetentionPolicy.automaticCleanupLabel, isOn: $model.automaticCleanup)
                         .toggleStyle(.goalongSwitch).font(.system(size: 13, weight: .semibold))
                         .accessibilityIdentifier("retention-automatic")
                     Text(model.automaticCleanup
@@ -114,7 +120,7 @@ extension HistoryRetentionPolicy {
                                     Text(kind.retentionTitle).font(.system(size: 13, weight: .medium))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     Picker(kind.retentionTitle, selection: durationBinding(kind)) {
-                                        Text("Jusqu’à ce que je supprime").tag(0)
+                                        Text(HistoryRetentionPolicy.noLimitLabel).tag(0)
                                         ForEach(durationOptions(kind), id: \.self) { days in Text(days == 1 ? "1 jour" : "\(days) jours").tag(days) }
                                     }.labelsHidden().frame(width: 230)
                                         .accessibilityIdentifier("retention-\(kind.rawValue)")
