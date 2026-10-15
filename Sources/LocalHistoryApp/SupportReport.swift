@@ -260,7 +260,9 @@ enum SupportFindings {
         for record in timeline where record.level == .error {
             let label = [symbol(record.values, .errorType)?.split(separator: ".").last.map(String.init),
                          symbol(record.values, .errorCase)].compactMap { $0 }.joined(separator: ".")
-            let key = "\(record.component.rawValue) · " + (label.isEmpty ? "\(record.event.rawValue) \(count(record.values, .errorCode) ?? 0)" : label)
+            let eventName = record.event == .repeatSummary
+                ? symbol(record.values, .repeatedEvent) ?? record.event.rawValue : record.event.rawValue
+            let key = "\(record.component.rawValue) · " + (label.isEmpty ? "\(eventName) \(count(record.values, .errorCode) ?? 0)" : label)
             let extra = record.event == .repeatSummary ? (count(record.values, .suppressedCount) ?? 0) - 1 : 0
             repeated[key, default: 0] += 1 + max(0, extra)
         }
@@ -280,7 +282,10 @@ enum SupportFindings {
         }
         if !diagnosticsEnabled {
             findings.append(SupportFinding(severity: .info, code: .diagnosticsDisabled,
-                title: "Journal technique désactivé", detail: "Le rapport ne contient que l’état actuel."))
+                title: "Journal technique désactivé",
+                detail: timeline.isEmpty
+                    ? "Le rapport ne contient que l’état actuel."
+                    : "Aucun nouvel événement n’est enregistré ; les journaux déjà conservés (7 jours au plus) restent inclus."))
         }
         if findings.isEmpty {
             findings.append(SupportFinding(severity: .info, code: .noProblemDetected,

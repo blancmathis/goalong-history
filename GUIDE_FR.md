@@ -11,8 +11,8 @@ glissez **Goalong History** dans Applications. C’est l’unique application
 publique : elle est gratuite, open source et ne nécessite ni Xcode ni abonnement
 Apple Developer payant.
 
-La Community Build est signée ad hoc pour vérifier l’intégrité du bundle, mais
-elle n’est pas notariée par Apple. Après avoir vérifié le SHA-256, le manifeste
+La Community Build est signée avec une identité Apple Development épinglée (équipe
+2L5SSLPX46), mais elle n’est pas notariée par Apple. Après avoir vérifié le SHA-256, le manifeste
 de release et la provenance GitHub/Sigstore, si macOS bloque la première
 ouverture, essayez d’ouvrir l’app une fois puis utilisez uniquement :
 
@@ -23,10 +23,11 @@ Réglages Système → Confidentialité et sécurité → Ouvrir quand même
 Ne désactivez jamais Gatekeeper globalement.
 
 Après l’installation, ouvrez **Goalong History** et suivez l’assistant. L’app
-exige macOS 13 Ventura ou une version plus récente. Comme la signature gratuite
-n’a pas d’identité Apple stable, macOS peut demander de renouveler les
-autorisations Goalong après une mise à jour ; l’historique et les réglages restent
-conservés.
+exige macOS 13 Ventura ou une version plus récente. Les versions
+publiques gardent la même identité de signature : macOS ne doit pas redemander les
+autorisations Goalong lors d’une mise à jour normale. Il peut les redemander une fois
+en quittant une ancienne version signée ad hoc, ou si l’identité de signature change un
+jour ; l’historique et les réglages restent conservés.
 
 ## L’assistant de première ouverture
 
@@ -168,7 +169,7 @@ Double-cliquez `Uninstall.command` dans le dossier source, ou lancez :
 ./uninstall.sh
 ```
 
-Par défaut, l’application et ses autorisations sont supprimées, mais l’historique reste conservé. Pour supprimer aussi les données :
+Par défaut, l’application, ses autorisations et le lien `~/.local/bin/goalong` (s’il pointe vers Goalong) sont supprimés, mais l’historique reste conservé. Pour supprimer aussi les données, les préférences, les caches et les clés d’analyse du Trousseau (la clé d’identité de l’appareil reste dans le Trousseau) :
 
 ```bash
 ./uninstall.sh --purge-data

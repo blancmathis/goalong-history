@@ -123,8 +123,15 @@ enum SupportReportStore {
         panel.title = "Enregistrer une copie du diagnostic"
         panel.nameFieldStringValue = url.lastPathComponent
         panel.allowedContentTypes = [.json]; panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let destination = panel.url,
-              let data = try? SupportDiagnostics.readPrivateFile(url, maximum: 16 * 1_024 * 1_024) else { return }
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        let data: Data
+        do {
+            data = try SupportDiagnostics.readPrivateFile(url, maximum: Self.maximumReportBytes)
+        } catch {
+            SupportDiagnostics.shared.failure(error, component: .support)
+            feedback = "Le rapport n’est plus disponible. Cliquez sur « Actualiser le rapport » puis réessayez."
+            return
+        }
         do {
             try SupportReportWriter.write(data, to: destination)
             feedback = "Copie enregistrée."
@@ -135,13 +142,19 @@ enum SupportReportStore {
         }
     }
 
+    private nonisolated static let maximumReportBytes = 16 * 1_024 * 1_024
+
     func revealReport() {
         guard case .ready(let url, _, _, _) = phase else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    func markIssue() {
-        SupportDiagnostics.shared.record(.userMarkedIssue, component: .support)
+    func markIssue(journal: SupportDiagnostics = .shared) {
+        guard journal.isEnabled else {
+            feedback = "Le journal technique est désactivé : activez-le dans Réglages › Aide et diagnostic pour ajouter un repère."
+            return
+        }
+        journal.record(.userMarkedIssue, component: .support)
         feedback = "Repère ajouté à \(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)). Reproduisez le problème puis cliquez sur « Actualiser le rapport »."
     }
 
@@ -283,6 +296,7 @@ struct SupportRequestView: View {
         return HStack(spacing: 10) {
             Menu {
                 Button("Ajouter un repère maintenant") { controller.markIssue() }
+                    .disabled(!SupportDiagnostics.shared.isEnabled)
                 Button("Actualiser le rapport") { controller.prepare() }
                 Divider()
                 Button("Enregistrer une copie…") { controller.saveCopy() }.disabled(ready == nil)

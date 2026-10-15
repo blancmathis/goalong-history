@@ -126,6 +126,9 @@
 
         private var runtimeStarted = false
         private var userQuitConfirmed = false
+        /// Set when an installer or uninstaller asked us to stop with SIGTERM.
+        private var terminatingForSignal = false
+        private var terminationSignalSource: DispatchSourceSignal?
         private var quitAlertIsVisible = false
         private let continuityPreferences = BackgroundContinuityPreferences()
 
@@ -142,11 +145,16 @@
 
         @MainActor private func startApplication() {
             guard !anotherInstanceIsRunning() else {
+                // Single-instance rule: this copy never opens the stores. Bring the running one forward.
+                NSRunningApplication.runningApplications(withBundleIdentifier: "ai.goalong.localhistory")
+                    .first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated }?
+                    .activate()
                 NSApplication.shared.terminate(nil)
                 return
             }
 
             runtimeStarted = true
+            installTerminationSignalHandler()
             let buildIdentity = BuildIdentityReader.current()
             LegacyInstallationMigrator.run()
             // The journal lives under the data root: create it first, or a fresh install's first writes fail
@@ -473,6 +481,32 @@
             }
         }
 
+        /// Turns SIGTERM (installer, uninstaller) into a normal quit so the full shutdown sequence runs:
+        /// flush, seal the minute, close the journal. A locked block resumes from its marker and the guard.
+        private func installTerminationSignalHandler() {
+            guard terminationSignalSource == nil else { return }
+            signal(SIGTERM, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+            source.setEventHandler { [weak self] in
+                self?.terminatingForSignal = true
+                NSApplication.shared.terminate(nil)
+            }
+            source.resume()
+            terminationSignalSource = source
+        }
+
+        /// The blocking-quit confirmation protects the user's own Quit. It never applies to logout,
+        /// restarts, updates, or an external SIGTERM (the process is being replaced).
+        static func shouldConfirmBlockingQuit(systemQuit: Bool, restarting: Bool, relaunchingForUpdate: Bool,
+                                              externalSignal: Bool) -> Bool {
+            !systemQuit && !restarting && !relaunchingForUpdate && !externalSignal
+        }
+
+        static func exitReason(relaunchingForUpdate: Bool, restarting: Bool, externalSignal: Bool, userQuit: Bool) -> String {
+            relaunchingForUpdate ? "update" : restarting ? "permission_restart"
+                : externalSignal ? "signal_terminate" : userQuit ? "user_quit" : "system_or_application_exit"
+        }
+
         func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
             let event = NSAppleEventManager.shared().currentAppleEvent
             let senderPID = event?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
@@ -485,7 +519,10 @@
                 guard confirmUserQuitIfNeeded() else { return .terminateCancel }
                 userQuitConfirmed = true
             }
-            if !systemQuit, !PermissionRecovery.isRestarting, !SoftwareUpdateManager.shared.isRelaunchingForUpdate {
+            if Self.shouldConfirmBlockingQuit(
+                systemQuit: systemQuit, restarting: PermissionRecovery.isRestarting,
+                relaunchingForUpdate: SoftwareUpdateManager.shared.isRelaunchingForUpdate,
+                externalSignal: terminatingForSignal) {
                 guard confirmBlockingQuitIfNeeded(consumeAuthorization: true) else { return .terminateCancel }
             }
             guard event?.eventClass == AEEventClass(kCoreEventClass), event?.eventID == AEEventID(kAEQuitApplication),
@@ -551,9 +588,9 @@
                 minuteSealer?.stopAndSeal()
             }
             recorder?.close()
-            let reason = SoftwareUpdateManager.shared.isRelaunchingForUpdate ? "update"
-                : PermissionRecovery.isRestarting ? "permission_restart"
-                : userQuitConfirmed ? "user_quit" : "system_or_application_exit"
+            let reason = Self.exitReason(
+                relaunchingForUpdate: SoftwareUpdateManager.shared.isRelaunchingForUpdate,
+                restarting: PermissionRecovery.isRestarting, externalSignal: terminatingForSignal, userQuit: userQuitConfirmed)
             BackgroundContinuityController.shared.stop(reason: reason)
 
             let center = NSWorkspace.shared.notificationCenter

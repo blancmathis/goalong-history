@@ -11,7 +11,8 @@ A native menu-bar app that turns foreground activity into a clear local timeline
 </div>
 
 > **Community Build:** Goalong History is distributed as one free, open-source app. The public
-> DMG and ZIP are ad-hoc code signed for bundle-integrity checks, but they are not Apple-notarized.
+> DMG and ZIP are signed with a pinned Apple Development identity (team 2L5SSLPX46, see
+> `Distribution/release-signing.json`), but they are not Apple-notarized.
 > Verify the published SHA-256/provenance, then use **System Settings → Privacy & Security → Open
 > Anyway** if macOS blocks the first launch. Never disable Gatekeeper globally.
 
@@ -129,7 +130,7 @@ time · application · website · context · activity · classification · cover
 
 Each group receives a random 256-bit salt and SHA-256 commitment. Those commitments form an event Merkle root. Event roots are chained with a monotonic sequence and the previous event hash.
 
-Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. Goalong History first tries Secure Enclave through the modern Data Protection Keychain and falls back to a software Keychain key for a stable certificate-backed build. Ad-hoc Community and development builds use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
+Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. Goalong History first tries Secure Enclave through the modern Data Protection Keychain and falls back to a software Keychain key for a stable certificate-backed build. The pinned Apple Development release build has a stable certificate, so it uses that Keychain path. Only ad-hoc builds (legacy builds and local development builds without a stable certificate) use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
 
 Signing identities are scoped to the app's designated code-signing requirement. If that requirement changes, Goalong History records a visible identity rotation and keeps the existing chain data instead of repeatedly requesting access to an incompatible old key. A refused authentication attempt also suspends background signing for that launch, so it can never create a password dialog every minute.
 
@@ -262,7 +263,7 @@ The build script creates the single `.app` bundle, generates the `.icns` asset, 
 Info.plist, code signs the bundle, and verifies it. It also generates
 `security-capabilities.json`, an SPDX SBOM and `release-manifest.json` from the final signed
 artifact. Local builds automatically use a stable Apple Development identity when available.
-The free public Community Build is deliberately ad-hoc signed and not notarized.
+The free public Community Build is signed with a pinned Apple Development identity (team 2L5SSLPX46) and is not notarized.
 
 ## Release pipeline
 
