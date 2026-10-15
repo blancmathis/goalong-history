@@ -26,12 +26,14 @@
         private let onTogglePause: () -> Void
         private let onRequestPermissions: () -> Void
         private let onReloadConfig: () -> Void
+        private let onRetryKeychain: () -> Void
         private let onQuit: () -> Void
 
         private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let permissionMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let globalPauseItem = NSMenuItem(title: "Confidentialité · tout suspendre…", action: #selector(toggleGlobalPause), keyEquivalent: "")
         private let pauseMenuItem = NSMenuItem(title: "", action: #selector(togglePause), keyEquivalent: "p")
+        private let sealingSuspendedItem = NSMenuItem(title: "", action: #selector(retryKeychain), keyEquivalent: "")
         private let technicalStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let updateMenuItem = NSMenuItem(title: "Rechercher les mises à jour…", action: #selector(checkForUpdates), keyEquivalent: "")
 
@@ -51,6 +53,7 @@
             onTogglePause: @escaping () -> Void,
             onRequestPermissions: @escaping () -> Void,
             onReloadConfig: @escaping () -> Void,
+            onRetryKeychain: @escaping () -> Void,
             onQuit: @escaping () -> Void
         ) {
             self.state = state
@@ -68,6 +71,7 @@
             self.onTogglePause = onTogglePause
             self.onRequestPermissions = onRequestPermissions
             self.onReloadConfig = onReloadConfig
+            self.onRetryKeychain = onRetryKeychain
             self.onQuit = onQuit
 
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -76,6 +80,9 @@
             configureStatusItem()
             buildMenu()
             updateStatus()
+            NotificationCenter.default.addObserver(
+                forName: DeviceTrustState.didChange, object: nil, queue: .main
+            ) { [weak self] _ in self?.updateStatus() }
         }
 
         func menuWillOpen(_ menu: NSMenu) {
@@ -208,6 +215,15 @@
             permissionMenuItem.title = display.description
             technicalStatusItem.title =
                 "Accessibilité : \(permissionStatus.accessibility ? "oui" : "non") · Surveillance de l’entrée : \(permissionStatus.inputMonitoringStatusLabel) · Interactions : \(eventTapStatus() ? "actives" : "inactives") · Preuve : \(health.captureProven ? "oui" : "non")"
+            if let notice = DeviceTrustState.shared.sealingSuspendedNotice {
+                sealingSuspendedItem.title = "\(notice) · Réessayer…"
+                sealingSuspendedItem.isHidden = false
+            } else {
+                sealingSuspendedItem.isHidden = true
+            }
+            if let rotation = DeviceIdentityRotation.load() {
+                technicalStatusItem.title += " · Identité changée le \(rotation.at.formatted(date: .abbreviated, time: .omitted))"
+            }
             globalPauseItem.title = GoalongGlobalPause.isPaused() ? GoalongGlobalPauseText.resume : "Confidentialité · tout suspendre…"
             pauseMenuItem.title = !localEnabled
                 ? "Configurer l’enregistrement…"
@@ -268,6 +284,9 @@
             permissionMenuItem.isEnabled = false
             menu.addItem(statusMenuItem)
             menu.addItem(permissionMenuItem)
+            sealingSuspendedItem.target = self
+            sealingSuspendedItem.isHidden = true
+            menu.addItem(sealingSuspendedItem)
             menu.addItem(.separator())
 
             globalPauseItem.target = self
@@ -360,6 +379,8 @@
             alert.addButton(withTitle: "Suspendre le suivi")
             return alert.runModal() == .alertSecondButtonReturn
         }
+        @objc private func retryKeychain() { onRetryKeychain() }
+
         @objc private func togglePause() {
             if state.isCapturing, !confirmRecordingStop(allSources: false) { return }
             onTogglePause()

@@ -12,7 +12,7 @@
 
             XCTAssertTrue(status.allGranted)
             XCTAssertTrue(status.canAttemptInputTap)
-            XCTAssertEqual(status.inputMonitoringStatusLabel, "via Accessibility")
+            XCTAssertEqual(status.inputMonitoringStatusLabel, "via Accessibilité")
         }
 
         func testSetupRemainsIncompleteWithoutAccessibility() {
@@ -26,7 +26,7 @@
             )
 
             XCTAssertFalse(status.allGranted)
-            XCTAssertEqual(status.inputMonitoringStatusLabel, "on")
+            XCTAssertEqual(status.inputMonitoringStatusLabel, "oui")
         }
     }
 #endif

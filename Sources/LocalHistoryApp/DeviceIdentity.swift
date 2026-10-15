@@ -11,6 +11,8 @@
         case cannotExportPublicKey(OSStatus)
         case cannotPersistSoftwareKey
         case cannotSign(CFError?)
+        /// The existing key could not be read at startup: signing stays suspended for this launch.
+        case identityUnavailable(OSStatus)
 
         var description: String {
             switch self {
@@ -20,10 +22,12 @@
             case .cannotExportPublicKey(let status): return "Cannot export public key (OSStatus \(status))"
             case .cannotPersistSoftwareKey: return "Cannot persist the local software signing key"
             case .cannotSign(let error): return "Cannot sign anchor: \(String(describing: error))"
+            case .identityUnavailable(let status): return "Signing identity unavailable (OSStatus \(status))"
             }
         }
 
         var shouldSuspendBackgroundSigning: Bool {
+            if case .identityUnavailable = self { return true }
             guard case .cannotSign(let error) = self, let error else { return false }
             let code = CFErrorGetCode(error)
             return code == errSecUserCanceled
@@ -42,6 +46,7 @@
             switch trustTier {
             case "secure_enclave": return "Protégée par la Secure Enclave"
             case "keychain_software": return "Protégée par le Trousseau"
+            case "unavailable": return "Signature suspendue"
             default: return "Clé logicielle locale"
             }
         }
@@ -52,9 +57,112 @@
                 return "Les engagements minute par minute sont signés par une clé P-256 non exportable de la Secure Enclave."
             case "keychain_software":
                 return "Les engagements minute par minute sont signés par une clé P-256 logicielle conservée dans le Trousseau."
+            case "unavailable":
+                return "Le Trousseau est inaccessible : les engagements minute par minute ne sont pas signés pendant ce lancement."
             default:
                 return "Les engagements minute par minute sont signés par une clé P-256 locale réservée à votre compte (version compilée localement)."
             }
+        }
+    }
+
+    /// Signing identity used when the existing key cannot be read at startup. It never signs.
+    final class UnavailableDeviceIdentity: MinuteSealSigningIdentity {
+        let info: DeviceIdentityInfo
+        let status: OSStatus
+        init(status: OSStatus, deviceID: String?) {
+            self.status = status
+            info = DeviceIdentityInfo(
+                deviceID: deviceID ?? "unavailable", publicKeyBase64: "", trustTier: "unavailable",
+                algorithm: "P-256/ECDSA-X9.62-SHA256")
+        }
+        func sign(_ message: Data) throws -> Data { throw DeviceIdentityError.identityUnavailable(status) }
+    }
+
+    struct DeviceIdentityStartup {
+        let identity: MinuteSealSigningIdentity
+        let info: DeviceIdentityInfo
+        /// Non-nil when the key could not be read: sealing is suspended for this launch.
+        let unavailableStatus: OSStatus?
+        var unavailableError: Error? = nil
+        var isDegraded: Bool { unavailableStatus != nil }
+
+        /// Resolves the identity without ever failing startup. An unreadable existing key
+        /// never creates another key; the app records without sealing instead.
+        static func resolve(
+            provider: () throws -> DeviceIdentity = { try DeviceIdentity.shared(attempts: 2, delay: 0.1) },
+            defaults: UserDefaults = .standard
+        ) -> DeviceIdentityStartup {
+            do {
+                let identity = try provider()
+                return DeviceIdentityStartup(identity: identity, info: identity.info, unavailableStatus: nil)
+            } catch {
+                var status = errSecInteractionNotAllowed
+                switch error as? DeviceIdentityError {
+                case .cannotLoadKey(let value), .cannotCreateKey(let value), .identityUnavailable(let value):
+                    status = value
+                default: break
+                }
+                Diagnostics.write("Signing identity unavailable at startup, sealing suspended for this launch: \(error)")
+                let unavailable = UnavailableDeviceIdentity(
+                    status: status, deviceID: DeviceIdentity.lastPersistedDeviceID(defaults: defaults))
+                return DeviceIdentityStartup(
+                    identity: unavailable, info: unavailable.info, unavailableStatus: status, unavailableError: error)
+            }
+        }
+    }
+
+    struct DeviceIdentityRotation: Equatable {
+        let at: Date
+        let previousTier: String
+        let newTier: String
+
+        static func load(defaults: UserDefaults = .standard) -> DeviceIdentityRotation? {
+            guard let value = defaults.string(forKey: DeviceIdentity.rotationKey) else { return nil }
+            let parts = value.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 3, let seconds = TimeInterval(parts[0]) else { return nil }
+            return DeviceIdentityRotation(
+                at: Date(timeIntervalSince1970: seconds), previousTier: parts[1], newTier: parts[2])
+        }
+
+        static func tierTitle(_ tier: String) -> String {
+            switch tier {
+            case "secure_enclave": return "Secure Enclave"
+            case "keychain_software": return "Trousseau"
+            case "local_software": return "clé logicielle locale"
+            default: return "inconnue"
+            }
+        }
+
+        var notice: String {
+            let date = at.formatted(date: .abbreviated, time: .omitted)
+            return "Nouvelle identité de vérification depuis le \(date) (\(Self.tierTitle(previousTier)) → \(Self.tierTitle(newTier))). Les preuves précédentes restent liées à l’ancienne identité."
+        }
+    }
+
+    /// Process-wide trust state shown in the menu bar and the integrity section.
+    final class DeviceTrustState {
+        static let shared = DeviceTrustState()
+        static let didChange = Notification.Name("ai.goalong.deviceTrustDidChange")
+        private let lock = NSLock()
+        private var suspendedStatus: OSStatus?
+
+        var sealingSuspendedNotice: String? {
+            lock.lock(); defer { lock.unlock() }
+            return suspendedStatus == nil ? nil : "Preuves suspendues : Trousseau inaccessible"
+        }
+
+        func setSealingSuspended(status: OSStatus?) {
+            lock.lock(); suspendedStatus = status; lock.unlock()
+            Self.postChange()
+        }
+
+        static func postChange() {
+            NotificationCenter.default.post(name: didChange, object: nil)
+        }
+
+        static func acknowledgeRotation(defaults: UserDefaults = .standard) {
+            defaults.removeObject(forKey: DeviceIdentity.rotationKey)
+            postChange()
         }
     }
 
@@ -77,10 +185,10 @@
 
         /// One identity per process: the app and the ChatGPT recap must sign with the same key,
         /// and a second resolution must never land on another tier.
-        static func shared() throws -> DeviceIdentity {
+        static func shared(attempts: Int = 4, delay: TimeInterval = 0.25) throws -> DeviceIdentity {
             sharedLock.lock(); defer { sharedLock.unlock() }
             if let sharedInstance { return sharedInstance }
-            let identity = try DeviceIdentity()
+            let identity = try DeviceIdentity(attempts: attempts, delay: delay)
             noteIdentity(identity.info)
             sharedInstance = identity
             return identity
@@ -92,12 +200,36 @@
             return previous != "\(current.deviceID)|\(current.trustTier)"
         }
 
-        private static func noteIdentity(_ info: DeviceIdentityInfo, defaults: UserDefaults = .standard) {
+        static func noteIdentity(
+            _ info: DeviceIdentityInfo, defaults: UserDefaults = .standard, now: Date = Date()
+        ) {
             let previous = defaults.string(forKey: lastIdentityKey)
             if identityChanged(previous: previous, current: info) {
                 Diagnostics.write("Device signing identity changed since the previous launch (tier \(info.trustTier))")
+                // A visible changed trust state, kept until the user acknowledges it.
+                let previousTier = previous?.split(separator: "|", omittingEmptySubsequences: false).dropFirst().first
+                    .map(String.init) ?? ""
+                defaults.set(
+                    "\(now.timeIntervalSince1970)|\(previousTier)|\(info.trustTier)", forKey: rotationKey)
+                DeviceTrustState.postChange()
             }
             defaults.set("\(info.deviceID)|\(info.trustTier)", forKey: lastIdentityKey)
+        }
+
+        static let rotationKey = "goalong.deviceIdentity.rotation.v1"
+
+        /// The device ID of the previous launch, if any. Never creates a key.
+        static func lastPersistedDeviceID(defaults: UserDefaults = .standard) -> String? {
+            guard let value = defaults.string(forKey: lastIdentityKey),
+                let id = value.split(separator: "|", omittingEmptySubsequences: false).first, !id.isEmpty
+            else { return nil }
+            return String(id)
+        }
+
+        /// Errors where retrying would only repeat a prompt the user already answered.
+        static func isImmediateStop(_ error: Error) -> Bool {
+            guard case .cannotLoadKey(let status)? = error as? DeviceIdentityError else { return false }
+            return status == errSecUserCanceled || status == errSecAuthFailed
         }
 
         /// A tier is unavailable when it cannot be used at all (no entitlement, key creation refused).
@@ -122,6 +254,7 @@
                     do { return try tier() }
                     catch {
                         if isTierUnavailable(error) { break }
+                        if isImmediateStop(error) { throw error }
                         attempt += 1
                         if attempt >= attempts { throw error }
                         pause(delay)
@@ -131,7 +264,7 @@
             return nil
         }
 
-        init() throws {
+        init(attempts: Int = 4, delay: TimeInterval = 0.25) throws {
             let tiers: [() throws -> (SecKey, String)] = [
                 { (try Self.loadOrCreateDataProtectionKey(tag: Self.secureEnclaveTag, secureEnclave: true), "secure_enclave") },
                 { (try Self.loadOrCreateDataProtectionKey(tag: Self.softwareTag, secureEnclave: false), "keychain_software") },
@@ -143,7 +276,7 @@
                         tag: Self.scopedLegacyTag(base: Self.softwareTag, signingScope: signingScope)), "keychain_software")
                 },
             ]
-            if let (key, tier) = try Self.resolveFirst(tiers) {
+            if let (key, tier) = try Self.resolveFirst(tiers, attempts: attempts, delay: delay) {
                 privateKey = key
                 info = try Self.makeInfo(privateKey: key, trustTier: tier)
                 return
