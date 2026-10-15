@@ -46,7 +46,7 @@
                                 emptyMessage: "Aucune activité d’application disponible."
                             )
                             usagePanel(
-                                title: "Apple devices",
+                                title: "Appareils Apple",
                                 subtitle: "Les totaux Temps d’écran peuvent se chevaucher entre appareils",
                                 symbol: "macbook.and.iphone",
                                 values: overview.screenTimeDevices,
@@ -143,7 +143,7 @@
 
                     HStack(spacing: 8) {
                         proofPill(
-                            "Run signature",
+                            "Signature du rapport",
                             state: report?.runSignature ?? proof.localSignatureStatus,
                             positive: (report?.runSignature ?? proof.localSignatureStatus) == "valid"
                         )
@@ -153,12 +153,12 @@
                             positive: (report?.sourceCommitments ?? proof.contextStatus).contains("valid")
                         )
                         proofPill(
-                            "Provider observation",
+                            "Observation du fournisseur",
                             state: report?.providerObservation ?? proof.providerObservationStatus,
                             positive: true
                         )
                         proofPill(
-                            "External receipt",
+                            "Reçu externe",
                             state: report?.externalReceipt ?? proof.externalReceiptStatus,
                             positive: (report?.externalReceipt ?? proof.externalReceiptStatus) != "not_present"
                         )
@@ -204,7 +204,7 @@
 
         private var header: some View {
             PageHeader(
-                title: "Activity",
+                title: "Bilan quotidien",
                 subtitle:
                     "Comprendre le déroulé et les résultats d’une journée à partir de l’historique, du Temps d’écran et des conversations IA."
             ) {
@@ -271,7 +271,7 @@
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.secondary)
                             }
-                            Label("\(confidence)% evidence confidence", systemImage: "checkmark.shield")
+                            Label("Confiance des preuves : \(confidence) %", systemImage: "checkmark.shield")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.secondary)
                             Text(isToday ? "La journée est encore en cours" : "Bilan de la journée terminée")
@@ -284,7 +284,7 @@
 
                         VStack(alignment: .leading, spacing: 11) {
                             HStack {
-                                Text("Five-line daily report")
+                                Text("Rapport du jour en cinq lignes")
                                     .font(.system(size: 13, weight: .semibold))
                                 Spacer()
                                 if recap.verifiesLocalAttestation {
@@ -298,7 +298,7 @@
                                     )
                                 } else {
                                     StatusPill(
-                                        title: "Legacy unsigned",
+                                        title: "Ancien rapport non signé",
                                         symbol: "clock.arrow.circlepath",
                                         tint: LHTheme.warning
                                     )
@@ -325,7 +325,7 @@
                     }
                 } else if let recap = recapRuntime.recap {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Legacy daily recap")
+                        Text("Ancien bilan quotidien")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
                             "Ce rapport est antérieur au format en cinq lignes. Régénérez-le pour obtenir un score, un niveau de confiance et un résumé structuré."
@@ -476,7 +476,7 @@
             LHCard {
                 HStack(alignment: .top, spacing: 18) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Label("AI collaboration", systemImage: "bubble.left.and.bubble.right")
+                        Label("Collaboration avec l’IA", systemImage: "bubble.left.and.bubble.right")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
                             "Les conversations sont lues ponctuellement dans Codex, Claude, OpenCode et les sources configurées. Seul le rapport en cinq lignes est conservé."
@@ -488,7 +488,7 @@
                     Spacer(minLength: 18)
                     collaborationMetric("Sessions", overview.agentSessions)
                     collaborationMetric("Messages", overview.agentMessages)
-                    collaborationMetric("Tool calls", overview.agentToolCalls)
+                    collaborationMetric("Appels d’outils", overview.agentToolCalls)
                     collaborationMetric("Erreurs", overview.agentErrors)
                 }
             }
@@ -511,7 +511,7 @@
                     Image(systemName: "checkmark.shield.fill")
                         .foregroundStyle(LHTheme.success)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Evidence coverage")
+                        Text("Couverture des preuves")
                             .font(.system(size: 11, weight: .semibold))
                         Text(
                             "\(overview.sourceEventCount.formatted()) événements · \(overview.privateMinutes) min privées ou masquées · \(overview.analyzedAgentSessions)/\(overview.agentSessions) sessions IA analysées"

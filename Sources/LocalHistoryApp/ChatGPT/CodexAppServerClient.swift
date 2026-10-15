@@ -411,7 +411,7 @@
         func completedMarkdown() throws -> String {
             let trimmed = (finalText ?? streamed).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
-                throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
+                throw CodexAppServerError.generationFailed("Codex a renvoyé une réponse vide.")
             }
 
             let markdown: String
@@ -428,7 +428,7 @@
             guard let redactedMarkdown = ActivitySemanticTextSanitizer.redact(markdown),
                 !redactedMarkdown.isEmpty
             else {
-                throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
+                throw CodexAppServerError.generationFailed("Codex a renvoyé une réponse vide.")
             }
             guard redactedMarkdown.utf8.count <= limits.maximumRecapMarkdownBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
@@ -441,7 +441,7 @@
         func completedAssessment() throws -> ChatGPTDailyAssessment {
             let raw = finalText ?? streamed
             guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
+                throw CodexAppServerError.generationFailed("Codex a renvoyé une réponse vide.")
             }
             guard raw.utf8.count <= limits.maximumRecapMarkdownBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
@@ -770,7 +770,7 @@
                         ],
                     ],
                     timeout: 15,
-                    operation: "initializing the local agent"
+                    operation: "initialisation de l’agent local"
                 )
                 guard let reportedHome = initialization["codexHome"] as? String else {
                     throw CodexAppServerError.malformedResponse(
@@ -788,7 +788,7 @@
                 try send(
                     ["method": "initialized", "params": [:] as [String: Any]],
                     deadline: Date().addingTimeInterval(15),
-                    operation: "acknowledging app-server initialization"
+                    operation: "confirmation de l’initialisation"
                 )
             } catch {
                 close()
@@ -806,7 +806,7 @@
                 method: "account/read",
                 params: ["refreshToken": refreshToken],
                 timeout: 20,
-                operation: "checking the ChatGPT account"
+                operation: "vérification du compte ChatGPT"
             )
             guard let rawAccount = result["account"] else { return nil }
             guard !(rawAccount is NSNull), let account = rawAccount as? [String: Any] else { return nil }
@@ -829,7 +829,7 @@
                     "appBrand": "chatgpt",
                 ],
                 timeout: 20,
-                operation: "starting ChatGPT sign-in"
+                operation: "démarrage de la connexion à ChatGPT"
             )
             guard let loginID = result["loginId"] as? String, !loginID.isEmpty,
                 let rawURL = result["authUrl"] as? String,
@@ -843,7 +843,7 @@
         func waitForChatGPTLogin(loginID: String, timeout: TimeInterval = 600) throws -> CodexAccount {
             let message = try waitForMessage(
                 timeout: timeout,
-                operation: "waiting for ChatGPT sign-in"
+                operation: "attente de la connexion à ChatGPT"
             ) { message in
                 guard message["method"] as? String == "account/login/completed",
                     let params = message["params"] as? [String: Any]
@@ -868,7 +868,7 @@
                 method: "account/logout",
                 params: [:],
                 timeout: 20,
-                operation: "disconnecting ChatGPT"
+                operation: "déconnexion de ChatGPT"
             )
         }
 
@@ -922,10 +922,10 @@
                 throw CodexAppServerError.generationFailed("Les exclusions bloquent cette analyse de texte. Utilisez le bilan par applications dans Connexions.")
             }
             guard siteAnalysisOnly else {
-                throw CodexAppServerError.generationFailed("Site analysis requires its isolated Codex connection.")
+                throw CodexAppServerError.generationFailed("L’analyse de sites exige sa connexion Codex isolée.")
             }
             guard try FileManager.default.contentsOfDirectory(atPath: workingDirectory.path).isEmpty else {
-                throw CodexAppServerError.generationFailed("The isolated analysis workspace must be empty.")
+                throw CodexAppServerError.generationFailed("Le dossier de travail isolé de l’analyse doit être vide.")
             }
             guard let account = try readAccount(refreshToken: true), account.isManagedChatGPT else {
                 throw CodexAppServerError.accountNotChatGPT("non-ChatGPT")
@@ -947,7 +947,7 @@
                     "config": ["model_reasoning_effort": CodexDailyAssessmentContract.reasoningEffort],
                 ],
                 timeout: CodexDailyAssessmentContract.threadStartTimeout,
-                operation: "starting the selected-data analysis"
+                operation: "démarrage de l’analyse des données choisies"
             )
             guard let thread = started["thread"] as? [String: Any],
                 let threadID = thread["id"] as? String, !threadID.isEmpty
@@ -956,8 +956,8 @@
             }
             guard thread["ephemeral"] as? Bool == true else {
                 _ = try? request(method: "thread/delete", params: ["threadId": threadID],
-                                 timeout: 15, operation: "removing the unexpected persistent analysis")
-                throw CodexAppServerError.generationFailed("Codex did not create a temporary analysis thread.")
+                                 timeout: 15, operation: "suppression de l’analyse persistante inattendue")
+                throw CodexAppServerError.generationFailed("Codex n’a pas créé de fil d’analyse temporaire.")
             }
             guard started["model"] as? String == CodexDailyAssessmentContract.model,
                 started["reasoningEffort"] as? String == CodexDailyAssessmentContract.reasoningEffort,
@@ -968,7 +968,7 @@
                 let roots = started["runtimeWorkspaceRoots"] as? [String],
                 Self.workspaceRootsAreConfined(roots, to: workingDirectory)
             else {
-                throw CodexAppServerError.generationFailed("Codex did not confirm the restricted analysis settings. Update Codex before trying again.")
+                throw CodexAppServerError.generationFailed("Codex n’a pas confirmé les réglages restreints de l’analyse. Mettez Codex à jour, puis réessayez.")
             }
             guard GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == privacyRevision else {
                 throw CodexAppServerError.generationFailed("Les exclusions ont changé. L’analyse a été arrêtée avant l’envoi.")
@@ -987,26 +987,26 @@
                     "outputSchema": schema,
                 ],
                 timeout: CodexDailyAssessmentContract.turnStartTimeout,
-                operation: "sending the reviewed selection to ChatGPT"
+                operation: "envoi de la sélection vérifiée à ChatGPT"
             )
             guard let initialTurn = turnResponse["turn"] as? [String: Any],
                 let turnID = initialTurn["id"] as? String, !turnID.isEmpty
             else {
-                throw CodexAppServerError.malformedResponse("The analysis turn identifier is missing.")
+                throw CodexAppServerError.malformedResponse("L’identifiant du tour d’analyse est absent.")
             }
             try Self.validateSiteAnalysisItems(in: initialTurn)
             let deadline = Date().addingTimeInterval(CodexDailyAssessmentContract.generationTimeout)
             var finalText: String?
             var streamedBytes = 0
             while Date() < deadline {
-                let message = try nextDeferredOrMessage(deadline: deadline, operation: "analyzing the reviewed selection")
+                let message = try nextDeferredOrMessage(deadline: deadline, operation: "analyse de la sélection vérifiée")
                 let method = try CodexAppServerMessageRouter.notificationMethod(in: message)
                 let params = message["params"] as? [String: Any] ?? [:]
                 if let eventThread = params["threadId"] as? String, eventThread != threadID {
-                    throw CodexAppServerError.malformedResponse("An event belonged to another analysis thread.")
+                    throw CodexAppServerError.malformedResponse("Un événement appartenait à un autre fil d’analyse.")
                 }
                 if let eventTurn = params["turnId"] as? String, eventTurn != turnID {
-                    throw CodexAppServerError.malformedResponse("An event belonged to another analysis turn.")
+                    throw CodexAppServerError.malformedResponse("Un événement appartenait à un autre tour d’analyse.")
                 }
                 switch method {
                 case "item/started", "item/completed":
@@ -1014,40 +1014,40 @@
                         let type = item["type"] as? String,
                         ["agentMessage", "reasoning", "userMessage"].contains(type)
                     else {
-                        throw CodexAppServerError.generationFailed("An unexpected tool or activity was requested. The analysis was stopped; no draft was saved.")
+                        throw CodexAppServerError.generationFailed("Un outil ou une activité inattendus ont été demandés. L’analyse a été arrêtée ; aucun brouillon n’a été enregistré.")
                     }
                     if method == "item/completed", type == "agentMessage",
                         let content = item["text"] as? String,
                         item["phase"] == nil || item["phase"] as? String == "final_answer"
                     {
                         guard content.utf8.count <= maximumResponseBytes else {
-                            throw CodexAppServerError.protocolLimitExceeded("The analysis response exceeded 32 KiB.")
+                            throw CodexAppServerError.protocolLimitExceeded("La réponse de l’analyse dépasse 32 Kio.")
                         }
                         finalText = content
                     }
                 case "item/agentMessage/delta":
                     streamedBytes += (params["delta"] as? String)?.utf8.count ?? 0
                     guard streamedBytes <= maximumResponseBytes * 2 else {
-                        throw CodexAppServerError.protocolLimitExceeded("The analysis stream exceeded 64 KiB.")
+                        throw CodexAppServerError.protocolLimitExceeded("Le flux de l’analyse dépasse 64 Kio.")
                     }
                 case "error":
-                    throw CodexAppServerError.generationFailed("ChatGPT could not complete the analysis. Check the connection and account usage, then try again.")
+                    throw CodexAppServerError.generationFailed("ChatGPT n’a pas pu terminer l’analyse. Vérifiez la connexion et l’usage du compte, puis réessayez.")
                 case "turn/completed":
                     guard let turn = params["turn"] as? [String: Any],
                         turn["id"] as? String == turnID,
                         turn["status"] as? String == "completed", let finalText
                     else {
-                        throw CodexAppServerError.generationFailed("The analysis did not produce a complete draft.")
+                        throw CodexAppServerError.generationFailed("L’analyse n’a pas produit de brouillon complet.")
                     }
                     try Self.validateSiteAnalysisItems(in: turn)
                     return Data(finalText.utf8)
                 default:
                     if method.hasPrefix("item/") && !method.hasPrefix("item/reasoning/") {
-                        throw CodexAppServerError.generationFailed("An unexpected analysis capability was used. The analysis was stopped.")
+                        throw CodexAppServerError.generationFailed("Une capacité d’analyse inattendue a été utilisée. L’analyse a été arrêtée.")
                     }
                 }
             }
-            throw CodexAppServerError.timeout("analyzing the reviewed selection")
+            throw CodexAppServerError.timeout("analyse de la sélection vérifiée")
         }
 
         private static let siteAnalysisOutputSchema: [String: Any] = [
@@ -1087,7 +1087,7 @@
                 guard let type = $0["type"] as? String else { return false }
                 return ["agentMessage", "reasoning", "userMessage"].contains(type)
             }) else {
-                throw CodexAppServerError.generationFailed("An unexpected tool or activity was requested. The analysis was stopped; no draft was saved.")
+                throw CodexAppServerError.generationFailed("Un outil ou une activité inattendus ont été demandés. L’analyse a été arrêtée ; aucun brouillon n’a été enregistré.")
             }
         }
 
@@ -1125,7 +1125,7 @@
                     ],
                 ],
                 timeout: CodexDailyAssessmentContract.threadStartTimeout,
-                operation: "starting the recap agent"
+                operation: "démarrage de l’agent du bilan"
             )
             guard let thread = started["thread"] as? [String: Any],
                 let threadID = thread["id"] as? String,
@@ -1138,41 +1138,41 @@
                     method: "thread/delete",
                     params: ["threadId": threadID],
                     timeout: 15,
-                    operation: "removing the unexpected persistent recap thread"
+                    operation: "suppression du fil de bilan persistant inattendu"
                 )
                 throw CodexAppServerError.malformedResponse(
-                    "Codex did not create an ephemeral thread; update the Codex CLI"
+                    "Codex n’a pas créé de fil éphémère ; mettez à jour Codex (ligne de commande)."
                 )
             }
             guard started["model"] as? String == CodexDailyAssessmentContract.model else {
                 throw CodexAppServerError.generationFailed(
-                    "Codex did not start GPT-5.6 Luna. Goalong will not silently use another model."
+                    "Codex n’a pas démarré GPT-5.6 Luna. Goalong n’utilisera pas un autre modèle sans vous le dire."
                 )
             }
             guard started["reasoningEffort"] as? String == CodexDailyAssessmentContract.reasoningEffort else {
                 throw CodexAppServerError.generationFailed(
-                    "Codex did not start GPT-5.6 Luna with High reasoning. Goalong will not silently use another effort."
+                    "Codex n’a pas démarré GPT-5.6 Luna avec un raisonnement élevé. Goalong n’utilisera pas un autre niveau sans vous le dire."
                 )
             }
             guard let activeProfile = started["activePermissionProfile"] as? [String: Any],
                 activeProfile["id"] as? String == Self.recapPermissionProfile
             else {
                 throw CodexAppServerError.malformedResponse(
-                    "Codex did not activate Goalong's restricted recap permission profile; update the Codex CLI"
+                    "Codex n’a pas activé le profil d’autorisations restreint de Goalong ; mettez à jour Codex (ligne de commande)."
                 )
             }
             guard let startedWorkingDirectory = started["cwd"] as? String,
                 Self.pathsMatchExactly([startedWorkingDirectory], expected: [workingDirectory])
             else {
                 throw CodexAppServerError.malformedResponse(
-                    "Codex did not start the recap inside Goalong's temporary workspace"
+                    "Codex n’a pas démarré le bilan dans le dossier de travail temporaire de Goalong."
                 )
             }
             guard let roots = started["runtimeWorkspaceRoots"] as? [String],
                 Self.workspaceRootsAreConfined(roots, to: workingDirectory)
             else {
                 throw CodexAppServerError.malformedResponse(
-                    "Codex did not confine the recap to Goalong's temporary workspace"
+                    "Codex n’a pas confiné le bilan au dossier de travail temporaire de Goalong."
                 )
             }
 
@@ -1195,7 +1195,7 @@
                     "outputSchema": CodexDailyAssessmentContract.outputSchema,
                 ],
                 timeout: CodexDailyAssessmentContract.turnStartTimeout,
-                operation: "starting the recap turn"
+                operation: "démarrage du tour de bilan"
             )
             let turnID = (startedTurn["turn"] as? [String: Any])?["id"] as? String
                 ?? startedTurn["turnId"] as? String
@@ -1208,7 +1208,7 @@
             while Date() < deadline {
                 let message = try nextDeferredOrMessage(
                     deadline: deadline,
-                    operation: "generating the recap"
+                    operation: "génération du bilan"
                 )
                 let method = try CodexAppServerMessageRouter.notificationMethod(in: message)
                 let params = message["params"] as? [String: Any] ?? [:]
@@ -1263,7 +1263,7 @@
                     break
                 }
             }
-            throw CodexAppServerError.timeout("generating the recap")
+            throw CodexAppServerError.timeout("génération du bilan")
         }
 
         private func requireDailyAssessmentModel() throws {
@@ -1279,7 +1279,7 @@
                     method: "model/list",
                     params: params,
                     timeout: 20,
-                    operation: "checking GPT-5.6 Luna availability"
+                    operation: "vérification de la disponibilité de GPT-5.6 Luna"
                 )
                 guard let models = result["data"] as? [[String: Any]] else {
                     throw CodexAppServerError.malformedResponse("model/list data is missing")
@@ -1292,7 +1292,7 @@
                         ($0["reasoningEffort"] as? String) == CodexDailyAssessmentContract.reasoningEffort
                     }) else {
                         throw CodexAppServerError.generationFailed(
-                            "GPT-5.6 Luna is available, but High reasoning is not enabled for this account."
+                            "GPT-5.6 Luna est disponible, mais le raisonnement élevé n’est pas activé pour ce compte."
                         )
                     }
                     return
@@ -1302,7 +1302,7 @@
             } while cursor != nil && pageCount < 10
 
             throw CodexAppServerError.generationFailed(
-                "GPT-5.6 Luna is not available for this ChatGPT account. Goalong did not fall back to another model."
+                "GPT-5.6 Luna n’est pas disponible pour ce compte ChatGPT. Goalong n’a pas basculé vers un autre modèle."
             )
         }
 

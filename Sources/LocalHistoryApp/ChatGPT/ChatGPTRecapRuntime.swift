@@ -242,7 +242,7 @@
             guard let redactedMarkdown = ActivitySemanticTextSanitizer.redact(recap.markdown),
                 !redactedMarkdown.isEmpty
             else {
-                throw CodexAppServerError.generationFailed("The recap contained no persistable text.")
+                throw CodexAppServerError.generationFailed("Le bilan ne contenait aucun texte à enregistrer.")
             }
             let normalizedGeneratedAt = Date(
                 timeIntervalSince1970: recap.generatedAt.timeIntervalSince1970.rounded(.down)
@@ -1104,7 +1104,7 @@
                         }
                         if !automatic {
                             self.alert = ChatGPTRecapAlert(
-                                title: "Daily activity report generated",
+                                title: "Rapport du jour généré",
                                 message:
                                     "Le rapport en cinq lignes est conservé avec une preuve locale chaînée, les engagements des sources et une copie chiffrée de la réponse. La consigne complète n’est gardée que sous forme d’empreinte ; aucune copie des conversations n’a été créée."
                             )
