@@ -693,6 +693,17 @@
             discardPendingDayOverview()
         }
 
+        /// A history clear may have erased the recap of the day on screen: show what is left on disk.
+        func refreshAfterHistoryClear() {
+            streamedMarkdown = ""
+            recap = ChatGPTRecapPersistence.load(for: selectedDay, from: recapsDirectory)
+            proofReport = nil
+            dayOverview = nil
+            dayOverviewError = nil
+            refreshDayOverview()
+            refreshProofReport()
+        }
+
         @discardableResult
         private func nextDayOverviewRequest() -> Int {
             runStateLock.lock()
