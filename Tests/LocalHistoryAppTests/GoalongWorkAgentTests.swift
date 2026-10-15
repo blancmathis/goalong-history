@@ -102,5 +102,21 @@ final class GoalongWorkAgentTests: XCTestCase {
         XCTAssertTrue(GoalongWorkAgent.isHomeBusy(CodexAppServerError.homeBusy))
         XCTAssertFalse(GoalongWorkAgent.isHomeBusy(CodexAppServerError.executableUnavailable))
     }
+
+    func testBusyGuardAndEscapeBindingsInSource() throws {
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0..<3 { root.deleteLastPathComponent() }
+        func src(_ path: String) throws -> String { try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8) }
+        let agent = try src("Sources/LocalHistoryApp/GoalongWorkAgent.swift")
+        XCTAssertTrue(agent.contains("if !userInitiated, ChatGPTRecapRuntime.shared.isBusyWithCodex {"), "Automatic runs defer while Codex is busy")
+        XCTAssertTrue(agent.contains("if !userInitiated, Self.isHomeBusy(error) {"), "An automatic homeBusy is not a failure")
+        XCTAssertTrue(agent.contains("guard rerunRequested, !isRunning, !ChatGPTRecapRuntime.shared.isBusyWithCodex"), "The rerun waits for Codex, not only the recap")
+        for path in ["Sources/LocalHistoryApp/GoalongWorkPage.swift",
+                     "Sources/LocalHistoryApp/DeveloperActivity/GoalongDeveloperProjectsSheet.swift",
+                     "Sources/LocalHistoryApp/Blocking/BlockingPageLists.swift",
+                     "Sources/LocalHistoryApp/GoalongRetentionSheet.swift"] {
+            XCTAssertTrue(try src(path).contains(".keyboardShortcut(.cancelAction)"), "\(path) closes with Escape")
+        }
+    }
 }
 #endif
