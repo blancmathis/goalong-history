@@ -75,6 +75,18 @@ final class BlockingPlusTests: XCTestCase {
         XCTAssertEqual(c.attemptsToday[list.id], 2)
         XCTAssertEqual(backend.lastFeedback?.attemptLine, "2ᵉ tentative aujourd’hui")
     }
+    @MainActor func testFirstAttemptAfterMidnightKeepsYesterdayInHistory() {
+        var now = date(8, 23, 59).addingTimeInterval(56)
+        let list = BlockList(name: "Sites", sites: [.init(pattern: "example.org"), .init(pattern: "example.net")])
+        let backend = PlusBackend(), c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .free)
+        now = now.addingTimeInterval(1); c.observe(target(now)); XCTAssertEqual(c.attemptsToday[list.id], 1)
+        // 00:00:01, less than 5 s after the last refresh: the attempt itself must archive yesterday.
+        now = now.addingTimeInterval(4); c.observe(target(now, url: "example.net/a"))
+        XCTAssertEqual(c.snapshot.usage?.day, "2026-10-09")
+        XCTAssertEqual(c.snapshot.usage?.blocked?[list.id], 1)
+        XCTAssertEqual(c.snapshot.usageHistory?["2026-10-08"]?.blocked?[list.id], 1)
+    }
     @MainActor func testContinuousVeilIsOneAttemptAndDifferentHostsCountSeparately() {
         var now = date(); let list = BlockList(name: "Sites", sites: [.init(pattern: "example.org")], reason: "Mon projet.")
         let backend = PlusBackend(), c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })

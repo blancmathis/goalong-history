@@ -720,11 +720,6 @@ import LocalHistoryCore
         // Publish only real changes: the page must not redraw on every sample.
         if lists != document.lists { lists = document.lists }
         if freeze != document.freeze { freeze = document.freeze }
-        if let previous = document.usage, previous.day != Self.dayKey(now, calendar: calendar) {
-            document.usageHistory = document.usageHistory ?? [:]
-            document.usageHistory?[previous.day] = previous
-            for day in (document.usageHistory?.keys.sorted().dropLast(366)) ?? [] { document.usageHistory?[day] = nil }
-        }
         let usage = todayUsage()
         if frictionUsage != usage { frictionUsage = usage }
         if attemptsToday != usage.blocked ?? [:] { attemptsToday = usage.blocked ?? [:] }
@@ -1082,9 +1077,16 @@ import LocalHistoryCore
         if blocks != activeBlocks { activeBlocks = blocks }
     }
 
+    /// Every write path reads today's usage here, so a previous day is archived before it can be replaced.
     private func todayUsage() -> BlockDayUsage {
         let day = Self.dayKey(clock(), calendar: calendar)
         if let usage = document.usage, usage.day == day { return usage }
+        if let previous = document.usage {
+            document.usageHistory = document.usageHistory ?? [:]
+            document.usageHistory?[previous.day] = previous
+            for key in (document.usageHistory?.keys.sorted().dropLast(366)) ?? [] { document.usageHistory?[key] = nil }
+            document.usage = nil
+        }
         return document.usageHistory?[day] ?? BlockDayUsage(day: day)
     }
 

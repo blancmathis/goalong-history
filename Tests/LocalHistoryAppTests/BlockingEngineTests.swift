@@ -196,6 +196,38 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertEqual(c.snapshot.usage?.quotaSecondsUsed[list.id], 5)
         XCTAssertEqual(c.snapshot.usage?.day, "2026-10-06")
     }
+    @MainActor func testFirstQuotaSampleAfterMidnightKeepsYesterdayInHistory() {
+        var now = date(5, 23, 59).addingTimeInterval(56)
+        let list = BlockList(name: "Quota", sites: [BlockSiteRule(pattern: "youtube.com")], quotaMinutesPerDay: 30)
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .free)
+        now = now.addingTimeInterval(1); c.observe(target(now))
+        now = now.addingTimeInterval(2); c.observe(target(now))
+        XCTAssertEqual(c.snapshot.usage?.quotaSecondsUsed[list.id], 2)
+        // 00:00:00.5, 4.5 s after the last refresh: the sample itself must archive yesterday.
+        now = now.addingTimeInterval(1.5); c.observe(target(now))
+        XCTAssertEqual(c.snapshot.usage?.day, "2026-10-06")
+        XCTAssertEqual(c.snapshot.usageHistory?["2026-10-05"]?.quotaSecondsUsed[list.id], 2)
+        XCTAssertEqual(c.frictionCounts(day: "2026-10-05").quotaSecondsUsed[list.id], 2)
+    }
+    @MainActor func testLockedRefusalsNameThePasswordBlock() throws {
+        let now = date()
+        var list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")], quotaMinutesPerDay: 30, breaks: BlockBreaks(count: 1, minutes: 5))
+        list.program.ranges = [.init(weekdays: [1], startMinute: 600, endMinute: 660)]
+        let credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        for (lock, prefix) in [(BlockLock.password, "Pendant un blocage par mot de passe, "), (.locked, "Pendant un verrou, ")] {
+            let c = BlockingController(document: .init(lists: [list], passwordLock: credential), clock: { now }, calendar: calendar)
+            c.start(listIDs: [list.id], until: now.addingTimeInterval(3600), lock: lock)
+            XCTAssertFalse(c.activeBlocks.isEmpty)
+            var quota = list; quota.quotaMinutesPerDay = 60
+            var breaks = list; breaks.breaks = BlockBreaks(count: 2, minutes: 5)
+            var program = list; program.program.ranges = []
+            for next in [quota, breaks, program] {
+                guard case .refused(let reason) = c.editCheck(next) else { XCTFail("\(lock) must refuse"); continue }
+                XCTAssertTrue(reason.hasPrefix(prefix), reason)
+            }
+        }
+    }
     @MainActor func testUnreadableAddressFailsClosedInPrivateAndNormalWindows() {
         for privateWindow in [true, false] {
             var now = date(); let backend = FakeBlockingBackend()
