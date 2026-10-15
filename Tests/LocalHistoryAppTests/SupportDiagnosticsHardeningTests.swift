@@ -23,6 +23,20 @@ final class SupportDiagnosticsHardeningTests: XCTestCase {
         XCTAssertGreaterThan(snapshot.writeFailures, 0)
         XCTAssertTrue(snapshot.records.contains { $0.values["errorCode"] == .count(Int(ENOSPC)) })
     }
+    func testJournalStartedAfterTheDataRootExistsWritesWithoutFailures() throws {
+        let (root, defaults) = try isolated()
+        let dataRoot = root.appendingPathComponent("dataRoot")
+        // Mirrors AppDelegate: AppPaths.prepare() creates the private data root before the journal starts.
+        try FileManager.default.createDirectory(at: dataRoot, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        let journal = SupportDiagnostics(root: dataRoot.appendingPathComponent("SupportDiagnostics"), defaults: defaults)
+        journal.start(); defer { journal.stop() }
+        journal.record(.userMarkedIssue, component: .support)
+        XCTAssertTrue(journal.flush())
+        let snapshot = journal.snapshot()
+        XCTAssertEqual(snapshot.writeFailures, 0)
+        XCTAssertFalse(snapshot.diskSnapshotIncomplete)
+        XCTAssertTrue(snapshot.records.contains { $0.event == .appStarted })
+    }
     func testLockedJournalCannotBlockExportOrQuitIndefinitely() throws {
         let (root, defaults) = try isolated()
         let directory = root.appendingPathComponent("journal")

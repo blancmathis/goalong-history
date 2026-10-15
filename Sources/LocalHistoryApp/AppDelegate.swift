@@ -23,6 +23,23 @@
         }
     }
 
+    /// When to capture the tail of the active Screen Time day. Completed days are never re-read,
+    /// so the last refresh must happen while the day is still the active one.
+    enum ScreenTimeMidnightSchedule {
+        static let lead: TimeInterval = 15
+
+        /// A moment just before the next local midnight. Inside the last `lead` seconds it targets the following midnight.
+        static func fireDate(after now: Date, calendar: Calendar = .current, lead: TimeInterval = lead) -> Date? {
+            let components = DateComponents(hour: 0, minute: 0, second: 0)
+            guard var midnight = calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTime) else { return nil }
+            if midnight.addingTimeInterval(-lead) <= now {
+                guard let following = calendar.nextDate(after: midnight, matching: components, matchingPolicy: .nextTime) else { return nil }
+                midnight = following
+            }
+            return midnight.addingTimeInterval(-lead)
+        }
+    }
+
     final class AppDelegate: NSObject, NSApplicationDelegate {
         @MainActor private lazy var websitePairing = GoalongWebsitePairingCoordinator()
         @MainActor private var pendingWebsiteURL: URL?
@@ -87,6 +104,8 @@
         private var developerActivityRuntime: GoalongDeveloperRuntime?
         private var screenTimeRepository: AppleSystemScreenTimeRepository?
         private var screenTimeArchiveTimer: Timer?
+        private var screenTimeMidnightTimer: Timer?
+        private var screenTimeClockObservers: [NSObjectProtocol] = []
         private var screenTimeArchiveRefreshInFlight = false
         private var readOnlyQueryServer: GoalongReadOnlyQueryServer?
         private var dashboardWindowController: DashboardWindowController!
@@ -129,8 +148,11 @@
 
             runtimeStarted = true
             let buildIdentity = BuildIdentityReader.current()
-            SupportDiagnostics.shared.start(version: buildIdentity.displayVersion, build: buildIdentity.buildNumber)
             LegacyInstallationMigrator.run()
+            // The journal lives under the data root: create it first, or a fresh install's first writes fail
+            // and mark every report incomplete. A failure here is reported again by the prepare below.
+            _ = try? AppPaths.prepare()
+            SupportDiagnostics.shared.start(version: buildIdentity.displayVersion, build: buildIdentity.buildNumber)
             NSApplication.shared.setActivationPolicy(.accessory)
             GoalongWebsiteAutoSender.shared.start()
             SoftwareUpdateManager.shared.start()
@@ -168,7 +190,7 @@
                 captureState = CaptureState()
                 store = try JSONLStore(retentionDays: configManager.config.retentionDays)
                 integrityStateStore = IntegrityStateStore()
-                deviceIdentity = try DeviceIdentity()
+                deviceIdentity = try DeviceIdentity.shared()
                 screenTimeRepository = try GoalongScreenTimeRepositoryProvider.repository(
                     rootDirectory: AppPaths.screenTimeDirectory,
                     deviceID: deviceIdentity.info.deviceID
@@ -350,8 +372,17 @@
             }
 
             installWorkspaceObservers()
-            showDashboardOnFirstConsentLaunch()
-            if PermissionRecovery.consumeSetupReturn() || CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
+            let resumedSetup = PermissionRecovery.consumeSetupReturn()
+            if !resumedSetup { showDashboardOnFirstConsentLaunch() }
+            if resumedSetup {
+                // The activation toggles live in the Recording pane, not on the Settings home.
+                if let capability = PermissionRecovery.resumedCapability,
+                   PermissionRecovery.resumeDestination(for: capability) != nil {
+                    dashboardViewModel.openRecordingSettings()
+                }
+                dashboardWindowController?.show(section: .settings)
+                PermissionRecovery.expireResumedCapability(after: 30)
+            } else if CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
                 dashboardWindowController?.show(section: .settings)
             } else if CommandLine.arguments.contains(PermissionRecovery.completedArgument) || UserDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
                 UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
@@ -486,8 +517,13 @@
             MainActor.assumeIsolated { BraiseRuntime.shared.shutdown() }
             SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()
+            flushCurrentScreenTimeDay()
             screenTimeArchiveTimer?.invalidate()
             screenTimeArchiveTimer = nil
+            screenTimeMidnightTimer?.invalidate()
+            screenTimeMidnightTimer = nil
+            for observer in screenTimeClockObservers { NotificationCenter.default.removeObserver(observer) }
+            screenTimeClockObservers = []
             if let capabilityConsentObserver {
                 NotificationCenter.default.removeObserver(capabilityConsentObserver)
             }
@@ -553,6 +589,8 @@
                 recorder.record(
                     kind: .recordingResumed, message: "Recording resumed from the Goalong History interface")
                 contextMonitor.resetAndSample()
+                // After a launch-restored pause the tap is not running: start it now, not at the next watchdog tick.
+                checkPermissionsAndStartTap()
             } else {
                 recorder.record(kind: .recordingPaused, message: "Recording paused from the Goalong History interface")
                 recorder.flush()
@@ -974,7 +1012,8 @@
             permissionTimer?.invalidate()
             let interval = PermissionWatchdogPolicy.interval(
                 status: permissions.snapshot,
-                eventTapRunning: eventTapMonitor.isRunning
+                eventTapRunning: eventTapMonitor.isRunning,
+                captureIntended: captureState.isCapturing
             )
             let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
                 self?.checkPermissionsAndStartTap(forceRefresh: true)
@@ -1237,6 +1276,8 @@
         private func configureScreenTimeDailyArchive() {
             screenTimeArchiveTimer?.invalidate()
             screenTimeArchiveTimer = nil
+            screenTimeMidnightTimer?.invalidate()
+            screenTimeMidnightTimer = nil
             guard capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused(), screenTimeRepository != nil else {
                 return
             }
@@ -1249,6 +1290,44 @@
             timer.tolerance = 60
             RunLoop.main.add(timer, forMode: .common)
             screenTimeArchiveTimer = timer
+            installScreenTimeClockObservers()
+            scheduleScreenTimeMidnightRefresh()
+        }
+
+        /// One last refresh just before midnight, re-armed after it fires, after a day or time zone change and after wake.
+        private func scheduleScreenTimeMidnightRefresh() {
+            screenTimeMidnightTimer?.invalidate()
+            screenTimeMidnightTimer = nil
+            guard screenTimeArchiveTimer != nil, let fireDate = ScreenTimeMidnightSchedule.fireDate(after: Date()) else { return }
+            let timer = Timer(fire: fireDate, interval: 0, repeats: false) { [weak self] _ in
+                self?.refreshCurrentScreenTimeDay()
+                self?.scheduleScreenTimeMidnightRefresh()
+            }
+            timer.tolerance = 0
+            RunLoop.main.add(timer, forMode: .common)
+            screenTimeMidnightTimer = timer
+        }
+
+        private func installScreenTimeClockObservers() {
+            guard screenTimeClockObservers.isEmpty else { return }
+            for name in [Notification.Name.NSCalendarDayChanged, .NSSystemTimeZoneDidChange, .NSSystemClockDidChange] {
+                screenTimeClockObservers.append(NotificationCenter.default.addObserver(
+                    forName: name, object: nil, queue: .main
+                ) { [weak self] _ in self?.scheduleScreenTimeMidnightRefresh() })
+            }
+        }
+
+        /// Sleep and quit can end the day's last refresh window: collect the active day now, bounded to a few seconds.
+        private func flushCurrentScreenTimeDay(timeout: TimeInterval = 2.5) {
+            guard capabilityConsents?.isEnabled(.appleScreenTime) == true, !GoalongGlobalPause.isPaused(),
+                  let screenTimeRepository else { return }
+            let finished = DispatchGroup()
+            finished.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = screenTimeRepository.collect(for: Date())
+                finished.leave()
+            }
+            _ = finished.wait(timeout: .now() + timeout)
         }
 
         private func refreshCurrentScreenTimeDay() {
@@ -1342,6 +1421,7 @@
                     self.captureState.setSystemAwake(false)
                     self.contextMonitor.invalidatePresence()
                     self.recorder.flush()
+                    self.flushCurrentScreenTimeDay()
                 }
             )
 
@@ -1357,6 +1437,7 @@
                     self.contextMonitor.resetAndSample()
                     self.checkPermissionsAndStartTap(forceRefresh: true)
                     self.refreshCurrentScreenTimeDay()
+                    self.scheduleScreenTimeMidnightRefresh()
                 }
             )
 

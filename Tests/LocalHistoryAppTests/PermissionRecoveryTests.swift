@@ -11,6 +11,14 @@
              PermissionRecovery.parentLaunchArgument, "1000.0"]
         }
 
+        func testResumedSetupReopensThePaneThatHostsTheActivationToggle() {
+            for capability in [GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations] {
+                let destination = PermissionRecovery.resumeDestination(for: capability)
+                XCTAssertEqual(destination?.section, .settings)
+                XCTAssertEqual(destination?.pane, .recording)
+            }
+        }
+
         func testOrdinaryLaunchDoesNotWaitOrLookUpAnotherProcess() {
             XCTAssertEqual(PermissionRecovery.parentState(arguments: ["Goalong"], currentPID: 124,
                 bundleURL: bundle, lookup: { _ in XCTFail("Unexpected lookup"); return nil }), .notRequested)

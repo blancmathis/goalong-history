@@ -14,6 +14,12 @@
             return defaults
         }
 
+        @MainActor func testInterruptionNoticeIsFrench() {
+            let text = BackgroundContinuityController.interruptionNoticeText
+            XCTAssertTrue(text.hasPrefix("La session précédente"))
+            XCTAssertFalse(text.contains("previous session"))
+        }
+
         func testBackgroundProtectionDefaultsOnWithoutPersistingAChoice() {
             let defaults = isolatedDefaults()
             let preferences = BackgroundContinuityPreferences(defaults: defaults)

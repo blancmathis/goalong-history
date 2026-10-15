@@ -129,7 +129,7 @@ time · application · website · context · activity · classification · cover
 
 Each group receives a random 256-bit salt and SHA-256 commitment. Those commitments form an event Merkle root. Event roots are chained with a monotonic sequence and the previous event hash.
 
-Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. Goalong History first tries Secure Enclave through the modern Data Protection Keychain and falls back to a non-exportable Keychain key for a stable certificate-backed build. Ad-hoc Community and development builds use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
+Once per minute, event roots are committed into a minute Merkle root. The minute anchor is chained to the previous anchor and signed with a P-256 device key. Goalong History first tries Secure Enclave through the modern Data Protection Keychain and falls back to a software Keychain key for a stable certificate-backed build. Ad-hoc Community and development builds use a user-only local key file and report that lower trust tier instead of creating a Keychain item that would trigger password prompts after recompilation.
 
 Signing identities are scoped to the app's designated code-signing requirement. If that requirement changes, Goalong History records a visible identity rotation and keeps the existing chain data instead of repeatedly requesting access to an incompatible old key. A refused authentication attempt also suspends background signing for that launch, so it can never create a password dialog every minute.
 

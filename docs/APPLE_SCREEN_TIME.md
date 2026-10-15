@@ -33,6 +33,8 @@ No manual export, file selection, companion snapshot or Goalong server is requir
 
 Goalong maintains exactly one compact normalized file for the active day under `apple-screen-time/days/`. It atomically replaces that file only when Apple-derived content changes. The existing app process updates the active day every ten minutes, on wake/unlock, on an explicit CLI request, and at most every 30 seconds while today's page is visible. Aggregate-store queries are bounded to that active day. Unchanged Biome files are served from an in-memory fingerprint cache; only newly created or modified SEGB files are decoded again. No helper, watcher or additional persistent Screen Time process is added.
 
+To keep the end of the day, Goalong refreshes the active day about 15 seconds before local midnight, and again (bounded to a few seconds) when the Mac goes to sleep or Goalong quits. Time spent after the last refresh, or synced later from an iPhone or iPad, is not added once the day is closed.
+
 When the local date changes, Goalong closes the previous day's record. Every later UI, recap and CLI read for that completed day uses only this Goalong-owned daily record; it never reopens Apple history. A missing completed-day record remains an explicit missing-data state rather than triggering a retrospective Apple scan. Goalong does not backfill older days during upgrade.
 
 The Mac-side refresh cadence is deterministic. Cross-device latency is not: Apple controls when iCloud/Biome delivers iPhone and iPad transitions. The page displays the latest Apple file/event update so a user can distinguish a live Mac refresh from a stale remote sync.

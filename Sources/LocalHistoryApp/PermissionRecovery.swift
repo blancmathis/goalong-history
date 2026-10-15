@@ -77,6 +77,19 @@
             return resumedCapability != nil
         }
 
+        /// Where a resumed setup reopens: the Recording pane hosts the activation toggle of all three resumable sources.
+        static func resumeDestination(for capability: GoalongCapability) -> (section: DashboardSection, pane: SettingsPane)? {
+            switch capability {
+            case .localComputerHistory, .appleScreenTime, .aiConversations: return (.settings, .recording)
+            default: return nil
+            }
+        }
+
+        /// A resumed capability that no toggle claimed in time must not open its sheet out of context later.
+        @MainActor static func expireResumedCapability(after delay: TimeInterval) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { resumedCapability = nil }
+        }
+
         @MainActor static func takeSetupReturn(for capability: GoalongCapability) -> Bool {
             guard resumedCapability == capability else { return false }
             resumedCapability = nil

@@ -51,7 +51,7 @@
             case "secure_enclave":
                 return "Les engagements minute par minute sont signés par une clé P-256 non exportable de la Secure Enclave."
             case "keychain_software":
-                return "Les engagements minute par minute sont signés par une clé P-256 non exportable du Trousseau."
+                return "Les engagements minute par minute sont signés par une clé P-256 logicielle conservée dans le Trousseau."
             default:
                 return "Les engagements minute par minute sont signés par une clé P-256 locale réservée à votre compte (version compilée localement)."
             }
@@ -71,29 +71,81 @@
         private let privateKey: SecKey
         let info: DeviceIdentityInfo
 
+        private static let sharedLock = NSLock()
+        private static var sharedInstance: DeviceIdentity?
+        private static let lastIdentityKey = "goalong.deviceIdentity.last.v1"
+
+        /// One identity per process: the app and the ChatGPT recap must sign with the same key,
+        /// and a second resolution must never land on another tier.
+        static func shared() throws -> DeviceIdentity {
+            sharedLock.lock(); defer { sharedLock.unlock() }
+            if let sharedInstance { return sharedInstance }
+            let identity = try DeviceIdentity()
+            noteIdentity(identity.info)
+            sharedInstance = identity
+            return identity
+        }
+
+        /// Pure: a device that resolves to another id or tier than the previous launch is a changed trust state.
+        static func identityChanged(previous: String?, current: DeviceIdentityInfo) -> Bool {
+            guard let previous else { return false }
+            return previous != "\(current.deviceID)|\(current.trustTier)"
+        }
+
+        private static func noteIdentity(_ info: DeviceIdentityInfo, defaults: UserDefaults = .standard) {
+            let previous = defaults.string(forKey: lastIdentityKey)
+            if identityChanged(previous: previous, current: info) {
+                Diagnostics.write("Device signing identity changed since the previous launch (tier \(info.trustTier))")
+            }
+            defaults.set("\(info.deviceID)|\(info.trustTier)", forKey: lastIdentityKey)
+        }
+
+        /// A tier is unavailable when it cannot be used at all (no entitlement, key creation refused).
+        /// Any other load failure means an existing key could not be read right now.
+        static func isTierUnavailable(_ error: Error) -> Bool {
+            switch error as? DeviceIdentityError {
+            case .cannotCreateKey: return true
+            case .cannotLoadKey(let status): return status == errSecMissingEntitlement
+            default: return false
+            }
+        }
+
+        /// Returns the first tier that yields a value. Falls through only from unavailable tiers.
+        /// An unreadable existing key is retried, then thrown: creating a lower-tier key would fork the device identity.
+        static func resolveFirst<T>(
+            _ tiers: [() throws -> T], attempts: Int = 4, delay: TimeInterval = 0.25,
+            pause: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+        ) throws -> T? {
+            for tier in tiers {
+                var attempt = 0
+                while true {
+                    do { return try tier() }
+                    catch {
+                        if isTierUnavailable(error) { break }
+                        attempt += 1
+                        if attempt >= attempts { throw error }
+                        pause(delay)
+                    }
+                }
+            }
+            return nil
+        }
+
         init() throws {
-            if let key = try? Self.loadOrCreateDataProtectionKey(
-                tag: Self.secureEnclaveTag, secureEnclave: true)
-            {
+            let tiers: [() throws -> (SecKey, String)] = [
+                { (try Self.loadOrCreateDataProtectionKey(tag: Self.secureEnclaveTag, secureEnclave: true), "secure_enclave") },
+                { (try Self.loadOrCreateDataProtectionKey(tag: Self.softwareTag, secureEnclave: false), "keychain_software") },
+                {
+                    guard let signingScope = Self.stableSigningScope() else {
+                        throw DeviceIdentityError.cannotLoadKey(errSecMissingEntitlement)
+                    }
+                    return (try Self.loadOrCreateLegacySoftwareKey(
+                        tag: Self.scopedLegacyTag(base: Self.softwareTag, signingScope: signingScope)), "keychain_software")
+                },
+            ]
+            if let (key, tier) = try Self.resolveFirst(tiers) {
                 privateKey = key
-                info = try Self.makeInfo(privateKey: key, trustTier: "secure_enclave")
-                return
-            }
-
-            if let key = try? Self.loadOrCreateDataProtectionKey(
-                tag: Self.softwareTag, secureEnclave: false)
-            {
-                privateKey = key
-                info = try Self.makeInfo(privateKey: key, trustTier: "keychain_software")
-                return
-            }
-
-            if let signingScope = Self.stableSigningScope(),
-               let key = try? Self.loadOrCreateLegacySoftwareKey(
-                   tag: Self.scopedLegacyTag(base: Self.softwareTag, signingScope: signingScope))
-            {
-                privateKey = key
-                info = try Self.makeInfo(privateKey: key, trustTier: "keychain_software")
+                info = try Self.makeInfo(privateKey: key, trustTier: tier)
                 return
             }
 
@@ -145,6 +197,7 @@
                 kSecAttrIsPermanent as String: true,
                 kSecAttrApplicationTag as String: tag,
                 kSecAttrLabel as String: keyLabel,
+                kSecAttrIsExtractable as String: false,
             ]
 
             if secureEnclave {
@@ -206,6 +259,7 @@
                     kSecAttrIsPermanent as String: true,
                     kSecAttrApplicationTag as String: tag,
                     kSecAttrLabel as String: keyLabel,
+                    kSecAttrIsExtractable as String: false,
                 ],
             ]
             var createError: Unmanaged<CFError>?

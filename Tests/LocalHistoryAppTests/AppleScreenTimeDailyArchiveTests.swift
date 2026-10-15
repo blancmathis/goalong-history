@@ -3,6 +3,7 @@
     import AppleSystemScreenTime
     import Foundation
     import XCTest
+    @testable import LocalHistoryApp
 
     final class AppleScreenTimeDailyArchiveTests: XCTestCase {
         func testGlobalPausePreventsAppleReadsAndDiscardsAnInterruptedCollection() throws {
@@ -490,6 +491,57 @@
         private func temporaryRoot() -> URL {
             FileManager.default.temporaryDirectory
                 .appendingPathComponent("goalong-screen-time-daily-\(UUID().uuidString)", isDirectory: true)
+        }
+
+        func testTailCapturedJustBeforeMidnightIsKeptWhenTheDayCloses() throws {
+            let root = temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let calendar = testCalendar()
+            let late = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 4, hour: 23, minute: 59, second: 45)))
+            let next = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 5, hour: 0, minute: 0, second: 30)))
+            let earlier = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 4, hour: 23, minute: 50)))
+            var now = earlier
+            var seconds: TimeInterval = 600
+            var reads = 0
+            let mac = AppleScreenTimeDevice(id: "mac", name: "Mac", kind: .mac)
+            let repository = try AppleSystemScreenTimeRepository(
+                rootDirectory: root, currentMacDevice: mac, calendar: calendar, nowProvider: { now },
+                liveCollectionProvider: { requestedDay in
+                    reads += 1
+                    return self.collection(day: requestedDay, device: mac, seconds: seconds, calendar: calendar)
+                }
+            )
+            let day = calendar.startOfDay(for: earlier)
+            _ = repository.collect(for: day)
+            now = late; seconds = 900
+            _ = repository.collect(for: day)
+            let readsBeforeClose = reads
+            now = next
+            let closed = repository.collect(for: day)
+            XCTAssertEqual(closed.storageState, .completedDayStored)
+            XCTAssertEqual(summaryDuration(closed, day: day, calendar: calendar), 900, accuracy: 0.001)
+            XCTAssertEqual(reads, readsBeforeClose, "Closing a day must not read Apple stores again")
+        }
+
+        func testMidnightRefreshFiresShortlyBeforeTheNextLocalMidnight() throws {
+            var utc = testCalendar()
+            let noon = try date(2026, 9, 4, hour: 12, calendar: utc)
+            let fire = try XCTUnwrap(ScreenTimeMidnightSchedule.fireDate(after: noon, calendar: utc))
+            XCTAssertEqual(fire, try date(2026, 9, 5, hour: 0, calendar: utc).addingTimeInterval(-15))
+            // Inside the last 15 seconds the following midnight is targeted, so the timer never loops.
+            let lastSeconds = try date(2026, 9, 5, hour: 0, calendar: utc).addingTimeInterval(-5)
+            XCTAssertEqual(try XCTUnwrap(ScreenTimeMidnightSchedule.fireDate(after: lastSeconds, calendar: utc)),
+                           try date(2026, 9, 6, hour: 0, calendar: utc).addingTimeInterval(-15))
+            // A 23-hour DST day still ends at local midnight.
+            utc.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+            let springDay = try date(2026, 3, 8, hour: 12, calendar: utc)
+            let springFire = try XCTUnwrap(ScreenTimeMidnightSchedule.fireDate(after: springDay, calendar: utc))
+            XCTAssertEqual(springFire.addingTimeInterval(15), try date(2026, 3, 9, hour: 0, calendar: utc))
+            // A time zone change moves the target to the new local midnight.
+            utc.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+            let tokyoFire = try XCTUnwrap(ScreenTimeMidnightSchedule.fireDate(after: springDay, calendar: utc))
+            XCTAssertEqual(utc.component(.hour, from: tokyoFire.addingTimeInterval(15)), 0)
+            XCTAssertNotEqual(tokyoFire, springFire)
         }
 
         private func testCalendar() -> Calendar {
