@@ -98,11 +98,17 @@ import LocalHistoryQueryCLI
         menuBarTimer = timer
     }
     func deleteData() throws {
+        error = nil
         controller?.refresh()
         if controller?.hasLockedBlock == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
         let wasEnabled = modules?.isEnabled(.concentration) == true
         apply(enabled: false)
-        do { try storeFactory().deleteData() } catch { self.error = String(describing: error); if wasEnabled { apply(enabled: true) }; throw error }
+        do { try storeFactory().deleteData() } catch {
+            // Re-enable first: `apply(enabled: true)` resets `error`, which must keep the failure.
+            if wasEnabled { apply(enabled: true) }
+            self.error = FocusUIError.message(error)
+            throw error
+        }
         if wasEnabled { apply(enabled: true) }
     }
     private func refreshMeasurements() {

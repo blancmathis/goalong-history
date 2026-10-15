@@ -116,7 +116,7 @@ import LocalHistoryCore
                     let descriptor = folder.path.withCString { Darwin.open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC) }
                     if descriptor >= 0 { Darwin.close(descriptor) }
                     else if errno == EPERM || errno == EACCES { return .fullDiskAccess }
-                    else { return .unavailable("Un dossier de conversations choisi est introuvable. Vérifiez son emplacement dans Réglages → Sources, puis réessayez.") }
+                    else { return .unavailable("Un dossier de conversations choisi est introuvable. Vérifiez son emplacement dans Réglages → Enregistrement → Choisir les dossiers de conversations…, puis réessayez.") }
                 }
                 return .ready
             default: return .ready

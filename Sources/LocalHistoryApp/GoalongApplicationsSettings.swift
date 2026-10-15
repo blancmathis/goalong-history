@@ -15,7 +15,10 @@ final class GoalongExclusionStore: ObservableObject {
     @discardableResult func update(_ mutation: (inout GoalongPrivacyPolicy) -> Void) -> Bool {
         var next = policy
         guard !next.blocked else { error = "Les exclusions sont illisibles. Ouvrez les diagnostics avant de reprendre."; return false }
-        mutation(&next); next.revision = UUID().uuidString; next.effectiveFrom = Date()
+        mutation(&next)
+        // A mutation that changes nothing must not bump the revision, stop the senders or notify.
+        if next == policy { error = nil; return true }
+        next.revision = UUID().uuidString; next.effectiveFrom = Date()
         do {
             try next.save(in: root)
             let saved = GoalongPrivacyPolicy.load(in: root)
@@ -169,9 +172,13 @@ enum GoalongKnownApplications {
                                 Image(systemName: "globe").font(.system(size: 13)).frame(width: 24).foregroundStyle(LHTheme.secondaryText)
                                 Text(domain).font(.system(size: 13, weight: .medium))
                                 Spacer()
-                                Text(domainExcluded(domain) ? "Exclu" : "Autorisé").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                let parent = parentRule(for: domain)
+                                Text(parent.map { "Exclu par \($0)" } ?? (domainExcluded(domain) ? "Exclu" : "Autorisé"))
+                                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 Toggle("Autoriser \(domain)", isOn: Binding(get: { !domainExcluded(domain) }, set: { setDomain(domain, enabled: $0) }))
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly).controlSize(.small)
+                                    .disabled(parent != nil)
+                                    .help(parent.map { "Pour autoriser ce site, retirez d’abord la règle « \($0) » : elle autoriserait aussi ses autres sous-domaines." } ?? "")
                             }.padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
                             if domain != domains.last { GoalongRowDivider(inset: LHTheme.cardInset + 36) }
                         }
@@ -226,10 +233,25 @@ enum GoalongKnownApplications {
     }
     private var empty: some View { Text("Aucun résultat").font(.system(size: 13)).foregroundStyle(.secondary).padding(24) }
     private func isExcluded(_ app: GoalongApplicationChoice) -> Bool { exclusions.policy.excludes(appID: app.id) || model.isApplicationExcludedFromCapture(app.id) }
+    /// The rule, other than the host itself, that excludes this host (« example.fr » for docs.example.fr).
+    /// Same matching as `URLRedactor.domain`: lowercase, surrounding dots and spaces trimmed, suffix after a dot.
+    nonisolated static func parentDomainRule(for host: String, in rules: [String]) -> String? {
+        let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+        return rules.lazy.map { $0.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ". ")) }
+            .first { !$0.isEmpty && host.hasSuffix("." + $0) }
+    }
+    private func parentRule(for domain: String) -> String? {
+        let draft = model.settingsDraft.excludedDomainsText.components(separatedBy: .newlines)
+        let applied = model.appliedSettings.excludedDomainsText.components(separatedBy: .newlines)
+        return Self.parentDomainRule(for: domain, in: exclusions.policy.domains + draft + applied)
+    }
     private func domainExcluded(_ domain: String) -> Bool { exclusions.policy.excludes(domain: domain) || model.isDomainExcludedFromCapture(domain) }
     private func setApp(_ app: GoalongApplicationChoice, enabled: Bool) {
         if enabled {
-            if exclusions.update({ $0.applications.removeValue(forKey: app.id) }) {
+            if exclusions.update({ policy in
+                policy.applications.keys.filter { $0.caseInsensitiveCompare(app.id) == .orderedSame }
+                    .forEach { policy.applications.removeValue(forKey: $0) }
+            }) {
                 model.setApplicationCaptureEnabled(true, bundleIdentifier: app.id)
             }
         } else {
@@ -240,6 +262,10 @@ enum GoalongKnownApplications {
     }
     private func setDomain(_ domain: String, enabled: Bool) {
         if enabled {
+            if let parent = parentRule(for: domain) {
+                notice = "Ce site est exclu par la règle « \(parent) ». Retirez cette règle pour l’autoriser."
+                return
+            }
             if exclusions.update({ $0.domains.removeAll { $0 == domain } }) { model.setDomainCaptureEnabled(true, host: domain) }
         } else if !exclusions.policy.inspectDomainsForExclusions { pendingDomain = domain }
         else { _ = exclusions.update { if !$0.domains.contains(domain) { $0.domains.append(domain) } } }

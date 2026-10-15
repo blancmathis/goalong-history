@@ -23,6 +23,9 @@ final class GoalongFinalUXTests: XCTestCase {
         XCTAssertTrue(SettingsPane.matches("fichier signé").contains(.tools))
         XCTAssertEqual(SettingsPane.matches("typesafe"), [.jev])
         XCTAssertTrue(SettingsPane.matches("minuterie").isEmpty)
+        for term in ["blocage", "bloquer", "verrouiller", "geler", "cold turkey", "braise"] {
+            XCTAssertTrue(SettingsPane.matches(term).contains(.modules), term)
+        }
     }
     func testIncompleteReplacementCannotBeSavedSilently() {
         var choice = GoalongAnalysisSelection()

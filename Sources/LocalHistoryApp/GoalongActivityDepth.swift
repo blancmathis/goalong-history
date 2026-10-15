@@ -106,7 +106,7 @@ struct GoalongActivityGaps: Equatable {
         case .observationGap: return "Le Mac a signalé un trou dans la collecte, par exemple après un ralentissement."
         case .sessionUnavailable: return "Écran de connexion, économiseur d’écran ou autre utilisateur."
         case .secureInput: return "Un champ de mot de passe était actif : rien n’est lu pendant ce temps."
-        case .excludedApplication, .excludedDomain: return "Exclu dans Réglages › Confidentialité."
+        case .excludedApplication, .excludedDomain: return "Exclu dans Réglages › \(SettingsPane.applications.title)."
         case .accessibility: return "Sans l’accès Accessibilité, Goalong ne voit pas la fenêtre au premier plan."
         default: return nil
         }
