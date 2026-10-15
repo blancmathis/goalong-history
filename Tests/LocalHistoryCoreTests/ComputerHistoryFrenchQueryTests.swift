@@ -287,6 +287,67 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
         XCTAssertEqual(french.end, today.addingTimeInterval(11 * 3600))
     }
 
+    func testWorkflowAnswerListsEachSuggestionOnce() {
+        func suggestion(_ id: String, confidence: Double) -> ComputerHistorySuggestion {
+            ComputerHistorySuggestion(
+                id: id,
+                kind: .automation,
+                title: "Suggestion \(id)",
+                rationale: "Repeated workflow",
+                suggestedPrompt: "Automate it",
+                workflowID: nil,
+                episodeIDs: [],
+                confidence: confidence
+            )
+        }
+        let memories = (0..<14).map { day -> ComputerHistoryDayMemory in
+            let dayStart = fixtureStart.addingTimeInterval(TimeInterval(day) * 86_400)
+            var suggestions = [suggestion("recurring", confidence: 0.98)]
+            if day == 13 {
+                suggestions += [
+                    suggestion("second", confidence: 0.7),
+                    suggestion("third", confidence: 0.6),
+                ]
+            }
+            return ComputerHistoryDayMemory(
+                dayStart: dayStart,
+                dayEnd: dayStart.addingTimeInterval(86_399),
+                generatedAt: dayStart.addingTimeInterval(86_400),
+                title: "Day \(day)",
+                executiveSummary: "Day \(day)",
+                episodes: [],
+                resources: [],
+                workflowPatterns: [],
+                suggestions: suggestions,
+                coverage: ComputerHistoryCoverage(
+                    sourceEventCount: 0,
+                    actionEventCount: 0,
+                    semanticSnapshotCount: 0,
+                    linkedInteractionCount: 0,
+                    interactionsWithBeforeAndAfterContext: 0,
+                    resourceCount: 0,
+                    episodeCount: 0,
+                    suppressedEventCount: 0,
+                    firstSourceSequence: nil,
+                    lastSourceSequence: nil,
+                    lastSourceEventHash: nil
+                ),
+                markdown: ""
+            )
+        }
+
+        let answer = ComputerHistorySearchService(memories: memories).ask(
+            "Quelles automatisations proposer ?",
+            now: fixtureStart.addingTimeInterval(15 * 86_400),
+            maximumHits: 12
+        )
+
+        XCTAssertEqual(
+            answer.hits.map(\.id),
+            ["suggestion:recurring", "suggestion:second", "suggestion:third"]
+        )
+    }
+
     private var utcCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!

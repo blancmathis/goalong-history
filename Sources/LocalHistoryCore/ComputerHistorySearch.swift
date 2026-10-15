@@ -1156,8 +1156,10 @@ public struct ComputerHistorySearchService {
                 latestDateBySuggestionID[suggestion.id] = memory.generatedAt
             }
         }
-        var ranked: [ComputerHistorySearchHit] = []
-        ranked.reserveCapacity(maximumHits)
+        // Suggestion IDs are stable across days: keep one copy per ID before
+        // the bounded ranking, so a workflow seen on many days cannot fill
+        // every slot. On equal score the latest day's copy wins.
+        var bestBySuggestionID: [String: ComputerHistorySearchHit] = [:]
         for memory in memories {
             for suggestion in memory.suggestions {
                 let score =
@@ -1187,13 +1189,23 @@ public struct ComputerHistorySearchService {
                         corpus: corpus
                     )
                 )
-                insertBounded(
-                    hit,
-                    into: &ranked,
-                    limit: maximumHits,
-                    precedes: searchHitPrecedes
-                )
+                if let existing = bestBySuggestionID[suggestion.id],
+                    searchHitPrecedes(existing, hit)
+                {
+                    continue
+                }
+                bestBySuggestionID[suggestion.id] = hit
             }
+        }
+        var ranked: [ComputerHistorySearchHit] = []
+        ranked.reserveCapacity(maximumHits)
+        for hit in bestBySuggestionID.values {
+            insertBounded(
+                hit,
+                into: &ranked,
+                limit: maximumHits,
+                precedes: searchHitPrecedes
+            )
         }
         let compacted = compactSearchHits(ranked, maximumHits: maximumHits)
         let lines = compacted.map { "- **\($0.title)** — \($0.snippet)" }
