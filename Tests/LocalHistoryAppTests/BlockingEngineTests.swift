@@ -819,6 +819,19 @@ final class BlockingEngineTests: XCTestCase {
         NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
         XCTAssertEqual(c.nextProgramStart?.date, date(5, 15))
     }
+    /// R2-088: a program due during sleep starts on wake without waiting for the next timer tick.
+    @MainActor func testWakeNotificationStartsAProgramDueDuringSleep() {
+        var now = date(5, 8)
+        var list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        list.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 540, endMinute: 720)])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendar: calendar,
+                                   continuous: { now.timeIntervalSince1970 }, runsTimers: true)
+        defer { c.shutdown() }
+        XCTAssertTrue(c.activeBlocks.isEmpty)
+        now = date(5, 9, 30)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        XCTAssertFalse(c.activeBlocks.isEmpty); XCTAssertTrue(c.needsObservation); XCTAssertTrue(c.hasTimer)
+    }
 }
 
 private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {

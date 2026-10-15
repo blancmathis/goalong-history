@@ -42,6 +42,7 @@ import LocalHistoryQueryCLI
     /// Usage day kept across a zone change until its old midnight, so quotas and breaks never reset early.
     private var usageDayCarry: (day: String, start: Date, end: Date)?
     private var systemObservers: [NSObjectProtocol] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
     private let continuous: () -> Double
     private let boot: () -> String
     private let runsTimers: Bool
@@ -132,6 +133,12 @@ import LocalHistoryQueryCLI
                     MainActor.assumeIsolated { self?.refresh() }
                 })
             }
+            // Timers do not fire during sleep: refresh on wake so a program or session due meanwhile starts at once.
+            for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+                workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.refresh() }
+                })
+            }
         }
         refresh()
     }
@@ -148,6 +155,7 @@ import LocalHistoryQueryCLI
         }
         timer?.invalidate(); timer = nil
         systemObservers.forEach(NotificationCenter.default.removeObserver); systemObservers.removeAll()
+        workspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver); workspaceObservers.removeAll()
         onObservationRequirementChanged?(false); onObservationRequirementChanged = nil
         onTimerInputChanged = nil
         clearFriction(); frictionAllowances.removeAll()
