@@ -630,7 +630,7 @@
                 .compactMap { $0 }
             let remoteDeviceCount = discoveredDevices.filter { $0.id != currentMacDevice.id }.count
             let status = makeStatus(
-                hasData: !rawReports.isEmpty,
+                hasData: !reports.isEmpty,
                 permissionDenied: denied,
                 remoteDeviceCount: remoteDeviceCount,
                 warnings: warnings
@@ -2416,6 +2416,15 @@
                     kind: .partial,
                     title: "Some Apple sources are unavailable",
                     message: "Goalong can access an Apple source, but other stores are unavailable and no usage was loaded for this day. Try another day or refresh. Full Disk Access does not guarantee access to every private Apple store."
+                )
+            }
+            if hasData, permissionDenied || !warnings.isEmpty, privateAggregateStore {
+                return AppleSystemScreenTimeStatus(
+                    kind: .partial,
+                    title: "Apple Screen Time partially available",
+                    message: warnings.first.map {
+                        "Apple’s private ScreenTimeAgent aggregate was read, but one of its stores is unavailable or incomplete; \($0)"
+                    } ?? "Apple’s private ScreenTimeAgent aggregate was read, but one of its stores is protected, so some devices or blocks may be missing."
                 )
             }
             if hasData, permissionDenied || !warnings.isEmpty {

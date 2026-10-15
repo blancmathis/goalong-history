@@ -29,6 +29,10 @@
             let repository = try AppleSystemScreenTimeRepository(
                 rootDirectory: rootDirectory,
                 deviceID: deviceID,
+                // The repository is a process-wide singleton: follow the system time zone so
+                // "today" never goes stale after a zone change. Day files written in a previous
+                // zone keep their old-zone name and stay readable as completed days.
+                calendar: .autoupdatingCurrent,
                 activityAdmission: { try? GoalongGlobalPause.admit() }
             )
             productionRepository = repository

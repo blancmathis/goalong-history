@@ -25,6 +25,26 @@ final class ScreenTimeActivationAccessTests: XCTestCase {
         }
     }
 
+    func testPartialStatusDescribesPrivateAggregateProvenanceAndKeepsFallbackWording() {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let source = AppleSystemScreenTimeSource(deviceID: "test", paths: AppleSystemScreenTimePaths(
+            knowledgeDatabase: missing, biomeSyncDatabase: missing,
+            biomeLocalDirectory: missing, biomeRemoteDirectory: missing, appleAccountDeviceDatabase: missing))
+        let warned = source.makeStatus(hasData: true, permissionDenied: false, remoteDeviceCount: 0,
+            warnings: ["daily block budget reached"], privateAggregateStore: true)
+        XCTAssertEqual(warned.kind, .partial)
+        XCTAssertFalse(warned.message.contains("unavailable. The readable fallback"))
+        XCTAssertTrue(warned.message.contains("daily block budget reached"))
+        let denied = source.makeStatus(hasData: true, permissionDenied: true, remoteDeviceCount: 0,
+            warnings: [], privateAggregateStore: true)
+        XCTAssertEqual(denied.kind, .partial)
+        XCTAssertFalse(denied.message.contains("unavailable"))
+        let fallback = source.makeStatus(hasData: true, permissionDenied: true, remoteDeviceCount: 0,
+            warnings: ["w"], privateAggregateStore: false)
+        XCTAssertEqual(fallback.kind, .partial)
+        XCTAssertTrue(fallback.message.contains("unavailable. The readable fallback is shown; w"))
+    }
+
     func testPreflightDistinguishesMissingReadableDeniedAndSymlinkWithoutCollecting() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
