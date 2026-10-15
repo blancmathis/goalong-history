@@ -828,6 +828,13 @@
         ) {
             do {
                 let derived = try derivedPlan.execute()
+                if cutoff == nil {
+                    // Work corrections keep window titles and carry no date: a full clear erases them too.
+                    MainActor.assumeIsolated {
+                        GoalongWorkAgent.shared.cancel()
+                        GoalongWorkStore.shared.removeAll()
+                    }
+                }
                 recorder.record(
                     kind: .historyCleared,
                     message: cutoff == nil

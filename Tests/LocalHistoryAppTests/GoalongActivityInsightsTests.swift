@@ -170,6 +170,29 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertTrue(reloaded.examples.isEmpty)
     }
 
+    @MainActor func testFullHistoryClearErasesWorkCorrectionsAndTheirTitles() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        let bank = GoalongWorkContext.Label(application: "Browser", bundleIdentifier: "fixture.Browser",
+                                            host: "bank.example.org", title: "Relevé de compte")
+        store.correct(key: bank.key, label: bank, verdict: .other, task: nil, day: "2026-09-10")
+        store.automatic = false
+        let revision = store.revision
+        store.removeAll()
+        XCTAssertTrue(store.corrections.isEmpty); XCTAssertTrue(store.verdicts.isEmpty)
+        let reloaded = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        XCTAssertTrue(reloaded.corrections.isEmpty)
+        XCTAssertEqual(reloaded.revision, revision); XCTAssertFalse(reloaded.automatic)
+        XCTAssertFalse(try String(contentsOf: file, encoding: .utf8).contains("Relevé"), "No title stays on disk")
+
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryApp/AppDelegate.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("if cutoff == nil {\n                    // Work corrections keep window titles"),
+                      "Only the full clear erases the work corrections")
+        XCTAssertTrue(source.contains("GoalongWorkStore.shared.removeAll()"))
+    }
+
     func testCSVExportHasOneRowPerDayAndUsageAndNeutralisesFormulas() {
         let hostile = day(10, from: 9 * 3600, minutes: 10, app: "=HYPERLINK(\"x\";\"y\")")
         let second = day(11, from: 9 * 3600, minutes: 30, app: "Editor", work: true)

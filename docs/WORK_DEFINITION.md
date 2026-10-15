@@ -82,6 +82,9 @@ de l’utilisateur (avec leur libellé, pour servir d’exemples), réglage « a
 
 - Changer la définition efface les verdicts de l’agent ; les corrections restent.
 - « Tout reclasser… » efface les verdicts de l’agent ; les corrections restent.
+- « Effacer tout l’historique détaillé » efface aussi les verdicts et les corrections
+  (avec leurs libellés) et arrête un classement en cours. Les effacements partiels
+  (10 min, 1 h, 24 h) les gardent : une correction n’a pas de date.
 - Renommer une tâche (ou lui donner le nom d’une autre pour les fusionner) s’applique à
   tous les contextes.
 - Les anciens choix Travail / Hors travail par app (`activity-classification.json`) ne sont
