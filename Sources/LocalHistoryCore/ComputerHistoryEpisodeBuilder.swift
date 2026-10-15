@@ -444,7 +444,9 @@ enum ComputerHistoryEpisodeBuilder {
     ) -> ComputerHistoryEpisode {
         let interactions = builder.interactions
         let start = interactions.first?.start ?? Date()
-        let end = interactions.last?.end ?? start
+        // Interactions are sorted by start, but an earlier one can end later when
+        // its settled observation arrives after a quicker action.
+        let end = max(start, interactions.lazy.map(\.end).max() ?? start)
         var seenResourceIDs = Set<String>()
         var resourceIDs: [String] = []
         for interaction in interactions {
