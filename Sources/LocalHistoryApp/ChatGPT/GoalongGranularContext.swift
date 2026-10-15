@@ -15,7 +15,7 @@ extension ChatGPTRecapContextBuilder {
         }
         try scope.validate()
         let consents = GoalongCapabilityConsentStore.shared
-        let sourceConsents = consents.document
+        let sourceConsents = consents.snapshot
         var events: [HistoryEvent] = [], snapshots: [String: SemanticContextPayload] = [:]
         if selection.computer && consents.isEnabled(.localComputerHistory),
            let interval = Calendar.current.dateInterval(of: .day, for: day) {
@@ -42,10 +42,10 @@ extension ChatGPTRecapContextBuilder {
         }
         let supplemental = selection.systemSources.map { flags in
             GoalongSystemRecapSections.load(root: root, day: GoalongLocalAnalytics.build(events: events, day: day),
-                selection: flags, consent: consents.document, scope: scope, privacy: privacy)
+                selection: flags, consent: consents.snapshot, scope: scope, privacy: privacy)
         }
         try GoalongGlobalPause.revalidate(pause, in: root)
-        guard GoalongPrivacyPolicy.load(in: root).revision == privacy.revision, consents.document == sourceConsents else {
+        guard GoalongPrivacyPolicy.load(in: root).revision == privacy.revision, consents.snapshot == sourceConsents else {
             throw CodexAppServerError.generationFailed("Les autorisations ont changé pendant la préparation.")
         }
         return try granularContext(day: day, events: events, snapshots: snapshots,

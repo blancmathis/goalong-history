@@ -103,7 +103,19 @@
     final class GoalongCapabilityConsentStore: ObservableObject {
         static let shared = GoalongCapabilityConsentStore(fileURL: AppPaths.capabilityConsentFile)
 
-        @Published private(set) var document: GoalongConsentDocument
+        /// Main-thread source for SwiftUI. Background readers must use `snapshot` or `isEnabled`.
+        @Published private(set) var document: GoalongConsentDocument {
+            didSet { snapshotLock.lock(); lockedDocument = document; snapshotLock.unlock() }
+        }
+
+        private let snapshotLock = NSLock()
+        private var lockedDocument = GoalongConsentDocument.disabledByDefault
+
+        /// Thread-safe copy of the current consent document: it is always either the old or the new value.
+        var snapshot: GoalongConsentDocument {
+            snapshotLock.lock(); defer { snapshotLock.unlock() }
+            return lockedDocument
+        }
 
         private let fileURL: URL
         private let fileManager: FileManager
@@ -121,7 +133,7 @@
         }
 
         func isEnabled(_ capability: GoalongCapability) -> Bool {
-            document.isEnabled(capability)
+            snapshot.isEnabled(capability)
         }
 
         @discardableResult
