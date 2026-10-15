@@ -15,7 +15,6 @@
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
                         Button {
                             model.refreshEverything()
-                            model.reloadShareSegments()
                         } label: {
                             Image(systemName: "arrow.clockwise")
                                 .frame(width: 28, height: 28)
@@ -37,9 +36,6 @@
             .padding(.top, 28)
             .padding(.bottom, 20)
             .background(LHTheme.pageBackground)
-            .onAppear {
-                if model.shareSegments.isEmpty { model.reloadShareSegments() }
-            }
         }
 
         private var disclosureBanner: some View {

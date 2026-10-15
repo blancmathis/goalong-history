@@ -34,7 +34,7 @@
             case .paused:
                 return "L’enregistrement est volontairement en pause. L’historique existant reste consultable."
             case .excludedPrivateOrSecure:
-                return "Le suivi détaillé est volontairement masqué pour la fenêtre active, selon vos exclusions."
+                return "Le suivi détaillé est volontairement masqué : app ou site exclu, navigation privée ou saisie sécurisée active (mot de passe, terminal). L’enregistrement reprend automatiquement."
             case .healthyButIdle:
                 return "Tout fonctionne ; aucune interaction n’a été reçue depuis quelques minutes."
             case .awaitingInputEvidence:

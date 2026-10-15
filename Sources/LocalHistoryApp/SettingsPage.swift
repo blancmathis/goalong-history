@@ -244,6 +244,11 @@ import AppKit
                 GoalongUpdateStatusRow()
                 Toggle("Rechercher les mises à jour automatiquement", isOn: Binding(
                     get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.goalongSwitch)
+                    .disabled(!updates.isConfigured)
+                if !updates.isConfigured {
+                    Text(updates.statusMessage).font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text("Chaque mise à jour est signée et vérifiée avant installation ; rien ne s’installe sans votre accord. Vos réglages et votre historique sont conservés.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -345,10 +350,9 @@ enum SettingsPane: Hashable {
         case .applications: return "ignorer exclure exclusions masquer application navigateur domaine"
         case .connections: return "connexions"
         case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"
-        case .modules: return "module modules ambiance braise filtre rouge luminosité horaires musique son sons concentration détente activer"
+        case .modules: return "module modules ambiance braise filtre rouge luminosité horaires musique son sons concentration détente blocage bloquer site sites app apps verrouiller cold turkey geler activer"
         case .jev: return "jev surveillance temps réel clé api typesafe rappel rappels distraction pause"
         case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
-        case .modules: return "module modules blocage bloquer site sites app apps verrouiller cold turkey geler activer"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"
         case .storage: return "supprimer effacer historique conserver durée espace mémoire"
         case .advanced: return "terminal cli configuration json diagnostic diagnostics version mise à jour démarrage développeur developer mocks fictives aperçu"

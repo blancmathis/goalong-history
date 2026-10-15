@@ -91,7 +91,7 @@ struct GoalongAnalyticsPage: View {
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { model.selectSection(.work) },
                                 onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
-                                onClassify: { agent.classify(day: selection.day) },
+                                onClassify: { agent.classify(day: GoalongWorkAgent.manualTarget(days: payload.current.days, fallback: selection.day)) },
                                 onHistory: { openHistory(selection.day) },
                                 onProjects: { if !previewActive { showingAnalysisChoice = true } },
                                 onHistoryDay: openHistory,

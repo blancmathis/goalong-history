@@ -575,18 +575,18 @@ not watch every older non-contributing journal it examined, so an append to such
 file may remain unseen until a watched file or the directory changes, the cache is
 discarded, or the lookup is otherwise rebuilt.
 
-The Share preview/export path has a separate direct, read-only JSONL contract. It streams
+The Share export path has a separate direct, read-only JSONL contract. It streams
 only event roots referenced by the selected seals, with production limits of 384 MiB per
 source, 2 MiB per line, 2,880 retained seals, 131,072 required roots, 256 MiB of referenced
 events retained for an export, and a process-local summary cache capped at 32 MiB across
 two days. Boundary-seal and receipt lookup is separately bounded to 4,096 auxiliary files,
 262,144 decoded rows, and 256 MiB of auxiliary sources. An
-unchanged warm preview rereads zero event bytes; a verified append scans only the suffix.
+unchanged warm export rereads zero event bytes; a verified append scans only the suffix.
 A replacement, truncation, deletion, unstable or malformed source, exhausted limit, or
-cancellation cannot publish or cache a partial result. Leaving the Share tab cancels its
-active preview but deliberately retains the bounded cache. Actually hiding the dashboard
-cancels preview and export work, clears rendered segments, and asynchronously discards the
-Share cache; the next preview is therefore a bounded cold scan. The standalone Share
+cancellation cannot publish or cache a partial result. Leaving the Share tab
+deliberately retains the bounded cache. Actually hiding the dashboard
+cancels export work and asynchronously discards the
+Share cache; the next export is therefore a bounded cold scan. The standalone Share
 window also performs initial loading and export work off the main thread, asks for the
 destination before building, and suppresses cancelled or late results. No Share cache is
 persisted. Duplicate committed field names fail closed during seal/event verification,

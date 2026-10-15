@@ -114,6 +114,45 @@ final class GoalongUXOptimizationTests: XCTestCase {
 
     // MARK: - French presentation
 
+    func testSecureInputDetailDoesNotBlameOnlyTheUsersExclusions() {
+        let detail = CaptureHealthState.excludedPrivateOrSecure.frenchDetail
+        XCTAssertFalse(detail.contains("selon vos exclusions"))
+        XCTAssertTrue(detail.contains("sécurisée") && detail.contains("privée"))
+    }
+
+    @MainActor func testExclusionsShortcutOpensTheApplicationsPane() throws {
+        let model = try isolatedModel()
+        model.openApplicationsSettings()
+        XCTAssertEqual(model.selectedSection, .settings)
+        XCTAssertEqual(model.settingsPane, .applications)
+        XCTAssertEqual(SettingsPane.applications.title, "Apps et sites")
+    }
+
+    @MainActor func testTargetedDeletionMessagesAreFrenchAndNeverRawErrors() async throws {
+        let request = TargetedHistoryDeletionRequest.computerHistoryEpisode(id: "episode", day: Date())
+        let success = try isolatedModel(deleteTargeted: { _, done in done(.success(3)) })
+        success.deleteTargetedDetails(request, successMessage: "Supprimé.")
+        try await waitForAlert(success)
+        XCTAssertEqual(success.alert?.message, "Supprimé. 3 élément(s) local(aux) supprimé(s).")
+        XCTAssertFalse(success.alert?.message.contains("Removed") ?? true)
+
+        let failure = try isolatedModel(deleteTargeted: { _, done in done(.failure(TargetedHistoryDeletionError.selectionExceedsLimit(10, 5))) })
+        failure.deleteTargetedDetails(request, successMessage: "Supprimé.")
+        try await waitForAlert(failure)
+        XCTAssertEqual(failure.alert?.message, TargetedHistoryDeletionError.selectionExceedsLimit(10, 5).errorDescription)
+        XCTAssertFalse(failure.alert?.message.contains("selectionExceedsLimit") ?? true)
+
+        let wide = try isolatedModel(deleteDetails: { _, done in done(.failure(TargetedHistoryDeletionError.sourceIncomplete)) })
+        wide.deleteDetails(since: nil)
+        try await waitForAlert(wide)
+        XCTAssertEqual(wide.alert?.message, TargetedHistoryDeletionError.sourceIncomplete.errorDescription)
+    }
+
+    @MainActor private func waitForAlert(_ model: DashboardViewModel) async throws {
+        for _ in 0..<100 where model.alert == nil { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertNotNil(model.alert)
+    }
+
     func testEveryCaptureHealthStateHasAFrenchExplanation() {
         for state in CaptureHealthState.allCases {
             XCTAssertFalse(state.frenchTitle.isEmpty)
@@ -164,7 +203,10 @@ final class GoalongUXOptimizationTests: XCTestCase {
         XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "tous les appareils · 2 applications · sans sites")
     }
 
-    private func isolatedModel() throws -> DashboardViewModel {
+    private func isolatedModel(
+        deleteDetails: @escaping DashboardViewModel.DeleteDetails = { _, done in done(.success(0)) },
+        deleteTargeted: @escaping DashboardViewModel.DeleteTargetedDetails = { _, done in done(.success(0)) }
+    ) throws -> DashboardViewModel {
         guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {
             throw XCTSkip("Navigation tests build a dashboard model only inside an isolated test HOME")
         }
@@ -178,8 +220,8 @@ final class GoalongUXOptimizationTests: XCTestCase {
             deviceInfo: DeviceIdentityInfo(deviceID: "ux-fixture", publicKeyBase64: "", trustTier: "test", algorithm: "test"),
             eventTapStatus: { false }, currentSuppression: { nil }, captureHealthSnapshot: { health.snapshot },
             onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
-            onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
-            onDeleteTargetedDetails: { _, done in done(.success(0)) })
+            onSaveConfiguration: { try config.save($0) }, onDeleteDetails: deleteDetails,
+            onDeleteTargetedDetails: deleteTargeted)
     }
 }
 #endif

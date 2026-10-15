@@ -361,7 +361,7 @@
                 protectionCard(
                     symbol: "key.fill",
                     title: "Mots de passe et champs sécurisés",
-                    message: "La saisie sécurisée masque l’activité clavier. Vérifiez les exclusions des gestionnaires de mots de passe dans Enregistrement.",
+                    message: "La saisie sécurisée masque l’activité clavier. Vérifiez les exclusions des gestionnaires de mots de passe dans Réglages › \(SettingsPane.applications.title).",
                     tint: LHTheme.success
                 )
                 protectionCard(

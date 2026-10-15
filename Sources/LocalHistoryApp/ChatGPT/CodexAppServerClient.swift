@@ -1000,7 +1000,7 @@
             }
             try requireSameSelection()
             guard filteredForPrivacyRevision != nil || !GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).hasExclusions else {
-                throw CodexAppServerError.generationFailed("Les exclusions bloquent cette analyse de texte. Utilisez le bilan par applications dans Connexions.")
+                throw CodexAppServerError.generationFailed("Les exclusions bloquent cette analyse de texte. Retirez-les dans Réglages → Apps et sites pour la lancer.")
             }
             guard siteAnalysisOnly else {
                 throw CodexAppServerError.generationFailed("L’analyse de sites exige sa connexion Codex isolée.")

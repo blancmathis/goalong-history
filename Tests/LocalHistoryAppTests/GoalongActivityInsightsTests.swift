@@ -83,6 +83,38 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertEqual(onlyToday.averageActivePerDay ?? 0, 1800, accuracy: 1)
     }
 
+    func testChartAverageIsTheHeadlineAverageWithoutToday() throws {
+        let now = date(12).addingTimeInterval(10 * 3600)
+        let current = GoalongLocalAnalytics.Period(days: [day(10, from: 9 * 3600, minutes: 300),
+            day(11, from: 9 * 3600, minutes: 300), day(12, from: 9 * 3600, minutes: 30, now: now)])
+        let summary = GoalongActivitySummary(period: current, previous: .init(days: []), calendar: calendar, now: now)
+        let line = try XCTUnwrap(GoalongDailyClassChart.averageLine(for: summary))
+        XCTAssertEqual(line.value, summary.averageActivePerDay ?? -1, accuracy: 0.001)
+        XCTAssertNotEqual(line.value, current.activeSeconds / Double(current.observedDays.count), accuracy: 1)
+        XCTAssertTrue(line.excludesToday)
+        // One completed day is not enough for a rule.
+        let single = GoalongActivitySummary(period: .init(days: [day(11, from: 9 * 3600, minutes: 300), day(12, from: 9 * 3600, minutes: 30, now: now)]),
+                                            previous: .init(days: []), calendar: calendar, now: now)
+        XCTAssertNil(GoalongDailyClassChart.averageLine(for: single))
+    }
+
+    func testHeadlineComparisonNamesTheDailyAverageOverSeveralDays() throws {
+        let comparison = GoalongActivitySummary.Comparison(current: 5 * 3600, previous: 3600, label: "les 7 jours précédents")
+        XCTAssertTrue(try XCTUnwrap(comparison.headlineLine(isDay: false)).contains("par jour par rapport aux 7 jours précédents"))
+        let dayLine = GoalongActivitySummary.Comparison(current: 5 * 3600, previous: 3600, label: "la veille")
+        XCTAssertFalse(try XCTUnwrap(dayLine.headlineLine(isDay: true)).contains("par jour"))
+        XCTAssertNil(GoalongActivitySummary.Comparison(current: 100, previous: 90, label: "la veille").headlineLine(isDay: true))
+    }
+
+    func testManualClassifyTargetsTheLatestUnclassifiedReadyDayOfAPeriod() {
+        let days = [day(10, from: 9 * 3600, minutes: 90), day(11, from: 9 * 3600, minutes: 90),
+                    day(12, from: 9 * 3600, minutes: 90, work: true)]
+        XCTAssertEqual(days.map { $0.seconds(.unclassified) >= 120 }, [true, true, false])
+        XCTAssertEqual(GoalongWorkAgent.manualTarget(days: days, fallback: date(12)), date(11))
+        XCTAssertEqual(GoalongWorkAgent.manualTarget(days: [days[2], days[2]], fallback: date(12)), date(12), "Nothing to classify: the fallback")
+        XCTAssertEqual(GoalongWorkAgent.manualTarget(days: [days[0]], fallback: date(12)), date(12), "A single day keeps the selected day")
+    }
+
     func testInsightsAskToClassifyUntilWorkIsMeasurable() {
         let unclassified = GoalongActivitySummary(period: .init(days: [day(10, from: 9 * 3600, minutes: 90)]),
                                                   previous: .init(days: []), calendar: calendar, now: date(20))
