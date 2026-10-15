@@ -22,7 +22,7 @@ final class JevMonitoringUXTests: XCTestCase {
         }
         XCTAssertTrue(try source("SettingsPage.swift").contains("JevMonitoringPage(onOpenRecording:"))
         let model = try source("DashboardViewModel.swift")
-        XCTAssertTrue(model.contains("if section == .monitoring {\n                selectSection(.settings)\n                settingsPane = .jev"))
+        XCTAssertTrue(model.contains("if section == .monitoring {\n                openSettingsPane(.jev)"))
     }
 
     func testActivationRequiresSetupButDeactivationNeverDoes() {
