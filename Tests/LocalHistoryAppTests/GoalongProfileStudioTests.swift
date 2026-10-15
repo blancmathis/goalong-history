@@ -21,6 +21,19 @@ import LocalHistoryCore
         XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: nil, requestedDay: b, idle: true, calendar: calendar), .rebuild)
         XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: a, requestedDay: b, idle: false, calendar: calendar), .keepWork)
     }
+    func testProfileShareSurvivesTheOpeningPaneAndCapturesTheRevisionAtSendTime() {
+        var revision = "r1"
+        let host = GoalongProfileStudioHost(currentRevision: { revision })
+        revision = "r2"
+        host.receive(Data("projection".utf8))
+        revision = "r3"
+        XCTAssertEqual(host.pending, GoalongProfileStudioHost.Share(data: Data("projection".utf8), privacyRevision: "r2"))
+    }
+    func testOneHostOwnsOneWindowForEveryCaller() {
+        let host = GoalongProfileStudioHost()
+        XCTAssertTrue(host.window === host.window)
+        XCTAssertNil(host.pending)
+    }
     func testLocalResultDoesNotImplicitlySelectAnyCardOrAuthorizeSend() throws {
         let model = try populated()
         XCTAssertTrue(model.selectedItems.isEmpty)

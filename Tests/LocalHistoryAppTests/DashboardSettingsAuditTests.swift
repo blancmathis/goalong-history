@@ -67,6 +67,27 @@ final class DashboardSettingsAuditTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
     }
 
+    @MainActor func testConcentrationStartFailureIsFrenchAndClearsOnDisable() {
+        let runtime = ConcentrationRuntime(storeFactory: { FocusStore(directory: URL(fileURLWithPath: "/private/tmp/goalong-none-\(UUID().uuidString)")) },
+            factory: { _ in throw FocusFailure.storageFailed }, presentsPanels: false)
+        runtime.apply(enabled: true)
+        XCTAssertNil(runtime.controller)
+        XCTAssertEqual(runtime.error, FocusUIError.message(FocusFailure.storageFailed))
+        runtime.apply(enabled: false)
+        XCTAssertNil(runtime.error)
+        XCTAssertNil(runtime.measurementError)
+    }
+
+    func testShareBuildErrorsKeepTheirReasonInAlerts() {
+        let text = DashboardViewModel.userFacingMessage(ShareBuildError.exclusionsUnreadable)
+        XCTAssertTrue(text.contains("Les exclusions sont illisibles"), text)
+    }
+
+    func testGlobalPauseResumeWordingDiffersFromRecordingResume() {
+        XCTAssertNotEqual(GoalongGlobalPauseText.resume, "Reprendre le suivi")
+        XCTAssertEqual(GoalongGlobalPauseText.failureTitle, "Pause non modifiée")
+    }
+
     func testSettingsPointersNameRealPanes() {
         let applications = SettingsPane.applications.title
         XCTAssertTrue(GoalongActivityGaps.help(.excludedApplication)?.contains(applications) ?? false)
