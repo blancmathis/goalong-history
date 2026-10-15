@@ -383,6 +383,13 @@ final class BlockingEngineTests: XCTestCase {
         clockNow = now.addingTimeInterval(3601); c.refresh()
         XCTAssertFalse(c.hasLocks); XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
     }
+    /// R2-065: the icon cluster lists each app or host once, so ids stay unique and "+N" counts unique items.
+    func testIconClusterDeduplicatesItems() {
+        let mail = BlockAppRule(bundleIdentifier: "com.apple.mail", name: "Mail")
+        let one = BlockList(name: "A", sites: [.init(pattern: "youtube.com"), .init(pattern: "youtube.com/shorts")], apps: [mail])
+        let two = BlockList(name: "B", sites: [.init(pattern: "youtube.com")], apps: [mail])
+        XCTAssertEqual(BlockingIconCluster.items(for: [one, two]), [.app(mail), .site("youtube.com")])
+    }
     /// R2-075: a failed marker write is retried on the next refresh, then not repeated.
     @MainActor func testFailedLockMarkerWriteIsRetried() throws {
         let store = try temporaryStore(), now = date(), list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
