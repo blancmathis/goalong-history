@@ -11,6 +11,15 @@ import LocalHistoryCore
     @Published var trackingDetail = "Chargement de l’état du suivi…"
     /// Consent is off: the header action opens Réglages instead of pausing.
     @Published var consentOff = false
+    /// Global pause is on: the header action opens Réglages, where the pause is lifted.
+    @Published var globalPaused = false
+    /// Header button label. During the global pause it says it opens Réglages.
+    var headerActionLabel: String {
+        if globalPaused { return "\(GoalongGlobalPauseText.resume)…" }
+        if consentOff { return "Configurer l’enregistrement…" }
+        if case .paused = tracking { return "Reprendre le suivi" }
+        return "Mettre le suivi en pause"
+    }
 
     struct DaySegment: Identifiable {
         let id: Int
@@ -159,6 +168,7 @@ import LocalHistoryCore
     private func refreshTracking() {
         let pause = globalPause()
         consentOff = !pause.blocksActivity && !localHistoryEnabled()
+        globalPaused = pause.blocksActivity
         // Same order as the classic menu: global pause, then consent (consent off also sets the manual pause), then manual pause.
         if pause.blocksActivity {
             if case .paused = tracking {} else { pausedSince = nil }

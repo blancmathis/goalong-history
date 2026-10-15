@@ -25,7 +25,7 @@
         private let onOpenShare: () -> Void
         private let onTogglePause: () -> Void
         private let onRequestPermissions: () -> Void
-        private let onReloadConfig: () -> Void
+        private let onReloadConfig: () -> Bool
         private let onRetryKeychain: () -> Void
         private let onQuit: () -> Void
 
@@ -52,7 +52,7 @@
             onOpenShare: @escaping () -> Void,
             onTogglePause: @escaping () -> Void,
             onRequestPermissions: @escaping () -> Void,
-            onReloadConfig: @escaping () -> Void,
+            onReloadConfig: @escaping () -> Bool,
             onRetryKeychain: @escaping () -> Void,
             onQuit: @escaping () -> Void
         ) {
@@ -170,24 +170,20 @@
             }
         }
 
-        func updateStatus() {
-            let permissionStatus = permissions.snapshot
-            let recording = state.isCapturing
-            let suppression = recording ? currentSuppression() : nil
-            let health = captureHealth()
-
+        static func statusDisplay(
+            health: CaptureHealthState, localEnabled: Bool, globalPaused: Bool, recording: Bool, suppression: SuppressionReason?
+        ) -> (title: String, symbol: String, description: String) {
             let display: (title: String, symbol: String, description: String)
-            let localEnabled = GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
-            if GoalongGlobalPause.isPaused() {
+            if globalPaused {
                 display = ("Arrêt de confidentialité", "pause.circle.fill", "Sources et envois suspendus")
             } else if !localEnabled {
                 display = ("Enregistrement désactivé", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
-            } else if health.state == .storageUnavailable {
+            } else if health == .storageUnavailable {
                 display = ("Enregistrement interrompu", "externaldrive.badge.exclamationmark",
                            "L’historique ne peut pas être écrit (disque plein ?). Reprise automatique dès que possible")
-            } else if health.state == .permissionRequired
-                || health.state == .permissionAppearsEnabledButStaleForBuild
-                || health.state == .accessibilityContextUnavailable
+            } else if health == .permissionRequired
+                || health == .permissionAppearsEnabledButStaleForBuild
+                || health == .accessibilityContextUnavailable
             {
                 display = ("Autorisation macOS à vérifier", "exclamationmark.triangle.fill",
                            "Ouvrez Goalong pour rétablir l’accès : rien n’est enregistré en attendant")
@@ -198,13 +194,29 @@
                            "Cette fenêtre ne peut pas être lue en toute sécurité : aucun détail enregistré")
             } else if let suppression, suppression == .sessionUnavailable {
                 display = ("Session Mac inactive", "lock.fill", "Le Mac est verrouillé, en veille ou indisponible")
-            } else if health.state == .inputTapUnavailable || health.state == .awaitingInputEvidence {
+            } else if health == .inputTapUnavailable {
+                // A failed tap never recovers by waiting: say what to check, like the panel.
+                display = (health.frenchTitle, "exclamationmark.triangle.fill", health.frenchDetail)
+            } else if health == .awaitingInputEvidence {
                 display = ("Interactions en attente", "waveform.path.ecg",
                            "Les clics et la frappe seront comptés dès le premier événement reçu")
             } else {
                 display = ("Enregistrement local actif", "record.circle.fill",
                            "Votre activité reste sur ce Mac")
             }
+            return display
+        }
+
+        func updateStatus() {
+            let permissionStatus = permissions.snapshot
+            let recording = state.isCapturing
+            let suppression = recording ? currentSuppression() : nil
+            let health = captureHealth()
+
+            let localEnabled = GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
+            let display = Self.statusDisplay(
+                health: health.state, localEnabled: localEnabled,
+                globalPaused: GoalongGlobalPause.isPaused(), recording: recording, suppression: suppression)
 
             statusMenuItem.title = display.title
             statusMenuItem.image = NSImage(
@@ -426,7 +438,15 @@
         }
 
         @objc private func reloadConfiguration() {
-            onReloadConfig()
+            guard onReloadConfig() else {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = "Configuration non rechargée"
+                alert.informativeText = "config.json n’a pas pu être relu (fichier absent ou format invalide). Les réglages précédents restent actifs."
+                alert.runModal()
+                return
+            }
             showInformation(
                 title: "Configuration rechargée",
                 message: "\(ProductIdentity.displayName) a relu config.json et actualisé ses réglages."

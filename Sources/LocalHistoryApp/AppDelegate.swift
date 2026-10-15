@@ -322,7 +322,7 @@
                     onOpenShare: { [weak self] in self?.dashboardWindowController.show(section: .share) },
                     onTogglePause: { [weak self] in self?.toggleManualPause() },
                     onRequestPermissions: { [weak self] in self?.requestPermissionsAndExplain() },
-                    onReloadConfig: { [weak self] in self?.reloadConfiguration() },
+                    onReloadConfig: { [weak self] in self?.reloadConfiguration() ?? false },
                     onRetryKeychain: { [weak self] in self?.retryDeviceIdentity() },
                     onQuit: { [weak self] in self?.requestUserQuit() }
                 )
@@ -668,13 +668,14 @@
             return applied
         }
 
-        private func reloadConfiguration() {
+        private func reloadConfiguration() -> Bool {
             let reloaded = configManager.reload()
             configureCallPresence()
             contextMonitor.resetAndSample()
             configureUploader(for: configManager.config)
             if reloaded { dashboardViewModel.reloadSettings(from: configManager.config) }
             menuBarController.updateStatus()
+            return reloaded
         }
 
         private func configureUploader(for config: RecorderConfig) {

@@ -40,6 +40,15 @@ enum AmbiancePackDownloader {
             && parts.percentEncodedPath == releasePath + pack.id + ".tar" && url == pack.url
     }
 
+    /// Checks the HTTP status before the size, so an error body (404 with a short
+    /// Content-Length) is never reported as a corrupt pack.
+    static func progressFailure(status: Int?, written: Int64, expected: Int64, packBytes: Int64) -> AmbianceError? {
+        if let status, status != 200 { return .serverUnavailable }
+        guard written <= packBytes, expected < 0 || expected == packBytes else {
+            return .invalidPack("taille incorrecte")
+        }
+        return nil
+    }
     static func redirectRequest(_ request: URLRequest, responseURL: URL?, initialURL: URL,
                                 pack: AmbiancePack, redirectCount: Int) -> URLRequest? {
         guard redirectCount == 1, allows(initialURL, pack: pack, redirect: false),
@@ -119,17 +128,19 @@ enum AmbiancePackDownloader {
         }
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                         totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-            guard totalBytesWritten <= pack.bytes,
-                  totalBytesExpectedToWrite < 0 || totalBytesExpectedToWrite == pack.bytes else {
-                failure = AmbianceError.invalidPack("taille incorrecte"); downloadTask.cancel(); return
+            if let failed = AmbiancePackDownloader.progressFailure(
+                status: (downloadTask.response as? HTTPURLResponse)?.statusCode,
+                written: totalBytesWritten, expected: totalBytesExpectedToWrite, packBytes: pack.bytes) {
+                failure = failed; downloadTask.cancel(); return
             }
             progress(min(1, Double(totalBytesWritten) / Double(pack.bytes)))
         }
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
             do {
                 if let failure { throw failure }
-                guard let response = downloadTask.response as? HTTPURLResponse, response.statusCode == 200,
-                      (try location.resourceValues(forKeys: [.fileSizeKey])).fileSize == Int(pack.bytes) else {
+                guard let response = downloadTask.response as? HTTPURLResponse else { throw AmbianceError.network }
+                guard response.statusCode == 200 else { throw AmbianceError.serverUnavailable }
+                guard (try location.resourceValues(forKeys: [.fileSizeKey])).fileSize == Int(pack.bytes) else {
                     throw AmbianceError.invalidPack("réponse ou taille incorrecte")
                 }
                 let file = FileManager.default.temporaryDirectory.appendingPathComponent("ambiance-download-\(UUID().uuidString).tar")
@@ -141,7 +152,7 @@ enum AmbiancePackDownloader {
             // Foundation transport errors may contain the signed failing URL.
             // Never retain or expose them through the controller's public error.
             if error != nil {
-                finish(.failure(failure ?? AmbianceError.invalidPack("téléchargement du pack \(pack.id) impossible")))
+                finish(.failure(failure ?? AmbianceError.network))
             }
         }
     }
