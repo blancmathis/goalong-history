@@ -79,6 +79,28 @@
             XCTAssertFalse(FileManager.default.fileExists(atPath: codex.appendingPathComponent("2026-08-20-goalong-computer-history.md").path))
         }
 
+        func testExecuteAfterSemanticFailureStillRemovesDerivedFiles() throws {
+            let container = FileManager.default.temporaryDirectory
+                .appendingPathComponent("goalong-derived-cleaner-\(UUID().uuidString)", isDirectory: true)
+            let root = container.appendingPathComponent("LocalHistory", isDirectory: true)
+            let analysis = root.appendingPathComponent("analysis", isDirectory: true)
+            let memories = root.appendingPathComponent("memories", isDirectory: true)
+            let computerHistory = root.appendingPathComponent("computer-history", isDirectory: true)
+            let codex = container.appendingPathComponent("codex-memory", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: container) }
+            for directory in [analysis, memories, computerHistory, codex] {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            let file = analysis.appendingPathComponent("2026-08-20.analysis.json")
+            try writeFixture(to: file)
+            let cleaner = DerivedHistoryCleaner(rootDirectory: root, codexMemoryDirectory: codex)
+            let plan = try cleaner.prepareDeletion(since: nil)
+            XCTAssertNotNil(plan.executeAfterSemanticFailure())
+            XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+            // A second run (retry) must not crash or throw.
+            _ = plan.executeAfterSemanticFailure()
+        }
+
         func testExactDayDeletionPreservesEarlierAndLaterDerivedMemories() throws {
             let container = FileManager.default.temporaryDirectory
                 .appendingPathComponent("goalong-derived-cleaner-\(UUID().uuidString)", isDirectory: true)

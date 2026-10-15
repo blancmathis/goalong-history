@@ -498,6 +498,21 @@
             try OwnedFileDeletionPlan.validate(allPlans)
         }
 
+        /// Raw events are already gone but the semantic clear failed: still remove the derived
+        /// views so no derived data of the deleted period survives. Errors are only logged;
+        /// the caller reports the semantic failure (a retry is idempotent).
+        @discardableResult
+        func executeAfterSemanticFailure() -> DerivedHistoryDeletionResult? {
+            do {
+                return try execute()
+            } catch {
+                Diagnostics.write(
+                    "Derived history clear failed after a semantic clear failure: \(error)"
+                )
+                return nil
+            }
+        }
+
         func execute() throws -> DerivedHistoryDeletionResult {
             _ = try OwnedFileDeletionPlan.execute(allPlans)
             if clearSummaryDirectory, let plan = activitySummaryPlans.first ?? activityTemporaryPlans.first {

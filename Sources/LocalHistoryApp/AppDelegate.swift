@@ -760,6 +760,7 @@
                     ) { [self] semanticResult in
                         switch semanticResult {
                         case .failure(let error):
+                            derivedPlan.executeAfterSemanticFailure()
                             completeHistoryClear(
                                 .failure(error),
                                 suspension: suspension,
@@ -852,13 +853,7 @@
                             case .failure(let error):
                                 // Raw events are gone: still remove the derived views of the
                                 // period, then report the semantic failure (a retry is idempotent).
-                                do {
-                                    _ = try derivedPlan.execute()
-                                } catch {
-                                    Diagnostics.write(
-                                        "Derived history clear failed after a semantic clear failure: \(error)"
-                                    )
-                                }
+                                derivedPlan.executeAfterSemanticFailure()
                                 completeHistoryClear(
                                     .failure(error),
                                     suspension: suspension,
@@ -890,6 +885,7 @@
                         semanticContextStore.deleteAll { [self] semanticResult in
                             switch semanticResult {
                             case .failure(let error):
+                                derivedPlan.executeAfterSemanticFailure()
                                 completeHistoryClear(
                                     .failure(error),
                                     suspension: suspension,
