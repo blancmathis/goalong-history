@@ -34,8 +34,13 @@ import LocalHistoryCore
     private let clock: () -> Date
     private let store: BlockingStore?
     private let backend: BlockingEnforcementBackend?
-    /// Launch-time snapshot on purpose: a zone change while running must not end a locked program or reset a quota (docs/BLOCKING.md, « Time zone »).
-    private let calendar: Calendar
+    /// Fixed copy of `calendarProvider()`. `followTimeZone` swaps it after a zone change, once it has held
+    /// the locked windows in progress and the usage day in progress (docs/BLOCKING.md, « Time zone »).
+    private var calendar: Calendar
+    private let calendarProvider: () -> Calendar
+    /// Usage day kept across a zone change until its old midnight, so quotas and breaks never reset early.
+    private var usageDayCarry: (day: String, start: Date, end: Date)?
+    private var systemObservers: [NSObjectProtocol] = []
     private let continuous: () -> Double
     private let boot: () -> String
     private let runsTimers: Bool
@@ -80,13 +85,15 @@ import LocalHistoryCore
 
     init(document: BlockingDocument = BlockingDocument(), clock: @escaping () -> Date = Date.init,
          store: BlockingStore? = nil, backend: BlockingEnforcementBackend? = nil,
-         calendar: Calendar = .current, continuous: @escaping () -> Double = BlockingClock.continuous,
+         calendar: Calendar = .autoupdatingCurrent, calendarProvider: (() -> Calendar)? = nil, continuous: @escaping () -> Double = BlockingClock.continuous,
          boot: @escaping () -> String = BlockingClock.bootID, runsTimers: Bool = false,
          runningApps: @escaping () -> Set<String> = {
              Set(NSWorkspace.shared.runningApplications.filter { !$0.isTerminated }.compactMap(\.bundleIdentifier))
          }) {
         self.document = document; self.lists = document.lists; self.freeze = document.freeze
-        self.clock = clock; self.store = store; self.backend = backend; self.calendar = calendar
+        self.clock = clock; self.store = store; self.backend = backend
+        let provider = calendarProvider ?? { calendar }
+        self.calendarProvider = provider; self.calendar = Self.frozen(provider())
         self.continuous = continuous; self.boot = boot; self.runsTimers = runsTimers
         self.runningApps = runningApps
         if let store {
@@ -117,6 +124,14 @@ import LocalHistoryCore
         backend?.siteActionStillRequired = { [weak self] in self?.siteActionStillRequired($0) == true }
         backend?.siteActionDeadline = { [weak self] in self?.siteActionDeadline($0) }
         backend?.onBlockPresented = { [weak self] target, id in self?.recordBlockedPresentation(target, listID: id) }
+        if runsTimers {
+            for name in [Notification.Name.NSSystemTimeZoneDidChange, .NSCalendarDayChanged, Notification.Name("NSSystemClockDidChangeNotification")] {
+                systemObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    if name == .NSSystemTimeZoneDidChange { NSTimeZone.resetSystemTimeZone() }
+                    MainActor.assumeIsolated { self?.refresh() }
+                })
+            }
+        }
         refresh()
     }
 
@@ -131,6 +146,7 @@ import LocalHistoryCore
             }
         }
         timer?.invalidate(); timer = nil
+        systemObservers.forEach(NotificationCenter.default.removeObserver); systemObservers.removeAll()
         onObservationRequirementChanged?(false); onObservationRequirementChanged = nil
         onTimerInputChanged = nil
         clearFriction(); frictionAllowances.removeAll()
@@ -330,7 +346,7 @@ import LocalHistoryCore
               stop.at <= clock() else { return [:] }
         let eligible = lists.filter { $0.earn != nil && $0.quotaMinutesPerDay != nil }
         guard !eligible.isEmpty else { return [:] }
-        let day = Self.dayKey(stop.at, calendar: calendar), today = Self.dayKey(clock(), calendar: calendar)
+        let day = usageDay(at: stop.at), today = usageDay(at: clock())
         var usage = day == today ? todayUsage() : document.usageHistory?[day] ?? BlockDayUsage(day: day)
         guard !(usage.earnedSessionIDs ?? []).contains(session.id) else { return [:] }
         guard (usage.earnedSessionIDs ?? []).count < 4096 else { throw FocusFailure.invalidArgument }
@@ -647,8 +663,7 @@ import LocalHistoryCore
             guard verifyPassword(password) == .ok else { return }
         }
         usage.breaksTaken[listID] = taken + 1
-        let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: clock()))!
-        usage.breakEnds[listID] = min(midnight, clock().addingTimeInterval(TimeInterval(breaks.minutes * 60)))
+        usage.breakEnds[listID] = min(usageDayBounds(at: clock()).end, clock().addingTimeInterval(TimeInterval(breaks.minutes * 60)))
         document.usage = usage
         commit()
     }
@@ -709,6 +724,7 @@ import LocalHistoryCore
         }
         lastClock = currentClock
         document.clock = currentClock
+        followTimeZone(at: now)
         let triggersChanged = synchronizeAppTriggers(at: now)
         if !storeFailed, let store, (triggersChanged || now.timeIntervalSince(lastSavedAt) >= 60), hasPersistedWork {
             do { try store.save(document); lastGood = document; lastSavedAt = now } catch { failStore() }
@@ -720,7 +736,7 @@ import LocalHistoryCore
         // Publish only real changes: the page must not redraw on every sample.
         if lists != document.lists { lists = document.lists }
         if freeze != document.freeze { freeze = document.freeze }
-        if let previous = document.usage, previous.day != Self.dayKey(now, calendar: calendar) {
+        if let previous = document.usage, previous.day != usageDay(at: now) {
             document.usageHistory = document.usageHistory ?? [:]
             document.usageHistory?[previous.day] = previous
             for day in (document.usageHistory?.keys.sorted().dropLast(366)) ?? [] { document.usageHistory?[day] = nil }
@@ -868,23 +884,57 @@ import LocalHistoryCore
         document.heldPrograms = (document.heldPrograms ?? []).filter { $0.end > oldWall }.map { value in
             var value = value; if jump < 0 { value.start = value.start.addingTimeInterval(jump) }; value.end = value.end.addingTimeInterval(jump); return value
         }
-        for index in document.lists.indices {
-            let list = document.lists[index]
-            for window in BlockingSchedule.windows(of: list.program, at: oldWall, calendar: calendar)
-                where window.start <= oldWall && window.end > oldWall {
-                let lock = list.program.isLocked(at: oldWall) ? BlockLock.locked
-                    : effectiveLock(list.program.ranges.first { $0.id == window.rangeID }?.effectiveLock ?? .free)
-                guard lock.protectsLists, document.programSkips?[window.rangeID].map({ $0 > oldWall }) != true,
-                      document.heldPrograms?.contains(where: { $0.id == window.rangeID }) != true else { continue }
-                document.heldPrograms = (document.heldPrograms ?? []) + [BlockSession(id: window.rangeID, listIDs: [list.id], start: window.start.addingTimeInterval(min(0, jump)),
-                    end: window.end.addingTimeInterval(jump), lock: lock, origin: .program(window.rangeID))]
-            }
-            if list.program.isLocked(at: oldWall) { document.lists[index].program.lockedUntil = list.program.lockedUntil?.addingTimeInterval(jump) }
+        holdProgramWindows(at: oldWall, jump: jump)
+        for index in document.lists.indices where document.lists[index].program.isLocked(at: oldWall) {
+            document.lists[index].program.lockedUntil = document.lists[index].program.lockedUntil?.addingTimeInterval(jump)
         }
         if let until = document.passwordLock?.retryAfter, until > oldWall {
             document.passwordLock?.retryAfter = until.addingTimeInterval(jump)
         }
         if var freeze = document.freeze { if jump < 0 { freeze.start = freeze.start.addingTimeInterval(jump) }; freeze.end = freeze.end.addingTimeInterval(jump); document.freeze = freeze }
+    }
+    /// Turns each protected program window in progress at `wall` into a held session, so a later
+    /// recomputation (clock jump, zone change) cannot end it early.
+    private func holdProgramWindows(at wall: Date, jump: Double) {
+        for list in document.lists {
+            for window in BlockingSchedule.windows(of: list.program, at: wall, calendar: calendar)
+                where window.start <= wall && window.end > wall {
+                let lock = list.program.isLocked(at: wall) ? BlockLock.locked
+                    : effectiveLock(list.program.ranges.first { $0.id == window.rangeID }?.effectiveLock ?? .free)
+                guard lock.protectsLists, document.programSkips?[window.rangeID].map({ $0 > wall }) != true,
+                      document.heldPrograms?.contains(where: { $0.id == window.rangeID }) != true else { continue }
+                document.heldPrograms = (document.heldPrograms ?? []) + [BlockSession(id: window.rangeID, listIDs: [list.id], start: window.start.addingTimeInterval(min(0, jump)),
+                    end: window.end.addingTimeInterval(jump), lock: lock, origin: .program(window.rangeID))]
+            }
+        }
+    }
+    /// After a zone change: hold the locked windows and the usage day in progress, then use the new zone
+    /// for everything else (future programs, the next day, timers).
+    private func followTimeZone(at now: Date) {
+        if let carry = usageDayCarry, carry.end <= now { usageDayCarry = nil }
+        let next = Self.frozen(calendarProvider())
+        guard next.timeZone.identifier != calendar.timeZone.identifier else { return }
+        holdProgramWindows(at: now, jump: 0)
+        let bounds = usageDayBounds(at: now)
+        usageDayCarry = (usageDay(at: now), bounds.start, bounds.end)
+        calendar = next
+    }
+    private func usageDay(at date: Date) -> String {
+        if let carry = usageDayCarry, carry.start <= date, date < carry.end { return carry.day }
+        return Self.dayKey(date, calendar: calendar)
+    }
+    private func usageDayBounds(at date: Date) -> (start: Date, end: Date) {
+        if let carry = usageDayCarry, carry.start <= date, date < carry.end { return (carry.start, carry.end) }
+        let start = calendar.startOfDay(for: date)
+        return (start, calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400))
+    }
+    /// A plain copy: `Calendar.autoupdatingCurrent` would change under the controller without notice.
+    nonisolated static func frozen(_ value: Calendar) -> Calendar {
+        var copy = Calendar(identifier: value.identifier)
+        copy.timeZone = TimeZone(identifier: value.timeZone.identifier) ?? value.timeZone
+        copy.locale = value.locale; copy.firstWeekday = value.firstWeekday
+        copy.minimumDaysInFirstWeek = value.minimumDaysInFirstWeek
+        return copy
     }
 
     func observe(_ target: BlockingObservation) {
@@ -899,7 +949,7 @@ import LocalHistoryCore
            previous.titleKeywordMatches == target.titleKeywordMatches,
            previous.windowIdentity == target.windowIdentity, previous.sessionAvailable, target.sessionAvailable,
            previous.idleSeconds <= 120, target.idleSeconds <= 120 {
-            let from = max(previous.at, calendar.startOfDay(for: target.at))
+            let from = max(previous.at, usageDayBounds(at: target.at).start)
             let seconds = min(15, max(0, target.at.timeIntervalSince(from)))
             var usage = todayUsage()
             for list in lists where list.quotaMinutesPerDay != nil && BlockingRules.wouldBlock(previous, list: list) {
@@ -1083,7 +1133,7 @@ import LocalHistoryCore
     }
 
     private func todayUsage() -> BlockDayUsage {
-        let day = Self.dayKey(clock(), calendar: calendar)
+        let day = usageDay(at: clock())
         if let usage = document.usage, usage.day == day { return usage }
         return document.usageHistory?[day] ?? BlockDayUsage(day: day)
     }
@@ -1136,7 +1186,7 @@ import LocalHistoryCore
         return minutes
     }
 
-    nonisolated static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
+    nonisolated static func dayKey(_ date: Date, calendar: Calendar = .autoupdatingCurrent) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
