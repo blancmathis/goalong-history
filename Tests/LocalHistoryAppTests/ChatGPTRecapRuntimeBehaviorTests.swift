@@ -230,6 +230,28 @@
             XCTAssertNil(runtime.alert)
         }
 
+        func testFailedDisconnectKeepsAutomaticRecapsAndFreesTheCodexHome() throws {
+            let container = try makeContainer()
+            defer { try? FileManager.default.removeItem(at: container) }
+            let key = "chatgptRecap.automaticEnabled"
+            let saved = UserDefaults.standard.object(forKey: key)
+            defer { UserDefaults.standard.set(saved, forKey: key) }
+            let runtime = makeRuntime(
+                container: container, executable: container.appendingPathComponent("codex"),
+                sessionFactory: { _ in throw CodexAppServerError.homeBusy })
+            runtime.automaticRecapsEnabled = true
+            runtime.setConnectionStateForTesting(.connected(email: nil, plan: nil))
+
+            runtime.disconnectChatGPT()
+            XCTAssertTrue(runtime.isBusyWithCodex, "the work agent must not start during the logout")
+            try waitUntil { runtime.alert != nil }
+            XCTAssertEqual(runtime.alert?.title, "ChatGPT n’a pas pu être déconnecté")
+            XCTAssertTrue(runtime.automaticRecapsEnabled, "a failed logout keeps the automatic setting")
+            XCTAssertFalse(runtime.isCheckingAccount)
+            XCTAssertTrue(runtime.isAccountConnected)
+            runtime.stop()
+        }
+
         private func waitUntil(timeout: TimeInterval = 15, _ condition: () -> Bool) throws {
             let deadline = Date().addingTimeInterval(timeout)
             while !condition() {

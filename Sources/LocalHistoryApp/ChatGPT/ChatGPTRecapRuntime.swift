@@ -847,12 +847,20 @@
 
         func disconnectChatGPT() {
             cancelChatGPTConnection()
+            let wasStarted = started
+            let wasAutomatic = automaticRecapsEnabled
             stop()
             automaticRecapsEnabled = false
+            // The work agent holds the shared Codex home for its whole run: stop it so its
+            // process exits and the logout session can take the home lease.
+            if Thread.isMainThread { MainActor.assumeIsolated { GoalongWorkAgent.shared.cancel() } }
             guard let executable = executableLocator() else {
                 connectionState = .codexUnavailable
                 return
             }
+            // Marks the Codex home as busy, so neither an account read nor the work agent
+            // starts a new session while the logout runs.
+            isCheckingAccount = true
             workQueue.async { [weak self] in
                 guard let self else { return }
                 do {
@@ -860,6 +868,7 @@
                     defer { self.closeSession(session) }
                     try session.logout()
                     DispatchQueue.main.async {
+                        self.isCheckingAccount = false
                         self.connectionState = .signedOut
                         self.alert = ChatGPTRecapAlert(
                             title: "ChatGPT déconnecté",
@@ -869,6 +878,10 @@
                     }
                 } catch {
                     DispatchQueue.main.async {
+                        self.isCheckingAccount = false
+                        // Still signed in: keep the member's automatic recap setting.
+                        if wasAutomatic { self.automaticRecapsEnabled = true }
+                        if wasStarted { self.start(checkPreviousDayImmediately: false) }
                         self.alert = ChatGPTRecapAlert(
                             title: "ChatGPT n’a pas pu être déconnecté",
                             message: error.localizedDescription
