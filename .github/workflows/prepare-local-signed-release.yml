@@ -28,7 +28,8 @@ jobs:
           bash scripts/test_verify_published_update_feed.sh
       - name: Test source and actual relaunch protocol
         run: |
-          xcrun swift test
+          mkdir -p "$RUNNER_TEMP/goalong-test-home"
+          GOALONG_TEST_HOME="$RUNNER_TEMP/goalong-test-home" CFFIXED_USER_HOME="$RUNNER_TEMP/goalong-test-home" xcrun swift test
           bash scripts/test_permission_relaunch.sh
           bash scripts/audit_privacy_boundaries.sh
       - name: Build universal staging app

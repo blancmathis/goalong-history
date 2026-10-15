@@ -188,7 +188,8 @@ jobs:
           if [[ "${{ inputs.local_gates }}" == true ]]; then
             python3 scripts/local_deploy_policy.py "$GITHUB_SHA" "$RUNNER_TEMP/source-gates.json"
           else
-            xcrun swift test
+            mkdir -p "$RUNNER_TEMP/goalong-test-home"
+            GOALONG_TEST_HOME="$RUNNER_TEMP/goalong-test-home" CFFIXED_USER_HOME="$RUNNER_TEMP/goalong-test-home" xcrun swift test
           fi
           bash scripts/audit_privacy_boundaries.sh
           bash scripts/test_release_signing_policy.sh

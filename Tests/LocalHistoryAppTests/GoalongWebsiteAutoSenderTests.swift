@@ -10,11 +10,12 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         let suite = "goalong-auto-legacy-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
+        let root = hermeticDataRoot()
         var value = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/unused", options: .init(deviceIDs: ["mac"], includeRecap: true))
         value.policyVersion = nil
         defaults.set(try JSONEncoder().encode(value), forKey: "goalong.website.autoSend.v1")
         var sends = 0
-        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, exporter: { _, _, _ in XCTFail("Legacy policy must not read source data"); return Data() },
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { _, _, _ in XCTFail("Legacy policy must not read source data"); return Data() },
             sender: { _, _, _, _ in sends += 1; return Data() }, sourceConsent: { _ in true })
         XCTAssertFalse(scheduler.enabled)
         await scheduler.tick()
@@ -37,21 +38,50 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         XCTAssertFalse(options.includeRhythmTimeline); XCTAssertFalse(options.includeRhythmContext)
     }
 
+    @MainActor func testPausedFileInAnotherRootDoesNotChangeTheSchedulerResult() async throws {
+        let suite = "goalong-auto-roots-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let pausedRoot = hermeticDataRoot(), root = hermeticDataRoot()
+        try GoalongGlobalPause.setPaused(true, in: pausedRoot)
+        XCTAssertTrue(GoalongGlobalPause.isPaused(in: pausedRoot)); XCTAssertFalse(GoalongGlobalPause.isPaused(in: root))
+        var config = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: .init(deviceIDs: ["mac"]),
+            hour: 9, minute: 45, timeZoneIdentifier: "America/Chicago")
+        config.privacyRevision = GoalongPrivacyPolicy.load(in: root).revision
+        defaults.set(try JSONEncoder().encode(config), forKey: "goalong.website.autoSend.v1")
+        var sent = 0
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { _, _, _ in Data() },
+            sender: { _, _, _, _ in sent += 1; return Data() }, sourceConsent: { _ in true })
+        await scheduler.tick(now: ISO8601DateFormatter().date(from: "2026-09-14T14:45:00Z")!)
+        XCTAssertEqual(sent, 1)
+    }
+
+    /// The Makefile and CI run tests with a throwaway home (GOALONG_TEST_HOME). Then the data root must stay inside it.
+    func testDataRootStaysInsideTheThrowawayHomeWhenOneIsConfigured() throws {
+        guard let home = ProcessInfo.processInfo.environment["GOALONG_TEST_HOME"], !home.isEmpty else {
+            throw XCTSkip("No throwaway home configured; use `make test`.")
+        }
+        let resolved = URL(fileURLWithPath: home).resolvingSymlinksInPath().path
+        XCTAssertTrue(AppPaths.applicationSupportDirectory.resolvingSymlinksInPath().path.hasPrefix(resolved + "/"),
+                      "\(AppPaths.applicationSupportDirectory.path) is outside \(resolved)")
+    }
+
     @MainActor func testScheduleHonorsMinuteAndSavedTimezoneAcrossRestart() async throws {
         let suite = "goalong-auto-time-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
+        let root = hermeticDataRoot()
         var config = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: .init(deviceIDs: ["mac"]),
             hour: 9, minute: 45, timeZoneIdentifier: "America/Chicago")
-        config.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+        config.privacyRevision = GoalongPrivacyPolicy.load(in: root).revision
         defaults.set(try JSONEncoder().encode(config), forKey: "goalong.website.autoSend.v1")
         var sent = 0
-        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, exporter: { _, day, _ in XCTAssertEqual(day, "2026-09-13"); return Data() },
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { _, day, _ in XCTAssertEqual(day, "2026-09-13"); return Data() },
             sender: { _, _, _, _ in sent += 1; return Data() }, sourceConsent: { _ in true })
         let parser = ISO8601DateFormatter()
         await scheduler.tick(now: parser.date(from: "2026-09-14T14:44:59Z")!); XCTAssertEqual(sent, 0)
         await scheduler.tick(now: parser.date(from: "2026-09-14T14:45:00Z")!); XCTAssertEqual(sent, 1)
-        let restarted = GoalongWebsiteAutoSender(defaults: defaults, exporter: { _, _, _ in XCTFail("Already received"); return Data() },
+        let restarted = GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { _, _, _ in XCTFail("Already received"); return Data() },
             sender: { _, _, _, _ in XCTFail("Already received"); return Data() }, sourceConsent: { _ in true })
         XCTAssertEqual(restarted.lastSuccess, "2026-09-13")
         await restarted.tick(now: parser.date(from: "2026-09-14T16:00:00Z")!)
@@ -120,29 +150,31 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         let suite = "goalong-auto-failure-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
+        let root = hermeticDataRoot()
         let options = GoalongSiteExportOptions(deviceIDs: ["mac"])
         var configuration = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: options)
-        configuration.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+        configuration.privacyRevision = GoalongPrivacyPolicy.load(in: root).revision
         defaults.set(try JSONEncoder().encode(configuration), forKey: "goalong.website.autoSend.v1")
         var sent = 0
-        let sender = GoalongWebsiteAutoSender(defaults: defaults, exporter: { _, _, _ in Data() }, sender: { _, _, _, _ in
+        let sender = GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { _, _, _ in Data() }, sender: { _, _, _, _ in
             sent += 1; throw GoalongSiteExportError.invalid("Receipt unknown")
         }, sourceConsent: { _ in true })
         let date = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 10))!
         await sender.tick(now: date); await sender.tick(now: date.addingTimeInterval(86400))
         XCTAssertEqual(sent, 1); XCTAssertFalse(sender.enabled)
-        let restarted = GoalongWebsiteAutoSender(defaults: defaults)
+        let restarted = GoalongWebsiteAutoSender(defaults: defaults, root: root)
         XCTAssertFalse(restarted.enabled)
     }
     @MainActor func testSourceConsentRevokedDuringPreparationPreventsSending() async throws {
         let suite = "goalong-auto-consent-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
+        let root = hermeticDataRoot()
         var configuration = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: .init(deviceIDs: ["mac"]))
-        configuration.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+        configuration.privacyRevision = GoalongPrivacyPolicy.load(in: root).revision
         defaults.set(try JSONEncoder().encode(configuration), forKey: "goalong.website.autoSend.v1")
         var consent = true, sent = 0
-        let sender = GoalongWebsiteAutoSender(defaults: defaults, exporter: { _, _, _ in
+        let sender = GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { _, _, _ in
             consent = false
             return Data()
         }, sender: { _, _, _, _ in sent += 1; return Data() }, sourceConsent: { _ in consent })

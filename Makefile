@@ -3,8 +3,11 @@
 VERSION ?= 0.6.0
 ARCHS ?= $(shell uname -m)
 
+# Tests run with a throwaway home so no test can read or write the real LocalHistory folder.
 test:
-	xcrun swift test
+	@home=$$(mktemp -d /tmp/goalong-test-XXXXXX); \
+	GOALONG_TEST_HOME="$$home" CFFIXED_USER_HOME="$$home" xcrun swift test; status=$$?; \
+	rm -rf "$$home"; exit $$status
 
 build:
 	xcrun swift build -c release --product LocalHistory
