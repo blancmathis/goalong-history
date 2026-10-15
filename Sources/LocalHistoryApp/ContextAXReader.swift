@@ -96,6 +96,16 @@
             let applicationElement = AXAccess.application(runningApplication.processIdentifier)
             AXAccess.setMessagingTimeout(applicationElement, 0.30)
             guard let windowElement = AXReader.focusedWindow(for: applicationElement) else {
+                // A browser whose last window was closed shows no page. Only an explicit
+                // "no value" for both window attributes counts: any other AX error still
+                // fails closed as unavailable.
+                if isBrowser, AXReader.hasNoWindow(applicationElement) {
+                    lastCaptureProvedExternalAX = Self.provesExternalAX(
+                        pid: runningApplication.processIdentifier,
+                        ownPID: ProcessInfo.processInfo.processIdentifier, protectedReadSucceeded: true)
+                    return ContextSnapshot(app: app, window: nil, focusedElement: nil, url: nil,
+                                           suppressionReason: nil)
+                }
                 return ContextSnapshot(
                     app: app,
                     window: nil,
@@ -129,14 +139,20 @@
                 )
             }
 
-            // Browser support is capability-based first. Any application exposing an AXWebArea
-            // or a page URL is treated as a web container, including new browsers and wrappers
-            // whose name or bundle identifier has never been seen by LocalHistory.
-            if !isBrowser,
-                capabilityURL != nil || AXReader.containsWebArea(windowElement)
-            {
+            // Browser support is capability-based first. An application showing a web page
+            // address (http/https with a host) is a browser, including new browsers and wrappers
+            // whose name or bundle identifier has never been seen by LocalHistory. A bare
+            // AXWebArea (Mail, Electron apps) or a file:// document only makes it a web
+            // container: its address and private windows are still read, but it is not
+            // remembered as a browser and a missing host does not suppress it under website
+            // exclusions (see websiteAllowed).
+            var showsWebPages = isBrowser
+            if !isBrowser, BrowserIdentity.isWebPageEvidence(capabilityURL) {
                 isBrowser = true
+                showsWebPages = true
                 rememberBrowser(app)
+            } else if !isBrowser, capabilityURL != nil || AXReader.containsWebArea(windowElement) {
+                isBrowser = true
             }
 
             if let capabilityURL, isBrowser {
@@ -186,12 +202,17 @@
                 // browser without a host just because URL capture was disabled.
                 if !config.captureURLs, !config.allowsWebsite(host: nil) {
                     // Inspection is separately authorized; do not cache or persist the URL.
-                    let host = privacy.inspectDomainsForExclusions
+                    let inspectedURL = privacy.inspectDomainsForExclusions
                         ? AXReader.browserURL(from: windowElement, addressFieldMarkers: config.addressFieldMarkers)
-                            .flatMap { URLComponents(string: $0)?.host }
                         : nil
+                    let host = inspectedURL.flatMap { URLComponents(string: $0)?.host }
                     clearCachedURL()
-                    if !config.allowsWebsite(host: host) {
+                    if !showsWebPages, BrowserIdentity.isWebPageEvidence(inspectedURL) {
+                        showsWebPages = true
+                        rememberBrowser(app)
+                    }
+                    if !Self.websiteAllowed(
+                        address: inspectedURL, host: host, config: config, showsWebPages: showsWebPages) {
                         return ContextSnapshot(app: app, window: nil, focusedElement: nil, url: nil,
                                                suppressionReason: .excludedDomain)
                     }
@@ -224,7 +245,9 @@
                 }
                 urlSnapshot = cachedURL
 
-                if !config.allowsWebsite(host: urlSnapshot?.host) {
+                if !Self.websiteAllowed(
+                    address: urlSnapshot?.value, host: urlSnapshot?.host, config: config,
+                    showsWebPages: showsWebPages) {
                     return ContextSnapshot(
                         app: app,
                         window: nil,
@@ -351,7 +374,8 @@
             ) else { return nil }
 
             guard let windowElement = AXReader.focusedWindow(for: applicationElement) else {
-                return .accessibilityUnavailable
+                // No window means no page to protect; any other AX error fails closed.
+                return AXReader.hasNoWindow(applicationElement) ? nil : .accessibilityUnavailable
             }
 
             let rawURL = hasDomainRules && (config.captureURLs || privacy.inspectDomainsForExclusions)
@@ -406,6 +430,19 @@
             capturesURLs: Bool
         ) -> Bool {
             capturesURLs && !isKnownBrowser
+        }
+
+        /// Website rules for one window. A real browser (catalogued, or proven by a web page
+        /// address) with no readable host fails closed under any website rule. In any other app,
+        /// a local file:// document is not a website, and a web view without a readable page host
+        /// (Mail's reading pane) follows app rules under exclusions. Under an include-only scope
+        /// that web view still fails closed: it may be an unknown browser outside the scope.
+        static func websiteAllowed(
+            address: String?, host: String?, config: RecorderConfig, showsWebPages: Bool
+        ) -> Bool {
+            if host?.isEmpty == false || showsWebPages { return config.allowsWebsite(host: host) }
+            if let address, URLComponents(string: address)?.scheme?.lowercased() == "file" { return true }
+            return config.includedDomains?.isEmpty != false
         }
 
         func element(at point: CGPoint, expectedProcessIdentifier: pid_t? = nil, parameters: ContextReadParameters) -> ElementSnapshot? {
@@ -465,13 +502,7 @@
 
             // Name markers remain only as a compatibility fast path. The capability probe above
             // is authoritative and lets unknown browsers work without adding a product-specific rule.
-            let identity = [app.name, app.bundleIdentifier ?? ""].joined(separator: " ").lowercased()
-            let browserNameMarkers = [
-                "safari", "chrome", "chromium", "firefox", "librewolf", "floorp",
-                "edge", "brave", "arc", "opera", "vivaldi", "orion", "duckduckgo",
-                "zen browser", "dia", "sigmaos", "browser",
-            ]
-            return browserNameMarkers.contains { identity.contains($0) }
+            return BrowserIdentity.isNamedBrowser(name: app.name, bundleIdentifier: app.bundleIdentifier)
         }
 
         private func isPrivateWindowCapableBrowser(
@@ -483,15 +514,7 @@
             {
                 return true
             }
-            let identity = [app.name, app.bundleIdentifier ?? ""]
-                .joined(separator: " ")
-                .lowercased()
-            let markers = [
-                "safari", "chrome", "chromium", "firefox", "librewolf", "floorp",
-                "edge", "brave", "arc", "opera", "vivaldi", "orion", "duckduckgo",
-                "zen browser", "dia", "sigmaos", "browser",
-            ]
-            return markers.contains { identity.contains($0) }
+            return BrowserIdentity.isNamedBrowser(name: app.name, bundleIdentifier: app.bundleIdentifier)
         }
     }
 #endif
