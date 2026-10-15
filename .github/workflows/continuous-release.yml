@@ -93,6 +93,32 @@ jobs:
             dist/release-manifest.json
           retention-days: 3
 
+  public-feed-cache:
+    # Not a gate: the promotion verified the feed through the API. This only reports
+    # when the public download URL (cached by GitHub) serves the same feed bytes.
+    needs: promote-prepared
+    if: needs.promote-prepared.outputs.result == 'admitted'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Wait for the public feed URL to serve the uploaded feed
+        run: |
+          set -euo pipefail
+          source scripts/sparkle_release.env
+          ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/latest-main" --jq '.assets[] | select(.name == "community-appcast.xml") | .id')"
+          WANT="$(gh api -H 'Accept: application/octet-stream' "repos/$GITHUB_REPOSITORY/releases/assets/$ID" | shasum -a 256 | cut -d' ' -f1)"
+          for attempt in $(seq 1 90); do
+            GOT="$(curl --fail --location --silent --show-error --header 'Cache-Control: no-cache' "$SPARKLE_FEED_URL" | shasum -a 256 | cut -d' ' -f1)"
+            if [[ "$GOT" == "$WANT" ]]; then echo "Public feed matches after $attempt checks."; exit 0; fi
+            sleep 10
+          done
+          echo "::warning::Public feed URL still serves an older feed after 15 minutes."
+          exit 1
+
   signing-plan:
     needs: promote-prepared
     if: always() && (github.event_name == 'workflow_dispatch' || needs.promote-prepared.outputs.result == 'fallback')

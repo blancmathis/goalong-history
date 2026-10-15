@@ -65,12 +65,18 @@ if [[ "${LOCALHISTORY_PACKAGE_STANDARD_DMG:-0}" != 1 ]] && command -v create-dmg
 else
   echo "Creating a standard Finder disk image with native hdiutil."
   ln -s /Applications "$STAGING/Applications"
-  /usr/bin/hdiutil create \
-    -volname "$DISPLAY_NAME" \
-    -srcfolder "$STAGING" \
-    -ov \
-    -format UDZO \
-    "$OUTPUT_DIR/$DMG_NAME" >/dev/null
+  # Hosted runners sometimes answer "Resource busy" (2026-10-13, run 38478515584): retry.
+  for attempt in 1 2 3 4; do
+    /usr/bin/hdiutil create \
+      -volname "$DISPLAY_NAME" \
+      -srcfolder "$STAGING" \
+      -ov \
+      -format UDZO \
+      "$OUTPUT_DIR/$DMG_NAME" >/dev/null && break
+    [[ "$attempt" -lt 4 ]] || exit 1
+    echo "hdiutil create failed (attempt $attempt); retrying." >&2
+    sleep $((attempt * 5))
+  done
 fi
 
 if [[ -n "$SIGN_IDENTITY" && "$SIGN_IDENTITY" != "-" ]]; then
