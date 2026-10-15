@@ -144,13 +144,6 @@ enum SupportReportStore {
 
     private nonisolated static let maximumReportBytes = 16 * 1_024 * 1_024
 
-    /// Copies the stored private report to `destination`. Throws, and writes nothing,
-    /// when the stored report cannot be read any more.
-    nonisolated static func copyReport(from source: URL, to destination: URL) throws {
-        let data = try SupportDiagnostics.readPrivateFile(source, maximum: maximumReportBytes)
-        try SupportReportWriter.write(data, to: destination)
-    }
-
     func revealReport() {
         guard case .ready(let url, _, _, _) = phase else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])

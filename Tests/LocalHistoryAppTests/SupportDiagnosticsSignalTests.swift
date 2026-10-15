@@ -134,15 +134,6 @@ final class SupportDiagnosticsSignalTests: XCTestCase {
         XCTAssertTrue(journal.snapshot().records.contains { $0.event == .userMarkedIssue })
     }
 
-    func testCopyingAMissingReportThrowsAndLeavesNoFile() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-copy-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let destination = directory.appendingPathComponent("copy.json")
-        XCTAssertThrowsError(try SupportRequestController.copyReport(from: directory.appendingPathComponent("missing.json"), to: destination))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
-    }
-
     func testDifferentErrorsOfOneComponentDoNotMerge() {
         func record(_ event: SupportEvent, _ values: [String: SupportValue]) -> SupportRecord {
             SupportRecord(schema: 1, revision: nil, timestamp: Date(), session: UUID(), sequence: 1, component: .capture,

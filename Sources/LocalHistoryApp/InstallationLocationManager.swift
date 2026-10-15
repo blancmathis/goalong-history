@@ -170,15 +170,17 @@
                 alert.addButton(withTitle: "Quitter")
                 return alert.runModal() == .alertFirstButtonReturn
             },
-            sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+            // NSRunningApplication state only refreshes on a turn of the main run loop,
+            // and this runs before application.run(), so the wait must spin the run loop.
+            sleep: (TimeInterval) -> Void = { RunLoop.current.run(until: Date().addingTimeInterval($0)) }
         ) throws -> Bool {
             let running = others.filter { !$0.isTerminated }
             guard !running.isEmpty else { return true }
             guard confirm() else { return false }
             running.forEach { _ = $0.terminate() }
-            var waited: TimeInterval = 0
-            while waited < timeout, running.contains(where: { !$0.isTerminated }) {
-                sleep(0.1); waited += 0.1
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline, running.contains(where: { !$0.isTerminated }) {
+                sleep(0.1)
             }
             if running.contains(where: { !$0.isTerminated }) { throw InstallationError.otherInstanceStillRunning }
             return true
