@@ -159,6 +159,13 @@ final class AmbianceTests: XCTestCase {
         XCTAssertTrue(AmbianceError.network.localizedDescription.contains("Connexion"))
         XCTAssertTrue(AmbianceError.invalidPack("taille incorrecte").localizedDescription.contains("taille incorrecte"))
     }
+    func testErrorBodyOf404IsServerUnavailableNotWrongSize() {
+        let notFound = AmbiancePackDownloader.progressFailure(status: 404, written: 9, expected: 9, packBytes: 5000)
+        XCTAssertEqual(notFound?.localizedDescription, AmbianceError.serverUnavailable.localizedDescription)
+        let wrongSize = AmbiancePackDownloader.progressFailure(status: 200, written: 9, expected: 9, packBytes: 5000)
+        XCTAssertTrue(wrongSize?.localizedDescription.contains("taille incorrecte") == true)
+        XCTAssertNil(AmbiancePackDownloader.progressFailure(status: 200, written: 10, expected: 5000, packBytes: 5000))
+    }
     func testRemoveOrphansKeepsPacksAndDoesNotFollowSymlinks() throws {
         let support = try root(), outside = try root()
         let store = AmbiancePackStore(supportDirectory: support)

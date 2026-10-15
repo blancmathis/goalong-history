@@ -40,6 +40,15 @@ enum AmbiancePackDownloader {
             && parts.percentEncodedPath == releasePath + pack.id + ".tar" && url == pack.url
     }
 
+    /// Checks the HTTP status before the size, so an error body (404 with a short
+    /// Content-Length) is never reported as a corrupt pack.
+    static func progressFailure(status: Int?, written: Int64, expected: Int64, packBytes: Int64) -> AmbianceError? {
+        if let status, status != 200 { return .serverUnavailable }
+        guard written <= packBytes, expected < 0 || expected == packBytes else {
+            return .invalidPack("taille incorrecte")
+        }
+        return nil
+    }
     static func redirectRequest(_ request: URLRequest, responseURL: URL?, initialURL: URL,
                                 pack: AmbiancePack, redirectCount: Int) -> URLRequest? {
         guard redirectCount == 1, allows(initialURL, pack: pack, redirect: false),
@@ -119,9 +128,10 @@ enum AmbiancePackDownloader {
         }
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                         totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-            guard totalBytesWritten <= pack.bytes,
-                  totalBytesExpectedToWrite < 0 || totalBytesExpectedToWrite == pack.bytes else {
-                failure = AmbianceError.invalidPack("taille incorrecte"); downloadTask.cancel(); return
+            if let failed = AmbiancePackDownloader.progressFailure(
+                status: (downloadTask.response as? HTTPURLResponse)?.statusCode,
+                written: totalBytesWritten, expected: totalBytesExpectedToWrite, packBytes: pack.bytes) {
+                failure = failed; downloadTask.cancel(); return
             }
             progress(min(1, Double(totalBytesWritten) / Double(pack.bytes)))
         }

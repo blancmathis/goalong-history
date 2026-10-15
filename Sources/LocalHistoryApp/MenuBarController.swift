@@ -441,7 +441,7 @@
                 let alert = NSAlert()
                 alert.alertStyle = .warning
                 alert.messageText = "Configuration non rechargée"
-                alert.informativeText = "config.json n’a pas pu être relu (format invalide). Les réglages précédents restent actifs."
+                alert.informativeText = "config.json n’a pas pu être relu (fichier absent ou format invalide). Les réglages précédents restent actifs."
                 alert.runModal()
                 return
             }
