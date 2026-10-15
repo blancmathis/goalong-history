@@ -6,12 +6,13 @@ import SwiftUI
 /// engagements of the day and the week, today's sessions, then the settings, folded.
 @MainActor struct ConcentrationPage: View {
     @ObservedObject private var runtime = ConcentrationRuntime.shared
+    @ObservedObject private var modules = GoalongModuleStore.shared
 
     var body: some View {
         if let controller = runtime.controller {
             ConcentrationPageContent(controller: controller)
         } else {
-            if runtime.error == nil {
+            if !modules.isEnabled(.concentration) || runtime.error == nil {
                 GoalongModuleOffNote(module: .concentration, text: "Séances, Pomodoro, plan du jour et bilan. Le module est désactivé.")
             } else {
                 Text("Concentration n’a pas pu démarrer. Vos données restent intactes.")

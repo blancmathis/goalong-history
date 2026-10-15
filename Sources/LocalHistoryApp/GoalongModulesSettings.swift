@@ -28,11 +28,14 @@ import SwiftUI
                     .buttonStyle(LHQuietButtonStyle())
                     .disabled(concentration.controller?.hasLockedBlock == true)
             }
-            if let deleteMessage {
+            if let error = concentration.error {
+                Text(FocusUIError.message(raw: error)).font(.callout)
+            } else if let deleteMessage {
                 GoalongNote(deleteMessage).accessibilityIdentifier("settings-concentration-delete-result")
-            } else if let error = concentration.error { Text(error).font(.callout) }
+            }
             GoalongNote("Un module désactivé ne tourne pas, n’installe rien et ne demande aucun accès.")
         }
+        .onChange(of: concentration.error) { if $0 != nil { deleteMessage = nil } }
         .alert("Supprimer les données Concentration ?", isPresented: $confirmingDelete) {
             Button("Annuler", role: .cancel) {}
             // A failure and a success both show a message above.
@@ -40,7 +43,8 @@ import SwiftUI
                 deleteMessage = nil
                 do {
                     try concentration.deleteData()
-                    deleteMessage = "Données Concentration supprimées."
+                    // A failed re-enable sets `concentration.error`; it must not hide behind a success note.
+                    if concentration.error == nil { deleteMessage = "Données Concentration supprimées." }
                 } catch {
                     deleteMessage = FocusUIError.message(error)
                 }
