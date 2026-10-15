@@ -64,7 +64,7 @@ consent remains required for every requested detail. Full options and limits bel
 
 **Envoyer cette journée** (the one-off send button), `send-site`, or the explicitly enabled website schedule sends the selected fields, using the specifically chosen
 upload-token file. The native sheet remembers the origin and token-file path, not the token value,
-and keeps scheduling off until the reviewed-preview activation button is used. The schedule runs only while the app is open, sends yesterday after the chosen hour, and stops on errors. It can reuse the selected devices, fields, domains and numbered parts of an already saved recap. It never repeats a one-off comment or a past contextual-session interpretation, and any active mask excludes recaps and domains. Disabling a native source stops later access; it
+and keeps scheduling off until the reviewed-preview activation button is used. The schedule runs only while the app is open, sends yesterday after the chosen hour, and stops on errors. It can reuse the selected devices, fields and domains; it never includes recap text or recap sections. It never repeats a one-off comment or a past contextual-session interpretation, and any active mask excludes domains. Disabling a native source stops later access; it
 does not retract data already submitted to the site. Manage website copies and sharing there.
 
 The native sender cannot grant a sharing audience. Existing website rules for circles, friends,
