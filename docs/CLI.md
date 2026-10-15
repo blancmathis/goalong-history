@@ -2,7 +2,7 @@
 
 The app bundle includes a bounded local `goalong` command for users and local agents. Original source histories stay read-only. Declared Goalong-side writes are the active-day Screen Time refresh, an explicitly requested proof export and `import-health`, which retains only selected compact Health days. `send-site` is a separate explicit network operation that submits selected saved data to the user's website account. The installer creates the stable link `~/.local/bin/goalong` when that directory is safe and writable. It never replaces an unrelated command already present there.
 
-**Réglages → Avancé → Outils → Terminal et agents** opens a short human guide and one complete agent brief that can be copied to the clipboard and pasted as-is into a local agent.
+**Réglages → Avancé → Terminal et agents** opens a short human guide and one complete agent brief that can be copied to the clipboard and pasted as-is into a local agent.
 
 ```bash
 goalong help
@@ -137,7 +137,7 @@ Workouts remain distinct from daily activity totals: their distance, calories an
 
 `goalong export-site DAY --structured` conserve les mêmes choix de confidentialité que l’export classique et produit le format Goalong version 3. Ajouter `--include-apps` donne les noms et budgets d’applications sélectionnés ; aucun contexte n’est inféré à partir du seul nom. Les catégories restent inconnues et les durées cumulatives ne reçoivent pas d’horaires inventés.
 
-Dans l’app, **Réglages → Avancé → Outils de partage et analyses → Structured report for productivity** produit le même aperçu avant l’envoi. Un agent peut ensuite qualifier le fichier préparé en suivant le [guide du site](https://goalong.spry-crumb-3668.chatgpt.site/assets/productivity-agent-guide.md). La collecte brute et les conversations restent locales ; leur éventuelle analyse par un fournisseur externe demande son autorisation distincte. Les règles de partage du site restent applicables après un envoi explicitement autorisé.
+Dans l’app, **Réglages → Avancé → Outils de partage et analyses → Partager un récap relu… → Rapport structuré de productivité** produit le même aperçu avant l’envoi. Un agent peut ensuite qualifier le fichier préparé en suivant le [guide du site](https://goalong.spry-crumb-3668.chatgpt.site/assets/productivity-agent-guide.md). La collecte brute et les conversations restent locales ; leur éventuelle analyse par un fournisseur externe demande son autorisation distincte. Les règles de partage du site restent applicables après un envoi explicitement autorisé.
 
 ## Session rhythm and pre-transmission choices
 
