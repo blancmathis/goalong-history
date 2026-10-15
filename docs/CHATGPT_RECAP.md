@@ -120,7 +120,12 @@ and hashes of the transient included projection. It never contains the body of a
 source conversation. A growing source is read to a pinned complete prefix; a
 rewrite, replacement or truncation remains an error.
 
-Only the bounded final assistant response is kept for up to 30 days in an
+The five-line recap is also saved on this Mac as plain JSON and Markdown in
+`chatgpt/recaps` (owner-only file permissions, not encrypted). It has no
+automatic expiry. Clearing the detailed history (all of it, a period or chosen
+days) erases the recaps of the cleared days. Retention rules do not touch it.
+
+An encrypted copy of the bounded final assistant response is kept for up to 30 days in an
 AES-256-GCM capsule with one random per-run DEK stored as a `ThisDeviceOnly`
 Keychain item. Authenticated metadata binds the execution, artifact kind, format
 and plaintext hash. Deleting the DEK first provides cryptographic deletion. The
@@ -141,8 +146,8 @@ UI no longer offers creation of a transcript copy.
 
 ## Scheduling and resource use
 
-Automatic completed-day analysis is enabled by default unless the user has
-explicitly turned it off.
+Automatic completed-day analysis is off by default. It runs only after the
+user turns it on.
 
 - One tolerant, non-repeating timer is scheduled for 00:05 local time.
 - One independent one-shot fallback wakes at 00:10 in case the main RunLoop timer did not fire; it adds no polling loop or background process.

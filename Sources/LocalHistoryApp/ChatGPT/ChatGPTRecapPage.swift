@@ -182,7 +182,7 @@
                         Image(systemName: "lock.doc")
                             .foregroundStyle(LHTheme.success)
                         Text(
-                            "Consigne : empreinte uniquement · conversations : stockage d’origine uniquement · réponse générée : chiffrée localement 30 jours"
+                            "Consigne : empreinte uniquement · conversations : stockage d’origine uniquement · bilan en cinq lignes : gardé sur ce Mac sans chiffrement, effacé avec l’historique détaillé du jour · réponse complète : copie chiffrée gardée 30 jours"
                         )
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
