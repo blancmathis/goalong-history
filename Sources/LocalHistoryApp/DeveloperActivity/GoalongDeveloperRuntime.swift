@@ -2,6 +2,19 @@
 import Foundation
 import LocalHistoryCore
 
+/// Latest watcher state per data folder, so the Activité page can show a stopped watcher.
+enum GoalongDeveloperMonitorStatus {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var values: [String: GoalongDeveloperLaneStatus] = [:]
+    static func publish(_ status: GoalongDeveloperLaneStatus, root: URL) {
+        lock.lock(); values[root.standardizedFileURL.path] = status; lock.unlock()
+    }
+    static func current(root: URL) -> GoalongDeveloperLaneStatus? {
+        lock.lock(); defer { lock.unlock() }
+        return values[root.standardizedFileURL.path]
+    }
+}
+
 /// Small lifecycle adapter: consent/project changes and global pause restart the watcher.
 final class GoalongDeveloperRuntime {
     private let monitor: GoalongDeveloperFileMonitor
