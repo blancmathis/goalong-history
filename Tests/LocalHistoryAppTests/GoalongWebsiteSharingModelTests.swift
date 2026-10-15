@@ -18,7 +18,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         let token = root.appendingPathComponent("token")
         try Data("synthetic-upload-credential-only".utf8).write(to: token)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: token.path)
-        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: consent, hiddenWebsites: { { _ in false } })
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: consent, hiddenWebsites: { { _ in false } }, hiddenApplications: { { _, _ in false } })
         let bytes = catalogBytes
         let model = GoalongWebsiteSharingModel(autoSender: scheduler, root: root,
             catalogLoader: { _, _, _ in try GoalongSiteSelectionCatalog(payload: bytes) },
@@ -32,7 +32,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
                 XCTAssertFalse(fingerprint.isEmpty)
                 onSend(data)
                 return Data(#"{"imported":1,"updated":0,"skipped":0,"verification":"unverified"}"#.utf8)
-            }, sourceConsent: consent, hiddenWebsites: { { _ in false } })
+            }, sourceConsent: consent, hiddenWebsites: { { _ in false } }, hiddenApplications: { { _, _ in false } })
         return (model, token, defaults, suite)
     }
 
@@ -57,11 +57,11 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         let bytes = Data(#"{"days":[{"telemetry":{"timezone":"Europe/Paris","devices":[{"id":"mac","name":"Mac","kind":"computer","screenSeconds":60,"apps":[{"id":"editor","name":"Editeur","seconds":60}]}],"websites":{"rows":[{"domain":"secret.example","seconds":60},{"domain":"open.example","seconds":30}]}}}]}"#.utf8)
         let hidden: () -> (String) -> Bool = { { SharingSubjectKey.normalizedHost($0) == "secret.example" } }
         var exported: [GoalongSiteExportOptions] = []
-        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: { _ in true }, hiddenWebsites: hidden)
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: { _ in true }, hiddenWebsites: hidden, hiddenApplications: { { _, _ in false } })
         let model = GoalongWebsiteSharingModel(autoSender: scheduler, root: root,
             catalogLoader: { _, _, _ in try GoalongSiteSelectionCatalog(payload: bytes) },
             exporter: { _, _, options in exported.append(options); return Data(#"{"version":2,"source":"goalong-history","days":[{"date":"2026-09-14","title":"G","summary":"","outcomes":[],"activities":[],"telemetry":{"devices":[{"id":"d","name":"O","screenSeconds":null,"hourly":null,"apps":[{"id":"editor","name":"E","seconds":60}]}],"websites":null,"agent":null}}]}"#.utf8) },
-            sourceConsent: { _ in true }, hiddenWebsites: hidden)
+            sourceConsent: { _ in true }, hiddenWebsites: hidden, hiddenApplications: { { _, _ in false } })
         model.draft.includeWebsites = true
         await model.loadCatalog()
         XCTAssertEqual(model.catalog?.websites.map(\.domain), ["open.example"])

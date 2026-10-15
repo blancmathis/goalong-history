@@ -31,7 +31,19 @@
         case exclusionsUnreadable
         case exclusionsChanged
 
-        var errorDescription: String? { description }
+        /// French text for the alert; `description` stays English for logs.
+        var errorDescription: String? {
+            switch self {
+            case .noSeals: return "Aucune minute scellée n’est disponible pour ce jour."
+            case .brokenSeal(let sequence): return "Le sceau de la minute \(sequence) n’a pas passé la vérification d’intégrité locale."
+            case .missingEvents(let sequence):
+                return "Les événements détaillés de la minute scellée \(sequence) ne sont plus disponibles. Choisissez « Entièrement privé » pour cette minute."
+            case .brokenEvent: return "Un événement n’a pas passé la vérification d’intégrité locale."
+            case .cancelled: return "Le chargement du partage a été annulé."
+            case .sourceIncomplete: return "Les données locales de ce jour sont incomplètes ou trop volumineuses pour l’export."
+            case .exclusionsUnreadable, .exclusionsChanged: return description
+            }
+        }
 
         var description: String {
             switch self {

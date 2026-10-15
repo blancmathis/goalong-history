@@ -97,6 +97,10 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     private var needsWebsiteSuggestion = true
     let autoSender: GoalongWebsiteAutoSender
     private let hiddenWebsites: () -> (String) -> Bool
+    private let hiddenApplications: () -> (String?, String) -> Bool
+    /// The `includeWebsites` value the catalog on screen was loaded with. The model's own
+    /// fallback change must not trigger another load that would erase its explanation.
+    private var loadedIncludeWebsites: Bool?
     private let root: URL
     private let catalogLoader: (URL, String, Bool) throws -> GoalongSiteSelectionCatalog
     private let exporter: (URL, String, GoalongSiteExportOptions) throws -> Data
@@ -108,8 +112,10 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
          exporter: @escaping (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) },
          sender: ((Data, String, URL, String) throws -> Data)? = nil,
          sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) },
-         hiddenWebsites: @escaping () -> (String) -> Bool = { SharingRulesStore().hiddenWebsiteFilter() }) {
+         hiddenWebsites: @escaping () -> (String) -> Bool = { SharingRulesStore().hiddenWebsiteFilter() },
+         hiddenApplications: @escaping () -> (String?, String) -> Bool = { SharingRulesStore().hiddenApplicationFilter() }) {
         self.hiddenWebsites = hiddenWebsites
+        self.hiddenApplications = hiddenApplications
         let autoSender = autoSender ?? .shared
         self.autoSender = autoSender; self.root = root; self.catalogLoader = catalogLoader
         self.exporter = exporter; self.sender = sender; self.sourceConsent = sourceConsent
@@ -179,6 +185,11 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     func invalidate() { preview = nil; reviewed = false; error = nil; status = nil }
     func connectionChanged() { generation = UUID(); invalidate(); autoSender.stop() }
     func cancelPreparation() { generation = UUID(); loading = false; invalidate() }
+    /// Called when `draft.includeWebsites` changes. A change the model made itself (fallback) reloads nothing.
+    func includeWebsitesChanged() async {
+        if loadedIncludeWebsites == draft.includeWebsites { return }
+        await loadCatalog()
+    }
 
     func loadCatalog() async {
         guard !GoalongGlobalPause.isPaused(in: root) else { error = "Pause globale : lecture suspendue."; return }
@@ -189,11 +200,20 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         do {
             let loaded = try await Task.detached(priority: .userInitiated) { try loader(root, snapshot.day, snapshot.includeWebsites) }.value
             guard generation == ticket, draft.day == snapshot.day, draft.includeWebsites == snapshot.includeWebsites else { return }
-            // Sites hidden in every share are neither listed nor preselected.
-            let value = loaded.removingWebsites(where: hiddenWebsites())
+            // Sites and applications hidden in every share are neither listed nor preselected.
+            let hiddenSite = hiddenWebsites(), hiddenApp = hiddenApplications()
+            let value = loaded.removingWebsites(where: hiddenSite).removingApplications(where: { hiddenApp($0, $1) })
             catalog = value
+            loadedIncludeWebsites = snapshot.includeWebsites
             configuringPresentation = true
             defer { configuringPresentation = false }
+            // A restored plan can still list subjects hidden since: drop them so the draft matches what is visible.
+            let visibleApps = Set(value.devices.flatMap { $0.applications.map(\.id) })
+            let allApps = Set(loaded.devices.flatMap { $0.applications.map(\.id) })
+            let prunedSites = draft.websiteDomains.filter { !hiddenSite($0) }
+            let prunedApps = draft.applicationIDs.filter { visibleApps.contains($0) || (!allApps.contains($0) && !hiddenApp($0, $0)) }
+            if prunedSites != draft.websiteDomains { draft.websiteDomains = prunedSites }
+            if prunedApps != draft.applicationIDs { draft.applicationIDs = prunedApps }
             if needsInitialSuggestion && !userChangedSelection {
                 draft.deviceIDs = Set(value.devices.prefix(12).map(\.id))
                 draft.includeApplications = true
@@ -217,7 +237,8 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             guard generation == ticket else { return }
             if snapshot.includeWebsites, let fallback = try? await Task.detached(priority: .userInitiated, operation: { try loader(root, snapshot.day, false) }).value {
                 guard generation == ticket else { return }
-                catalog = fallback
+                catalog = fallback.removingApplications(where: { hiddenApplications()($0, $1) })
+                loadedIncludeWebsites = false
                 configuringPresentation = true
                 draft.includeWebsites = false
                 configuringPresentation = false
@@ -238,7 +259,13 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         }
         let snapshot = draft, target = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let ticket = UUID(); generation = ticket
-        let options = GoalongWebsiteAutoSender.removingHiddenWebsites(snapshot.options, isHidden: hiddenWebsites())
+        let hiddenApp = hiddenApplications()
+        let catalogNames = Dictionary(catalog.devices.flatMap { $0.applications }.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        var options = GoalongWebsiteAutoSender.removingHiddenWebsites(snapshot.options, isHidden: hiddenWebsites(),
+                                                                       isApplicationHidden: hiddenApp)
+        // The catalog also knows the display names, so a rule keyed on the name still applies.
+        options.selectedApplicationIDs = options.selectedApplicationIDs?.filter { !hiddenApp($0, catalogNames[$0] ?? $0) }
+        if GoalongWebsiteAutoSender.selectsNothing(options) { error = GoalongWebsiteAutoSender.nothingSelectedMessage; return }
         if snapshot.delivery == .daily && catalog.timezone != snapshot.timezone {
             error = "Le fuseau du planning ne correspond pas à cette journée. Choisissez une journée enregistrée dans le fuseau courant avant d’activer la synchronisation."
             return
