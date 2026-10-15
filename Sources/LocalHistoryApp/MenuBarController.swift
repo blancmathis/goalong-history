@@ -25,7 +25,7 @@
         private let onOpenShare: () -> Void
         private let onTogglePause: () -> Void
         private let onRequestPermissions: () -> Void
-        private let onReloadConfig: () -> Void
+        private let onReloadConfig: () -> Bool
         private let onRetryKeychain: () -> Void
         private let onQuit: () -> Void
 
@@ -52,7 +52,7 @@
             onOpenShare: @escaping () -> Void,
             onTogglePause: @escaping () -> Void,
             onRequestPermissions: @escaping () -> Void,
-            onReloadConfig: @escaping () -> Void,
+            onReloadConfig: @escaping () -> Bool,
             onRetryKeychain: @escaping () -> Void,
             onQuit: @escaping () -> Void
         ) {
@@ -180,6 +180,8 @@
             let localEnabled = GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
             if GoalongGlobalPause.isPaused() {
                 display = ("Arrêt de confidentialité", "pause.circle.fill", "Sources et envois suspendus")
+            } else if configManager.isFailClosed {
+                display = ("Réglages illisibles", "exclamationmark.triangle.fill", ConfigManager.failClosedNotice)
             } else if !localEnabled {
                 display = ("Enregistrement désactivé", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
             } else if health.state == .storageUnavailable {
@@ -424,7 +426,13 @@
         }
 
         @objc private func reloadConfiguration() {
-            onReloadConfig()
+            guard onReloadConfig() else {
+                showInformation(
+                    title: "Configuration non rechargée",
+                    message: configManager.statusNotice ?? ConfigManager.reloadFailedNotice
+                )
+                return
+            }
             showInformation(
                 title: "Configuration rechargée",
                 message: "\(ProductIdentity.displayName) a relu config.json et actualisé ses réglages."

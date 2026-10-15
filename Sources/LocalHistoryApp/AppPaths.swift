@@ -1937,51 +1937,144 @@
         }
     }
 
+    extension Notification.Name {
+        /// Posted on the main thread when config.json becomes unreadable or readable again.
+        static let goalongConfigStatusDidChange = Notification.Name("goalong.config.status.changed")
+    }
+
     final class ConfigManager {
+        enum Failure: LocalizedError {
+            case unreadable
+
+            var errorDescription: String? { ConfigManager.failClosedNotice }
+        }
+
+        static let failClosedNotice =
+            "config.json est illisible : l’enregistrement est en pause. Corrigez le fichier puis rechargez, ou réinitialisez les réglages."
+        static let reloadFailedNotice = "config.json est illisible. Les réglages précédents restent actifs."
+
         private(set) var config: RecorderConfig
+        /// config.json existed at launch but could not be read. The active config is
+        /// `.default`, recording stays paused and saves are refused until a reload
+        /// succeeds or the user resets the settings. The file is never touched meanwhile.
+        private(set) var isFailClosed = false
+        /// The last reload failed while a valid config stayed active.
+        private(set) var reloadFailed = false
+        /// File name (no folder) of the last damaged config.json kept aside.
+        private(set) var lastDamagedBackupName: String?
+        private let fileURL: URL
 
         /// In-memory fixture; does not load or write the recording configuration.
-        init(config: RecorderConfig) { self.config = config }
+        init(config: RecorderConfig) {
+            self.config = config
+            self.fileURL = AppPaths.configFile
+        }
 
-        init() {
+        init(fileURL: URL = AppPaths.configFile, prepareStorage: () throws -> Void = AppPaths.prepare) {
+            self.fileURL = fileURL
+            var fileExisted = false
             do {
-                try AppPaths.prepare()
-                if FileManager.default.fileExists(atPath: AppPaths.configFile.path) {
-                    config = try RecorderConfig.load(from: AppPaths.configFile)
+                try prepareStorage()
+                fileExisted = FileManager.default.fileExists(atPath: fileURL.path)
+                if fileExisted {
+                    config = try RecorderConfig.load(from: fileURL)
                     try? FileManager.default.setAttributes(
-                        [.posixPermissions: 0o600], ofItemAtPath: AppPaths.configFile.path)
+                        [.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
                 } else {
                     config = .default
-                    try config.write(to: AppPaths.configFile)
+                    try config.write(to: fileURL)
                     try? FileManager.default.setAttributes(
-                        [.posixPermissions: 0o600], ofItemAtPath: AppPaths.configFile.path)
+                        [.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
                 }
             } catch {
                 config = .default
+                // A present but unreadable file holds the user's exclusions: never record
+                // with defaults in its place, and never overwrite it silently.
+                isFailClosed = fileExisted
                 Diagnostics.write("Failed to load config; using defaults: \(error)")
             }
         }
 
-        func reload() {
+        /// What Settings and the menu show while config.json is unreadable.
+        var statusNotice: String? {
+            if isFailClosed { return Self.failClosedNotice }
+            if reloadFailed { return Self.reloadFailedNotice }
+            return nil
+        }
+
+        /// Re-reads config.json. On failure the previous configuration stays active
+        /// (or recording stays paused if the file was already unreadable at launch).
+        func reload() throws {
             do {
-                config = try RecorderConfig.load(from: AppPaths.configFile)
+                config = try RecorderConfig.load(from: fileURL)
                 try? FileManager.default.setAttributes(
-                    [.posixPermissions: 0o600], ofItemAtPath: AppPaths.configFile.path)
+                    [.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+                lastDamagedBackupName = nil
+                setStatus(failClosed: false, reloadFailed: false)
                 Diagnostics.write("Configuration reloaded")
             } catch {
+                setStatus(failClosed: isFailClosed, reloadFailed: !isFailClosed)
                 Diagnostics.write("Configuration reload failed: \(error)")
+                throw error
             }
         }
 
         @discardableResult
         func save(_ newConfig: RecorderConfig) throws -> RecorderConfig {
+            guard !isFailClosed else { throw Failure.unreadable }
             let validated = newConfig.validated()
-            try validated.write(to: AppPaths.configFile)
+            // After a failed reload the file on disk holds the user's unreadable edits.
+            if reloadFailed { try moveDamagedFileAside() }
+            try validated.write(to: fileURL)
             try? FileManager.default.setAttributes(
-                [.posixPermissions: 0o600], ofItemAtPath: AppPaths.configFile.path)
+                [.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
             config = validated
+            setStatus(failClosed: false, reloadFailed: false)
             Diagnostics.write("Configuration saved from the dashboard")
             return validated
+        }
+
+        /// The only way out of the unreadable state besides a successful reload: keep the
+        /// unreadable file aside as config.damaged-<date>.json, then write the defaults.
+        /// Returns the backup file name, if a file was kept.
+        @discardableResult
+        func resetToDefaults() throws -> String? {
+            let backup = try moveDamagedFileAside()
+            let defaults = RecorderConfig.default.validated()
+            try defaults.write(to: fileURL)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            config = defaults
+            setStatus(failClosed: false, reloadFailed: false)
+            Diagnostics.write("Configuration reset to defaults")
+            return backup
+        }
+
+        private func setStatus(failClosed: Bool, reloadFailed: Bool) {
+            guard failClosed != isFailClosed || reloadFailed != self.reloadFailed else { return }
+            isFailClosed = failClosed
+            self.reloadFailed = reloadFailed
+            NotificationCenter.default.post(name: .goalongConfigStatusDidChange, object: self)
+        }
+
+        /// Keeps the user's unreadable file (exclusion lists) before it is overwritten.
+        @discardableResult
+        private func moveDamagedFileAside() throws -> String? {
+            let fm = FileManager.default
+            guard fm.fileExists(atPath: fileURL.path) else { return nil }
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            let folder = fileURL.deletingLastPathComponent()
+            var name = "config.damaged-\(stamp).json"
+            var index = 1
+            while fm.fileExists(atPath: folder.appendingPathComponent(name).path) {
+                name = "config.damaged-\(stamp)-\(index).json"
+                index += 1
+            }
+            let target = folder.appendingPathComponent(name, isDirectory: false)
+            try fm.moveItem(at: fileURL, to: target)
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+            lastDamagedBackupName = name
+            return name
         }
     }
 

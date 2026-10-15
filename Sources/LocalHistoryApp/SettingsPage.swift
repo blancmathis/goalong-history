@@ -37,7 +37,9 @@ import AppKit
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 Text(pane.title).goalongPageTitle()
-                content
+                GoalongConfigStatusBanner(model: model)
+                // While config.json is unreadable, nothing may be saved over it.
+                content.disabled(model.configLocked && pane != .home)
             }
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
             .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 40)
@@ -362,6 +364,42 @@ enum SettingsPane: Hashable {
     }
 }
 /// Version, last check and the one relevant action, in plain words.
+/// config.json could not be read: says what is applied and offers the only ways out.
+@MainActor struct GoalongConfigStatusBanner: View {
+    @ObservedObject var model: DashboardViewModel
+    @State private var confirmingReset = false
+
+    var body: some View {
+        if let notice = model.configNotice {
+            VStack(alignment: .leading, spacing: 10) {
+                Label(notice, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Button("Ouvrir config.json") { model.openConfiguration() }.buttonStyle(LHQuietButtonStyle())
+                    Button("Recharger") { model.reloadConfigurationFromSettings() }.buttonStyle(LHSecondaryButtonStyle())
+                    if model.configLocked {
+                        Button("Réinitialiser les réglages…") { confirmingReset = true }.buttonStyle(LHQuietButtonStyle())
+                    }
+                }
+            }
+            .padding(14)
+            .background(LHTheme.warning.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityIdentifier("settings-config-unreadable")
+            .alert("Réinitialiser les réglages ?", isPresented: $confirmingReset) {
+                Button("Annuler", role: .cancel) {}
+                Button("Réinitialiser", role: .destructive) { model.resetConfigurationFromSettings() }
+            } message: {
+                Text("Le fichier illisible est conservé à côté sous le nom config.damaged-<date>.json. Les réglages par défaut le remplacent.")
+            }
+        } else if let backup = model.configBackupName {
+            Text("Ancien fichier conservé : \(backup)")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .accessibilityIdentifier("settings-config-backup")
+        }
+    }
+}
+
 @MainActor struct GoalongUpdateStatusRow: View {
     @ObservedObject private var updates = SoftwareUpdateManager.shared
 
