@@ -1265,7 +1265,7 @@ enum FocusUIError {
         case .locked: return "Le blocage de cette phase est verrouillé jusqu’à sa fin."
         case .invalidArgument: return "Vérifiez le texte et les durées."
         case .notFound: return "Cet élément n’existe plus."
-        case .storageFailed: return "Enregistrement impossible. Les données déjà enregistrées restent intactes."
+        case .storageFailed: return "Enregistrement impossible. Les données déjà enregistrées restent intactes ; Goalong réessaie chaque minute."
         case .moduleDisabled: return "Activez Blocage dans Réglages › Modules pour bloquer pendant une séance."
         case .appNotRunning: return "Goalong ne répond pas."
         case nil: return raw.count < 120 && !raw.contains("Error") ? raw : "L’action n’a pas abouti."

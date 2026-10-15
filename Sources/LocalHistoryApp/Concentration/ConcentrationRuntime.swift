@@ -81,8 +81,9 @@ import LocalHistoryQueryCLI
     /// Minutes, not seconds: one wake per minute while a session runs, none otherwise.
     private func updateMenuBar(phase: FocusPhase?, session: FocusSession?) {
         menuBarTimer?.invalidate(); menuBarTimer = nil
-        guard let session, let phase, phase.kind != .ended else { onMenuBarText?(nil); return }
-        let now = Date(), text: String, next: TimeInterval
+        let now = Date()
+        guard let session, let phase, phase.kind != .ended, phase.endsAt.map({ $0 > now }) ?? true else { onMenuBarText?(nil); return }
+        let text: String, next: TimeInterval
         if let end = phase.endsAt {
             let left = max(0, end.timeIntervalSince(now)), minutes = max(1, Int((left / 60).rounded(.up)))
             text = (phase.isWork ? "" : "Pause ") + "\(minutes) min"
