@@ -24,6 +24,21 @@ final class GoalongSiteSubmissionIntentTests: XCTestCase {
         }
     }
 
+    func testSubmissionErrorsReachTheUIInFrenchAndStayEnglishForTheCLI() throws {
+        for status in [301, 401, 403, 409, 413, 429, 500] {
+            XCTAssertThrowsError(try GoalongSiteSubmission.validatedResponse(Data(), status: status)) {
+                let text = goalongUserMessage($0)
+                XCTAssertFalse(text.isEmpty)
+                for english in ["website", "Upload", "token", "The "] { XCTAssertFalse(text.contains(english), "\(status): \(text)") }
+                XCTAssertTrue(String(describing: $0).contains("website") || String(describing: $0).contains("Upload"))
+                if status == 401 { XCTAssertTrue(text.contains("Relier mon Mac")) }
+            }
+        }
+        XCTAssertThrowsError(try GoalongSiteSubmission.tokenFileURL(path: "relative")) {
+            XCTAssertFalse(goalongUserMessage($0).contains("absolute local path"))
+        }
+    }
+
     func testAnExplicitRetryRetainsItsOriginalOperationAndBytes() throws {
         let endpoint = try GoalongSiteSubmission.endpoint(origin: "https://example.invalid")
         let payload = Data("reviewed-selection".utf8)

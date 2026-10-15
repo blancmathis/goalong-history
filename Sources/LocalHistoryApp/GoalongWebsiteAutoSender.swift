@@ -200,7 +200,7 @@ import LocalHistoryCore
         } catch {
             SupportDiagnostics.shared.failure(error, component: .sharing)
             stop()
-            status = "Synchronisation en pause : \(goalongUserMessage(error)). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre."
+            status = "Synchronisation en pause : \(goalongUserMessage(error).trimmingCharacters(in: CharacterSet(charactersIn: ".…"))). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre."
         }
     }
     deinit { timer?.invalidate() }

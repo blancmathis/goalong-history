@@ -59,8 +59,13 @@ public struct GoalongSiteExportOptions: Codable {
 
 public enum GoalongSiteExportError: Error, CustomStringConvertible {
     case invalid(String)
+    /// English text for the CLI and logs, French text for the app UI.
+    case localized(String, french: String)
     public var description: String {
-        switch self { case .invalid(let message): return message }
+        switch self { case .invalid(let message), .localized(let message, _): return message }
+    }
+    public var userMessage: String {
+        switch self { case .invalid(let message): return message; case .localized(_, let french): return french }
     }
 }
 
@@ -68,7 +73,7 @@ public enum GoalongSiteExportError: Error, CustomStringConvertible {
 /// (URLError, DecodingError, NSError) never leak raw "Error Domain=..." text. Raw errors
 /// still go to SupportDiagnostics at the call sites.
 public func goalongUserMessage(_ error: Error) -> String {
-    if let curated = error as? GoalongSiteExportError { return curated.description }
+    if let curated = error as? GoalongSiteExportError { return curated.userMessage }
     if let localized = error as? LocalizedError, let text = localized.errorDescription, !text.isEmpty { return text }
     if error is URLError {
         return "Le site n’a pas pu être joint. Vérifiez votre connexion, puis réessayez."
