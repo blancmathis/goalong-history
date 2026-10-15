@@ -174,5 +174,35 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
         XCTAssertTrue(onboarding.contains("showingLocalActivation = true"))
         XCTAssertFalse(onboarding.contains("let firstReview = !privacyReviewed && !consents.isEnabled"))
     }
+    func testReloadReportsInvalidConfigAndKeepsPreviousSettings() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-reload-\(UUID())")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("config.json")
+        var custom = RecorderConfig.default
+        custom.captureClicks = !custom.captureClicks
+        try custom.write(to: file)
+        let manager = ConfigManager(config: .default)
+        XCTAssertTrue(manager.reload(from: file))
+        XCTAssertEqual(manager.config.captureClicks, custom.captureClicks)
+        try Data("{\"captureClicks\": true,}".utf8).write(to: file)
+        XCTAssertFalse(manager.reload(from: file))
+        XCTAssertEqual(manager.config.captureClicks, custom.captureClicks)
+    }
+    func testClassicMenuTellsInputTapFailureApartFromWaiting() {
+        func display(_ health: CaptureHealthState) -> (title: String, symbol: String, description: String) {
+            MenuBarController.statusDisplay(health: health, localEnabled: true, globalPaused: false, recording: true, suppression: nil)
+        }
+        let failed = display(.inputTapUnavailable)
+        XCTAssertEqual(failed.title, CaptureHealthState.inputTapUnavailable.frenchTitle)
+        XCTAssertTrue(failed.description.contains("Surveillance de l’entrée"))
+        let waiting = display(.awaitingInputEvidence)
+        XCTAssertEqual(waiting.title, "Interactions en attente")
+        XCTAssertTrue(waiting.description.contains("premier événement"))
+        XCTAssertEqual(MenuBarController.statusDisplay(health: .inputTapUnavailable, localEnabled: true, globalPaused: false,
+            recording: true, suppression: nil).title, "Interactions non reçues")
+        XCTAssertEqual(MenuBarController.statusDisplay(health: .permissionRequired, localEnabled: true, globalPaused: false,
+            recording: true, suppression: nil).title, "Autorisation macOS à vérifier")
+    }
 }
 #endif
