@@ -47,7 +47,9 @@ import LocalHistoryCore
     init(defaults: UserDefaults = .standard, root: URL = AppPaths.applicationSupportDirectory,
          exporter: @escaping (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) },
          sender: ((Data, String, URL, String?) throws -> Data)? = nil,
-         sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) }) {
+         sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) },
+         hiddenWebsites: @escaping () -> (String) -> Bool = { SharingRulesStore().hiddenWebsiteFilter() }) {
+        self.hiddenWebsites = hiddenWebsites
         self.defaults = defaults; self.root = root; self.exporter = exporter; self.sender = sender
         self.sourceConsent = sourceConsent
         let saved = configuration()
@@ -69,6 +71,13 @@ import LocalHistoryCore
     private func store(_ value: Configuration) throws { defaults.set(try JSONEncoder().encode(value), forKey: key) }
     static func timeLabel(_ value: Configuration) -> String {
         String(format: "%02d:%02d", value.hour ?? 9, value.minute ?? 0) + " · " + (value.timeZoneIdentifier ?? TimeZone.current.identifier)
+    }
+    private let hiddenWebsites: () -> (String) -> Bool
+    /// Sites hidden in every share never leave, even when an older plan still lists them.
+    static func removingHiddenWebsites(_ options: GoalongSiteExportOptions, isHidden: (String) -> Bool) -> GoalongSiteExportOptions {
+        var value = options
+        value.selectedWebsiteDomains = options.selectedWebsiteDomains?.filter { !isHidden($0) }
+        return value
     }
     static func dailyOptions(_ options: GoalongSiteExportOptions) throws -> GoalongSiteExportOptions {
         guard !options.deviceIDs.isEmpty, options.deviceIDs.count <= 12,
@@ -104,7 +113,7 @@ import LocalHistoryCore
         guard (0...23).contains(hour), (0...59).contains(minute), TimeZone(identifier: timeZoneIdentifier) != nil else {
             throw GoalongSiteExportError.invalid("Choisissez une heure et un fuseau horaire valides.")
         }
-        let selected = try Self.dailyOptions(options)
+        let selected = Self.removingHiddenWebsites(try Self.dailyOptions(options), isHidden: hiddenWebsites())
         guard sourceConsent(selected) else { throw GoalongSiteExportError.invalid("Une source sélectionnée est désactivée dans les réglages.") }
         var value = Configuration(origin: origin, tokenPath: tokenPath, options: selected, hour: hour,
                                   minute: minute, timeZoneIdentifier: timeZoneIdentifier, credentialFingerprint: SHA256Digest.hashHex(Data(token.utf8)))
@@ -156,7 +165,7 @@ import LocalHistoryCore
         let day = formatter.string(from: previous)
         guard current.lastAttempt != day else { return }
         do {
-            current.options = try Self.dailyOptions(current.options)
+            current.options = Self.removingHiddenWebsites(try Self.dailyOptions(current.options), isHidden: hiddenWebsites())
             guard sourceConsent(current.options) else {
                 stop(); status = "Synchronisation arrêtée : une source est désactivée."; return
             }

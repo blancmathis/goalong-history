@@ -102,6 +102,13 @@
             lock.withValue { document.rules }
         }
 
+        /// True for a website the user hid in every share (explicit rule, or a hidden default).
+        /// Reads the rules once, so callers can test many hosts cheaply.
+        func hiddenWebsiteFilter() -> (String) -> Bool {
+            let (rules, fallback) = lock.withValue { (document.rules, document.defaultVisibility) }
+            return { host in (rules[SharingSubjectKey.website(host: host)] ?? fallback) == .hidden }
+        }
+
         func visibility(for key: String) -> SharingVisibility {
             lock.withValue { document.rules[key] ?? document.defaultVisibility }
         }
