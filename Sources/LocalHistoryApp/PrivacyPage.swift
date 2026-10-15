@@ -431,12 +431,14 @@
                     )
 
                     HStack(spacing: 13) {
-                        Image(systemName: "checkmark.shield.fill")
+                        let suspended = model.deviceTrustTier == "unavailable"
+                        let tint = suspended ? LHTheme.warning : LHTheme.success
+                        Image(systemName: suspended ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
                             .font(.system(size: 23, weight: .semibold))
-                            .foregroundStyle(LHTheme.success)
+                            .foregroundStyle(tint)
                             .frame(width: 48, height: 48)
                             .background(
-                                LHTheme.success.opacity(0.1), in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 13, style: .continuous)
                             )
                         VStack(alignment: .leading, spacing: 4) {
                             Text(model.deviceProtectionTitle)
@@ -454,7 +456,7 @@
                             Text(notice)
                                 .font(.system(size: 12, weight: .medium))
                             Spacer()
-                            if notice.hasPrefix("Preuves suspendues") {
+                            if notice == DeviceTrustState.shared.sealingSuspendedNotice {
                                 Button("Réessayer") { model.onRetryKeychain() }
                             } else {
                                 Button("Compris") { DeviceTrustState.acknowledgeRotation() }

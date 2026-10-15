@@ -87,6 +87,12 @@
             XCTAssertTrue(sealer.runtimeSnapshot.signingSuspended)
         }
 
+        func testUnavailableTierDoesNotClaimAKey() {
+            let info = UnavailableDeviceIdentity(status: errSecInteractionNotAllowed, deviceID: nil).info
+            XCTAssertEqual(info.protectionTitle, "Signature suspendue")
+            XCTAssertFalse(info.protectionSummary.contains("sont signés par"))
+        }
+
         func testIdentityChangeSetsAVisibleRotationFlag() throws {
             let suite = "goalong-identity-test-\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

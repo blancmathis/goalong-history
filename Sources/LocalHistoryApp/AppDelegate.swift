@@ -848,6 +848,15 @@
                     case .success(let identity):
                         self.deviceIdentityStartup = DeviceIdentityStartup(
                             identity: identity, info: identity.info, unavailableStatus: nil)
+                        if self.screenTimeRepository == nil {
+                            do {
+                                self.screenTimeRepository = try GoalongScreenTimeRepositoryProvider.repository(
+                                    rootDirectory: AppPaths.screenTimeDirectory,
+                                    deviceID: identity.info.deviceID)
+                            } catch {
+                                Diagnostics.write("Screen Time repository unavailable after keychain retry: \(error)")
+                            }
+                        }
                         self.minuteSealer.resumeSigning(with: identity)
                         self.dashboardViewModel.updateDeviceInfo(identity.info)
                         ChatGPTRecapRuntime.shared.configure(deviceID: identity.info.deviceID)
@@ -929,6 +938,10 @@
                             switch semanticResult {
                             case .failure(let error):
                                 derivedPlan.executeAfterSemanticFailure()
+                                MainActor.assumeIsolated {
+                                    GoalongWorkAgent.shared.cancel()
+                                    GoalongWorkStore.shared.removeAll()
+                                }
                                 completeHistoryClear(
                                     .failure(error),
                                     suspension: suspension,

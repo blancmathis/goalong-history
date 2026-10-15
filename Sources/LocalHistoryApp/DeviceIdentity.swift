@@ -46,6 +46,7 @@
             switch trustTier {
             case "secure_enclave": return "Protégée par la Secure Enclave"
             case "keychain_software": return "Protégée par le Trousseau"
+            case "unavailable": return "Signature suspendue"
             default: return "Clé logicielle locale"
             }
         }
@@ -56,6 +57,8 @@
                 return "Les engagements minute par minute sont signés par une clé P-256 non exportable de la Secure Enclave."
             case "keychain_software":
                 return "Les engagements minute par minute sont signés par une clé P-256 logicielle conservée dans le Trousseau."
+            case "unavailable":
+                return "Le Trousseau est inaccessible : les engagements minute par minute ne sont pas signés pendant ce lancement."
             default:
                 return "Les engagements minute par minute sont signés par une clé P-256 locale réservée à votre compte (version compilée localement)."
             }
