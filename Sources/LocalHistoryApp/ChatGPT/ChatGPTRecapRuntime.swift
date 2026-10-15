@@ -1479,6 +1479,13 @@
                 clearAutomaticRetry(for: completedDay)
                 return
             }
+            // A wake or clock change must not bypass the automatic retry cap.
+            if automaticRetryDay == Calendar.current.startOfDay(for: completedDay),
+                automaticRetryWorkItem != nil
+                    || automaticRetryAttempt >= Self.automaticRetryDelays.count
+            {
+                return
+            }
             generateRecap(for: completedDay, automatic: true)
         }
 
