@@ -148,6 +148,10 @@ explicitly turned it off.
 - One independent one-shot fallback wakes at 00:10 in case the main RunLoop timer did not fire; it adds no polling loop or background process.
 - The timer analyzes only the day that just ended.
 - On app launch, one delayed catch-up checks yesterday only.
+- These timers count only awake time. After a wake from sleep, a new calendar day,
+  or a clock or time zone change, Goalong re-arms them and, about 45 seconds later,
+  checks yesterday once. If the Mac sleeps across several midnights, only the
+  last completed day is recapped automatically.
 - Transient startup or session failures retry at most three times, after 15 minutes, 1 hour and 3 hours.
 - Existing valid reports suppress duplicate work.
 - There is no fifteen-minute polling loop and no unbounded historical backlog.

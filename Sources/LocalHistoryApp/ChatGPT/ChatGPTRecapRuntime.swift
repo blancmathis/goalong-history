@@ -499,6 +499,7 @@
         private var automaticRetryDay: Date?
         private var automaticRetryAttempt = 0
         private var started = false
+        private var systemClockObservers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
 
         private static let automaticRecapsKey = "chatgptRecap.automaticEnabled"
         private static let automaticRetryDelays: [TimeInterval] = [15 * 60, 60 * 60, 3 * 60 * 60]
@@ -530,8 +531,9 @@
             },
             automaticBoundaryFallbackScheduler: @escaping (Date, DispatchWorkItem) -> Void = {
                 fireDate, workItem in
+                // Wall time keeps counting while the Mac sleeps.
                 DispatchQueue.main.asyncAfter(
-                    deadline: .now() + max(fireDate.timeIntervalSinceNow, 0),
+                    wallDeadline: .now() + max(fireDate.timeIntervalSinceNow, 0),
                     execute: workItem
                 )
             },
@@ -571,6 +573,7 @@
         }
 
         deinit {
+            for observer in systemClockObservers { observer.center.removeObserver(observer.token) }
             timer?.invalidate()
             delayedAutomaticWorkItem?.cancel()
             automaticRetryWorkItem?.cancel()
@@ -609,6 +612,7 @@
             guard analysisConsentProvider(), analysisSelectionProvider().isValid(for: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)) else { return }
             guard !started else { return }
             started = true
+            installSystemClockObservers()
             scheduleNextAutomaticRecap()
             scheduleAutomaticBoundaryFallback()
             guard checkPreviousDayImmediately else { return }
@@ -629,7 +633,42 @@
             automaticBoundaryFallbackWorkItem?.cancel()
             automaticBoundaryFallbackWorkItem = nil
             started = false
+            removeSystemClockObservers()
             invalidateActiveRun(closeSession: true)
+        }
+
+        /// The daily timers count only awake time. A wake, a new day or a clock change re-arms
+        /// them and checks yesterday once the network and the journal have settled.
+        private func installSystemClockObservers() {
+            guard systemClockObservers.isEmpty else { return }
+            let handler: (Notification) -> Void = { [weak self] _ in self?.handleWakeOrDayChange() }
+            let workspace = NSWorkspace.shared.notificationCenter
+            systemClockObservers.append((workspace, workspace.addObserver(
+                forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: handler)))
+            for name in [Notification.Name.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+                systemClockObservers.append((.default, NotificationCenter.default.addObserver(
+                    forName: name, object: nil, queue: .main, using: handler)))
+            }
+        }
+
+        private func removeSystemClockObservers() {
+            for observer in systemClockObservers { observer.center.removeObserver(observer.token) }
+            systemClockObservers.removeAll()
+        }
+
+        private func handleWakeOrDayChange() {
+            guard started else { return }
+            scheduleNextAutomaticRecap()
+            scheduleAutomaticBoundaryFallback()
+            guard automaticRecapsEnabled else { return }
+            delayedAutomaticWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.started else { return }
+                self.delayedAutomaticWorkItem = nil
+                self.maybeGenerateAutomaticRecap()
+            }
+            delayedAutomaticWorkItem = workItem
+            delayedAutomaticScheduler(workItem)
         }
 
         /// Invalidates UI callbacks and interrupts any active recap session before the
@@ -1352,6 +1391,10 @@
             }
 
             var automaticRetryAttemptForTesting: Int { automaticRetryAttempt }
+
+            func handleWakeOrDayChangeForTesting() { handleWakeOrDayChange() }
+
+            var observesSystemClockForTesting: Bool { !systemClockObservers.isEmpty }
 
             var hasAutomaticBoundaryFallbackForTesting: Bool {
                 automaticBoundaryFallbackWorkItem != nil

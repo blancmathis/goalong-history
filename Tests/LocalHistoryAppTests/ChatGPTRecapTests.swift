@@ -2071,6 +2071,62 @@
             XCTAssertFalse(runtime.hasAutomaticBoundaryFallbackForTesting)
         }
 
+        func testWakeOrDayChangeReArmsTimersAndChecksYesterday() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-recap-wake")
+            defer { try? FileManager.default.removeItem(at: container) }
+            var fallbackItems: [DispatchWorkItem] = []
+            var delayedItems: [DispatchWorkItem] = []
+            var consent = true
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(
+                    rootDirectory: container.appendingPathComponent("history", isDirectory: true)
+                ),
+                recapsDirectory: container.appendingPathComponent("recaps", isDirectory: true),
+                executableLocator: { nil },
+                sessionFactory: { _ in throw NSError(domain: "ChatGPTRecapTests", code: 103) },
+                directoryOpener: { _ in },
+                fileRevealer: { _ in },
+                delayedAutomaticScheduler: { delayedItems.append($0) },
+                automaticRetryScheduler: { _, _ in },
+                automaticBoundaryFallbackScheduler: { _, workItem in fallbackItems.append(workItem) },
+                analysisConsentProvider: { consent },
+                analysisSelectionProvider: {
+                    var value = GoalongAnalysisSelection(); value.version = 1; value.revision = "test-approved"; value.reviewed = true; value.computer = true
+                    value.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+                    return value
+                }
+            )
+            runtime.configure(deviceID: "wake-test-device")
+            runtime.automaticRecapsEnabled = true
+            runtime.start(checkPreviousDayImmediately: false)
+            defer { runtime.stop() }
+            XCTAssertTrue(runtime.observesSystemClockForTesting)
+            XCTAssertEqual(fallbackItems.count, 1)
+            XCTAssertTrue(delayedItems.isEmpty)
+
+            runtime.handleWakeOrDayChangeForTesting()
+            XCTAssertEqual(fallbackItems.count, 2, "the fallback is re-armed on wall time")
+            XCTAssertTrue(fallbackItems[0].isCancelled)
+            XCTAssertEqual(delayedItems.count, 1)
+
+            // Consent withdrawn meanwhile: the delayed check does nothing.
+            consent = false
+            delayedItems[0].perform()
+            XCTAssertNotEqual(runtime.connectionState, .codexUnavailable)
+
+            // With consent, the check tries to recap yesterday (here Codex is absent).
+            consent = true
+            runtime.handleWakeOrDayChangeForTesting()
+            XCTAssertEqual(delayedItems.count, 2)
+            delayedItems[1].perform()
+            XCTAssertEqual(runtime.connectionState, .codexUnavailable)
+
+            runtime.stop()
+            XCTAssertFalse(runtime.observesSystemClockForTesting)
+            runtime.handleWakeOrDayChangeForTesting()
+            XCTAssertEqual(delayedItems.count, 2, "a stopped runtime ignores wake events")
+        }
+
         func testAutomaticRecapCannotStartWithoutGoalongConsent() throws {
             let container = try makeTemporaryDirectory(prefix: "goalong-recap-no-consent")
             defer { try? FileManager.default.removeItem(at: container) }
