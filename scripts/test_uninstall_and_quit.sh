@@ -55,4 +55,14 @@ GOALONG_QUIT_WAIT_TENTHS=5 quit_running_goalong "$POLITE_NAME" "$STUBBORN_NAME"
 for needle in '--uninstall-agent-integrations' 'reset SystemPolicyAllFiles' 'reset Calendar' 'reset Reminders'; do
   grep -qF -- "$needle" "$SCRIPT_DIR/../uninstall.sh" || fail "uninstall.sh does not run: $needle"
 done
+grep -qF -- "grep -qaF -- '--uninstall-agent-integrations'" "$SCRIPT_DIR/../uninstall.sh" || fail "uninstall.sh does not guard the flag call."
+# Behavior of the guard: a stub without the flag must not be run; a stub with the flag must be.
+printf '#!/bin/bash\ntouch "%s/ran-old"\n' "$WORK" > "$WORK/old-stub"
+printf '#!/bin/bash\n# --uninstall-agent-integrations\ntouch "%s/ran-new"\n' "$WORK" > "$WORK/new-stub"
+chmod +x "$WORK/old-stub" "$WORK/new-stub"
+for stub in old-stub new-stub; do
+  if /usr/bin/grep -qaF -- '--uninstall-agent-integrations' "$WORK/$stub"; then "$WORK/$stub"; fi
+done
+[[ ! -e "$WORK/ran-old" ]] || fail "Stub without the flag was run."
+[[ -e "$WORK/ran-new" ]] || fail "Stub with the flag was not run."
 echo "Uninstall and quit tests passed."
