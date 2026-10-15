@@ -146,6 +146,7 @@ extension GoalongWorkSharingFilter {
     /// 15 minutes, another day once per launch, and nothing while a daily report runs.
     func classifyIfNeeded(_ days: [GoalongLocalAnalytics.Day], now: Date = Date()) {
         guard store.automatic, !isRunning, readiness == .ready, !ChatGPTRecapRuntime.shared.isBusyWithCodex else { return }
+        if rerunRequested { runPendingRerun(); return }
         let calendar = Calendar.current
         for day in days.reversed() where day.state == .ready && day.seconds(.unclassified) >= 120 {
             let today = calendar.isDate(day.date, inSameDayAs: now)
@@ -179,6 +180,11 @@ extension GoalongWorkSharingFilter {
         let state = readiness
         guard state == .ready else {
             if userInitiated { lastError = state.message }
+            return
+        }
+        if !userInitiated, ChatGPTRecapRuntime.shared.isBusyWithCodex {
+            // Codex is in use by a recap, an account check or a connection: retry quietly later.
+            rerunRequested = true
             return
         }
         if userInitiated, ChatGPTRecapRuntime.shared.isBusyWithCodex {
@@ -281,6 +287,12 @@ extension GoalongWorkSharingFilter {
                     + (rest > 0 ? " \(rest) autre\(rest > 1 ? "s" : "") au prochain passage." : ""))
             } catch {
                 guard operation == id else { return }
+                if !userInitiated, Self.isHomeBusy(error) {
+                    // Lost a race for the Codex home: not a failure, no backoff, try again later.
+                    attempts[start] = nil; rerunRequested = true
+                    runningDay = nil; progress = nil
+                    return
+                }
                 attempts[start] = (Date(), true)
                 SupportDiagnostics.shared.failure(error, component: .analysis)
                 lastError = (error as? LocalizedError)?.errorDescription ?? "Le classement n’a pas abouti. Réessayez."
@@ -304,11 +316,16 @@ extension GoalongWorkSharingFilter {
 
     /// Starts the run asked for while another one was going, through the usual guards.
     private func runPendingRerun() {
-        guard rerunRequested, !isRunning else { return }
+        guard rerunRequested, !isRunning, !ChatGPTRecapRuntime.shared.isBusyWithCodex else { return }
         rerunRequested = false
         attempts[Calendar.current.startOfDay(for: Date())] = nil
-        guard store.automatic, !ChatGPTRecapRuntime.shared.isGenerating else { return }
+        guard store.automatic else { return }
         classify(day: Date(), userInitiated: false)
+    }
+
+    nonisolated static func isHomeBusy(_ error: Error) -> Bool {
+        if case CodexAppServerError.homeBusy = error { return true }
+        return false
     }
 
     static func dayString(_ date: Date, calendar: Calendar = .current) -> String {

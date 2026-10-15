@@ -97,5 +97,10 @@ final class GoalongWorkAgentTests: XCTestCase {
         XCTAssertTrue(source.contains("classified += applied.count"), "Only stored verdicts are reported as classified")
         XCTAssertTrue(source.contains("prompt(request, definition: sharedDefinition)"), "The prompt reads the masked definition")
     }
+
+    func testHomeBusyIsRecognisedAsRetryLater() {
+        XCTAssertTrue(GoalongWorkAgent.isHomeBusy(CodexAppServerError.homeBusy))
+        XCTAssertFalse(GoalongWorkAgent.isHomeBusy(CodexAppServerError.executableUnavailable))
+    }
 }
 #endif
