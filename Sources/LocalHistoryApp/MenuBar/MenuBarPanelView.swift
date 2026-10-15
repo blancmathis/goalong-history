@@ -156,8 +156,8 @@
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 8)
                 PanelIconButton(
-                    symbol: model.consentOff ? "gearshape.fill" : (paused ? "play.fill" : "pause.fill"),
-                    label: model.consentOff ? "Configurer l’enregistrement…" : (paused ? "Reprendre le suivi" : "Mettre le suivi en pause"),
+                    symbol: model.consentOff || model.globalPaused ? "gearshape.fill" : (paused ? "play.fill" : "pause.fill"),
+                    label: model.headerActionLabel,
                     prominent: paused,
                     action: model.togglePause
                 )

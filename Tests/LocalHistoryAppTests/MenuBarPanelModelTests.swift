@@ -137,6 +137,17 @@ final class MenuBarPanelModelTests: XCTestCase {
         XCTAssertTrue(model.concentrationEnabled)
     }
 
+    @MainActor func testGlobalPauseHeaderLabelSaysItOpensSettingsNotManualResume() {
+        let f = fixture(), model = f.model()
+        f.globallyPaused.paused = true; model.refreshRuntimeState()
+        XCTAssertTrue(model.globalPaused)
+        XCTAssertEqual(model.headerActionLabel, "\(GoalongGlobalPauseText.resume)…")
+        XCTAssertNotEqual(model.headerActionLabel, "Reprendre le suivi")
+        f.globallyPaused.paused = false; model.refreshRuntimeState()
+        XCTAssertFalse(model.globalPaused)
+        XCTAssertEqual(model.headerActionLabel, "Mettre le suivi en pause")
+    }
+
     @MainActor func testConsentOffFlagIsSetOnlyForConsent() {
         let f = fixture(), model = f.model()
         f.consent = false; model.refreshRuntimeState(); XCTAssertTrue(model.consentOff)
