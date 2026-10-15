@@ -94,6 +94,8 @@ extension GoalongWorkSharingFilter {
 
 /// Runs the user's definition over the contexts of a day through the connected ChatGPT
 /// account (isolated, tool-less Codex thread). Unknown contexts are sent longest first; automatic unclear verdicts may receive bounded daily reassessment.
+struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
+
 @MainActor final class GoalongWorkAgent: ObservableObject {
     static let shared = GoalongWorkAgent()
 
@@ -207,10 +209,10 @@ extension GoalongWorkSharingFilter {
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let observation = await Task.detached(priority: .utility) {
+                let observation = await Self.detachedForwardingCancellation(priority: .utility) {
                     GoalongWorkClassification.observe(root: root, day: start, calendar: calendar,
                                                       shouldContinue: { !Task.isCancelled })
-                }.value
+                }
                 guard operation == id else { return }
                 guard let observation else {
                     throw GoalongWorkClassification.Failure.invalid("La journée n’a pas pu être lue entièrement. Réessayez ; rien n’a été envoyé.")
@@ -223,10 +225,10 @@ extension GoalongWorkSharingFilter {
                     return
                 }
                 let reasks = Set(pending.keys.filter { store.verdicts.contexts[$0]?.verdict == .unclear })
-                let rawExcerpts = await Task.detached(priority: .utility) {
+                let rawExcerpts = await Self.detachedForwardingCancellation(priority: .utility) {
                     GoalongWorkReassessment.excerpts(root: root, day: start, keys: reasks, calendar: calendar,
                         permits: filter.permitsVisibleContext, shouldContinue: { !Task.isCancelled })
-                }.value
+                }
                 guard operation == id else { return }
                 var excerpts: [String: String] = [:]
                 for (key, text) in rawExcerpts {
@@ -238,8 +240,11 @@ extension GoalongWorkSharingFilter {
                 guard let executable = CodexExecutableLocator.locate() else { throw CodexAppServerError.executableUnavailable }
                 try ChatGPTSecureStorage.prepareDirectory(AppPaths.chatGPTDirectory)
                 // The connected ChatGPT account, under the strict tool-less, network-less profile.
-                let session = try CodexAppServerSession(executableURL: executable,
-                    codexHomeURL: AppPaths.chatGPTCodexHomeDirectory, siteAnalysisOnly: true, homeLeaseWait: 0)
+                // Built off the main actor: the launch and the initialize handshake can block for seconds.
+                guard let session = try await Self.makeOffMain({
+                    try CodexAppServerSession(executableURL: executable,
+                        codexHomeURL: AppPaths.chatGPTCodexHomeDirectory, siteAnalysisOnly: true, homeLeaseWait: 0)
+                }, isStale: { [weak self] in self?.operation != id }, close: { $0.close() }) else { return }
                 self.session = session
                 defer { session.close(); if operation == id { self.session = nil } }
                 // Name replacements apply to everything the agent reads, not only the contexts.
@@ -303,6 +308,22 @@ extension GoalongWorkSharingFilter {
                 runPendingRerun()
             }
         }
+    }
+
+    /// Runs a blocking job off the main actor and forwards a cancellation of the caller to it
+    /// (a detached task does not inherit it, so its `shouldContinue` checks would never stop).
+    nonisolated static func detachedForwardingCancellation<T: Sendable>(priority: TaskPriority,
+                                                                         _ body: @escaping @Sendable () -> T) async -> T {
+        let scan = Task.detached(priority: priority, operation: body)
+        return await withTaskCancellationHandler(operation: { await scan.value }, onCancel: { scan.cancel() })
+    }
+
+    /// Builds a session off the main actor. A run that became stale or cancelled meanwhile closes it and gets nil.
+    static func makeOffMain<S>(_ make: @escaping @Sendable () throws -> S, isStale: @MainActor () -> Bool,
+                               close: (S) -> Void) async throws -> S? {
+        let built = try await Task.detached(priority: .userInitiated) { UncheckedSendable(value: try make()) }.value
+        if Task.isCancelled || isStale() { close(built.value); return nil }
+        return built.value
     }
 
     func cancel() {

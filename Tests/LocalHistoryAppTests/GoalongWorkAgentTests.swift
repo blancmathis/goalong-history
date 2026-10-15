@@ -82,6 +82,51 @@ final class GoalongWorkAgentTests: XCTestCase {
         XCTAssertEqual(ChatGPTRecapContextBuilder.workDefinitionText(GoalongWorkDefinition()), "")
     }
 
+    @MainActor func testSlowSessionBuildKeepsTheMainActorFreeAndStaleRunsCloseIt() async throws {
+        final class Box: @unchecked Sendable { var closed = 0 }
+        let box = Box()
+        var mainRan = false
+        let build = Task { @MainActor in
+            try await GoalongWorkAgent.makeOffMain({ Thread.sleep(forTimeInterval: 0.6); return 7 }, isStale: { false }, close: { _ in box.closed += 1 })
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        mainRan = true
+        let built = try await build.value; XCTAssertEqual(built, 7)
+        XCTAssertTrue(mainRan)
+        XCTAssertEqual(box.closed, 0)
+        let stale = try await GoalongWorkAgent.makeOffMain({ 8 }, isStale: { true }, close: { _ in box.closed += 1 })
+        XCTAssertNil(stale)
+        XCTAssertEqual(box.closed, 1, "A stale run closes the session it built")
+        let cancelled = Task { @MainActor in
+            try await GoalongWorkAgent.makeOffMain({ Thread.sleep(forTimeInterval: 0.3); return 9 }, isStale: { false }, close: { _ in box.closed += 1 })
+        }
+        cancelled.cancel()
+        let none = try await cancelled.value; XCTAssertNil(none)
+        XCTAssertEqual(box.closed, 2)
+    }
+
+    func testCancellingTheParentStopsTheDetachedScan() async throws {
+        final class Counter: @unchecked Sendable { let lock = NSLock(); var n = 0; var stopped = false
+            func tick(_ live: Bool) { lock.lock(); n += 1; if !live { stopped = true }; lock.unlock() } }
+        let counter = Counter()
+        let parent = Task {
+            await GoalongWorkAgent.detachedForwardingCancellation(priority: .utility) {
+                for _ in 0..<2_000 {
+                    counter.tick(!Task.isCancelled)
+                    if Task.isCancelled { return false }
+                    Thread.sleep(forTimeInterval: 0.005)
+                }
+                return true
+            }
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        parent.cancel()
+        let finished = await parent.value
+        XCTAssertFalse(finished)
+        XCTAssertTrue(counter.stopped)
+        XCTAssertLessThan(counter.n, 1_000)
+    }
+
     func testAgentNeverRunsOnATimerAndOnlyWithConsent() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryApp/GoalongWorkAgent.swift"), encoding: .utf8)
