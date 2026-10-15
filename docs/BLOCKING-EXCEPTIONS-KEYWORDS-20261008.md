@@ -1,5 +1,8 @@
 # Blocage — exceptions et mots-clés (2026-10-08)
 
+> Superseded 2026-10-14 (c03e5fa): private windows are now read in memory and follow the lists.
+> The private-window rules under « Privacy » and « Tests » below are historical; see `docs/BLOCKING.md`.
+
 Owner request: the last functional gap after #75/#76. Base: `docs/BLOCKING.md` (rules, privacy,
 lock semantics). This file only adds to it.
 
