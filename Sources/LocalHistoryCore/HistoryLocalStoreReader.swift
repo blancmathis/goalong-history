@@ -56,6 +56,9 @@ public struct DailyWebsiteUsageLoadResult {
     public let peakStreamBufferBytes: Int
     public let peakEstimatedRetainedBytes: Int64
     public let issues: [HistoryLoadIssue]
+    /// Rows that could not be decoded and were left out of the totals. A few
+    /// torn rows keep the day usable; many mean the source is unavailable.
+    public let skippedMalformedRowCount: Int
 
     public init(
         day: Date,
@@ -66,8 +69,10 @@ public struct DailyWebsiteUsageLoadResult {
         sourceEventCount: Int,
         peakStreamBufferBytes: Int,
         peakEstimatedRetainedBytes: Int64,
-        issues: [HistoryLoadIssue]
+        issues: [HistoryLoadIssue],
+        skippedMalformedRowCount: Int = 0
     ) {
+        self.skippedMalformedRowCount = max(0, skippedMalformedRowCount)
         self.day = day
         self.state = state
         self.websites = websites
@@ -1181,7 +1186,11 @@ package struct HistoryJSONLinesStreamReader {
 /// It never asks for Accessibility/Input Monitoring and never mutates recorder files.
 public struct HistoryLocalStoreReader {
     private static let maximumCaptureHealthBytes = 1 * 1_024 * 1_024
+    /// Same ceiling as the current-day memory index; larger memory or semantic
+    /// JSON files are reported as load issues instead of being read whole.
+    private static let maximumJSONFileBytes = 16 * 1_024 * 1_024
     private static let maximumComputerHistoryIssues = 256
+    private static let maximumSkippedMalformedRows = 16
     private static let maximumSourceSearchDirectoryEntries = 8_192
     private static let maximumSourceSearchFiles = 4_096
 
@@ -1268,6 +1277,7 @@ public struct HistoryLocalStoreReader {
         var sourceBoundExceeded = false
         var sourceChanged = false
         var sourceUnavailable = false
+        var skippedMalformedRowCount = 0
         var eventFiles: [HistoryPinnedSourceFile] = []
         var pinnedRoot: HistoryPinnedSourceDirectory?
         var pinnedEvents: HistoryPinnedSourceDirectory?
@@ -1368,12 +1378,17 @@ public struct HistoryLocalStoreReader {
                                 onObservedEvent?(event)
                                 accumulator.ingest(event)
                             } catch {
-                                sourceUnavailable = true
+                                // A torn row (for example after a crash during an append) must
+                                // not hide the other rows. Heavy corruption still fails closed.
+                                skippedMalformedRowCount += 1
                                 appendIssue(
                                     path: sourceFile.url.path,
                                     line: lineNumber,
-                                    message: "Could not decode daily website source row: \(error)"
+                                    message: "Skipped an undecodable daily website source row."
                                 )
+                                if skippedMalformedRowCount > Self.maximumSkippedMalformedRows {
+                                    sourceUnavailable = true
+                                }
                             }
                         }
                     },
@@ -1474,8 +1489,50 @@ public struct HistoryLocalStoreReader {
             sourceEventCount: accumulator.sourceEventCount,
             peakStreamBufferBytes: peakStreamBufferBytes,
             peakEstimatedRetainedBytes: accumulator.peakEstimatedRetainedBytes,
+            issues: issues,
+            skippedMalformedRowCount: skippedMalformedRowCount
+        )
+    }
+
+    /// Loads only the stored memories, without events or semantic snapshots.
+    /// Callers that only list memories avoid decoding the event journals.
+    public func loadMemories() -> HistoryLoadedData {
+        var issues: [HistoryLoadIssue] = []
+        let memories = loadMemoryFiles(start: nil, end: nil, issues: &issues)
+        return HistoryLoadedData(
+            events: [],
+            memories: memories.sorted { $0.start < $1.start },
+            semanticSnapshots: [:],
+            captureHealth: nil,
             issues: issues
         )
+    }
+
+    private func loadMemoryFiles(
+        start: Date?,
+        end: Date?,
+        issues: inout [HistoryLoadIssue]
+    ) -> [ActivityMemory] {
+        loadJSONFiles(
+            ActivityMemory.self,
+            from: files(
+                in: memoriesDirectory,
+                extensions: ["json"],
+                intersecting: start,
+                end: end
+            )
+                + files(
+                    in: analysisDirectory,
+                    extensions: ["memory.json"],
+                    intersecting: start,
+                    end: end
+                ),
+            issues: &issues
+        ).filter { memory in
+            if let start, memory.end < start { return false }
+            if let end, memory.start > end { return false }
+            return true
+        }
     }
 
     public func load(
@@ -1496,26 +1553,7 @@ public struct HistoryLocalStoreReader {
             timestamp: { $0.timestamp },
             issues: &issues
         )
-        let memories = loadJSONFiles(
-            ActivityMemory.self,
-            from: files(
-                in: memoriesDirectory,
-                extensions: ["json"],
-                intersecting: start,
-                end: end
-            )
-                + files(
-                    in: analysisDirectory,
-                    extensions: ["memory.json"],
-                    intersecting: start,
-                    end: end
-                ),
-            issues: &issues
-        ).filter { memory in
-            if let start, memory.end < start { return false }
-            if let end, memory.start > end { return false }
-            return true
-        }
+        let memories = loadMemoryFiles(start: start, end: end, issues: &issues)
         let semanticRows =
             loadJSONLines(
                 SemanticContextPayload.self,
@@ -1668,12 +1706,8 @@ public struct HistoryLocalStoreReader {
                 parent: sourceRoot,
                 name: "events"
             )
-            guard let memoryFile = try memoryDirectory.matchingFiles(
-                extensions: ["json"]
-            ).first(where: { $0.name == memoryName }),
-                let eventFile = try eventDirectory.matchingFiles(
-                    extensions: ["jsonl"]
-                ).first(where: { $0.name == eventName })
+            guard let memoryFile = try memoryDirectory.regularFile(named: memoryName),
+                let eventFile = try eventDirectory.regularFile(named: eventName)
             else {
                 return CurrentComputerHistoryMemoryLoad(
                     memory: nil,
@@ -3416,7 +3450,11 @@ public struct HistoryLocalStoreReader {
     ) -> [T] {
         files.compactMap { file in
             do {
-                return try decoder().decode(T.self, from: Data(contentsOf: file))
+                let raw = try readBoundedFile(
+                    file,
+                    maximumBytes: Self.maximumJSONFileBytes
+                )
+                return try decoder().decode(T.self, from: raw)
             } catch {
                 issues.append(
                     HistoryLoadIssue(

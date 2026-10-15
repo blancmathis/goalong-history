@@ -167,7 +167,8 @@ public struct HistoryQueryService {
     public func application(_ rawName: String, maximumHits: Int = 500) -> HistoryQueryResult {
         let query = ActivityMemoryUtilities.normalized(rawName)
         let matches = events.filter { event in
-            ActivityMemoryUtilities.normalized([event.app?.name, event.app?.bundleIdentifier].compactMap { $0 }.joined(separator: " "))
+            guard event.suppressionReason == nil else { return false }
+            return ActivityMemoryUtilities.normalized([event.app?.name, event.app?.bundleIdentifier].compactMap { $0 }.joined(separator: " "))
                 .contains(query)
         }
         return makeResult(
