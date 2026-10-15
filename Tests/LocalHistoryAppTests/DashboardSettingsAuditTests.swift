@@ -78,6 +78,29 @@ final class DashboardSettingsAuditTests: XCTestCase {
         XCTAssertNil(runtime.measurementError)
     }
 
+    /// R3-028: a failing measurement sets `measurementError` (not `error`) and the page has a note for it.
+    @MainActor func testMeasurementFailureIsKeptApartAndHasANote() throws {
+        let directory = URL(fileURLWithPath: "/private/tmp/goalong-measure-\(UUID().uuidString)")
+        let plans = directory.appendingPathComponent("plans").path
+        addTeardownBlock { chmod(plans, 0o700); try? FileManager.default.removeItem(at: directory) }
+        var calls = 0
+        let runtime = ConcentrationRuntime(storeFactory: {
+            calls += 1
+            let store = FocusStore(directory: directory)
+            if calls >= 2 { try? store.savePlans([FocusPlan(day: "2026-01-01")]); chmod(plans, 0o000) }
+            return store
+        }, presentsPanels: false)
+        runtime.apply(enabled: true)
+        XCTAssertNotNil(runtime.controller)
+        let deadline = Date().addingTimeInterval(5)
+        while runtime.measurementError == nil, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        XCTAssertNotNil(runtime.measurementError); XCTAssertNil(runtime.error)
+        XCTAssertNotNil(ConcentrationPageContent.measurementNote(runtime.measurementError))
+        XCTAssertNil(ConcentrationPageContent.measurementNote(nil))
+        runtime.apply(enabled: false)
+        XCTAssertNil(runtime.measurementError)
+    }
+
     func testShareBuildErrorsKeepTheirReasonInAlerts() {
         let text = DashboardViewModel.userFacingMessage(ShareBuildError.exclusionsUnreadable)
         XCTAssertTrue(text.contains("Les exclusions sont illisibles"), text)

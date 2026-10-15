@@ -30,6 +30,7 @@ import SwiftUI
     var now: Date?
     var measures: [FocusItemMeasure]?
     @ObservedObject private var modules = GoalongModuleStore.shared
+    @ObservedObject private var runtime = ConcentrationRuntime.shared
     @State private var draft: FocusComposerDraft
     @State private var reviewing = false
     @State private var editingCommitment: FocusCommitmentEditRequest?
@@ -43,6 +44,11 @@ import SwiftUI
         self.measures = measures
         _draft = State(initialValue: draft)
         _settingsOpen = State(initialValue: settingsOpen)
+    }
+
+    /// R3-028: background measurement failures, kept apart from `runtime.error` (a start failure).
+    static func measurementNote(_ error: String?) -> String? {
+        error == nil ? nil : "Les minutes mesurées n’ont pas pu être mises à jour."
     }
 
     var body: some View {
@@ -64,6 +70,9 @@ import SwiftUI
                             GoalongNote(FocusUIError.message(raw: error), tone: .warning)
                                 .onTapGesture { controller.error = nil }
                                 .accessibilityIdentifier("concentration-error")
+                        }
+                        if modules.isEnabled(.concentration), let note = Self.measurementNote(runtime.measurementError) {
+                            GoalongNote(note, tone: .warning).accessibilityIdentifier("concentration-measurement-error")
                         }
                         FocusPlanSection(controller: controller, now: now, measures: measures ?? controller.itemMeasures,
                                          draft: $draft, addFocused: $addFocused, onReview: { reviewing = true })
