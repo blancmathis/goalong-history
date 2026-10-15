@@ -337,11 +337,16 @@
             if selectedSection == .share { reloadShareSegments() }
         }
 
+        /// Opens Réglages on one pane. `selectSection(.settings)` resets the pane, so it is set after.
+        func openSettingsPane(_ pane: SettingsPane) {
+            selectSection(.settings)
+            settingsPane = pane
+        }
+
         func selectSection(_ section: DashboardSection) {
             // Jev has no page of its own any more: its key and settings live in Réglages › Jev.
             if section == .monitoring {
-                selectSection(.settings)
-                settingsPane = .jev
+                openSettingsPane(.jev)
                 return
             }
             let previousSection = selectedSection

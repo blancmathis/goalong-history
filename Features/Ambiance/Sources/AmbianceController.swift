@@ -19,6 +19,10 @@ import OndeCore
     private var runtime: AmbianceRuntime?
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var downloadTickets: [String: UUID] = [:]
+    @Published public private(set) var importNotice: String?
+    private var importTask: Task<Void, Never>?
+    private var playTask: Task<Void, Never>?
+    private var playTicket: UUID?
     init(settings: AmbianceSettings, supportDirectory: URL) {
         precondition(settings.isEnabled)
         self.settings = settings; store = AmbiancePackStore(supportDirectory: supportDirectory)
@@ -37,35 +41,70 @@ import OndeCore
             state = .error(AmbianceError.unavailable.localizedDescription); return
         }
         state = .loading
-        do {
-            let prepared: AmbianceRuntime
-            if canonical.profile != nil, let pack = AmbiancePackCatalog.packs.first(where: { $0.id == "orchestra" }) {
-                prepared = try AmbianceRuntime(source: canonical, orchestraDirectory: store.directory(pack))
-            } else {
-                let url: URL
-                if canonical.kind == .ownFile, let path = canonical.path { url = URL(fileURLWithPath: path) }
-                else if canonical.kind == .texture, let pack = AmbiancePackCatalog.packs.first(where: { $0.id == "textures" }) {
-                    url = store.directory(pack).appendingPathComponent(canonical.id + ".wav")
-                } else { throw AmbianceError.unavailable }
-                prepared = try AmbianceRuntime(fileURL: url, looping: canonical.kind == .texture) { [weak self] in
-                    self?.stop()
+        if canonical.profile != nil, let pack = AmbiancePackCatalog.packs.first(where: { $0.id == "orchestra" }) {
+            // Hashing the samples takes a while on a cold disk: keep it off the main actor so the
+            // "Préparation…" state shows and the UI stays responsive. Stop or another Play invalidates the ticket.
+            let ticket = UUID(), directory = store.directory(pack)
+            playTicket = ticket
+            playTask = Task { [weak self] in
+                let worker = Task.detached(priority: .userInitiated) {
+                    try AmbianceRuntime.prepareOrchestra(source: canonical, orchestraDirectory: directory)
                 }
+                let prepared: AmbianceRuntime.PreparedOrchestra
+                do {
+                    prepared = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+                } catch {
+                    guard let self, self.playTicket == ticket else { return }
+                    self.playTask = nil; self.playTicket = nil
+                    self.state = .error("Lecture impossible : \(error.localizedDescription)")
+                    return
+                }
+                guard let self, self.playTicket == ticket, !Task.isCancelled else { prepared.discard(); return }
+                self.playTask = nil; self.playTicket = nil
+                self.begin(AmbianceRuntime(prepared: prepared), canonical)
             }
+            return
+        }
+        do {
+            let url: URL
+            if canonical.kind == .ownFile, let path = canonical.path { url = URL(fileURLWithPath: path) }
+            else if canonical.kind == .texture, let pack = AmbiancePackCatalog.packs.first(where: { $0.id == "textures" }) {
+                url = store.directory(pack).appendingPathComponent(canonical.id + ".wav")
+            } else { throw AmbianceError.unavailable }
+            begin(try AmbianceRuntime(fileURL: url, looping: canonical.kind == .texture) { [weak self] in
+                self?.stop()
+            }, canonical)
+        } catch {
+            stop(); state = .error("Lecture impossible : \(error.localizedDescription)")
+        }
+    }
+    private func begin(_ prepared: AmbianceRuntime, _ canonical: AmbianceSource) {
+        do {
             prepared.volume = volume; runtime = prepared
+            prepared.onInterrupted = { [weak self] in self?.outputInterrupted() }
             try prepared.startOutput()
             settings.lastSource = canonical.id; state = .playing(canonical)
         } catch {
             stop(); state = .error("Lecture impossible : \(error.localizedDescription)")
         }
     }
-    public func stop() { runtime?.stop(); runtime = nil; state = .idle }
+    /// The audio device changed under a playing source: release everything and say so.
+    func outputInterrupted() {
+        guard case .playing = state else { return }
+        stop(); state = .error("Sortie audio modifiée : relancez la lecture.")
+    }
+    public func stop() {
+        playTask?.cancel(); playTask = nil; playTicket = nil
+        runtime?.stop(); runtime = nil; state = .idle
+    }
     public func shutdown() {
         stop()
+        importTask?.cancel(); importTask = nil; importNotice = nil
         for task in downloadTasks.values { task.cancel() }
         downloadTasks.removeAll(); downloadTickets.removeAll()
         sources = []; packs = []
     }
-    deinit { for task in downloadTasks.values { task.cancel() } }
+    deinit { playTask?.cancel(); importTask?.cancel(); for task in downloadTasks.values { task.cancel() } }
     /// Explicit diagnostic render. It emits no device audio and always tears
     /// down the runtime, including on validation, decode and render failures.
     public func renderOffline(_ source: AmbianceSource, seconds: Double) throws -> AmbianceRenderMeasure {
@@ -131,25 +170,69 @@ import OndeCore
         do { try store.remove(pack); refresh() }
         catch { setStatus(id, .failed("Suppression impossible : \(error.localizedDescription)")) }
     }
-    public func addOwnFiles(_ urls: [URL]) {
-        guard settings.isEnabled else { return }
+    /// Most own files kept in the list, and most directory entries looked at in one import.
+    public nonisolated static let ownFilesLimit = 500
+    nonisolated static let visitedEntriesLimit = 50_000
+    /// Audio files in `urls` (folders walked recursively), not already in `existing`, without copying anything.
+    /// Pure file-system work: runs off the main actor and stops when cancelled.
+    nonisolated static func collectAudioFiles(_ urls: [URL], existing: [String], limit: Int = ownFilesLimit) -> (paths: [String], truncated: Bool) {
         let extensions: Set<String> = ["wav", "aiff", "aif", "m4a", "mp3", "caf", "flac"]
-        var paths = settings.ownFiles
+        var seen = Set(existing), added: [String] = [], truncated = false, visited = 0
         func include(_ file: URL) {
             guard extensions.contains(file.pathExtension.lowercased()) else { return }
             let path = file.resolvingSymlinksInPath().standardizedFileURL.path
-            if (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true, !paths.contains(path) { paths.append(path) }
+            guard !seen.contains(path), (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { return }
+            if existing.count + added.count >= limit { truncated = true; return }
+            seen.insert(path); added.append(path)
         }
         for url in urls where url.isFileURL {
+            if Task.isCancelled { break }
             if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                if let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
-                    while let file = files.nextObject() as? URL { include(file) }
+                guard let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
+                while let file = files.nextObject() as? URL {
+                    if Task.isCancelled || truncated { break }
+                    visited += 1
+                    if visited > visitedEntriesLimit { truncated = true; break }
+                    include(file)
                 }
             } else {
                 include(url)
             }
         }
+        return (added, truncated)
+    }
+    /// Plain files are added at once; folders are walked off the main actor. The returned task ends when the list is updated.
+    @discardableResult public func addOwnFiles(_ urls: [URL]) -> Task<Void, Never>? {
+        guard settings.isEnabled else { return nil }
+        importNotice = nil
+        let hasFolder = urls.contains { url in
+            url.isFileURL && (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+        guard hasFolder else {
+            merge(Self.collectAudioFiles(urls, existing: settings.ownFiles)); return nil
+        }
+        let existing = settings.ownFiles
+        let task = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) { Self.collectAudioFiles(urls, existing: existing) }.value
+            guard let self, !Task.isCancelled else { return }
+            self.importTask = nil
+            self.merge(result)
+        }
+        importTask = task
+        return task
+    }
+    private func merge(_ result: (paths: [String], truncated: Bool)) {
+        // Folders can take a while: the module may have been turned off, or the list changed, meanwhile.
+        guard settings.isEnabled else { return }
+        var paths = settings.ownFiles
+        let known = Set(paths)
+        var truncated = result.truncated
+        for path in result.paths where !known.contains(path) {
+            if paths.count >= Self.ownFilesLimit { truncated = true; break }
+            paths.append(path)
+        }
         settings.ownFiles = paths; refreshSources()
+        if truncated { importNotice = "Seuls les \(Self.ownFilesLimit) premiers fichiers ont été ajoutés." }
     }
     public func removeOwnFile(_ source: AmbianceSource) {
         guard settings.isEnabled else { return }
@@ -166,8 +249,10 @@ import OndeCore
             case .failed(let message): absent = .failed(message)
             default: absent = .notInstalled
             }
+            let installed = store.isInstalled(pack)
             return AmbiancePackState(id: pack.id, title: pack.title, bytes: pack.bytes,
-                                     status: store.isInstalled(pack) ? .installed : absent)
+                                     status: installed ? .installed : absent,
+                                     hasLeftovers: !installed && store.hasLeftovers(pack))
         }
         refreshSources()
     }

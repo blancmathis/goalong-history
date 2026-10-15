@@ -319,6 +319,11 @@
                         self?.menuBarController.closePanel()
                         self?.dashboardWindowController.show(section: section)
                     },
+                    onOpenSettingsPane: { [weak self] pane in
+                        self?.menuBarController.closePanel()
+                        self?.dashboardViewModel.openSettingsPane(pane)
+                        self?.dashboardWindowController.show(section: .settings)
+                    },
                     onOpenDay: { [weak self] in
                         self?.menuBarController.closePanel()
                         self?.dashboardViewModel.selectDay(Date())

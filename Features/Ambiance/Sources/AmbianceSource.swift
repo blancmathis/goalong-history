@@ -2,7 +2,13 @@ import Foundation
 import OndeCore
 
 public struct AmbianceSource: Identifiable, Equatable {
-    public enum Kind: Equatable { case focus, relax, texture, ownFile }
+    public enum Kind: Equatable, CaseIterable {
+        case focus, relax, texture, ownFile
+        /// The one French name of each kind, used by the Ambiance page and the menu-bar panel.
+        public var displayName: String {
+            switch self { case .focus: return "Concentration"; case .relax: return "Détente"; case .texture: return "Texture"; case .ownFile: return "Ma musique" }
+        }
+    }
     public let id: String
     public let title: String
     public let kind: Kind
