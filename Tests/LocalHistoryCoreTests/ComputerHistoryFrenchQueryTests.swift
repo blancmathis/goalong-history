@@ -41,6 +41,8 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
         for query in [
             "Ou j en etais avant ma pause ?",
             "Où en étais-je avant ma dernière pause ?",
+            "Où j'en étais ?",
+            "Où j’en étais avant ma pause ?",
         ] {
             let answer = ComputerHistorySearchService(memories: [memory]).ask(
                 query,
@@ -116,7 +118,20 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
     }
 
     func testFrenchTodaySummaryAvoidsTheRawJournalPass() {
-        let query = "Sur quoi ai-je travaillé aujourd'hui ?"
+        for query in [
+            "Sur quoi ai-je travaillé aujourd'hui ?",
+            "Sur quoi j'ai travaillé aujourd’hui ?",
+        ] {
+            assertTodaySummaryAvoidsTheRawJournalPass(query)
+        }
+        XCTAssertFalse(
+            ComputerHistorySearchService.shouldSearchRawSources(
+                for: "Sur quoi j'ai travaillé hier ?"
+            )
+        )
+    }
+
+    private func assertTodaySummaryAvoidsTheRawJournalPass(_ query: String) {
         let textEdit = fixtureApp("TextEdit")
         let event = fixtureEvent(
             id: "today-summary",

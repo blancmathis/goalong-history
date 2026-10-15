@@ -848,7 +848,11 @@ public struct ComputerHistorySearchService {
         case generic
 
         static func detect(_ query: SearchText.PreparedQuery) -> SearchIntent {
-            let value = query.normalized
+            // Markers are written without apostrophes ("ou j en etais"), so
+            // match them against the canonical form of "Où j'en étais ?".
+            let value = SearchText.normalized(
+                ComputerHistoryNaturalLanguage.canonicalize(query.raw)
+            )
             if SearchText.containsAny(
                 value,
                 [
