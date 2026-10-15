@@ -164,6 +164,26 @@ public struct AmbiancePackStore {
               root.resolvingSymlinksInPath().path == root.standardizedFileURL.path else { throw AmbianceError.invalidPack("répertoire non sûr") }
         if FileManager.default.fileExists(atPath: folder.path) { try FileManager.default.removeItem(at: folder) }
     }
+    /// Removes `.install-<pack>-<UUID>` and `.stale-<pack>-<UUID>` folders left by an interrupted install.
+    /// Call only while no install runs. Never touches final pack folders; symbolic links are removed, not followed.
+    @discardableResult public func removeOrphans() -> Int {
+        let fm = FileManager.default
+        guard isRegularDirectory(root), root.resolvingSymlinksInPath().path == root.standardizedFileURL.path,
+              let children = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isSymbolicLinkKey], options: []) else { return 0 }
+        var removed = 0
+        for child in children where Self.isOrphanName(child.lastPathComponent) {
+            if (try? fm.removeItem(at: child)) != nil { removed += 1 }
+        }
+        return removed
+    }
+    static func isOrphanName(_ name: String) -> Bool {
+        for kind in [".install-", ".stale-"] where name.hasPrefix(kind) {
+            for id in ["orchestra", "textures"] where name.hasPrefix(kind + id + "-") {
+                return UUID(uuidString: String(name.dropFirst(kind.count + id.count + 1))) != nil
+            }
+        }
+        return false
+    }
     private func isRegularDirectory(_ url: URL) -> Bool {
         guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return false }
         return values.isDirectory == true && values.isSymbolicLink != true

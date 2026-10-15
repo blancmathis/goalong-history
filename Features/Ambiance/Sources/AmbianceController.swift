@@ -175,14 +175,15 @@ import OndeCore
     nonisolated static let visitedEntriesLimit = 50_000
     /// Audio files in `urls` (folders walked recursively), not already in `existing`, without copying anything.
     /// Pure file-system work: runs off the main actor and stops when cancelled.
-    nonisolated static func collectAudioFiles(_ urls: [URL], existing: [String], limit: Int = ownFilesLimit) -> (paths: [String], truncated: Bool) {
+    public enum Truncation: Equatable { case listFull, walkCapped }
+    nonisolated static func collectAudioFiles(_ urls: [URL], existing: [String], limit: Int = ownFilesLimit, visitedLimit: Int = visitedEntriesLimit) -> (paths: [String], truncated: Truncation?) {
         let extensions: Set<String> = ["wav", "aiff", "aif", "m4a", "mp3", "caf", "flac"]
-        var seen = Set(existing), added: [String] = [], truncated = false, visited = 0
+        var seen = Set(existing), added: [String] = [], truncated: Truncation? = nil, visited = 0
         func include(_ file: URL) {
             guard extensions.contains(file.pathExtension.lowercased()) else { return }
             let path = file.resolvingSymlinksInPath().standardizedFileURL.path
             guard !seen.contains(path), (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { return }
-            if existing.count + added.count >= limit { truncated = true; return }
+            if existing.count + added.count >= limit { truncated = .listFull; return }
             seen.insert(path); added.append(path)
         }
         for url in urls where url.isFileURL {
@@ -190,9 +191,9 @@ import OndeCore
             if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
                 guard let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
                 while let file = files.nextObject() as? URL {
-                    if Task.isCancelled || truncated { break }
+                    if Task.isCancelled || truncated != nil { break }
                     visited += 1
-                    if visited > visitedEntriesLimit { truncated = true; break }
+                    if visited > visitedLimit { truncated = .walkCapped; break }
                     include(file)
                 }
             } else {
@@ -212,8 +213,10 @@ import OndeCore
             merge(Self.collectAudioFiles(urls, existing: settings.ownFiles)); return nil
         }
         let existing = settings.ownFiles
+        importTask?.cancel()
         let task = Task { [weak self] in
-            let result = await Task.detached(priority: .userInitiated) { Self.collectAudioFiles(urls, existing: existing) }.value
+            let worker = Task.detached(priority: .userInitiated) { Self.collectAudioFiles(urls, existing: existing) }
+            let result = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
             guard let self, !Task.isCancelled else { return }
             self.importTask = nil
             self.merge(result)
@@ -221,18 +224,22 @@ import OndeCore
         importTask = task
         return task
     }
-    private func merge(_ result: (paths: [String], truncated: Bool)) {
+    func merge(_ result: (paths: [String], truncated: Truncation?)) {
         // Folders can take a while: the module may have been turned off, or the list changed, meanwhile.
         guard settings.isEnabled else { return }
         var paths = settings.ownFiles
         let known = Set(paths)
         var truncated = result.truncated
         for path in result.paths where !known.contains(path) {
-            if paths.count >= Self.ownFilesLimit { truncated = true; break }
+            if paths.count >= Self.ownFilesLimit { truncated = truncated ?? .listFull; break }
             paths.append(path)
         }
         settings.ownFiles = paths; refreshSources()
-        if truncated { importNotice = "Seuls les \(Self.ownFilesLimit) premiers fichiers ont été ajoutés." }
+        switch truncated {
+        case .walkCapped?: importNotice = "Dossier trop volumineux : seule une partie a été parcourue."
+        case .listFull?: importNotice = "La liste est pleine (\(Self.ownFilesLimit) fichiers)."
+        case nil: break
+        }
     }
     public func removeOwnFile(_ source: AmbianceSource) {
         guard settings.isEnabled else { return }
@@ -241,6 +248,8 @@ import OndeCore
     }
     public func refresh() {
         guard settings.isEnabled else { shutdown(); return }
+        // No install runs: interrupted installs may have left staging folders behind.
+        if downloadTasks.isEmpty { store.removeOrphans() }
         packs = AmbiancePackCatalog.packs.map { pack in
             let pending = packs.first(where: { $0.id == pack.id })?.status
             let absent: AmbiancePackState.Status

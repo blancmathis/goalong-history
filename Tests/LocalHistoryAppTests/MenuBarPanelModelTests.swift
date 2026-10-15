@@ -127,6 +127,35 @@ final class MenuBarPanelModelTests: XCTestCase {
         XCTAssertEqual(f.opened, [.ambiance], "An enabled module still opens its own page")
     }
 
+    @MainActor func testConcentrationOffExposesFlagAndStartOpensModulesPane() {
+        let f = fixture(), model = f.model()
+        model.refreshRuntimeState()
+        XCTAssertFalse(model.concentrationEnabled)
+        model.startFocus()
+        XCTAssertEqual(f.openedPanes, [.modules]); XCTAssertTrue(f.opened.isEmpty)
+        f.modules.setEnabled(.concentration, true); model.refreshRuntimeState()
+        XCTAssertTrue(model.concentrationEnabled)
+    }
+
+    @MainActor func testConsentOffFlagIsSetOnlyForConsent() {
+        let f = fixture(), model = f.model()
+        f.consent = false; model.refreshRuntimeState(); XCTAssertTrue(model.consentOff)
+        f.globallyPaused.paused = true; model.refreshRuntimeState(); XCTAssertFalse(model.consentOff)
+        f.globallyPaused.paused = false; f.consent = true; model.refreshRuntimeState(); XCTAssertFalse(model.consentOff)
+    }
+
+    @MainActor func testWorkIsUnknownUntilVerdictsExistLikeTheActivityPage() {
+        let f = fixture(), model = f.model(), day = f.calendar.startOfDay(for: f.now)
+        func value(_ kind: GoalongLocalAnalytics.Kind) -> GoalongLocalAnalytics.Day {
+            .init(date: day, end: day.addingTimeInterval(86400), state: .ready, segments: [
+                .init(start: day, end: day.addingTimeInterval(3600), kind: kind, application: "A", bundleIdentifier: nil, host: nil)
+            ], eventCount: 1, classifierVersions: [])
+        }
+        model.applyDay(value(.unclassified)); XCTAssertFalse(model.workKnown)
+        model.applyDay(value(.work)); XCTAssertTrue(model.workKnown)
+        model.applyDay(value(.other)); XCTAssertTrue(model.workKnown, "Mostly classified: work is a real zero")
+    }
+
     @MainActor func testPomodoroAndFreeSessionsUseControllerAndRealPhaseClock() throws {
         let f = fixture(); try f.startFocusController()
         let model = f.model(); model.focusMinutes = 50; model.startFocus()

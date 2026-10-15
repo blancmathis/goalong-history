@@ -104,6 +104,48 @@ final class AmbianceTests: XCTestCase {
         XCTAssertEqual(settings.ownFiles, first, "Importing the same folder again changes nothing")
         XCTAssertEqual(Set(settings.ownFiles).count, settings.ownFiles.count)
     }
+    func testCollectAudioFilesReportsTruncationReason() throws {
+        let folder = try root()
+        for index in 0..<4 { try Data([1]).write(to: folder.appendingPathComponent("a\(index).wav")) }
+        XCTAssertEqual(AmbianceController.collectAudioFiles([folder], existing: [], visitedLimit: 2).truncated, .walkCapped)
+        XCTAssertEqual(AmbianceController.collectAudioFiles([folder], existing: [], limit: 1).truncated, .listFull)
+        XCTAssertNil(AmbianceController.collectAudioFiles([folder], existing: []).truncated)
+    }
+    @MainActor func testMergeNoticeMatchesTruncationReason() throws {
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { try! self.root() }, controller = try XCTUnwrap(module.controller)
+        controller.merge((paths: [], truncated: .walkCapped))
+        XCTAssertEqual(controller.importNotice, "Dossier trop volumineux : seule une partie a été parcourue.")
+        controller.merge((paths: [], truncated: .listFull))
+        XCTAssertEqual(controller.importNotice, "La liste est pleine (\(AmbianceController.ownFilesLimit) fichiers).")
+    }
+    @MainActor func testShutdownCancelsFolderImport() async throws {
+        let support = try root(), folder = try root()
+        try Data([1]).write(to: folder.appendingPathComponent("a.wav"))
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        let task = controller.addOwnFiles([folder])
+        controller.shutdown()
+        await task?.value
+        XCTAssertTrue(settings.ownFiles.isEmpty)
+    }
+    func testRemoveOrphansKeepsPacksAndDoesNotFollowSymlinks() throws {
+        let support = try root(), outside = try root()
+        let store = AmbiancePackStore(supportDirectory: support)
+        let fm = FileManager.default
+        try fm.createDirectory(at: store.root, withIntermediateDirectories: true)
+        let install = store.root.appendingPathComponent(".install-orchestra-\(UUID().uuidString)")
+        let stale = store.root.appendingPathComponent(".stale-textures-\(UUID().uuidString)")
+        for dir in [install, stale, store.root.appendingPathComponent("orchestra")] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data([1]).write(to: dir.appendingPathComponent("f"))
+        }
+        try Data([1]).write(to: outside.appendingPathComponent("keep"))
+        try fm.createSymbolicLink(at: store.root.appendingPathComponent(".install-textures-\(UUID().uuidString)"), withDestinationURL: outside)
+        XCTAssertEqual(store.removeOrphans(), 3)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: store.root.path), ["orchestra"])
+        XCTAssertTrue(fm.fileExists(atPath: outside.appendingPathComponent("keep").path))
+    }
     @MainActor func testFolderImportIsDiscardedWhenModuleTurnsOffMeanwhile() async throws {
         let support = try root(), folder = try root()
         try Data([1]).write(to: folder.appendingPathComponent("a.wav"))

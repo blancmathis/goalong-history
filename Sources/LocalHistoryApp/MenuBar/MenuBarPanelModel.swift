@@ -9,6 +9,8 @@ import LocalHistoryCore
     enum Tracking: Equatable { case active, paused(since: Date?), attention(String) }
     @Published var tracking: Tracking = .attention("Chargement")
     @Published var trackingDetail = "Chargement de l’état du suivi…"
+    /// Consent is off: the header action opens Réglages instead of pausing.
+    @Published var consentOff = false
 
     struct DaySegment: Identifiable {
         let id: Int
@@ -18,6 +20,8 @@ import LocalHistoryCore
         enum Kind { case work, other, unclassified }
     }
     @Published var workSeconds: TimeInterval = 0
+    /// Same rule as the Activity headline: work is unknown (« — »), never zero, until most active time is classified.
+    @Published var workKnown = false
     @Published var otherSeconds: TimeInterval = 0
     @Published var segments: [DaySegment] = []
     @Published var nowFraction: Double = 0
@@ -34,6 +38,7 @@ import LocalHistoryCore
         var isPaused: Bool
     }
     @Published var focusAvailable = false
+    @Published var concentrationEnabled = false
     @Published var focusUnavailableReason: String?
     @Published var focusKind: FocusKind = .pomodoro
     @Published var focusMinutes = 25
@@ -120,7 +125,7 @@ import LocalHistoryCore
         nowFraction = fraction(now)
         if displayedDay != day {
             stopRefreshing(); displayedDay = day
-            workSeconds = 0; otherSeconds = 0; segments = []
+            workSeconds = 0; workKnown = false; otherSeconds = 0; segments = []
         }
         guard dayTask == nil, let loadDay else { return }
         let generation = dayGeneration
@@ -134,7 +139,7 @@ import LocalHistoryCore
             } catch {
                 guard let self, !Task.isCancelled, self.dayGeneration == generation else { return }
                 self.dayTask = nil
-                self.workSeconds = 0; self.otherSeconds = 0; self.segments = []
+                self.workSeconds = 0; self.workKnown = false; self.otherSeconds = 0; self.segments = []
                 self.trackingDetail += " · Journée indisponible"
             }
         }
@@ -153,6 +158,7 @@ import LocalHistoryCore
 
     private func refreshTracking() {
         let pause = globalPause()
+        consentOff = !pause.blocksActivity && !localHistoryEnabled()
         // Same order as the classic menu: global pause, then consent (consent off also sets the manual pause), then manual pause.
         if pause.blocksActivity {
             if case .paused = tracking {} else { pausedSince = nil }
@@ -187,6 +193,8 @@ import LocalHistoryCore
 
     func applyDay(_ day: GoalongLocalAnalytics.Day) {
         workSeconds = day.seconds(.work); otherSeconds = day.seconds(.other)
+        let active = day.activeSeconds
+        workKnown = workSeconds > 0 || (active > 0 && (workSeconds + otherSeconds) / active >= 0.5)
         segments = day.segments.enumerated().compactMap { index, segment in
             let kind: DaySegment.Kind
             switch segment.kind {
@@ -213,6 +221,7 @@ import LocalHistoryCore
 
     private func refreshFocus() {
         let enabled = modules.isEnabled(.concentration)
+        concentrationEnabled = enabled
         let observing = state.isCapturing && localHistoryEnabled() && !globalPause().blocksActivity
         let controller = enabled ? concentration() : nil
         focusAvailable = enabled && observing && controller != nil
@@ -243,7 +252,7 @@ import LocalHistoryCore
 
     func startFocus() {
         refreshRuntimeState()
-        guard modules.isEnabled(.concentration) else { onOpenSection(.concentration); return }
+        guard modules.isEnabled(.concentration) else { openModulesSettings(); return }
         guard focusAvailable, let controller = concentration(), controller.currentSession == nil else { return }
         var mode = FocusMode()
         switch focusKind {
